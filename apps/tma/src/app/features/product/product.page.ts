@@ -1,7 +1,6 @@
-import { LowerCasePipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import type { ProductDetail, VariationType } from '@takeaway/shared-types';
+import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -10,88 +9,155 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 
 const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 
+const VARIATION_LABELS: Record<VariationType, string> = {
+  SIZE: 'Size',
+  TEMPERATURE: 'Temperature',
+  MILK: 'Milk',
+  CUP: 'Cup',
+};
+
+/**
+ * TMA Product Detail — pencil XJUmz.
+ *
+ * tcContent (0/16/16/16 padding, gap 20):
+ *   hero — 220px image (16px radius)
+ *   infoRow — title (Fraunces 20/700) · base price (Inter 18/700 caramel)
+ *   description
+ *   sizeSection / milkSection / extrasSection — pill-button rows
+ * MainButton (Telegram blue, 48px) handles add-to-cart action.
+ */
 @Component({
   selector: 'app-tma-product',
   standalone: true,
-  imports: [LowerCasePipe],
   template: `
-    <section class="px-4 pt-6 pb-32">
+    <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
-        <h1 class="text-2xl mb-2" style="font-family: var(--font-display)">{{ p.name }}</h1>
-        @if (p.description) {
-          <p class="text-sm mb-4" style="opacity: 0.7">{{ p.description }}</p>
-        }
+        <!-- Hero image -->
+        <div
+          [style.background]="heroBg(p)"
+          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center"
+        ></div>
 
-        <div class="flex items-center gap-4 mb-6 text-xs" style="opacity: 0.6">
-          <span>⌛ {{ minutes(p.prepTimeSeconds) }} min</span>
-          @if (p.calories !== null) {
-            <span>{{ p.calories }} kcal</span>
-          }
+        <!-- Title row -->
+        <div class="flex items-start justify-between" style="gap: 12px">
+          <div class="flex flex-col flex-1" style="gap: 4px">
+            <span
+              style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso)"
+              >{{ p.name }}</span
+            >
+            <div class="flex items-center" style="gap: 12px">
+              @if (p.calories !== null) {
+                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                  >🔥 {{ p.calories }} kcal</span
+                >
+              }
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                >⌛ {{ minutes(p.prepTimeSeconds) }} min</span
+              >
+            </div>
+          </div>
+          <span style="font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--color-caramel)">{{
+            price(totalCents())
+          }}</span>
         </div>
 
+        @if (p.description) {
+          <p
+            style="font-family: var(--font-sans); font-size: 14px; line-height: 1.6; color: var(--color-text-secondary); margin: 0"
+          >
+            {{ p.description }}
+          </p>
+        }
+
+        <!-- Variation sections -->
         @for (group of variationGroups(); track group.type) {
-          @if (group.variations.length > 0) {
-            <fieldset class="mb-5">
-              <legend class="text-xs uppercase tracking-wider mb-2" style="opacity: 0.5">
-                {{ group.type | lowercase }}
-              </legend>
-              <div class="flex flex-wrap gap-2">
-                @for (v of group.variations; track v.id) {
-                  <button
-                    type="button"
-                    (click)="selectVariation(group.type, v.id)"
-                    class="px-3 py-1.5 border text-sm"
-                    [style.background]="isSelected(group.type, v.id) ? 'var(--color-espresso)' : 'transparent'"
-                    [style.color]="isSelected(group.type, v.id) ? 'white' : 'var(--color-espresso)'"
-                    style="border-color: var(--color-espresso); border-radius: var(--radius-pill)"
-                  >
-                    {{ v.name }}
-                  </button>
-                }
-              </div>
-            </fieldset>
-          }
+          <div class="flex flex-col" style="gap: 10px">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ variationLabel(group.type) }}</span
+            >
+            <div class="flex flex-wrap" style="gap: 8px">
+              @for (v of group.variations; track v.id) {
+                <button
+                  type="button"
+                  (click)="selectVariation(group.type, v.id)"
+                  [style.background]="isSelected(group.type, v.id) ? 'var(--color-caramel)' : 'var(--color-foam)'"
+                  [style.color]="isSelected(group.type, v.id) ? 'white' : 'var(--color-text-primary)'"
+                  [style.border]="
+                    isSelected(group.type, v.id) ? '1px solid transparent' : '1px solid var(--color-border-light)'
+                  "
+                  style="height: 38px; padding: 0 16px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500"
+                >
+                  {{ v.name }}
+                </button>
+              }
+            </div>
+          </div>
         }
 
         @if (p.modifiers.length > 0) {
-          <fieldset class="mb-6">
-            <legend class="text-xs uppercase tracking-wider mb-2" style="opacity: 0.5">Add-ons</legend>
-            <ul class="flex flex-col gap-2">
+          <div class="flex flex-col" style="gap: 10px">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >Add-ons</span
+            >
+            <div class="flex flex-col" style="gap: 8px">
               @for (m of p.modifiers; track m.id) {
-                <li
-                  class="flex items-center justify-between p-3"
-                  style="background: var(--color-cream); border-radius: var(--radius-input)"
+                <div
+                  class="flex items-center justify-between"
+                  style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); padding: 12px 14px; gap: 12px"
                 >
-                  <span>{{ m.name }}</span>
-                  <div class="flex items-center gap-2">
+                  <div class="flex flex-col" style="gap: 2px">
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)">{{
+                      m.name
+                    }}</span>
+                    @if (m.priceDeltaCents > 0) {
+                      <span style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary)"
+                        >+{{ price(m.priceDeltaCents) }}</span
+                      >
+                    }
+                  </div>
+                  <div
+                    class="flex items-center"
+                    style="border: 1px solid var(--color-border); border-radius: var(--radius-button); overflow: hidden"
+                  >
                     <button
                       type="button"
-                      (click)="decModifier(m.id, m.minCount)"
+                      (click)="decModifier(m)"
                       [disabled]="modifierCount(m.id) <= m.minCount"
-                      class="w-7 h-7 disabled:opacity-30"
-                      style="background: var(--color-latte); border-radius: var(--radius-pill)"
+                      class="disabled:opacity-30"
+                      style="width: 32px; height: 32px; font-size: 16px; color: var(--color-text-primary)"
                     >
                       −
                     </button>
-                    <span class="w-5 text-center text-sm">{{ modifierCount(m.id) }}</span>
+                    <span
+                      class="flex items-center justify-center"
+                      style="width: 28px; height: 32px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                      >{{ modifierCount(m.id) }}</span
+                    >
                     <button
                       type="button"
-                      (click)="incModifier(m.id, m.maxCount)"
+                      (click)="incModifier(m)"
                       [disabled]="modifierCount(m.id) >= m.maxCount"
-                      class="w-7 h-7 disabled:opacity-30"
-                      style="background: var(--color-latte); border-radius: var(--radius-pill)"
+                      class="disabled:opacity-30"
+                      style="width: 32px; height: 32px; font-size: 16px; color: var(--color-text-primary)"
                     >
                       +
                     </button>
                   </div>
-                </li>
+                </div>
               }
-            </ul>
-          </fieldset>
+            </div>
+          </div>
         }
 
         @if (!authStore.isAuthenticated()) {
-          <p class="text-xs text-center" style="opacity: 0.6">Sign in within Telegram to add items to the cart.</p>
+          <p
+            class="text-center"
+            style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+          >
+            Sign in within Telegram to add items to the cart.
+          </p>
         }
       }
     </section>
@@ -116,7 +182,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
     if (!p) return [];
     return VARIATION_GROUPS.map((type) => ({
       type,
-      variations: p.variations.filter((v) => v.type === type),
+      variations: p.variations.filter((v) => v.type === type).sort((a, b) => a.sortOrder - b.sortOrder),
     })).filter((g) => g.variations.length > 0);
   });
 
@@ -158,6 +224,10 @@ export class TmaProductPage implements OnInit, OnDestroy {
     this.detachBack?.();
   }
 
+  variationLabel(type: VariationType): string {
+    return VARIATION_LABELS[type];
+  }
+
   selectVariation(type: VariationType, id: string): void {
     this.selectedVariations.update((s) => ({ ...s, [type]: id }));
     this.tg.haptic('light');
@@ -172,21 +242,21 @@ export class TmaProductPage implements OnInit, OnDestroy {
     return this.modifierCounts()[id] ?? 0;
   }
 
-  incModifier(id: string, max: number): void {
+  incModifier(m: Modifier): void {
     this.modifierCounts.update((state) => {
-      const current = state[id] ?? 0;
-      if (current >= max) return state;
-      return { ...state, [id]: current + 1 };
+      const current = state[m.id] ?? 0;
+      if (current >= m.maxCount) return state;
+      return { ...state, [m.id]: current + 1 };
     });
     this.tg.haptic('light');
     this.refreshMainButton();
   }
 
-  decModifier(id: string, min: number): void {
+  decModifier(m: Modifier): void {
     this.modifierCounts.update((state) => {
-      const current = state[id] ?? 0;
-      if (current <= min) return state;
-      return { ...state, [id]: current - 1 };
+      const current = state[m.id] ?? 0;
+      if (current <= m.minCount) return state;
+      return { ...state, [m.id]: current - 1 };
     });
     this.tg.haptic('light');
     this.refreshMainButton();
@@ -200,12 +270,18 @@ export class TmaProductPage implements OnInit, OnDestroy {
     return Math.max(1, Math.round(seconds / 60));
   }
 
+  heroBg(p: ProductDetail): string {
+    const url = p.imageUrls?.[0];
+    if (url) return `url('${url}')`;
+    return 'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)';
+  }
+
   private initializeDefaults(p: ProductDetail): void {
     const defaults: Partial<Record<VariationType, string>> = {};
     for (const v of p.variations) if (v.isDefault && !defaults[v.type]) defaults[v.type] = v.id;
     for (const type of VARIATION_GROUPS) {
       if (!defaults[type]) {
-        const first = p.variations.find((v) => v.type === type);
+        const first = p.variations.find((v: Variation) => v.type === type);
         if (first) defaults[type] = first.id;
       }
     }

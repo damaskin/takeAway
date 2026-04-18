@@ -7,38 +7,159 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
+/**
+ * TMA Checkout — pencil u5mrZ.
+ *
+ * tcContent (gap 20):
+ *   pickupSec  — ASAP / Scheduled toggle + time
+ *   storeSec   — foam card with store name and address
+ *   orderSec   — order lines + totals
+ *   promo      — foam input for promo codes (stubbed)
+ *   paySec     — payment method select (Apple/Google/Card stub)
+ * MainButton (Telegram blue) fires placeOrder with current pickup mode.
+ */
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
   template: `
-    <section class="px-4 pt-6 pb-32">
-      <h1 class="text-2xl mb-2" style="font-family: var(--font-display)">Checkout</h1>
-      <p class="text-sm mb-6" style="opacity: 0.6">Ready in ~{{ etaMinutes() }} min</p>
+    <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
+      <h1
+        style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
+      >
+        Checkout
+      </h1>
 
-      @if (cart(); as c) {
-        @if (c.items.length === 0) {
-          <p class="text-sm" style="opacity: 0.6">Your cart is empty.</p>
-        } @else {
-          <ul class="flex flex-col gap-2 text-sm mb-6">
-            @for (item of c.items; track item.id) {
-              <li class="flex justify-between">
-                <span>{{ item.quantity }} × {{ item.productName }}</span>
-                <span>{{ price(item.unitPriceCents * item.quantity) }}</span>
-              </li>
-            }
-          </ul>
-          <hr class="my-3" style="border-color: var(--color-latte)" />
-          <div class="flex justify-between font-medium">
-            <span>Total</span>
-            <span>{{ price(c.subtotalCents) }}</span>
-          </div>
-          <p class="mt-6 text-xs text-center" style="opacity: 0.5">Tap the Telegram button below to place the order.</p>
+      <!-- Pickup time -->
+      <div class="flex flex-col" style="gap: 12px">
+        <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+          >When do you want to pick up?</span
+        >
+        <div class="flex" style="gap: 8px">
+          <button
+            type="button"
+            (click)="setPickup('ASAP')"
+            class="flex-1"
+            [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+            [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
+            [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
+            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+          >
+            ASAP · ~{{ etaMinutes() }} min
+          </button>
+          <button
+            type="button"
+            (click)="setPickup('SCHEDULED')"
+            class="flex-1"
+            [style.background]="pickupMode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+            [style.color]="pickupMode() === 'SCHEDULED' ? 'white' : 'var(--color-text-primary)'"
+            [style.border]="
+              pickupMode() === 'SCHEDULED' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+            "
+            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+          >
+            Schedule
+          </button>
+        </div>
+        @if (pickupMode() === 'SCHEDULED') {
+          <input
+            type="datetime-local"
+            [value]="scheduledAt()"
+            (change)="onScheduledChange($event)"
+            style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+          />
         }
+      </div>
+
+      <!-- Store card -->
+      @if (cart(); as c) {
+        <div
+          class="flex flex-col"
+          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 8px"
+        >
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >Pickup location</span
+          >
+          <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">
+            {{ storeName() }}
+          </span>
+          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
+            Ready in ~{{ etaMinutes() }} min
+          </span>
+        </div>
+
+        <!-- Order lines -->
+        <div class="flex flex-col" style="gap: 12px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >Your order</span
+          >
+          @if (c.items.length === 0) {
+            <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
+              Your cart is empty.
+            </p>
+          } @else {
+            <div
+              class="flex flex-col"
+              style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 12px"
+            >
+              @for (item of c.items; track item.id) {
+                <div class="flex items-start justify-between" style="gap: 12px">
+                  <span
+                    class="flex-1"
+                    style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                    >{{ item.quantity }} × {{ item.productName }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                    >{{ price(item.unitPriceCents * item.quantity) }}</span
+                  >
+                </div>
+              }
+              <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
+              <div class="flex items-center justify-between">
+                <span
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
+                  >Total</span
+                >
+                <span
+                  style="font-family: var(--font-sans); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
+                  >{{ price(c.subtotalCents) }}</span
+                >
+              </div>
+            </div>
+          }
+        </div>
       }
+
+      <!-- Promo code -->
+      <div
+        class="flex items-center"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); padding: 0 14px; height: 48px; gap: 8px"
+      >
+        <span style="color: var(--color-text-tertiary); font-size: 16px">🎟</span>
+        <input
+          type="text"
+          placeholder="Promo code"
+          class="flex-1 outline-none bg-transparent"
+          style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+        />
+      </div>
 
       @if (error()) {
-        <p class="mt-4 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
+        <p
+          style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0; text-align: center"
+        >
+          {{ error() }}
+        </p>
       }
+
+      <p
+        class="text-center"
+        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
+      >
+        Tap the Telegram button below to place the order.
+      </p>
     </section>
   `,
 })
@@ -52,6 +173,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
+  readonly pickupMode = signal<'ASAP' | 'SCHEDULED'>('ASAP');
+  readonly scheduledAt = signal<string>(this.defaultScheduledAt());
+  readonly storeName = signal<string>('');
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
   private detachBack: (() => void) | null = null;
@@ -61,6 +185,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (list) => {
         const first = list[0];
         if (!first) return;
+        this.storeName.set(first.name);
         this.cartService.load(first.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -81,8 +206,28 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     this.tg.hideMainButton();
   }
 
+  setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
+    this.pickupMode.set(mode);
+    this.tg.haptic('light');
+    this.refreshMainButton();
+  }
+
+  onScheduledChange(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    this.scheduledAt.set(input.value);
+    this.refreshMainButton();
+  }
+
   price(cents: number): string {
     return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+  }
+
+  private defaultScheduledAt(): string {
+    const d = new Date(Date.now() + 30 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+      d.getMinutes(),
+    )}`;
   }
 
   private refreshMainButton(): void {
@@ -91,14 +236,19 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
-    this.tg.setMainButton(`Pay ${this.price(c.subtotalCents)} · ASAP`, () => this.placeOrder());
+    const label =
+      this.pickupMode() === 'ASAP'
+        ? `Pay ${this.price(c.subtotalCents)} · ASAP`
+        : `Pay ${this.price(c.subtotalCents)} · Scheduled`;
+    this.tg.setMainButton(label, () => this.placeOrder());
   }
 
   private placeOrder(): void {
     const c = this.cart();
     if (!c) return;
     this.tg.haptic('medium');
-    this.orders.create({ cartId: c.id, pickupMode: 'ASAP' }).subscribe({
+    const pickupAt = this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
+    this.orders.create({ cartId: c.id, pickupMode: this.pickupMode(), pickupAt }).subscribe({
       next: (order) => void this.router.navigate(['/orders', order.id]),
       error: (err) => {
         const maybe = err as { error?: { message?: string }; message?: string };
