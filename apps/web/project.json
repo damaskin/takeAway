@@ -49,6 +49,10 @@
     "serve": {
       "continuous": true,
       "executor": "@angular/build:dev-server",
+      "options": {
+        "port": 4200,
+        "proxyConfig": "apps/web/proxy.conf.json"
+      },
       "configurations": {
         "production": {
           "buildTarget": "web:build:production"
