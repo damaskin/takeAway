@@ -60,7 +60,7 @@ export class TmaHomePage implements OnInit {
 
   eta(busy: number): string {
     if (busy >= 75) return 'var(--color-berry)';
-    if (busy >= 40) return 'var(--color-amber-warn)';
+    if (busy >= 40) return 'var(--color-amber)';
     return 'var(--color-mint)';
   }
 }

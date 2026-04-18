@@ -19,11 +19,11 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
   template: `
     <div
       class="min-h-screen flex flex-col"
-      style="background: var(--color-dark-bg); color: var(--color-cream); font-family: var(--font-sans)"
+      style="background: var(--color-cream); color: var(--color-cream); font-family: var(--font-sans)"
     >
       <header
         class="flex items-center justify-between px-6 py-3 border-b"
-        style="border-color: var(--color-dark-surface-variant)"
+        style="border-color: var(--color-surface-variant)"
       >
         <div class="flex items-center gap-4">
           <span class="text-2xl" style="font-family: var(--font-display)">takeAway KDS</span>
@@ -32,7 +32,7 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
               [value]="selectedStoreId()"
               (change)="onStoreChange($event)"
               class="px-3 py-1 text-sm"
-              style="background: var(--color-dark-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
+              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
             >
               @for (s of stores(); track s.id) {
                 <option [value]="s.id">{{ s.name }}</option>
@@ -173,7 +173,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
     const diff = (new Date(order.pickupAt).getTime() - this.now()) / 1000;
     if (order.status === 'READY') return 'var(--color-mint)';
     if (diff < 0) return 'var(--color-berry)';
-    if (diff < 120) return 'var(--color-amber-warn)';
+    if (diff < 120) return 'var(--color-amber)';
     return 'var(--color-cream)';
   }
 

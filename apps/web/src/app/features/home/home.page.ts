@@ -115,13 +115,13 @@ export class HomePage implements OnInit {
 
   etaColor(store: StoreListItem): string {
     if (store.busyMeter >= 75) return 'var(--color-berry)';
-    if (store.busyMeter >= 40) return 'var(--color-amber-warn)';
+    if (store.busyMeter >= 40) return 'var(--color-amber)';
     return 'var(--color-mint)';
   }
 
   busyColor(store: StoreListItem): string {
     if (store.busyMeter >= 75) return 'var(--color-berry)';
-    if (store.busyMeter >= 40) return 'var(--color-amber-warn)';
+    if (store.busyMeter >= 40) return 'var(--color-amber)';
     return 'var(--color-mint)';
   }
 

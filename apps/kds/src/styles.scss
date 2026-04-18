@@ -1,6 +1,27 @@
 @import 'tailwindcss';
 @import '../../../libs/ui-kit/src/lib/design-tokens.css';
 
+:root {
+  /* KDS is always dark; the @theme tokens flip via the attribute. */
+  color-scheme: dark;
+}
+
+html {
+  /* Force dark tokens regardless of OS preference — KDS is a kitchen surface. */
+  --color-cream: #0e0b0a;
+  --color-espresso: #f8f3eb;
+  --color-foam: #2a2523;
+  --color-latte: #1c1817;
+  --color-surface: #1c1817;
+  --color-surface-variant: #2a2523;
+  --color-border: #3a3430;
+  --color-border-light: #2a2523;
+  --color-caramel-light: #c77d3b30;
+  --color-text-primary: #f8f3eb;
+  --color-text-secondary: #a89b91;
+  --color-text-tertiary: #7a6e64;
+}
+
 html,
 body {
   height: 100%;
@@ -9,8 +30,8 @@ body {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--color-dark-bg);
-  color: var(--color-cream);
+  background: var(--color-cream);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

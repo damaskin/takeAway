@@ -13,12 +13,9 @@ type Step = 'phone' | 'code';
   template: `
     <main
       class="min-h-screen flex items-center justify-center"
-      style="background: var(--color-dark-bg); color: var(--color-cream)"
+      style="background: var(--color-cream); color: var(--color-cream)"
     >
-      <section
-        class="w-full max-w-md p-8"
-        style="background: var(--color-dark-surface); border-radius: var(--radius-card)"
-      >
+      <section class="w-full max-w-md p-8" style="background: var(--color-surface); border-radius: var(--radius-card)">
         <h1 class="text-3xl mb-2" style="font-family: var(--font-display)">takeAway KDS</h1>
         <p class="mb-6" style="opacity: 0.6">
           {{ step() === 'phone' ? 'Sign in to take orders' : 'Enter the code we sent' }}
@@ -31,7 +28,7 @@ type Step = 'phone' | 'code';
               type="tel"
               placeholder="+14155551234"
               class="px-4 py-3 outline-none"
-              style="background: var(--color-dark-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
+              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
             />
             <button
               type="submit"
@@ -50,7 +47,7 @@ type Step = 'phone' | 'code';
               maxlength="6"
               placeholder="123456"
               class="px-4 py-3 text-center text-xl tracking-[0.5em] outline-none"
-              style="background: var(--color-dark-surface-variant); color: var(--color-cream); border-radius: var(--radius-input); font-family: var(--font-mono)"
+              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input); font-family: var(--font-mono)"
             />
             <button
               type="submit"
