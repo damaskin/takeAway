@@ -1,5 +1,5 @@
-import { LowerCasePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 
@@ -9,135 +9,297 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 
 const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 
+const VARIATION_LABELS: Record<VariationType, string> = {
+  SIZE: 'Size',
+  TEMPERATURE: 'Temperature',
+  MILK: 'Milk',
+  CUP: 'Cup',
+};
+
+/**
+ * Web Product Detail — pencil A3 (9ISer).
+ *
+ * Layout:
+ *   pdpBody (padding 48/80, gap 64)
+ *     pdpImgCol (560px) — hero 480px image, 24px radius
+ *     pdpDetailCol (fill) —
+ *       breadcrumb
+ *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
+ *       meta: calories + allergens
+ *       variations: Size / Milk / Temperature tab rows (42px pill buttons, caramel fill on active)
+ *       modifiers: row with name + price + stepper (36x36 square pills)
+ *       caffeine dots (4 coffee cups; filled = caramel, empty = border)
+ *       notes textarea (foam, 140px)
+ *       add bar: qty stepper + caramel pill button (56px, "Add to cart — $X")
+ */
 @Component({
   selector: 'app-product',
   standalone: true,
-  imports: [LowerCasePipe, RouterLink],
+  imports: [FormsModule, RouterLink],
   template: `
-    <section class="max-w-3xl mx-auto px-4 py-12">
-      <button type="button" (click)="back()" class="text-sm mb-6" style="opacity: 0.6">← Back</button>
-
-      @if (product(); as p) {
-        <h1 class="text-4xl mb-2" style="font-family: var(--font-display)">{{ p.name }}</h1>
-        @if (p.description) {
-          <p class="mb-6" style="opacity: 0.7">{{ p.description }}</p>
-        }
-
-        <div class="flex items-center gap-6 mb-8 text-sm" style="opacity: 0.6">
-          <span>{{ price(p.basePriceCents) }} base</span>
-          <span>⌛ {{ prepMinutes(p.prepTimeSeconds) }} min</span>
-          @if (p.caffeineLevel !== null) {
-            <span>☕ caffeine {{ p.caffeineLevel }}/4</span>
-          }
-          @if (p.calories !== null) {
-            <span>{{ p.calories }} kcal</span>
-          }
+    @if (product(); as p) {
+      <section style="padding: 48px 80px; display: flex; gap: 64px; max-width: 1440px; margin: 0 auto">
+        <!-- Image column -->
+        <div class="flex flex-col" style="width: 560px; gap: 16px; flex-shrink: 0">
+          <div
+            [style.background]="heroImageBg(p)"
+            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; overflow: hidden"
+          ></div>
         </div>
 
-        @for (group of variationGroups(); track group.type) {
-          @if (group.variations.length > 0) {
-            <fieldset class="mb-6">
-              <legend class="text-sm uppercase tracking-wider mb-2" style="opacity: 0.5">
-                {{ group.type | lowercase }}
-              </legend>
-              <div class="flex flex-wrap gap-2">
+        <!-- Detail column -->
+        <div class="flex flex-col flex-1" style="gap: 20px">
+          <!-- Breadcrumb -->
+          <nav class="flex items-center" style="gap: 8px">
+            <a
+              routerLink="/menu"
+              style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+              >Menu</a
+            >
+            <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+              >Coffee</span
+            >
+            <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
+              >{{ p.name }}</span
+            >
+          </nav>
+
+          <!-- Title block -->
+          <div class="flex flex-col" style="gap: 8px">
+            <h1
+              style="font-family: var(--font-display); font-size: 36px; font-weight: 700; color: var(--color-espresso); margin: 0"
+            >
+              {{ p.name }}
+            </h1>
+            @if (p.description) {
+              <p
+                style="font-family: var(--font-sans); font-size: 16px; line-height: 1.6; color: var(--color-text-secondary); margin: 0"
+              >
+                {{ p.description }}
+              </p>
+            }
+            <!-- Meta: calories + allergens -->
+            <div class="flex items-center" style="gap: 16px; margin-top: 4px">
+              @if (p.calories !== null) {
+                <div class="flex items-center" style="gap: 6px">
+                  <span style="color: var(--color-text-tertiary); font-size: 14px">🔥</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+                    >{{ p.calories }} kcal</span
+                  >
+                </div>
+              }
+              @if (p.allergens.length > 0) {
+                <div class="flex items-center" style="gap: 6px">
+                  <span style="color: var(--color-text-tertiary); font-size: 14px">⚠</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+                    p.allergens.join(', ')
+                  }}</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Variations -->
+          @for (group of variationGroups(); track group.type) {
+            <div class="flex flex-col" style="gap: 8px">
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                >{{ variationLabel(group.type) }}</span
+              >
+              <div class="flex flex-wrap" style="gap: 8px">
                 @for (v of group.variations; track v.id) {
                   <button
                     type="button"
                     (click)="selectVariation(group.type, v.id)"
-                    class="px-4 py-2 border text-sm"
-                    [style.background]="isSelected(group.type, v.id) ? 'var(--color-espresso)' : 'transparent'"
-                    [style.color]="isSelected(group.type, v.id) ? 'white' : 'var(--color-espresso)'"
-                    style="border-color: var(--color-espresso); border-radius: var(--radius-pill)"
+                    class="flex items-center justify-center"
+                    [style.background]="isSelected(group.type, v.id) ? 'var(--color-caramel)' : 'transparent'"
+                    [style.color]="isSelected(group.type, v.id) ? 'white' : 'var(--color-text-primary)'"
+                    [style.border]="
+                      isSelected(group.type, v.id) ? '1px solid transparent' : '1px solid var(--color-border)'
+                    "
+                    style="height: 42px; padding: 0 20px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 500; gap: 6px"
                   >
-                    {{ v.name }}
+                    <span>{{ v.name }}</span>
                     @if (v.priceDeltaCents > 0) {
-                      <span style="opacity: 0.7"> +{{ priceDelta(v.priceDeltaCents) }} </span>
+                      <span style="opacity: 0.7; font-size: 12px">+{{ priceDelta(v.priceDeltaCents) }}</span>
                     }
                   </button>
                 }
               </div>
-            </fieldset>
+            </div>
           }
-        }
 
-        @if (p.modifiers.length > 0) {
-          <fieldset class="mb-6">
-            <legend class="text-sm uppercase tracking-wider mb-2" style="opacity: 0.5">Add-ons</legend>
-            <ul class="flex flex-col gap-2">
+          <!-- Modifiers -->
+          @if (p.modifiers.length > 0) {
+            <div class="flex flex-col" style="gap: 24px; margin-top: 4px">
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                >Add-ons</span
+              >
               @for (m of p.modifiers; track m.id) {
-                <li
-                  class="flex items-center justify-between p-3"
-                  style="background: var(--color-cream); border-radius: var(--radius-input)"
-                >
-                  <div>
-                    <span>{{ m.name }}</span>
+                <div class="flex items-center justify-between">
+                  <div class="flex flex-col" style="gap: 2px">
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)">{{
+                      m.name
+                    }}</span>
                     @if (m.priceDeltaCents > 0) {
-                      <span class="text-sm ml-2" style="opacity: 0.6"> +{{ priceDelta(m.priceDeltaCents) }} </span>
+                      <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                        >+{{ priceDelta(m.priceDeltaCents) }}</span
+                      >
                     }
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div
+                    class="flex items-center"
+                    style="border: 1px solid var(--color-border); border-radius: var(--radius-button); overflow: hidden"
+                  >
                     <button
                       type="button"
                       (click)="decModifier(m)"
                       [disabled]="modifierCount(m.id) <= m.minCount"
-                      class="w-8 h-8 flex items-center justify-center disabled:opacity-30"
-                      style="background: var(--color-latte); border-radius: var(--radius-pill)"
+                      class="flex items-center justify-center disabled:opacity-30"
+                      style="width: 36px; height: 36px; font-size: 18px; color: var(--color-text-primary)"
                     >
                       −
                     </button>
-                    <span class="w-6 text-center font-medium">{{ modifierCount(m.id) }}</span>
+                    <span
+                      class="flex items-center justify-center"
+                      style="width: 36px; height: 36px; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                      >{{ modifierCount(m.id) }}</span
+                    >
                     <button
                       type="button"
                       (click)="incModifier(m)"
                       [disabled]="modifierCount(m.id) >= m.maxCount"
-                      class="w-8 h-8 flex items-center justify-center disabled:opacity-30"
-                      style="background: var(--color-latte); border-radius: var(--radius-pill)"
+                      class="flex items-center justify-center disabled:opacity-30"
+                      style="width: 36px; height: 36px; font-size: 18px; color: var(--color-text-primary)"
                     >
                       +
                     </button>
                   </div>
-                </li>
+                </div>
               }
-            </ul>
-          </fieldset>
-        }
+            </div>
+          }
 
+          <!-- Caffeine dots -->
+          @if (p.caffeineLevel !== null) {
+            <div class="flex items-center" style="gap: 12px">
+              <span
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+                >Caffeine</span
+              >
+              <div class="flex items-center" style="gap: 6px">
+                @for (i of [0, 1, 2, 3]; track i) {
+                  <span
+                    [style.color]="i < p.caffeineLevel ? 'var(--color-caramel)' : 'var(--color-border)'"
+                    style="font-size: 16px"
+                    >☕</span
+                  >
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Notes -->
+          <div class="flex flex-col" style="gap: 8px">
+            <label
+              for="pdp-notes"
+              style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+              >Special instructions</label
+            >
+            <textarea
+              id="pdp-notes"
+              [(ngModel)]="notes"
+              rows="4"
+              placeholder="Any preferences? E.g. extra hot, light foam…"
+              style="background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 12px 16px; height: 140px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); resize: vertical"
+            ></textarea>
+          </div>
+
+          <!-- Add bar: qty + primary button -->
+          <div class="flex items-center" style="gap: 16px; margin-top: 8px">
+            <div
+              class="flex items-center"
+              style="border: 1px solid var(--color-border); border-radius: var(--radius-button); overflow: hidden"
+            >
+              <button
+                type="button"
+                (click)="decQty()"
+                [disabled]="quantity() <= 1"
+                class="flex items-center justify-center disabled:opacity-30"
+                style="width: 44px; height: 48px; font-size: 20px; color: var(--color-text-primary)"
+              >
+                −
+              </button>
+              <span
+                class="flex items-center justify-center"
+                style="width: 44px; height: 48px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
+                >{{ quantity() }}</span
+              >
+              <button
+                type="button"
+                (click)="incQty()"
+                class="flex items-center justify-center"
+                style="width: 44px; height: 48px; font-size: 20px; color: var(--color-text-primary)"
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              (click)="addToCart()"
+              [disabled]="adding() || !authStore.isAuthenticated() || !storeId()"
+              class="flex items-center justify-center disabled:opacity-60"
+              style="flex: 1; height: 56px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); gap: 12px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
+            >
+              <span style="font-size: 18px">🛍</span>
+              <span>{{ adding() ? 'Adding…' : 'Add to cart — ' + price(totalCents()) }}</span>
+            </button>
+          </div>
+          @if (!authStore.isAuthenticated()) {
+            <p
+              class="text-center"
+              style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+            >
+              <a routerLink="/login" style="color: var(--color-caramel); text-decoration: underline">Sign in</a>
+              to place an order.
+            </p>
+          } @else if (cartItemCount() > 0) {
+            <a
+              routerLink="/checkout"
+              [queryParams]="{ store: storeSlug() }"
+              class="flex items-center justify-center"
+              style="margin-top: 4px; height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+              >Go to checkout · {{ cartItemCount() }} in cart</a
+            >
+          }
+          @if (addError()) {
+            <p
+              class="text-center"
+              style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin-top: 4px"
+            >
+              {{ addError() }}
+            </p>
+          }
+        </div>
+      </section>
+    }
+
+    @if (error()) {
+      <section style="padding: 48px 80px; max-width: 1440px; margin: 0 auto">
         <button
           type="button"
-          (click)="addToCart()"
-          [disabled]="adding() || !authStore.isAuthenticated() || !storeId()"
-          class="sticky bottom-4 mt-10 w-full flex items-center justify-between p-4 disabled:opacity-60"
-          style="background: var(--color-espresso); color: white; border-radius: var(--radius-card)"
+          (click)="back()"
+          style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin-bottom: 16px"
         >
-          <span class="text-sm" style="opacity: 0.8">
-            {{ adding() ? 'Adding…' : 'Add to cart · ready in ~' + estimatedPrepMinutes() + ' min' }}
-          </span>
-          <span class="text-lg font-medium">{{ price(totalCents()) }}</span>
+          ← Back
         </button>
-        @if (!authStore.isAuthenticated()) {
-          <p class="mt-3 text-sm text-center" style="opacity: 0.6">
-            <a routerLink="/login" class="underline">Sign in</a> to place an order.
-          </p>
-        } @else if (cartItemCount() > 0) {
-          <a
-            routerLink="/checkout"
-            [queryParams]="{ store: storeSlug() }"
-            class="block mt-4 w-full text-center py-3 font-medium"
-            style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
-          >
-            Go to checkout · {{ cartItemCount() }} in cart
-          </a>
-        }
-        @if (addError()) {
-          <p class="mt-3 text-sm text-center" style="color: var(--color-berry)">{{ addError() }}</p>
-        }
-      }
-
-      @if (error()) {
-        <p class="text-sm" style="color: var(--color-berry)">{{ error() }}</p>
-      }
-    </section>
+        <p style="color: var(--color-berry); font-family: var(--font-sans); font-size: 14px">{{ error() }}</p>
+      </section>
+    }
   `,
 })
 export class ProductPage implements OnInit {
@@ -157,44 +319,31 @@ export class ProductPage implements OnInit {
   readonly error = signal<string | null>(null);
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
+  readonly quantity = signal(1);
+  notes = '';
 
   readonly variationGroups = computed(() => {
     const p = this.product();
     if (!p) return [];
     return VARIATION_GROUPS.map((type) => ({
       type,
-      variations: p.variations.filter((v) => v.type === type),
+      variations: p.variations.filter((v) => v.type === type).sort((a, b) => a.sortOrder - b.sortOrder),
     })).filter((g) => g.variations.length > 0);
   });
 
   readonly totalCents = computed(() => {
     const p = this.product();
     if (!p) return 0;
-    let total = p.basePriceCents;
+    let unit = p.basePriceCents;
     const selected = this.selectedVariations();
     for (const v of p.variations) {
-      if (selected[v.type] === v.id) total += v.priceDeltaCents;
+      if (selected[v.type] === v.id) unit += v.priceDeltaCents;
     }
     const counts = this.modifierCounts();
     for (const m of p.modifiers) {
-      total += (counts[m.id] ?? 0) * m.priceDeltaCents;
+      unit += (counts[m.id] ?? 0) * m.priceDeltaCents;
     }
-    return total;
-  });
-
-  readonly estimatedPrepMinutes = computed(() => {
-    const p = this.product();
-    if (!p) return 0;
-    let seconds = p.prepTimeSeconds;
-    const selected = this.selectedVariations();
-    for (const v of p.variations) {
-      if (selected[v.type] === v.id) seconds += v.prepTimeDeltaSeconds;
-    }
-    const counts = this.modifierCounts();
-    for (const m of p.modifiers) {
-      seconds += (counts[m.id] ?? 0) * m.prepTimeDeltaSeconds;
-    }
-    return Math.max(1, Math.round(seconds / 60));
+    return unit * this.quantity();
   });
 
   ngOnInit(): void {
@@ -234,7 +383,7 @@ export class ProductPage implements OnInit {
       .add({
         storeId,
         productId: p.id,
-        quantity: 1,
+        quantity: this.quantity(),
         variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
         modifiers: this.modifierCounts(),
       })
@@ -284,6 +433,14 @@ export class ProductPage implements OnInit {
     });
   }
 
+  incQty(): void {
+    this.quantity.update((q) => Math.min(q + 1, 20));
+  }
+
+  decQty(): void {
+    this.quantity.update((q) => Math.max(q - 1, 1));
+  }
+
   price(cents: number): string {
     return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
   }
@@ -292,8 +449,14 @@ export class ProductPage implements OnInit {
     return this.price(cents);
   }
 
-  prepMinutes(seconds: number): number {
-    return Math.max(1, Math.round(seconds / 60));
+  variationLabel(type: VariationType): string {
+    return VARIATION_LABELS[type];
+  }
+
+  heroImageBg(p: ProductDetail): string {
+    const url = p.imageUrls?.[0];
+    if (url) return `url('${url}')`;
+    return 'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)';
   }
 
   private initializeDefaults(p: ProductDetail): void {
