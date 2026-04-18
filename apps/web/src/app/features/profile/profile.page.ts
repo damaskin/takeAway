@@ -1,37 +1,132 @@
 import { Component, inject } from '@angular/core';
+import { Router } from '@angular/router';
 
+import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 
+interface ProfileSection {
+  icon: string;
+  label: string;
+  value?: string;
+}
+
+/**
+ * Web Profile — pencil A8 (E9UIT).
+ *
+ * Body (padding 40/0, gap 32, centered, 800px width):
+ *   pfHeroCard — 24px-radius caramel→dark-caramel gradient, 32px padding
+ *     72px circle avatar, name (Fraunces 22/700 white), phone (white 60%),
+ *     tier badge + points text, right chevron
+ *   pfTierProgress — tier row ("Gold" caramel / "550 to Platinum" tertiary) + 6px rail
+ *   pfSections — 56px foam cards (icon left · label · optional value · chevron):
+ *     Personal info · Payment methods · Gift cards · Notifications · Language
+ *   pfLogout — 56px transparent row (berry icon + berry label)
+ */
 @Component({
   selector: 'app-profile',
   standalone: true,
   template: `
     @if (store.user(); as user) {
-      <section class="max-w-md mx-auto px-4 py-12">
-        <h1 class="text-4xl mb-8" style="font-family: var(--font-display)">Profile</h1>
-        <dl
-          class="p-6"
-          style="background: var(--color-foam); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
+      <section
+        style="max-width: 800px; margin: 0 auto; padding: 40px 24px; display: flex; flex-direction: column; gap: 32px"
+      >
+        <!-- Hero card -->
+        <div
+          class="flex items-center"
+          style="background: linear-gradient(135deg, var(--color-caramel) 0%, #a0612a 100%); border-radius: 24px; padding: 32px; gap: 24px; color: white"
         >
-          <div class="flex justify-between py-2 border-b" style="border-color: var(--color-latte)">
-            <dt style="opacity: 0.6">Name</dt>
-            <dd>{{ user.name ?? '—' }}</dd>
+          <div
+            class="flex items-center justify-center flex-shrink-0"
+            style="width: 72px; height: 72px; border-radius: 9999px; background: rgba(255,255,255,0.19); font-family: var(--font-display); font-size: 28px; font-weight: 700"
+          >
+            {{ initials(user.name) }}
           </div>
-          <div class="flex justify-between py-2 border-b" style="border-color: var(--color-latte)">
-            <dt style="opacity: 0.6">Phone</dt>
-            <dd>{{ user.phone }}</dd>
+          <div class="flex flex-col flex-1" style="gap: 6px">
+            <span style="font-family: var(--font-sans); font-size: 22px; font-weight: 700; color: white">{{
+              user.name || 'Guest'
+            }}</span>
+            <span style="font-family: var(--font-sans); font-size: 14px; color: rgba(255,255,255,0.6)">{{
+              user.phone
+            }}</span>
+            <div class="flex items-center" style="gap: 12px; margin-top: 2px">
+              <span
+                class="flex items-center"
+                style="height: 26px; padding: 0 10px; background: rgba(255,255,255,0.13); border-radius: 9999px; gap: 6px; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: white"
+              >
+                ⭐ {{ tier() }}
+              </span>
+              <span
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.6)"
+                >{{ points() }} points</span
+              >
+            </div>
           </div>
-          <div class="flex justify-between py-2 border-b" style="border-color: var(--color-latte)">
-            <dt style="opacity: 0.6">Role</dt>
-            <dd>{{ user.role }}</dd>
+          <span style="color: rgba(255,255,255,0.4); font-size: 24px">›</span>
+        </div>
+
+        <!-- Tier progress -->
+        <div class="flex flex-col" style="gap: 8px">
+          <div class="flex items-center justify-between">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel)"
+              >{{ tier() }}</span
+            >
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+              >{{ pointsToNextTier() }} pts to {{ nextTier() }}</span
+            >
           </div>
-          <div class="flex justify-between py-2">
-            <dt style="opacity: 0.6">Currency</dt>
-            <dd>{{ user.currency }}</dd>
+          <div
+            style="position: relative; width: 100%; height: 6px; background: var(--color-surface-variant); border-radius: 9999px; overflow: hidden"
+          >
+            <div
+              [style.width.%]="tierProgressPercent()"
+              style="height: 100%; background: var(--color-caramel); border-radius: 9999px; transition: width 300ms ease"
+            ></div>
           </div>
-        </dl>
-        <p class="mt-6 text-sm text-center" style="opacity: 0.5">
-          Orders history, loyalty and payment methods arrive with M2 and M3.
+        </div>
+
+        <!-- Section list -->
+        <div class="flex flex-col" style="gap: 4px">
+          @for (sec of sections; track sec.label) {
+            <button
+              type="button"
+              class="flex items-center"
+              style="height: 56px; padding: 0 20px; background: var(--color-foam); border-radius: 14px; gap: 16px"
+            >
+              <span style="color: var(--color-text-secondary); font-size: 18px">{{ sec.icon }}</span>
+              <span
+                class="flex-1 text-left"
+                style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+                >{{ sec.label }}</span
+              >
+              @if (sec.value) {
+                <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)">{{
+                  sec.value
+                }}</span>
+              }
+              <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+            </button>
+          }
+
+          <!-- Logout -->
+          <button
+            type="button"
+            (click)="logout()"
+            class="flex items-center"
+            style="height: 56px; padding: 0 20px; background: transparent; border-radius: 14px; gap: 16px; margin-top: 8px"
+          >
+            <span style="color: var(--color-berry); font-size: 18px">⎋</span>
+            <span style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-berry)"
+              >Sign out</span
+            >
+          </button>
+        </div>
+
+        <p
+          class="text-center"
+          style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
+        >
+          Role {{ user.role }} · {{ user.currency }}
         </p>
       </section>
     }
@@ -39,4 +134,51 @@ import { AuthStore } from '../../core/auth/auth.store';
 })
 export class ProfilePage {
   readonly store = inject(AuthStore);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+
+  readonly sections: ProfileSection[] = [
+    { icon: '👤', label: 'Personal info' },
+    { icon: '💳', label: 'Payment methods' },
+    { icon: '🎁', label: 'Gift cards' },
+    { icon: '🔔', label: 'Notifications' },
+    { icon: '🌐', label: 'Language', value: 'English' },
+  ];
+
+  initials(name?: string | null): string {
+    if (!name) return 'TA';
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? '')
+      .join('');
+  }
+
+  // Placeholders until loyalty lands in M3.
+  points(): number {
+    return 2450;
+  }
+
+  tier(): string {
+    return 'Gold';
+  }
+
+  nextTier(): string {
+    return 'Platinum';
+  }
+
+  pointsToNextTier(): number {
+    return Math.max(0, 3000 - this.points());
+  }
+
+  tierProgressPercent(): number {
+    return Math.min(100, Math.round((this.points() / 3000) * 100));
+  }
+
+  logout(): void {
+    this.auth.logout().subscribe({
+      complete: () => void this.router.navigate(['/']),
+    });
+  }
 }
