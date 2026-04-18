@@ -3,6 +3,8 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, Router } from '@angular/router';
 import type { ProductDetail, VariationType } from '@takeaway/shared-types';
 
+import { TmaAuthStore } from '../../core/auth/tma-auth.store';
+import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -88,7 +90,9 @@ const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP']
           </fieldset>
         }
 
-        <p class="text-xs text-center" style="opacity: 0.5">Checkout and payment via Telegram Pay arrive with M2.</p>
+        @if (!authStore.isAuthenticated()) {
+          <p class="text-xs text-center" style="opacity: 0.6">Sign in within Telegram to add items to the cart.</p>
+        }
       }
     </section>
   `,
@@ -97,11 +101,14 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly catalog = inject(CatalogService);
+  private readonly cartService = inject(CartService);
   private readonly tg = inject(TelegramBridgeService);
+  readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
+  private storeId: string | null = null;
   private detachBack: (() => void) | null = null;
 
   readonly variationGroups = computed(() => {
@@ -127,14 +134,17 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) return;
+    this.catalog.listStores().subscribe({
+      next: (list) => {
+        const first = list[0];
+        if (first) this.storeId = first.id;
+      },
+    });
     this.catalog.getProduct(slug).subscribe({
       next: (p) => {
         this.product.set(p);
         this.initializeDefaults(p);
-        this.tg.setMainButton(`Add · ${this.price(this.totalCents())}`, () => {
-          this.tg.haptic('medium');
-          alert('Cart and checkout land with M2.');
-        });
+        this.refreshMainButton();
       },
     });
     this.detachBack = this.tg.setBackButton(() => {
@@ -207,9 +217,27 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   private refreshMainButton(): void {
-    this.tg.setMainButton(`Add · ${this.price(this.totalCents())}`, () => {
-      this.tg.haptic('medium');
-      alert('Cart and checkout land with M2.');
-    });
+    if (!this.authStore.isAuthenticated()) {
+      this.tg.hideMainButton();
+      return;
+    }
+    this.tg.setMainButton(`Add · ${this.price(this.totalCents())}`, () => this.onMainButton());
+  }
+
+  private onMainButton(): void {
+    const p = this.product();
+    if (!p || !this.storeId) return;
+    this.tg.haptic('medium');
+    this.cartService
+      .add({
+        storeId: this.storeId,
+        productId: p.id,
+        quantity: 1,
+        variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
+        modifiers: this.modifierCounts(),
+      })
+      .subscribe({
+        next: () => void this.router.navigate(['/checkout']),
+      });
   }
 }
