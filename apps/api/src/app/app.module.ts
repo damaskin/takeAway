@@ -11,6 +11,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
     CartModule,
     OrdersModule,
     PaymentsModule,
+    RealtimeModule,
     HealthModule,
   ],
   controllers: [AppController],
