@@ -1,8 +1,10 @@
 import { LowerCasePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 
+import { AuthStore } from '../../core/auth/auth.store';
+import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 
 const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
@@ -10,7 +12,7 @@ const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP']
 @Component({
   selector: 'app-product',
   standalone: true,
-  imports: [LowerCasePipe],
+  imports: [LowerCasePipe, RouterLink],
   template: `
     <section class="max-w-3xl mx-auto px-4 py-12">
       <button type="button" (click)="back()" class="text-sm mb-6" style="opacity: 0.6">← Back</button>
@@ -101,14 +103,35 @@ const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP']
           </fieldset>
         }
 
-        <div
-          class="sticky bottom-4 mt-10 flex items-center justify-between p-4"
+        <button
+          type="button"
+          (click)="addToCart()"
+          [disabled]="adding() || !authStore.isAuthenticated() || !storeId()"
+          class="sticky bottom-4 mt-10 w-full flex items-center justify-between p-4 disabled:opacity-60"
           style="background: var(--color-espresso); color: white; border-radius: var(--radius-card)"
         >
-          <span class="text-sm" style="opacity: 0.8"> Total · ready in ~{{ estimatedPrepMinutes() }} min </span>
+          <span class="text-sm" style="opacity: 0.8">
+            {{ adding() ? 'Adding…' : 'Add to cart · ready in ~' + estimatedPrepMinutes() + ' min' }}
+          </span>
           <span class="text-lg font-medium">{{ price(totalCents()) }}</span>
-        </div>
-        <p class="mt-3 text-sm text-center" style="opacity: 0.5">Cart, checkout and live ETA arrive with M2.</p>
+        </button>
+        @if (!authStore.isAuthenticated()) {
+          <p class="mt-3 text-sm text-center" style="opacity: 0.6">
+            <a routerLink="/login" class="underline">Sign in</a> to place an order.
+          </p>
+        } @else if (cartItemCount() > 0) {
+          <a
+            routerLink="/checkout"
+            [queryParams]="{ store: storeSlug() }"
+            class="block mt-4 w-full text-center py-3 font-medium"
+            style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
+          >
+            Go to checkout · {{ cartItemCount() }} in cart
+          </a>
+        }
+        @if (addError()) {
+          <p class="mt-3 text-sm text-center" style="color: var(--color-berry)">{{ addError() }}</p>
+        }
       }
 
       @if (error()) {
@@ -121,6 +144,14 @@ export class ProductPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly catalog = inject(CatalogService);
+  private readonly cart = inject(CartService);
+  readonly authStore = inject(AuthStore);
+
+  readonly adding = signal(false);
+  readonly addError = signal<string | null>(null);
+  readonly storeId = signal<string | null>(null);
+  readonly storeSlug = signal<string | null>(null);
+  readonly cartItemCount = this.cart.itemCount;
 
   readonly product = signal<ProductDetail | null>(null);
   readonly error = signal<string | null>(null);
@@ -179,6 +210,42 @@ export class ProductPage implements OnInit {
       },
       error: () => this.error.set('Product not found'),
     });
+
+    this.catalog.listStores().subscribe({
+      next: (list) => {
+        const first = list[0];
+        if (!first) return;
+        this.storeId.set(first.id);
+        this.storeSlug.set(first.slug);
+        if (this.authStore.isAuthenticated()) {
+          this.cart.load(first.id).subscribe();
+        }
+      },
+    });
+  }
+
+  addToCart(): void {
+    const p = this.product();
+    const storeId = this.storeId();
+    if (!p || !storeId) return;
+    this.adding.set(true);
+    this.addError.set(null);
+    this.cart
+      .add({
+        storeId,
+        productId: p.id,
+        quantity: 1,
+        variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
+        modifiers: this.modifierCounts(),
+      })
+      .subscribe({
+        next: () => this.adding.set(false),
+        error: (err) => {
+          this.adding.set(false);
+          const maybe = err as { error?: { message?: string }; message?: string };
+          this.addError.set(maybe.error?.message ?? maybe.message ?? 'Failed to add to cart');
+        },
+      });
   }
 
   back(): void {
