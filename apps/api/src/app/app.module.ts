@@ -10,6 +10,7 @@ import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
@@ -35,6 +36,7 @@ import { UsersModule } from './users/users.module';
     AdminCatalogModule,
     CartModule,
     OrdersModule,
+    PaymentsModule,
     HealthModule,
   ],
   controllers: [AppController],
