@@ -58,6 +58,7 @@ export class AuthService {
       name: user.name,
       locale: user.locale,
       currency: user.currency,
+      role: user.role,
     };
   }
 }

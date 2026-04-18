@@ -48,6 +48,14 @@ enum OAuthProvider {
   TELEGRAM
 }
 
+enum Role {
+  CUSTOMER
+  STAFF
+  STORE_MANAGER
+  BRAND_ADMIN
+  SUPER_ADMIN
+}
+
 enum StoreStatus {
   OPEN
   CLOSED
@@ -96,6 +104,7 @@ model User {
   locale         Locale    @default(EN)
   currency       Currency  @default(USD)
   telegramUserId BigInt?   @unique
+  role           Role      @default(CUSTOMER)
   blockedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

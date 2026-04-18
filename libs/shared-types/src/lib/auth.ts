@@ -29,6 +29,8 @@ export interface AuthSession extends AuthTokens {
   user: AuthUser;
 }
 
+export type UserRole = 'CUSTOMER' | 'STAFF' | 'STORE_MANAGER' | 'BRAND_ADMIN' | 'SUPER_ADMIN';
+
 export interface AuthUser {
   id: string;
   phone: string | null;
@@ -36,6 +38,7 @@ export interface AuthUser {
   name: string | null;
   locale: 'EN' | 'RU';
   currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
+  role: UserRole;
 }
 
 export interface RefreshRequest {
