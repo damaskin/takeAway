@@ -26,6 +26,18 @@ export const appRoutes: Route[] = [
         path: 'stores',
         loadComponent: () => import('./features/stores/stores.page').then((m) => m.StoresPage),
       },
+      {
+        path: 'orders',
+        loadComponent: () => import('./features/orders/orders.page').then((m) => m.AdminOrdersPage),
+      },
+      {
+        path: 'promo',
+        loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
+      },
+      {
+        path: 'analytics',
+        loadComponent: () => import('./features/analytics/analytics.page').then((m) => m.AdminAnalyticsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

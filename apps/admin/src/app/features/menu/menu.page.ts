@@ -8,118 +8,217 @@ import {
   type ProductAdminDto,
 } from '../../core/catalog/admin-catalog.service';
 
+/**
+ * Admin Menu Management — pencil oKo7M.
+ *
+ * mainArea (cream):
+ *   top bar (foam, 64px, border-bottom) — title + brand name + actions
+ *   content area — 320px category rail (foam, caramel-light active) +
+ *     product table (foam card, sticky header, inline visibility toggle)
+ */
 @Component({
   selector: 'app-menu',
   standalone: true,
   imports: [ReactiveFormsModule],
   template: `
-    <header class="flex items-center justify-between mb-8">
-      <h1 class="text-3xl" style="font-family: var(--font-display)">Menu</h1>
-      @if (brand()) {
-        <span class="text-sm" style="opacity: 0.6">{{ brand()?.name }}</span>
-      }
-    </header>
+    <!-- Top bar -->
+    <div
+      class="flex items-center justify-between"
+      style="height: 64px; padding: 0 24px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+    >
+      <div class="flex items-center" style="gap: 16px">
+        <h1
+          style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
+        >
+          Menu management
+        </h1>
+        @if (brand()) {
+          <span
+            class="flex items-center"
+            style="height: 26px; padding: 0 10px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
+            >{{ brand()?.name }}</span
+          >
+        }
+      </div>
+      <div class="flex items-center" style="gap: 8px">
+        <button
+          type="button"
+          class="flex items-center"
+          style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+        >
+          Import CSV
+        </button>
+        @if (selectedCategoryId()) {
+          <button
+            type="button"
+            (click)="openProductForm()"
+            class="flex items-center"
+            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+          >
+            + New product
+          </button>
+        }
+      </div>
+    </div>
 
-    <div class="grid grid-cols-[320px_1fr] gap-6">
+    <section style="padding: 24px; display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start">
+      <!-- Categories rail -->
       <aside
-        class="p-4"
-        style="background: var(--color-cream); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
+        class="flex flex-col"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 16px; gap: 4px"
       >
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg" style="font-family: var(--font-display)">Categories</h2>
-          <button type="button" (click)="openCategoryForm()" class="text-sm underline">+ Add</button>
+        <div class="flex items-center justify-between" style="padding: 0 8px 12px 8px">
+          <h2
+            style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
+          >
+            CATEGORIES
+          </h2>
+          <button
+            type="button"
+            (click)="openCategoryForm()"
+            style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
+          >
+            + Add
+          </button>
         </div>
 
         @if (categories().length === 0) {
-          <p class="text-sm" style="opacity: 0.6">No categories yet.</p>
+          <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); padding: 8px">
+            No categories yet.
+          </p>
         }
 
-        <ul class="flex flex-col gap-1">
-          @for (cat of categories(); track cat.id) {
-            <li>
-              <button
-                type="button"
-                (click)="selectCategory(cat.id)"
-                class="w-full flex items-center justify-between px-3 py-2 text-left rounded-lg hover:bg-[var(--color-latte)]/50"
-                [style.background]="selectedCategoryId() === cat.id ? 'var(--color-latte)' : null"
+        @for (cat of categories(); track cat.id) {
+          <button
+            type="button"
+            (click)="selectCategory(cat.id)"
+            class="flex items-center justify-between"
+            [style.background]="selectedCategoryId() === cat.id ? 'var(--color-caramel-light)' : 'transparent'"
+            [style.color]="selectedCategoryId() === cat.id ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
+            style="height: 40px; padding: 0 12px; border-radius: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left"
+          >
+            <span>{{ cat.name }}</span>
+            @if (!cat.visible) {
+              <span
+                style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
+                >Hidden</span
               >
-                <span>{{ cat.name }}</span>
-                <span class="text-xs" style="opacity: 0.5">{{ cat.visible ? '' : 'hidden' }}</span>
-              </button>
-            </li>
-          }
-        </ul>
+            }
+          </button>
+        }
 
         @if (categoryFormOpen()) {
-          <form [formGroup]="categoryForm" (ngSubmit)="createCategory()" class="mt-4 flex flex-col gap-2">
+          <form
+            [formGroup]="categoryForm"
+            (ngSubmit)="createCategory()"
+            class="flex flex-col"
+            style="gap: 8px; margin-top: 12px"
+          >
             <input
               formControlName="name"
               placeholder="Category name"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px"
             />
             <input
               formControlName="slug"
               placeholder="slug (kebab-case)"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px; font-family: var(--font-mono)"
             />
-            <div class="flex gap-2">
+            <div class="flex" style="gap: 8px">
               <button
                 type="submit"
                 [disabled]="categoryForm.invalid"
-                class="flex-1 py-2 font-medium disabled:opacity-50"
-                style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
+                class="flex-1 disabled:opacity-50"
+                style="height: 36px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
               >
                 Create
               </button>
-              <button type="button" (click)="categoryFormOpen.set(false)" class="py-2 px-4 text-sm">Cancel</button>
+              <button
+                type="button"
+                (click)="categoryFormOpen.set(false)"
+                style="padding: 0 12px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+              >
+                Cancel
+              </button>
             </div>
           </form>
         }
       </aside>
 
+      <!-- Product table -->
       <section
-        class="p-4"
-        style="background: var(--color-cream); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
+        class="flex flex-col"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0"
       >
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg" style="font-family: var(--font-display)">
+        <header class="flex items-center justify-between">
+          <h2
+            style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-espresso); margin: 0"
+          >
             {{ selectedCategory()?.name ?? 'Products' }}
           </h2>
-          @if (selectedCategoryId()) {
-            <button type="button" (click)="openProductForm()" class="text-sm underline">+ Add product</button>
-          }
-        </div>
+          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+            >{{ products().length }} items</span
+          >
+        </header>
 
         @if (!selectedCategoryId()) {
-          <p class="text-sm" style="opacity: 0.6">Select a category to see its products.</p>
+          <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
+            Select a category to see its products.
+          </p>
         } @else if (products().length === 0 && !productFormOpen()) {
-          <p class="text-sm" style="opacity: 0.6">No products in this category.</p>
+          <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
+            No products in this category.
+          </p>
         }
 
         @if (products().length > 0) {
-          <table class="w-full text-sm">
+          <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
             <thead>
-              <tr class="text-left" style="opacity: 0.6">
-                <th class="py-2 pr-4">Name</th>
-                <th class="py-2 pr-4">Price</th>
-                <th class="py-2 pr-4">Prep time</th>
-                <th class="py-2 pr-4">Visible</th>
-                <th></th>
+              <tr>
+                <th
+                  style="text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                >
+                  Name
+                </th>
+                <th
+                  style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                >
+                  Price
+                </th>
+                <th
+                  style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                >
+                  Prep
+                </th>
+                <th
+                  style="text-align: center; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                >
+                  Visible
+                </th>
+                <th style="border-bottom: 1px solid var(--color-border-light)"></th>
               </tr>
             </thead>
             <tbody>
               @for (p of products(); track p.id) {
-                <tr class="border-t" style="border-color: var(--color-latte)">
-                  <td class="py-2 pr-4">{{ p.name }}</td>
-                  <td class="py-2 pr-4">{{ formatPrice(p.basePriceCents) }}</td>
-                  <td class="py-2 pr-4">{{ (p.prepTimeSeconds / 60).toFixed(0) }} min</td>
-                  <td class="py-2 pr-4">
+                <tr style="border-bottom: 1px solid var(--color-border-light)">
+                  <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
+                    {{ p.name }}
+                  </td>
+                  <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right">
+                    {{ formatPrice(p.basePriceCents) }}
+                  </td>
+                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
+                    {{ (p.prepTimeSeconds / 60).toFixed(0) }} min
+                  </td>
+                  <td style="padding: 12px; text-align: center">
                     <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
                   </td>
-                  <td class="py-2 text-right">
-                    <button type="button" (click)="deleteProduct(p)" class="text-xs" style="color: var(--color-berry)">
+                  <td style="padding: 12px; text-align: right">
+                    <button
+                      type="button"
+                      (click)="deleteProduct(p)"
+                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); font-weight: 500"
+                    >
                       Delete
                     </button>
                   </td>
@@ -130,60 +229,69 @@ import {
         }
 
         @if (productFormOpen()) {
-          <form [formGroup]="productForm" (ngSubmit)="createProduct()" class="mt-4 grid grid-cols-2 gap-3">
+          <form
+            [formGroup]="productForm"
+            (ngSubmit)="createProduct()"
+            class="grid"
+            style="grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; padding: 16px; background: var(--color-cream); border-radius: 16px"
+          >
             <input
               formControlName="name"
               placeholder="Product name"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <input
               formControlName="slug"
-              placeholder="slug (kebab-case)"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              placeholder="slug"
+              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
             />
             <input
               formControlName="basePriceCents"
               type="number"
               min="0"
-              placeholder="Price in cents"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              placeholder="Price (cents)"
+              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <input
               formControlName="prepTimeSeconds"
               type="number"
               min="0"
-              placeholder="Prep time (seconds)"
-              class="px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              placeholder="Prep time (s)"
+              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <textarea
               formControlName="description"
               placeholder="Description"
               rows="2"
-              class="col-span-2 px-3 py-2 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
+              class="col-span-2"
+              style="grid-column: span 2; padding: 10px 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; resize: vertical"
             ></textarea>
-            <div class="col-span-2 flex gap-2">
+            <div class="flex" style="grid-column: span 2; gap: 8px">
               <button
                 type="submit"
                 [disabled]="productForm.invalid"
-                class="flex-1 py-2 font-medium disabled:opacity-50"
-                style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
+                class="disabled:opacity-50"
+                style="height: 40px; padding: 0 20px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
               >
                 Create product
               </button>
-              <button type="button" (click)="productFormOpen.set(false)" class="py-2 px-4 text-sm">Cancel</button>
+              <button
+                type="button"
+                (click)="productFormOpen.set(false)"
+                style="padding: 0 16px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
+              >
+                Cancel
+              </button>
             </div>
           </form>
         }
       </section>
-    </div>
+    </section>
 
     @if (error()) {
-      <p class="mt-4 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
+      <p style="padding: 0 24px 24px 24px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
+        {{ error() }}
+      </p>
     }
   `,
 })
