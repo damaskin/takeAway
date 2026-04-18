@@ -25,7 +25,18 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         secret: config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access',
       }),
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Global throttler: per-IP coarse defense across the whole API. Dev gets a
+    // much more generous default so iterating on the login flow doesn't keep
+    // hitting 429 — production keeps the conservative 100/min.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const isDev = config.get<string>('NODE_ENV') !== 'production';
+        const ttl = Number(config.get('THROTTLER_TTL_MS')) || 60_000;
+        const limit = Number(config.get('THROTTLER_LIMIT')) || (isDev ? 1000 : 100);
+        return [{ ttl, limit }];
+      },
+    }),
   ],
   controllers: [AuthController],
   providers: [
