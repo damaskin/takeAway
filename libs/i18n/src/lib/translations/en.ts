@@ -39,6 +39,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       min: 'min',
       mShort: 'm',
       sShort: 's',
+      kmShort: 'km',
     },
     timeAgo: {
       justNow: 'just now',
@@ -509,13 +510,45 @@ export const TRANSLATIONS_EN: TranslationTree = {
       emptySubtitle: 'Your takeAway history will appear here once you place your first order.',
       signInTitle: 'Sign in first',
       signInSubtitle: 'Open takeAway from your Telegram account to see your orders.',
+      itemsCount: '{{count}} items',
+      pickupAsap: 'ASAP',
+      pickupScheduled: 'Scheduled',
+      status: {
+        CREATED: 'Queued',
+        PAID: 'Queued',
+        ACCEPTED: 'Accepted',
+        IN_PROGRESS: 'Preparing',
+        READY: 'Ready',
+        PICKED_UP: 'Picked up',
+        CANCELLED: 'Cancelled',
+        EXPIRED: 'Expired',
+      },
+    },
+    product: {
+      labels: {
+        size: 'Size',
+        milk: 'Milk',
+        temperature: 'Temperature',
+        cup: 'Cup',
+        addons: 'Add-ons',
+        kcal: '{{calories}} kcal',
+      },
+      signInPrompt: 'Sign in within Telegram to add items to the cart.',
+      cta: {
+        add: 'Add · {{total}}',
+      },
+    },
+    orderStatus: {
+      orderClosed: 'Order closed',
     },
     profile: {
       loyalty: 'LOYALTY',
       tierGold: 'Gold',
       pointsSuffix: 'pts',
+      pointsLine: '{{points}} pts',
       toPlatinum: '{{points}} pts to Platinum',
       signOut: 'Sign out',
+      fallbackName: 'Telegram user',
     },
     checkout: {
       title: 'Checkout',
@@ -528,6 +561,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       empty: 'Your cart is empty.',
       promo: 'Promo code',
       tapPay: 'Tap the Telegram button below to place the order.',
+      payAsap: 'Pay {{total}} · ASAP',
+      payScheduled: 'Pay {{total}} · Scheduled',
+      placeOrderFailed: 'Failed to place the order',
     },
     stores: {
       title: 'Pick a store',

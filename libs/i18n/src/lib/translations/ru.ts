@@ -38,6 +38,7 @@ export const TRANSLATIONS_RU = {
       min: 'мин',
       mShort: 'м',
       sShort: 'с',
+      kmShort: 'км',
     },
     timeAgo: {
       justNow: 'только что',
@@ -509,13 +510,45 @@ export const TRANSLATIONS_RU = {
       emptySubtitle: 'История появится после первого заказа.',
       signInTitle: 'Войдите, чтобы увидеть заказы',
       signInSubtitle: 'Откройте takeAway из Telegram.',
+      itemsCount: '{{count}} позиций',
+      pickupAsap: 'Сейчас',
+      pickupScheduled: 'По времени',
+      status: {
+        CREATED: 'В очереди',
+        PAID: 'В очереди',
+        ACCEPTED: 'Принят',
+        IN_PROGRESS: 'Готовится',
+        READY: 'Готов',
+        PICKED_UP: 'Выдан',
+        CANCELLED: 'Отменён',
+        EXPIRED: 'Истёк',
+      },
+    },
+    product: {
+      labels: {
+        size: 'Размер',
+        milk: 'Молоко',
+        temperature: 'Температура',
+        cup: 'Чашка',
+        addons: 'Добавки',
+        kcal: '{{calories}} ккал',
+      },
+      signInPrompt: 'Войдите в Telegram, чтобы добавить в корзину.',
+      cta: {
+        add: 'Добавить · {{total}}',
+      },
+    },
+    orderStatus: {
+      orderClosed: 'Заказ закрыт',
     },
     profile: {
       loyalty: 'ЛОЯЛЬНОСТЬ',
       tierGold: 'Gold',
       pointsSuffix: 'баллов',
+      pointsLine: '{{points}} баллов',
       toPlatinum: '{{points}} баллов до Platinum',
       signOut: 'Выйти',
+      fallbackName: 'Пользователь Telegram',
     },
     checkout: {
       title: 'Оформление',
@@ -528,6 +561,9 @@ export const TRANSLATIONS_RU = {
       empty: 'Корзина пуста.',
       promo: 'Промокод',
       tapPay: 'Нажмите кнопку Telegram внизу, чтобы оформить.',
+      payAsap: 'Оплатить {{total}} · Сейчас',
+      payScheduled: 'Оплатить {{total}} · По времени',
+      placeOrderFailed: 'Не удалось оформить заказ',
     },
     stores: {
       title: 'Выберите точку',

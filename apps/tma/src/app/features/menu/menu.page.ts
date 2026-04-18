@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
@@ -17,7 +18,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-menu',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
     @if (store(); as s) {
       <div
@@ -33,7 +34,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
         <a
           routerLink="/stores"
           style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-caramel)"
-          >Change</a
+          >{{ 'tma.menu.change' | translate }}</a
         >
       </div>
     }

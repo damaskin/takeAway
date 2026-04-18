@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -9,11 +10,12 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 
 const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 
-const VARIATION_LABELS: Record<VariationType, string> = {
-  SIZE: 'Size',
-  TEMPERATURE: 'Temperature',
-  MILK: 'Milk',
-  CUP: 'Cup',
+// Translation keys; resolved via TranslateService in `variationLabel()`.
+const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
+  SIZE: 'tma.product.labels.size',
+  TEMPERATURE: 'tma.product.labels.temperature',
+  MILK: 'tma.product.labels.milk',
+  CUP: 'tma.product.labels.cup',
 };
 
 /**
@@ -29,6 +31,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
 @Component({
   selector: 'app-tma-product',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
@@ -48,11 +51,11 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <div class="flex items-center" style="gap: 12px">
               @if (p.calories !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-                  >🔥 {{ p.calories }} kcal</span
+                  >🔥 {{ 'tma.product.labels.kcal' | translate: { calories: p.calories } }}</span
                 >
               }
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-                >⌛ {{ minutes(p.prepTimeSeconds) }} min</span
+                >⌛ {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}</span
               >
             </div>
           </div>
@@ -74,7 +77,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
           <div class="flex flex-col" style="gap: 10px">
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-              >{{ variationLabel(group.type) }}</span
+              >{{ variationLabel(group.type) | translate }}</span
             >
             <div class="flex flex-wrap" style="gap: 8px">
               @for (v of group.variations; track v.id) {
@@ -99,7 +102,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
           <div class="flex flex-col" style="gap: 10px">
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-              >Add-ons</span
+              >{{ 'tma.product.labels.addons' | translate }}</span
             >
             <div class="flex flex-col" style="gap: 8px">
               @for (m of p.modifiers; track m.id) {
@@ -156,7 +159,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             class="text-center"
             style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
           >
-            Sign in within Telegram to add items to the cart.
+            {{ 'tma.product.signInPrompt' | translate }}
           </p>
         }
       }
@@ -169,6 +172,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly catalog = inject(CatalogService);
   private readonly cartService = inject(CartService);
   private readonly tg = inject(TelegramBridgeService);
+  private readonly translate = inject(TranslateService);
   readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
@@ -224,8 +228,9 @@ export class TmaProductPage implements OnInit, OnDestroy {
     this.detachBack?.();
   }
 
+  /** Returns a translation key — resolved via | translate in the template. */
   variationLabel(type: VariationType): string {
-    return VARIATION_LABELS[type];
+    return VARIATION_LABEL_KEYS[type];
   }
 
   selectVariation(type: VariationType, id: string): void {
@@ -297,7 +302,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
-    this.tg.setMainButton(`Add · ${this.price(this.totalCents())}`, () => this.onMainButton());
+    const label = this.translate.instant('tma.product.cta.add', { total: this.price(this.totalCents()) });
+    this.tg.setMainButton(label, () => this.onMainButton());
   }
 
   private onMainButton(): void {

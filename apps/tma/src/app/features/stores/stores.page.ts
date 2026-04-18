@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
@@ -17,13 +18,13 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-stores',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Pick a store
+        {{ 'tma.stores.title' | translate }}
       </h1>
 
       <!-- Search bar -->
@@ -34,7 +35,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
         <span style="color: var(--color-text-secondary); font-size: 16px">🔍</span>
         <input
           type="search"
-          placeholder="District, landmark…"
+          [placeholder]="'tma.stores.search' | translate"
           class="flex-1 outline-none bg-transparent"
           style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
         />
@@ -67,7 +68,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
       <span
         style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso); margin-top: 4px"
-        >Nearby</span
+        >{{ 'tma.stores.nearby' | translate }}</span
       >
 
       <div class="flex flex-col" style="gap: 12px">
@@ -87,7 +88,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                 [style.background]="statusBg(s.status)"
                 [style.color]="statusColor(s.status)"
                 style="padding: 3px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                >{{ statusLabel(s.status) }}</span
+                >{{ statusLabel(s.status) | translate }}</span
               >
             </div>
             <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
@@ -95,7 +96,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
             </p>
             <div class="flex items-center" style="gap: 14px">
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                >⏱ {{ minutes(s.currentEtaSeconds) }} min</span
+                >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}</span
               >
               @if (s.distanceMeters !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
@@ -113,6 +114,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 })
 export class TmaStoresPage implements OnInit {
   private readonly catalog = inject(CatalogService);
+  private readonly translate = inject(TranslateService);
 
   readonly stores = signal<StoreListItem[]>([]);
 
@@ -125,14 +127,15 @@ export class TmaStoresPage implements OnInit {
   }
 
   distanceLabel(meters: number): string {
-    if (meters < 1000) return `${Math.round(meters)} m`;
-    return `${(meters / 1000).toFixed(1)} km`;
+    if (meters < 1000) return `${Math.round(meters)} ${this.translate.instant('common.units.mShort')}`;
+    return `${(meters / 1000).toFixed(1)} ${this.translate.instant('common.units.kmShort')}`;
   }
 
+  /** Returns a translation key — resolved via | translate in the template. */
   statusLabel(status: StoreListItem['status']): string {
-    if (status === 'OPEN') return 'Open';
-    if (status === 'OVERLOADED') return 'Busy';
-    return 'Closed';
+    if (status === 'OPEN') return 'web.stores.status.OPEN';
+    if (status === 'OVERLOADED') return 'web.stores.status.OVERLOADED';
+    return 'web.stores.status.CLOSED';
   }
 
   statusBg(status: StoreListItem['status']): string {

@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -21,18 +22,20 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Checkout
+        {{ 'tma.checkout.title' | translate }}
       </h1>
 
       <!-- Pickup time -->
       <div class="flex flex-col" style="gap: 12px">
-        <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-          >When do you want to pick up?</span
+        <span
+          style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+          >{{ 'tma.checkout.pickupWhen' | translate }}</span
         >
         <div class="flex" style="gap: 8px">
           <button
@@ -44,7 +47,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
             [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
             style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
           >
-            ASAP · ~{{ etaMinutes() }} min
+            {{ 'tma.checkout.asap' | translate: { min: etaMinutes() } }}
           </button>
           <button
             type="button"
@@ -57,7 +60,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
             "
             style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
           >
-            Schedule
+            {{ 'tma.checkout.schedule' | translate }}
           </button>
         </div>
         @if (pickupMode() === 'SCHEDULED') {
@@ -78,13 +81,13 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         >
           <span
             style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >Pickup location</span
+            >{{ 'tma.checkout.location' | translate }}</span
           >
           <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">
             {{ storeName() }}
           </span>
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
-            Ready in ~{{ etaMinutes() }} min
+            {{ 'tma.checkout.readyIn' | translate: { min: etaMinutes() } }}
           </span>
         </div>
 
@@ -92,11 +95,11 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         <div class="flex flex-col" style="gap: 12px">
           <span
             style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >Your order</span
+            >{{ 'tma.checkout.yourOrder' | translate }}</span
           >
           @if (c.items.length === 0) {
             <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-              Your cart is empty.
+              {{ 'tma.checkout.empty' | translate }}
             </p>
           } @else {
             <div
@@ -120,7 +123,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
-                  >Total</span
+                  >{{ 'common.total' | translate }}</span
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
@@ -140,7 +143,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         <span style="color: var(--color-text-tertiary); font-size: 16px">🎟</span>
         <input
           type="text"
-          placeholder="Promo code"
+          [placeholder]="'tma.checkout.promo' | translate"
           class="flex-1 outline-none bg-transparent"
           style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
         />
@@ -158,7 +161,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         class="text-center"
         style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
       >
-        Tap the Telegram button below to place the order.
+        {{ 'tma.checkout.tapPay' | translate }}
       </p>
     </section>
   `,
@@ -170,6 +173,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
+  private readonly translate = inject(TranslateService);
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
@@ -236,10 +240,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
-    const label =
-      this.pickupMode() === 'ASAP'
-        ? `Pay ${this.price(c.subtotalCents)} · ASAP`
-        : `Pay ${this.price(c.subtotalCents)} · Scheduled`;
+    const total = this.price(c.subtotalCents);
+    const key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+    const label = this.translate.instant(key, { total });
     this.tg.setMainButton(label, () => this.placeOrder());
   }
 
@@ -252,7 +255,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (order) => void this.router.navigate(['/orders', order.id]),
       error: (err) => {
         const maybe = err as { error?: { message?: string }; message?: string };
-        this.error.set(maybe.error?.message ?? maybe.message ?? 'Failed to place order');
+        this.error.set(
+          maybe.error?.message ?? maybe.message ?? this.translate.instant('tma.checkout.placeOrderFailed'),
+        );
       },
     });
   }

@@ -8,17 +8,6 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
 type Tab = 'ACTIVE' | 'HISTORY';
 
-const STATUS_LABELS: Record<OrderStatusString, string> = {
-  CREATED: 'Queued',
-  PAID: 'Queued',
-  ACCEPTED: 'Accepted',
-  IN_PROGRESS: 'Preparing',
-  READY: 'Ready',
-  PICKED_UP: 'Picked up',
-  CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
-};
-
 /**
  * TMA Orders History — pencil 3Srti.
  *
@@ -88,7 +77,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
           class="text-center"
           style="padding: 40px 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
         >
-          Loading…
+          {{ 'common.loading' | translate }}
         </p>
       } @else if (orders().length === 0) {
         <div
@@ -135,19 +124,23 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
                     >#{{ o.orderCode }} · {{ o.storeName }}</span
                   >
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                    >{{ formatDate(o.createdAt) }} · {{ o.itemCount }} items</span
+                    >{{ formatDate(o.createdAt) }} ·
+                    {{ 'tma.orders.itemsCount' | translate: { count: o.itemCount } }}</span
                   >
                 </div>
                 <span
                   [style.background]="statusBg(o.status)"
                   [style.color]="statusColor(o.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap"
-                  >{{ statusLabel(o.status) }}</span
+                  >{{ statusLabel(o.status) | translate }}</span
                 >
               </div>
               <div class="flex items-center justify-between">
                 <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-                  >{{ o.pickupMode === 'ASAP' ? 'ASAP' : 'Scheduled' }} · {{ formatTime(o.pickupAt) }}</span
+                  >{{
+                    (o.pickupMode === 'ASAP' ? 'tma.orders.pickupAsap' : 'tma.orders.pickupScheduled') | translate
+                  }}
+                  · {{ formatTime(o.pickupAt) }}</span
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 700; color: var(--color-caramel)"
@@ -187,8 +180,9 @@ export class TmaOrdersPage implements OnInit {
     }
   }
 
+  /** Returns a translation key — resolved via | translate in the template. */
   statusLabel(status: OrderStatusString): string {
-    return STATUS_LABELS[status];
+    return `tma.orders.status.${status}`;
   }
 
   isActive(status: OrderStatusString): boolean {
