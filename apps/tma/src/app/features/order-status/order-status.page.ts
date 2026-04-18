@@ -1,21 +1,11 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { interval, type Subscription } from 'rxjs';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { OrdersApi, type OrderStatusString, type OrderView } from '../../core/orders/orders.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
-
-const STATUS_LABELS: Record<OrderStatusString, string> = {
-  CREATED: 'Order received',
-  PAID: 'Payment confirmed',
-  ACCEPTED: 'Preparing soon',
-  IN_PROGRESS: 'Preparing\nyour order',
-  READY: 'Ready for pickup',
-  PICKED_UP: 'Picked up',
-  CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
-};
 
 /**
  * TMA Order Status — pencil e48T5.
@@ -29,6 +19,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
 @Component({
   selector: 'app-tma-order-status',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     @if (order(); as o) {
       <section
@@ -46,7 +37,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
         <h1
           style="font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1.2; color: var(--color-espresso); text-align: center; white-space: pre-line; margin: 0"
         >
-          {{ statusLabel(o.status) }}
+          {{ statusLabel(o.status) | translate }}
         </h1>
 
         <!-- Timer + code -->
@@ -56,17 +47,17 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
               o.orderCode
             }}</span>
           } @else if (o.status === 'CANCELLED' || o.status === 'EXPIRED') {
-            <span style="font-family: var(--font-sans); font-size: 15px; color: var(--color-text-secondary)"
-              >Order closed</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 15px; color: var(--color-text-secondary)">{{
+              'tma.orderStatus.orderClosed' | translate
+            }}</span>
           } @else {
             <span
               style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
               >{{ countdown() }}</span
             >
-            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-              >code {{ o.orderCode }}</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+              'web.orderStatus.codeLabel' | translate: { code: o.orderCode }
+            }}</span>
           }
         </div>
 
@@ -87,7 +78,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
               </span>
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-                >{{ step.label }}</span
+                >{{ step.label | translate }}</span
               >
             </div>
           }
@@ -118,7 +109,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
             <div class="flex items-center justify-between">
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                >Total</span
+                >{{ 'common.total' | translate }}</span
               >
               <span
                 style="font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--color-caramel)"
@@ -141,11 +132,12 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
 
+  // Labels are translation keys — resolved with | translate in the template.
   readonly timelineSteps = [
-    { idx: 1, key: 'PAID' as OrderStatusString, label: 'Payment confirmed' },
-    { idx: 2, key: 'ACCEPTED' as OrderStatusString, label: 'Accepted by kitchen' },
-    { idx: 3, key: 'READY' as OrderStatusString, label: 'Ready for pickup' },
-    { idx: 4, key: 'PICKED_UP' as OrderStatusString, label: 'Picked up' },
+    { idx: 1, key: 'PAID' as OrderStatusString, label: 'web.orderStatus.status.PAID' },
+    { idx: 2, key: 'ACCEPTED' as OrderStatusString, label: 'web.orderStatus.status.ACCEPTED' },
+    { idx: 3, key: 'READY' as OrderStatusString, label: 'web.orderStatus.status.READY' },
+    { idx: 4, key: 'PICKED_UP' as OrderStatusString, label: 'web.orderStatus.status.PICKED_UP' },
   ];
 
   private tickSub: Subscription | null = null;
@@ -182,8 +174,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.detachBack?.();
   }
 
+  /** Returns a translation key — resolved via | translate in the template. */
   statusLabel(status: OrderStatusString): string {
-    return STATUS_LABELS[status];
+    return `web.orderStatus.status.${status}`;
   }
 
   isReady(): boolean {

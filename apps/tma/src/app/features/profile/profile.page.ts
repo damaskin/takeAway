@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
@@ -21,7 +22,7 @@ interface ProfileRow {
 @Component({
   selector: 'app-tma-profile',
   standalone: true,
-  imports: [TmaTabBarComponent],
+  imports: [TmaTabBarComponent, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 20px">
       <!-- Avatar block -->
@@ -49,19 +50,22 @@ interface ProfileRow {
         style="background: var(--color-caramel); border-radius: 16px; padding: 16px; gap: 8px; color: white"
       >
         <div class="flex items-center justify-between">
-          <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8)"
-            >LOYALTY</span
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8)"
+            >{{ 'tma.profile.loyalty' | translate }}</span
           >
           <span
             class="flex items-center"
             style="height: 22px; padding: 0 10px; background: rgba(255,255,255,0.15); border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-            >⭐ Gold</span
+            >⭐ {{ 'tma.profile.tierGold' | translate }}</span
           >
         </div>
-        <span style="font-family: var(--font-display); font-size: 30px; font-weight: 700">2,450 pts</span>
-        <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)"
-          >550 pts to Platinum</span
-        >
+        <span style="font-family: var(--font-display); font-size: 30px; font-weight: 700">{{
+          'tma.profile.pointsLine' | translate: { points: '2,450' }
+        }}</span>
+        <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)">{{
+          'tma.profile.toPlatinum' | translate: { points: 550 }
+        }}</span>
         <div
           style="width: 100%; height: 6px; background: rgba(255,255,255,0.2); border-radius: 9999px; overflow: hidden; margin-top: 4px"
         >
@@ -85,11 +89,11 @@ interface ProfileRow {
             <span
               class="flex-1 text-left"
               style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-              >{{ row.label }}</span
+              >{{ row.label | translate }}</span
             >
             @if (row.value) {
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-                row.value
+                row.value | translate
               }}</span>
             }
             <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
@@ -104,7 +108,7 @@ interface ProfileRow {
         class="flex items-center justify-center"
         style="height: 48px; background: var(--color-foam); color: var(--color-berry); border: 1px solid var(--color-berry); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
       >
-        Sign out
+        {{ 'tma.profile.signOut' | translate }}
       </button>
     </section>
 
@@ -113,17 +117,19 @@ interface ProfileRow {
 })
 export class TmaProfilePage {
   private readonly authStore = inject(TmaAuthStore);
+  private readonly translate = inject(TranslateService);
 
+  // Labels and value are translation keys — resolved with | translate in the template.
   readonly rows: ProfileRow[] = [
-    { icon: '👤', label: 'Personal info' },
-    { icon: '💳', label: 'Payment methods' },
-    { icon: '🎁', label: 'Gift cards' },
-    { icon: '🔔', label: 'Notifications' },
-    { icon: '🌐', label: 'Language', value: 'English' },
+    { icon: '👤', label: 'web.profile.sections.personal' },
+    { icon: '💳', label: 'web.profile.sections.payment' },
+    { icon: '🎁', label: 'web.profile.sections.gift' },
+    { icon: '🔔', label: 'web.profile.sections.notifications' },
+    { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
   ];
 
   displayName(): string {
-    return this.authStore.user()?.name || 'Telegram user';
+    return this.authStore.user()?.name || this.translate.instant('tma.profile.fallbackName');
   }
 
   phone(): string {

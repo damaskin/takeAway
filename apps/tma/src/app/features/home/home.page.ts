@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
@@ -12,28 +13,30 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-home',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
     <section style="padding: 24px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
       <div class="flex flex-col" style="gap: 4px">
         <h1
           style="font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
-          Pre-order
+          {{ 'tma.home.title' | translate }}
         </h1>
         <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-          Skip the queue. Pick it up.
+          {{ 'tma.home.subtitle' | translate }}
         </p>
       </div>
 
       <h2
         style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso); margin: 8px 0 0 0"
       >
-        Nearby stores
+        {{ 'tma.home.nearby' | translate }}
       </h2>
 
       @if (stores().length === 0) {
-        <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">Loading…</p>
+        <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">
+          {{ 'common.loading' | translate }}
+        </p>
       }
 
       <div class="flex flex-col" style="gap: 12px">
@@ -57,7 +60,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                 class="flex items-center justify-center"
                 [style.background]="etaColor(s.busyMeter)"
                 style="height: 26px; padding: 0 10px; color: white; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-                >⏱ {{ minutes(s.currentEtaSeconds) }} min</span
+                >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}</span
               >
             </div>
           </a>
