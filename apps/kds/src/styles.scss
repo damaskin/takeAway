@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+@import '../../../libs/ui-kit/src/lib/design-tokens.css';
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-dark-bg);
+  color: var(--color-cream);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

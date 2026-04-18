@@ -1,0 +1,44 @@
+/*
+ * takeAway — design tokens (Tailwind 4 @theme)
+ * Source of truth for colors, typography, radii, shadows.
+ * Reference: 03_PENCIL_PROMPT.md §"Визуальный язык"
+ */
+
+@theme {
+  /* Brand colors */
+  --color-espresso: #1a1414;
+  --color-cream: #f8f3eb;
+  --color-latte: #e8ddcb;
+  --color-caramel: #c77d3b;
+  --color-foam: #ffffff;
+  --color-mint: #7bc4a4;
+  --color-berry: #d94b5e;
+  --color-amber-warn: #e9a84b;
+
+  /* Category accents */
+  --color-matcha: #9db87e;
+  --color-purple-signature: #8e5fb0;
+  --color-egg-yellow: #f5c95c;
+  --color-terracotta: #c86a4b;
+  --color-pink-dessert: #e8a0b4;
+
+  /* Dark theme surfaces */
+  --color-dark-bg: #0e0b0a;
+  --color-dark-surface: #1c1817;
+  --color-dark-surface-variant: #2a2523;
+
+  /* Typography */
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Radii */
+  --radius-card: 20px;
+  --radius-button: 14px;
+  --radius-input: 12px;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-soft: 0 6px 20px rgba(26, 20, 20, 0.06);
+  --shadow-lifted: 0 12px 32px rgba(26, 20, 20, 0.1);
+}

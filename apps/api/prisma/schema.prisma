@@ -1,0 +1,12 @@
+// takeAway — Prisma schema
+// Reference: 01_TECHNICAL_SPEC.md §5 Data model
+// Migrations are added in later milestones (M1+).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

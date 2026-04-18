@@ -13,6 +13,7 @@ Thumbs.db
 # Dependencies
 node_modules/
 pnpm-lock.yaml.backup
+.pnpm-store/
 
 # Environment
 .env
@@ -24,11 +25,22 @@ pnpm-lock.yaml.backup
 dist/
 build/
 out/
+out-tsc/
 .next/
 .nuxt/
 .angular/
 coverage/
 *.tsbuildinfo
+
+# Nx
+.nx/cache
+.nx/workspace-data
+tmp/
+
+# Testing
+.playwright/
+playwright-report/
+test-results/
 
 # Logs
 *.log
@@ -37,5 +49,15 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Misc
+.cache/
+.eslintcache
+.stylelintcache
+
+# Docker volumes
+infra/.data/
+
 # Claude local state
 .claude/
+
+.angular
