@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -11,6 +11,8 @@ interface ProfileSection {
   icon: string;
   label: string;
   value?: string;
+  /** When set, the row is rendered as a routerLink to this URL. */
+  link?: string;
 }
 
 /**
@@ -28,7 +30,7 @@ interface ProfileSection {
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     @if (store.user(); as user) {
       <section
@@ -92,24 +94,45 @@ interface ProfileSection {
         <!-- Section list -->
         <div class="flex flex-col" style="gap: 4px">
           @for (sec of sections; track sec.label) {
-            <button
-              type="button"
-              class="flex items-center"
-              style="height: 56px; padding: 0 20px; background: var(--color-foam); border-radius: 14px; gap: 16px"
-            >
-              <span style="color: var(--color-text-secondary); font-size: 18px">{{ sec.icon }}</span>
-              <span
-                class="flex-1 text-left"
-                style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-                >{{ sec.label | translate }}</span
+            @if (sec.link) {
+              <a
+                [routerLink]="sec.link"
+                class="flex items-center"
+                style="height: 56px; padding: 0 20px; background: var(--color-foam); border-radius: 14px; gap: 16px; text-decoration: none"
               >
-              @if (sec.value) {
-                <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)">{{
-                  sec.value | translate
-                }}</span>
-              }
-              <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
-            </button>
+                <span style="color: var(--color-text-secondary); font-size: 18px">{{ sec.icon }}</span>
+                <span
+                  class="flex-1 text-left"
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+                  >{{ sec.label | translate }}</span
+                >
+                @if (sec.value) {
+                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)">{{
+                    sec.value | translate
+                  }}</span>
+                }
+                <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+              </a>
+            } @else {
+              <button
+                type="button"
+                class="flex items-center"
+                style="height: 56px; padding: 0 20px; background: var(--color-foam); border-radius: 14px; gap: 16px"
+              >
+                <span style="color: var(--color-text-secondary); font-size: 18px">{{ sec.icon }}</span>
+                <span
+                  class="flex-1 text-left"
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+                  >{{ sec.label | translate }}</span
+                >
+                @if (sec.value) {
+                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)">{{
+                    sec.value | translate
+                  }}</span>
+                }
+                <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+              </button>
+            }
           }
 
           <!-- Logout -->
@@ -150,6 +173,7 @@ export class ProfilePage implements OnInit {
   }
 
   readonly sections: ProfileSection[] = [
+    { icon: '🧾', label: 'web.profile.sections.myOrders', link: '/orders' },
     { icon: '👤', label: 'web.profile.sections.personal' },
     { icon: '💳', label: 'web.profile.sections.payment' },
     { icon: '🎁', label: 'web.profile.sections.gift' },
