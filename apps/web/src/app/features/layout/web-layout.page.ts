@@ -9,46 +9,79 @@ import { AuthStore } from '../../core/auth/auth.store';
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-espresso)">
+    <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-text-primary)">
+      <!-- Top nav — pencil L4k2D -->
       <header
-        class="border-b sticky top-0 z-10 backdrop-blur"
-        style="border-color: var(--color-latte); background: rgba(248, 243, 235, 0.85)"
+        class="sticky top-0 z-10"
+        style="background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
       >
-        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div
+          class="max-w-[1440px] mx-auto flex items-center justify-between"
+          style="height: 72px; padding: 0 80px"
+        >
           <a routerLink="/" class="flex items-center gap-2">
-            <span class="text-2xl" style="font-family: var(--font-display)">takeAway</span>
+            <span
+              style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
+            >takeAway</span>
           </a>
-          <nav class="flex items-center gap-6 text-sm">
-            <a routerLink="/stores" routerLinkActive="opacity-100" class="opacity-60 hover:opacity-100">Stores</a>
-            <a routerLink="/menu" routerLinkActive="opacity-100" class="opacity-60 hover:opacity-100">Menu</a>
+
+          <nav class="flex items-center" style="gap: 32px">
+            <a
+              routerLink="/menu"
+              routerLinkActive="opacity-100"
+              [routerLinkActiveOptions]="{ exact: false }"
+              class="opacity-70 hover:opacity-100"
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+            >Menu</a>
+            <a
+              routerLink="/stores"
+              routerLinkActive="opacity-100"
+              class="opacity-70 hover:opacity-100"
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+            >Stores</a>
+            <a
+              href="#how-it-works"
+              class="opacity-70 hover:opacity-100"
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+            >About</a>
+            <a
+              href="#loyalty"
+              class="opacity-70 hover:opacity-100"
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+            >Loyalty</a>
+          </nav>
+
+          <div class="flex items-center" style="gap: 12px">
             @if (isAuthed()) {
-              <a routerLink="/profile" routerLinkActive="opacity-100" class="opacity-60 hover:opacity-100">
-                {{ userName() }}
-              </a>
-              <button type="button" (click)="logout()" class="opacity-60 hover:opacity-100">Sign out</button>
+              <a
+                routerLink="/profile"
+                class="flex items-center justify-center"
+                style="height: 42px; padding: 0 20px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ userName() }}</a>
+              <button
+                type="button"
+                (click)="logout()"
+                style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
+              >Sign out</button>
             } @else {
               <a
                 routerLink="/login"
-                class="px-4 py-2 font-medium"
-                style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
-              >
-                Sign in
-              </a>
+                class="flex items-center justify-center"
+                style="height: 42px; padding: 0 20px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+              >Sign in</a>
             }
-          </nav>
+            <a
+              routerLink="/menu"
+              class="flex items-center justify-center"
+              style="height: 42px; padding: 0 20px; background: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: white"
+            >Order</a>
+          </div>
         </div>
       </header>
 
       <main class="flex-1">
         <router-outlet />
       </main>
-
-      <footer class="border-t mt-16" style="border-color: var(--color-latte)">
-        <div class="max-w-6xl mx-auto px-4 py-8 text-sm flex items-center justify-between" style="opacity: 0.6">
-          <span>© takeAway</span>
-          <span>Pre-order. Skip the queue. Pick it up.</span>
-        </div>
-      </footer>
     </div>
   `,
 })
@@ -63,7 +96,8 @@ export class WebLayoutPage {
 
   userName(): string {
     const u = this.store.user();
-    return u?.name ?? u?.phone ?? 'Account';
+    const name = u?.name?.split(/\s+/)[0];
+    return name || 'Account';
   }
 
   logout(): void {
