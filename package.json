@@ -26,7 +26,13 @@
     "prisma:migrate": "prisma migrate dev --schema=apps/api/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema=apps/api/prisma/schema.prisma",
     "prisma:deploy": "prisma migrate deploy --schema=apps/api/prisma/schema.prisma",
+    "prisma:seed": "tsx apps/api/prisma/seed.ts",
+    "prisma:reset": "prisma migrate reset --schema=apps/api/prisma/schema.prisma --force",
     "prepare": "husky"
+  },
+  "prisma": {
+    "schema": "apps/api/prisma/schema.prisma",
+    "seed": "tsx apps/api/prisma/seed.ts"
   },
   "lint-staged": {
     "*.{ts,js,json,md,yml,yaml,scss,css,html}": [
@@ -90,6 +96,7 @@
     "ts-jest": "^29.4.0",
     "ts-node": "10.9.1",
     "tslib": "^2.3.0",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.58.2",
     "webpack-cli": "^5.1.4"
