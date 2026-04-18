@@ -30,9 +30,57 @@ async function bootstrap(): Promise<void> {
     // Swagger UI iframes the API docs page; COEP blocks its own subresources.
     crossOriginEmbedderPolicy: false,
   });
+  const swaggerPrefix = `/${globalPrefix}/docs`;
   const { default: fastifyCompress } = await import('@fastify/compress');
-  await app.register(fastifyCompress);
+  // Two dev-only bugs bite here otherwise:
+  //   1. Chrome negotiates `zstd` but @fastify/compress pipes an empty body
+  //      back for zstd-encoded static files from swagger-ui-dist (observed
+  //      content-length: 0 on swagger-ui-init.js). Dropping zstd from the
+  //      negotiated encodings forces br/gzip which serialize correctly.
+  //   2. Compressing inside /api/docs is risky because the swagger-ui-init
+  //      file is written on the fly by @nestjs/swagger and the combination
+  //      occasionally emits a 0-length body. The filter below skips
+  //      compression entirely for that prefix so the browser always gets
+  //      the full uncompressed payload.
+  await app.register(fastifyCompress, {
+    encodings: ['br', 'gzip', 'deflate'],
+    customTypes: /^(text|application)\/.*/,
+  });
   app.enableCors({ origin: true, credentials: true });
+  const fastify = app.getHttpAdapter().getInstance() as unknown as {
+    addHook: (
+      name: 'onRequest' | 'onSend',
+      fn: (
+        req: { url?: string; headers: Record<string, string | undefined> },
+        reply: {
+          header(name: string, value: string): unknown;
+        },
+        payloadOrDone?: unknown,
+        done?: unknown,
+      ) => void,
+    ) => void;
+  };
+  fastify.addHook('onRequest', (req, _reply, done) => {
+    if (req.url && req.url.startsWith(swaggerPrefix)) {
+      // Drop conditional-cache headers so @fastify/static cannot return a 304
+      // that points the browser back at a bad cached body.
+      delete req.headers['if-none-match'];
+      delete req.headers['if-modified-since'];
+      // Force the downstream compress plugin into no-op mode for Swagger:
+      // we've seen zstd-encoded swagger-ui-init.js arrive with content-length: 0
+      // in Chrome. With accept-encoding gone the plugin passes the body through.
+      delete req.headers['accept-encoding'];
+    }
+    (done as () => void)();
+  });
+  fastify.addHook('onSend', (req, reply, _payload, done) => {
+    if (req.url && req.url.startsWith(swaggerPrefix)) {
+      reply.header('cache-control', 'no-store, must-revalidate');
+      reply.header('pragma', 'no-cache');
+      reply.header('expires', '0');
+    }
+    (done as () => void)();
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('takeAway API')
