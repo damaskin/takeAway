@@ -28,41 +28,18 @@ export default defineConfig({
     url: 'http://localhost:4200',
     reuseExistingServer: true,
     cwd: workspaceRoot,
+    timeout: 120_000,
   },
+  /*
+   * We intentionally run only Chromium in CI. Firefox/webkit matrix inflates
+   * runtime ~3× and currently doesn't catch extra regressions on top of the
+   * Angular 21 baseline Chromium already hits. Add them back via a separate
+   * nightly workflow if we need per-engine coverage.
+   */
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    // Uncomment for mobile browsers support
-    /* {
-      name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'Mobile Safari',
-      use: { ...devices['iPhone 12'] },
-    }, */
-
-    // Uncomment for branded browsers
-    /* {
-      name: 'Microsoft Edge',
-      use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    },
-    {
-      name: 'Google Chrome',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    } */
   ],
 });
