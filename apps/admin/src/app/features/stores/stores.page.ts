@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 
@@ -11,6 +12,7 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
 @Component({
   selector: 'app-stores',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -19,21 +21,21 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Stores
+        {{ 'admin.stores.title' | translate }}
       </h1>
       <button
         type="button"
         class="flex items-center"
         style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
       >
-        + Add store
+        {{ 'admin.stores.add' | translate }}
       </button>
     </div>
 
     <section style="padding: 24px; display: flex; flex-direction: column; gap: 16px">
       @if (stores().length === 0 && !error()) {
         <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-          No stores yet.
+          {{ 'admin.stores.empty' | translate }}
         </p>
       }
 
@@ -57,7 +59,7 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
                 [style.background]="statusBg(s.status)"
                 [style.color]="statusColor(s.status)"
                 style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                >{{ statusLabel(s.status) }}</span
+                >{{ statusLabel(s.status) | translate }}</span
               >
             </header>
 
@@ -78,14 +80,14 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
                 class="flex-1"
                 style="height: 36px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
               >
-                Edit
+                {{ 'admin.stores.edit' | translate }}
               </button>
               <button
                 type="button"
                 class="flex-1"
                 style="height: 36px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
               >
-                Hours & stop-list
+                {{ 'admin.stores.hours' | translate }}
               </button>
             </div>
           </article>
@@ -114,10 +116,11 @@ export class StoresPage implements OnInit {
     });
   }
 
+  /** Translation key; resolved with | translate in the template. */
   statusLabel(status: StoreAdminDto['status']): string {
-    if (status === 'OPEN') return 'Open';
-    if (status === 'OVERLOADED') return 'Busy';
-    return 'Closed';
+    if (status === 'OPEN') return 'admin.stores.status.OPEN';
+    if (status === 'OVERLOADED') return 'admin.stores.status.OVERLOADED';
+    return 'admin.stores.status.CLOSED';
   }
 
   statusBg(status: StoreAdminDto['status']): string {

@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AdminPromoApi } from '../../core/promo/promo.service';
 
@@ -23,7 +24,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
 @Component({
   selector: 'app-admin-promo',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -32,7 +33,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Promo & Loyalty
+        {{ 'admin.promo.title' | translate }}
       </h1>
       <div class="flex items-center" style="gap: 8px">
         <button
@@ -42,7 +43,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
           class="flex items-center"
           style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
         >
-          {{ loading() ? 'Refreshing…' : 'Refresh' }}
+          {{ (loading() ? 'common.refreshing' : 'common.refresh') | translate }}
         </button>
         <button
           type="button"
@@ -50,7 +51,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
           class="flex items-center"
           style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
         >
-          {{ formOpen() ? 'Close form' : '+ New promo' }}
+          {{ (formOpen() ? 'admin.promo.closeForm' : 'admin.promo.newPromo') | translate }}
         </button>
       </div>
     </div>
@@ -70,7 +71,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             >
             <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700">{{ t.members }}</span>
             <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.8)"
-              >{{ t.threshold }} pts · {{ t.benefit }}</span
+              >{{ t.threshold }} {{ 'admin.promo.tiers.pointsSuffix' | translate }} · {{ t.benefit | translate }}</span
             >
           </article>
         }
@@ -156,7 +157,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             <h2
               style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
             >
-              Promotions
+              {{ 'admin.promo.table.title' | translate }}
             </h2>
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
               >{{ promos().length }} total · {{ runningCount() }} running</span
@@ -171,7 +172,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
                 [style.color]="filter() === f ? 'white' : 'var(--color-text-primary)'"
                 style="height: 30px; padding: 0 14px; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
               >
-                {{ f }}
+                {{ 'admin.promo.filters.' + f.toLowerCase() | translate }}
               </button>
             }
           </div>
@@ -183,7 +184,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             style="padding: 40px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
           >
             @if (loading()) {
-              Loading promos…
+              {{ 'admin.promo.table.loading' | translate }}
             } @else {
               No promos in this bucket yet.
             }
@@ -195,37 +196,37 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
                 <th
                   style="text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Code
+                  {{ 'admin.promo.table.code' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Label
+                  {{ 'admin.promo.table.label' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Type
+                  {{ 'admin.promo.table.type' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Value
+                  {{ 'admin.promo.table.value' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Window
+                  {{ 'admin.promo.table.window' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Usage
+                  {{ 'admin.promo.table.usage' | translate }}
                 </th>
                 <th
                   style="text-align: center; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Status
+                  {{ 'admin.promo.table.status' | translate }}
                 </th>
               </tr>
             </thead>
@@ -297,28 +298,28 @@ export class AdminPromoPage implements OnInit {
       name: 'Silver',
       members: '—',
       threshold: '0',
-      benefit: '5% off every 10th cup',
+      benefit: 'admin.promo.tiers.silverBenefit',
       gradient: 'linear-gradient(135deg, #A39888 0%, #6B5E54 100%)',
     },
     {
       name: 'Gold',
       members: '—',
       threshold: '1,500',
-      benefit: 'Free size upgrade',
+      benefit: 'admin.promo.tiers.goldBenefit',
       gradient: 'linear-gradient(135deg, var(--color-caramel) 0%, #a0612a 100%)',
     },
     {
       name: 'Platinum',
       members: '—',
       threshold: '3,000',
-      benefit: 'Free drink every 8th visit',
+      benefit: 'admin.promo.tiers.platinumBenefit',
       gradient: 'linear-gradient(135deg, #8E5FB0 0%, #5B3D78 100%)',
     },
     {
       name: 'Signature',
       members: '—',
       threshold: '10,000',
-      benefit: 'Priority pickup + gifts',
+      benefit: 'admin.promo.tiers.signatureBenefit',
       gradient: 'linear-gradient(135deg, #1a1414 0%, #3a3430 100%)',
     },
   ];

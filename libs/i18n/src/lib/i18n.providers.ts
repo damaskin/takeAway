@@ -1,5 +1,5 @@
 import { inject, provideAppInitializer } from '@angular/core';
-import { TranslateService, provideTranslateService, type TranslateLoader, type Translation } from '@ngx-translate/core';
+import { TranslateLoader, TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { Observable, of } from 'rxjs';
 
 import { AVAILABLE_LOCALES, DEFAULT_LOCALE, LOCALE_STORAGE_KEY, type AppLocale } from './i18n.types';
@@ -32,7 +32,10 @@ export function provideTakeawayI18n() {
     provideTranslateService({
       lang: DEFAULT_LOCALE,
       fallbackLang: 'en',
-      loader: { provide: 'TranslateLoader', useClass: InlineTranslateLoader },
+      // ngx-translate@17 uses the abstract `TranslateLoader` class as the
+      // injection token. A string token silently becomes NG0201 at bootstrap
+      // and the whole app stays stuck on a blank <app-root>.
+      loader: { provide: TranslateLoader, useClass: InlineTranslateLoader },
     }),
     provideAppInitializer(() => {
       const translate = inject(TranslateService);
@@ -52,21 +55,25 @@ export function provideTakeawayI18n() {
 }
 
 /**
- * Pick the initial UI language:
- *  1. explicit user choice saved to localStorage,
- *  2. browser navigator.language if it starts with one of ours,
- *  3. default (Russian).
+ * Pick the initial UI language.
+ *
+ * takeAway is Russian-first: Russian is the default for every user regardless
+ * of browser locale. We only bow to the browser when it reports Russian too
+ * (so we don't gratuitously ignore a user's explicit system preference when
+ * they match ours). Any other browser locale falls back to Russian until the
+ * user hits the switcher and stores an explicit choice.
+ *
+ *   1. explicit user choice saved to localStorage — highest priority,
+ *   2. Russian if navigator.language starts with `ru`,
+ *   3. otherwise default (Russian).
  */
 export function resolveInitialLocale(): AppLocale {
   if (typeof localStorage !== 'undefined') {
     const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
     if (stored === 'ru' || stored === 'en') return stored;
   }
-  if (typeof navigator !== 'undefined' && navigator.language) {
-    const short = navigator.language.slice(0, 2).toLowerCase();
-    if (short === 'ru') return 'ru';
-    if (short === 'en') return 'en';
-  }
+  // Intentionally no auto-fallback to English for non-Russian browsers —
+  // Russian stays the default until the user picks English themselves.
   return DEFAULT_LOCALE;
 }
 

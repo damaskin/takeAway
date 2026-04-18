@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   AdminCatalogApi,
@@ -19,7 +20,7 @@ import {
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, TranslatePipe],
   template: `
     <!-- Top bar -->
     <div
@@ -30,7 +31,7 @@ import {
         <h1
           style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
-          Menu management
+          {{ 'admin.menu.title' | translate }}
         </h1>
         @if (brand()) {
           <span
@@ -46,7 +47,7 @@ import {
           class="flex items-center"
           style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
         >
-          Import CSV
+          {{ 'admin.menu.importCsv' | translate }}
         </button>
         @if (selectedCategoryId()) {
           <button
@@ -55,7 +56,7 @@ import {
             class="flex items-center"
             style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
           >
-            + New product
+            {{ 'admin.menu.newProduct' | translate }}
           </button>
         }
       </div>
@@ -71,14 +72,14 @@ import {
           <h2
             style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
           >
-            CATEGORIES
+            {{ 'admin.menu.categories' | translate }}
           </h2>
           <button
             type="button"
             (click)="openCategoryForm()"
             style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
           >
-            + Add
+            {{ 'admin.menu.add' | translate }}
           </button>
         </div>
 
@@ -101,7 +102,7 @@ import {
             @if (!cat.visible) {
               <span
                 style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
-                >Hidden</span
+                >{{ 'admin.menu.hidden' | translate }}</span
               >
             }
           </button>
@@ -116,12 +117,12 @@ import {
           >
             <input
               formControlName="name"
-              placeholder="Category name"
+              [placeholder]="'admin.menu.product.name' | translate"
               style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px"
             />
             <input
               formControlName="slug"
-              placeholder="slug (kebab-case)"
+              [placeholder]="'admin.menu.product.slug' | translate"
               style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px; font-family: var(--font-mono)"
             />
             <div class="flex" style="gap: 8px">
@@ -131,14 +132,14 @@ import {
                 class="flex-1 disabled:opacity-50"
                 style="height: 36px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
               >
-                Create
+                {{ 'admin.menu.create' | translate }}
               </button>
               <button
                 type="button"
                 (click)="categoryFormOpen.set(false)"
                 style="padding: 0 12px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
               >
-                Cancel
+                {{ 'common.cancel' | translate }}
               </button>
             </div>
           </form>
@@ -163,11 +164,11 @@ import {
 
         @if (!selectedCategoryId()) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-            Select a category to see its products.
+            {{ 'admin.menu.select' | translate }}
           </p>
         } @else if (products().length === 0 && !productFormOpen()) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-            No products in this category.
+            {{ 'admin.menu.emptyCategory' | translate }}
           </p>
         }
 
@@ -178,22 +179,22 @@ import {
                 <th
                   style="text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
                 >
-                  Name
+                  {{ 'admin.menu.headers.name' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
                 >
-                  Price
+                  {{ 'admin.menu.headers.price' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
                 >
-                  Prep
+                  {{ 'admin.menu.headers.prep' | translate }}
                 </th>
                 <th
                   style="text-align: center; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
                 >
-                  Visible
+                  {{ 'admin.menu.headers.visible' | translate }}
                 </th>
                 <th style="border-bottom: 1px solid var(--color-border-light)"></th>
               </tr>
@@ -219,7 +220,7 @@ import {
                       (click)="deleteProduct(p)"
                       style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); font-weight: 500"
                     >
-                      Delete
+                      {{ 'admin.menu.product.deleteCta' | translate }}
                     </button>
                   </td>
                 </tr>
@@ -237,7 +238,7 @@ import {
           >
             <input
               formControlName="name"
-              placeholder="Product name"
+              [placeholder]="'admin.menu.product.name' | translate"
               style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <input
@@ -249,19 +250,19 @@ import {
               formControlName="basePriceCents"
               type="number"
               min="0"
-              placeholder="Price (cents)"
+              [placeholder]="'admin.menu.product.price' | translate"
               style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <input
               formControlName="prepTimeSeconds"
               type="number"
               min="0"
-              placeholder="Prep time (s)"
+              [placeholder]="'admin.menu.product.prep' | translate"
               style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
             />
             <textarea
               formControlName="description"
-              placeholder="Description"
+              [placeholder]="'admin.menu.product.description' | translate"
               rows="2"
               class="col-span-2"
               style="grid-column: span 2; padding: 10px 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; resize: vertical"
@@ -273,14 +274,14 @@ import {
                 class="disabled:opacity-50"
                 style="height: 40px; padding: 0 20px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
               >
-                Create product
+                {{ 'admin.menu.product.createCta' | translate }}
               </button>
               <button
                 type="button"
                 (click)="productFormOpen.set(false)"
                 style="padding: 0 16px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
               >
-                Cancel
+                {{ 'common.cancel' | translate }}
               </button>
             </div>
           </form>
@@ -297,6 +298,7 @@ import {
 })
 export class MenuPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
+  private readonly translate = inject(TranslateService);
 
   readonly brand = signal<BrandDto | null>(null);
   readonly categories = signal<CategoryAdminDto[]>([]);
@@ -406,7 +408,8 @@ export class MenuPage implements OnInit {
   }
 
   deleteProduct(product: ProductAdminDto): void {
-    if (!confirm(`Delete ${product.name}?`)) return;
+    const msg = this.translate.instant('admin.menu.product.deleteConfirm', { name: product.name });
+    if (!confirm(msg)) return;
     this.api.deleteProduct(product.id).subscribe({
       next: () => {
         const current = this.selectedCategoryId();

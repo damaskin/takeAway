@@ -1,5 +1,6 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import {
   AnalyticsApi,
@@ -23,7 +24,7 @@ interface ChartBar {
 @Component({
   selector: 'app-admin-analytics',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -32,7 +33,7 @@ interface ChartBar {
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Analytics
+        {{ 'admin.analytics.title' | translate }}
       </h1>
       <div class="flex items-center" style="gap: 8px">
         @for (r of ranges; track r.days) {
@@ -60,7 +61,7 @@ interface ChartBar {
           <div class="flex flex-col" style="gap: 4px">
             <span
               style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-              >Revenue · last {{ activeRange() }} days</span
+              >{{ 'admin.analytics.revenueTitle' | translate: { days: activeRange() } }}</span
             >
             <div class="flex items-baseline" style="gap: 12px">
               <span
@@ -80,7 +81,7 @@ interface ChartBar {
             <div class="flex flex-col" style="gap: 6px; text-align: right">
               <span
                 style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >Best day</span
+                >{{ 'admin.analytics.bestDay' | translate }}</span
               >
               <span
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-espresso)"
@@ -96,7 +97,7 @@ interface ChartBar {
             class="text-center"
             style="padding: 40px 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
           >
-            No data for this range yet.
+            {{ 'admin.analytics.noData' | translate }}
           </p>
         } @else {
           <div
@@ -137,11 +138,11 @@ interface ChartBar {
           <h3
             style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            Top products
+            {{ 'admin.analytics.topProducts' | translate }}
           </h3>
           @if (topProducts().length === 0) {
             <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
-              No orders yet.
+              {{ 'admin.analytics.noOrders' | translate }}
             </p>
           } @else {
             @for (row of topProducts(); track row.name) {
@@ -152,7 +153,8 @@ interface ChartBar {
                     >{{ row.name }}</span
                   >
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-                    >{{ row.unitsSold }} sold · {{ price(row.revenueCents) }}</span
+                    >{{ row.unitsSold }} {{ 'admin.analytics.unitsSold' | translate }} ·
+                    {{ price(row.revenueCents) }}</span
                   >
                 </div>
                 <div
@@ -176,7 +178,7 @@ interface ChartBar {
           <h3
             style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            Customer cohort · last 30 days
+            {{ 'admin.analytics.cohortTitle' | translate }}
           </h3>
           <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 16px">
             <div
@@ -184,7 +186,7 @@ interface ChartBar {
             >
               <span
                 style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >Repeat rate</span
+                >{{ 'admin.analytics.repeatRate' | translate }}</span
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
@@ -196,7 +198,7 @@ interface ChartBar {
             >
               <span
                 style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >Avg basket</span
+                >{{ 'admin.analytics.avgBasket' | translate }}</span
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
@@ -208,7 +210,7 @@ interface ChartBar {
             >
               <span
                 style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >New customers</span
+                >{{ 'admin.analytics.newCustomers' | translate }}</span
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
@@ -220,7 +222,7 @@ interface ChartBar {
             >
               <span
                 style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >Pickup SLA</span
+                >{{ 'admin.analytics.pickupSla' | translate }}</span
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"

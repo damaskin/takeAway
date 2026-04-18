@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { User } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,11 +18,18 @@ export class AuthService {
     private readonly otp: OtpService,
     private readonly tokens: TokensService,
     private readonly telegram: TelegramService,
+    private readonly config: ConfigService,
   ) {}
 
   async sendOtp(phone: string): Promise<SendOtpResponseDto> {
     const { code, result } = await this.otp.issue(phone);
     this.otp.deliver(phone, code);
+    // Non-production: echo the code so local/dev clients can display it
+    // instead of asking the user to grep pino logs. Stripped in production
+    // via the explicit check — the DTO field is optional.
+    if (this.config.get<string>('NODE_ENV') !== 'production') {
+      return { ...result, devCode: code };
+    }
     return result;
   }
 

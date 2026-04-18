@@ -1,16 +1,17 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
 type Filter = 'ALL' | 'OPEN' | 'NEAR' | 'FAV';
 
 const FILTER_LABELS: Record<Filter, string> = {
-  ALL: 'All',
-  OPEN: 'Open now',
-  NEAR: 'Nearest',
-  FAV: 'Favorites',
+  ALL: 'web.stores.filters.all',
+  OPEN: 'web.stores.filters.open',
+  NEAR: 'web.stores.filters.near',
+  FAV: 'web.stores.filters.fav',
 };
 
 const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D94B5E'];
@@ -25,7 +26,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
 @Component({
   selector: 'app-stores-list',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <section class="flex" style="height: calc(100vh - 72px); overflow: hidden">
       <!-- Map area -->
@@ -46,7 +47,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
           <span style="color: var(--color-text-secondary); font-size: 18px">🔍</span>
           <input
             type="search"
-            placeholder="Search by district, store, landmark…"
+            [placeholder]="'web.stores.searchPlaceholder' | translate"
             class="flex-1 outline-none bg-transparent"
             style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
           />
@@ -55,7 +56,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
             class="flex items-center justify-center"
             style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
           >
-            Use my location
+            {{ 'web.stores.useLocation' | translate }}
           </button>
         </div>
 
@@ -89,11 +90,11 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
           <h1
             style="font-family: var(--font-display); font-size: 24px; font-weight: 600; color: var(--color-espresso); margin: 0"
           >
-            Nearby stores
+            {{ 'web.stores.title' | translate }}
           </h1>
-          <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
-            >{{ filteredStores().length }} found</span
-          >
+          <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">{{
+            'web.stores.found' | translate: { count: filteredStores().length }
+          }}</span>
         </header>
 
         <!-- Filters -->
@@ -107,7 +108,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
               [style.border]="filter() === f ? '1px solid transparent' : '1px solid var(--color-border)'"
               style="padding: 8px 16px; border-radius: 9999px; font-family: var(--font-sans); font-size: 13px; font-weight: 500"
             >
-              {{ filterLabel(f) }}
+              {{ filterLabel(f) | translate }}
             </button>
           }
         </div>
@@ -133,7 +134,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
                   [style.background]="statusBg(store.status)"
                   [style.color]="statusColor(store.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600"
-                  >{{ statusLabel(store.status) }}</span
+                  >{{ statusLabel(store.status) | translate }}</span
                 >
               </div>
               <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
@@ -141,7 +142,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
               </p>
               <div class="flex items-center" style="gap: 16px">
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                  >⏱ Ready in {{ etaMinutes(store) }} min</span
+                  >⏱ {{ 'common.readyIn' | translate: { min: etaMinutes(store) } }}</span
                 >
                 @if (store.distanceMeters !== null) {
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
@@ -155,7 +156,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
                   class="flex items-center justify-center"
                   style="height: 36px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
                 >
-                  Order from here
+                  {{ 'web.stores.orderHere' | translate }}
                 </button>
               }
             </a>
@@ -164,7 +165,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
             <p
               style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); text-align: center; padding: 40px 0"
             >
-              No stores match this filter.
+              {{ 'web.stores.empty' | translate }}
             </p>
           }
         </div>
@@ -237,10 +238,11 @@ export class StoresListPage implements OnInit {
     };
   }
 
+  /** Returns a translation key; the template runs it through the translate pipe. */
   statusLabel(status: StoreListItem['status']): string {
-    if (status === 'OPEN') return 'Open';
-    if (status === 'OVERLOADED') return 'Busy';
-    return 'Closed';
+    if (status === 'OPEN') return 'web.stores.status.OPEN';
+    if (status === 'OVERLOADED') return 'web.stores.status.OVERLOADED';
+    return 'web.stores.status.CLOSED';
   }
 
   statusBg(status: StoreListItem['status']): string {

@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AdminOrdersApi, type AdminOrderSummary, type OrderStatusString } from '../../core/orders/orders.service';
 
@@ -14,6 +15,7 @@ type StatusFilter = OrderStatus | 'ALL';
 @Component({
   selector: 'app-admin-orders',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -23,11 +25,11 @@ type StatusFilter = OrderStatus | 'ALL';
         <h1
           style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
-          Orders
+          {{ 'admin.orders.title' | translate }}
         </h1>
-        <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-          >{{ filtered().length }} orders</span
-        >
+        <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+          'admin.orders.count' | translate: { count: filtered().length }
+        }}</span>
       </div>
       <div class="flex items-center" style="gap: 8px">
         <div
@@ -37,7 +39,7 @@ type StatusFilter = OrderStatus | 'ALL';
           <span style="color: var(--color-text-tertiary); font-size: 14px">🔍</span>
           <input
             type="search"
-            placeholder="Code, customer, product…"
+            [placeholder]="'admin.orders.searchPlaceholder' | translate"
             (input)="onSearch($event)"
             class="outline-none bg-transparent"
             style="width: 280px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
@@ -50,7 +52,7 @@ type StatusFilter = OrderStatus | 'ALL';
           class="flex items-center"
           style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
         >
-          {{ loading() ? 'Refreshing…' : 'Refresh' }}
+          {{ (loading() ? 'common.refreshing' : 'common.refresh') | translate }}
         </button>
       </div>
     </div>
@@ -66,14 +68,14 @@ type StatusFilter = OrderStatus | 'ALL';
             class="text-center"
             style="padding: 40px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
           >
-            Loading orders…
+            {{ 'common.loading' | translate }}
           </p>
         } @else if (filtered().length === 0) {
           <p
             class="text-center"
             style="padding: 40px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
           >
-            No orders match the current filter.
+            {{ 'admin.orders.empty' | translate }}
           </p>
         } @else {
           <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
@@ -82,37 +84,37 @@ type StatusFilter = OrderStatus | 'ALL';
                 <th
                   style="text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Code
+                  {{ 'admin.orders.columns.code' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Store
+                  {{ 'admin.orders.columns.store' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Items
+                  {{ 'admin.orders.columns.items' | translate }}
                 </th>
                 <th
                   style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Pickup
+                  {{ 'admin.orders.columns.pickup' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Total
+                  {{ 'admin.orders.columns.total' | translate }}
                 </th>
                 <th
                   style="text-align: center; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Status
+                  {{ 'admin.orders.columns.status' | translate }}
                 </th>
                 <th
                   style="text-align: right; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
-                  Placed
+                  {{ 'admin.orders.columns.placed' | translate }}
                 </th>
               </tr>
             </thead>
@@ -143,7 +145,7 @@ type StatusFilter = OrderStatus | 'ALL';
                       [style.background]="statusBg(o.status)"
                       [style.color]="statusColor(o.status)"
                       style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                      >{{ statusLabel(o.status) }}</span
+                      >{{ statusLabel(o.status) | translate }}</span
                     >
                   </td>
                   <td style="padding: 12px 16px; font-size: 12px; color: var(--color-text-tertiary); text-align: right">
@@ -165,7 +167,7 @@ type StatusFilter = OrderStatus | 'ALL';
           <h3
             style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
           >
-            STATUS
+            {{ 'admin.orders.columns.status' | translate }}
           </h3>
           <div class="flex flex-col" style="gap: 4px">
             @for (f of statusFilters; track f.key) {
@@ -177,7 +179,7 @@ type StatusFilter = OrderStatus | 'ALL';
                 [style.color]="activeStatus() === f.key ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
                 style="height: 38px; padding: 0 12px; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 500"
               >
-                <span>{{ f.label }}</span>
+                <span>{{ f.label | translate }}</span>
                 <span style="font-size: 12px; color: var(--color-text-tertiary)">{{ statusCount(f.key) }}</span>
               </button>
             }
@@ -196,13 +198,13 @@ export class AdminOrdersPage implements OnInit {
   readonly orders = signal<AdminOrderSummary[]>([]);
 
   readonly statusFilters: Array<{ key: StatusFilter; label: string }> = [
-    { key: 'ALL', label: 'All orders' },
-    { key: 'PAID', label: 'Queued' },
-    { key: 'ACCEPTED', label: 'Accepted' },
-    { key: 'IN_PROGRESS', label: 'Preparing' },
-    { key: 'READY', label: 'Ready' },
-    { key: 'PICKED_UP', label: 'Picked up' },
-    { key: 'CANCELLED', label: 'Cancelled' },
+    { key: 'ALL', label: 'admin.orders.filters.all' },
+    { key: 'PAID', label: 'admin.orders.status.PAID' },
+    { key: 'ACCEPTED', label: 'admin.orders.status.ACCEPTED' },
+    { key: 'IN_PROGRESS', label: 'admin.orders.status.IN_PROGRESS' },
+    { key: 'READY', label: 'admin.orders.status.READY' },
+    { key: 'PICKED_UP', label: 'admin.orders.status.PICKED_UP' },
+    { key: 'CANCELLED', label: 'admin.orders.status.CANCELLED' },
   ];
 
   readonly filtered = computed(() => {
@@ -244,17 +246,9 @@ export class AdminOrdersPage implements OnInit {
     this.search.set((event.target as HTMLInputElement).value);
   }
 
+  /** Returns a translation key — resolved in the template via | translate. */
   statusLabel(status: OrderStatus): string {
-    return {
-      CREATED: 'New',
-      PAID: 'Queued',
-      ACCEPTED: 'Accepted',
-      IN_PROGRESS: 'Preparing',
-      READY: 'Ready',
-      PICKED_UP: 'Picked up',
-      CANCELLED: 'Cancelled',
-      EXPIRED: 'Expired',
-    }[status];
+    return `admin.orders.status.${status}`;
   }
 
   statusBg(status: OrderStatus): string {

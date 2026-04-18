@@ -25,8 +25,13 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  await app.register(import('@fastify/helmet'), { contentSecurityPolicy: false });
-  await app.register(import('@fastify/compress'));
+  await app.register(import('@fastify/helmet'), {
+    contentSecurityPolicy: false,
+    // Swagger UI iframes the API docs page; COEP blocks its own subresources.
+    crossOriginEmbedderPolicy: false,
+  });
+  const { default: fastifyCompress } = await import('@fastify/compress');
+  await app.register(fastifyCompress);
   app.enableCors({ origin: true, credentials: true });
 
   const swaggerConfig = new DocumentBuilder()
@@ -36,7 +41,10 @@ async function bootstrap(): Promise<void> {
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${globalPrefix}/docs`, app, document);
+  SwaggerModule.setup(`${globalPrefix}/docs`, app, document, {
+    // Keep the token between reloads so `/api/loyalty/me` etc. are one click.
+    swaggerOptions: { persistAuthorization: true },
+  });
 
   const host = process.env['API_HOST'] ?? '0.0.0.0';
   const port = Number(process.env['API_PORT'] ?? process.env['PORT'] ?? 3000);

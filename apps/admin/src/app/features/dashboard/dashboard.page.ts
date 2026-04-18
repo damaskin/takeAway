@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -30,6 +31,7 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     <section style="padding: 32px; display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between" style="gap: 24px">
@@ -37,10 +39,10 @@ interface DashboardOrder {
           <h1
             style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            Welcome back{{ name() ? ', ' + name() : '' }}
+            {{ 'admin.dashboard.title' | translate: { name: name() ? ', ' + name() : '' } }}
           </h1>
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
-            Here's what's happening across your takeAway network today.
+            {{ 'admin.dashboard.subtitle' | translate }}
           </p>
         </div>
         <div class="flex items-center" style="gap: 8px">
@@ -49,14 +51,14 @@ interface DashboardOrder {
             class="flex items-center"
             style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
           >
-            Last 7 days ▾
+            {{ 'admin.dashboard.range' | translate }} ▾
           </button>
           <button
             type="button"
             class="flex items-center"
             style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
           >
-            + New promo
+            {{ 'admin.dashboard.newPromo' | translate }}
           </button>
         </div>
       </header>
@@ -70,7 +72,7 @@ interface DashboardOrder {
           >
             <span
               style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-              >{{ kpi.label }}</span
+              >{{ kpi.label | translate }}</span
             >
             <span
               style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-espresso)"
@@ -99,12 +101,12 @@ interface DashboardOrder {
             <h2
               style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
             >
-              Live orders
+              {{ 'admin.dashboard.liveOrders' | translate }}
             </h2>
             <a
               href="#/orders"
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-caramel)"
-              >View all →</a
+              >{{ 'admin.dashboard.viewAll' | translate }}</a
             >
           </header>
           <div class="flex flex-col" style="gap: 8px">
@@ -134,7 +136,7 @@ interface DashboardOrder {
                     [style.background]="statusBg(o.status)"
                     [style.color]="statusColor(o.status)"
                     style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                    >{{ statusLabel(o.status) }}</span
+                    >{{ statusLabel(o.status) | translate }}</span
                   >
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); min-width: 56px; text-align: right"
@@ -154,7 +156,7 @@ interface DashboardOrder {
           <h2
             style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            Stores performance
+            {{ 'admin.dashboard.storePerf' | translate }}
           </h2>
           <div class="flex flex-col" style="gap: 12px">
             @for (s of storePerf(); track s.name) {
@@ -198,28 +200,28 @@ export class DashboardPage implements OnInit {
     const s = this.summary();
     return [
       {
-        label: 'Revenue today',
+        label: 'admin.dashboard.kpi.revenueToday',
         value: this.price(s?.revenueTodayCents ?? 0),
         delta: s?.deltas['revenue'] ?? '—',
         positive: (s?.deltas['revenue'] ?? '+0%').startsWith('+'),
         accent: 'var(--color-caramel)',
       },
       {
-        label: 'Orders today',
+        label: 'admin.dashboard.kpi.ordersToday',
         value: String(s?.ordersToday ?? 0),
         delta: s?.deltas['orders'] ?? '—',
         positive: (s?.deltas['orders'] ?? '+0%').startsWith('+'),
         accent: 'var(--color-mint)',
       },
       {
-        label: 'Avg pickup time',
+        label: 'admin.dashboard.kpi.pickupTime',
         value: this.formatSeconds(s?.avgPickupSeconds ?? 0),
         delta: s?.deltas['pickup'] ?? '0s',
         positive: (s?.deltas['pickup'] ?? '+0').startsWith('-') || s?.avgPickupSeconds === 0,
         accent: 'var(--color-amber)',
       },
       {
-        label: 'NPS',
+        label: 'admin.dashboard.kpi.nps',
         value: String(s?.nps ?? '—'),
         delta: s?.deltas['nps'] ?? '0',
         positive: true,
@@ -277,12 +279,13 @@ export class DashboardPage implements OnInit {
     return `${m}m ${s}s`;
   }
 
+  /** Returns a translation key; translated in the template with | translate. */
   statusLabel(status: DashboardOrder['status']): string {
     return {
-      READY: 'Ready',
-      IN_PROGRESS: 'Preparing',
-      ACCEPTED: 'Accepted',
-      PAID: 'Queued',
+      READY: 'admin.orders.status.READY',
+      IN_PROGRESS: 'admin.orders.status.IN_PROGRESS',
+      ACCEPTED: 'admin.orders.status.ACCEPTED',
+      PAID: 'admin.orders.status.PAID',
     }[status];
   }
 

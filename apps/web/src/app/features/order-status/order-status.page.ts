@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { TranslatePipe } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -24,7 +25,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
 @Component({
   selector: 'app-order-status',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TranslatePipe],
   template: `
     @if (order(); as o) {
       <section class="max-w-3xl mx-auto px-6 py-10 flex flex-col items-center" style="gap: var(--spacing-lg)">
@@ -34,7 +35,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             Hi{{ firstName() ? ', ' + firstName() : '' }}!
           </h1>
           <p class="mt-2" style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)">
-            {{ heroSubtitle() }}
+            {{ heroSubtitle() | translate }}
           </p>
         </header>
 
@@ -48,7 +49,9 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
           @if (o.status === 'READY') {
             <span style="font-family: var(--font-display); font-size: 48px; font-weight: 700">Ready</span>
           } @else if (o.status === 'CANCELLED') {
-            <span style="font-family: var(--font-display); font-size: 36px; font-weight: 600">Cancelled</span>
+            <span style="font-family: var(--font-display); font-size: 36px; font-weight: 600">{{
+              'web.orderStatus.status.CANCELLED' | translate
+            }}</span>
           } @else if (o.status === 'PICKED_UP') {
             <span style="font-family: var(--font-display); font-size: 40px; font-weight: 700">Thanks!</span>
           } @else {
@@ -149,7 +152,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               text-decoration: none;
             "
           >
-            Open in Maps
+            {{ 'web.orderStatus.openMaps' | translate }}
           </a>
         </article>
 
@@ -168,7 +171,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               transition: background 0.15s;
             "
           >
-            {{ imHereClicked() ? 'We know — see you in a sec ✓' : "I'm here" }}
+            {{ (imHereClicked() ? 'common.confirm' : 'web.orderStatus.iAmHere') | translate }}
           </button>
         }
 
@@ -187,7 +190,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               font-family: var(--font-sans); font-size: 14px; font-weight: 500;
             "
           >
-            Cancel order
+            {{ 'web.orderStatus.cancelOrder' | translate }}
           </button>
         }
 
@@ -221,25 +224,26 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     return name.split(/\s+/)[0] ?? '';
   });
 
+  /** Returns a translation KEY — resolved with the `translate` pipe in the template. */
   readonly heroSubtitle = computed(() => {
     const status = this.order()?.status;
     switch (status) {
       case 'CREATED':
-        return 'Order received';
+        return 'web.orderStatus.status.CREATED';
       case 'PAID':
-        return 'Payment confirmed';
+        return 'web.orderStatus.status.PAID';
       case 'ACCEPTED':
-        return 'Starting your order soon';
+        return 'web.orderStatus.status.ACCEPTED';
       case 'IN_PROGRESS':
-        return 'Preparing your order';
+        return 'web.orderStatus.status.IN_PROGRESS';
       case 'READY':
-        return 'Ready for pickup';
+        return 'web.orderStatus.status.READY';
       case 'PICKED_UP':
-        return 'Enjoy!';
+        return 'web.orderStatus.status.PICKED_UP';
       case 'CANCELLED':
-        return 'Order cancelled';
+        return 'web.orderStatus.status.CANCELLED';
       case 'EXPIRED':
-        return 'Order expired';
+        return 'web.orderStatus.status.EXPIRED';
       default:
         return '';
     }
