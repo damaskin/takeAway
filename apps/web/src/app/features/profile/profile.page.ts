@@ -1,8 +1,10 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import type { LoyaltyAccount } from '@takeaway/shared-types';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
 interface ProfileSection {
   icon: string;
@@ -132,10 +134,17 @@ interface ProfileSection {
     }
   `,
 })
-export class ProfilePage {
+export class ProfilePage implements OnInit {
   readonly store = inject(AuthStore);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly loyaltyApi = inject(LoyaltyService);
+
+  readonly loyalty = signal<LoyaltyAccount | null>(null);
+
+  ngOnInit(): void {
+    this.loyaltyApi.me().subscribe({ next: (acc) => this.loyalty.set(acc) });
+  }
 
   readonly sections: ProfileSection[] = [
     { icon: '👤', label: 'Personal info' },
@@ -155,25 +164,29 @@ export class ProfilePage {
       .join('');
   }
 
-  // Placeholders until loyalty lands in M3.
   points(): number {
-    return 2450;
+    return this.loyalty()?.pointsBalance ?? 0;
   }
 
   tier(): string {
-    return 'Gold';
+    return this.formatTier(this.loyalty()?.tier ?? 'SILVER');
   }
 
   nextTier(): string {
-    return 'Platinum';
+    const next = this.loyalty()?.nextTier;
+    return next ? this.formatTier(next) : 'Signature';
   }
 
   pointsToNextTier(): number {
-    return Math.max(0, 3000 - this.points());
+    return this.loyalty()?.pointsToNextTier ?? 0;
   }
 
   tierProgressPercent(): number {
-    return Math.min(100, Math.round((this.points() / 3000) * 100));
+    return this.loyalty()?.tierProgressPercent ?? 0;
+  }
+
+  private formatTier(t: string): string {
+    return t.charAt(0) + t.slice(1).toLowerCase();
   }
 
   logout(): void {

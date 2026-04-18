@@ -8,7 +8,7 @@
  *   pnpm prisma:seed
  */
 
-import { PrismaClient, VariationType } from '@prisma/client';
+import { PrismaClient, PromoStatus, PromoType, VariationType } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -128,6 +128,8 @@ async function main(): Promise<void> {
     },
   });
 
+  // Variation has no natural unique key so we replace the whole set on each run.
+  await prisma.variation.deleteMany({ where: { productId: latte.id } });
   for (const v of [
     { type: VariationType.SIZE, name: 'Small', priceDeltaCents: 0, isDefault: true, sortOrder: 1 },
     { type: VariationType.SIZE, name: 'Medium', priceDeltaCents: 70, sortOrder: 2 },
@@ -146,7 +148,11 @@ async function main(): Promise<void> {
     { slug: 'vanilla-syrup', name: 'Vanilla syrup', priceDeltaCents: 50, maxCount: 2 },
     { slug: 'caramel-syrup', name: 'Caramel syrup', priceDeltaCents: 50, maxCount: 2 },
   ]) {
-    await prisma.modifier.create({ data: { productId: latte.id, ...m } });
+    await prisma.modifier.upsert({
+      where: { productId_slug: { productId: latte.id, slug: m.slug } },
+      update: { ...m },
+      create: { productId: latte.id, ...m },
+    });
   }
 
   await prisma.product.upsert({
@@ -181,6 +187,115 @@ async function main(): Promise<void> {
       allergens: ['gluten', 'nuts', 'milk'],
     },
   });
+
+  // ── Loyalty + promos ───────────────────────────────────────────────────
+  // Seed a handful of promos matching the admin UI fixtures so the /admin/promo
+  // dashboard shows live data instead of placeholders after the first boot.
+  const promos: Array<{
+    code: string;
+    label: string;
+    type: PromoType;
+    value: number;
+    maxRedemptions?: number;
+    perUserLimit?: number;
+    minSubtotalCents?: number;
+    startsAt: Date;
+    endsAt: Date;
+    status: PromoStatus;
+  }> = [
+    {
+      code: 'WELCOME10',
+      label: 'First-time 10% off',
+      type: PromoType.PERCENT,
+      value: 10,
+      maxRedemptions: 1000,
+      perUserLimit: 1,
+      startsAt: new Date('2026-04-01T00:00:00Z'),
+      endsAt: new Date('2026-06-30T23:59:59Z'),
+      status: PromoStatus.RUNNING,
+    },
+    {
+      code: 'MATCHAHAPPY',
+      label: 'Matcha Happy Hour',
+      type: PromoType.PERCENT,
+      value: 20,
+      maxRedemptions: 500,
+      startsAt: new Date('2026-04-10T00:00:00Z'),
+      endsAt: new Date('2026-04-30T23:59:59Z'),
+      status: PromoStatus.RUNNING,
+    },
+    {
+      code: 'CROISSANT2',
+      label: 'Croissant BOGO',
+      type: PromoType.BOGO,
+      value: 1,
+      maxRedemptions: 200,
+      startsAt: new Date('2026-04-15T00:00:00Z'),
+      endsAt: new Date('2026-05-05T23:59:59Z'),
+      status: PromoStatus.RUNNING,
+    },
+    {
+      code: 'SPRING2026',
+      label: 'Spring points boost (2×)',
+      type: PromoType.POINTS_MULTIPLIER,
+      value: 20, // ×2.0
+      startsAt: new Date('2026-05-01T00:00:00Z'),
+      endsAt: new Date('2026-05-31T23:59:59Z'),
+      status: PromoStatus.SCHEDULED,
+    },
+    {
+      code: 'WINTER5',
+      label: 'Loyalty winter $5',
+      type: PromoType.FIXED,
+      value: 500, // cents
+      minSubtotalCents: 1500,
+      startsAt: new Date('2025-12-01T00:00:00Z'),
+      endsAt: new Date('2026-01-15T23:59:59Z'),
+      status: PromoStatus.EXPIRED,
+    },
+  ];
+
+  for (const p of promos) {
+    await prisma.promo.upsert({
+      where: { brandId_code: { brandId: brand.id, code: p.code } },
+      update: {
+        label: p.label,
+        type: p.type,
+        value: p.value,
+        maxRedemptions: p.maxRedemptions ?? 0,
+        perUserLimit: p.perUserLimit ?? 0,
+        minSubtotalCents: p.minSubtotalCents ?? null,
+        startsAt: p.startsAt,
+        endsAt: p.endsAt,
+        status: p.status,
+        currency: brand.currency,
+      },
+      create: {
+        brandId: brand.id,
+        code: p.code,
+        label: p.label,
+        type: p.type,
+        value: p.value,
+        maxRedemptions: p.maxRedemptions ?? 0,
+        perUserLimit: p.perUserLimit ?? 0,
+        minSubtotalCents: p.minSubtotalCents ?? null,
+        startsAt: p.startsAt,
+        endsAt: p.endsAt,
+        status: p.status,
+        currency: brand.currency,
+      },
+    });
+  }
+
+  // Give the Super Admin a loyalty account so /loyalty/me works out of the box.
+  const admin = await prisma.user.findUnique({ where: { phone: '+10000000001' } });
+  if (admin) {
+    await prisma.loyaltyAccount.upsert({
+      where: { userId: admin.id },
+      update: {},
+      create: { userId: admin.id },
+    });
+  }
 }
 
 main()

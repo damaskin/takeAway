@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
@@ -39,6 +40,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly config: StripeConfig,
     private readonly realtime: RealtimeGateway,
+    private readonly orders: OrdersService,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
   ) {}
 
@@ -150,6 +152,20 @@ export class PaymentsService {
       },
       updatedOrder.userId,
     );
+
+    // Credit loyalty points. Fire-and-forget: a ledger hiccup must not roll
+    // back a successful payment.
+    if (updatedOrder.status === 'PAID') {
+      try {
+        await this.orders.creditLoyaltyForPayment(updatedOrder.id);
+      } catch (err) {
+        this.logger.error(
+          `[loyalty] failed to credit points for order=${updatedOrder.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   private async onPaymentFailed(intent: any): Promise<void> {

@@ -20,6 +20,9 @@ export class StoreListItemDto {
   id!: string;
 
   @ApiProperty()
+  brandId!: string;
+
+  @ApiProperty()
   slug!: string;
 
   @ApiProperty()

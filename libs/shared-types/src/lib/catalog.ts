@@ -13,6 +13,7 @@ export type { PickupPointType };
 
 export interface StoreListItem {
   id: string;
+  brandId: string;
   slug: string;
   name: string;
   addressLine: string;

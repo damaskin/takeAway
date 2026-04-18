@@ -46,6 +46,22 @@ export interface CreateOrderInput {
   customerName?: string;
   customerPhone?: string;
   notes?: string;
+  /** Promo / coupon code the customer typed at checkout, if any. */
+  couponCode?: string;
+}
+
+export interface OrderSummary {
+  id: string;
+  orderCode: string;
+  status: OrderStatusString;
+  pickupMode: 'ASAP' | 'SCHEDULED';
+  pickupAt: string;
+  totalCents: number;
+  currency: string;
+  storeId: string;
+  storeName: string;
+  itemCount: number;
+  createdAt: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -67,5 +83,24 @@ export class OrdersApi {
 
   createPaymentIntent(orderId: string): Observable<{ clientSecret: string }> {
     return this.http.post<{ clientSecret: string }>(`${this.api.baseUrl}/payments/intent`, { orderId });
+  }
+
+  listMine(group: 'ACTIVE' | 'HISTORY' | 'ALL' = 'ALL', take = 20): Observable<OrderSummary[]> {
+    return this.http.get<OrderSummary[]>(`${this.api.baseUrl}/me/orders?group=${group}&take=${take}`);
+  }
+
+  listAdmin(
+    params: {
+      brandId?: string;
+      storeId?: string;
+      status?: string;
+      take?: number;
+    } = {},
+  ): Observable<OrderSummary[]> {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    return this.http.get<OrderSummary[]>(`${this.api.baseUrl}/admin/orders${qs ? '?' + qs : ''}`);
   }
 }
