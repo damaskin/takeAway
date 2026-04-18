@@ -90,6 +90,56 @@ enum DietTag {
   SUGAR_FREE
 }
 
+enum FulfillmentType {
+  PICKUP
+  DINE_IN
+  DELIVERY
+}
+
+enum PickupMode {
+  ASAP
+  SCHEDULED
+}
+
+enum OrderStatus {
+  CREATED
+  PAID
+  ACCEPTED
+  IN_PROGRESS
+  READY
+  PICKED_UP
+  CANCELLED
+  EXPIRED
+}
+
+enum OrderEventType {
+  STATUS_CHANGED
+  ETA_UPDATED
+  CUSTOMER_NEARBY
+  CUSTOMER_HERE
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  REFUND_ISSUED
+  CANCELLED
+  NOTE
+}
+
+enum PaymentProvider {
+  STRIPE
+  TELEGRAM
+  APPLE_PAY
+  GOOGLE_PAY
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,6 +162,8 @@ model User {
   devices       Device[]
   oauthAccounts OAuthAccount[]
   otpRequests   OtpRequest[]
+  carts         Cart[]
+  orders        Order[]
 
   @@index([createdAt])
 }
@@ -209,6 +261,8 @@ model Store {
   brand           Brand              @relation(fields: [brandId], references: [id], onDelete: Restrict)
   workingHours    StoreWorkingHour[]
   stopListEntries StopListEntry[]
+  carts           Cart[]
+  orders          Order[]
 
   @@index([brandId])
   @@index([country, city])
@@ -287,6 +341,7 @@ model Product {
   variations      Variation[]
   modifiers       Modifier[]
   stopListEntries StopListEntry[]
+  cartItems       CartItem[]
 
   @@unique([brandId, slug])
   @@index([categoryId, sortOrder])
@@ -338,4 +393,144 @@ model StopListEntry {
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, productId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cart & Order
+//
+// Carts are transient per (user, store). ETA is recomputed on every mutation
+// based on store load + item prep times + modifier deltas.
+//
+// Once an order is placed, items are snapshotted into OrderItem so that
+// subsequent menu/price edits do not affect placed orders.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Cart {
+  id            String   @id @default(cuid())
+  userId        String
+  storeId       String
+  subtotalCents Int      @default(0)
+  etaSeconds    Int      @default(0)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@unique([userId, storeId])
+  @@index([userId])
+}
+
+model CartItem {
+  id              String   @id @default(cuid())
+  cartId          String
+  productId       String
+  quantity        Int      @default(1)
+  // Resolved selections captured at add time so the cart can render without
+  // a round-trip to the product catalog. Refreshed on ETA/price recompute.
+  variationIds    String[] @default([])
+  // Map of { modifierId: count } as a small JSON blob. Avoids a join table
+  // for a tiny list and keeps writes atomic.
+  modifiersJson   Json     @default("{}")
+  unitPriceCents  Int
+  unitPrepSeconds Int
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([cartId])
+}
+
+model Order {
+  id              String          @id @default(cuid())
+  userId          String
+  storeId         String
+  status          OrderStatus     @default(CREATED)
+  fulfillmentType FulfillmentType @default(PICKUP)
+  pickupMode      PickupMode      @default(ASAP)
+  // UTC. For ASAP it's the moment we expect to hand it over.
+  pickupAt        DateTime
+  subtotalCents   Int
+  discountCents   Int             @default(0)
+  taxCents        Int             @default(0)
+  totalCents      Int
+  currency        Currency
+  // 4-digit human-readable code shown to the customer and barista.
+  orderCode       String          @unique
+  // Opaque token embedded in the pickup QR; independent of the short code.
+  qrToken         String          @unique
+  paymentIntentId String?
+  customerName    String?
+  customerPhone   String?
+  notes           String?
+  couponCode      String?
+  // Status timeline — denormalized from OrderEvent for quick queries.
+  createdAt       DateTime        @default(now())
+  acceptedAt      DateTime?
+  startedAt       DateTime?
+  readyAt         DateTime?
+  pickedUpAt      DateTime?
+  cancelledAt     DateTime?
+  expiredAt       DateTime?
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  store    Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  items    OrderItem[]
+  events   OrderEvent[]
+  payments Payment[]
+
+  @@index([userId, createdAt])
+  @@index([storeId, status])
+  @@index([status, pickupAt])
+}
+
+model OrderItem {
+  id              String @id @default(cuid())
+  orderId         String
+  // Full product/variations/modifiers snapshot at the moment of order
+  // creation so price/stock edits do not mutate history.
+  productSnapshot Json
+  quantity        Int
+  unitPriceCents  Int
+  totalCents      Int
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model OrderEvent {
+  id        String         @id @default(cuid())
+  orderId   String
+  type      OrderEventType
+  actorId   String?
+  payload   Json?
+  createdAt DateTime       @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}
+
+model Payment {
+  id            String          @id @default(cuid())
+  orderId       String
+  provider      PaymentProvider @default(STRIPE)
+  providerRef   String? // Stripe PaymentIntent id, Telegram charge id, etc.
+  status        PaymentStatus   @default(PENDING)
+  amountCents   Int
+  refundedCents Int             @default(0)
+  currency      Currency
+  rawJson       Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([providerRef])
 }
