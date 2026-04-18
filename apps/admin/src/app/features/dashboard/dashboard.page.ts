@@ -1,6 +1,8 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 
+import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
 
 interface KpiCard {
   label: string;
@@ -61,7 +63,7 @@ interface DashboardOrder {
 
       <!-- KPI grid -->
       <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px">
-        @for (kpi of kpis; track kpi.label) {
+        @for (kpi of kpis(); track kpi.label) {
           <article
             class="flex flex-col"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 10px"
@@ -106,7 +108,7 @@ interface DashboardOrder {
             >
           </header>
           <div class="flex flex-col" style="gap: 8px">
-            @for (o of liveOrders; track o.code) {
+            @for (o of liveOrders(); track o.code) {
               <div
                 class="flex items-center justify-between"
                 style="padding: 12px 14px; border: 1px solid var(--color-border-light); border-radius: 14px; gap: 16px"
@@ -155,7 +157,7 @@ interface DashboardOrder {
             Stores performance
           </h2>
           <div class="flex flex-col" style="gap: 12px">
-            @for (s of storePerf; track s.name) {
+            @for (s of storePerf(); track s.name) {
               <div class="flex flex-col" style="gap: 6px">
                 <div class="flex items-center justify-between">
                   <span
@@ -183,32 +185,96 @@ interface DashboardOrder {
     </section>
   `,
 })
-export class DashboardPage {
+export class DashboardPage implements OnInit {
   private readonly store = inject(AuthStore);
+  private readonly analytics = inject(AnalyticsApi);
+  private readonly orders = inject(AdminOrdersApi);
 
-  readonly kpis: KpiCard[] = [
-    { label: 'Revenue today', value: '$8,412', delta: '+12.3%', positive: true, accent: 'var(--color-caramel)' },
-    { label: 'Orders today', value: '412', delta: '+4.1%', positive: true, accent: 'var(--color-mint)' },
-    { label: 'Avg pickup time', value: '6m 20s', delta: '+14s', positive: false, accent: 'var(--color-amber)' },
-    { label: 'NPS', value: '82', delta: '+3', positive: true, accent: 'var(--color-cat-signature)' },
-  ];
+  readonly summary = signal<DashboardSummary | null>(null);
+  readonly liveRaw = signal<AdminOrderSummary[]>([]);
+  readonly storePerfRaw = signal<StorePerformance[]>([]);
 
-  readonly liveOrders: DashboardOrder[] = [
-    { code: '2471', product: 'Caramel latte · Large', store: 'Downtown Hub', status: 'IN_PROGRESS', minutes: 3 },
-    { code: '2472', product: 'Avocado toast + tea', store: 'Marina Bay', status: 'ACCEPTED', minutes: 5 },
-    { code: '2473', product: 'Double espresso', store: 'Airport T3', status: 'READY', minutes: 0 },
-    { code: '2474', product: 'Matcha oat + croissant', store: 'Downtown Hub', status: 'PAID', minutes: 8 },
-  ];
+  readonly kpis = computed<KpiCard[]>(() => {
+    const s = this.summary();
+    return [
+      {
+        label: 'Revenue today',
+        value: this.price(s?.revenueTodayCents ?? 0),
+        delta: s?.deltas['revenue'] ?? '—',
+        positive: (s?.deltas['revenue'] ?? '+0%').startsWith('+'),
+        accent: 'var(--color-caramel)',
+      },
+      {
+        label: 'Orders today',
+        value: String(s?.ordersToday ?? 0),
+        delta: s?.deltas['orders'] ?? '—',
+        positive: (s?.deltas['orders'] ?? '+0%').startsWith('+'),
+        accent: 'var(--color-mint)',
+      },
+      {
+        label: 'Avg pickup time',
+        value: this.formatSeconds(s?.avgPickupSeconds ?? 0),
+        delta: s?.deltas['pickup'] ?? '0s',
+        positive: (s?.deltas['pickup'] ?? '+0').startsWith('-') || s?.avgPickupSeconds === 0,
+        accent: 'var(--color-amber)',
+      },
+      {
+        label: 'NPS',
+        value: String(s?.nps ?? '—'),
+        delta: s?.deltas['nps'] ?? '0',
+        positive: true,
+        accent: 'var(--color-cat-signature)',
+      },
+    ];
+  });
 
-  readonly storePerf = [
-    { name: 'Downtown Hub', value: '$3,120', percent: 92 },
-    { name: 'Marina Bay', value: '$2,580', percent: 78 },
-    { name: 'Airport T3', value: '$1,640', percent: 54 },
-    { name: 'Parkside', value: '$1,072', percent: 38 },
-  ];
+  readonly liveOrders = computed<DashboardOrder[]>(() =>
+    this.liveRaw()
+      .slice(0, 5)
+      .map((o) => ({
+        code: o.orderCode,
+        product: `Order · ${o.itemCount} items`,
+        store: o.storeName,
+        status: (['READY', 'IN_PROGRESS', 'ACCEPTED'].includes(o.status)
+          ? o.status
+          : 'PAID') as DashboardOrder['status'],
+        minutes: Math.max(0, Math.round((new Date(o.pickupAt).getTime() - Date.now()) / 60_000)),
+      })),
+  );
+
+  readonly storePerf = computed(() => {
+    const rows = this.storePerfRaw();
+    const max = Math.max(1, ...rows.map((r) => r.revenueCents));
+    return rows.slice(0, 6).map((r) => ({
+      name: r.storeName,
+      value: this.price(r.revenueCents),
+      percent: Math.round((r.revenueCents / max) * 100),
+    }));
+  });
+
+  ngOnInit(): void {
+    this.analytics.summary().subscribe({ next: (s) => this.summary.set(s) });
+    this.orders.list({ take: 10 }).subscribe({
+      next: (list) => this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
+    });
+    this.analytics.storePerformance(14).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
+  }
 
   name(): string {
     return this.store.user()?.name ?? '';
+  }
+
+  price(cents: number): string {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(
+      cents / 100,
+    );
+  }
+
+  formatSeconds(sec: number): string {
+    if (!sec) return '—';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s}s`;
   }
 
   statusLabel(status: DashboardOrder['status']): string {

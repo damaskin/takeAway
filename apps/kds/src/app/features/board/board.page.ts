@@ -3,6 +3,7 @@ import { interval, type Subscription } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { KdsApi, type KdsOrder, type KdsOrderStatus } from '../../core/kds/kds.service';
+import { KdsRealtimeService, type KdsOrderChanged } from '../../core/realtime/realtime.service';
 import { StoresApi, type StoreSummary } from '../../core/stores/stores.service';
 
 type Column = 'NEW' | 'PREPARING' | 'READY';
@@ -227,6 +228,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
 export class KdsBoardPage implements OnInit, OnDestroy {
   private readonly api = inject(KdsApi);
   private readonly storesApi = inject(StoresApi);
+  private readonly realtime = inject(KdsRealtimeService);
   readonly authStore = inject(AuthStore);
 
   readonly columns: Array<{ key: Column }> = [{ key: 'NEW' }, { key: 'PREPARING' }, { key: 'READY' }];
@@ -243,7 +245,9 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   );
 
   private tickSub: Subscription | null = null;
+  /** Safety-net slow poll (30 s). Primary refresh path is the WS subscription. */
   private pollSub: Subscription | null = null;
+  private detachWs: (() => void) | null = null;
 
   ngOnInit(): void {
     this.storesApi.list().subscribe({
@@ -253,21 +257,47 @@ export class KdsBoardPage implements OnInit, OnDestroy {
         if (first) {
           this.selectedStoreId.set(first.id);
           this.refresh();
+          this.wireRealtime(first.id);
         }
       },
     });
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));
-    this.pollSub = interval(5000).subscribe(() => this.refresh());
+    this.pollSub = interval(30_000).subscribe(() => this.refresh());
   }
 
   ngOnDestroy(): void {
     this.tickSub?.unsubscribe();
     this.pollSub?.unsubscribe();
+    this.detachWs?.();
   }
 
   onStoreChange(event: Event): void {
-    this.selectedStoreId.set((event.target as HTMLSelectElement).value);
+    const id = (event.target as HTMLSelectElement).value;
+    this.selectedStoreId.set(id);
     this.refresh();
+    this.wireRealtime(id);
+  }
+
+  private wireRealtime(storeId: string): void {
+    this.detachWs?.();
+    this.detachWs = this.realtime.subscribeToStore(storeId, (event) => this.applyWsEvent(event));
+  }
+
+  private applyWsEvent(event: KdsOrderChanged): void {
+    const OPEN: KdsOrderStatus[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY'];
+    this.orders.update((list) => {
+      if (event.kind === 'removed') {
+        return list.filter((o) => o.id !== event.orderId);
+      }
+      if (!event.order) return list;
+      const incoming = event.order as unknown as KdsOrder;
+      // Drop closed orders, otherwise upsert by id.
+      if (!OPEN.includes(incoming.status)) {
+        return list.filter((o) => o.id !== incoming.id);
+      }
+      const exists = list.some((o) => o.id === incoming.id);
+      return exists ? list.map((o) => (o.id === incoming.id ? incoming : o)) : [...list, incoming];
+    });
   }
 
   ordersFor(col: Column): KdsOrder[] {
