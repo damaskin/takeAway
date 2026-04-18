@@ -1,46 +1,57 @@
 import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterOutlet } from '@angular/router';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 
+/**
+ * Admin layout — pencil F52Ar sidebar + 64px foam top bar.
+ *
+ * Top bar: 64px height, 32px horizontal padding, border-bottom light.
+ * Main content area inherits cream background and lets each page set its own padding.
+ */
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, AdminSidebarComponent],
   template: `
-    <div class="flex min-h-screen" style="background: var(--color-foam); color: var(--color-espresso)">
-      <aside class="w-60 shrink-0 p-4 border-r flex flex-col gap-2" style="border-color: var(--color-latte)">
-        <div class="px-2 mb-4">
-          <span class="text-2xl" style="font-family: var(--font-display)">takeAway</span>
-          <span class="block text-xs uppercase tracking-widest" style="opacity: 0.5">admin</span>
-        </div>
-        <a
-          routerLink="/dashboard"
-          routerLinkActive="bg-[var(--color-latte)]"
-          class="px-3 py-2 rounded-lg hover:bg-[var(--color-latte)]/50"
-          >Dashboard</a
-        >
-        <a
-          routerLink="/menu"
-          routerLinkActive="bg-[var(--color-latte)]"
-          class="px-3 py-2 rounded-lg hover:bg-[var(--color-latte)]/50"
-          >Menu</a
-        >
-        <a
-          routerLink="/stores"
-          routerLinkActive="bg-[var(--color-latte)]"
-          class="px-3 py-2 rounded-lg hover:bg-[var(--color-latte)]/50"
-          >Stores</a
-        >
-      </aside>
+    <div class="flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
+      <app-admin-sidebar />
 
-      <div class="flex-1 flex flex-col">
-        <header class="h-14 flex items-center justify-between px-6 border-b" style="border-color: var(--color-latte)">
-          <span class="text-sm" style="opacity: 0.6">{{ userName() }} · {{ userRole() }}</span>
-          <button type="button" (click)="logout()" class="text-sm hover:underline">Sign out</button>
+      <div class="flex-1 flex flex-col min-w-0">
+        <header
+          class="flex items-center justify-between"
+          style="height: 64px; padding: 0 32px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+        >
+          <div class="flex items-center" style="gap: 10px">
+            <span
+              class="flex items-center justify-center"
+              style="width: 34px; height: 34px; border-radius: 9999px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-sans); font-size: 13px; font-weight: 700"
+            >
+              {{ initials() }}
+            </span>
+            <div class="flex flex-col">
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                >{{ userName() }}</span
+              >
+              <span
+                style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px"
+                >{{ userRole() }}</span
+              >
+            </div>
+          </div>
+          <button
+            type="button"
+            (click)="logout()"
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+          >
+            Sign out
+          </button>
         </header>
-        <main class="p-8 flex-1 overflow-auto">
+
+        <main class="flex-1 overflow-auto" style="background: var(--color-cream)">
           <router-outlet />
         </main>
       </div>
@@ -59,6 +70,16 @@ export class AdminLayoutPage {
 
   userRole(): string {
     return this.store.user()?.role ?? '';
+  }
+
+  initials(): string {
+    const name = this.userName();
+    return name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? '')
+      .join('');
   }
 
   logout(): void {
