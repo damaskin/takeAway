@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -7,7 +9,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 @Component({
   selector: 'app-web-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LanguageSwitcherComponent],
   template: `
     <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-text-primary)">
       <!-- Top nav — pencil L4k2D -->
@@ -19,7 +21,7 @@ import { AuthStore } from '../../core/auth/auth.store';
           <a routerLink="/" class="flex items-center gap-2">
             <span
               style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
-              >takeAway</span
+              >{{ 'common.brand' | translate }}</span
             >
           </a>
 
@@ -30,30 +32,31 @@ import { AuthStore } from '../../core/auth/auth.store';
               [routerLinkActiveOptions]="{ exact: false }"
               class="opacity-70 hover:opacity-100"
               style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >Menu</a
+              >{{ 'nav.menu' | translate }}</a
             >
             <a
               routerLink="/stores"
               routerLinkActive="opacity-100"
               class="opacity-70 hover:opacity-100"
               style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >Stores</a
+              >{{ 'nav.stores' | translate }}</a
             >
             <a
               href="#how-it-works"
               class="opacity-70 hover:opacity-100"
               style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >About</a
+              >{{ 'nav.about' | translate }}</a
             >
             <a
               href="#loyalty"
               class="opacity-70 hover:opacity-100"
               style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >Loyalty</a
+              >{{ 'nav.loyalty' | translate }}</a
             >
           </nav>
 
           <div class="flex items-center" style="gap: 12px">
+            <app-language-switcher />
             @if (isAuthed()) {
               <a
                 routerLink="/profile"
@@ -66,21 +69,21 @@ import { AuthStore } from '../../core/auth/auth.store';
                 (click)="logout()"
                 style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
               >
-                Sign out
+                {{ 'common.signOut' | translate }}
               </button>
             } @else {
               <a
                 routerLink="/login"
                 class="flex items-center justify-center"
                 style="height: 42px; padding: 0 20px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                >Sign in</a
+                >{{ 'common.signIn' | translate }}</a
               >
             }
             <a
               routerLink="/menu"
               class="flex items-center justify-center"
               style="height: 42px; padding: 0 20px; background: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: white"
-              >Order</a
+              >{{ 'common.order' | translate }}</a
             >
           </div>
         </div>

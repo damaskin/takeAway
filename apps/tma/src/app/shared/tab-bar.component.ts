@@ -1,16 +1,17 @@
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { TranslatePipe } from '@ngx-translate/core';
 
 /**
  * TMA bottom tab bar — pencil tmaTabBar (kaqJQ/vtZXk/05LjB/Do3R7).
  *
- * 56px foam bar with 4 tabs (Home · Stores · Orders · Profile).
+ * 56px foam bar with 4 tabs ({{ 'nav.home' | translate }} · {{ 'nav.stores' | translate }} · {{ 'nav.orders' | translate }} · {{ 'nav.profile' | translate }}).
  * Active tab uses caramel icon + label, inactive uses text-tertiary.
  */
 @Component({
   selector: 'app-tma-tab-bar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, RouterLinkActive, TranslatePipe],
   template: `
     <nav
       class="fixed left-0 right-0 bottom-0 flex items-center justify-around"
@@ -24,7 +25,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         style="gap: 2px"
       >
         <span style="font-size: 18px">🏠</span>
-        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">Home</span>
+        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">{{
+          'nav.home' | translate
+        }}</span>
       </a>
       <a
         routerLink="/stores"
@@ -33,7 +36,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         style="gap: 2px"
       >
         <span style="font-size: 18px">📍</span>
-        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">Stores</span>
+        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">{{
+          'nav.stores' | translate
+        }}</span>
       </a>
       <a
         routerLink="/orders"
@@ -42,7 +47,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         style="gap: 2px"
       >
         <span style="font-size: 18px">🧾</span>
-        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">Orders</span>
+        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">{{
+          'nav.orders' | translate
+        }}</span>
       </a>
       <a
         routerLink="/profile"
@@ -51,7 +58,9 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
         style="gap: 2px"
       >
         <span style="font-size: 18px">👤</span>
-        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">Profile</span>
+        <span style="font-family: var(--font-sans); font-size: 10px; font-weight: 600">{{
+          'nav.profile' | translate
+        }}</span>
       </a>
     </nav>
   `,

@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 
@@ -19,27 +20,28 @@ type Step = 'phone' | 'code';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, TranslatePipe],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
       <!-- Left column: form -->
       <div class="flex flex-col justify-center" style="flex: 1; padding: 64px 80px; gap: 40px">
-        <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-caramel)"
-          >takeAway</span
+        <span
+          style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-caramel)"
+          >{{ 'common.brand' | translate }}</span
         >
 
         <div class="flex flex-col" style="gap: 8px">
           <h1
             style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            {{ step() === 'phone' ? 'Welcome back' : 'Enter the code' }}
+            {{ (step() === 'phone' ? 'web.auth.welcomeBack' : 'web.auth.enterCode') | translate }}
           </h1>
           <p style="font-family: var(--font-sans); font-size: 16px; color: var(--color-text-secondary); margin: 0">
-            {{
-              step() === 'phone'
-                ? 'Sign in with your phone number'
-                : 'We sent a 6-digit code to ' + phoneForm.controls.phone.value
-            }}
+            @if (step() === 'phone') {
+              {{ 'web.auth.signInPhone' | translate }}
+            } @else {
+              {{ 'web.auth.codeSentTo' | translate: { phone: phoneForm.controls.phone.value } }}
+            }
           </p>
         </div>
 
@@ -49,7 +51,7 @@ type Step = 'phone' | 'code';
               <label class="flex flex-col" style="gap: 8px">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-                  >Phone number</span
+                  >{{ 'web.auth.phoneLabel' | translate }}</span
                 >
                 <div
                   class="flex items-center"
@@ -75,15 +77,15 @@ type Step = 'phone' | 'code';
                 class="flex items-center justify-center disabled:opacity-50"
                 style="height: 52px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 16px; font-weight: 600"
               >
-                {{ loading() ? 'Sending…' : 'Continue' }}
+                {{ (loading() ? 'web.auth.sending' : 'web.auth.continue') | translate }}
               </button>
 
               <!-- Divider -->
               <div class="flex items-center" style="gap: 12px">
                 <span style="flex: 1; height: 1px; background: var(--color-border-light)"></span>
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-                  >or</span
-                >
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+                  'web.auth.or' | translate
+                }}</span>
                 <span style="flex: 1; height: 1px; background: var(--color-border-light)"></span>
               </div>
 
@@ -95,7 +97,7 @@ type Step = 'phone' | 'code';
                   class="flex items-center justify-center"
                   style="height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; gap: 8px"
                 >
-                  Continue with Apple
+                  {{ 'web.auth.signInApple' | translate }}
                 </button>
                 <button
                   type="button"
@@ -103,7 +105,7 @@ type Step = 'phone' | 'code';
                   class="flex items-center justify-center"
                   style="height: 48px; background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; gap: 8px"
                 >
-                  G Continue with Google
+                  G {{ 'web.auth.signInGoogle' | translate }}
                 </button>
               </div>
             </form>
@@ -112,7 +114,7 @@ type Step = 'phone' | 'code';
               <label class="flex flex-col" style="gap: 8px">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-                  >6-digit code</span
+                  >{{ 'web.auth.enterCode' | translate }}</span
                 >
                 <input
                   formControlName="code"
@@ -131,14 +133,14 @@ type Step = 'phone' | 'code';
                 class="flex items-center justify-center disabled:opacity-50"
                 style="height: 52px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 16px; font-weight: 600"
               >
-                {{ loading() ? 'Verifying…' : 'Sign in' }}
+                {{ (loading() ? 'web.auth.sendingSignIn' : 'common.signIn') | translate }}
               </button>
               <button
                 type="button"
                 (click)="step.set('phone')"
                 style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
               >
-                ← Change number
+                {{ 'web.auth.changeNumber' | translate }}
               </button>
             </form>
           }
@@ -151,7 +153,7 @@ type Step = 'phone' | 'code';
         </div>
 
         <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
-          By continuing you agree to our Terms and Privacy Policy.
+          {{ 'web.auth.agreement' | translate }}
         </p>
       </div>
 
@@ -161,13 +163,13 @@ type Step = 'phone' | 'code';
         class="hidden md:flex items-end"
       >
         <div style="padding: 48px; color: white">
-          <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1.2"
-            >Pre-order. Skip the queue. Pick it up.</span
-          >
+          <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1.2">{{
+            'web.home.hero.title' | translate
+          }}</span>
           <p
             style="margin-top: 12px; font-family: var(--font-sans); font-size: 14px; color: rgba(255, 255, 255, 0.85); line-height: 1.5"
           >
-            Your drink waits for you, not the other way around.
+            {{ 'web.home.hero.subtitle' | translate }}
           </p>
         </div>
       </div>

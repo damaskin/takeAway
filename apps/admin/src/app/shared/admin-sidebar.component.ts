@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { TranslatePipe } from '@ngx-translate/core';
 
 interface NavItem {
   icon: string;
@@ -20,7 +21,7 @@ interface NavItem {
 @Component({
   selector: 'app-admin-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive],
+  imports: [RouterLink, RouterLinkActive, TranslatePipe],
   template: `
     <aside
       class="flex flex-col"
@@ -45,7 +46,7 @@ interface NavItem {
           style="height: 42px; padding: 0 12px; border-radius: 10px; gap: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
         >
           <span class="admin-nav-icon" style="font-size: 18px">{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
+          <span>{{ item.label | translate }}</span>
         </a>
       }
     </aside>
@@ -71,11 +72,11 @@ interface NavItem {
 })
 export class AdminSidebarComponent {
   readonly navItems: NavItem[] = [
-    { icon: '▦', label: 'Dashboard', link: '/dashboard' },
-    { icon: '🍽', label: 'Menu', link: '/menu' },
-    { icon: '🏬', label: 'Stores', link: '/stores' },
-    { icon: '🧾', label: 'Orders', link: '/orders' },
-    { icon: '🎟', label: 'Promo', link: '/promo' },
-    { icon: '📊', label: 'Analytics', link: '/analytics' },
+    { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard' },
+    { icon: '🍽', label: 'admin.nav.menu', link: '/menu' },
+    { icon: '🏬', label: 'admin.nav.stores', link: '/stores' },
+    { icon: '🧾', label: 'admin.nav.orders', link: '/orders' },
+    { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
+    { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
   ];
 }
