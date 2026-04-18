@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -8,118 +8,236 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
+type PaymentMethod = 'APPLE_PAY' | 'GOOGLE_PAY' | 'CARD';
+
+interface Step {
+  n: number;
+  label: string;
+  state: 'current' | 'done' | 'upcoming';
+}
 
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, RouterLink],
   template: `
-    <section class="max-w-xl mx-auto px-4 py-10">
-      <h1 class="text-3xl mb-8" style="font-family: var(--font-display)">Checkout</h1>
+    <section class="min-h-screen">
+      <header
+        class="flex items-center justify-center gap-6 py-4"
+        style="border-bottom: 1px solid var(--color-border-light); background: var(--color-foam)"
+      >
+        @for (step of steps(); track step.n; let last = $last) {
+          <div class="flex items-center gap-2">
+            <span
+              class="flex items-center justify-center"
+              [style.background]="step.state === 'upcoming' ? 'transparent' : 'var(--color-caramel)'"
+              [style.border]="step.state === 'upcoming' ? '1.5px solid var(--color-border)' : 'none'"
+              [style.color]="step.state === 'upcoming' ? 'var(--color-text-tertiary)' : 'var(--color-foam)'"
+              style="width: 28px; height: 28px; border-radius: 999px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+              >{{ step.n }}</span
+            >
+            <span
+              [style.color]="step.state === 'upcoming' ? 'var(--color-text-tertiary)' : 'var(--color-caramel)'"
+              style="font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+              >{{ step.label }}</span
+            >
+          </div>
+          @if (!last) {
+            <span
+              [style.background]="step.state === 'done' ? 'var(--color-caramel)' : 'var(--color-border)'"
+              style="width: 32px; height: 2px; border-radius: 1px"
+            ></span>
+          }
+        }
+      </header>
 
       @if (!authStore.isAuthenticated()) {
-        <p class="p-4 mb-6" style="background: var(--color-amber); color: white; border-radius: var(--radius-card)">
+        <p
+          class="max-w-xl mx-auto my-10 p-4 text-center"
+          style="background: var(--color-amber); color: var(--color-foam); border-radius: 16px"
+        >
           Please <a routerLink="/login" class="underline">sign in</a> to place an order.
         </p>
       }
 
       @if (cart(); as c) {
         @if (c.items.length === 0) {
-          <p style="opacity: 0.6">Your cart is empty. <a routerLink="/menu" class="underline">Browse the menu</a>.</p>
+          <p class="text-center mt-10" style="color: var(--color-text-secondary)">
+            Your cart is empty. <a routerLink="/menu" class="underline">Browse the menu</a>.
+          </p>
         } @else {
-          <section
-            class="mb-6 p-4"
-            style="background: var(--color-foam); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
+          <div
+            class="flex flex-col items-center"
+            style="gap: var(--spacing-xl); padding: var(--spacing-2xl) var(--spacing-base)"
           >
-            <h2 class="text-xl mb-3" style="font-family: var(--font-display)">Pickup time</h2>
+            <h1
+              style="font-family: var(--font-display); font-size: 32px; font-weight: 600; color: var(--color-espresso); text-align: center"
+            >
+              When are you coming?
+            </h1>
 
-            <div class="flex gap-2 mb-4">
-              <button
-                type="button"
-                (click)="selectMode('ASAP')"
-                class="flex-1 px-4 py-3 border text-sm"
-                [style.background]="mode() === 'ASAP' ? 'var(--color-espresso)' : 'transparent'"
-                [style.color]="mode() === 'ASAP' ? 'white' : 'var(--color-espresso)'"
-                style="border-color: var(--color-espresso); border-radius: var(--radius-pill)"
-              >
-                ASAP · ready in ~{{ etaMinutes() }} min
-              </button>
-              <button
-                type="button"
-                (click)="selectMode('SCHEDULED')"
-                class="flex-1 px-4 py-3 border text-sm"
-                [style.background]="mode() === 'SCHEDULED' ? 'var(--color-espresso)' : 'transparent'"
-                [style.color]="mode() === 'SCHEDULED' ? 'white' : 'var(--color-espresso)'"
-                style="border-color: var(--color-espresso); border-radius: var(--radius-pill)"
-              >
-                Schedule
-              </button>
-            </div>
+            <section
+              class="w-full"
+              style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: var(--spacing-xl); display: flex; flex-direction: column; gap: var(--spacing-lg)"
+            >
+              <div class="flex gap-3 w-full">
+                <button
+                  type="button"
+                  (click)="selectMode('ASAP')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  ASAP
+                </button>
+                <button
+                  type="button"
+                  (click)="selectMode('SCHEDULED')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  Later
+                </button>
+              </div>
 
-            @if (mode() === 'SCHEDULED') {
-              <label class="flex flex-col gap-1">
-                <span class="text-sm font-medium">Pick up at</span>
-                <input
-                  type="datetime-local"
-                  [value]="scheduledAt()"
-                  (change)="onScheduledChange($event)"
-                  [min]="minScheduled"
-                  class="px-3 py-2 border outline-none"
-                  style="border-color: var(--color-latte); border-radius: var(--radius-input)"
-                />
-                <span class="text-xs mt-1" style="opacity: 0.5"> Between {{ minLabel }} and 24 h from now </span>
-              </label>
-            }
-          </section>
-
-          <section
-            class="mb-6 p-4"
-            style="background: var(--color-foam); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
-          >
-            <h2 class="text-xl mb-3" style="font-family: var(--font-display)">Order summary</h2>
-            <ul class="flex flex-col gap-2">
-              @for (item of c.items; track item.id) {
-                <li class="flex justify-between text-sm">
-                  <span>{{ item.quantity }} × {{ item.productName }}</span>
-                  <span>{{ price(item.unitPriceCents * item.quantity) }}</span>
-                </li>
+              @if (mode() === 'SCHEDULED') {
+                <label class="flex flex-col gap-1">
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+                    >Pick up at</span
+                  >
+                  <input
+                    type="datetime-local"
+                    [value]="scheduledAt()"
+                    (change)="onScheduledChange($event)"
+                    [min]="minScheduled"
+                    style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+                  />
+                  <span style="font-size: 12px; color: var(--color-text-tertiary)"
+                    >Between 10 min and 24 h from now</span
+                  >
+                </label>
               }
-            </ul>
-            <hr class="my-3" style="border-color: var(--color-latte)" />
-            <div class="flex justify-between font-medium">
-              <span>Total</span>
-              <span>{{ price(c.subtotalCents) }}</span>
-            </div>
-          </section>
 
-          <form [formGroup]="contactForm" class="mb-6 flex flex-col gap-3">
-            <input
-              formControlName="customerName"
-              placeholder="Name on the order"
-              class="px-4 py-3 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
-            />
-            <input
-              formControlName="notes"
-              placeholder="Notes for the barista (optional)"
-              class="px-4 py-3 border outline-none"
-              style="border-color: var(--color-latte); border-radius: var(--radius-input)"
-            />
-          </form>
+              <div>
+                <p
+                  style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
+                >
+                  Ready by {{ readyTimeLabel() }}
+                </p>
+                <p
+                  class="mt-1"
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                >
+                  We'll start preparing at {{ prepStartLabel() }} so it's fresh when you arrive.
+                </p>
+              </div>
+            </section>
 
-          <button
-            type="button"
-            (click)="placeOrder()"
-            [disabled]="!canSubmit() || submitting()"
-            class="w-full py-4 text-lg font-medium disabled:opacity-50"
-            style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
-          >
-            {{ submitting() ? 'Placing order…' : 'Pay ' + price(c.subtotalCents) + ' · Ready ' + readyLabel() }}
-          </button>
+            <section
+              class="w-full"
+              style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: var(--spacing-base) var(--spacing-lg); display: flex; flex-direction: column; gap: 12px"
+            >
+              @for (item of c.items; track item.id) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
+                    {{ item.productName }} × {{ item.quantity }}
+                  </span>
+                  <span
+                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                  >
+                    {{ price(item.unitPriceCents * item.quantity) }}
+                  </span>
+                </div>
+              }
+              <div style="height: 1px; background: var(--color-border-light)"></div>
+              <div class="flex items-center justify-between">
+                <span
+                  style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                  >Total</span
+                >
+                <span
+                  style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-caramel)"
+                >
+                  {{ price(c.subtotalCents) }}
+                </span>
+              </div>
+            </section>
 
-          @if (error()) {
-            <p class="mt-4 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
-          }
+            <form
+              [formGroup]="contactForm"
+              class="w-full flex flex-col"
+              style="max-width: 500px; gap: var(--spacing-md)"
+            >
+              <input
+                formControlName="customerName"
+                placeholder="Name on the order"
+                style="padding: 14px 16px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+              />
+              <input
+                formControlName="notes"
+                placeholder="Notes for the barista (optional)"
+                style="padding: 14px 16px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+              />
+            </form>
+
+            <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-md)">
+              <button
+                type="button"
+                (click)="selectPayment('APPLE_PAY')"
+                class="flex items-center justify-center"
+                [style.background]="payment() === 'APPLE_PAY' ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                [style.color]="payment() === 'APPLE_PAY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                [style.border]="payment() === 'APPLE_PAY' ? 'none' : '1px solid var(--color-border)'"
+                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+              >
+                Pay
+              </button>
+              <button
+                type="button"
+                (click)="selectPayment('GOOGLE_PAY')"
+                class="flex items-center justify-center"
+                [style.background]="payment() === 'GOOGLE_PAY' ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                [style.color]="payment() === 'GOOGLE_PAY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                [style.border]="payment() === 'GOOGLE_PAY' ? 'none' : '1px solid var(--color-border)'"
+                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+              >
+                G Pay
+              </button>
+              <button
+                type="button"
+                (click)="selectPayment('CARD')"
+                class="flex items-center justify-center"
+                [style.background]="payment() === 'CARD' ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                [style.color]="payment() === 'CARD' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                [style.border]="payment() === 'CARD' ? 'none' : '1px solid var(--color-border)'"
+                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 400"
+              >
+                Card
+              </button>
+            </section>
+
+            <button
+              type="button"
+              (click)="placeOrder()"
+              [disabled]="!canSubmit() || submitting()"
+              class="w-full flex items-center justify-center disabled:opacity-50"
+              style="max-width: 500px; height: 56px; background: var(--color-caramel); color: var(--color-foam); border-radius: 16px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
+            >
+              {{
+                submitting() ? 'Placing order…' : 'Pay ' + price(c.subtotalCents) + ' · Ready by ' + readyTimeLabel()
+              }}
+            </button>
+
+            @if (error()) {
+              <p class="text-sm text-center" style="color: var(--color-berry)">{{ error() }}</p>
+            }
+          </div>
         }
       }
     </section>
@@ -135,11 +253,39 @@ export class CheckoutPage implements OnInit {
 
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
+  readonly payment = signal<PaymentMethod>('APPLE_PAY');
   readonly scheduledAt = signal<string>(this.defaultScheduled());
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
+  readonly contactForm = new FormGroup({
+    customerName: new FormControl('', { nonNullable: true }),
+    notes: new FormControl('', { nonNullable: true }),
+  });
+
+  readonly minScheduled = this.toLocalInput(new Date(Date.now() + 10 * 60_000));
+
+  readonly readyAt = computed<Date>(() => {
+    if (this.mode() === 'ASAP') {
+      return new Date(Date.now() + (this.cart()?.etaSeconds ?? 0) * 1000);
+    }
+    const iso = this.scheduledAt();
+    return iso ? new Date(iso) : new Date(Date.now() + 30 * 60_000);
+  });
+
+  readonly readyTimeLabel = computed(() => this.formatTime(this.readyAt()));
+
+  readonly prepStartLabel = computed(() => {
+    const at = new Date(this.readyAt().getTime() - (this.cart()?.etaSeconds ?? 0) * 1000);
+    return this.formatTime(at);
+  });
+
+  readonly steps = computed<Step[]>(() => [
+    { n: 1, label: 'Time & store', state: 'current' },
+    { n: 2, label: 'Contact', state: this.contactForm.controls.customerName.value ? 'done' : 'current' },
+    { n: 3, label: 'Payment', state: 'upcoming' },
+  ]);
+
   readonly canSubmit = computed(() => {
     const c = this.cart();
     if (!c || c.items.length === 0) return false;
@@ -148,14 +294,6 @@ export class CheckoutPage implements OnInit {
     return true;
   });
 
-  readonly contactForm = new FormGroup({
-    customerName: new FormControl('', { nonNullable: true }),
-    notes: new FormControl('', { nonNullable: true }),
-  });
-
-  readonly minScheduled = this.toLocalInput(new Date(Date.now() + 10 * 60_000));
-  readonly minLabel = '10 min';
-
   ngOnInit(): void {
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
@@ -163,7 +301,6 @@ export class CheckoutPage implements OnInit {
         next: (store) => this.cartService.load(store.id).subscribe((c) => this.cart.set(c)),
       });
     } else {
-      // No store hint; fall back to the first store we know about.
       this.catalog.listStores().subscribe({
         next: (stores) => {
           const first = stores[0];
@@ -177,19 +314,12 @@ export class CheckoutPage implements OnInit {
     this.mode.set(mode);
   }
 
-  onScheduledChange(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.scheduledAt.set(value);
+  selectPayment(method: PaymentMethod): void {
+    this.payment.set(method);
   }
 
-  readyLabel(): string {
-    if (this.mode() === 'ASAP') {
-      const when = new Date(Date.now() + (this.cart()?.etaSeconds ?? 0) * 1000);
-      return when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    const iso = this.scheduledAt();
-    if (!iso) return '—';
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  onScheduledChange(event: Event): void {
+    this.scheduledAt.set((event.target as HTMLInputElement).value);
   }
 
   placeOrder(): void {
@@ -224,6 +354,10 @@ export class CheckoutPage implements OnInit {
       style: 'currency',
       currency: this.authStore.user()?.currency ?? 'USD',
     }).format(cents / 100);
+  }
+
+  private formatTime(date: Date): string {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   private defaultScheduled(): string {
