@@ -1,6 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 
@@ -9,24 +11,27 @@ type Step = 'phone' | 'code';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, LanguageSwitcherComponent, TranslatePipe],
   template: `
     <main class="min-h-screen flex items-center justify-center" style="background: var(--color-cream)">
       <section
         class="w-full max-w-sm p-8 shadow-[var(--shadow-soft)]"
         style="background: var(--color-foam); border-radius: var(--radius-card)"
       >
-        <h1 class="text-3xl mb-2" style="font-family: var(--font-display); color: var(--color-espresso)">
-          takeAway admin
-        </h1>
+        <div class="flex items-center justify-between mb-2">
+          <h1 style="font-family: var(--font-display); font-size: 26px; color: var(--color-espresso); margin: 0">
+            {{ 'admin.login.title' | translate }}
+          </h1>
+          <app-language-switcher />
+        </div>
         <p class="text-sm mb-6" style="color: var(--color-espresso); opacity: 0.6">
-          {{ step() === 'phone' ? 'Sign in with your phone number' : 'Enter the code we sent you' }}
+          {{ (step() === 'phone' ? 'web.auth.signInPhone' : 'web.auth.enterCode') | translate }}
         </p>
 
         @if (step() === 'phone') {
           <form [formGroup]="phoneForm" (ngSubmit)="sendCode()" class="flex flex-col gap-4">
             <label class="flex flex-col gap-1">
-              <span class="text-sm font-medium">Phone</span>
+              <span class="text-sm font-medium">{{ 'admin.login.phoneLabel' | translate }}</span>
               <input
                 formControlName="phone"
                 type="tel"
@@ -46,7 +51,7 @@ type Step = 'phone' | 'code';
               class="py-2 font-medium disabled:opacity-50"
               style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
             >
-              {{ loading() ? 'Sending…' : 'Send code' }}
+              {{ (loading() ? 'admin.login.sending' : 'admin.login.sendCode') | translate }}
             </button>
           </form>
         } @else {
@@ -55,7 +60,7 @@ type Step = 'phone' | 'code';
               Code sent to <strong>{{ phoneForm.controls.phone.value }}</strong>
             </p>
             <label class="flex flex-col gap-1">
-              <span class="text-sm font-medium">6-digit code</span>
+              <span class="text-sm font-medium">{{ 'admin.login.codeLabel' | translate }}</span>
               <input
                 formControlName="code"
                 type="text"
@@ -73,7 +78,7 @@ type Step = 'phone' | 'code';
               class="py-2 font-medium disabled:opacity-50"
               style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
             >
-              {{ loading() ? 'Verifying…' : 'Sign in' }}
+              {{ (loading() ? 'admin.login.verifying' : 'admin.login.verifyCode') | translate }}
             </button>
             <button
               type="button"
@@ -81,7 +86,7 @@ type Step = 'phone' | 'code';
               class="py-2 text-sm"
               style="color: var(--color-espresso); opacity: 0.6"
             >
-              Change number
+              {{ 'admin.login.changeNumber' | translate }}
             </button>
           </form>
         }

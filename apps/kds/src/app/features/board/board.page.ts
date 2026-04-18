@@ -1,6 +1,9 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { interval, type Subscription } from 'rxjs';
 
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { TranslatePipe } from '@ngx-translate/core';
+
 import { AuthStore } from '../../core/auth/auth.store';
 import { KdsApi, type KdsOrder, type KdsOrderStatus } from '../../core/kds/kds.service';
 import { KdsRealtimeService, type KdsOrderChanged } from '../../core/realtime/realtime.service';
@@ -15,9 +18,9 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
 };
 
 const COLUMN_META: Record<Column, { label: string; accent: string; accentText: string }> = {
-  NEW: { label: 'New', accent: '#C77D3B20', accentText: 'var(--color-caramel)' },
-  PREPARING: { label: 'Preparing', accent: '#E9A84B20', accentText: '#E9A84B' },
-  READY: { label: 'Ready', accent: '#7BC4A420', accentText: 'var(--color-mint)' },
+  NEW: { label: 'kds.cols.new', accent: '#C77D3B20', accentText: 'var(--color-caramel)' },
+  PREPARING: { label: 'kds.cols.preparing', accent: '#E9A84B20', accentText: '#E9A84B' },
+  READY: { label: 'kds.cols.ready', accent: '#7BC4A420', accentText: 'var(--color-mint)' },
 };
 
 /**
@@ -37,6 +40,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
 @Component({
   selector: 'app-kds-board',
   standalone: true,
+  imports: [LanguageSwitcherComponent, TranslatePipe],
   template: `
     <div
       class="flex flex-col"
@@ -76,7 +80,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
             }}</span>
             <span
               style="font-family: var(--font-sans); font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.85); letter-spacing: 0.5px; text-transform: uppercase"
-              >in queue</span
+              >{{ 'kds.topbar.inQueue' | translate }}</span
             >
           </div>
           <span
@@ -85,16 +89,17 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
           >
         </div>
 
-        <!-- Right: filter chip + user -->
+        <!-- Right: filter chip + user + language -->
         <div class="flex items-center" style="gap: 12px">
           <div
             class="flex items-center"
             style="height: 34px; padding: 0 12px; border: 1px solid #2A2523; border-radius: 8px; gap: 6px"
           >
             <span style="font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.7)"
-              >🕵 All pickups</span
+              >🕵 {{ 'kds.topbar.pickupsAll' | translate }}</span
             >
           </div>
+          <app-language-switcher />
           <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(248,243,235,0.55)">{{
             authStore.user()?.name ?? authStore.user()?.phone
           }}</span>
@@ -119,7 +124,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; gap: 8px"
                 [style.color]="columnMeta(col.key).accentText"
               >
-                {{ columnMeta(col.key).label }}
+                {{ columnMeta(col.key).label | translate }}
               </span>
               <span
                 style="font-family: var(--font-sans); font-size: 12px; font-weight: 600"
@@ -199,7 +204,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                         [style.background]="action.color"
                         style="height: 40px; color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 700"
                       >
-                        {{ action.label }}
+                        {{ action.label | translate }}
                       </button>
                     }
                   </div>
@@ -209,7 +214,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                   class="flex items-center justify-center"
                   style="padding: 40px 0; font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.3)"
                 >
-                  Nothing here right now.
+                  {{ 'kds.card.empty' | translate }}
                 </div>
               }
             </div>
@@ -350,18 +355,32 @@ export class KdsBoardPage implements OnInit, OnDestroy {
       case 'CREATED':
       case 'PAID':
         return [
-          { label: 'Accept', color: 'var(--color-caramel)', run: () => handle(this.api.accept(storeId, order.id)) },
+          {
+            label: 'kds.card.actions.accept',
+            color: 'var(--color-caramel)',
+            run: () => handle(this.api.accept(storeId, order.id)),
+          },
         ];
       case 'ACCEPTED':
         return [
-          { label: 'Start', color: 'var(--color-caramel)', run: () => handle(this.api.start(storeId, order.id)) },
+          {
+            label: 'kds.card.actions.start',
+            color: 'var(--color-caramel)',
+            run: () => handle(this.api.start(storeId, order.id)),
+          },
         ];
       case 'IN_PROGRESS':
-        return [{ label: 'Ready', color: 'var(--color-mint)', run: () => handle(this.api.ready(storeId, order.id)) }];
+        return [
+          {
+            label: 'kds.card.actions.ready',
+            color: 'var(--color-mint)',
+            run: () => handle(this.api.ready(storeId, order.id)),
+          },
+        ];
       case 'READY':
         return [
           {
-            label: 'Picked up',
+            label: 'kds.card.actions.pickedUp',
             color: '#3a3430',
             run: () => handle(this.api.pickedUp(storeId, order.id)),
           },

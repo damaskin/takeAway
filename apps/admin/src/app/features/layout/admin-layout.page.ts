@@ -1,5 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -14,7 +16,7 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, AdminSidebarComponent],
+  imports: [RouterOutlet, AdminSidebarComponent, LanguageSwitcherComponent, TranslatePipe],
   template: `
     <div class="flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
       <app-admin-sidebar />
@@ -42,12 +44,13 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
               >
             </div>
           </div>
+          <app-language-switcher />
           <button
             type="button"
             (click)="logout()"
             style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
           >
-            Sign out
+            {{ 'common.signOut' | translate }}
           </button>
         </header>
 

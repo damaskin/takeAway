@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
@@ -20,7 +21,7 @@ interface HowStep {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <!-- Store locator section — pencil IzEzR -->
     <section
@@ -31,17 +32,17 @@ interface HowStep {
           <h2
             style="font-family: var(--font-display); font-size: 36px; font-weight: 700; color: var(--color-espresso); line-height: 1.1"
           >
-            Find a store near you
+            {{ 'web.home.stores.title' | translate }}
           </h2>
           <p style="font-family: var(--font-sans); font-size: 16px; color: var(--color-text-secondary)">
-            Pick up your order at any of our locations
+            {{ 'web.home.stores.subtitle' | translate }}
           </p>
         </div>
         <a
           routerLink="/stores"
           class="flex items-center"
           style="gap: 8px; height: 42px; padding: 0 20px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-          >🗺️ View on map</a
+          >🗺️ {{ 'web.home.stores.cta' | translate }}</a
         >
       </div>
 
@@ -87,17 +88,17 @@ interface HowStep {
           <h2
             style="font-family: var(--font-display); font-size: 36px; font-weight: 700; color: var(--color-espresso); line-height: 1.1"
           >
-            From the menu
+            {{ 'web.home.menu.title' | translate }}
           </h2>
           <p style="font-family: var(--font-sans); font-size: 16px; color: var(--color-text-secondary)">
-            Freshly prepared, just for you
+            {{ 'web.home.menu.subtitle' | translate }}
           </p>
         </div>
         <a
           routerLink="/menu"
           class="flex items-center"
           style="gap: 8px; height: 42px; padding: 0 20px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-          >View menu →</a
+          >{{ 'web.home.menu.cta' | translate }}</a
         >
       </div>
 
@@ -116,7 +117,7 @@ interface HowStep {
             </div>
             <span
               style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-              >{{ cat.name }}</span
+              >{{ cat.name | translate }}</span
             >
           </a>
         }
@@ -133,13 +134,8 @@ interface HowStep {
         <h2
           style="font-family: var(--font-display); font-size: 36px; font-weight: 700; color: var(--color-espresso); line-height: 1.1; text-align: center"
         >
-          How it works
+          {{ 'web.home.howItWorks.title' | translate }}
         </h2>
-        <p
-          style="font-family: var(--font-sans); font-size: 16px; color: var(--color-text-secondary); text-align: center"
-        >
-          Three simple steps to your perfect order
-        </p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 w-full" style="gap: 48px; max-width: 1200px">
@@ -158,12 +154,12 @@ interface HowStep {
             <h3
               style="font-family: var(--font-sans); font-size: 20px; font-weight: 600; color: var(--color-text-primary)"
             >
-              {{ step.title }}
+              {{ step.title | translate }}
             </h3>
             <p
               style="font-family: var(--font-sans); font-size: 15px; color: var(--color-text-secondary); max-width: 280px"
             >
-              {{ step.desc }}
+              {{ step.desc | translate }}
             </p>
           </article>
         }
@@ -188,18 +184,18 @@ interface HowStep {
         <h2
           style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso); line-height: 1.1"
         >
-          Earn rewards<br />with every order
+          {{ 'web.home.loyalty.title' | translate }}
         </h2>
         <p
           style="font-family: var(--font-sans); font-size: 16px; line-height: 1.6; color: var(--color-text-secondary); max-width: 480px"
         >
-          Join Coffeepass and earn points on every order. Unlock free drinks, exclusive perks and tier-based benefits.
+          {{ 'web.home.loyalty.subtitle' | translate }}
         </p>
         <a
           routerLink="/login"
           class="self-start flex items-center justify-center"
           style="gap: 10px; height: 52px; padding: 0 28px; background: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: white"
-          >Join</a
+          >{{ 'web.home.loyalty.cta' | translate }}</a
         >
       </div>
 
@@ -218,9 +214,9 @@ interface HowStep {
             <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)">GOLD</span>
           </div>
           <span style="font-family: var(--font-sans); font-size: 40px; font-weight: 700; color: white">2,450</span>
-          <span style="font-family: var(--font-sans); font-size: 14px; color: rgba(255,255,255,0.6)"
-            >points earned</span
-          >
+          <span style="font-family: var(--font-sans); font-size: 14px; color: rgba(255,255,255,0.6)">{{
+            'web.home.loyalty.points' | translate
+          }}</span>
         </div>
       </div>
     </section>
@@ -240,19 +236,19 @@ interface HowStep {
         <h2
           style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso); line-height: 1.1"
         >
-          Gift the joy<br />of great coffee
+          {{ 'web.home.gift.title' | translate }}
         </h2>
         <p
           style="font-family: var(--font-sans); font-size: 16px; line-height: 1.6; color: var(--color-text-secondary); max-width: 440px"
         >
-          Send a takeAway gift card to friends and family. Perfect for any occasion.
+          {{ 'web.home.gift.subtitle' | translate }}
         </p>
         <button
           type="button"
           class="self-start flex items-center justify-center"
           style="gap: 10px; height: 52px; padding: 0 28px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); background: transparent; font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-text-primary)"
         >
-          Buy gift card
+          {{ 'web.home.gift.cta' | translate }}
         </button>
       </div>
     </section>
@@ -275,11 +271,11 @@ interface HowStep {
           <div class="flex flex-col" style="gap: 16px">
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; letter-spacing: 1px; color: rgba(248,243,235,0.4)"
-              >{{ col.title }}</span
+              >{{ col.title | translate }}</span
             >
             @for (link of col.links; track link) {
               <a href="#" style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)">{{
-                link
+                link | translate
               }}</a>
             }
           </div>
@@ -290,7 +286,7 @@ interface HowStep {
 
       <div class="flex items-center justify-between flex-wrap" style="gap: 16px">
         <span style="font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.4)">
-          © 2026 takeAway. All rights reserved.
+          {{ 'web.home.footer.rights' | translate }}
         </span>
         <div class="flex items-center" style="gap: 20px; color: rgba(248,243,235,0.6)">
           <span>📷</span><span>🐦</span><span>📘</span>
@@ -306,23 +302,23 @@ interface HowStep {
       <h1
         style="font-family: var(--font-display); font-size: 56px; font-weight: 700; color: var(--color-cream); line-height: 1.05; max-width: 900px"
       >
-        Pre-order. Zero queue.
+        {{ 'web.home.closing.title' | translate }}
       </h1>
       <p
         style="font-family: var(--font-sans); font-size: 20px; color: var(--color-cream); max-width: 700px; text-align: center; line-height: 1.5"
       >
-        Your coffee and food ready the moment you arrive. No waiting.
+        {{ 'web.home.closing.subtitle' | translate }}
       </p>
       <div class="flex items-center" style="gap: 16px; flex-wrap: wrap; justify-content: center">
         <a
           routerLink="/menu"
           style="padding: 14px 32px; background: var(--color-cream); color: var(--color-caramel); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-          >Order now</a
+          >{{ 'web.home.closing.ctaMenu' | translate }}</a
         >
         <a
           href="#"
           style="padding: 14px 32px; background: var(--color-caramel); border: 2px solid var(--color-cream); color: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-          >Download app</a
+          >{{ 'web.home.closing.ctaGet' | translate }}</a
         >
       </div>
     </section>
@@ -332,25 +328,37 @@ export class HomePage implements OnInit {
   private readonly catalog = inject(CatalogService);
   readonly stores = signal<StoreListItem[]>([]);
 
+  // Category names are translated in the template via the `translate` pipe.
   readonly categories: HomeCategory[] = [
-    { slug: 'coffee', name: 'Coffee', bg: 'var(--color-caramel-light)', emoji: '☕' },
-    { slug: 'tea', name: 'Tea', bg: '#9DB87E33', emoji: '🍵' },
-    { slug: 'signature', name: 'Signature', bg: '#8E5FB033', emoji: '✨' },
-    { slug: 'breakfast', name: 'Breakfast', bg: '#F5C95C33', emoji: '🍳' },
-    { slug: 'lunch', name: 'Lunch', bg: '#C86A4B33', emoji: '🥗' },
-    { slug: 'desserts', name: 'Desserts', bg: '#E8A0B433', emoji: '🍰' },
+    { slug: 'coffee', name: 'web.home.menu.categories.coffee', bg: 'var(--color-caramel-light)', emoji: '☕' },
+    { slug: 'tea', name: 'web.home.menu.categories.tea', bg: '#9DB87E33', emoji: '🍵' },
+    { slug: 'signature', name: 'web.home.menu.categories.signature', bg: '#8E5FB033', emoji: '✨' },
+    { slug: 'breakfast', name: 'web.home.menu.categories.breakfast', bg: '#F5C95C33', emoji: '🍳' },
+    { slug: 'lunch', name: 'web.home.menu.categories.lunch', bg: '#C86A4B33', emoji: '🥗' },
+    { slug: 'desserts', name: 'web.home.menu.categories.desserts', bg: '#E8A0B433', emoji: '🍰' },
   ];
 
   readonly howSteps: HowStep[] = [
-    { num: '01', title: 'Choose a store', desc: 'Find the nearest takeAway store on the map' },
-    { num: '02', title: 'Customize', desc: 'Pick size, milk, syrups and toppings' },
-    { num: '03', title: 'Pick it up', desc: 'Grab your order — no queue, no waiting' },
+    { num: '01', title: 'web.home.howItWorks.step1Title', desc: 'web.home.howItWorks.step1Body' },
+    { num: '02', title: 'web.home.howItWorks.step2Title', desc: 'web.home.howItWorks.step2Body' },
+    { num: '03', title: 'web.home.howItWorks.step3Title', desc: 'web.home.howItWorks.step3Body' },
   ];
 
+  // Footer column titles/links reference translation keys resolved with the
+  // `translate` pipe in the template.
   readonly footerColumns = [
-    { title: 'PRODUCT', links: ['Menu', 'Stores', 'Loyalty', 'Gift cards'] },
-    { title: 'COMPANY', links: ['About', 'Franchise', 'Careers', 'Press'] },
-    { title: 'SUPPORT', links: ['Help center', 'Contact us', 'Privacy policy', 'Terms of service'] },
+    {
+      title: 'web.home.menu.title',
+      links: ['nav.menu', 'nav.stores', 'nav.loyalty', 'web.home.gift.title'],
+    },
+    {
+      title: 'nav.about',
+      links: ['web.home.footer.about', 'web.home.footer.careers', 'web.home.footer.press'],
+    },
+    {
+      title: 'web.home.footer.help',
+      links: ['web.home.footer.help', 'web.home.footer.contact', 'web.home.footer.privacy', 'web.home.footer.terms'],
+    },
   ];
 
   ngOnInit(): void {

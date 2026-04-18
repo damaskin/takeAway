@@ -32,8 +32,11 @@ export class AnalyticsService {
       this.aggregateRevenue(prevStart, start, brandId),
     ]);
 
+    // Only report a "best day" if there's actual revenue to compare against.
+    // Otherwise the reducer happily picks the first zero-revenue bucket and
+    // the UI renders "Best day: <date> — $0".
     const bestDay = current.points.reduce<RevenuePointDto | null>(
-      (best, p) => (!best || p.revenueCents > best.revenueCents ? p : best),
+      (best, p) => (p.revenueCents > 0 && (!best || p.revenueCents > best.revenueCents) ? p : best),
       null,
     );
 
