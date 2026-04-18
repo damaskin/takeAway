@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import type { AuthSession, AuthUser } from '@takeaway/shared-types';
+import type { AuthSession, AuthTokens, AuthUser } from '@takeaway/shared-types';
 
 const STORAGE_KEY = 'takeaway.web.session';
 
@@ -30,6 +30,31 @@ export class AuthStore {
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  }
+
+  /**
+   * Replace just the token pair (e.g. after a silent /auth/refresh) while
+   * keeping the existing user. Returns false if there's no current session
+   * to update — caller should treat that as "log out".
+   */
+  setTokens(tokens: AuthTokens): boolean {
+    const current = this._session();
+    if (!current) return false;
+    const next: StoredSession = {
+      ...current,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      accessTokenExpiresInSeconds: tokens.accessTokenExpiresInSeconds,
+      refreshTokenExpiresInSeconds: tokens.refreshTokenExpiresInSeconds,
+    };
+    this._session.set(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return true;
+  }
+
+  /** Refresh-and-retry needs to read the current refresh token without going through reactive sigs. */
+  refreshToken(): string | null {
+    return this._session()?.refreshToken ?? null;
   }
 
   clear(): void {

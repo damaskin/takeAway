@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import type { AuthSession, AuthUser } from '@takeaway/shared-types';
+import type { AuthSession, AuthTokens, AuthUser } from '@takeaway/shared-types';
 
 const STORAGE_KEY = 'takeaway.admin.session';
 
@@ -30,6 +30,26 @@ export class AuthStore {
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  }
+
+  /** See web/auth.store.ts for context — silent-refresh token swap. */
+  setTokens(tokens: AuthTokens): boolean {
+    const current = this._session();
+    if (!current) return false;
+    const next: StoredSession = {
+      ...current,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      accessTokenExpiresInSeconds: tokens.accessTokenExpiresInSeconds,
+      refreshTokenExpiresInSeconds: tokens.refreshTokenExpiresInSeconds,
+    };
+    this._session.set(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return true;
+  }
+
+  refreshToken(): string | null {
+    return this._session()?.refreshToken ?? null;
   }
 
   clear(): void {
