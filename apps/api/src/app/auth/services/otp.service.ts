@@ -21,16 +21,31 @@ export class OtpService {
   private readonly logger = new Logger(OtpService.name);
 
   private readonly codeLength = 6;
-  private readonly ttlSeconds = 5 * 60;
-  private readonly resendCooldownSeconds = 60;
-  private readonly maxVerifyAttempts = 5;
-  private readonly maxSendPerHour = 5;
+  private readonly ttlSeconds: number;
+  private readonly resendCooldownSeconds: number;
+  private readonly maxVerifyAttempts: number;
+  private readonly maxSendPerHour: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    // In development we prefer generous limits so iterating on the login flow
+    // doesn't require flushing Redis every other attempt. Production keeps
+    // the conservative SMS-provider-friendly defaults.
+    const isDev = this.config.get<string>('NODE_ENV') !== 'production';
+    this.ttlSeconds = this.readNumber('OTP_TTL_SECONDS', 5 * 60);
+    this.resendCooldownSeconds = this.readNumber('OTP_RESEND_COOLDOWN_SECONDS', isDev ? 5 : 60);
+    this.maxVerifyAttempts = this.readNumber('OTP_MAX_VERIFY_ATTEMPTS', isDev ? 100 : 5);
+    this.maxSendPerHour = this.readNumber('OTP_MAX_SEND_PER_HOUR', isDev ? 200 : 5);
+  }
+
+  private readNumber(key: string, fallback: number): number {
+    const raw = this.config.get<string>(key);
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
 
   async issue(phone: string): Promise<{ code: string; result: IssueResult }> {
     const cooldownKey = `otp:cooldown:${phone}`;
