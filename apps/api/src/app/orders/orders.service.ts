@@ -9,7 +9,9 @@ import {
 } from '@nestjs/common';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
@@ -24,6 +26,8 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly promo: PromoService,
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -41,9 +45,21 @@ export class OrdersService {
     if (subtotalCents < cart.store.minOrderCents) {
       throw new BadRequestException('Cart total below store minimum');
     }
-    const discountCents = 0;
+
+    // Resolve promo (if any) BEFORE the transaction — validation is cheap and
+    // catching a bad code here keeps our transaction tight. Discounts get
+    // locked in via applyAndRedeem() inside the tx below.
+    const promoResult = dto.couponCode
+      ? await this.promo.validate(userId, dto.couponCode, cart.store.brandId, subtotalCents)
+      : null;
+    if (promoResult && !promoResult.valid) {
+      throw new BadRequestException(promoResult.reason ?? 'Promo code invalid');
+    }
+
+    const discountCents = promoResult?.discountCents ?? 0;
     const taxCents = 0;
-    const totalCents = subtotalCents - discountCents + taxCents;
+    const totalCents = Math.max(0, subtotalCents - discountCents + taxCents);
+    const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
 
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
@@ -85,10 +101,36 @@ export class OrdersService {
           include: { items: true, store: true },
         });
 
+        // Record promo redemption in the same transaction so cart conversion,
+        // promo use and points multiplier are all-or-nothing.
+        if (dto.couponCode && promoResult?.valid) {
+          await this.promo.applyAndRedeem(
+            {
+              code: dto.couponCode,
+              brandId: cart.store.brandId,
+              subtotalCents,
+              userId,
+            },
+            created.id,
+            tx,
+          );
+        }
+
         await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
         await tx.cart.update({
           where: { id: cart.id },
           data: { subtotalCents: 0, etaSeconds: 0 },
+        });
+
+        // Stash the effective multiplier in the order payload for later
+        // points credit (we do it on PAID transition in PaymentsService).
+        await tx.orderEvent.create({
+          data: {
+            orderId: created.id,
+            type: 'NOTE',
+            actorId: userId,
+            payload: { pointsMultiplier } satisfies Prisma.InputJsonValue,
+          },
         });
 
         return created;
@@ -107,26 +149,102 @@ export class OrdersService {
     return this.toOrderDto(order);
   }
 
-  async listForUser(userId: string, take = 20): Promise<OrderSummaryDto[]> {
+  async listForUser(
+    userId: string,
+    take = 20,
+    statusGroup: 'ACTIVE' | 'HISTORY' | 'ALL' = 'ALL',
+  ): Promise<OrderSummaryDto[]> {
+    const activeStatuses = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY'] as const;
+    const historyStatuses = ['PICKED_UP', 'CANCELLED', 'EXPIRED'] as const;
+    const where: Prisma.OrderWhereInput = { userId };
+    if (statusGroup === 'ACTIVE') where.status = { in: [...activeStatuses] };
+    if (statusGroup === 'HISTORY') where.status = { in: [...historyStatuses] };
+
     const orders = await this.prisma.order.findMany({
-      where: { userId },
+      where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(100, Math.max(1, take)),
       include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
     });
-    return orders.map((o) => ({
+    return orders.map((o) => this.toSummary(o));
+  }
+
+  /**
+   * Admin feed — brand-wide list with optional status / store filters.
+   * Roles are enforced in the controller via @Roles(BRAND_ADMIN|SUPER_ADMIN).
+   */
+  async listForAdmin(params: {
+    brandId?: string;
+    storeId?: string;
+    status?: string;
+    take?: number;
+  }): Promise<OrderSummaryDto[]> {
+    const where: Prisma.OrderWhereInput = {};
+    if (params.storeId) where.storeId = params.storeId;
+    if (params.brandId) where.store = { brandId: params.brandId };
+    if (params.status) where.status = params.status as Prisma.OrderWhereInput['status'];
+
+    const orders = await this.prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(200, Math.max(1, params.take ?? 50)),
+      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+    });
+    return orders.map((o) => this.toSummary(o));
+  }
+
+  private toSummary(o: {
+    id: string;
+    orderCode: string;
+    status: string;
+    pickupMode: string;
+    pickupAt: Date;
+    totalCents: number;
+    currency: string;
+    storeId: string;
+    store: { name: string };
+    items: Array<{ quantity: number }>;
+    createdAt: Date;
+  }): OrderSummaryDto {
+    return {
       id: o.id,
       orderCode: o.orderCode,
-      status: o.status,
-      pickupMode: o.pickupMode,
+      status: o.status as OrderSummaryDto['status'],
+      pickupMode: o.pickupMode as OrderSummaryDto['pickupMode'],
       pickupAt: o.pickupAt.toISOString(),
       totalCents: o.totalCents,
-      currency: o.currency,
+      currency: o.currency as OrderSummaryDto['currency'],
       storeId: o.storeId,
       storeName: o.store.name,
       itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
       createdAt: o.createdAt.toISOString(),
-    }));
+    };
+  }
+
+  /**
+   * Called from PaymentsService when Stripe confirms payment. Credits loyalty
+   * points inside a dedicated transaction so a points-ledger failure cannot
+   * block the order status transition.
+   */
+  async creditLoyaltyForPayment(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { events: { where: { type: 'NOTE' }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!order) return;
+
+    // Use the pointsMultiplier stamped at order creation (from the promo), or 1×.
+    const multiplier =
+      order.events
+        .map((e) => {
+          const p = (e.payload as Record<string, unknown> | null) ?? null;
+          return p && typeof p['pointsMultiplier'] === 'number' ? (p['pointsMultiplier'] as number) : null;
+        })
+        .find((x): x is number => typeof x === 'number') ?? 1;
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.loyalty.creditForOrder(order.userId, order.id, order.subtotalCents, multiplier, tx);
+    });
   }
 
   async cancel(userId: string, orderId: string): Promise<OrderDto> {

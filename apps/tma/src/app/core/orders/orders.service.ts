@@ -33,6 +33,20 @@ export interface OrderView {
   }>;
 }
 
+export interface OrderSummary {
+  id: string;
+  orderCode: string;
+  status: OrderStatusString;
+  pickupMode: 'ASAP' | 'SCHEDULED';
+  pickupAt: string;
+  totalCents: number;
+  currency: string;
+  storeId: string;
+  storeName: string;
+  itemCount: number;
+  createdAt: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class OrdersApi {
   private readonly http = inject(HttpClient);
@@ -44,11 +58,16 @@ export class OrdersApi {
     pickupAt?: string;
     customerName?: string;
     notes?: string;
+    couponCode?: string;
   }): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders`, input);
   }
 
   get(id: string): Observable<OrderView> {
     return this.http.get<OrderView>(`${this.api.baseUrl}/orders/${id}`);
+  }
+
+  listMine(group: 'ACTIVE' | 'HISTORY' | 'ALL' = 'ALL', take = 20): Observable<OrderSummary[]> {
+    return this.http.get<OrderSummary[]>(`${this.api.baseUrl}/me/orders?group=${group}&take=${take}`);
   }
 }

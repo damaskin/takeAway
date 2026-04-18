@@ -24,6 +24,7 @@ export class CatalogService {
     return stores
       .map((s) => ({
         id: s.id,
+        brandId: s.brandId,
         slug: s.slug,
         name: s.name,
         addressLine: s.addressLine,
@@ -56,6 +57,7 @@ export class CatalogService {
 
     return {
       id: store.id,
+      brandId: store.brandId,
       slug: store.slug,
       name: store.name,
       addressLine: store.addressLine,

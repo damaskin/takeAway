@@ -141,6 +141,48 @@ enum PaymentStatus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Loyalty & Promo enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum LoyaltyTier {
+  SILVER
+  GOLD
+  PLATINUM
+  SIGNATURE
+}
+
+/// Kind of movement in the points ledger.
+/// EARN  — credited to the user (order paid, bonus, referral…)
+/// SPEND — debited from the user (promo redemption, etc.)
+/// EXPIRE — periodic cleanup of aged points (M3+)
+/// ADJUST — manual admin correction (ticketed fix)
+enum PointsEntryType {
+  EARN
+  SPEND
+  EXPIRE
+  ADJUST
+}
+
+enum PromoType {
+  /// Percentage discount off subtotal (value = 0..100).
+  PERCENT
+  /// Flat discount in cents off subtotal.
+  FIXED
+  /// Cheapest qualifying item free (value = N of Y trigger; simplified M3).
+  BOGO
+  /// Multiply earned loyalty points by `value` (e.g. 2×).
+  POINTS_MULTIPLIER
+}
+
+enum PromoStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  EXPIRED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Identity
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -159,11 +201,14 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  devices       Device[]
-  oauthAccounts OAuthAccount[]
-  otpRequests   OtpRequest[]
-  carts         Cart[]
-  orders        Order[]
+  devices          Device[]
+  oauthAccounts    OAuthAccount[]
+  otpRequests      OtpRequest[]
+  carts            Cart[]
+  orders           Order[]
+  loyaltyAccount   LoyaltyAccount?
+  pointsLedger     PointsLedger[]
+  promoRedemptions PromoRedemption[]
 
   @@index([createdAt])
 }
@@ -229,6 +274,7 @@ model Brand {
   stores     Store[]
   categories Category[]
   products   Product[]
+  promos     Promo[]
 }
 
 model Store {
@@ -477,11 +523,13 @@ model Order {
   cancelledAt     DateTime?
   expiredAt       DateTime?
 
-  user     User         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  store    Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  items    OrderItem[]
-  events   OrderEvent[]
-  payments Payment[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  store           Store            @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  items           OrderItem[]
+  events          OrderEvent[]
+  payments        Payment[]
+  pointsEntries   PointsLedger[]
+  promoRedemption PromoRedemption?
 
   @@index([userId, createdAt])
   @@index([storeId, status])
@@ -533,4 +581,102 @@ model Payment {
 
   @@index([orderId])
   @@index([providerRef])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Loyalty
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row per user. Denormalized balance + current tier updated inside the
+/// same transaction as ledger writes so reads stay cheap.
+model LoyaltyAccount {
+  id             String      @id @default(cuid())
+  userId         String      @unique
+  pointsBalance  Int         @default(0)
+  lifetimePoints Int         @default(0)
+  tier           LoyaltyTier @default(SILVER)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries PointsLedger[]
+
+  @@index([tier])
+}
+
+/// Append-only ledger — any change to LoyaltyAccount.pointsBalance must have a
+/// matching row here so we can audit / reverse / show "Recent activity".
+model PointsLedger {
+  id               String          @id @default(cuid())
+  loyaltyAccountId String
+  userId           String
+  orderId          String?
+  type             PointsEntryType
+  // Positive for EARN/ADJUST credits, negative for SPEND/EXPIRE/ADJUST debits.
+  amount           Int
+  reason           String
+  metadata         Json?
+  createdAt        DateTime        @default(now())
+
+  loyaltyAccount LoyaltyAccount @relation(fields: [loyaltyAccountId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order          Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Promo
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A coupon/loyalty promotion owned by a brand. Validated at checkout and
+/// snapshotted onto the order so subsequent edits to the promo never rewrite
+/// history.
+model Promo {
+  id               String      @id @default(cuid())
+  brandId          String
+  /// Public code the customer types. Case-insensitive unique within brand.
+  code             String
+  label            String
+  type             PromoType
+  /// For PERCENT — integer 1..100.
+  /// For FIXED   — discount in cents.
+  /// For BOGO    — 1 (reserved for future trigger counts).
+  /// For POINTS_MULTIPLIER — multiplier ×10 (so "2.5x" = 25).
+  value            Int
+  /// Optional minimum cart subtotal (cents).
+  minSubtotalCents Int?
+  /// 0 = unlimited.
+  maxRedemptions   Int         @default(0)
+  perUserLimit     Int         @default(0)
+  startsAt         DateTime
+  endsAt           DateTime
+  status           PromoStatus @default(DRAFT)
+  currency         Currency    @default(USD)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  brand       Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  redemptions PromoRedemption[]
+
+  @@unique([brandId, code])
+  @@index([brandId, status])
+  @@index([startsAt, endsAt])
+}
+
+model PromoRedemption {
+  id            String   @id @default(cuid())
+  promoId       String
+  userId        String
+  orderId       String   @unique
+  discountCents Int
+  createdAt     DateTime @default(now())
+
+  promo Promo @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([promoId])
+  @@index([userId])
 }

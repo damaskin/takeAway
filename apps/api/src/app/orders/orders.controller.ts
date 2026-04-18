@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
@@ -33,8 +34,36 @@ export class OrdersController {
 
   @Get('me/orders')
   @ApiQuery({ name: 'take', required: false, type: Number })
+  @ApiQuery({ name: 'group', required: false, enum: ['ACTIVE', 'HISTORY', 'ALL'] })
   @ApiOkResponse({ type: OrderSummaryDto, isArray: true })
-  list(@CurrentUser() user: AuthenticatedUser, @Query('take') take?: string): Promise<OrderSummaryDto[]> {
-    return this.orders.listForUser(user.id, take ? Number(take) : undefined);
+  list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('take') take?: string,
+    @Query('group') group?: 'ACTIVE' | 'HISTORY' | 'ALL',
+  ): Promise<OrderSummaryDto[]> {
+    return this.orders.listForUser(user.id, take ? Number(take) : undefined, group ?? 'ALL');
+  }
+
+  // ── Admin feed ────────────────────────────────────────────────────────────
+
+  @Get('admin/orders')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN', 'STORE_MANAGER')
+  @ApiQuery({ name: 'brandId', required: false, type: String })
+  @ApiQuery({ name: 'storeId', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false, type: String })
+  @ApiQuery({ name: 'take', required: false, type: Number })
+  @ApiOkResponse({ type: OrderSummaryDto, isArray: true })
+  listAdmin(
+    @Query('brandId') brandId?: string,
+    @Query('storeId') storeId?: string,
+    @Query('status') status?: string,
+    @Query('take') take?: string,
+  ): Promise<OrderSummaryDto[]> {
+    return this.orders.listForAdmin({
+      brandId,
+      storeId,
+      status,
+      take: take ? Number(take) : undefined,
+    });
   }
 }

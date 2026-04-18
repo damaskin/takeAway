@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { PromoService } from '../../core/loyalty/loyalty.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
@@ -157,6 +158,25 @@ interface Step {
               }
               <div style="height: 1px; background: var(--color-border-light)"></div>
               <div class="flex items-center justify-between">
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                  >Subtotal</span
+                >
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                  price(c.subtotalCents)
+                }}</span>
+              </div>
+              @if (discountCents() > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
+                    >Promo · {{ promoCode() }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
+                    >− {{ price(discountCents()) }}</span
+                  >
+                </div>
+              }
+              <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
                   >Total</span
@@ -164,9 +184,48 @@ interface Step {
                 <span
                   style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-caramel)"
                 >
-                  {{ price(c.subtotalCents) }}
+                  {{ price(totalCents(c.subtotalCents)) }}
                 </span>
               </div>
+            </section>
+
+            <!-- Promo code -->
+            <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
+              <span
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+                >Promo code</span
+              >
+              <div
+                class="flex items-center"
+                style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
+              >
+                <span style="color: var(--color-text-tertiary)">🎟</span>
+                <input
+                  [value]="promoInput()"
+                  (input)="onPromoInput($event)"
+                  type="text"
+                  placeholder="WELCOME10"
+                  class="flex-1 outline-none bg-transparent"
+                  style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-primary); text-transform: uppercase"
+                />
+                <button
+                  type="button"
+                  (click)="applyPromo()"
+                  [disabled]="!promoInput() || promoLoading()"
+                  class="flex items-center justify-center disabled:opacity-50"
+                  style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                >
+                  {{ promoLoading() ? '…' : discountCents() > 0 ? 'Clear' : 'Apply' }}
+                </button>
+              </div>
+              @if (promoStatus()) {
+                <span
+                  style="font-family: var(--font-sans); font-size: 12px"
+                  [style.color]="discountCents() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
+                >
+                  {{ promoStatus() }}
+                </span>
+              }
             </section>
 
             <form
@@ -248,6 +307,7 @@ export class CheckoutPage implements OnInit {
   private readonly cartService = inject(CartService);
   private readonly catalog = inject(CatalogService);
   private readonly orders = inject(OrdersApi);
+  private readonly promo = inject(PromoService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -257,6 +317,16 @@ export class CheckoutPage implements OnInit {
   readonly scheduledAt = signal<string>(this.defaultScheduled());
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
+
+  // Promo state — promoCode() is the confirmed/applied code, promoInput() is
+  // what's currently typed in the input.
+  readonly promoInput = signal('');
+  readonly promoCode = signal<string | null>(null);
+  readonly discountCents = signal(0);
+  readonly promoStatus = signal<string | null>(null);
+  readonly promoLoading = signal(false);
+  /** Brand ID derived from the active store, needed for /promo/validate. */
+  readonly brandId = signal<string | null>(null);
 
   readonly contactForm = new FormGroup({
     customerName: new FormControl('', { nonNullable: true }),
@@ -298,16 +368,79 @@ export class CheckoutPage implements OnInit {
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
       this.catalog.getStore(storeSlug).subscribe({
-        next: (store) => this.cartService.load(store.id).subscribe((c) => this.cart.set(c)),
+        next: (store) => {
+          this.brandId.set(store.brandId);
+          this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
+        },
       });
     } else {
       this.catalog.listStores().subscribe({
         next: (stores) => {
           const first = stores[0];
-          if (first) this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
+          if (first) {
+            this.brandId.set(first.brandId);
+            this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
+          }
         },
       });
     }
+  }
+
+  // ── Promo flow ──────────────────────────────────────────────────────────
+
+  onPromoInput(event: Event): void {
+    this.promoInput.set((event.target as HTMLInputElement).value.trim().toUpperCase());
+    if (this.promoCode() && this.promoInput() !== this.promoCode()) {
+      // User started editing a confirmed code — reset the applied discount.
+      this.clearPromo();
+    }
+  }
+
+  applyPromo(): void {
+    // Acting as a toggle: if one is already applied, the button clears it.
+    if (this.discountCents() > 0) {
+      this.clearPromo();
+      return;
+    }
+    const code = this.promoInput();
+    const brandId = this.brandId();
+    const cart = this.cart();
+    if (!code || !brandId || !cart) return;
+
+    this.promoLoading.set(true);
+    this.promoStatus.set(null);
+    this.promo.validate(code, brandId, cart.subtotalCents).subscribe({
+      next: (res) => {
+        this.promoLoading.set(false);
+        if (!res.valid) {
+          this.promoStatus.set(res.reason ?? 'Promo is not valid');
+          return;
+        }
+        this.promoCode.set(code);
+        this.discountCents.set(res.discountCents);
+        this.promoStatus.set(
+          res.discountCents > 0
+            ? `Applied · saving ${this.price(res.discountCents)}`
+            : res.pointsMultiplier > 1
+              ? `Applied · earn ${res.pointsMultiplier}× points`
+              : 'Applied',
+        );
+      },
+      error: (err) => {
+        this.promoLoading.set(false);
+        this.promoStatus.set(extractMessage(err));
+      },
+    });
+  }
+
+  clearPromo(): void {
+    this.promoCode.set(null);
+    this.discountCents.set(0);
+    this.promoStatus.set(null);
+  }
+
+  totalCents(subtotalCents: number): number {
+    return Math.max(0, subtotalCents - this.discountCents());
   }
 
   selectMode(mode: PickupMode): void {
@@ -335,6 +468,7 @@ export class CheckoutPage implements OnInit {
       pickupAt: this.mode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined,
       customerName: v.customerName || undefined,
       notes: v.notes || undefined,
+      couponCode: this.promoCode() ?? undefined,
     };
 
     this.orders.create(input).subscribe({
