@@ -11,6 +11,7 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { OtpService } from './services/otp.service';
+import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -31,6 +32,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AuthService,
     OtpService,
     TokensService,
+    TelegramService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

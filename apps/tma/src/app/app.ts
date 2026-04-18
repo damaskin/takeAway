@@ -1,13 +1,22 @@
-import { Component } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { NxWelcome } from './nx-welcome';
+import { Component, OnInit, inject } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+import { TmaAuthService } from './core/auth/tma-auth.service';
+import { TelegramBridgeService } from './core/telegram/telegram-bridge.service';
 
 @Component({
-  imports: [NxWelcome, RouterModule],
   selector: 'app-root',
-  templateUrl: './app.html',
-  styleUrl: './app.scss',
+  standalone: true,
+  imports: [RouterOutlet],
+  template: `<router-outlet />`,
 })
-export class App {
-  protected title = 'tma';
+export class App implements OnInit {
+  private readonly tg = inject(TelegramBridgeService);
+  private readonly auth = inject(TmaAuthService);
+
+  ngOnInit(): void {
+    this.tg.ready();
+    this.tg.expand();
+    this.auth.autoSignIn();
+  }
 }
