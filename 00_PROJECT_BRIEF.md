@@ -76,12 +76,12 @@
 2. ✅ Техническое задание + стек
 3. ✅ Промт для pencil.dev → дизайн
 4. ✅ Утверждение дизайна (takeAway.pen)
-5. ⏳ Монорепо-скелет + инфра (Docker, CI)
-6. ⏳ MVP Backend: auth, menu, cart, orders, payments
-7. ⏳ MVP Web/PWA
-8. ⏳ MVP Telegram Mini App
-9. ⏳ Admin panel
-10. ⏳ KDS (экран баристы)
+5. ✅ Монорепо-скелет + инфра (Docker, CI)
+6. ✅ MVP Backend: auth, menu, cart, orders, payments (Stripe Payment Intents + webhook, WebSocket realtime)
+7. ✅ MVP Web/PWA (каталог + корзина + checkout + статус заказа с live WebSocket)
+8. ✅ MVP Telegram Mini App (каталог + корзина + checkout + статус с haptics и MainButton)
+9. ✅ Admin panel (auth, layout, dashboard, menu management, stores)
+10. ✅ KDS (экран баристы — 3 колонки, dual-timer, status transitions)
 11. ⏳ Alpha-тест в 1 локации
 12. ⏳ Flutter-приложения (iOS/Android)
 13. ⏳ Public launch
