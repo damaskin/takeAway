@@ -315,15 +315,15 @@ importers:
 
   libs/ui-kit:
     dependencies:
-      '@angular/common':
-        specifier: ^21.2.0
-        version: 21.2.9(@angular/core@21.2.9(@angular/compiler@21.2.9)(rxjs@7.8.2))(rxjs@7.8.2)
       '@angular/core':
         specifier: ^21.2.0
         version: 21.2.9(@angular/compiler@21.2.9)(rxjs@7.8.2)
 
   libs/utils:
     dependencies:
+      '@takeaway/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       tslib:
         specifier: ^2.3.0
         version: 2.8.1
