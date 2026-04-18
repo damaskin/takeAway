@@ -26,6 +26,20 @@ interface StoreLoadPayload {
   currentEtaSeconds: number;
 }
 
+/**
+ * KDS events. Kitchen clients subscribe to a store room and get any
+ * change that should repaint their board (status transition, new order,
+ * cancellation). The payload is deliberately identical to what /kds/:storeId
+ * GET would return per row so the client just patches in place.
+ */
+interface KdsOrderPayload {
+  storeId: string;
+  kind: 'created' | 'updated' | 'removed';
+  orderId: string;
+  /** Full KDS order row (same shape as KdsService.list). Null for "removed". */
+  order: unknown | null;
+}
+
 @Injectable()
 @WebSocketGateway({ namespace: 'ws', cors: { origin: true, credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -92,8 +106,47 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.emit('store.loadChanged', payload);
   }
 
+  /**
+   * KDS clients (store staff) subscribe to their store's kitchen feed. We
+   * only let users with a staff-level role in — everyone else gets {ok:false}.
+   */
+  @SubscribeMessage('kds.subscribe')
+  async subscribeToKds(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
+    const userId = client.data['userId'] as string | undefined;
+    if (!userId || !body?.storeId) return { ok: false };
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user || !['STAFF', 'STORE_MANAGER', 'BRAND_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      return { ok: false };
+    }
+    await client.join(this.kdsRoom(body.storeId));
+    return { ok: true };
+  }
+
+  @SubscribeMessage('kds.unsubscribe')
+  async unsubscribeFromKds(client: Socket, body: { storeId: string }): Promise<void> {
+    if (!body?.storeId) return;
+    await client.leave(this.kdsRoom(body.storeId));
+  }
+
+  /**
+   * Broadcast a KDS-shaped change to every connected kitchen in this store.
+   * Called by OrdersService (new order / cancel) and KdsService (status
+   * transitions) to replace the current 5-second polling fallback.
+   */
+  emitKdsOrderChanged(payload: KdsOrderPayload): void {
+    this.server.to(this.kdsRoom(payload.storeId)).emit('kds.orderChanged', payload);
+  }
+
   private orderRoom(orderId: string): string {
     return `order:${orderId}`;
+  }
+
+  private kdsRoom(storeId: string): string {
+    return `kds:${storeId}`;
   }
 
   private extractToken(client: Socket): string | null {

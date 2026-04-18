@@ -109,11 +109,54 @@ export class KdsService {
       updated.userId,
     );
 
+    // Push to the kitchen board too. PICKED_UP orders leave the open list,
+    // so we send a "removed" hint; everything else is an "updated" patch
+    // carrying the fresh KDS row so the client can re-render in place.
+    if (updated.status === 'PICKED_UP') {
+      this.realtime.emitKdsOrderChanged({
+        storeId: updated.storeId,
+        kind: 'removed',
+        orderId: updated.id,
+        order: null,
+      });
+    } else {
+      const [row] = await this.listOpenByIds(storeId, [updated.id]);
+      this.realtime.emitKdsOrderChanged({
+        storeId: updated.storeId,
+        kind: 'updated',
+        orderId: updated.id,
+        order: row ?? null,
+      });
+    }
+
     return {
       id: updated.id,
       status: updated.status,
       orderCode: updated.orderCode,
       pickupAt: updated.pickupAt.toISOString(),
     };
+  }
+
+  /** Same mapping as listOpen() but filtered by specific ids — used to get a
+   *  fresh row after a transition so the KDS socket payload is ready-to-paint. */
+  private async listOpenByIds(storeId: string, ids: string[]) {
+    const orders = await this.prisma.order.findMany({
+      where: { storeId, id: { in: ids } },
+      include: { items: true },
+    });
+    return orders.map((o) => ({
+      id: o.id,
+      orderCode: o.orderCode,
+      status: o.status,
+      pickupMode: o.pickupMode,
+      pickupAt: o.pickupAt.toISOString(),
+      createdAt: o.createdAt.toISOString(),
+      customerName: o.customerName,
+      notes: o.notes,
+      items: o.items.map((i) => ({
+        productSnapshot: i.productSnapshot,
+        quantity: i.quantity,
+      })),
+    }));
   }
 }

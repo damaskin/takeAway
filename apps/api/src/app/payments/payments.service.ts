@@ -153,6 +153,36 @@ export class PaymentsService {
       updatedOrder.userId,
     );
 
+    // New PAID order should appear on the KDS board without waiting for the
+    // 5s polling tick. We load the fresh row (with items) and broadcast it.
+    if (updatedOrder.status === 'PAID') {
+      const kdsRow = await this.prisma.order.findUnique({
+        where: { id: updatedOrder.id },
+        include: { items: true },
+      });
+      if (kdsRow) {
+        this.realtime.emitKdsOrderChanged({
+          storeId: updatedOrder.storeId,
+          kind: 'created',
+          orderId: updatedOrder.id,
+          order: {
+            id: kdsRow.id,
+            orderCode: kdsRow.orderCode,
+            status: kdsRow.status,
+            pickupMode: kdsRow.pickupMode,
+            pickupAt: kdsRow.pickupAt.toISOString(),
+            createdAt: kdsRow.createdAt.toISOString(),
+            customerName: kdsRow.customerName,
+            notes: kdsRow.notes,
+            items: kdsRow.items.map((i) => ({
+              productSnapshot: i.productSnapshot,
+              quantity: i.quantity,
+            })),
+          },
+        });
+      }
+    }
+
     // Credit loyalty points. Fire-and-forget: a ledger hiccup must not roll
     // back a successful payment.
     if (updatedOrder.status === 'PAID') {
