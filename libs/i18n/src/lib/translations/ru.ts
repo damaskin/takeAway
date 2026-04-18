@@ -470,6 +470,9 @@ export const TRANSLATIONS_RU = {
     },
   },
   kds: {
+    login: {
+      title: 'takeAway · Кухня',
+    },
     topbar: {
       inQueue: 'в очереди',
       pickupsAll: 'Все выдачи',
