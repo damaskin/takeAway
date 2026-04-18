@@ -49,6 +49,10 @@
     "serve": {
       "continuous": true,
       "executor": "@angular/build:dev-server",
+      "options": {
+        "port": 4201,
+        "proxyConfig": "apps/tma/proxy.conf.json"
+      },
       "configurations": {
         "production": {
           "buildTarget": "tma:build:production"

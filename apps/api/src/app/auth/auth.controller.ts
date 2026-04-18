@@ -9,6 +9,7 @@ import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto, SendOtpResponseDto } from './dto/auth-response.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
+import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
@@ -36,6 +37,15 @@ export class AuthController {
   @ApiOkResponse({ type: AuthSessionDto })
   verifyOtp(@Body() dto: VerifyOtpDto): Promise<AuthSessionDto> {
     return this.auth.verifyOtp(dto);
+  }
+
+  @Public()
+  @Post('telegram')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  verifyTelegram(@Body() dto: TelegramAuthDto): Promise<AuthSessionDto> {
+    return this.auth.verifyTelegram(dto.initData);
   }
 
   @Public()
