@@ -33,7 +33,7 @@ interface NavItem {
         >
         <span
           style="font-family: var(--font-sans); font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 1px"
-          >Admin</span
+          >{{ 'admin.layout.adminTag' | translate }}</span
         >
       </div>
 

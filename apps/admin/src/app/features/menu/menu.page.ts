@@ -85,7 +85,7 @@ import {
 
         @if (categories().length === 0) {
           <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); padding: 8px">
-            No categories yet.
+            {{ 'admin.menu.noCategories' | translate }}
           </p>
         }
 
@@ -155,11 +155,11 @@ import {
           <h2
             style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            {{ selectedCategory()?.name ?? 'Products' }}
+            {{ selectedCategory()?.name ?? ('admin.menu.productsFallback' | translate) }}
           </h2>
-          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-            >{{ products().length }} items</span
-          >
+          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+            'admin.menu.itemsCount' | translate: { count: products().length }
+          }}</span>
         </header>
 
         @if (!selectedCategoryId()) {
@@ -209,7 +209,7 @@ import {
                     {{ formatPrice(p.basePriceCents) }}
                   </td>
                   <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
-                    {{ (p.prepTimeSeconds / 60).toFixed(0) }} min
+                    {{ (p.prepTimeSeconds / 60).toFixed(0) }} {{ 'common.units.min' | translate }}
                   </td>
                   <td style="padding: 12px; text-align: center">
                     <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
@@ -243,7 +243,7 @@ import {
             />
             <input
               formControlName="slug"
-              placeholder="slug"
+              [placeholder]="'admin.menu.product.slug' | translate"
               style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
             />
             <input
@@ -337,7 +337,7 @@ export class MenuPage implements OnInit {
         this.brand.set(first);
         this.loadCategories(first.id);
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
@@ -367,7 +367,7 @@ export class MenuPage implements OnInit {
         this.categoryFormOpen.set(false);
         this.loadCategories(brand.id);
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
@@ -392,7 +392,7 @@ export class MenuPage implements OnInit {
           this.productFormOpen.set(false);
           this.loadProducts(categoryId);
         },
-        error: (err) => this.error.set(extractMessage(err)),
+        error: (err) => this.error.set(this.extractMessage(err)),
       });
   }
 
@@ -403,7 +403,7 @@ export class MenuPage implements OnInit {
         const current = this.selectedCategoryId();
         if (current) this.loadProducts(current);
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
@@ -415,7 +415,7 @@ export class MenuPage implements OnInit {
         const current = this.selectedCategoryId();
         if (current) this.loadProducts(current);
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
@@ -434,7 +434,7 @@ export class MenuPage implements OnInit {
           this.selectCategory(list[0].id);
         }
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
@@ -443,14 +443,14 @@ export class MenuPage implements OnInit {
     if (!brand) return;
     this.api.listProducts(brand.id, categoryId).subscribe({
       next: (list) => this.products.set(list),
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
-}
 
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Request failed';
+  private extractMessage(err: unknown): string {
+    const maybe = err as { error?: { message?: unknown }; message?: unknown };
+    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
+    if (typeof maybe.message === 'string') return maybe.message;
+    return this.translate.instant('common.requestFailed');
+  }
 }

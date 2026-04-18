@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 
@@ -70,7 +70,7 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
                 >{{ s.currency }}</span
               >
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-                >slug: {{ s.slug }}</span
+                >{{ 'admin.stores.slugLabel' | translate }}: {{ s.slug }}</span
               >
             </div>
 
@@ -102,6 +102,7 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
 })
 export class StoresPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
+  private readonly translate = inject(TranslateService);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly error = signal<string | null>(null);
@@ -111,7 +112,7 @@ export class StoresPage implements OnInit {
       next: (list) => this.stores.set(list),
       error: (err) => {
         const maybe = err as { error?: { message?: string }; message?: string };
-        this.error.set(maybe.error?.message ?? maybe.message ?? 'Failed to load stores');
+        this.error.set(maybe.error?.message ?? maybe.message ?? this.translate.instant('admin.stores.loadFailed'));
       },
     });
   }
