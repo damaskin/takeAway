@@ -21,10 +21,12 @@
 Изменить стек можно только с явного согласия Raynor. Никаких скрытых замен.
 
 ### Monorepo
+
 - **pnpm** + **Nx** (или Turborepo если Nx перегружен для MVP)
 - Единый TypeScript, единый ESLint, Prettier, commitlint (Conventional Commits)
 
 ### Backend — `apps/api`
+
 - **NestJS 11** на Fastify adapter
 - **PostgreSQL 16** + **Prisma**
 - **Redis 7** (cache, session, rate limit, BullMQ)
@@ -37,7 +39,8 @@
 - Auth: **JWT** access (15m) + refresh в Redis (7d), Passport strategies
 
 ### Web / TMA / Admin / KDS — `apps/web`, `apps/tma`, `apps/admin`, `apps/kds`
-- **Angular 19+**, standalone components, **signals**
+
+- **Angular 21+**, standalone components, **signals**
 - **NgRx Signal Store** для state (или Akita если станет сложнее)
 - **Tailwind CSS 4** + собственный UI Kit в `libs/ui-kit`
 - **Reactive Forms** + zod-валидация
@@ -48,15 +51,18 @@
 - **Mixpanel** + **Sentry** SDK
 
 ### Mobile (v2) — `apps/mobile`
+
 - **Flutter 3.x**, Riverpod 2, Dio + Retrofit, firebase_messaging, flutter_stripe
 
 ### Shared libs
+
 - `libs/shared-types` — чистые TS-интерфейсы, переиспользуемые DTO
 - `libs/api-client` — сгенерированный из OpenAPI клиент, используется всеми Angular-приложениями
 - `libs/ui-kit` — Angular-компоненты: Button, Input, Card, Modal, BottomSheet, Toast
 - `libs/utils` — форматтеры валют, дат, вспомогательные функции
 
 ### Инфраструктура
+
 - **Docker** + docker-compose для локалки (postgres, redis, minio, mailhog)
 - **GitHub Actions** для CI/CD
 - **Cloudflare** для DNS + CDN
@@ -66,12 +72,14 @@
 ## 3. Правила работы
 
 ### 3.1. Перед любой задачей
+
 1. Прочитай `00_PROJECT_BRIEF.md`, `01_TECHNICAL_SPEC.md` и относящиеся разделы
 2. Если задача касается существующего кода — прочитай файлы целиком, не строчки
 3. Никогда не пиши код без чтения соседних файлов. Понимай окружение
 4. Если задача неочевидна — уточни через AskUserQuestion до кода, не после
 
 ### 3.2. Коммуникация
+
 - **Язык общения с Raynor: русский.** Кратко, по делу, без воды
 - **Язык кода, комментариев, commit-ов, документации: английский**
 - Никаких эмодзи в коде, документации, коммитах, интерфейсе — если Raynor явно не просит
@@ -79,6 +87,7 @@
 - Не хвалить свою работу и не подводить итог действий без запроса. Raynor читает diff
 
 ### 3.3. Код-стайл
+
 - TypeScript **strict**. Запрещены `any`, `unknown as T`, `@ts-ignore` без письменного обоснования
 - В Angular — только **standalone components** и **signals**, никаких NgModule
 - В NestJS — DTO + validator для каждого входа, сервис-слой без доступа к HTTP-объектам
@@ -89,6 +98,7 @@
 - Не добавлять backwards-compat шимов. Удалять полностью, если есть согласие
 
 ### 3.4. Что НЕ делать
+
 - Не создавать «улучшалки» за пределами задачи. Bug fix — это bug fix, не рефакторинг
 - Не добавлять зависимости без явного согласия
 - Не делать преждевременных абстракций — три похожие строчки кода лучше непрошенного helper-а
@@ -97,12 +107,14 @@
 - Не трогать миграции в `apps/api/prisma/migrations` после применения к staging
 
 ### 3.5. Тесты
+
 - Unit через Jest (NestJS) и Vitest (Angular)
 - e2e через Playwright для web/admin/kds
 - Integration tests для backend через Supertest + testcontainers-postgres
 - Минимальный coverage: 70% для backend core модулей (auth, orders, payments, loyalty)
 
 ### 3.6. Безопасность
+
 - Stripe secret key только на backend, никогда в Angular/Flutter
 - Все secrets через env, никогда в git. Использовать `.env.example`
 - Rate limit на auth endpoints (@nestjs/throttler + Redis)
@@ -111,6 +123,7 @@
 - GDPR: endpoints для export/delete данных пользователя
 
 ### 3.7. Память и сессии
+
 - В начале сессии — читаю `MEMORY.md` и применимые файлы памяти
 - Сохраняю в память: решения по архитектуре, фидбек Raynor, новые паттерны проекта
 - Не сохраняю в память: TODO, ephemeral state, историю коммитов — это в git/tasks

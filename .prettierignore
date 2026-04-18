@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.nx
+.angular
+tmp
+pnpm-lock.yaml
+*.pen

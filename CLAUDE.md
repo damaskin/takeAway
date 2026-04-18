@@ -8,6 +8,6 @@
 
 Язык общения с пользователем: русский. Язык кода и документации: английский.
 
-Стек: TypeScript монорепо (pnpm + Nx), NestJS + Prisma + PostgreSQL + Redis на бэке, Angular 19+ со standalone и signals на фронте (web / TMA / admin / KDS), Flutter в v2 для iOS/Android. Платежи — Stripe.
+Стек: TypeScript монорепо (pnpm + Nx), NestJS + Prisma + PostgreSQL + Redis на бэке, Angular 21+ со standalone и signals на фронте (web / TMA / admin / KDS), Flutter в v2 для iOS/Android. Платежи — Stripe.
 
 Перед любым коммитом, рефакторингом или добавлением зависимости — явное согласие пользователя.
