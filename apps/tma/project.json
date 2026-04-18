@@ -20,7 +20,7 @@
             "input": "apps/tma/public"
           }
         ],
-        "styles": ["apps/tma/src/styles.scss"]
+        "styles": ["apps/tma/src/styles.css"]
       },
       "configurations": {
         "production": {

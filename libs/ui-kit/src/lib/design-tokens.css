@@ -5,9 +5,16 @@
  * Light/dark theme switched via `data-theme="dark"` on <html> (or <body>).
  * Generated from pencil.dev get_variables output — keep names in sync with
  * the .pen file so designer ↔ dev handoff is round-trippable.
+ *
+ * NOTE: we declare tokens inside :root (not Tailwind's @theme) because the
+ * file is imported via SCSS, which bypasses the @tailwindcss/postcss step
+ * that would expand @theme into custom properties. As plain :root variables
+ * they are available everywhere via var(...) unconditionally.
  */
 
-@theme {
+:root {
+  color-scheme: light;
+
   /* Brand (theme-neutral) */
   --color-caramel: #c77d3b;
   --color-caramel-hover: #b56d2b;
@@ -72,10 +79,6 @@
   /* Shadows */
   --shadow-soft: 0 6px 20px rgba(26, 20, 20, 0.06);
   --shadow-lifted: 0 12px 32px rgba(26, 20, 20, 0.1);
-}
-
-:root {
-  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
