@@ -15,14 +15,22 @@ type Step = 'phone' | 'code';
   template: `
     <main
       class="min-h-screen flex items-center justify-center"
-      style="background: var(--color-cream); color: var(--color-cream)"
+      style="background: var(--color-cream); color: var(--color-text-primary); padding: 16px"
     >
-      <section class="w-full max-w-md p-8" style="background: var(--color-surface); border-radius: var(--radius-card)">
+      <section
+        class="w-full max-w-md"
+        style="background: var(--color-foam); border-radius: var(--radius-card); padding: 32px; box-shadow: var(--shadow-soft)"
+      >
         <div class="flex items-center justify-between mb-2">
-          <h1 class="text-3xl" style="font-family: var(--font-display)">{{ 'kds.login.title' | translate }}</h1>
+          <h1
+            class="text-3xl"
+            style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 700; margin: 0"
+          >
+            {{ 'kds.login.title' | translate }}
+          </h1>
           <app-language-switcher />
         </div>
-        <p class="mb-6" style="opacity: 0.6">
+        <p class="mb-6" style="color: var(--color-text-secondary); font-family: var(--font-sans); font-size: 14px">
           {{ (step() === 'phone' ? 'web.auth.signInPhone' : 'web.auth.enterCode') | translate }}
         </p>
 
@@ -31,15 +39,16 @@ type Step = 'phone' | 'code';
             <input
               formControlName="phone"
               type="tel"
+              autocomplete="tel"
               [placeholder]="'admin.login.phonePlaceholder' | translate"
               class="px-4 py-3 outline-none"
-              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
+              style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px"
             />
             <button
               type="submit"
               [disabled]="phoneForm.invalid || loading()"
               class="py-3 font-medium disabled:opacity-50"
-              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
+              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 15px; font-weight: 600"
             >
               {{ (loading() ? 'admin.login.sending' : 'admin.login.sendCode') | translate }}
             </button>
@@ -49,24 +58,33 @@ type Step = 'phone' | 'code';
             <input
               formControlName="code"
               inputmode="numeric"
+              autocomplete="one-time-code"
               maxlength="6"
               [placeholder]="'admin.login.codePlaceholder' | translate"
               class="px-4 py-3 text-center text-xl tracking-[0.5em] outline-none"
-              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input); font-family: var(--font-mono)"
+              style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono)"
             />
             <button
               type="submit"
               [disabled]="codeForm.invalid || loading()"
               class="py-3 font-medium disabled:opacity-50"
-              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
+              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 15px; font-weight: 600"
             >
               {{ (loading() ? 'admin.login.verifying' : 'common.signIn') | translate }}
+            </button>
+            <button
+              type="button"
+              (click)="step.set('phone')"
+              class="py-2 text-sm"
+              style="color: var(--color-text-secondary); font-family: var(--font-sans)"
+            >
+              {{ 'admin.login.changeNumber' | translate }}
             </button>
           </form>
         }
 
         @if (error()) {
-          <p class="mt-4 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
+          <p class="mt-4 text-sm" style="color: var(--color-berry); font-family: var(--font-sans)">{{ error() }}</p>
         }
       </section>
     </main>
