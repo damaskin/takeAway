@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
+import { Role } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { UsersService } from '../../users/users.service';
@@ -15,6 +16,7 @@ export interface AuthenticatedUser {
   phone: string | null;
   email: string | null;
   name: string | null;
+  role: Role;
 }
 
 @Injectable()
@@ -35,6 +37,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.blockedAt) {
       throw new UnauthorizedException('User not found or blocked');
     }
-    return { id: user.id, phone: user.phone, email: user.email, name: user.name };
+    return { id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role };
   }
 }

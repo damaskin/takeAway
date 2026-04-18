@@ -9,6 +9,7 @@ import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { OtpService } from './services/otp.service';
 import { TokensService } from './services/tokens.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -32,6 +33,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TokensService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
   exports: [AuthService],

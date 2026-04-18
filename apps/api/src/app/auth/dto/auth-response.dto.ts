@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Currency, Locale } from '@prisma/client';
+import { Currency, Locale, Role } from '@prisma/client';
 
 export class AuthUserDto {
   @ApiProperty()
@@ -19,6 +19,9 @@ export class AuthUserDto {
 
   @ApiProperty({ enum: Currency })
   currency!: Currency;
+
+  @ApiProperty({ enum: Role })
+  role!: Role;
 }
 
 export class AuthTokensDto {

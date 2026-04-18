@@ -13,6 +13,12 @@ import { PrismaClient, VariationType } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
+  await prisma.user.upsert({
+    where: { phone: '+10000000001' },
+    update: { role: 'SUPER_ADMIN' },
+    create: { phone: '+10000000001', name: 'Dev Super Admin', role: 'SUPER_ADMIN' },
+  });
+
   const brand = await prisma.brand.upsert({
     where: { slug: 'takeaway' },
     update: {},
