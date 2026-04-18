@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@source "./**/*.{ts,html}";
+@source "../../../libs/ui-kit/src/**/*.{ts,html}";
 @import '../../../libs/ui-kit/src/lib/design-tokens.css';
 
 html,
@@ -9,7 +11,7 @@ body {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--color-foam);
+  background: var(--color-cream);
   color: var(--color-espresso);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

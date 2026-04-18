@@ -20,7 +20,7 @@
             "input": "apps/kds/public"
           }
         ],
-        "styles": ["apps/kds/src/styles.scss"]
+        "styles": ["apps/kds/src/styles.css"]
       },
       "configurations": {
         "production": {

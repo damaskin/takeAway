@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@source "./**/*.{ts,html}";
+@source "../../../libs/ui-kit/src/**/*.{ts,html}";
 @import '../../../libs/ui-kit/src/lib/design-tokens.css';
 
 html,

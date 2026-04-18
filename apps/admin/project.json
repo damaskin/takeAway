@@ -20,7 +20,7 @@
             "input": "apps/admin/public"
           }
         ],
-        "styles": ["apps/admin/src/styles.scss"]
+        "styles": ["apps/admin/src/styles.css"]
       },
       "configurations": {
         "production": {
