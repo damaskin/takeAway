@@ -10,6 +10,7 @@ import {
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
 
@@ -20,7 +21,10 @@ const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
     const cart = await this.prisma.cart.findUnique({
@@ -147,6 +151,16 @@ export class OrdersService {
       },
       include: { items: true, store: { select: { name: true } } },
     });
+
+    this.realtime.emitOrderStatusChanged(
+      {
+        orderId: updated.id,
+        status: updated.status,
+        etaSeconds: 0,
+        occurredAt: (updated.cancelledAt ?? new Date()).toISOString(),
+      },
+      updated.userId,
+    );
 
     return this.toOrderDto(updated);
   }

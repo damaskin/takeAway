@@ -10,6 +10,7 @@ import {
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
 // Minimal runtime-only shape of the Stripe objects we consume. Full types
@@ -37,6 +38,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: StripeConfig,
+    private readonly realtime: RealtimeGateway,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
   ) {}
 
@@ -116,7 +118,7 @@ export class PaymentsService {
     const order = orderId ? await this.prisma.order.findUnique({ where: { id: orderId } }) : null;
     if (!order) return;
 
-    await this.prisma.$transaction([
+    const [, updatedOrder] = await this.prisma.$transaction([
       this.prisma.payment.updateMany({
         where: { providerRef: intent.id },
         data: { status: 'SUCCEEDED', rawJson: intent as Prisma.InputJsonValue },
@@ -134,6 +136,20 @@ export class PaymentsService {
         },
       }),
     ]);
+
+    const store = await this.prisma.store.findUnique({
+      where: { id: updatedOrder.storeId },
+      select: { currentEtaSeconds: true },
+    });
+    this.realtime.emitOrderStatusChanged(
+      {
+        orderId: updatedOrder.id,
+        status: updatedOrder.status,
+        etaSeconds: store?.currentEtaSeconds ?? 0,
+        occurredAt: new Date().toISOString(),
+      },
+      updatedOrder.userId,
+    );
   }
 
   private async onPaymentFailed(intent: any): Promise<void> {
