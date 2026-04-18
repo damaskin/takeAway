@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -27,6 +28,7 @@ interface ProfileSection {
 @Component({
   selector: 'app-profile',
   standalone: true,
+  imports: [TranslatePipe],
   template: `
     @if (store.user(); as user) {
       <section
@@ -55,11 +57,11 @@ interface ProfileSection {
                 class="flex items-center"
                 style="height: 26px; padding: 0 10px; background: rgba(255,255,255,0.13); border-radius: 9999px; gap: 6px; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: white"
               >
-                ⭐ {{ tier() }}
+                ⭐ {{ tier() | translate }}
               </span>
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.6)"
-                >{{ points() }} points</span
+                >{{ points() }} {{ 'web.profile.pointsSuffix' | translate }}</span
               >
             </div>
           </div>
@@ -71,11 +73,11 @@ interface ProfileSection {
           <div class="flex items-center justify-between">
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel)"
-              >{{ tier() }}</span
+              >{{ tier() | translate }}</span
             >
-            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-              >{{ pointsToNextTier() }} pts to {{ nextTier() }}</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+              'web.profile.toNextTier' | translate: { points: pointsToNextTier(), tier: nextTier() }
+            }}</span>
           </div>
           <div
             style="position: relative; width: 100%; height: 6px; background: var(--color-surface-variant); border-radius: 9999px; overflow: hidden"
@@ -99,11 +101,11 @@ interface ProfileSection {
               <span
                 class="flex-1 text-left"
                 style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-                >{{ sec.label }}</span
+                >{{ sec.label | translate }}</span
               >
               @if (sec.value) {
                 <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)">{{
-                  sec.value
+                  sec.value | translate
                 }}</span>
               }
               <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
@@ -118,9 +120,9 @@ interface ProfileSection {
             style="height: 56px; padding: 0 20px; background: transparent; border-radius: 14px; gap: 16px; margin-top: 8px"
           >
             <span style="color: var(--color-berry); font-size: 18px">⎋</span>
-            <span style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-berry)"
-              >Sign out</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-berry)">{{
+              'common.signOut' | translate
+            }}</span>
           </button>
         </div>
 
@@ -139,6 +141,7 @@ export class ProfilePage implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly loyaltyApi = inject(LoyaltyService);
+  private readonly translate = inject(TranslateService);
 
   readonly loyalty = signal<LoyaltyAccount | null>(null);
 
@@ -147,11 +150,11 @@ export class ProfilePage implements OnInit {
   }
 
   readonly sections: ProfileSection[] = [
-    { icon: '👤', label: 'Personal info' },
-    { icon: '💳', label: 'Payment methods' },
-    { icon: '🎁', label: 'Gift cards' },
-    { icon: '🔔', label: 'Notifications' },
-    { icon: '🌐', label: 'Language', value: 'English' },
+    { icon: '👤', label: 'web.profile.sections.personal' },
+    { icon: '💳', label: 'web.profile.sections.payment' },
+    { icon: '🎁', label: 'web.profile.sections.gift' },
+    { icon: '🔔', label: 'web.profile.sections.notifications' },
+    { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
   ];
 
   initials(name?: string | null): string {
@@ -168,13 +171,15 @@ export class ProfilePage implements OnInit {
     return this.loyalty()?.pointsBalance ?? 0;
   }
 
+  /** Translation KEY for the current tier — resolved in the template via | translate. */
   tier(): string {
-    return this.formatTier(this.loyalty()?.tier ?? 'SILVER');
+    return this.tierKey(this.loyalty()?.tier ?? 'SILVER');
   }
 
+  /** Already-translated label for interpolation inside `toNextTier` binding. */
   nextTier(): string {
     const next = this.loyalty()?.nextTier;
-    return next ? this.formatTier(next) : 'Signature';
+    return this.translate.instant(next ? this.tierKey(next) : 'web.profile.tierSignature');
   }
 
   pointsToNextTier(): number {
@@ -185,8 +190,17 @@ export class ProfilePage implements OnInit {
     return this.loyalty()?.tierProgressPercent ?? 0;
   }
 
-  private formatTier(t: string): string {
-    return t.charAt(0) + t.slice(1).toLowerCase();
+  private tierKey(t: string): string {
+    switch (t) {
+      case 'GOLD':
+        return 'web.profile.tierGold';
+      case 'PLATINUM':
+        return 'web.profile.tierPlatinum';
+      case 'SIGNATURE':
+        return 'web.profile.tierSignature';
+      default:
+        return 'web.profile.tierSilver';
+    }
   }
 
   logout(): void {

@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -10,10 +11,10 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 
 const VARIATION_LABELS: Record<VariationType, string> = {
-  SIZE: 'Size',
-  TEMPERATURE: 'Temperature',
-  MILK: 'Milk',
-  CUP: 'Cup',
+  SIZE: 'web.product.labels.size',
+  TEMPERATURE: 'web.product.labels.temperature',
+  MILK: 'web.product.labels.milk',
+  CUP: 'web.product.labels.cup',
 };
 
 /**
@@ -35,7 +36,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
 @Component({
   selector: 'app-product',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, TranslatePipe],
   template: `
     @if (product(); as p) {
       <section style="padding: 48px 80px; display: flex; gap: 64px; max-width: 1440px; margin: 0 auto">
@@ -54,12 +55,12 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <a
               routerLink="/menu"
               style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-              >Menu</a
+              >{{ 'web.product.breadcrumbMenu' | translate }}</a
             >
             <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
-            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-              >Coffee</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+              'web.product.breadcrumbCoffee' | translate
+            }}</span>
             <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
@@ -86,9 +87,9 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               @if (p.calories !== null) {
                 <div class="flex items-center" style="gap: 6px">
                   <span style="color: var(--color-text-tertiary); font-size: 14px">🔥</span>
-                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-                    >{{ p.calories }} kcal</span
-                  >
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+                    'web.product.labels.kcal' | translate: { calories: p.calories }
+                  }}</span>
                 </div>
               }
               @if (p.allergens.length > 0) {
@@ -107,7 +108,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <div class="flex flex-col" style="gap: 8px">
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                >{{ variationLabel(group.type) }}</span
+                >{{ variationLabel(group.type) | translate }}</span
               >
               <div class="flex flex-wrap" style="gap: 8px">
                 @for (v of group.variations; track v.id) {
@@ -137,7 +138,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <div class="flex flex-col" style="gap: 24px; margin-top: 4px">
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                >Add-ons</span
+                >{{ 'web.product.labels.addons' | translate }}</span
               >
               @for (m of p.modifiers; track m.id) {
                 <div class="flex items-center justify-between">
@@ -189,7 +190,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <div class="flex items-center" style="gap: 12px">
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
-                >Caffeine</span
+                >{{ 'web.product.labels.caffeine' | translate }}</span
               >
               <div class="flex items-center" style="gap: 6px">
                 @for (i of [0, 1, 2, 3]; track i) {
@@ -208,13 +209,13 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <label
               for="pdp-notes"
               style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-              >Special instructions</label
+              >{{ 'web.product.labels.specialInstructions' | translate }}</label
             >
             <textarea
               id="pdp-notes"
               [(ngModel)]="notes"
               rows="4"
-              placeholder="Any preferences? E.g. extra hot, light foam…"
+              [placeholder]="'web.product.placeholders.notes' | translate"
               style="background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 12px 16px; height: 140px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); resize: vertical"
             ></textarea>
           </div>
@@ -256,7 +257,11 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               style="flex: 1; height: 56px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); gap: 12px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
             >
               <span style="font-size: 18px">🛍</span>
-              <span>{{ adding() ? 'Adding…' : 'Add to cart — ' + price(totalCents()) }}</span>
+              <span>{{
+                adding()
+                  ? ('web.product.cta.adding' | translate)
+                  : ('web.product.cta.add' | translate: { total: price(totalCents()) })
+              }}</span>
             </button>
           </div>
           @if (!authStore.isAuthenticated()) {
@@ -264,8 +269,10 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               class="text-center"
               style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
             >
-              <a routerLink="/login" style="color: var(--color-caramel); text-decoration: underline">Sign in</a>
-              to place an order.
+              <a routerLink="/login" style="color: var(--color-caramel); text-decoration: underline">{{
+                'common.signIn' | translate
+              }}</a>
+              {{ 'web.product.cta.signInPrompt' | translate }}
             </p>
           } @else if (cartItemCount() > 0) {
             <a
@@ -273,7 +280,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               [queryParams]="{ store: storeSlug() }"
               class="flex items-center justify-center"
               style="margin-top: 4px; height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >Go to checkout · {{ cartItemCount() }} in cart</a
+              >{{ 'web.product.cta.goToCheckout' | translate: { count: cartItemCount() } }}</a
             >
           }
           @if (addError()) {
@@ -295,7 +302,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
           (click)="back()"
           style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin-bottom: 16px"
         >
-          ← Back
+          ← {{ 'common.back' | translate }}
         </button>
         <p style="color: var(--color-berry); font-family: var(--font-sans); font-size: 14px">{{ error() }}</p>
       </section>

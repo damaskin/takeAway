@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { OrdersApi, type OrderStatusString, type OrderSummary } from '../../core/orders/orders.service';
@@ -27,13 +28,13 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
 @Component({
   selector: 'app-tma-orders',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
-        Your orders
+        {{ 'tma.orders.title' | translate }}
       </h1>
 
       <!-- Tab row -->
@@ -50,7 +51,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
           [style.boxShadow]="tab() === 'ACTIVE' ? 'var(--shadow-soft)' : 'none'"
           style="border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
         >
-          Active
+          {{ 'tma.orders.tabActive' | translate }}
         </button>
         <button
           type="button"
@@ -61,7 +62,7 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
           [style.boxShadow]="tab() === 'HISTORY' ? 'var(--shadow-soft)' : 'none'"
           style="border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
         >
-          History
+          {{ 'tma.orders.tabHistory' | translate }}
         </button>
       </div>
 
@@ -73,13 +74,13 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
           <span style="font-size: 28px">🔐</span>
           <span
             style="font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
-            >Sign in first</span
+            >{{ 'tma.orders.signInTitle' | translate }}</span
           >
           <p
             class="text-center"
             style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
           >
-            Open takeAway from your Telegram account to see your orders.
+            {{ 'tma.orders.signInSubtitle' | translate }}
           </p>
         </div>
       } @else if (loading()) {
@@ -104,16 +105,16 @@ const STATUS_LABELS: Record<OrderStatusString, string> = {
             style="font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--color-espresso); text-align: center"
           >
             @if (tab() === 'ACTIVE') {
-              No active orders
+              {{ 'tma.orders.emptyActive' | translate }}
             } @else {
-              No past orders yet
+              {{ 'tma.orders.emptyHistory' | translate }}
             }
           </span>
           <p
             class="text-center"
             style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0; max-width: 260px"
           >
-            Your takeAway history will appear here once you place your first order.
+            {{ 'tma.orders.emptySubtitle' | translate }}
           </p>
         </div>
       } @else {

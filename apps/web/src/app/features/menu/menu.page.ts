@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, ProductSummary, StoreDetail, StoreMenu } from '@takeaway/shared-types';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
@@ -17,7 +18,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 @Component({
   selector: 'app-web-menu',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <!-- Store bar — pencil EVEFd -->
     <div
@@ -33,7 +34,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
         <a
           routerLink="/stores"
           style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-caramel)"
-          >Change</a
+          >{{ 'common.change' | translate }}</a
         >
         <span style="width: 1px; height: 24px; background: var(--color-border)"></span>
       }
@@ -64,7 +65,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
         <div style="padding: 0 12px 12px 12px">
           <span
             style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--color-text-tertiary)"
-            >CATEGORIES</span
+            >{{ 'web.menu.sidebarHeading' | translate }}</span
           >
         </div>
         @for (cat of categories(); track cat.id; let i = $index) {
@@ -93,7 +94,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
                 {{ cat.name }}
               </h2>
               <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-tertiary)"
-                >{{ cat.products.length }} items</span
+                >{{ cat.products.length }} {{ 'common.items' | translate }}</span
               >
             </header>
 
@@ -130,7 +131,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
                       @if (p.onStopList) {
                         <span
                           style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-berry)"
-                          >Sold out</span
+                          >{{ 'common.soldOut' | translate }}</span
                         >
                       } @else {
                         <span
@@ -161,13 +162,13 @@ import { CatalogService } from '../../core/catalog/catalog.service';
       >
         <div class="flex items-center" style="gap: 8px">
           <span style="font-size: 16px">⏱</span>
-          <span style="font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-            >Ready in {{ etaMinutes(s) }} min</span
-          >
+          <span style="font-family: var(--font-sans); font-size: 14px; font-weight: 600">{{
+            'common.readyIn' | translate: { min: etaMinutes(s) }
+          }}</span>
         </div>
-        <span style="font-family: var(--font-sans); font-size: 12px; color: #f8f3ebcc"
-          >We start prepping at {{ startPrepAt(s) }}</span
-        >
+        <span style="font-family: var(--font-sans); font-size: 12px; color: #f8f3ebcc">{{
+          'web.menu.prepStartsAt' | translate: { time: startPrepAt(s) }
+        }}</span>
       </div>
     }
   `,

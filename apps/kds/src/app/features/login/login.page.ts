@@ -1,6 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 
@@ -9,16 +11,19 @@ type Step = 'phone' | 'code';
 @Component({
   selector: 'app-kds-login',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, LanguageSwitcherComponent, TranslatePipe],
   template: `
     <main
       class="min-h-screen flex items-center justify-center"
       style="background: var(--color-cream); color: var(--color-cream)"
     >
       <section class="w-full max-w-md p-8" style="background: var(--color-surface); border-radius: var(--radius-card)">
-        <h1 class="text-3xl mb-2" style="font-family: var(--font-display)">takeAway KDS</h1>
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-3xl" style="font-family: var(--font-display)">takeAway KDS</h1>
+          <app-language-switcher />
+        </div>
         <p class="mb-6" style="opacity: 0.6">
-          {{ step() === 'phone' ? 'Sign in to take orders' : 'Enter the code we sent' }}
+          {{ (step() === 'phone' ? 'web.auth.signInPhone' : 'web.auth.enterCode') | translate }}
         </p>
 
         @if (step() === 'phone') {
@@ -36,7 +41,7 @@ type Step = 'phone' | 'code';
               class="py-3 font-medium disabled:opacity-50"
               style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
             >
-              {{ loading() ? 'Sending…' : 'Send code' }}
+              {{ (loading() ? 'admin.login.sending' : 'admin.login.sendCode') | translate }}
             </button>
           </form>
         } @else {
@@ -55,7 +60,7 @@ type Step = 'phone' | 'code';
               class="py-3 font-medium disabled:opacity-50"
               style="background: var(--color-caramel); color: white; border-radius: var(--radius-button)"
             >
-              {{ loading() ? 'Verifying…' : 'Sign in' }}
+              {{ (loading() ? 'admin.login.verifying' : 'common.signIn') | translate }}
             </button>
           </form>
         }

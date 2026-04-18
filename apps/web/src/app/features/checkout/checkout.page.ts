@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -20,7 +21,7 @@ interface Step {
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
   template: `
     <section class="min-h-screen">
       <header
@@ -40,7 +41,7 @@ interface Step {
             <span
               [style.color]="step.state === 'upcoming' ? 'var(--color-text-tertiary)' : 'var(--color-caramel)'"
               style="font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >{{ step.label }}</span
+              >{{ step.label | translate }}</span
             >
           </div>
           @if (!last) {
@@ -64,7 +65,9 @@ interface Step {
       @if (cart(); as c) {
         @if (c.items.length === 0) {
           <p class="text-center mt-10" style="color: var(--color-text-secondary)">
-            Your cart is empty. <a routerLink="/menu" class="underline">Browse the menu</a>.
+            {{ 'web.checkout.emptyCart' | translate }}
+            <a routerLink="/menu" class="underline">{{ 'web.checkout.browseMenu' | translate }}</a
+            >.
           </p>
         } @else {
           <div
@@ -74,7 +77,7 @@ interface Step {
             <h1
               style="font-family: var(--font-display); font-size: 32px; font-weight: 600; color: var(--color-espresso); text-align: center"
             >
-              When are you coming?
+              {{ 'web.checkout.title' | translate }}
             </h1>
 
             <section
@@ -91,7 +94,7 @@ interface Step {
                   [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
                   style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
                 >
-                  ASAP
+                  {{ 'web.checkout.pickupAsap' | translate }}
                 </button>
                 <button
                   type="button"
@@ -102,7 +105,7 @@ interface Step {
                   [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
                   style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
                 >
-                  Later
+                  {{ 'web.checkout.pickupScheduled' | translate }}
                 </button>
               </div>
 
@@ -110,7 +113,7 @@ interface Step {
                 <label class="flex flex-col gap-1">
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
-                    >Pick up at</span
+                    >{{ 'web.checkout.pickupAtLabel' | translate }}</span
                   >
                   <input
                     type="datetime-local"
@@ -119,9 +122,9 @@ interface Step {
                     [min]="minScheduled"
                     style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
                   />
-                  <span style="font-size: 12px; color: var(--color-text-tertiary)"
-                    >Between 10 min and 24 h from now</span
-                  >
+                  <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
+                    'web.checkout.scheduledHint' | translate
+                  }}</span>
                 </label>
               }
 
@@ -129,7 +132,7 @@ interface Step {
                 <p
                   style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
                 >
-                  Ready by {{ readyTimeLabel() }}
+                  {{ 'common.readyBy' | translate: { time: readyTimeLabel() } }}
                 </p>
                 <p
                   class="mt-1"
@@ -158,9 +161,9 @@ interface Step {
               }
               <div style="height: 1px; background: var(--color-border-light)"></div>
               <div class="flex items-center justify-between">
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                  >Subtotal</span
-                >
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                  'common.subtotal' | translate
+                }}</span>
                 <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
                   price(c.subtotalCents)
                 }}</span>
@@ -179,7 +182,7 @@ interface Step {
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
-                  >Total</span
+                  >{{ 'common.total' | translate }}</span
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-caramel)"
@@ -193,7 +196,7 @@ interface Step {
             <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-                >Promo code</span
+                >{{ 'web.checkout.promoLabel' | translate }}</span
               >
               <div
                 class="flex items-center"
@@ -215,7 +218,13 @@ interface Step {
                   class="flex items-center justify-center disabled:opacity-50"
                   style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
                 >
-                  {{ promoLoading() ? '…' : discountCents() > 0 ? 'Clear' : 'Apply' }}
+                  @if (promoLoading()) {
+                    …
+                  } @else if (discountCents() > 0) {
+                    {{ 'common.clear' | translate }}
+                  } @else {
+                    {{ 'common.apply' | translate }}
+                  }
                 </button>
               </div>
               @if (promoStatus()) {
@@ -235,12 +244,12 @@ interface Step {
             >
               <input
                 formControlName="customerName"
-                placeholder="Name on the order"
+                [placeholder]="'web.checkout.name' | translate"
                 style="padding: 14px 16px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
               />
               <input
                 formControlName="notes"
-                placeholder="Notes for the barista (optional)"
+                [placeholder]="'web.checkout.notes' | translate"
                 style="padding: 14px 16px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
               />
             </form>
@@ -289,7 +298,10 @@ interface Step {
               style="max-width: 500px; height: 56px; background: var(--color-caramel); color: var(--color-foam); border-radius: 16px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
             >
               {{
-                submitting() ? 'Placing order…' : 'Pay ' + price(c.subtotalCents) + ' · Ready by ' + readyTimeLabel()
+                submitting()
+                  ? ('common.loading' | translate)
+                  : ('web.checkout.payCta'
+                    | translate: { total: price(totalCents(c.subtotalCents)), time: readyTimeLabel() })
               }}
             </button>
 
@@ -308,6 +320,7 @@ export class CheckoutPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly orders = inject(OrdersApi);
   private readonly promo = inject(PromoService);
+  private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -351,9 +364,13 @@ export class CheckoutPage implements OnInit {
   });
 
   readonly steps = computed<Step[]>(() => [
-    { n: 1, label: 'Time & store', state: 'current' },
-    { n: 2, label: 'Contact', state: this.contactForm.controls.customerName.value ? 'done' : 'current' },
-    { n: 3, label: 'Payment', state: 'upcoming' },
+    { n: 1, label: 'web.checkout.stepsPickup', state: 'current' },
+    {
+      n: 2,
+      label: 'web.checkout.stepsContact',
+      state: this.contactForm.controls.customerName.value ? 'done' : 'current',
+    },
+    { n: 3, label: 'web.checkout.stepsPayment', state: 'upcoming' },
   ]);
 
   readonly canSubmit = computed(() => {
@@ -413,18 +430,22 @@ export class CheckoutPage implements OnInit {
       next: (res) => {
         this.promoLoading.set(false);
         if (!res.valid) {
-          this.promoStatus.set(res.reason ?? 'Promo is not valid');
+          this.promoStatus.set(res.reason ?? this.translate.instant('web.checkout.promoInvalid'));
           return;
         }
         this.promoCode.set(code);
         this.discountCents.set(res.discountCents);
-        this.promoStatus.set(
-          res.discountCents > 0
-            ? `Applied · saving ${this.price(res.discountCents)}`
-            : res.pointsMultiplier > 1
-              ? `Applied · earn ${res.pointsMultiplier}× points`
-              : 'Applied',
-        );
+        if (res.discountCents > 0) {
+          this.promoStatus.set(
+            this.translate.instant('web.checkout.promoApplied', { amount: this.price(res.discountCents) }),
+          );
+        } else if (res.pointsMultiplier > 1) {
+          this.promoStatus.set(
+            this.translate.instant('web.checkout.promoPointsApplied', { mult: res.pointsMultiplier }),
+          );
+        } else {
+          this.promoStatus.set(this.translate.instant('common.apply'));
+        }
       },
       error: (err) => {
         this.promoLoading.set(false);
