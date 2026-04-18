@@ -7,8 +7,11 @@ services:
       POSTGRES_USER: takeaway
       POSTGRES_PASSWORD: takeaway
       POSTGRES_DB: takeaway
+    # Host-side port is 55432 to avoid clashing with a native Postgres
+    # install on the developer's machine. The container itself still
+    # listens on 5432 — keep app code connecting through DATABASE_URL.
     ports:
-      - '5432:5432'
+      - '55432:5432'
     volumes:
       - .data/postgres:/var/lib/postgresql/data
     healthcheck:
