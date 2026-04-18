@@ -81,23 +81,12 @@
   --shadow-lifted: 0 12px 32px rgba(26, 20, 20, 0.1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --color-cream: #0e0b0a;
-    --color-espresso: #f8f3eb;
-    --color-foam: #2a2523;
-    --color-latte: #1c1817;
-    --color-surface: #1c1817;
-    --color-surface-variant: #2a2523;
-    --color-border: #3a3430;
-    --color-border-light: #2a2523;
-    --color-caramel-light: #c77d3b30;
-    --color-text-primary: #f8f3eb;
-    --color-text-secondary: #a89b91;
-    --color-text-tertiary: #7a6e64;
-  }
-}
-
+/*
+ * Dark theme — opt-in only via <html data-theme="dark"> (or <body>).
+ * We intentionally do NOT auto-flip on prefers-color-scheme: the takeAway
+ * pencil design is authored for the light palette, and the KDS app sets
+ * data-theme="dark" explicitly in its own styles.css override.
+ */
 :root[data-theme='dark'] {
   color-scheme: dark;
   --color-cream: #0e0b0a;
