@@ -109,7 +109,7 @@ pnpm format             # format with Prettier
 
 | Service  | URL                   | Credentials             |
 | -------- | --------------------- | ----------------------- |
-| Postgres | `localhost:5432`      | takeaway / takeaway     |
+| Postgres | `localhost:55432`     | takeaway / takeaway     |
 | Redis    | `localhost:6379`      | —                       |
 | MinIO    | http://localhost:9001 | minioadmin / minioadmin |
 | Mailhog  | http://localhost:8025 | —                       |
