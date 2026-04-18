@@ -470,6 +470,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
   },
   kds: {
+    login: {
+      title: 'takeAway · Kitchen',
+    },
     topbar: {
       inQueue: 'in queue',
       pickupsAll: 'All pickups',

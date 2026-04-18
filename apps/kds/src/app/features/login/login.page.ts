@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 
@@ -19,7 +19,7 @@ type Step = 'phone' | 'code';
     >
       <section class="w-full max-w-md p-8" style="background: var(--color-surface); border-radius: var(--radius-card)">
         <div class="flex items-center justify-between mb-2">
-          <h1 class="text-3xl" style="font-family: var(--font-display)">takeAway KDS</h1>
+          <h1 class="text-3xl" style="font-family: var(--font-display)">{{ 'kds.login.title' | translate }}</h1>
           <app-language-switcher />
         </div>
         <p class="mb-6" style="opacity: 0.6">
@@ -31,7 +31,7 @@ type Step = 'phone' | 'code';
             <input
               formControlName="phone"
               type="tel"
-              placeholder="+14155551234"
+              [placeholder]="'admin.login.phonePlaceholder' | translate"
               class="px-4 py-3 outline-none"
               style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
             />
@@ -50,7 +50,7 @@ type Step = 'phone' | 'code';
               formControlName="code"
               inputmode="numeric"
               maxlength="6"
-              placeholder="123456"
+              [placeholder]="'admin.login.codePlaceholder' | translate"
               class="px-4 py-3 text-center text-xl tracking-[0.5em] outline-none"
               style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input); font-family: var(--font-mono)"
             />
@@ -75,6 +75,7 @@ type Step = 'phone' | 'code';
 export class KdsLoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly translate = inject(TranslateService);
 
   readonly step = signal<Step>('phone');
   readonly loading = signal(false);
@@ -103,7 +104,7 @@ export class KdsLoginPage {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(this.extractMessage(err));
       },
     });
   }
@@ -120,15 +121,15 @@ export class KdsLoginPage {
         },
         error: (err) => {
           this.loading.set(false);
-          this.error.set(extractMessage(err));
+          this.error.set(this.extractMessage(err));
         },
       });
   }
-}
 
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Something went wrong';
+  private extractMessage(err: unknown): string {
+    const maybe = err as { error?: { message?: unknown }; message?: unknown };
+    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
+    if (typeof maybe.message === 'string') return maybe.message;
+    return this.translate.instant('common.genericError');
+  }
 }

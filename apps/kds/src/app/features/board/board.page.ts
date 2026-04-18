@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { interval, type Subscription } from 'rxjs';
 
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { KdsApi, type KdsOrder, type KdsOrderStatus } from '../../core/kds/kds.service';
@@ -163,10 +163,10 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                   <!-- Customer row -->
                   <div class="flex items-center justify-between">
                     <span style="font-family: var(--font-sans); font-size: 14px; color: #F8F3EB">
-                      {{ order.customerName ?? 'Customer' }}
+                      {{ order.customerName ?? ('kds.card.customer' | translate) }}
                     </span>
                     <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(248,243,235,0.5)">
-                      due {{ pickupTime(order) }}
+                      {{ 'kds.card.due' | translate: { time: pickupTime(order) } }}
                     </span>
                   </div>
 
@@ -234,6 +234,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   private readonly api = inject(KdsApi);
   private readonly storesApi = inject(StoresApi);
   private readonly realtime = inject(KdsRealtimeService);
+  private readonly translate = inject(TranslateService);
   readonly authStore = inject(AuthStore);
 
   readonly columns: Array<{ key: Column }> = [{ key: 'NEW' }, { key: 'PREPARING' }, { key: 'READY' }];
@@ -347,7 +348,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
     const handle = (obs: ReturnType<KdsApi['accept']>): void => {
       obs.subscribe({
         next: () => this.refresh(),
-        error: (err) => this.error.set(extractMessage(err)),
+        error: (err) => this.error.set(this.extractMessage(err)),
       });
     };
 
@@ -395,14 +396,14 @@ export class KdsBoardPage implements OnInit, OnDestroy {
     if (!storeId) return;
     this.api.list(storeId).subscribe({
       next: (list) => this.orders.set(list),
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
-}
 
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Request failed';
+  private extractMessage(err: unknown): string {
+    const maybe = err as { error?: { message?: unknown }; message?: unknown };
+    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
+    if (typeof maybe.message === 'string') return maybe.message;
+    return this.translate.instant('common.requestFailed');
+  }
 }
