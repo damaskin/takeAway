@@ -18,10 +18,7 @@ type PickupMode = 'ASAP' | 'SCHEDULED';
       <h1 class="text-3xl mb-8" style="font-family: var(--font-display)">Checkout</h1>
 
       @if (!authStore.isAuthenticated()) {
-        <p
-          class="p-4 mb-6"
-          style="background: var(--color-amber-warn); color: white; border-radius: var(--radius-card)"
-        >
+        <p class="p-4 mb-6" style="background: var(--color-amber); color: white; border-radius: var(--radius-card)">
           Please <a routerLink="/login" class="underline">sign in</a> to place an order.
         </p>
       }
