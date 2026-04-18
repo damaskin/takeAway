@@ -1,0 +1,49 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { Currency, Locale } from '@prisma/client';
+
+export class AuthUserDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  phone!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  email!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  name!: string | null;
+
+  @ApiProperty({ enum: Locale })
+  locale!: Locale;
+
+  @ApiProperty({ enum: Currency })
+  currency!: Currency;
+}
+
+export class AuthTokensDto {
+  @ApiProperty()
+  accessToken!: string;
+
+  @ApiProperty()
+  refreshToken!: string;
+
+  @ApiProperty()
+  accessTokenExpiresInSeconds!: number;
+
+  @ApiProperty()
+  refreshTokenExpiresInSeconds!: number;
+}
+
+export class AuthSessionDto extends AuthTokensDto {
+  @ApiProperty({ type: AuthUserDto })
+  user!: AuthUserDto;
+}
+
+export class SendOtpResponseDto {
+  @ApiProperty({ description: 'Seconds until the code expires' })
+  expiresInSeconds!: number;
+
+  @ApiProperty({ description: 'Seconds before another OTP can be requested for this phone' })
+  resendAfterSeconds!: number;
+}
