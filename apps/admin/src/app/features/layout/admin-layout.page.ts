@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -65,10 +65,11 @@ export class AdminLayoutPage {
   private readonly auth = inject(AuthService);
   private readonly store = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly translate = inject(TranslateService);
 
   userName(): string {
     const user = this.store.user();
-    return user?.name ?? user?.phone ?? 'User';
+    return user?.name ?? user?.phone ?? this.translate.instant('common.user');
   }
 
   userRole(): string {

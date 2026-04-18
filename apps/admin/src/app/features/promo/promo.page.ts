@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminPromoApi } from '../../core/promo/promo.service';
 
@@ -85,27 +85,27 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
         >
           <input
             formControlName="code"
-            placeholder="Code (ex. WELCOME10)"
+            [placeholder]="'admin.promo.form.code' | translate"
             style="grid-column: span 1; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-mono); font-size: 13px; text-transform: uppercase"
           />
           <input
             formControlName="label"
-            placeholder="Label"
+            [placeholder]="'admin.promo.form.label' | translate"
             style="grid-column: span 2; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
           />
           <select
             formControlName="type"
             style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
           >
-            <option value="PERCENT">Percent off</option>
-            <option value="FIXED">Fixed cents off</option>
-            <option value="BOGO">BOGO</option>
-            <option value="POINTS_MULTIPLIER">Points multiplier (×10)</option>
+            <option value="PERCENT">{{ 'admin.promo.form.typePercent' | translate }}</option>
+            <option value="FIXED">{{ 'admin.promo.form.typeFixed' | translate }}</option>
+            <option value="BOGO">{{ 'admin.promo.form.typeBogo' | translate }}</option>
+            <option value="POINTS_MULTIPLIER">{{ 'admin.promo.form.typePoints' | translate }}</option>
           </select>
           <input
             formControlName="value"
             type="number"
-            placeholder="Value"
+            [placeholder]="'admin.promo.form.value' | translate"
             style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
           />
           <input
@@ -122,9 +122,9 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             formControlName="status"
             style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
           >
-            <option value="DRAFT">Draft</option>
-            <option value="SCHEDULED">Scheduled</option>
-            <option value="RUNNING">Running</option>
+            <option value="DRAFT">{{ 'admin.promo.form.statusDraft' | translate }}</option>
+            <option value="SCHEDULED">{{ 'admin.promo.form.statusScheduled' | translate }}</option>
+            <option value="RUNNING">{{ 'admin.promo.form.statusRunning' | translate }}</option>
           </select>
           <button
             type="button"
@@ -133,7 +133,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             class="disabled:opacity-50"
             style="grid-column: span 4; height: 42px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
           >
-            {{ submitting() ? 'Saving…' : 'Create promo' }}
+            {{ (submitting() ? 'admin.promo.form.saving' : 'admin.promo.form.create') | translate }}
           </button>
           @if (formError()) {
             <span
@@ -159,9 +159,9 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             >
               {{ 'admin.promo.table.title' | translate }}
             </h2>
-            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
-              >{{ promos().length }} total · {{ runningCount() }} running</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+              'admin.promo.table.subtitle' | translate: { total: promos().length, running: runningCount() }
+            }}</span>
           </div>
           <div class="flex" style="gap: 8px">
             @for (f of filters; track f) {
@@ -186,7 +186,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             @if (loading()) {
               {{ 'admin.promo.table.loading' | translate }}
             } @else {
-              No promos in this bucket yet.
+              {{ 'admin.promo.table.empty' | translate }}
             }
           </p>
         } @else {
@@ -239,7 +239,9 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
                     {{ p.code }}
                   </td>
                   <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary)">{{ p.label }}</td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary)">{{ p.type }}</td>
+                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary)">
+                    {{ 'admin.promo.type.' + p.type | translate }}
+                  </td>
                   <td
                     style="padding: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
                   >
@@ -259,7 +261,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
                       [style.color]="statusColor(p.status)"
                       style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; border: none; cursor: pointer"
                     >
-                      {{ p.status }}
+                      {{ 'admin.promo.status.' + p.status | translate }}
                     </button>
                   </td>
                 </tr>
@@ -273,6 +275,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
 })
 export class AdminPromoPage implements OnInit {
   private readonly api = inject(AdminPromoApi);
+  private readonly translate = inject(TranslateService);
 
   readonly filter = signal<FilterKey>('All');
   readonly filters: FilterKey[] = ['All', 'Running', 'Scheduled', 'Paused', 'Draft', 'Expired'];
@@ -361,7 +364,7 @@ export class AdminPromoPage implements OnInit {
       // Bootstrap case: no promos yet → we need to know which brand we're in.
       // For M3 we rely on having at least one seeded promo; future UI will
       // surface a brand picker.
-      this.formError.set('Refresh first to load a brand context');
+      this.formError.set(this.translate.instant('admin.promo.errors.noBrand'));
       return;
     }
     if (this.form.invalid) return;
@@ -397,7 +400,8 @@ export class AdminPromoPage implements OnInit {
         error: (err) => {
           this.submitting.set(false);
           const msg =
-            (err as { error?: { message?: string }; message?: string })?.error?.message ?? 'Could not create promo';
+            (err as { error?: { message?: string }; message?: string })?.error?.message ??
+            this.translate.instant('admin.promo.errors.createFailed');
           this.formError.set(msg);
         },
       });
@@ -425,13 +429,13 @@ export class AdminPromoPage implements OnInit {
   formatValue(p: Promo): string {
     switch (p.type) {
       case 'PERCENT':
-        return `${p.value}%`;
+        return this.translate.instant('admin.promo.value.percent', { value: p.value });
       case 'FIXED':
-        return `$${(p.value / 100).toFixed(2)} off`;
+        return this.translate.instant('admin.promo.value.fixed', { value: (p.value / 100).toFixed(2) });
       case 'BOGO':
-        return 'Buy 1 get 1';
+        return this.translate.instant('admin.promo.value.bogo');
       case 'POINTS_MULTIPLIER':
-        return `${(p.value / 10).toFixed(1)}× pts`;
+        return this.translate.instant('admin.promo.value.pointsMultiplier', { value: (p.value / 10).toFixed(1) });
       default:
         return String(p.value);
     }

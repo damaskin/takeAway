@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 
@@ -36,12 +36,12 @@ type Step = 'phone' | 'code';
                 formControlName="phone"
                 type="tel"
                 autocomplete="tel"
-                placeholder="+14155551234"
+                [placeholder]="'admin.login.phonePlaceholder' | translate"
                 class="px-3 py-2 border outline-none"
                 style="border-color: var(--color-latte); border-radius: var(--radius-input)"
               />
               @if (phoneForm.controls.phone.invalid && phoneForm.controls.phone.touched) {
-                <span class="text-xs" style="color: var(--color-berry)">Enter phone in E.164 format</span>
+                <span class="text-xs" style="color: var(--color-berry)">{{ 'admin.login.phoneHint' | translate }}</span>
               }
             </label>
 
@@ -57,7 +57,7 @@ type Step = 'phone' | 'code';
         } @else {
           <form [formGroup]="codeForm" (ngSubmit)="verifyCode()" class="flex flex-col gap-4">
             <p class="text-sm" style="color: var(--color-espresso); opacity: 0.7">
-              Code sent to <strong>{{ phoneForm.controls.phone.value }}</strong>
+              {{ 'admin.login.codeSentTo' | translate: { phone: phoneForm.controls.phone.value } }}
             </p>
             <label class="flex flex-col gap-1">
               <span class="text-sm font-medium">{{ 'admin.login.codeLabel' | translate }}</span>
@@ -67,7 +67,7 @@ type Step = 'phone' | 'code';
                 inputmode="numeric"
                 autocomplete="one-time-code"
                 maxlength="6"
-                placeholder="123456"
+                [placeholder]="'admin.login.codePlaceholder' | translate"
                 class="px-3 py-2 border text-center text-lg tracking-[0.5em] outline-none"
                 style="border-color: var(--color-latte); border-radius: var(--radius-input); font-family: var(--font-mono)"
               />
@@ -101,6 +101,7 @@ type Step = 'phone' | 'code';
 export class LoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly translate = inject(TranslateService);
 
   readonly step = signal<Step>('phone');
   readonly loading = signal(false);
@@ -132,7 +133,7 @@ export class LoginPage {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(this.extractMessage(err));
       },
     });
   }
@@ -150,15 +151,15 @@ export class LoginPage {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(this.extractMessage(err));
       },
     });
   }
-}
 
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Something went wrong, please try again';
+  private extractMessage(err: unknown): string {
+    const maybe = err as { error?: { message?: unknown }; message?: unknown };
+    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
+    if (typeof maybe.message === 'string') return maybe.message;
+    return this.translate.instant('common.genericError');
+  }
 }

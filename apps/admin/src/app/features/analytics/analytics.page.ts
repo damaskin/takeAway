@@ -45,7 +45,7 @@ interface ChartBar {
             [style.border]="activeRange() === r.days ? '1px solid transparent' : '1px solid var(--color-border-light)'"
             style="height: 32px; padding: 0 12px; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
           >
-            {{ r.label }}
+            {{ 'admin.analytics.rangeShort.' + r.days | translate }}
           </button>
         }
       </div>
@@ -239,12 +239,8 @@ export class AdminAnalyticsPage implements OnInit {
   private readonly api = inject(AnalyticsApi);
 
   readonly activeRange = signal(14);
-  readonly ranges = [
-    { days: 7, label: '7 days' },
-    { days: 14, label: '14 days' },
-    { days: 30, label: '30 days' },
-    { days: 90, label: '90 days' },
-  ];
+  // Labels are translated in the template via `admin.analytics.rangeShort.<days>`.
+  readonly ranges = [{ days: 7 }, { days: 14 }, { days: 30 }, { days: 90 }];
 
   readonly revenue = signal<RevenueSeries | null>(null);
   readonly topProducts = signal<TopProduct[]>([]);

@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminOrdersApi, type AdminOrderSummary, type OrderStatusString } from '../../core/orders/orders.service';
 
@@ -133,7 +133,11 @@ type StatusFilter = OrderStatus | 'ALL';
                     {{ o.itemCount }}
                   </td>
                   <td style="padding: 12px; font-size: 12px; color: var(--color-text-secondary)">
-                    {{ o.pickupMode === 'ASAP' ? 'ASAP' : 'Scheduled' }} · {{ formatTime(o.pickupAt) }}
+                    {{
+                      (o.pickupMode === 'ASAP' ? 'admin.orders.pickup.asap' : 'admin.orders.pickup.scheduled')
+                        | translate
+                    }}
+                    · {{ formatTime(o.pickupAt) }}
                   </td>
                   <td
                     style="padding: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
@@ -191,6 +195,7 @@ type StatusFilter = OrderStatus | 'ALL';
 })
 export class AdminOrdersPage implements OnInit {
   private readonly api = inject(AdminOrdersApi);
+  private readonly translate = inject(TranslateService);
 
   readonly activeStatus = signal<StatusFilter>('ALL');
   readonly search = signal('');
@@ -280,11 +285,11 @@ export class AdminOrdersPage implements OnInit {
   timeAgo(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
     const min = Math.round(diff / 60_000);
-    if (min < 1) return 'just now';
-    if (min < 60) return `${min}m ago`;
+    if (min < 1) return this.translate.instant('common.timeAgo.justNow');
+    if (min < 60) return this.translate.instant('common.timeAgo.minutes', { n: min });
     const h = Math.round(min / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.round(h / 24)}d ago`;
+    if (h < 24) return this.translate.instant('common.timeAgo.hours', { n: h });
+    return this.translate.instant('common.timeAgo.days', { n: Math.round(h / 24) });
   }
 
   private matches(o: AdminOrderSummary, q: string): boolean {

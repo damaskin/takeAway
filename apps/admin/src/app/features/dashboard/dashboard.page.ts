@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -140,7 +140,7 @@ interface DashboardOrder {
                   >
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); min-width: 56px; text-align: right"
-                    >⏱ {{ o.minutes }} min</span
+                    >⏱ {{ o.minutes }} {{ 'common.units.min' | translate }}</span
                   >
                 </div>
               </div>
@@ -191,6 +191,7 @@ export class DashboardPage implements OnInit {
   private readonly store = inject(AuthStore);
   private readonly analytics = inject(AnalyticsApi);
   private readonly orders = inject(AdminOrdersApi);
+  private readonly translate = inject(TranslateService);
 
   readonly summary = signal<DashboardSummary | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
@@ -235,7 +236,7 @@ export class DashboardPage implements OnInit {
       .slice(0, 5)
       .map((o) => ({
         code: o.orderCode,
-        product: `Order · ${o.itemCount} items`,
+        product: this.translate.instant('admin.dashboard.orderProductLine', { count: o.itemCount }),
         store: o.storeName,
         status: (['READY', 'IN_PROGRESS', 'ACCEPTED'].includes(o.status)
           ? o.status
@@ -276,7 +277,9 @@ export class DashboardPage implements OnInit {
     if (!sec) return '—';
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return `${m}m ${s}s`;
+    const mShort = this.translate.instant('common.units.mShort');
+    const sShort = this.translate.instant('common.units.sShort');
+    return `${m}${mShort} ${s}${sShort}`;
   }
 
   /** Returns a translation key; translated in the template with | translate. */
