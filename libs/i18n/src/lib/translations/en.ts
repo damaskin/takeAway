@@ -228,6 +228,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
       orderHere: 'Order from here',
       empty: 'No stores match this filter.',
     },
+    orders: {
+      title: 'My orders',
+      subtitle: 'Active and past orders',
+      tabActive: 'Active',
+      tabHistory: 'History',
+      emptyActive: 'No active orders',
+      emptyHistory: 'No past orders yet',
+      emptySubtitle: 'Place your first order — it will show up here.',
+      browseMenu: 'Browse menu',
+    },
     profile: {
       signOut: 'Sign out',
       initials: 'G',
@@ -239,6 +249,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pointsSuffix: 'points',
       toNextTier: '{{points}} pts to {{tier}}',
       sections: {
+        myOrders: 'My orders',
         personal: 'Personal info',
         payment: 'Payment methods',
         gift: 'Gift cards',

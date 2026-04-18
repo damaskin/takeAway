@@ -34,6 +34,11 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/checkout/checkout.page').then((m) => m.CheckoutPage),
       },
       {
+        path: 'orders',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/orders/orders-history.page').then((m) => m.OrdersHistoryPage),
+      },
+      {
         path: 'orders/:id',
         canMatch: [authGuard],
         loadComponent: () => import('./features/order-status/order-status.page').then((m) => m.OrderStatusPage),

@@ -228,6 +228,16 @@ export const TRANSLATIONS_RU = {
       orderHere: 'Заказать отсюда',
       empty: 'Нет точек, подходящих под фильтр.',
     },
+    orders: {
+      title: 'Мои заказы',
+      subtitle: 'Текущие и завершённые заказы',
+      tabActive: 'Активные',
+      tabHistory: 'История',
+      emptyActive: 'Нет активных заказов',
+      emptyHistory: 'Заказов пока не было',
+      emptySubtitle: 'Сделайте свой первый заказ — он появится здесь.',
+      browseMenu: 'Открыть меню',
+    },
     profile: {
       signOut: 'Выйти',
       initials: 'Г',
@@ -239,6 +249,7 @@ export const TRANSLATIONS_RU = {
       pointsSuffix: 'баллов',
       toNextTier: '{{points}} баллов до {{tier}}',
       sections: {
+        myOrders: 'Мои заказы',
         personal: 'Личные данные',
         payment: 'Способы оплаты',
         gift: 'Подарочные карты',
