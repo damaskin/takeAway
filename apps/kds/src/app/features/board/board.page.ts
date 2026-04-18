@@ -13,77 +13,190 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
   READY: ['READY'],
 };
 
+const COLUMN_META: Record<Column, { label: string; accent: string; accentText: string }> = {
+  NEW: { label: 'New', accent: '#C77D3B20', accentText: 'var(--color-caramel)' },
+  PREPARING: { label: 'Preparing', accent: '#E9A84B20', accentText: '#E9A84B' },
+  READY: { label: 'Ready', accent: '#7BC4A420', accentText: 'var(--color-mint)' },
+};
+
+/**
+ * KDS (Kitchen Display) — pencil Hfi24.
+ *
+ * Full-dark kitchen surface (#0E0B0A) tuned for ambient glare.
+ *
+ *   kdsTop (56px, #1C1817, bottom border #2A2523):
+ *     left   — takeAway logo + store selector
+ *     center — queue count pill + wall-clock time
+ *     right  — filter chip
+ *   kdsColumns (3 columns, gap 16, padding 16):
+ *     each column — accent header chip + order cards (#1C1817 w/ #2A2523 stroke)
+ *     order card — big mono code + due timer, item list, notes chip, 1-2
+ *       action buttons (Accept/Start/Ready/Picked up).
+ */
 @Component({
   selector: 'app-kds-board',
   standalone: true,
   template: `
     <div
-      class="min-h-screen flex flex-col"
-      style="background: var(--color-cream); color: var(--color-cream); font-family: var(--font-sans)"
+      class="flex flex-col"
+      style="min-height: 100vh; background: #0E0B0A; color: #F8F3EB; font-family: var(--font-sans)"
     >
+      <!-- Top bar -->
       <header
-        class="flex items-center justify-between px-6 py-3 border-b"
-        style="border-color: var(--color-surface-variant)"
+        class="flex items-center justify-between"
+        style="height: 56px; padding: 0 24px; background: #1C1817; border-bottom: 1px solid #2A2523"
       >
-        <div class="flex items-center gap-4">
-          <span class="text-2xl" style="font-family: var(--font-display)">takeAway KDS</span>
+        <!-- Left: logo + store selector -->
+        <div class="flex items-center" style="gap: 16px">
+          <span style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-caramel)"
+            >takeAway</span
+          >
           @if (stores().length > 0) {
             <select
               [value]="selectedStoreId()"
               (change)="onStoreChange($event)"
-              class="px-3 py-1 text-sm"
-              style="background: var(--color-surface-variant); color: var(--color-cream); border-radius: var(--radius-input)"
+              style="height: 32px; padding: 0 12px; background: #2A2523; border: 1px solid #3a3430; color: #F8F3EB; border-radius: 8px; font-family: var(--font-sans); font-size: 13px"
             >
               @for (s of stores(); track s.id) {
                 <option [value]="s.id">{{ s.name }}</option>
               }
             </select>
           }
-          <span class="text-xs" style="opacity: 0.5"> {{ openCount() }} in queue · {{ nowLabel() }} </span>
         </div>
-        <span class="text-xs" style="opacity: 0.5">{{ authStore.user()?.name ?? authStore.user()?.phone }}</span>
+
+        <!-- Center: queue count + clock -->
+        <div class="flex items-center" style="gap: 24px">
+          <div
+            class="flex items-center"
+            style="height: 30px; padding: 0 12px; background: var(--color-caramel); border-radius: 9999px; gap: 8px"
+          >
+            <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: white">{{
+              openCount()
+            }}</span>
+            <span
+              style="font-family: var(--font-sans); font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.85); letter-spacing: 0.5px; text-transform: uppercase"
+              >in queue</span
+            >
+          </div>
+          <span
+            style="font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: rgba(248,243,235,0.8)"
+            >{{ nowLabel() }}</span
+          >
+        </div>
+
+        <!-- Right: filter chip + user -->
+        <div class="flex items-center" style="gap: 12px">
+          <div
+            class="flex items-center"
+            style="height: 34px; padding: 0 12px; border: 1px solid #2A2523; border-radius: 8px; gap: 6px"
+          >
+            <span style="font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.7)"
+              >🕵 All pickups</span
+            >
+          </div>
+          <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(248,243,235,0.55)">{{
+            authStore.user()?.name ?? authStore.user()?.phone
+          }}</span>
+        </div>
       </header>
 
-      <main class="grid grid-cols-3 gap-4 p-4 flex-1 overflow-hidden">
+      <!-- Columns -->
+      <main
+        class="grid"
+        style="grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 16px; flex: 1; min-height: 0; overflow: hidden"
+      >
         @for (col of columns; track col.key) {
           <section class="flex flex-col min-h-0">
-            <h2 class="text-lg mb-3 uppercase tracking-wider" style="opacity: 0.6">{{ col.label }}</h2>
-            <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
+            <!-- Column header chip -->
+            <div
+              class="flex items-center justify-between"
+              [style.background]="columnMeta(col.key).accent"
+              style="height: 40px; padding: 0 12px; border-radius: 10px; gap: 8px; margin-bottom: 12px"
+            >
+              <span
+                class="flex items-center"
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; gap: 8px"
+                [style.color]="columnMeta(col.key).accentText"
+              >
+                {{ columnMeta(col.key).label }}
+              </span>
+              <span
+                style="font-family: var(--font-sans); font-size: 12px; font-weight: 600"
+                [style.color]="columnMeta(col.key).accentText"
+                >{{ ordersFor(col.key).length }}</span
+              >
+            </div>
+
+            <!-- Cards -->
+            <div class="flex flex-col" style="gap: 12px; overflow-y: auto; padding-right: 4px">
               @for (order of ordersFor(col.key); track order.id) {
                 <article
-                  class="p-4"
-                  [style.background]="cardBackground(order)"
-                  style="color: var(--color-espresso); border-radius: var(--radius-card)"
+                  class="flex flex-col"
+                  [style.border]="cardBorder(order)"
+                  style="background: #1C1817; border-radius: 16px; padding: 16px; gap: 12px"
                 >
+                  <!-- Header row: big code + due timer -->
                   <div class="flex items-center justify-between">
-                    <span class="text-3xl" style="font-family: var(--font-mono)">{{ order.orderCode }}</span>
-                    <span class="text-xs uppercase tracking-wider">{{ order.pickupMode }}</span>
+                    <span
+                      style="font-family: var(--font-mono); font-size: 36px; font-weight: 700; color: #F8F3EB; line-height: 1"
+                      >{{ order.orderCode }}</span
+                    >
+                    <div class="flex flex-col items-end" style="gap: 4px">
+                      <span
+                        style="font-family: var(--font-mono); font-size: 18px; font-weight: 700"
+                        [style.color]="dueColor(order)"
+                        >{{ dueLabel(order) }}</span
+                      >
+                      <span
+                        style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(248,243,235,0.6)"
+                        >{{ order.pickupMode }}</span
+                      >
+                    </div>
                   </div>
-                  <div class="mt-1 flex items-center justify-between">
-                    <span class="text-sm">{{ order.customerName ?? 'Customer' }}</span>
-                    <span class="text-sm" style="font-family: var(--font-mono)"> due {{ dueLabel(order) }} </span>
+
+                  <!-- Customer row -->
+                  <div class="flex items-center justify-between">
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: #F8F3EB">
+                      {{ order.customerName ?? 'Customer' }}
+                    </span>
+                    <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(248,243,235,0.5)">
+                      due {{ pickupTime(order) }}
+                    </span>
                   </div>
-                  <ul class="mt-3 text-sm">
+
+                  <!-- Items -->
+                  <ul class="flex flex-col" style="gap: 4px; margin: 0; padding: 0; list-style: none">
                     @for (item of order.items; track $index) {
-                      <li>{{ item.quantity }} × {{ item.productSnapshot.name }}</li>
+                      <li
+                        class="flex items-start justify-between"
+                        style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.85); gap: 12px"
+                      >
+                        <span>
+                          <span style="color: var(--color-caramel); font-weight: 700">{{ item.quantity }}×</span>
+                          {{ item.productSnapshot.name }}
+                        </span>
+                      </li>
                     }
                   </ul>
+
+                  <!-- Notes -->
                   @if (order.notes) {
-                    <p
-                      class="mt-2 text-xs p-2"
-                      style="background: var(--color-latte); border-radius: var(--radius-input)"
+                    <div
+                      style="background: #2A2523; border-radius: 10px; padding: 8px 12px; font-family: var(--font-sans); font-size: 12px; color: var(--color-amber)"
                     >
                       ⚠ {{ order.notes }}
-                    </p>
+                    </div>
                   }
-                  <div class="mt-3 flex gap-2">
+
+                  <!-- Actions -->
+                  <div class="flex" style="gap: 8px">
                     @for (action of actionsFor(order); track action.label) {
                       <button
                         type="button"
                         (click)="action.run()"
-                        class="px-3 py-2 text-xs font-medium"
+                        class="flex-1 flex items-center justify-center"
                         [style.background]="action.color"
-                        style="color: white; border-radius: var(--radius-button)"
+                        style="height: 40px; color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 700"
                       >
                         {{ action.label }}
                       </button>
@@ -91,7 +204,12 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
                   </div>
                 </article>
               } @empty {
-                <p class="text-xs" style="opacity: 0.4">—</p>
+                <div
+                  class="flex items-center justify-center"
+                  style="padding: 40px 0; font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.3)"
+                >
+                  Nothing here right now.
+                </div>
               }
             </div>
           </section>
@@ -99,7 +217,9 @@ const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
       </main>
 
       @if (error()) {
-        <p class="px-4 py-2 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
+        <p style="padding: 8px 24px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
+          {{ error() }}
+        </p>
       }
     </div>
   `,
@@ -109,11 +229,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   private readonly storesApi = inject(StoresApi);
   readonly authStore = inject(AuthStore);
 
-  readonly columns: Array<{ key: Column; label: string }> = [
-    { key: 'NEW', label: 'New' },
-    { key: 'PREPARING', label: 'Preparing' },
-    { key: 'READY', label: 'Ready' },
-  ];
+  readonly columns: Array<{ key: Column }> = [{ key: 'NEW' }, { key: 'PREPARING' }, { key: 'READY' }];
 
   readonly stores = signal<StoreSummary[]>([]);
   readonly selectedStoreId = signal<string>('');
@@ -123,7 +239,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
 
   readonly openCount = computed(() => this.orders().length);
   readonly nowLabel = computed(() =>
-    new Date(this.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    new Date(this.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   );
 
   private tickSub: Subscription | null = null;
@@ -141,8 +257,6 @@ export class KdsBoardPage implements OnInit, OnDestroy {
       },
     });
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));
-    // Lightweight polling fallback; live WS updates will come from the
-    // realtime gateway once we wire a KDS subscription channel.
     this.pollSub = interval(5000).subscribe(() => this.refresh());
   }
 
@@ -160,6 +274,10 @@ export class KdsBoardPage implements OnInit, OnDestroy {
     return this.orders().filter((o) => COLUMN_STATUSES[col].includes(o.status));
   }
 
+  columnMeta(col: Column) {
+    return COLUMN_META[col];
+  }
+
   dueLabel(order: KdsOrder): string {
     const diff = new Date(order.pickupAt).getTime() - this.now();
     const abs = Math.abs(Math.round(diff / 1000));
@@ -169,12 +287,24 @@ export class KdsBoardPage implements OnInit, OnDestroy {
     return `${sign}${min}:${String(sec).padStart(2, '0')}`;
   }
 
-  cardBackground(order: KdsOrder): string {
+  pickupTime(order: KdsOrder): string {
+    return new Date(order.pickupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  dueColor(order: KdsOrder): string {
     const diff = (new Date(order.pickupAt).getTime() - this.now()) / 1000;
     if (order.status === 'READY') return 'var(--color-mint)';
     if (diff < 0) return 'var(--color-berry)';
     if (diff < 120) return 'var(--color-amber)';
-    return 'var(--color-cream)';
+    return '#F8F3EB';
+  }
+
+  cardBorder(order: KdsOrder): string {
+    const diff = (new Date(order.pickupAt).getTime() - this.now()) / 1000;
+    if (order.status === 'READY') return '1px solid var(--color-mint)';
+    if (diff < 0) return '2px solid var(--color-berry)';
+    if (diff < 120) return '1px solid var(--color-amber)';
+    return '1px solid #2A2523';
   }
 
   actionsFor(order: KdsOrder): Array<{ label: string; color: string; run: () => void }> {
@@ -202,7 +332,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
         return [
           {
             label: 'Picked up',
-            color: 'var(--color-espresso)',
+            color: '#3a3430',
             run: () => handle(this.api.pickedUp(storeId, order.id)),
           },
         ];
