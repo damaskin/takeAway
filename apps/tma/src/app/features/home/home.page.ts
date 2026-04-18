@@ -3,46 +3,69 @@ import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
+/**
+ * TMA Home — entry screen. Mirrors pencil TMA — Menu hero: store selector row,
+ * then a prompt to pick a nearby store. Uses the shared bottom tab bar.
+ */
 @Component({
   selector: 'app-tma-home',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, TmaTabBarComponent],
   template: `
-    <section class="px-4 pt-6 pb-24">
-      <h1 class="text-2xl mb-1" style="font-family: var(--font-display)">Pre-order</h1>
-      <p class="text-sm mb-6" style="opacity: 0.6">Skip the queue. Pick it up.</p>
+    <section style="padding: 24px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
+      <div class="flex flex-col" style="gap: 4px">
+        <h1
+          style="font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--color-espresso); margin: 0"
+        >
+          Pre-order
+        </h1>
+        <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
+          Skip the queue. Pick it up.
+        </p>
+      </div>
 
-      <h2 class="text-lg mb-3" style="font-family: var(--font-display)">Nearby stores</h2>
+      <h2
+        style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso); margin: 8px 0 0 0"
+      >
+        Nearby stores
+      </h2>
+
       @if (stores().length === 0) {
-        <p class="text-sm" style="opacity: 0.6">Loading…</p>
+        <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">Loading…</p>
       }
-      <ul class="flex flex-col gap-3">
+
+      <div class="flex flex-col" style="gap: 12px">
         @for (s of stores(); track s.id) {
-          <li>
-            <a
-              [routerLink]="['/stores', s.slug]"
-              class="block p-4"
-              style="background: var(--color-foam); border-radius: var(--radius-card); box-shadow: var(--shadow-soft)"
-            >
-              <div class="flex items-start justify-between">
-                <div>
-                  <h3 style="font-family: var(--font-display)">{{ s.name }}</h3>
-                  <p class="text-xs mt-1" style="opacity: 0.6">{{ s.addressLine }}</p>
-                </div>
+          <a
+            [routerLink]="['/stores', s.slug]"
+            class="flex flex-col"
+            style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: 16px; gap: 8px"
+          >
+            <div class="flex items-start justify-between" style="gap: 12px">
+              <div class="flex flex-col" style="gap: 4px">
                 <span
-                  class="text-xs px-2 py-1 font-medium"
-                  [style.background]="eta(s.busyMeter)"
-                  style="color: white; border-radius: var(--radius-pill)"
+                  style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
+                  >{{ s.name }}</span
                 >
-                  {{ minutes(s.currentEtaSeconds) }} min
-                </span>
+                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                  >{{ s.addressLine }}, {{ s.city }}</span
+                >
               </div>
-            </a>
-          </li>
+              <span
+                class="flex items-center justify-center"
+                [style.background]="etaColor(s.busyMeter)"
+                style="height: 26px; padding: 0 10px; color: white; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
+                >⏱ {{ minutes(s.currentEtaSeconds) }} min</span
+              >
+            </div>
+          </a>
         }
-      </ul>
+      </div>
     </section>
+
+    <app-tma-tab-bar />
   `,
 })
 export class TmaHomePage implements OnInit {
@@ -58,7 +81,7 @@ export class TmaHomePage implements OnInit {
     return Math.max(1, Math.round(seconds / 60));
   }
 
-  eta(busy: number): string {
+  etaColor(busy: number): string {
     if (busy >= 75) return 'var(--color-berry)';
     if (busy >= 40) return 'var(--color-amber)';
     return 'var(--color-mint)';
