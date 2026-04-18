@@ -49,6 +49,10 @@
     "serve": {
       "continuous": true,
       "executor": "@angular/build:dev-server",
+      "options": {
+        "port": 4203,
+        "proxyConfig": "apps/kds/proxy.conf.json"
+      },
       "configurations": {
         "production": {
           "buildTarget": "kds:build:production"

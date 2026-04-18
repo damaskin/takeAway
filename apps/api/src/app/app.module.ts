@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { HealthModule } from './health/health.module';
+import { KdsModule } from './kds/kds.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -39,6 +40,7 @@ import { UsersModule } from './users/users.module';
     OrdersModule,
     PaymentsModule,
     RealtimeModule,
+    KdsModule,
     HealthModule,
   ],
   controllers: [AppController],
