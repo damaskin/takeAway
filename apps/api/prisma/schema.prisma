@@ -1,6 +1,12 @@
 // takeAway — Prisma schema
-// Reference: 01_TECHNICAL_SPEC.md §5 Data model
-// Migrations are added in later milestones (M1+).
+// Conventions (see 02_CLAUDE_PROMPT.md §7):
+//   - Money: integer cents, never floats. Column type: Int.
+//   - Duration: integer seconds. Column type: Int.
+//   - Timestamps: UTC, column type: DateTime. UI converts to store TZ.
+//   - Currency: ISO 4217 code on Brand and persisted per Store.
+//
+// Scope of this migration: M1 (Auth + Catalog).
+// Orders / Loyalty / Payments / GiftCards tables are added in later milestones.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +15,318 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Locale {
+  EN
+  RU
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  AED
+  THB
+  IDR
+}
+
+enum DeviceType {
+  IOS
+  ANDROID
+  WEB
+  TELEGRAM
+}
+
+enum OAuthProvider {
+  GOOGLE
+  APPLE
+  TELEGRAM
+}
+
+enum StoreStatus {
+  OPEN
+  CLOSED
+  OVERLOADED
+}
+
+enum StoreFulfillment {
+  TAKEAWAY
+  DINE_IN
+  DRIVE_THRU
+}
+
+enum PickupPointType {
+  COUNTER
+  LOCKER
+  SHELF
+}
+
+enum VariationType {
+  SIZE
+  TEMPERATURE
+  MILK
+  CUP
+}
+
+enum DietTag {
+  VEGAN
+  VEGETARIAN
+  GLUTEN_FREE
+  LACTOSE_FREE
+  DECAF
+  SUGAR_FREE
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  phone          String?   @unique
+  email          String?   @unique
+  name           String?
+  dateOfBirth    DateTime?
+  avatarUrl      String?
+  locale         Locale    @default(EN)
+  currency       Currency  @default(USD)
+  telegramUserId BigInt?   @unique
+  blockedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  devices       Device[]
+  oauthAccounts OAuthAccount[]
+  otpRequests   OtpRequest[]
+
+  @@index([createdAt])
+}
+
+model Device {
+  id         String     @id @default(cuid())
+  userId     String
+  type       DeviceType
+  pushToken  String?
+  locale     Locale     @default(EN)
+  lastSeenAt DateTime   @default(now())
+  createdAt  DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([pushToken])
+}
+
+model OAuthAccount {
+  id             String        @id @default(cuid())
+  userId         String
+  provider       OAuthProvider
+  providerUserId String
+  createdAt      DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+model OtpRequest {
+  id         String    @id @default(cuid())
+  userId     String?
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([phone, createdAt])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenancy (brands, stores)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Brand {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  currency  Currency @default(USD)
+  locale    Locale   @default(EN)
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores     Store[]
+  categories Category[]
+  products   Product[]
+}
+
+model Store {
+  id                String             @id @default(cuid())
+  brandId           String
+  slug              String             @unique
+  name              String
+  addressLine       String
+  city              String
+  country           String
+  latitude          Float
+  longitude         Float
+  timezone          String             @default("UTC")
+  currency          Currency
+  phone             String?
+  email             String?
+  status            StoreStatus        @default(OPEN)
+  fulfillmentTypes  StoreFulfillment[]
+  pickupPointType   PickupPointType    @default(COUNTER)
+  // 0..100 — higher means kitchen is busier.
+  busyMeter         Int                @default(0)
+  // Cached ETA for an ASAP order placed now, in seconds.
+  currentEtaSeconds Int                @default(600)
+  minOrderCents     Int                @default(0)
+  heroImageUrl      String?
+  galleryUrls       String[]           @default([])
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  brand           Brand              @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  workingHours    StoreWorkingHour[]
+  stopListEntries StopListEntry[]
+
+  @@index([brandId])
+  @@index([country, city])
+  @@index([latitude, longitude])
+}
+
+model StoreWorkingHour {
+  id       String  @id @default(cuid())
+  storeId  String
+  // 0 = Sunday, 6 = Saturday (JS getDay() convention).
+  weekday  Int
+  // Minutes since local midnight, e.g. 08:30 = 510.
+  opensAt  Int
+  closesAt Int
+  isClosed Boolean @default(false)
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, weekday])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Category {
+  id            String   @id @default(cuid())
+  brandId       String
+  slug          String
+  name          String
+  description   String?
+  iconUrl       String?
+  sortOrder     Int      @default(0)
+  // Optional availability window — minutes since local midnight.
+  availableFrom Int?
+  availableTo   Int?
+  visible       Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([brandId, slug])
+  @@index([brandId, sortOrder])
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  brandId         String
+  categoryId      String
+  slug            String
+  name            String
+  description     String?
+  basePriceCents  Int
+  // Base preparation time in seconds; variations/modifiers add deltas.
+  prepTimeSeconds Int       @default(180)
+  caffeineLevel   Int? // 0..4 cups
+  calories        Int?
+  proteinsGrams   Float?
+  fatsGrams       Float?
+  carbsGrams      Float?
+  allergens       String[]  @default([])
+  dietTags        DietTag[] @default([])
+  imageUrls       String[]  @default([])
+  visible         Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  // Seasonal window; null = always available.
+  availableFrom   DateTime?
+  availableTo     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  brand           Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  category        Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variations      Variation[]
+  modifiers       Modifier[]
+  stopListEntries StopListEntry[]
+
+  @@unique([brandId, slug])
+  @@index([categoryId, sortOrder])
+  @@index([brandId, visible])
+}
+
+model Variation {
+  id                   String        @id @default(cuid())
+  productId            String
+  type                 VariationType
+  name                 String
+  priceDeltaCents      Int           @default(0)
+  prepTimeDeltaSeconds Int           @default(0)
+  sortOrder            Int           @default(0)
+  isDefault            Boolean       @default(false)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, type, sortOrder])
+}
+
+model Modifier {
+  id                   String @id @default(cuid())
+  productId            String
+  slug                 String
+  name                 String
+  priceDeltaCents      Int    @default(0)
+  prepTimeDeltaSeconds Int    @default(0)
+  minCount             Int    @default(0)
+  maxCount             Int    @default(1)
+  sortOrder            Int    @default(0)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, slug])
+  @@index([productId, sortOrder])
+}
+
+model StopListEntry {
+  id        String    @id @default(cuid())
+  storeId   String
+  productId String
+  reason    String?
+  // Optional — when to auto-restock. Null = manual re-enable.
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, productId])
 }
