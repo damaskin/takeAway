@@ -13,15 +13,39 @@ export interface BrandDto {
   logoUrl: string | null;
 }
 
+export interface StoreWorkingHourDto {
+  weekday: number;
+  opensAt: number;
+  closesAt: number;
+  isClosed: boolean;
+}
+
 export interface StoreAdminDto {
   id: string;
   brandId: string;
   slug: string;
   name: string;
+  addressLine?: string;
   city: string;
   country: string;
-  status: string;
+  status: 'OPEN' | 'CLOSED' | 'OVERLOADED';
   currency: string;
+  phone?: string | null;
+  email?: string | null;
+  minOrderCents?: number;
+  timezone?: string;
+  workingHours?: StoreWorkingHourDto[];
+}
+
+export interface UpdateStoreInput {
+  name?: string;
+  addressLine?: string;
+  city?: string;
+  country?: string;
+  phone?: string | null;
+  email?: string | null;
+  status?: 'OPEN' | 'CLOSED' | 'OVERLOADED';
+  minOrderCents?: number;
 }
 
 export interface CategoryAdminDto {
@@ -93,6 +117,18 @@ export class AdminCatalogApi {
   listStores(brandId?: string): Observable<StoreAdminDto[]> {
     const params = brandId ? { brandId } : undefined;
     return this.http.get<StoreAdminDto[]>(`${this.api.baseUrl}/admin/stores`, { params });
+  }
+
+  getStore(id: string): Observable<StoreAdminDto> {
+    return this.http.get<StoreAdminDto>(`${this.api.baseUrl}/admin/stores/${id}`);
+  }
+
+  updateStore(id: string, input: UpdateStoreInput): Observable<StoreAdminDto> {
+    return this.http.patch<StoreAdminDto>(`${this.api.baseUrl}/admin/stores/${id}`, input);
+  }
+
+  replaceWorkingHours(id: string, hours: StoreWorkingHourDto[]): Observable<StoreWorkingHourDto[]> {
+    return this.http.put<StoreWorkingHourDto[]>(`${this.api.baseUrl}/admin/stores/${id}/working-hours`, { hours });
   }
 
   listCategories(brandId?: string): Observable<CategoryAdminDto[]> {
