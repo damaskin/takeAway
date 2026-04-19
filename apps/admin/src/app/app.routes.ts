@@ -1,6 +1,23 @@
-import { Route } from '@angular/router';
+import { inject } from '@angular/core';
+import { Route, Router } from '@angular/router';
 
 import { anonymousGuard, authGuard } from './core/auth/auth.guard';
+import { AuthStore } from './core/auth/auth.store';
+
+/**
+ * Riders don't see the full admin shell — they land on a compact
+ * `/rider` layout and can't click through to dashboard/menu/etc. The
+ * `redirectRiderToRiderHome` guard intercepts `/` for them. Staff
+ * and higher roles fall through to the normal shell.
+ */
+const redirectRiderToRiderHome = () => {
+  const store = inject(AuthStore);
+  const router = inject(Router);
+  if (store.user()?.role === 'RIDER') {
+    return router.createUrlTree(['/rider']);
+  }
+  return true;
+};
 
 export const appRoutes: Route[] = [
   {
@@ -9,8 +26,14 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'rider',
+    canMatch: [authGuard],
+    loadComponent: () => import('./features/rider/rider.page').then((m) => m.RiderPage),
+  },
+  {
     path: '',
     canMatch: [authGuard],
+    canActivate: [redirectRiderToRiderHome],
     loadComponent: () => import('./features/layout/admin-layout.page').then((m) => m.AdminLayoutPage),
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
@@ -29,6 +52,10 @@ export const appRoutes: Route[] = [
       {
         path: 'orders',
         loadComponent: () => import('./features/orders/orders.page').then((m) => m.AdminOrdersPage),
+      },
+      {
+        path: 'dispatch',
+        loadComponent: () => import('./features/dispatch/dispatch.page').then((m) => m.DispatchPage),
       },
       {
         path: 'promo',

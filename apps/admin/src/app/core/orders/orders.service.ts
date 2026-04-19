@@ -11,6 +11,8 @@ export type OrderStatusString =
   | 'IN_PROGRESS'
   | 'READY'
   | 'PICKED_UP'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
   | 'CANCELLED'
   | 'EXPIRED';
 
