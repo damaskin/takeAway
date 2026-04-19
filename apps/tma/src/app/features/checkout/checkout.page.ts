@@ -73,49 +73,49 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
-      <!-- Pickup time — DELIVERY is always ASAP in v1, so hide the toggle for it -->
-      @if (fulfillmentType() === 'PICKUP') {
-        <div class="flex flex-col" style="gap: 12px">
-          <span
-            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >{{ 'tma.checkout.pickupWhen' | translate }}</span
+      <!-- Pickup / delivery time — works for both fulfillment types -->
+      <div class="flex flex-col" style="gap: 12px">
+        <span
+          style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+          >{{
+            (fulfillmentType() === 'DELIVERY' ? 'tma.checkout.deliveryWhen' : 'tma.checkout.pickupWhen') | translate
+          }}</span
+        >
+        <div class="flex" style="gap: 8px">
+          <button
+            type="button"
+            (click)="setPickup('ASAP')"
+            class="flex-1"
+            [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+            [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
+            [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
+            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
           >
-          <div class="flex" style="gap: 8px">
-            <button
-              type="button"
-              (click)="setPickup('ASAP')"
-              class="flex-1"
-              [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
-              [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
-              [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
-              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-            >
-              {{ 'tma.checkout.asap' | translate: { min: etaMinutes() } }}
-            </button>
-            <button
-              type="button"
-              (click)="setPickup('SCHEDULED')"
-              class="flex-1"
-              [style.background]="pickupMode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-foam)'"
-              [style.color]="pickupMode() === 'SCHEDULED' ? 'white' : 'var(--color-text-primary)'"
-              [style.border]="
-                pickupMode() === 'SCHEDULED' ? '1px solid transparent' : '1px solid var(--color-border-light)'
-              "
-              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-            >
-              {{ 'tma.checkout.schedule' | translate }}
-            </button>
-          </div>
-          @if (pickupMode() === 'SCHEDULED') {
-            <input
-              type="datetime-local"
-              [value]="scheduledAt()"
-              (change)="onScheduledChange($event)"
-              style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-            />
-          }
+            {{ 'tma.checkout.asap' | translate: { min: etaMinutes() } }}
+          </button>
+          <button
+            type="button"
+            (click)="setPickup('SCHEDULED')"
+            class="flex-1"
+            [style.background]="pickupMode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+            [style.color]="pickupMode() === 'SCHEDULED' ? 'white' : 'var(--color-text-primary)'"
+            [style.border]="
+              pickupMode() === 'SCHEDULED' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+            "
+            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+          >
+            {{ 'tma.checkout.schedule' | translate }}
+          </button>
         </div>
-      }
+        @if (pickupMode() === 'SCHEDULED') {
+          <input
+            type="datetime-local"
+            [value]="scheduledAt()"
+            (change)="onScheduledChange($event)"
+            style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+          />
+        }
+      </div>
 
       <!-- Delivery address form -->
       @if (fulfillmentType() === 'DELIVERY') {
@@ -359,9 +359,6 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   setFulfillment(type: FulfillmentType): void {
     this.fulfillmentType.set(type);
-    // DELIVERY is always ASAP in v1 — clear any scheduled pickup state so we
-    // don't send a stale pickupAt when the user toggles back.
-    if (type === 'DELIVERY') this.pickupMode.set('ASAP');
     this.tg.haptic('light');
     this.refreshMainButton();
   }
@@ -458,7 +455,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     const total = this.price(this.totalCents(c.subtotalCents));
     let key: string;
     if (this.fulfillmentType() === 'DELIVERY') {
-      key = 'tma.checkout.payDelivery';
+      key = this.pickupMode() === 'SCHEDULED' ? 'tma.checkout.payDeliveryScheduled' : 'tma.checkout.payDelivery';
     } else {
       key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
     }
@@ -471,8 +468,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     if (!c) return;
     this.tg.haptic('medium');
     const isDelivery = this.fulfillmentType() === 'DELIVERY';
-    const pickupAt =
-      !isDelivery && this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
+    const pickupAt = this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
     const input = {
       cartId: c.id,
       pickupMode: this.pickupMode(),

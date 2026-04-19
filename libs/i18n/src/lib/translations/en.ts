@@ -629,6 +629,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payAsap: 'Pay {{total}} · ASAP',
       payScheduled: 'Pay {{total}} · Scheduled',
       payDelivery: 'Pay {{total}} · Deliver',
+      payDeliveryScheduled: 'Pay {{total}} · Scheduled delivery',
+      deliveryWhen: 'When do you want it delivered?',
       placeOrderFailed: 'Failed to place the order',
       fulfillment: 'How do you want it?',
       fulfillmentPickup: 'Pickup',

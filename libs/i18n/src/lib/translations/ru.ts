@@ -629,6 +629,8 @@ export const TRANSLATIONS_RU = {
       payAsap: 'Оплатить {{total}} · Сейчас',
       payScheduled: 'Оплатить {{total}} · По времени',
       payDelivery: 'Оплатить {{total}} · Доставка',
+      payDeliveryScheduled: 'Оплатить {{total}} · Доставка ко времени',
+      deliveryWhen: 'Когда доставить?',
       placeOrderFailed: 'Не удалось оформить заказ',
       fulfillment: 'Как удобнее?',
       fulfillmentPickup: 'Самовывоз',
