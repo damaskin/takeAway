@@ -163,11 +163,11 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             >
               📍
               {{
-                (customerLat() != null ? 'tma.checkout.deliveryGeolocateRetry' : 'tma.checkout.deliveryGeolocate')
+                (customerLat() !== null ? 'tma.checkout.deliveryGeolocateRetry' : 'tma.checkout.deliveryGeolocate')
                   | translate
               }}
             </button>
-            @if (deliveryDistanceM() != null) {
+            @if (deliveryDistanceM() !== null) {
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
                 'tma.checkout.deliveryDistance' | translate: { km: formatKm(deliveryDistanceM()!) }
               }}</span>
