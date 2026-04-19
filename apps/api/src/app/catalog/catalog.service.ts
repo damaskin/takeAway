@@ -67,7 +67,10 @@ export class CatalogService {
   async getStore(idOrSlug: string): Promise<StoreDetailDto> {
     const store = await this.prisma.store.findFirst({
       where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
-      include: { workingHours: { orderBy: { weekday: 'asc' } } },
+      include: {
+        workingHours: { orderBy: { weekday: 'asc' } },
+        brand: { select: { id: true, slug: true, name: true, logoUrl: true, themeOverrides: true } },
+      },
     });
     if (!store) throw new NotFoundException('Store not found');
 
@@ -100,6 +103,13 @@ export class CatalogService {
         closesAt: h.closesAt,
         isClosed: h.isClosed,
       })),
+      brand: {
+        id: store.brand.id,
+        slug: store.brand.slug,
+        name: store.brand.name,
+        logoUrl: store.brand.logoUrl,
+        themeOverrides: (store.brand.themeOverrides as Record<string, string> | null) ?? null,
+      },
     };
   }
 

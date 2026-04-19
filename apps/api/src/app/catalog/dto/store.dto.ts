@@ -68,6 +68,28 @@ export class StoreListItemDto {
   distanceMeters!: number | null;
 }
 
+export class BrandThemeDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  slug!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  logoUrl!: string | null;
+
+  /** Map of `{ "--css-var": "value" }` overrides for the TMA theme. */
+  @ApiProperty({
+    nullable: true,
+    type: Object,
+    description: 'CSS variable overrides applied on top of the Telegram theme',
+  })
+  themeOverrides!: Record<string, string> | null;
+}
+
 export class StoreDetailDto extends StoreListItemDto {
   @ApiProperty()
   timezone!: string;
@@ -86,4 +108,7 @@ export class StoreDetailDto extends StoreListItemDto {
 
   @ApiProperty({ type: [StoreWorkingHourDto] })
   workingHours!: StoreWorkingHourDto[];
+
+  @ApiProperty({ type: BrandThemeDto })
+  brand!: BrandThemeDto;
 }
