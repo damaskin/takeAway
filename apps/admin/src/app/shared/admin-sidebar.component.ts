@@ -2,6 +2,7 @@ import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
+import { AuthStore } from '../core/auth/auth.store';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 
 interface NavItem {
@@ -11,6 +12,8 @@ interface NavItem {
   exact?: boolean;
   /** Optional runtime gate — hidden when the returned flag is false. */
   requires?: 'deliveryEnabled';
+  /** Role gate — item is hidden for users whose role is not in this list. */
+  roles?: ReadonlyArray<'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'STAFF' | 'RIDER'>;
 }
 
 /**
@@ -76,6 +79,7 @@ interface NavItem {
 })
 export class AdminSidebarComponent {
   private readonly flags = inject(FeatureFlagsStore);
+  private readonly authStore = inject(AuthStore);
 
   readonly navItems: NavItem[] = [
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard' },
@@ -86,10 +90,16 @@ export class AdminSidebarComponent {
     { icon: '🧑‍✈️', label: 'admin.nav.riders', link: '/riders', requires: 'deliveryEnabled' },
     { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
+    { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ['SUPER_ADMIN'] },
   ];
 
   readonly visibleItems = computed(() => {
     const flags = this.flags.flags();
-    return this.navItems.filter((item) => !item.requires || flags[item.requires]);
+    const role = this.authStore.user()?.role;
+    return this.navItems.filter((item) => {
+      if (item.requires && !flags[item.requires]) return false;
+      if (item.roles && (!role || !item.roles.includes(role as never))) return false;
+      return true;
+    });
   });
 }

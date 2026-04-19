@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { BrandModerationStatus } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 import type { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import type {
@@ -20,12 +22,25 @@ export class AdminCatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
-  listBrands() {
-    return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
+  listBrands(status?: BrandModerationStatus) {
+    return this.prisma.brand.findMany({
+      where: status ? { moderationStatus: status } : undefined,
+      orderBy: [{ moderationStatus: 'asc' }, { name: 'asc' }],
+      include: {
+        owner: { select: { id: true, email: true, name: true, phone: true } },
+        _count: { select: { stores: true, products: true } },
+      },
+    });
   }
 
   async getBrand(id: string) {
-    const brand = await this.prisma.brand.findUnique({ where: { id } });
+    const brand = await this.prisma.brand.findUnique({
+      where: { id },
+      include: {
+        owner: { select: { id: true, email: true, name: true, phone: true } },
+        _count: { select: { stores: true, products: true } },
+      },
+    });
     if (!brand) throw new NotFoundException('Brand not found');
     return brand;
   }
@@ -37,6 +52,18 @@ export class AdminCatalogService {
   async updateBrand(id: string, dto: UpdateBrandDto) {
     await this.getBrand(id);
     return this.prisma.brand.update({ where: { id }, data: dto });
+  }
+
+  async setBrandModeration(id: string, dto: SetBrandModerationDto) {
+    await this.getBrand(id);
+    return this.prisma.brand.update({
+      where: { id },
+      data: {
+        moderationStatus: dto.status,
+        moderationNote: dto.note ?? null,
+        moderatedAt: new Date(),
+      },
+    });
   }
 
   // ── Stores ────────────────────────────────────────────────────────────────

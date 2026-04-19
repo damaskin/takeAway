@@ -99,6 +99,10 @@ export const appRoutes: Route[] = [
         path: 'analytics',
         loadComponent: () => import('./features/analytics/analytics.page').then((m) => m.AdminAnalyticsPage),
       },
+      {
+        path: 'brands',
+        loadComponent: () => import('./features/brands/brands.page').then((m) => m.AdminBrandsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },
