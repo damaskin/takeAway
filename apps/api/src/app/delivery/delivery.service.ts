@@ -107,7 +107,7 @@ export class DeliveryService {
       },
     });
 
-    this.emitDispatchChange(updated.storeId);
+    this.emitDispatchChange(updated.storeId, updated.id, 'updated');
     return { id: updated.id, riderId: updated.riderId };
   }
 
@@ -138,7 +138,7 @@ export class DeliveryService {
       throw new ForbiddenException('Someone else just claimed this order');
     }
 
-    this.emitDispatchChange(order.storeId);
+    this.emitDispatchChange(order.storeId, orderId, 'updated');
     return { id: orderId, riderId };
   }
 
@@ -220,8 +220,12 @@ export class DeliveryService {
         orderId: updated.id,
         order: null,
       });
+      // Dispatcher keeps OUT_FOR_DELIVERY rows in its queue — it's now "en route"
+      // state that still needs visibility, just no longer actionable.
+      this.emitDispatchChange(updated.storeId, updated.id, 'updated');
     } else {
-      this.emitDispatchChange(updated.storeId);
+      // DELIVERED — drop from dispatch queue entirely.
+      this.emitDispatchChange(updated.storeId, updated.id, 'removed');
     }
 
     return {
@@ -262,14 +266,8 @@ export class DeliveryService {
     }
   }
 
-  /**
-   * Piggybacks on the KDS realtime channel for now — dispatchers will live
-   * in the admin app and can subscribe to `kds:<storeId>` to get order
-   * changes in real time. A dedicated `delivery:<storeId>` room is a
-   * follow-up (see M6 plan §6).
-   */
-  private emitDispatchChange(storeId: string): void {
-    this.realtime.emitKdsOrderChanged({ storeId, kind: 'updated', orderId: '*', order: null });
+  private emitDispatchChange(storeId: string, orderId: string, kind: 'created' | 'updated' | 'removed'): void {
+    this.realtime.emitDispatchChanged({ storeId, kind, orderId });
   }
 
   private toDispatchRow(o: {
