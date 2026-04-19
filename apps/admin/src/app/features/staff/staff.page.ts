@@ -233,7 +233,8 @@ export class AdminStaffPage implements OnInit {
       next: (list) => {
         this.stores.set(list);
         this.loadingStores.set(false);
-        if (list.length > 0) this.selectStore(list[0].id);
+        const first = list[0];
+        if (first) this.selectStore(first.id);
       },
       error: () => this.loadingStores.set(false),
     });
