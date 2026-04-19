@@ -2,20 +2,18 @@
  * Auth transport types shared between apps/api, web, tma, admin, kds.
  */
 
-export interface SendOtpRequest {
-  phone: string;
+export interface PasswordLoginRequest {
+  email: string;
+  password: string;
 }
 
-export interface SendOtpResponse {
-  expiresInSeconds: number;
-  resendAfterSeconds: number;
+export interface PasswordForgotRequest {
+  email: string;
 }
 
-export interface VerifyOtpRequest {
-  phone: string;
-  code: string;
-  deviceType?: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM';
-  pushToken?: string;
+export interface PasswordResetRequest {
+  token: string;
+  newPassword: string;
 }
 
 export interface AuthTokens {
