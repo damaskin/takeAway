@@ -106,6 +106,26 @@ export class AuthService {
     ]);
   }
 
+  /**
+   * Link the current (email+password) user to a Telegram chat ID via a
+   * Login Widget callback. Used by admin/KDS staff to receive push
+   * notifications. Unlike the sign-in path, we do NOT create a new user
+   * or issue tokens — we just write `telegramUserId` onto the existing
+   * row.
+   */
+  async linkTelegram(userId: string, payload: TelegramLoginWidgetPayload): Promise<AuthUserDto> {
+    const tgUser = this.telegram.verifyLoginWidget(payload);
+    const telegramUserId = BigInt(tgUser.id);
+
+    const existing = await this.prisma.user.findUnique({ where: { telegramUserId } });
+    if (existing && existing.id !== userId) {
+      throw new BadRequestException('This Telegram account is already linked to another user');
+    }
+
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { telegramUserId } });
+    return this.toAuthUser(user);
+  }
+
   verifyTelegram(initData: string): Promise<AuthSessionDto> {
     const { user: tgUser } = this.telegram.verifyInitData(initData);
     return this.finalizeTelegramSignIn(tgUser, 'TELEGRAM');

@@ -13,6 +13,16 @@ import { Observable, tap } from 'rxjs';
 import { API_CONFIG } from '../api/api.config';
 import { AuthStore } from './auth.store';
 
+interface TelegramLoginPayload {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
@@ -31,6 +41,15 @@ export class AuthService {
 
   resetPassword(body: PasswordResetRequest): Observable<void> {
     return this.http.post<void>(`${this.api.baseUrl}/auth/password/reset`, body);
+  }
+
+  linkTelegram(payload: TelegramLoginPayload): Observable<AuthUser> {
+    return this.http.post<AuthUser>(`${this.api.baseUrl}/auth/telegram/link`, payload).pipe(
+      tap((user) => {
+        const session = this.store.session();
+        if (session) this.store.set({ ...session, user });
+      }),
+    );
   }
 
   refresh(refreshToken: string): Observable<AuthTokens> {

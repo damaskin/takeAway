@@ -187,16 +187,18 @@ export class PaymentsService {
 
     // Customer-facing push — "payment confirmed".
     if (updatedOrder.status === 'PAID') {
-      void this.notifications.notifyOrderStatus(
-        {
-          id: updatedOrder.id,
-          userId: updatedOrder.userId,
-          orderCode: updatedOrder.orderCode,
-          storeId: updatedOrder.storeId,
-          fulfillmentType: updatedOrder.fulfillmentType,
-        },
-        'PAID',
-      );
+      const orderLike = {
+        id: updatedOrder.id,
+        userId: updatedOrder.userId,
+        orderCode: updatedOrder.orderCode,
+        storeId: updatedOrder.storeId,
+        fulfillmentType: updatedOrder.fulfillmentType,
+      };
+      void this.notifications.notifyOrderStatus(orderLike, 'PAID');
+      // Brand-staff push — BRAND_ADMIN + STORE_MANAGER/STAFF assigned to
+      // the store get a Telegram notification so they aren't waiting on
+      // the polling dashboard.
+      void this.notifications.notifyBrandStaffNewOrder(orderLike);
     }
 
     // Credit loyalty points. Fire-and-forget: a ledger hiccup must not roll

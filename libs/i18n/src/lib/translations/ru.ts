@@ -340,6 +340,18 @@ export const TRANSLATIONS_RU = {
       analytics: 'Аналитика',
       brands: 'Бренды',
       settings: 'Настройки',
+      telegramLink: 'Telegram',
+    },
+    telegramLink: {
+      title: 'Привязка Telegram для уведомлений о заказах',
+      subtitle:
+        'Нажмите кнопку Telegram — бот начнёт присылать сообщения при каждом новом оплаченном заказе в вашей точке.',
+      startHint: 'Telegram попросит подтвердить. Это не заменяет вход по email/паролю.',
+      linking: 'Привязываем…',
+      linked: 'Привязано',
+      linkedNote:
+        'Теперь вы получаете события заказов в Telegram. Нажмите кнопку ещё раз, чтобы привязать другой аккаунт.',
+      unavailable: 'Telegram не настроен на этом окружении — попросите администратора указать username бота.',
     },
     settings: {
       title: 'Настройки бренда',

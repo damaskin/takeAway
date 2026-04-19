@@ -340,6 +340,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
       analytics: 'Analytics',
       brands: 'Brands',
       settings: 'Settings',
+      telegramLink: 'Telegram',
+    },
+    telegramLink: {
+      title: 'Link Telegram for order notifications',
+      subtitle:
+        'Tap the Telegram button below — the bot will push you a message the moment a new paid order lands at one of your stores.',
+      startHint: 'You will be redirected to Telegram to confirm. This does not replace your email/password login.',
+      linking: 'Linking…',
+      linked: 'Linked',
+      linkedNote:
+        'You will now receive order events in Telegram. Tap the button again to relink under a different account.',
+      unavailable: 'Telegram is not configured on this deployment — ask your admin to set the bot username.',
     },
     settings: {
       title: 'Brand settings',

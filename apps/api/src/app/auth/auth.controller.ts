@@ -97,6 +97,21 @@ export class AuthController {
     return this.auth.verifyTelegramWidget(dto);
   }
 
+  /**
+   * Link Telegram to an already-authenticated staff account so they can
+   * receive order-event push notifications. Same widget payload shape as
+   * the sign-in path, but scoped to the current user instead of creating
+   * a new session.
+   */
+  @Post('telegram/link')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.telegram, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: AuthUserDto })
+  linkTelegram(@CurrentUser() user: AuthenticatedUser, @Body() dto: TelegramWidgetAuthDto): Promise<AuthUserDto> {
+    return this.auth.linkTelegram(user.id, dto);
+  }
+
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
