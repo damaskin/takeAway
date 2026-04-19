@@ -13,6 +13,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { HealthModule } from './health/health.module';
 import { KdsModule } from './kds/kds.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PromoModule } from './promo/promo.module';
@@ -48,6 +49,7 @@ import { UsersModule } from './users/users.module';
     RealtimeModule,
     KdsModule,
     DeliveryModule,
+    NotificationsModule,
     AnalyticsModule,
     HealthModule,
   ],

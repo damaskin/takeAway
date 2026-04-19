@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -30,6 +31,7 @@ export class OrdersService {
     private readonly promo: PromoService,
     private readonly loyalty: LoyaltyService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -324,6 +326,19 @@ export class OrdersService {
         occurredAt: (updated.cancelledAt ?? new Date()).toISOString(),
       },
       updated.userId,
+    );
+
+    // Fire-and-forget push. If Telegram/APNs/FCM are down this still
+    // returns the cancel result cleanly.
+    void this.notifications.notifyOrderStatus(
+      {
+        id: updated.id,
+        userId: updated.userId,
+        orderCode: updated.orderCode,
+        storeId: updated.storeId,
+        fulfillmentType: updated.fulfillmentType,
+      },
+      updated.status,
     );
 
     return this.toOrderDto(updated);
