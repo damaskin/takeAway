@@ -10,6 +10,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { BrandScopeService } from './services/brand-scope.service';
 import { MailService } from './services/mail.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService } from './services/telegram.service';
@@ -48,11 +49,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TokensService,
     TelegramService,
     UserStoreScopeService,
+    BrandScopeService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [AuthService, UserStoreScopeService, PasswordService, TokensService],
+  exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, TokensService],
 })
 export class AuthModule {}
