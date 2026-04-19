@@ -38,6 +38,15 @@ export interface StoreWorkingHour {
   isClosed: boolean;
 }
 
+export interface BrandTheme {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl: string | null;
+  /** CSS-variable overrides applied on top of the Telegram theme. */
+  themeOverrides: Record<string, string> | null;
+}
+
 export interface StoreDetail extends StoreListItem {
   timezone: string;
   phone: string | null;
@@ -45,6 +54,7 @@ export interface StoreDetail extends StoreListItem {
   minOrderCents: number;
   galleryUrls: string[];
   workingHours: StoreWorkingHour[];
+  brand: BrandTheme;
 }
 
 export interface Variation {

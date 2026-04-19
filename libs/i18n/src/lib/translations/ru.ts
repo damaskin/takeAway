@@ -289,9 +289,32 @@ export const TRANSLATIONS_RU = {
     login: {
       title: 'Вход в панель',
       subtitle: 'Для сотрудников бренда',
-      telegramPrompt: 'Войдите через ваш аккаунт Telegram',
-      telegramUnavailable: 'Вход через Telegram не настроен для этого окружения.',
+      passwordPrompt: 'Войдите по рабочему email и паролю',
+      emailLabel: 'Email',
+      emailPlaceholder: 'you@example.com',
+      passwordLabel: 'Пароль',
+      signIn: 'Войти',
       signingIn: 'Входим…',
+      forgot: 'Забыли пароль?',
+    },
+    forgot: {
+      title: 'Восстановление пароля',
+      subtitle: 'Введите email — мы пришлём ссылку для сброса.',
+      sendLink: 'Отправить ссылку',
+      sending: 'Отправляем…',
+      sent: 'Если такой адрес зарегистрирован, ссылка уже в пути.',
+      backToLogin: '← Вернуться ко входу',
+    },
+    reset: {
+      title: 'Новый пароль',
+      subtitle: 'Минимум 8 символов.',
+      newPasswordLabel: 'Новый пароль',
+      save: 'Сохранить',
+      saving: 'Сохраняем…',
+      done: 'Пароль обновлён. Перенаправляем на вход…',
+      signIn: 'Войти',
+      missingToken: 'В ссылке нет токена. Запросите новую.',
+      requestNewLink: 'Запросить новую ссылку',
     },
     layout: {
       adminTag: 'Админ',
@@ -542,9 +565,7 @@ export const TRANSLATIONS_RU = {
   kds: {
     login: {
       title: 'takeAway · Кухня',
-      telegramPrompt: 'Войдите через ваш аккаунт Telegram',
-      telegramUnavailable: 'Вход через Telegram не настроен для этого окружения.',
-      signingIn: 'Входим…',
+      passwordPrompt: 'Войдите по рабочему email и паролю',
     },
     topbar: {
       inQueue: 'в очереди',

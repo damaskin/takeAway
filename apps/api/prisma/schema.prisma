@@ -297,6 +297,9 @@ model Brand {
   currency         Currency              @default(USD)
   locale           Locale                @default(EN)
   logoUrl          String?
+  /// Optional CSS-variable overrides applied on top of the Telegram theme
+  /// in TMA (and optionally web). Shape: `{ "--color-caramel": "#aabb00" }`.
+  themeOverrides   Json?
   /// Null for the demo seed brand; set on every self-registered brand.
   ownerId          String?
   moderationStatus BrandModerationStatus @default(PENDING)
