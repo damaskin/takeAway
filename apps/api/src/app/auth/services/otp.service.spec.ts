@@ -32,7 +32,10 @@ describe('OtpService', () => {
         OtpService,
         { provide: PrismaService, useValue: prisma },
         { provide: RedisService, useValue: redis },
-        { provide: ConfigService, useValue: { get: () => 'test' } },
+        {
+          provide: ConfigService,
+          useValue: { get: (key: string) => (key === 'NODE_ENV' ? 'production' : undefined) },
+        },
       ],
     }).compile();
 
