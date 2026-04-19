@@ -11,6 +11,7 @@ import { OrdersApi } from '../../core/orders/orders.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
 type PaymentMethod = 'APPLE_PAY' | 'GOOGLE_PAY' | 'CARD';
+type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
 interface Step {
   n: number;
@@ -84,30 +85,112 @@ interface Step {
               class="w-full"
               style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: var(--spacing-xl); display: flex; flex-direction: column; gap: var(--spacing-lg)"
             >
+              <!-- PICKUP / DELIVERY toggle -->
               <div class="flex gap-3 w-full">
                 <button
                   type="button"
-                  (click)="selectMode('ASAP')"
+                  (click)="selectFulfillment('PICKUP')"
                   class="flex items-center justify-center w-full"
-                  [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                  [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                  [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
-                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  [style.background]="fulfillmentType() === 'PICKUP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="fulfillmentType() === 'PICKUP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="fulfillmentType() === 'PICKUP' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
                 >
-                  {{ 'web.checkout.pickupAsap' | translate }}
+                  {{ 'web.checkout.fulfillmentPickup' | translate }}
                 </button>
                 <button
                   type="button"
-                  (click)="selectMode('SCHEDULED')"
-                  class="flex items-center justify-center w-full"
-                  [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                  [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                  [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
-                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  (click)="selectFulfillment('DELIVERY')"
+                  [disabled]="!deliveryAvailable()"
+                  class="flex items-center justify-center w-full disabled:opacity-40"
+                  [style.background]="fulfillmentType() === 'DELIVERY' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="fulfillmentType() === 'DELIVERY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="fulfillmentType() === 'DELIVERY' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
                 >
-                  {{ 'web.checkout.pickupScheduled' | translate }}
+                  {{ 'web.checkout.fulfillmentDelivery' | translate }}
                 </button>
               </div>
+
+              <!-- ASAP / SCHEDULED — only for pickup (delivery is always ASAP in v1) -->
+              @if (fulfillmentType() === 'PICKUP') {
+                <div class="flex gap-3 w-full">
+                  <button
+                    type="button"
+                    (click)="selectMode('ASAP')"
+                    class="flex items-center justify-center w-full"
+                    [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                    [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                    [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
+                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  >
+                    {{ 'web.checkout.pickupAsap' | translate }}
+                  </button>
+                  <button
+                    type="button"
+                    (click)="selectMode('SCHEDULED')"
+                    class="flex items-center justify-center w-full"
+                    [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                    [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                    [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
+                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  >
+                    {{ 'web.checkout.pickupScheduled' | translate }}
+                  </button>
+                </div>
+              }
+
+              <!-- Delivery address form -->
+              @if (fulfillmentType() === 'DELIVERY') {
+                <div [formGroup]="deliveryForm" class="flex flex-col" style="gap: 12px">
+                  <label class="flex flex-col gap-1">
+                    <span
+                      style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+                    >
+                      {{ 'web.checkout.deliveryAddressLabel' | translate }}
+                    </span>
+                    <input
+                      formControlName="addressLine"
+                      type="text"
+                      autocomplete="street-address"
+                      [placeholder]="'web.checkout.deliveryAddressPlaceholder' | translate"
+                      style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span
+                      style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+                    >
+                      {{ 'web.checkout.deliveryCityLabel' | translate }}
+                    </span>
+                    <input
+                      formControlName="city"
+                      type="text"
+                      autocomplete="address-level2"
+                      [placeholder]="'web.checkout.deliveryCityPlaceholder' | translate"
+                      style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-1">
+                    <span
+                      style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
+                    >
+                      {{ 'web.checkout.deliveryNotesLabel' | translate }}
+                    </span>
+                    <input
+                      formControlName="notes"
+                      type="text"
+                      [placeholder]="'web.checkout.deliveryNotesPlaceholder' | translate"
+                      style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
+                    />
+                  </label>
+                  <p
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
+                  >
+                    {{ 'web.checkout.deliveryFeeHint' | translate: { fee: price(deliveryFeeCents()) } }}
+                  </p>
+                </div>
+              }
 
               @if (mode() === 'SCHEDULED') {
                 <label class="flex flex-col gap-1">
@@ -326,10 +409,15 @@ export class CheckoutPage implements OnInit {
 
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
+  readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly payment = signal<PaymentMethod>('APPLE_PAY');
   readonly scheduledAt = signal<string>(this.defaultScheduled());
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
+  /** Whether the picked store advertises DELIVERY in `fulfillmentTypes`. */
+  readonly deliveryAvailable = signal(false);
+  /** Flat fee in cents; in sync with server DELIVERY_FEE_CENTS default. */
+  readonly deliveryFeeCents = signal(300);
 
   // Promo state — promoCode() is the confirmed/applied code, promoInput() is
   // what's currently typed in the input.
@@ -343,6 +431,12 @@ export class CheckoutPage implements OnInit {
 
   readonly contactForm = new FormGroup({
     customerName: new FormControl('', { nonNullable: true }),
+    notes: new FormControl('', { nonNullable: true }),
+  });
+
+  readonly deliveryForm = new FormGroup({
+    addressLine: new FormControl('', { nonNullable: true }),
+    city: new FormControl('', { nonNullable: true }),
     notes: new FormControl('', { nonNullable: true }),
   });
 
@@ -387,6 +481,7 @@ export class CheckoutPage implements OnInit {
       this.catalog.getStore(storeSlug).subscribe({
         next: (store) => {
           this.brandId.set(store.brandId);
+          this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
           this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
         },
       });
@@ -396,6 +491,7 @@ export class CheckoutPage implements OnInit {
           const first = stores[0];
           if (first) {
             this.brandId.set(first.brandId);
+            this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
             this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
           }
         },
@@ -461,11 +557,19 @@ export class CheckoutPage implements OnInit {
   }
 
   totalCents(subtotalCents: number): number {
-    return Math.max(0, subtotalCents - this.discountCents());
+    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
+    return Math.max(0, subtotalCents - this.discountCents() + fee);
   }
 
   selectMode(mode: PickupMode): void {
     this.mode.set(mode);
+  }
+
+  selectFulfillment(type: FulfillmentType): void {
+    this.fulfillmentType.set(type);
+    // Delivery is always ASAP in v1. If the user toggled from SCHEDULED
+    // pickup, reset to ASAP so we don't send conflicting state to the API.
+    if (type === 'DELIVERY') this.mode.set('ASAP');
   }
 
   selectPayment(method: PaymentMethod): void {
@@ -483,13 +587,31 @@ export class CheckoutPage implements OnInit {
     this.error.set(null);
 
     const v = this.contactForm.getRawValue();
+    const isDelivery = this.fulfillmentType() === 'DELIVERY';
+    if (isDelivery) {
+      const d = this.deliveryForm.getRawValue();
+      if (!d.addressLine.trim() || !d.city.trim()) {
+        this.submitting.set(false);
+        this.error.set(this.translate.instant('web.checkout.deliveryAddressRequired'));
+        return;
+      }
+    }
+    const d = this.deliveryForm.getRawValue();
     const input = {
       cartId: c.id,
       pickupMode: this.mode(),
       pickupAt: this.mode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined,
+      fulfillmentType: this.fulfillmentType(),
       customerName: v.customerName || undefined,
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
+      ...(isDelivery
+        ? {
+            deliveryAddressLine: d.addressLine.trim(),
+            deliveryCity: d.city.trim(),
+            deliveryNotes: d.notes?.trim() || undefined,
+          }
+        : {}),
     };
 
     this.orders.create(input).subscribe({

@@ -175,6 +175,16 @@ export const TRANSLATIONS_RU = {
       payWithGoogle: 'G Pay',
       payWithCard: 'Карта',
       payCta: 'Оплатить {{total}} · готово к {{time}}',
+      fulfillmentPickup: 'Самовывоз',
+      fulfillmentDelivery: 'Доставка',
+      deliveryAddressLabel: 'Адрес',
+      deliveryAddressPlaceholder: 'ул. Примерная, д. 12, кв. 34',
+      deliveryCityLabel: 'Город',
+      deliveryCityPlaceholder: 'Москва',
+      deliveryNotesLabel: 'Для курьера (подъезд, код, этаж)',
+      deliveryNotesPlaceholder: 'Подъезд 2, код 1234',
+      deliveryFeeHint: 'К стоимости заказа добавится {{fee}} за доставку.',
+      deliveryAddressRequired: 'Укажите адрес и город для доставки.',
     },
     orderStatus: {
       status: {
