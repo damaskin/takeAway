@@ -186,6 +186,19 @@ enum PromoStatus {
   EXPIRED
 }
 
+/// Moderation state for a self-registered Brand.
+///  * PENDING  — the owner can manage their catalog / stores, but nothing is
+///               visible to customers until a SUPER_ADMIN approves.
+///  * APPROVED — fully visible on the storefront.
+///  * REJECTED — stays in the DB (with optional moderationNote) but is not
+///               visible on the storefront and the owner can no longer add
+///               new data.
+enum BrandModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +225,7 @@ model User {
   devices          Device[]
   oauthAccounts    OAuthAccount[]
   passwordResetTokens PasswordResetToken[]
+  ownedBrands      Brand[] @relation("BrandOwner")
   carts            Cart[]
   orders           Order[]
   loyaltyAccount   LoyaltyAccount?
@@ -277,19 +291,30 @@ model PasswordResetToken {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Brand {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  currency  Currency @default(USD)
-  locale    Locale   @default(EN)
-  logoUrl   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String                @id @default(cuid())
+  slug             String                @unique
+  name             String
+  currency         Currency              @default(USD)
+  locale           Locale                @default(EN)
+  logoUrl          String?
+  /// Null for the demo seed brand; set on every self-registered brand.
+  ownerId          String?
+  moderationStatus BrandModerationStatus @default(PENDING)
+  /// Free-form note the super-admin can leave when rejecting or approving.
+  moderationNote   String?
+  submittedAt      DateTime              @default(now())
+  moderatedAt      DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
+  owner      User?      @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   stores     Store[]
   categories Category[]
   products   Product[]
   promos     Promo[]
+
+  @@index([moderationStatus])
+  @@index([ownerId])
 }
 
 model Store {
