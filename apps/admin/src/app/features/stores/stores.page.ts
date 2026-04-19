@@ -16,7 +16,8 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
   template: `
     <div
       class="flex items-center justify-between"
-      style="height: 64px; padding: 0 24px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+      class="flex-wrap"
+      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"

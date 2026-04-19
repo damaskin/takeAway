@@ -28,7 +28,8 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
   template: `
     <div
       class="flex items-center justify-between"
-      style="height: 64px; padding: 0 24px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+      class="flex-wrap"
+      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
@@ -58,7 +59,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
 
     <section style="padding: 24px; display: flex; flex-direction: column; gap: 24px">
       <!-- Loyalty tier cards (static — tiers come from M5 analytics) -->
-      <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
         @for (t of tiers; track t.name) {
           <article
             class="flex flex-col"
@@ -81,7 +82,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
       @if (formOpen()) {
         <article
           [formGroup]="form"
-          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px"
+          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px"
         >
           <input
             formControlName="code"
@@ -147,7 +148,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
       <!-- Promos table -->
       <article
         class="flex flex-col"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden; overflow-x: auto"
       >
         <header
           class="flex items-center justify-between"

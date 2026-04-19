@@ -23,7 +23,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
     <!-- Store bar — pencil EVEFd -->
     <div
       class="flex items-center"
-      style="background: var(--color-foam); height: 56px; padding: 0 48px; border-bottom: 1px solid var(--color-border-light); gap: 16px"
+      style="background: var(--color-foam); height: 56px; padding: 0 clamp(16px, 4vw, 48px); border-bottom: 1px solid var(--color-border-light); gap: 16px"
     >
       @if (store(); as s) {
         <span style="color: var(--color-caramel); font-size: 18px">📍</span>
@@ -56,10 +56,10 @@ import { CatalogService } from '../../core/catalog/catalog.service';
     </div>
 
     <!-- Body: sidebar + main content -->
-    <div class="flex" style="min-height: calc(100vh - 72px - 56px - 48px)">
+    <div class="menu-body flex" style="min-height: calc(100vh - 72px - 56px - 48px)">
       <!-- Sidebar — pencil i92Sa -->
       <aside
-        class="flex flex-col"
+        class="menu-sidebar flex flex-col"
         style="width: 240px; background: var(--color-foam); border-right: 1px solid var(--color-border-light); padding: 24px 16px; gap: 4px; position: sticky; top: 128px; align-self: flex-start; max-height: calc(100vh - 128px); overflow-y: auto"
       >
         <div style="padding: 0 12px 12px 12px">
@@ -84,7 +84,10 @@ import { CatalogService } from '../../core/catalog/catalog.service';
       </aside>
 
       <!-- Main content — pencil QKAH4 -->
-      <main class="flex-1 flex flex-col" style="background: var(--color-cream); padding: 32px; gap: 24px">
+      <main
+        class="menu-main flex-1 flex flex-col"
+        style="background: var(--color-cream); padding: clamp(16px, 4vw, 32px); gap: 24px"
+      >
         @for (cat of categories(); track cat.id) {
           <section [attr.id]="'cat-' + cat.id">
             <header class="flex items-center justify-between" style="margin-bottom: 20px">
@@ -98,7 +101,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
               >
             </header>
 
-            <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 20px">
+            <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px">
               @for (p of cat.products; track p.id) {
                 <a
                   [routerLink]="['/products', p.slug]"
@@ -158,7 +161,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
     @if (store(); as s) {
       <div
         class="flex items-center justify-between"
-        style="background: var(--color-caramel); height: 48px; padding: 0 48px; color: var(--color-foam)"
+        style="background: var(--color-caramel); height: 48px; padding: 0 clamp(16px, 4vw, 48px); color: var(--color-foam)"
       >
         <div class="flex items-center" style="gap: 8px">
           <span style="font-size: 16px">⏱</span>
@@ -172,6 +175,15 @@ import { CatalogService } from '../../core/catalog/catalog.service';
       </div>
     }
   `,
+  styles: [
+    `
+      @media (max-width: 768px) {
+        .menu-sidebar {
+          display: none !important;
+        }
+      }
+    `,
+  ],
 })
 export class MenuPage implements OnInit {
   private readonly route = inject(ActivatedRoute);

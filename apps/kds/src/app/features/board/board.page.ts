@@ -49,7 +49,8 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
       <!-- Top bar -->
       <header
         class="flex items-center justify-between"
-        style="height: 56px; padding: 0 24px; background: #1C1817; border-bottom: 1px solid #2A2523"
+        class="flex-wrap"
+        style="min-height: 56px; padding: 8px clamp(12px, 3vw, 24px); background: #1C1817; border-bottom: 1px solid #2A2523; gap: 12px"
       >
         <!-- Left: logo + store selector -->
         <div class="flex items-center" style="gap: 16px">
@@ -109,7 +110,8 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
       <!-- Columns -->
       <main
         class="grid"
-        style="grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 16px; flex: 1; min-height: 0; overflow: hidden"
+        class="kds-board-grid"
+        style="grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 16px; flex: 1; min-height: 0; overflow-x: auto"
       >
         @for (col of columns; track col.key) {
           <section class="flex flex-col min-h-0">
@@ -229,6 +231,20 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
       }
     </div>
   `,
+  styles: [
+    `
+      @media (max-width: 900px) {
+        .kds-board-grid {
+          grid-template-columns: repeat(3, minmax(260px, 1fr)) !important;
+        }
+      }
+      @media (max-width: 600px) {
+        .kds-board-grid {
+          grid-template-columns: repeat(3, 280px) !important;
+        }
+      }
+    `,
+  ],
 })
 export class KdsBoardPage implements OnInit, OnDestroy {
   private readonly api = inject(KdsApi);

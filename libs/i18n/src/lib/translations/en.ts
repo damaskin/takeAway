@@ -32,6 +32,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     readyBy: 'Ready by {{time}}',
     search: 'Search',
     soldOut: 'Sold out',
+    menu: 'Menu',
+    close: 'Close',
     user: 'User',
     requestFailed: 'Request failed',
     genericError: 'Something went wrong, please try again',
