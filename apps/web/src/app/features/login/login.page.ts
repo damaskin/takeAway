@@ -3,9 +3,9 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { TELEGRAM_AUTH_CONFIG } from '../../core/api/telegram.config';
+import { TELEGRAM_AUTH_CONFIG, TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from '@takeaway/ui-kit';
+
 import { AuthService } from '../../core/auth/auth.service';
-import { TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from './telegram-login-button.component';
 
 type Step = 'phone' | 'code';
 
@@ -95,7 +95,7 @@ type Step = 'phone' | 'code';
               <div class="flex flex-col" style="gap: 12px">
                 @if (telegramBotUsername) {
                   <div class="flex justify-center">
-                    <app-telegram-login-button
+                    <lib-telegram-login-button
                       [botUsername]="telegramBotUsername"
                       (auth)="signInWithTelegram($event)"
                     />
