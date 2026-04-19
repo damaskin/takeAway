@@ -45,6 +45,15 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'forgot-password',
+    canMatch: [anonymousGuard],
+    loadComponent: () => import('./features/forgot-password/forgot-password.page').then((m) => m.ForgotPasswordPage),
+  },
+  {
+    path: 'reset-password',
+    loadComponent: () => import('./features/reset-password/reset-password.page').then((m) => m.ResetPasswordPage),
+  },
+  {
     path: 'rider',
     canMatch: [authGuard],
     canActivate: [deliveryEnabledGuard],
