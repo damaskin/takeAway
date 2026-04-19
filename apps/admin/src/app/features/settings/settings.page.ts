@@ -113,17 +113,34 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
             />
           </label>
 
-          <label class="flex flex-col" style="gap: 6px">
+          <div class="flex flex-col" style="gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-              'admin.settings.logoUrl' | translate
+              'admin.settings.logo' | translate
             }}</span>
-            <input
-              formControlName="logoUrl"
-              type="url"
-              placeholder="https://…"
-              style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px; outline: none"
-            />
-          </label>
+            <div class="flex items-center" style="gap: 12px">
+              @if (form.controls.logoUrl.value) {
+                <img
+                  [src]="form.controls.logoUrl.value"
+                  alt="logo"
+                  style="width: 64px; height: 64px; object-fit: cover; border-radius: 12px; background: var(--color-cream); border: 1px solid var(--color-border)"
+                />
+              }
+              <label
+                style="padding: 8px 14px; background: var(--color-latte); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-espresso); cursor: pointer"
+              >
+                {{ (uploading() ? 'admin.settings.uploading' : 'admin.settings.uploadLogo') | translate }}
+                <input type="file" accept="image/*" (change)="onLogoPicked($event)" style="display: none" />
+              </label>
+              @if (form.controls.logoUrl.value) {
+                <input
+                  formControlName="logoUrl"
+                  type="url"
+                  placeholder="https://…"
+                  style="flex: 1; height: 36px; padding: 0 10px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-mono); font-size: 12px; outline: none"
+                />
+              }
+            </div>
+          </div>
 
           <fieldset style="border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; margin: 0">
             <legend
@@ -196,6 +213,7 @@ export class AdminSettingsPage {
   readonly brand = signal<MyBrand | null>(null);
   readonly loading = signal(true);
   readonly saving = signal(false);
+  readonly uploading = signal(false);
   readonly saved = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -269,6 +287,26 @@ export class AdminSettingsPage {
           this.error.set(this.extractMessage(err));
         },
       });
+  }
+
+  onLogoPicked(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.uploading.set(true);
+    this.error.set(null);
+    this.settings.uploadLogo(file).subscribe({
+      next: (res) => {
+        this.uploading.set(false);
+        this.form.controls.logoUrl.setValue(res.logoUrl);
+        this.form.markAsDirty();
+      },
+      error: (err) => {
+        this.uploading.set(false);
+        this.error.set(this.extractMessage(err));
+      },
+    });
+    input.value = '';
   }
 
   private extractMessage(err: unknown): string {
