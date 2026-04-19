@@ -18,6 +18,7 @@ DOMAINS=(
   admin.takeaway.million-sales.ru
   kds.takeaway.million-sales.ru
   tma.takeaway.million-sales.ru
+  cdn.takeaway.million-sales.ru
 )
 
 # certbot runs in a one-shot container that shares the ACME webroot with nginx.

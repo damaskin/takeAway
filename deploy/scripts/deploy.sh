@@ -31,7 +31,9 @@ bash "$DEPLOY_DIR/scripts/bootstrap-certs.sh"
 
 echo "==> [1/4] building + starting api + dependencies"
 docker compose -f docker-compose.prod.yml build api
-docker compose -f docker-compose.prod.yml up -d postgres redis
+docker compose -f docker-compose.prod.yml up -d postgres redis minio
+# One-shot bucket setup. Safe to re-run; exits 0 when the bucket is ready.
+docker compose -f docker-compose.prod.yml up minio-init --exit-code-from minio-init || true
 
 # Wait briefly for postgres to become healthy before running migrations.
 echo "==> waiting for postgres to become healthy"
@@ -50,8 +52,9 @@ echo "==> [3/4] applying prisma migrations"
 bash "$DEPLOY_DIR/scripts/migrate.sh"
 
 echo "==> [4/4] bringing up api + nginx, reloading config"
-docker compose -f docker-compose.prod.yml up -d api nginx
-# If nginx was already running, force a reload so it picks up SPA changes.
+docker compose -f docker-compose.prod.yml up -d api nginx minio
+# If nginx was already running, force a reload so it picks up SPA changes
+# and any nginx/*.conf edits (new vhosts, new snippets, etc.).
 docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true
 
 echo "done."
