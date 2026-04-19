@@ -1,0 +1,48 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**'
+      - '!.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Run deploy.sh on production
+        env:
+          HOST: 62.238.4.92
+          USER: deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts "$USER@$HOST" \
+            "set -e; cd /opt/takeaway/repo && git fetch origin && git reset --hard origin/main && bash deploy/scripts/deploy.sh"
+
+      - name: Health check
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -sSf https://api.takeaway.million-sales.ru/api/health > /tmp/health.json; then
+              echo "API healthy:"; cat /tmp/health.json
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 10s"
+            sleep 10
+          done
+          echo "API health check failed after 5 attempts"
+          exit 1
