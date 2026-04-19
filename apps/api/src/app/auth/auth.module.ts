@@ -13,6 +13,7 @@ import { RolesGuard } from './guards/roles.guard';
 import { OtpService } from './services/otp.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
+import { UserStoreScopeService } from './services/user-store-scope.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -44,11 +45,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     OtpService,
     TokensService,
     TelegramService,
+    UserStoreScopeService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [AuthService],
+  exports: [AuthService, UserStoreScopeService],
 })
 export class AuthModule {}
