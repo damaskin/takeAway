@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
+import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,6 +33,7 @@ export class OrdersService {
     private readonly loyalty: LoyaltyService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly deliveryFee: DeliveryFeeService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -64,9 +66,23 @@ export class OrdersService {
       throw new BadRequestException('Cart total below store minimum');
     }
 
-    // Delivery fee — flat v1. Config key DELIVERY_FEE_CENTS (default $3.00).
-    // Distance-based pricing is a follow-up (see M6 plan PR 5).
-    const deliveryFeeCents = fulfillmentType === 'DELIVERY' ? Number(this.config.get('DELIVERY_FEE_CENTS')) || 300 : 0;
+    // Delivery fee — distance-based when the client sends customer coords,
+    // flat fallback otherwise (see DeliveryFeeService).
+    let deliveryFeeCents = 0;
+    let deliveryDistanceM: number | null = null;
+    if (fulfillmentType === 'DELIVERY') {
+      const quote = this.deliveryFee.quote({
+        storeLatitude: cart.store.latitude,
+        storeLongitude: cart.store.longitude,
+        customerLatitude: dto.deliveryLatitude ?? null,
+        customerLongitude: dto.deliveryLongitude ?? null,
+      });
+      if (!quote.deliverable) {
+        throw new BadRequestException('Delivery address is outside the serviceable radius');
+      }
+      deliveryFeeCents = quote.feeCents;
+      deliveryDistanceM = quote.distanceM;
+    }
 
     // Resolve promo (if any) BEFORE the transaction — validation is cheap and
     // catching a bad code here keeps our transaction tight. Discounts get
@@ -111,6 +127,7 @@ export class OrdersService {
             deliveryLongitude: dto.deliveryLongitude ?? null,
             deliveryNotes: dto.deliveryNotes ?? null,
             deliveryFeeCents,
+            deliveryDistanceM,
             items: {
               create: cart.items.map((i) => ({
                 productSnapshot: this.snapshotItem(i) as Prisma.InputJsonValue,
