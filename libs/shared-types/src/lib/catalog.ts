@@ -5,7 +5,7 @@
 import type { PickupPointType } from './shared-types';
 
 export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
-export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU';
+export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
 export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
 

@@ -175,6 +175,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payWithGoogle: 'G Pay',
       payWithCard: 'Card',
       payCta: 'Pay {{total}} · ready by {{time}}',
+      fulfillmentPickup: 'Pickup',
+      fulfillmentDelivery: 'Delivery',
+      deliveryAddressLabel: 'Address',
+      deliveryAddressPlaceholder: '123 Main St, Apt 4',
+      deliveryCityLabel: 'City',
+      deliveryCityPlaceholder: 'Dubai',
+      deliveryNotesLabel: 'Notes for the rider (building, floor, code)',
+      deliveryNotesPlaceholder: 'Building B, code 1234',
+      deliveryFeeHint: 'A {{fee}} delivery fee will be added to your order total.',
+      deliveryAddressRequired: 'Enter an address and city to deliver.',
     },
     orderStatus: {
       status: {
