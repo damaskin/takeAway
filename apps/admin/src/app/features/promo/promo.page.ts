@@ -27,8 +27,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
   imports: [ReactiveFormsModule, TranslatePipe],
   template: `
     <div
-      class="flex items-center justify-between"
-      class="flex-wrap"
+      class="flex items-center justify-between flex-wrap"
       style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
       <h1
