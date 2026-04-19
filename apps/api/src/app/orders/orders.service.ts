@@ -198,6 +198,18 @@ export class OrdersService {
       }),
     );
 
+    // Customer-facing push — "order received, awaiting payment".
+    void this.notifications.notifyOrderStatus(
+      {
+        id: order.id,
+        userId: order.userId,
+        orderCode: order.orderCode,
+        storeId: order.storeId,
+        fulfillmentType: order.fulfillmentType,
+      },
+      'CREATED',
+    );
+
     return this.toOrderDto(order);
   }
 

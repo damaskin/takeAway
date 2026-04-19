@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -41,6 +42,7 @@ export class PaymentsService {
     private readonly config: StripeConfig,
     private readonly realtime: RealtimeGateway,
     private readonly orders: OrdersService,
+    private readonly notifications: NotificationsService,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
   ) {}
 
@@ -181,6 +183,20 @@ export class PaymentsService {
           },
         });
       }
+    }
+
+    // Customer-facing push — "payment confirmed".
+    if (updatedOrder.status === 'PAID') {
+      void this.notifications.notifyOrderStatus(
+        {
+          id: updatedOrder.id,
+          userId: updatedOrder.userId,
+          orderCode: updatedOrder.orderCode,
+          storeId: updatedOrder.storeId,
+          fulfillmentType: updatedOrder.fulfillmentType,
+        },
+        'PAID',
+      );
     }
 
     // Credit loyalty points. Fire-and-forget: a ledger hiccup must not roll
