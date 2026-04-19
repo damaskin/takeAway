@@ -5,6 +5,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+import { BrandThemeService } from '../../core/theme/brand-theme.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
 /**
@@ -105,6 +106,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly catalog = inject(CatalogService);
   private readonly tg = inject(TelegramBridgeService);
+  private readonly brandTheme = inject(BrandThemeService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -127,7 +129,12 @@ export class TmaMenuPage implements OnInit, OnDestroy {
       return;
     }
 
-    this.catalog.getStore(slug).subscribe({ next: (s) => this.store.set(s) });
+    this.catalog.getStore(slug).subscribe({
+      next: (s) => {
+        this.store.set(s);
+        this.brandTheme.apply(s.brand?.themeOverrides ?? null);
+      },
+    });
     this.catalog.getMenu(slug).subscribe({
       next: (m) => {
         this.menu.set(m);
@@ -141,6 +148,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.detachBack?.();
+    this.brandTheme.reset();
   }
 
   scrollToCategory(id: string): void {
