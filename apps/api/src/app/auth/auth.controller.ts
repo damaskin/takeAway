@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post } 
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
+import { FeatureFlagsService } from '../config/feature-flags.service';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -33,6 +34,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly users: UsersService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   @Public()
@@ -41,6 +43,7 @@ export class AuthController {
   @Throttle({ default: { limit: limits.otpSend, ttl: 60_000 } })
   @ApiOkResponse({ type: SendOtpResponseDto })
   sendOtp(@Body() dto: SendOtpDto): Promise<SendOtpResponseDto> {
+    this.requireOtpEnabled();
     return this.auth.sendOtp(dto.phone);
   }
 
@@ -50,6 +53,7 @@ export class AuthController {
   @Throttle({ default: { limit: limits.otpVerify, ttl: 60_000 } })
   @ApiOkResponse({ type: AuthSessionDto })
   verifyOtp(@Body() dto: VerifyOtpDto): Promise<AuthSessionDto> {
+    this.requireOtpEnabled();
     return this.auth.verifyOtp(dto);
   }
 
@@ -100,5 +104,11 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return this.auth.toAuthUser(dbUser);
+  }
+
+  private requireOtpEnabled(): void {
+    if (!this.flags.authOtpEnabled) {
+      throw new NotFoundException('OTP authentication is disabled');
+    }
   }
 }

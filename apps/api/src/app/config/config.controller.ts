@@ -17,7 +17,7 @@ export class ConfigController {
   @Get('features')
   @Public()
   @ApiOkResponse({ description: 'Active feature flags for this deployment' })
-  features(): { deliveryEnabled: boolean } {
+  features(): { deliveryEnabled: boolean; authOtpEnabled: boolean } {
     return this.flags.snapshot();
   }
 }

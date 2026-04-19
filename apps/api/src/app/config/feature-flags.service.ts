@@ -25,9 +25,21 @@ export class FeatureFlagsService {
     return this.parseBool(this.config.get<string>('DELIVERY_ENABLED'));
   }
 
+  /**
+   * Phone + SMS OTP login path. When off, `/auth/otp/send` and
+   * `/auth/otp/verify` return 404 and clients hide the phone form —
+   * Telegram Login Widget / Mini App init-data become the only auth paths.
+   */
+  get authOtpEnabled(): boolean {
+    return this.parseBool(this.config.get<string>('AUTH_OTP_ENABLED'));
+  }
+
   /** Serialized payload for the `/config/features` endpoint. */
-  snapshot(): { deliveryEnabled: boolean } {
-    return { deliveryEnabled: this.deliveryEnabled };
+  snapshot(): { deliveryEnabled: boolean; authOtpEnabled: boolean } {
+    return {
+      deliveryEnabled: this.deliveryEnabled,
+      authOtpEnabled: this.authOtpEnabled,
+    };
   }
 
   private parseBool(raw: string | undefined): boolean {
