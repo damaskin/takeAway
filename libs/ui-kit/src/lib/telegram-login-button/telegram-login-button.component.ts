@@ -23,7 +23,6 @@ export interface TelegramLoginWidgetUser {
   hash: string;
 }
 
-// Global Window augmentation so TS accepts `window[callbackName]` assignment.
 declare global {
   interface Window {
     [key: string]: unknown;
@@ -48,7 +47,7 @@ let instanceCounter = 0;
  *      components on the same page don't fight for `window.onTelegramAuth`.
  */
 @Component({
-  selector: 'app-telegram-login-button',
+  selector: 'lib-telegram-login-button',
   standalone: true,
   template: ` <div #host style="display: inline-block; min-height: 40px"></div> `,
 })
