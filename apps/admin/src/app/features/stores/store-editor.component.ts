@@ -164,14 +164,14 @@ type Tab = 'details' | 'hours';
                 <input
                   formControlName="opens"
                   type="time"
-                  [disabled]="day.get('isClosed')?.value"
+                  [attr.disabled]="day.get('isClosed')?.value ? '' : null"
                   style="height: 30px; padding: 0 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 6px; font-family: var(--font-mono); font-size: 13px"
                 />
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">—</span>
                 <input
                   formControlName="closes"
                   type="time"
-                  [disabled]="day.get('isClosed')?.value"
+                  [attr.disabled]="day.get('isClosed')?.value ? '' : null"
                   style="height: 30px; padding: 0 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 6px; font-family: var(--font-mono); font-size: 13px"
                 />
               </div>
