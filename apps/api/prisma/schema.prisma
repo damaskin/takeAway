@@ -54,6 +54,7 @@ enum Role {
   STORE_MANAGER
   BRAND_ADMIN
   SUPER_ADMIN
+  RIDER
 }
 
 enum StoreStatus {
@@ -66,6 +67,7 @@ enum StoreFulfillment {
   TAKEAWAY
   DINE_IN
   DRIVE_THRU
+  DELIVERY
 }
 
 enum PickupPointType {
@@ -108,6 +110,8 @@ enum OrderStatus {
   IN_PROGRESS
   READY
   PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
   CANCELLED
   EXPIRED
 }
@@ -209,6 +213,12 @@ model User {
   loyaltyAccount   LoyaltyAccount?
   pointsLedger     PointsLedger[]
   promoRedemptions PromoRedemption[]
+  // Multi-store scope for staff/rider roles. Empty for CUSTOMER; brand-admin
+  // and super-admin bypass the pivot entirely (see UserStoreScopeService).
+  userStores       UserStore[]
+  // Delivery orders assigned to this user (RIDER). SetNull on delete so we
+  // can remove riders without wiping the order history.
+  assignedDeliveries Order[]         @relation("RiderDeliveries")
 
   @@index([createdAt])
 }
@@ -309,10 +319,28 @@ model Store {
   stopListEntries StopListEntry[]
   carts           Cart[]
   orders          Order[]
+  userStores      UserStore[]
 
   @@index([brandId])
   @@index([country, city])
   @@index([latitude, longitude])
+}
+
+/// Pivot table scoping a staff user to one or more stores. Used by the
+/// StoreScopeGuard so STORE_MANAGER, STAFF and RIDER users only see orders
+/// and dispatch queues for stores they're assigned to. Global roles
+/// (BRAND_ADMIN, SUPER_ADMIN) don't need rows — the scope service treats
+/// them as "all stores".
+model UserStore {
+  userId    String
+  storeId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storeId])
+  @@index([storeId])
 }
 
 model StoreWorkingHour {
@@ -514,17 +542,33 @@ model Order {
   customerPhone   String?
   notes           String?
   couponCode      String?
+  // Delivery-only fields. Mirror of address/fee kept on the Order so history
+  // is immutable even if the customer's default address changes later. All
+  // nullable because the PICKUP / DINE_IN path doesn't fill them.
+  deliveryAddressLine String?
+  deliveryCity        String?
+  deliveryLatitude    Float?
+  deliveryLongitude   Float?
+  deliveryNotes       String?
+  deliveryFeeCents    Int     @default(0)
+  /// Estimated distance from store to delivery address (metres). Optional —
+  /// geocoding/distance estimation is a follow-up, stored here when available.
+  deliveryDistanceM   Int?
+  riderId             String?
   // Status timeline — denormalized from OrderEvent for quick queries.
   createdAt       DateTime        @default(now())
   acceptedAt      DateTime?
   startedAt       DateTime?
   readyAt         DateTime?
   pickedUpAt      DateTime?
+  outForDeliveryAt DateTime?
+  deliveredAt      DateTime?
   cancelledAt     DateTime?
   expiredAt       DateTime?
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
   store           Store            @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  rider           User?            @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
   items           OrderItem[]
   events          OrderEvent[]
   payments        Payment[]
@@ -534,6 +578,7 @@ model Order {
   @@index([userId, createdAt])
   @@index([storeId, status])
   @@index([status, pickupAt])
+  @@index([riderId, status])
 }
 
 model OrderItem {

@@ -178,9 +178,28 @@ export class OrdersService {
     storeId?: string;
     status?: string;
     take?: number;
+    /**
+     * Store-level access filter. When provided (STORE_MANAGER etc.), the
+     * query is narrowed to this allow-list. If the caller also passed an
+     * explicit `storeId` that isn't in the scope, the final filter picks
+     * the intersection (empty → no results), so a manager fiddling with
+     * ?storeId= in a URL can't see stores they shouldn't.
+     */
+    scopeStoreIds?: string[];
   }): Promise<OrderSummaryDto[]> {
     const where: Prisma.OrderWhereInput = {};
-    if (params.storeId) where.storeId = params.storeId;
+    if (params.scopeStoreIds) {
+      if (params.scopeStoreIds.length === 0) return [];
+      if (params.storeId) {
+        // Intersect the single requested store with the user's scope.
+        if (!params.scopeStoreIds.includes(params.storeId)) return [];
+        where.storeId = params.storeId;
+      } else {
+        where.storeId = { in: params.scopeStoreIds };
+      }
+    } else if (params.storeId) {
+      where.storeId = params.storeId;
+    }
     if (params.brandId) where.store = { brandId: params.brandId };
     if (params.status) where.status = params.status as Prisma.OrderWhereInput['status'];
 
