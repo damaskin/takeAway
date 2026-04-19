@@ -45,7 +45,17 @@ export class DeliveryController {
   async quote(@Body() dto: QuoteDeliveryDto) {
     const store = await this.prisma.store.findUnique({
       where: { id: dto.storeId },
-      select: { id: true, latitude: true, longitude: true, fulfillmentTypes: true, currency: true },
+      select: {
+        id: true,
+        latitude: true,
+        longitude: true,
+        fulfillmentTypes: true,
+        currency: true,
+        deliveryFeeBaseCents: true,
+        deliveryFeePerKmCents: true,
+        deliveryFreeRadiusM: true,
+        deliveryMaxRadiusM: true,
+      },
     });
     if (!store) throw new NotFoundException('Store not found');
     const supportsDelivery = store.fulfillmentTypes.includes('DELIVERY');
@@ -54,6 +64,12 @@ export class DeliveryController {
       storeLongitude: store.longitude,
       customerLatitude: dto.latitude ?? null,
       customerLongitude: dto.longitude ?? null,
+      storeOverrides: {
+        deliveryFeeBaseCents: store.deliveryFeeBaseCents,
+        deliveryFeePerKmCents: store.deliveryFeePerKmCents,
+        deliveryFreeRadiusM: store.deliveryFreeRadiusM,
+        deliveryMaxRadiusM: store.deliveryMaxRadiusM,
+      },
     });
     return {
       feeCents: q.feeCents,
