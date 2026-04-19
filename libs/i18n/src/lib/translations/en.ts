@@ -356,6 +356,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       saving: 'Saving…',
       saved: 'Saved',
+      pendingNotice:
+        'Your brand is waiting for approval. Customers won’t see your menu yet, but you can already set up stores and products.',
+      rejectedTitle: 'Your brand was rejected',
+      rejectedGeneric: 'Contact support if you think this is a mistake — the reviewer did not leave a note.',
     },
     brands: {
       title: 'Brand moderation',
