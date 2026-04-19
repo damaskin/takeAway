@@ -1,11 +1,23 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Patch } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
 
 /**
@@ -18,7 +30,10 @@ import { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
 @Roles(Role.BRAND_ADMIN)
 @Controller('my-brand')
 export class BrandOwnerController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   @Get()
   async get(@CurrentUser() user: AuthenticatedUser) {
@@ -54,6 +69,32 @@ export class BrandOwnerController {
     }
 
     return this.prisma.brand.update({ where: { id: brand.id }, data: payload });
+  }
+
+  /**
+   * Upload a new logo. Accepts a single `file` multipart field, stores it
+   * via the shared StorageService, and writes the resulting public URL
+   * into `Brand.logoUrl`.
+   */
+  @Post('logo')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadLogo(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: { originalname: string; mimetype: string; buffer: Buffer; size: number } | undefined,
+  ): Promise<{ logoUrl: string }> {
+    if (!file) throw new BadRequestException('`file` field is required');
+    const brand = await this.prisma.brand.findFirst({ where: { ownerId: user.id }, select: { id: true, slug: true } });
+    if (!brand) throw new NotFoundException('No brand for the current user');
+
+    const { url } = await this.storage.uploadImage(
+      `brands/${brand.slug}`,
+      file.originalname,
+      file.mimetype,
+      file.buffer,
+    );
+    await this.prisma.brand.update({ where: { id: brand.id }, data: { logoUrl: url } });
+    return { logoUrl: url };
   }
 }
 

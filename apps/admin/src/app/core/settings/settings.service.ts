@@ -35,4 +35,10 @@ export class SettingsService {
   updateMyBrand(body: UpdateMyBrandRequest): Observable<MyBrand> {
     return this.http.patch<MyBrand>(`${this.api.baseUrl}/my-brand`, body);
   }
+
+  uploadLogo(file: File): Observable<{ logoUrl: string }> {
+    const fd = new FormData();
+    fd.append('file', file);
+    return this.http.post<{ logoUrl: string }>(`${this.api.baseUrl}/my-brand/logo`, fd);
+  }
 }
