@@ -29,6 +29,25 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
+  /**
+   * Sign in via the Telegram Login Widget
+   * (https://core.telegram.org/widgets/login). The payload is forwarded
+   * verbatim; the server re-verifies the `hash` against the bot token.
+   */
+  verifyTelegramWidget(payload: {
+    id: number;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+    photo_url?: string;
+    auth_date: number;
+    hash: string;
+  }): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/telegram/widget`, payload)
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
   refresh(refreshToken: string): Observable<AuthTokens> {
     return this.http.post<AuthTokens>(`${this.api.baseUrl}/auth/refresh`, { refreshToken });
   }
