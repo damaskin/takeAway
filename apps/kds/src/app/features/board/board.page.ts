@@ -48,8 +48,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
     >
       <!-- Top bar -->
       <header
-        class="flex items-center justify-between"
-        class="flex-wrap"
+        class="flex items-center justify-between flex-wrap"
         style="min-height: 56px; padding: 8px clamp(12px, 3vw, 24px); background: #1C1817; border-bottom: 1px solid #2A2523; gap: 12px"
       >
         <!-- Left: logo + store selector -->
@@ -109,8 +108,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
 
       <!-- Columns -->
       <main
-        class="grid"
-        class="kds-board-grid"
+        class="grid kds-board-grid"
         style="grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 16px; flex: 1; min-height: 0; overflow-x: auto"
       >
         @for (col of columns; track col.key) {
