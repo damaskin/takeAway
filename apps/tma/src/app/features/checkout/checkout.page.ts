@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -7,6 +8,8 @@ import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+
+type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
 /**
  * TMA Checkout — pencil u5mrZ.
@@ -22,7 +25,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [FormsModule, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
       <h1
@@ -31,47 +34,129 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         {{ 'tma.checkout.title' | translate }}
       </h1>
 
-      <!-- Pickup time -->
-      <div class="flex flex-col" style="gap: 12px">
-        <span
-          style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-          >{{ 'tma.checkout.pickupWhen' | translate }}</span
-        >
-        <div class="flex" style="gap: 8px">
-          <button
-            type="button"
-            (click)="setPickup('ASAP')"
-            class="flex-1"
-            [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
-            [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
-            [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
-            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+      <!-- Fulfillment type (PICKUP / DELIVERY) — hidden if store doesn't offer delivery -->
+      @if (deliveryAvailable()) {
+        <div class="flex flex-col" style="gap: 12px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.fulfillment' | translate }}</span
           >
-            {{ 'tma.checkout.asap' | translate: { min: etaMinutes() } }}
-          </button>
-          <button
-            type="button"
-            (click)="setPickup('SCHEDULED')"
-            class="flex-1"
-            [style.background]="pickupMode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-foam)'"
-            [style.color]="pickupMode() === 'SCHEDULED' ? 'white' : 'var(--color-text-primary)'"
-            [style.border]="
-              pickupMode() === 'SCHEDULED' ? '1px solid transparent' : '1px solid var(--color-border-light)'
-            "
-            style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-          >
-            {{ 'tma.checkout.schedule' | translate }}
-          </button>
+          <div class="flex" style="gap: 8px">
+            <button
+              type="button"
+              (click)="setFulfillment('PICKUP')"
+              class="flex-1"
+              [style.background]="fulfillmentType() === 'PICKUP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="fulfillmentType() === 'PICKUP' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="
+                fulfillmentType() === 'PICKUP' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+              "
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.fulfillmentPickup' | translate }}
+            </button>
+            <button
+              type="button"
+              (click)="setFulfillment('DELIVERY')"
+              class="flex-1"
+              [style.background]="fulfillmentType() === 'DELIVERY' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="fulfillmentType() === 'DELIVERY' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="
+                fulfillmentType() === 'DELIVERY' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+              "
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.fulfillmentDelivery' | translate }}
+            </button>
+          </div>
         </div>
-        @if (pickupMode() === 'SCHEDULED') {
+      }
+
+      <!-- Pickup time — DELIVERY is always ASAP in v1, so hide the toggle for it -->
+      @if (fulfillmentType() === 'PICKUP') {
+        <div class="flex flex-col" style="gap: 12px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.pickupWhen' | translate }}</span
+          >
+          <div class="flex" style="gap: 8px">
+            <button
+              type="button"
+              (click)="setPickup('ASAP')"
+              class="flex-1"
+              [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="pickupMode() === 'ASAP' ? '1px solid transparent' : '1px solid var(--color-border-light)'"
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.asap' | translate: { min: etaMinutes() } }}
+            </button>
+            <button
+              type="button"
+              (click)="setPickup('SCHEDULED')"
+              class="flex-1"
+              [style.background]="pickupMode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="pickupMode() === 'SCHEDULED' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="
+                pickupMode() === 'SCHEDULED' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+              "
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.schedule' | translate }}
+            </button>
+          </div>
+          @if (pickupMode() === 'SCHEDULED') {
+            <input
+              type="datetime-local"
+              [value]="scheduledAt()"
+              (change)="onScheduledChange($event)"
+              style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+            />
+          }
+        </div>
+      }
+
+      <!-- Delivery address form -->
+      @if (fulfillmentType() === 'DELIVERY') {
+        <div
+          class="flex flex-col"
+          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 12px"
+        >
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.deliveryAddressLabel' | translate }}</span
+          >
           <input
-            type="datetime-local"
-            [value]="scheduledAt()"
-            (change)="onScheduledChange($event)"
-            style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+            type="text"
+            autocomplete="street-address"
+            [ngModel]="deliveryAddress()"
+            (ngModelChange)="deliveryAddress.set($event); refreshMainButton()"
+            name="deliveryAddress"
+            [placeholder]="'tma.checkout.deliveryAddressPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
           />
-        }
-      </div>
+          <input
+            type="text"
+            autocomplete="address-level2"
+            [ngModel]="deliveryCity()"
+            (ngModelChange)="deliveryCity.set($event); refreshMainButton()"
+            name="deliveryCity"
+            [placeholder]="'tma.checkout.deliveryCityPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
+          />
+          <input
+            type="text"
+            [ngModel]="deliveryNotes()"
+            (ngModelChange)="deliveryNotes.set($event)"
+            name="deliveryNotes"
+            [placeholder]="'tma.checkout.deliveryNotesPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
+          />
+          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
+            {{ 'tma.checkout.deliveryFeeHint' | translate: { fee: price(deliveryFeeCents()) } }}
+          </span>
+        </div>
+      }
 
       <!-- Store card -->
       @if (cart(); as c) {
@@ -120,6 +205,16 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
                 </div>
               }
               <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
+              @if (fulfillmentType() === 'DELIVERY') {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    'tma.checkout.deliveryFeeRow' | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(deliveryFeeCents())
+                  }}</span>
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
@@ -127,7 +222,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
-                  >{{ price(c.subtotalCents) }}</span
+                  >{{ price(totalCents(c.subtotalCents)) }}</span
                 >
               </div>
             </div>
@@ -182,6 +277,15 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly storeName = signal<string>('');
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
+  readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
+  /** True iff the active store advertises DELIVERY in `fulfillmentTypes`. */
+  readonly deliveryAvailable = signal(false);
+  /** Flat fee in cents, mirrors server `DELIVERY_FEE_CENTS` (default 300). */
+  readonly deliveryFeeCents = signal(300);
+  readonly deliveryAddress = signal('');
+  readonly deliveryCity = signal('');
+  readonly deliveryNotes = signal('');
+
   private detachBack: (() => void) | null = null;
 
   ngOnInit(): void {
@@ -190,6 +294,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         const first = list[0];
         if (!first) return;
         this.storeName.set(first.name);
+        this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
         this.cartService.load(first.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -216,6 +321,20 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     this.refreshMainButton();
   }
 
+  setFulfillment(type: FulfillmentType): void {
+    this.fulfillmentType.set(type);
+    // DELIVERY is always ASAP in v1 — clear any scheduled pickup state so we
+    // don't send a stale pickupAt when the user toggles back.
+    if (type === 'DELIVERY') this.pickupMode.set('ASAP');
+    this.tg.haptic('light');
+    this.refreshMainButton();
+  }
+
+  totalCents(subtotalCents: number): number {
+    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
+    return subtotalCents + fee;
+  }
+
   onScheduledChange(e: Event): void {
     const input = e.target as HTMLInputElement;
     this.scheduledAt.set(input.value);
@@ -234,14 +353,23 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     )}`;
   }
 
-  private refreshMainButton(): void {
+  refreshMainButton(): void {
     const c = this.cart();
     if (!c || c.items.length === 0 || !this.authStore.isAuthenticated()) {
       this.tg.hideMainButton();
       return;
     }
-    const total = this.price(c.subtotalCents);
-    const key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+    if (this.fulfillmentType() === 'DELIVERY' && (!this.deliveryAddress().trim() || !this.deliveryCity().trim())) {
+      this.tg.hideMainButton();
+      return;
+    }
+    const total = this.price(this.totalCents(c.subtotalCents));
+    let key: string;
+    if (this.fulfillmentType() === 'DELIVERY') {
+      key = 'tma.checkout.payDelivery';
+    } else {
+      key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+    }
     const label = this.translate.instant(key, { total });
     this.tg.setMainButton(label, () => this.placeOrder());
   }
@@ -250,8 +378,23 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     const c = this.cart();
     if (!c) return;
     this.tg.haptic('medium');
-    const pickupAt = this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
-    this.orders.create({ cartId: c.id, pickupMode: this.pickupMode(), pickupAt }).subscribe({
+    const isDelivery = this.fulfillmentType() === 'DELIVERY';
+    const pickupAt =
+      !isDelivery && this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
+    const input = {
+      cartId: c.id,
+      pickupMode: this.pickupMode(),
+      pickupAt,
+      fulfillmentType: this.fulfillmentType(),
+      ...(isDelivery
+        ? {
+            deliveryAddressLine: this.deliveryAddress().trim(),
+            deliveryCity: this.deliveryCity().trim(),
+            deliveryNotes: this.deliveryNotes().trim() || undefined,
+          }
+        : {}),
+    };
+    this.orders.create(input).subscribe({
       next: (order) => void this.router.navigate(['/orders', order.id]),
       error: (err) => {
         const maybe = err as { error?: { message?: string }; message?: string };
