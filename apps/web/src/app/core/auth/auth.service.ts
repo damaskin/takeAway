@@ -39,6 +39,22 @@ export class AuthService {
     return this.http.get<AuthUser>(`${this.api.baseUrl}/auth/me`);
   }
 
+  updateMe(patch: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    dateOfBirth?: string;
+    locale?: 'EN' | 'RU';
+    currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
+  }): Observable<AuthUser> {
+    return this.http.patch<AuthUser>(`${this.api.baseUrl}/auth/me`, patch).pipe(
+      tap((user) => {
+        const session = this.store.session();
+        if (session) this.store.set({ ...session, user });
+      }),
+    );
+  }
+
   logout(): Observable<void> {
     const session = this.store.session();
     this.store.clear();

@@ -174,7 +174,7 @@ export class ProfilePage implements OnInit {
 
   readonly sections: ProfileSection[] = [
     { icon: '🧾', label: 'web.profile.sections.myOrders', link: '/orders' },
-    { icon: '👤', label: 'web.profile.sections.personal' },
+    { icon: '👤', label: 'web.profile.sections.personal', link: '/profile/personal' },
     { icon: '💳', label: 'web.profile.sections.payment' },
     { icon: '🎁', label: 'web.profile.sections.gift' },
     { icon: '🔔', label: 'web.profile.sections.notifications' },

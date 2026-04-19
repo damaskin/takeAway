@@ -48,6 +48,11 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/profile.page').then((m) => m.ProfilePage),
       },
+      {
+        path: 'profile/personal',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/personal-info.page').then((m) => m.PersonalInfoPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

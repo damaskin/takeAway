@@ -1,7 +1,18 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ConflictException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
+import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -13,6 +24,7 @@ import { PasswordResetDto } from './dto/password-reset.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
 // Per-route throttle limits. Dev gets a 10× multiplier so iterating on login
@@ -33,6 +45,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly users: UsersService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Public()
@@ -109,5 +122,28 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return this.auth.toAuthUser(dbUser);
+  }
+
+  @Patch('me')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: AuthUserDto })
+  async updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateProfileDto): Promise<AuthUserDto> {
+    const data: Record<string, unknown> = {};
+    if (dto.name !== undefined) data['name'] = dto.name;
+    if (dto.phone !== undefined) data['phone'] = dto.phone;
+    if (dto.email !== undefined) data['email'] = dto.email.toLowerCase();
+    if (dto.dateOfBirth !== undefined) data['dateOfBirth'] = new Date(dto.dateOfBirth);
+    if (dto.locale !== undefined) data['locale'] = dto.locale;
+    if (dto.currency !== undefined) data['currency'] = dto.currency;
+
+    try {
+      const updated = await this.prisma.user.update({ where: { id: user.id }, data });
+      return this.auth.toAuthUser(updated);
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && (err as { code?: string }).code === 'P2002') {
+        throw new ConflictException('Email or phone already in use');
+      }
+      throw err;
+    }
   }
 }
