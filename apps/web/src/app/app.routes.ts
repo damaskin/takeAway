@@ -13,6 +13,11 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
       },
       {
+        path: 'business/signup',
+        loadComponent: () =>
+          import('./features/business-signup/business-signup.page').then((m) => m.BusinessSignupPage),
+      },
+      {
         path: 'stores',
         loadComponent: () => import('./features/stores/stores-list.page').then((m) => m.StoresListPage),
       },

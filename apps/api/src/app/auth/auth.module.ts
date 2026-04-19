@@ -53,6 +53,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [AuthService, UserStoreScopeService, PasswordService],
+  exports: [AuthService, UserStoreScopeService, PasswordService, TokensService],
 })
 export class AuthModule {}
