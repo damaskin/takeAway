@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import type { AuthSession } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -24,21 +25,7 @@ export interface BusinessBrand {
 
 export interface BusinessRegisterResponse {
   brand: BusinessBrand;
-  session: {
-    accessToken: string;
-    refreshToken: string;
-    accessTokenExpiresInSeconds: number;
-    refreshTokenExpiresInSeconds: number;
-    user: {
-      id: string;
-      phone: string | null;
-      email: string | null;
-      name: string | null;
-      locale: 'EN' | 'RU';
-      currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
-      role: string;
-    };
-  };
+  session: AuthSession;
 }
 
 @Injectable({ providedIn: 'root' })
