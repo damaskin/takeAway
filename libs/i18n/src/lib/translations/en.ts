@@ -185,6 +185,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryNotesPlaceholder: 'Building B, code 1234',
       deliveryFeeHint: 'A {{fee}} delivery fee will be added to your order total.',
       deliveryAddressRequired: 'Enter an address and city to deliver.',
+      deliveryGeolocate: 'Use my location for exact fee',
+      deliveryGeolocateRetry: 'Update location',
+      deliveryGeolocateDenied: 'Location permission denied — keeping the flat fee.',
+      deliveryGeolocateUnsupported: 'This browser does not support geolocation — keeping the flat fee.',
+      deliveryOutsideRadius: 'Sorry, your location is outside this store’s delivery area.',
+      deliveryDistance: '≈ {{km}} from the store',
     },
     orderStatus: {
       status: {

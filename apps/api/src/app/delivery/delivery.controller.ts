@@ -1,4 +1,14 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
@@ -6,8 +16,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { PrismaService } from '../prisma/prisma.service';
+import { DeliveryFeeService } from './delivery-fee.service';
 import { DeliveryService } from './delivery.service';
 import { AssignRiderDto } from './dto/assign-rider.dto';
+import { QuoteDeliveryDto } from './dto/quote-delivery.dto';
 import { UpdateDeliveryStatusDto } from './dto/update-delivery-status.dto';
 
 @ApiTags('delivery')
@@ -17,7 +30,39 @@ export class DeliveryController {
   constructor(
     private readonly delivery: DeliveryService,
     private readonly scope: UserStoreScopeService,
+    private readonly fee: DeliveryFeeService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Fee quote for a candidate delivery. Open to any authenticated user — it's
+   * used by checkout UIs (web/tma) to show a live fee as the customer shares
+   * their location. Safe to expose: the only inputs are the store id and the
+   * customer's own coords, and the response carries no PII.
+   */
+  @Post('quote')
+  @ApiOkResponse()
+  async quote(@Body() dto: QuoteDeliveryDto) {
+    const store = await this.prisma.store.findUnique({
+      where: { id: dto.storeId },
+      select: { id: true, latitude: true, longitude: true, fulfillmentTypes: true, currency: true },
+    });
+    if (!store) throw new NotFoundException('Store not found');
+    const supportsDelivery = store.fulfillmentTypes.includes('DELIVERY');
+    const q = this.fee.quote({
+      storeLatitude: store.latitude,
+      storeLongitude: store.longitude,
+      customerLatitude: dto.latitude ?? null,
+      customerLongitude: dto.longitude ?? null,
+    });
+    return {
+      feeCents: q.feeCents,
+      distanceM: q.distanceM,
+      deliverable: supportsDelivery && q.deliverable,
+      reason: supportsDelivery ? q.reason : 'STORE_NOT_DELIVERING',
+      currency: store.currency,
+    };
+  }
 
   // ── Dispatcher endpoints (store manager + admins) ───────────────────────
 
