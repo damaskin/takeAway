@@ -40,6 +40,18 @@ interface KdsOrderPayload {
   order: unknown | null;
 }
 
+/**
+ * Dispatcher events. STORE_MANAGER+ clients subscribe per store. We don't
+ * ship the row on the wire — the queue rebuild is cheap and the dispatcher
+ * cares about the full, consistent state (rider name, status, etc.). The
+ * client refetches `/delivery/queue` on any event.
+ */
+interface DispatchChangedPayload {
+  storeId: string;
+  kind: 'created' | 'updated' | 'removed';
+  orderId: string;
+}
+
 @Injectable()
 @WebSocketGateway({ namespace: 'ws', cors: { origin: true, credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -141,12 +153,48 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.server.to(this.kdsRoom(payload.storeId)).emit('kds.orderChanged', payload);
   }
 
+  /**
+   * Dispatcher clients (admins + store managers) subscribe to the delivery
+   * queue for their store. Only staff-level roles pass — RIDER and CUSTOMER
+   * get {ok:false}.
+   */
+  @SubscribeMessage('dispatch.subscribe')
+  async subscribeToDispatch(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
+    const userId = client.data['userId'] as string | undefined;
+    if (!userId || !body?.storeId) return { ok: false };
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!user || !['STORE_MANAGER', 'BRAND_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      return { ok: false };
+    }
+    await client.join(this.dispatchRoom(body.storeId));
+    return { ok: true };
+  }
+
+  @SubscribeMessage('dispatch.unsubscribe')
+  async unsubscribeFromDispatch(client: Socket, body: { storeId: string }): Promise<void> {
+    if (!body?.storeId) return;
+    await client.leave(this.dispatchRoom(body.storeId));
+  }
+
+  /** Broadcast a dispatch-queue change to every connected dispatcher for this store. */
+  emitDispatchChanged(payload: DispatchChangedPayload): void {
+    this.server.to(this.dispatchRoom(payload.storeId)).emit('dispatch.orderChanged', payload);
+  }
+
   private orderRoom(orderId: string): string {
     return `order:${orderId}`;
   }
 
   private kdsRoom(storeId: string): string {
     return `kds:${storeId}`;
+  }
+
+  private dispatchRoom(storeId: string): string {
+    return `dispatch:${storeId}`;
   }
 
   private extractToken(client: Socket): string | null {

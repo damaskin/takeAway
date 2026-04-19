@@ -1,16 +1,18 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { type AvailableRider, DeliveryApi, type DispatchOrderRow } from '../../core/delivery/delivery.service';
+import { DispatchRealtimeService } from '../../core/realtime/dispatch-realtime.service';
 
 /**
  * Admin Dispatch — delivery queue for a store. Managers pick a store, see
  * DELIVERY orders in READY / OUT_FOR_DELIVERY, and assign them to a rider.
  *
- * The real-time story reuses the `kds:<storeId>` channel (see M6 PR 3);
- * for v1 we just refresh on assign/claim — a socket subscription is a
- * follow-up to avoid bloating this PR.
+ * Subscribes to the dedicated `dispatch:<storeId>` WS room — any change
+ * that affects the queue (new READY DELIVERY order, rider assignment,
+ * OUT_FOR_DELIVERY/DELIVERED) triggers a refetch. Manual refresh button
+ * is kept as a fallback for the rare WS-disconnect case.
  */
 @Component({
   selector: 'app-admin-dispatch',
@@ -142,9 +144,10 @@ import { type AvailableRider, DeliveryApi, type DispatchOrderRow } from '../../c
     </section>
   `,
 })
-export class DispatchPage implements OnInit {
+export class DispatchPage implements OnInit, OnDestroy {
   private readonly catalog = inject(AdminCatalogApi);
   private readonly delivery = inject(DeliveryApi);
+  private readonly realtime = inject(DispatchRealtimeService);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly selectedStoreId = signal<string | null>(null);
@@ -153,6 +156,8 @@ export class DispatchPage implements OnInit {
   readonly loading = signal(false);
   readonly assigning = signal(false);
   readonly error = signal<string | null>(null);
+
+  private unsubscribeRealtime: (() => void) | null = null;
 
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
@@ -165,11 +170,23 @@ export class DispatchPage implements OnInit {
     });
   }
 
+  ngOnDestroy(): void {
+    this.unsubscribeRealtime?.();
+  }
+
   selectStore(storeId: string): void {
     if (!storeId) return;
     this.selectedStoreId.set(storeId);
     this.refresh();
     this.loadRiders(storeId);
+    // Swap the realtime subscription to the new store.
+    this.unsubscribeRealtime?.();
+    this.unsubscribeRealtime = this.realtime.subscribeToStore(storeId, () => {
+      // Any kind of change invalidates the queue — refetch so we get a
+      // consistent snapshot (rider names, status chips, etc.) instead of
+      // trying to patch in place.
+      this.refresh();
+    });
   }
 
   refresh(): void {
