@@ -22,6 +22,11 @@ set -a; source ./.env.production; set +a
 
 echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
 mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
+# Ensure docker compose auto-picks the production env for variable substitution.
+# The `.env` filename is compose's default; we keep the canonical file named
+# .env.production and symlink .env -> .env.production so ad-hoc compose
+# commands in this directory interpolate the right values.
+ln -sf .env.production "$DEPLOY_DIR/.env"
 bash "$DEPLOY_DIR/scripts/bootstrap-certs.sh"
 
 echo "==> [1/4] building + starting api + dependencies"

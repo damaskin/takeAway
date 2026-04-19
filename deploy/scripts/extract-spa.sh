@@ -34,6 +34,10 @@ for app in "${APPS[@]}"; do
   docker cp "${cid}:/dist/." "$tmp/"
   docker rm "$cid" >/dev/null
 
+  # mktemp defaults to 700; nginx runs as a different uid inside its
+  # container and needs read+execute on the webroot dirs, so open up.
+  chmod -R a+rX "$tmp"
+
   # Atomically swap.
   if [ -d "$WEBROOT/$app" ]; then
     rm -rf "$WEBROOT/${app}.old"
