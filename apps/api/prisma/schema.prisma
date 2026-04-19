@@ -194,6 +194,10 @@ model User {
   id             String    @id @default(cuid())
   phone          String?   @unique
   email          String?   @unique
+  /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
+  /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
+  /// set a password.
+  passwordHash   String?
   name           String?
   dateOfBirth    DateTime?
   avatarUrl      String?
@@ -207,7 +211,7 @@ model User {
 
   devices          Device[]
   oauthAccounts    OAuthAccount[]
-  otpRequests      OtpRequest[]
+  passwordResetTokens PasswordResetToken[]
   carts            Cart[]
   orders           Order[]
   loyaltyAccount   LoyaltyAccount?
@@ -251,19 +255,20 @@ model OAuthAccount {
   @@index([userId])
 }
 
-model OtpRequest {
+/// One-shot email-based password reset token. Hashed (SHA-256) before
+/// storage — the raw value is mailed to the user once and cannot be
+/// recovered server-side.
+model PasswordResetToken {
   id         String    @id @default(cuid())
-  userId     String?
-  phone      String
-  codeHash   String
-  attempts   Int       @default(0)
+  userId     String
+  tokenHash  String    @unique
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([phone, createdAt])
+  @@index([userId])
   @@index([expiresAt])
 }
 

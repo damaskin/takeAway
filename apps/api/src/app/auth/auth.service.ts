@@ -1,63 +1,117 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { User } from '@prisma/client';
+import { Role, type User } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import type { AuthSessionDto, AuthUserDto, SendOtpResponseDto } from './dto/auth-response.dto';
-import type { VerifyOtpDto } from './dto/verify-otp.dto';
-import { OtpService } from './services/otp.service';
+import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
+import { MailService } from './services/mail.service';
+import { PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 
+const PASSWORD_RESET_TTL_SECONDS = 60 * 60; // 1 hour
+
+// Roles that can authenticate with email+password. CUSTOMER is always
+// Telegram-driven — they never set a password, and we refuse the login flow
+// for them outright even if a hash existed.
+const PASSWORD_LOGIN_ROLES: ReadonlySet<Role> = new Set([
+  Role.SUPER_ADMIN,
+  Role.BRAND_ADMIN,
+  Role.STORE_MANAGER,
+  Role.STAFF,
+  Role.RIDER,
+]);
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
-    private readonly otp: OtpService,
     private readonly tokens: TokensService,
     private readonly telegram: TelegramService,
+    private readonly passwords: PasswordService,
+    private readonly mail: MailService,
     private readonly config: ConfigService,
   ) {}
 
-  async sendOtp(phone: string): Promise<SendOtpResponseDto> {
-    const { code, result } = await this.otp.issue(phone);
-    this.otp.deliver(phone, code);
-    // Non-production: echo the code so local/dev clients can display it
-    // instead of asking the user to grep pino logs. Stripped in production
-    // via the explicit check — the DTO field is optional.
-    if (this.config.get<string>('NODE_ENV') !== 'production') {
-      return { ...result, devCode: code };
-    }
-    return result;
-  }
+  /**
+   * Staff / admin sign-in with email + password. Customer accounts are
+   * rejected even if a password hash is somehow present — they must use
+   * Telegram on web / TMA.
+   */
+  async loginWithPassword(email: string, password: string): Promise<AuthSessionDto> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    // Same error for "no user" and "bad password" to avoid email-enumeration.
+    const generic = new UnauthorizedException('Invalid email or password');
+    if (!user || !user.passwordHash) throw generic;
+    if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw generic;
+    if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
 
-  async verifyOtp(input: VerifyOtpDto): Promise<AuthSessionDto> {
-    await this.otp.verify(input.phone, input.code);
+    const ok = await this.passwords.compare(password, user.passwordHash);
+    if (!ok) throw generic;
 
-    const user = await this.users.findOrCreateByPhone(input.phone);
-    const device = input.deviceType
-      ? await this.prisma.device.create({
-          data: {
-            userId: user.id,
-            type: input.deviceType,
-            pushToken: input.pushToken,
-            locale: user.locale,
-          },
-        })
-      : null;
-
-    const tokens = await this.tokens.issue(user.id, device?.id ?? null);
+    const device = await this.prisma.device.create({
+      data: { userId: user.id, type: 'WEB', locale: user.locale },
+    });
+    const tokens = await this.tokens.issue(user.id, device.id);
     return { ...tokens, user: this.toAuthUser(user) };
   }
 
-  async verifyTelegram(initData: string): Promise<AuthSessionDto> {
+  /**
+   * Issues a reset token for the given email. Always returns the same shape
+   * even if the email is unknown — clients show a generic "if the address
+   * exists we emailed a link" so attackers can't enumerate accounts.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (!user || !PASSWORD_LOGIN_ROLES.has(user.role)) {
+      this.logger.debug(`Password reset requested for unknown/non-staff email: ${email}`);
+      return;
+    }
+
+    const { raw, hash } = this.passwords.issueResetToken();
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_SECONDS * 1000),
+      },
+    });
+
+    const base = this.config.get<string>('ADMIN_APP_URL') ?? 'http://localhost:4202';
+    const resetUrl = `${base.replace(/\/$/, '')}/reset-password?token=${raw}`;
+    await this.mail.sendPasswordReset(user.email ?? email, resetUrl);
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const hash = this.passwords.hashResetToken(token);
+    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
+    if (!record || record.consumedAt || record.expiresAt < new Date()) {
+      throw new BadRequestException('Reset link is invalid or has expired');
+    }
+
+    const newHash = await this.passwords.hash(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { passwordHash: newHash },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: record.id },
+        data: { consumedAt: new Date() },
+      }),
+    ]);
+  }
+
+  verifyTelegram(initData: string): Promise<AuthSessionDto> {
     const { user: tgUser } = this.telegram.verifyInitData(initData);
     return this.finalizeTelegramSignIn(tgUser, 'TELEGRAM');
   }
 
-  async verifyTelegramWidget(payload: TelegramLoginWidgetPayload): Promise<AuthSessionDto> {
+  verifyTelegramWidget(payload: TelegramLoginWidgetPayload): Promise<AuthSessionDto> {
     const tgUser = this.telegram.verifyLoginWidget(payload);
     // The widget is loaded on the web site, so record the device as WEB
     // rather than TELEGRAM — the Mini App path keeps TELEGRAM for its own
@@ -67,9 +121,7 @@ export class AuthService {
 
   /**
    * Shared tail of both Telegram sign-in paths (Mini App init-data + Login
-   * Widget). Keys the user on `telegramUserId`; merging with existing
-   * phone-OTP users is a deliberate non-goal (no phone number exposed by
-   * either Telegram path, so we can't match reliably at login time).
+   * Widget). Keys the user on `telegramUserId`.
    */
   private async finalizeTelegramSignIn(tgUser: TelegramUser, deviceType: 'TELEGRAM' | 'WEB'): Promise<AuthSessionDto> {
     const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || null;

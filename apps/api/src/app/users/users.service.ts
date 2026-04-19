@@ -11,15 +11,7 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
-  findByPhone(phone: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { phone } });
-  }
-
-  findOrCreateByPhone(phone: string): Promise<User> {
-    return this.prisma.user.upsert({
-      where: { phone },
-      update: {},
-      create: { phone },
-    });
+  findByEmail(email: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   }
 }

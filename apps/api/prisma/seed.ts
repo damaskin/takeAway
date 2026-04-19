@@ -8,16 +8,42 @@
  *   pnpm prisma:seed
  */
 
+import * as bcrypt from 'bcrypt';
 import { PrismaClient, PromoStatus, PromoType, VariationType } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-async function main(): Promise<void> {
-  await prisma.user.upsert({
-    where: { phone: '+10000000001' },
-    update: { role: 'SUPER_ADMIN' },
-    create: { phone: '+10000000001', name: 'Dev Super Admin', role: 'SUPER_ADMIN' },
+async function seedSuperAdmin(): Promise<{ id: string } | null> {
+  const email = process.env['SUPER_ADMIN_EMAIL']?.toLowerCase();
+  const password = process.env['SUPER_ADMIN_PASSWORD'];
+
+  if (!email || !password) {
+    const existing = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
+    if (existing) return { id: existing.id };
+    console.warn(
+      '[seed] SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD not set and no SUPER_ADMIN user exists. ' +
+        'Skipping admin bootstrap — set both env vars to create one.',
+    );
+    return null;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const admin = await prisma.user.upsert({
+    where: { email },
+    update: { role: 'SUPER_ADMIN', passwordHash, blockedAt: null },
+    create: {
+      email,
+      passwordHash,
+      name: 'Super Admin',
+      role: 'SUPER_ADMIN',
+    },
   });
+  console.log(`[seed] Super admin ready: ${email}`);
+  return { id: admin.id };
+}
+
+async function main(): Promise<void> {
+  const admin = await seedSuperAdmin();
 
   const brand = await prisma.brand.upsert({
     where: { slug: 'takeaway' },
@@ -288,7 +314,6 @@ async function main(): Promise<void> {
   }
 
   // Give the Super Admin a loyalty account so /loyalty/me works out of the box.
-  const admin = await prisma.user.findUnique({ where: { phone: '+10000000001' } });
   if (admin) {
     await prisma.loyaltyAccount.upsert({
       where: { userId: admin.id },
