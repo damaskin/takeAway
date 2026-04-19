@@ -311,6 +311,13 @@ model Store {
   minOrderCents     Int                @default(0)
   heroImageUrl      String?
   galleryUrls       String[]           @default([])
+  // Per-store delivery fee overrides. All nullable — `null` means "inherit
+  // the DELIVERY_FEE_* env defaults". Set on franchisees or high-density
+  // stores that need their own economics.
+  deliveryFeeBaseCents   Int?
+  deliveryFeePerKmCents  Int?
+  deliveryFreeRadiusM    Int?
+  deliveryMaxRadiusM     Int?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 

@@ -76,6 +76,12 @@ export class OrdersService {
         storeLongitude: cart.store.longitude,
         customerLatitude: dto.deliveryLatitude ?? null,
         customerLongitude: dto.deliveryLongitude ?? null,
+        storeOverrides: {
+          deliveryFeeBaseCents: cart.store.deliveryFeeBaseCents,
+          deliveryFeePerKmCents: cart.store.deliveryFeePerKmCents,
+          deliveryFreeRadiusM: cart.store.deliveryFreeRadiusM,
+          deliveryMaxRadiusM: cart.store.deliveryMaxRadiusM,
+        },
       });
       if (!quote.deliverable) {
         throw new BadRequestException('Delivery address is outside the serviceable radius');
