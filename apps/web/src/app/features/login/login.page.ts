@@ -1,31 +1,25 @@
 import { Component, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
-
 import { TELEGRAM_AUTH_CONFIG, TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from '@takeaway/ui-kit';
 
 import { AuthService } from '../../core/auth/auth.service';
 
-type Step = 'phone' | 'code';
-
 /**
- * Web Authentication — pencil A10 (xqkL1).
+ * Web Authentication.
  *
  * Layout:
- *   authLeft (fill, cream) — logo, H1 "Welcome", subtitle, form (400px)
- *     phone input (52px, foam, flag | sep | digits), 52px caramel pill Continue
- *     divider "or" with border-light hair lines
- *     Apple (espresso 48px) + Google (foam 48px outlined) social buttons
- *   authRight (560px) — branded hero photograph
+ *   authLeft (fill, cream) — logo, H1 "Welcome back", subtitle, Telegram Login
+ *     Widget centered in a 400px column, small agreement footer.
+ *   authRight (560px) — branded hero photograph, hidden below md.
  */
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, TelegramLoginButtonComponent],
+  imports: [TranslatePipe, TelegramLoginButtonComponent],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
-      <!-- Left column: form -->
+      <!-- Left column: Telegram sign-in -->
       <div class="flex flex-col justify-center" style="flex: 1; padding: 64px 80px; gap: 40px">
         <span
           style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-caramel)"
@@ -36,129 +30,31 @@ type Step = 'phone' | 'code';
           <h1
             style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso); margin: 0"
           >
-            {{ (step() === 'phone' ? 'web.auth.welcomeBack' : 'web.auth.enterCode') | translate }}
+            {{ 'web.auth.welcomeBack' | translate }}
           </h1>
           <p style="font-family: var(--font-sans); font-size: 16px; color: var(--color-text-secondary); margin: 0">
-            @if (step() === 'phone') {
-              {{ 'web.auth.signInPhone' | translate }}
-            } @else {
-              {{ 'web.auth.codeSentTo' | translate: { phone: phoneForm.controls.phone.value } }}
-            }
+            {{ 'web.auth.telegramPrompt' | translate }}
           </p>
         </div>
 
-        <div style="width: 400px; max-width: 100%">
-          @if (step() === 'phone') {
-            <form [formGroup]="phoneForm" (ngSubmit)="sendCode()" class="flex flex-col" style="gap: 20px">
-              <label class="flex flex-col" style="gap: 8px">
-                <span
-                  style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-                  >{{ 'web.auth.phoneLabel' | translate }}</span
-                >
-                <div
-                  class="flex items-center"
-                  style="height: 52px; padding: 0 16px; gap: 10px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input)"
-                >
-                  <span style="font-family: var(--font-sans); font-size: 15px; color: var(--color-text-primary)"
-                    >🇦🇪 +971</span
-                  >
-                  <span style="width: 1px; height: 24px; background: var(--color-border)"></span>
-                  <input
-                    formControlName="phone"
-                    type="tel"
-                    autocomplete="tel"
-                    placeholder="50 123 4567"
-                    class="flex-1 outline-none bg-transparent"
-                    style="font-family: var(--font-sans); font-size: 15px; color: var(--color-text-primary)"
-                  />
-                </div>
-              </label>
-              <button
-                type="submit"
-                [disabled]="phoneForm.invalid || loading()"
-                class="flex items-center justify-center disabled:opacity-50"
-                style="height: 52px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-              >
-                {{ (loading() ? 'web.auth.sending' : 'web.auth.continue') | translate }}
-              </button>
-
-              <!-- Divider -->
-              <div class="flex items-center" style="gap: 12px">
-                <span style="flex: 1; height: 1px; background: var(--color-border-light)"></span>
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-                  'web.auth.or' | translate
-                }}</span>
-                <span style="flex: 1; height: 1px; background: var(--color-border-light)"></span>
-              </div>
-
-              <!-- Social buttons -->
-              <div class="flex flex-col" style="gap: 12px">
-                @if (telegramBotUsername) {
-                  <div class="flex justify-center">
-                    <lib-telegram-login-button
-                      [botUsername]="telegramBotUsername"
-                      (auth)="signInWithTelegram($event)"
-                    />
-                  </div>
-                }
-                <button
-                  type="button"
-                  (click)="socialStub('Apple')"
-                  class="flex items-center justify-center"
-                  style="height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; gap: 8px"
-                >
-                  {{ 'web.auth.signInApple' | translate }}
-                </button>
-                <button
-                  type="button"
-                  (click)="socialStub('Google')"
-                  class="flex items-center justify-center"
-                  style="height: 48px; background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; gap: 8px"
-                >
-                  G {{ 'web.auth.signInGoogle' | translate }}
-                </button>
-              </div>
-            </form>
+        <div style="width: 400px; max-width: 100%" class="flex flex-col" style="gap: 20px">
+          @if (telegramBotUsername) {
+            <div class="flex justify-center py-4">
+              <lib-telegram-login-button [botUsername]="telegramBotUsername" (auth)="signInWithTelegram($event)" />
+            </div>
           } @else {
-            <form [formGroup]="codeForm" (ngSubmit)="verifyCode()" class="flex flex-col" style="gap: 20px">
-              <label class="flex flex-col" style="gap: 8px">
-                <span
-                  style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
-                  >{{ 'web.auth.enterCode' | translate }}</span
-                >
-                <input
-                  formControlName="code"
-                  type="text"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  maxlength="6"
-                  placeholder="· · · · · ·"
-                  class="outline-none text-center"
-                  style="height: 52px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.5em; color: var(--color-text-primary)"
-                />
-              </label>
-              <button
-                type="submit"
-                [disabled]="codeForm.invalid || loading()"
-                class="flex items-center justify-center disabled:opacity-50"
-                style="height: 52px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-              >
-                {{ (loading() ? 'web.auth.sendingSignIn' : 'common.signIn') | translate }}
-              </button>
-              <button
-                type="button"
-                (click)="step.set('phone')"
-                style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
-              >
-                {{ 'web.auth.changeNumber' | translate }}
-              </button>
-            </form>
+            <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-berry)">
+              {{ 'web.auth.telegramUnavailable' | translate }}
+            </p>
           }
 
-          @if (error()) {
-            <p style="margin-top: 16px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
-              {{ error() }}
+          @if (loading()) {
+            <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">
+              {{ 'web.auth.signingIn' | translate }}
             </p>
+          }
+          @if (error()) {
+            <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">{{ error() }}</p>
           }
         </div>
 
@@ -192,61 +88,8 @@ export class LoginPage {
   private readonly telegramCfg = inject(TELEGRAM_AUTH_CONFIG);
 
   readonly telegramBotUsername = this.telegramCfg.botUsername;
-
-  readonly step = signal<Step>('phone');
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
-
-  readonly phoneForm = new FormGroup({
-    phone: new FormControl('', {
-      nonNullable: true,
-      // Accept local-style or E.164 — we'll normalize on send.
-      validators: [Validators.required, Validators.pattern(/^[+\d][\d\s()-]{6,20}$/)],
-    }),
-  });
-
-  readonly codeForm = new FormGroup({
-    code: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/^\d{6}$/)],
-    }),
-  });
-
-  sendCode(): void {
-    if (this.phoneForm.invalid) return;
-    this.loading.set(true);
-    this.error.set(null);
-    this.auth.sendOtp({ phone: this.normalizedPhone() }).subscribe({
-      next: () => {
-        this.loading.set(false);
-        this.step.set('code');
-      },
-      error: (err) => {
-        this.loading.set(false);
-        this.error.set(extractMessage(err));
-      },
-    });
-  }
-
-  verifyCode(): void {
-    if (this.codeForm.invalid) return;
-    this.loading.set(true);
-    this.error.set(null);
-    this.auth.verifyOtp({ phone: this.normalizedPhone(), code: this.codeForm.controls.code.value }).subscribe({
-      next: () => {
-        this.loading.set(false);
-        void this.router.navigate(['/']);
-      },
-      error: (err) => {
-        this.loading.set(false);
-        this.error.set(extractMessage(err));
-      },
-    });
-  }
-
-  socialStub(provider: string): void {
-    this.error.set(`${provider} sign-in is coming soon. Use phone for now.`);
-  }
 
   signInWithTelegram(user: TelegramLoginWidgetUser): void {
     this.loading.set(true);
@@ -261,14 +104,6 @@ export class LoginPage {
         this.error.set(extractMessage(err));
       },
     });
-  }
-
-  private normalizedPhone(): string {
-    const raw = this.phoneForm.controls.phone.value.trim();
-    const digits = raw.replace(/[^\d]/g, '');
-    // If the user typed a full E.164 (starts with +), keep leading +; otherwise assume +971.
-    if (raw.startsWith('+')) return '+' + digits;
-    return '+971' + digits;
   }
 }
 
