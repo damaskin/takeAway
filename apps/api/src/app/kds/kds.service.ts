@@ -80,6 +80,12 @@ export class KdsService {
   ) {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
+    // DELIVERY orders never reach PICKED_UP — they move through OUT_FOR_DELIVERY
+    // → DELIVERED via the rider flow. Guard in KDS so a barista can't fat-finger
+    // the wrong button.
+    if (key === 'pickedUp' && order.fulfillmentType === 'DELIVERY') {
+      throw new BadRequestException('Delivery orders must be dispatched via the rider flow, not marked picked up');
+    }
     const allowed = ALLOWED_TRANSITIONS[key] ?? [];
     if (!allowed.includes(order.status)) {
       throw new BadRequestException(`Cannot ${key} an order in status ${order.status}`);
