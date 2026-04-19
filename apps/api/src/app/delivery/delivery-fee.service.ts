@@ -36,12 +36,20 @@ export class DeliveryFeeService {
     storeLongitude: number;
     customerLatitude?: number | null;
     customerLongitude?: number | null;
+    /** Per-store overrides. Any null falls back to the matching env knob. */
+    storeOverrides?: {
+      deliveryFeeBaseCents?: number | null;
+      deliveryFeePerKmCents?: number | null;
+      deliveryFreeRadiusM?: number | null;
+      deliveryMaxRadiusM?: number | null;
+    };
   }): DeliveryFeeQuote {
     const flat = this.intEnv('DELIVERY_FEE_CENTS', 300);
-    const base = this.intEnv('DELIVERY_FEE_BASE_CENTS', 200);
-    const perKm = this.intEnv('DELIVERY_FEE_PER_KM_CENTS', 100);
-    const freeRadiusM = this.intEnv('DELIVERY_FREE_RADIUS_M', 500);
-    const maxRadiusM = this.intEnv('DELIVERY_MAX_RADIUS_M', 7000);
+    const overrides = params.storeOverrides ?? {};
+    const base = pickNonNeg(overrides.deliveryFeeBaseCents) ?? this.intEnv('DELIVERY_FEE_BASE_CENTS', 200);
+    const perKm = pickNonNeg(overrides.deliveryFeePerKmCents) ?? this.intEnv('DELIVERY_FEE_PER_KM_CENTS', 100);
+    const freeRadiusM = pickNonNeg(overrides.deliveryFreeRadiusM) ?? this.intEnv('DELIVERY_FREE_RADIUS_M', 500);
+    const maxRadiusM = pickNonNeg(overrides.deliveryMaxRadiusM) ?? this.intEnv('DELIVERY_MAX_RADIUS_M', 7000);
 
     const custLat = params.customerLatitude;
     const custLng = params.customerLongitude;
@@ -64,6 +72,12 @@ export class DeliveryFeeService {
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   }
+}
+
+/** Coerce optional override to a non-negative integer; null/undefined/NaN → null. */
+function pickNonNeg(v: number | null | undefined): number | null {
+  if (v == null) return null;
+  return Number.isFinite(v) && v >= 0 ? v : null;
 }
 
 /** Haversine great-circle distance in metres. */
