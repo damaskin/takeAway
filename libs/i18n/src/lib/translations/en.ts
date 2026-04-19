@@ -341,6 +341,28 @@ export const TRANSLATIONS_EN: TranslationTree = {
       brands: 'Brands',
       settings: 'Settings',
       telegramLink: 'Telegram',
+      staff: 'Staff',
+    },
+    staff: {
+      title: 'Staff roster',
+      subtitle:
+        'Invite managers and kitchen staff to your stores. They sign in at the admin URL with the email and temp password you set.',
+      noStores: 'Create a store first to invite staff.',
+      roster: 'Current roster',
+      empty: 'No staff in this store yet.',
+      addTitle: 'Invite new staff',
+      email: 'Email',
+      name: 'Name',
+      roleLabel: 'Role',
+      role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff' },
+      tempPassword: 'Temporary password',
+      tempPasswordHint:
+        'Give this to the user privately — they should change it via /forgot-password on first sign-in.',
+      addCta: 'Invite',
+      saving: 'Saving…',
+      saved: 'Invited',
+      remove: 'Remove',
+      confirmRemove: 'Remove {{name}} from this store?',
     },
     telegramLink: {
       title: 'Link Telegram for order notifications',
