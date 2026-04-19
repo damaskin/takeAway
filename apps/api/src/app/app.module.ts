@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminCatalogModule } from './admin/catalog/admin-catalog.module';
 import { AdminRidersModule } from './admin/riders/admin-riders.module';
+import { AdminStaffModule } from './admin/staff/admin-staff.module';
 import { AuthModule } from './auth/auth.module';
 import { BrandOwnerModule } from './brand-owner/brand-owner.module';
 import { BusinessModule } from './business/business.module';
@@ -51,6 +52,7 @@ import { UsersModule } from './users/users.module';
     CatalogModule,
     AdminCatalogModule,
     AdminRidersModule,
+    AdminStaffModule,
     CartModule,
     PromoModule,
     LoyaltyModule,

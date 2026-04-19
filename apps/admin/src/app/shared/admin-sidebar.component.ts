@@ -88,6 +88,7 @@ export class AdminSidebarComponent {
     { icon: '🧾', label: 'admin.nav.orders', link: '/orders' },
     { icon: '🛵', label: 'admin.nav.dispatch', link: '/dispatch', requires: 'deliveryEnabled' },
     { icon: '🧑‍✈️', label: 'admin.nav.riders', link: '/riders', requires: 'deliveryEnabled' },
+    { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ['SUPER_ADMIN', 'BRAND_ADMIN'] },
     { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
     { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ['SUPER_ADMIN'] },
