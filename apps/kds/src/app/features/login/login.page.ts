@@ -1,15 +1,15 @@
 import { Component, inject, signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { TELEGRAM_AUTH_CONFIG, TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from '@takeaway/ui-kit';
 
 import { AuthService } from '../../core/auth/auth.service';
 
 @Component({
   selector: 'app-kds-login',
   standalone: true,
-  imports: [LanguageSwitcherComponent, TranslatePipe, TelegramLoginButtonComponent],
+  imports: [ReactiveFormsModule, LanguageSwitcherComponent, TranslatePipe],
   template: `
     <main
       class="min-h-screen flex items-center justify-center"
@@ -29,24 +29,37 @@ import { AuthService } from '../../core/auth/auth.service';
           <app-language-switcher />
         </div>
         <p class="mb-6" style="color: var(--color-text-secondary); font-family: var(--font-sans); font-size: 14px">
-          {{ 'kds.login.telegramPrompt' | translate }}
+          {{ 'kds.login.passwordPrompt' | translate }}
         </p>
 
-        @if (telegramBotUsername) {
-          <div class="flex justify-center py-4">
-            <lib-telegram-login-button [botUsername]="telegramBotUsername" (auth)="signInWithTelegram($event)" />
-          </div>
-        } @else {
-          <p class="text-sm" style="color: var(--color-berry); font-family: var(--font-sans)">
-            {{ 'kds.login.telegramUnavailable' | translate }}
-          </p>
-        }
+        <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
+          <input
+            formControlName="email"
+            type="email"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            [placeholder]="'admin.login.emailPlaceholder' | translate"
+            class="px-4 py-3 outline-none"
+            style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px"
+          />
+          <input
+            formControlName="password"
+            type="password"
+            autocomplete="current-password"
+            class="px-4 py-3 outline-none"
+            style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px"
+          />
+          <button
+            type="submit"
+            [disabled]="form.invalid || loading()"
+            class="py-3 font-medium disabled:opacity-50"
+            style="background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 15px; font-weight: 600"
+          >
+            {{ (loading() ? 'admin.login.signingIn' : 'admin.login.signIn') | translate }}
+          </button>
+        </form>
 
-        @if (loading()) {
-          <p class="mt-4 text-sm" style="color: var(--color-text-secondary); font-family: var(--font-sans)">
-            {{ 'kds.login.signingIn' | translate }}
-          </p>
-        }
         @if (error()) {
           <p class="mt-4 text-sm" style="color: var(--color-berry); font-family: var(--font-sans)">{{ error() }}</p>
         }
@@ -58,25 +71,40 @@ export class KdsLoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
-  private readonly telegramCfg = inject(TELEGRAM_AUTH_CONFIG);
 
-  readonly telegramBotUsername = this.telegramCfg.botUsername;
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  signInWithTelegram(user: TelegramLoginWidgetUser): void {
+  readonly form = new FormGroup({
+    email: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.email],
+    }),
+    password: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(8)],
+    }),
+  });
+
+  submit(): void {
+    if (this.form.invalid) return;
     this.loading.set(true);
     this.error.set(null);
-    this.auth.verifyTelegramWidget(user).subscribe({
-      next: () => {
-        this.loading.set(false);
-        void this.router.navigate(['/']);
-      },
-      error: (err) => {
-        this.loading.set(false);
-        this.error.set(this.extractMessage(err));
-      },
-    });
+    this.auth
+      .login({
+        email: this.form.controls.email.value.trim().toLowerCase(),
+        password: this.form.controls.password.value,
+      })
+      .subscribe({
+        next: () => {
+          this.loading.set(false);
+          void this.router.navigate(['/']);
+        },
+        error: (err) => {
+          this.loading.set(false);
+          this.error.set(this.extractMessage(err));
+        },
+      });
   }
 
   private extractMessage(err: unknown): string {

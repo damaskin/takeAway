@@ -271,9 +271,32 @@ export const TRANSLATIONS_EN: TranslationTree = {
     login: {
       title: 'Sign in to admin',
       subtitle: 'Staff access only',
-      telegramPrompt: 'Sign in with your Telegram account',
-      telegramUnavailable: 'Telegram sign-in is not configured for this deployment.',
+      passwordPrompt: 'Sign in with your work email and password',
+      emailLabel: 'Email',
+      emailPlaceholder: 'you@example.com',
+      passwordLabel: 'Password',
+      signIn: 'Sign in',
       signingIn: 'Signing in…',
+      forgot: 'Forgot password?',
+    },
+    forgot: {
+      title: 'Forgot password',
+      subtitle: "Enter your email — we'll send you a reset link.",
+      sendLink: 'Send reset link',
+      sending: 'Sending…',
+      sent: 'If the address exists, a reset link is on its way.',
+      backToLogin: '← Back to sign in',
+    },
+    reset: {
+      title: 'Set a new password',
+      subtitle: 'Pick a password of at least 8 characters.',
+      newPasswordLabel: 'New password',
+      save: 'Save password',
+      saving: 'Saving…',
+      done: 'Password updated. Redirecting to sign-in…',
+      signIn: 'Sign in',
+      missingToken: 'This reset link is missing a token. Request a new one.',
+      requestNewLink: 'Request a new link',
     },
     layout: {
       adminTag: 'Admin',
@@ -524,9 +547,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
   kds: {
     login: {
       title: 'takeAway · Kitchen',
-      telegramPrompt: 'Sign in with your Telegram account',
-      telegramUnavailable: 'Telegram sign-in is not configured for this deployment.',
-      signingIn: 'Signing in…',
+      passwordPrompt: 'Sign in with your work email and password',
     },
     topbar: {
       inQueue: 'in queue',
