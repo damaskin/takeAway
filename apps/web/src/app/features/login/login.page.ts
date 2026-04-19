@@ -3,7 +3,9 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
+import { TELEGRAM_AUTH_CONFIG } from '../../core/api/telegram.config';
 import { AuthService } from '../../core/auth/auth.service';
+import { TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from './telegram-login-button.component';
 
 type Step = 'phone' | 'code';
 
@@ -20,7 +22,7 @@ type Step = 'phone' | 'code';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, TranslatePipe, TelegramLoginButtonComponent],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
       <!-- Left column: form -->
@@ -91,6 +93,14 @@ type Step = 'phone' | 'code';
 
               <!-- Social buttons -->
               <div class="flex flex-col" style="gap: 12px">
+                @if (telegramBotUsername) {
+                  <div class="flex justify-center">
+                    <app-telegram-login-button
+                      [botUsername]="telegramBotUsername"
+                      (auth)="signInWithTelegram($event)"
+                    />
+                  </div>
+                }
                 <button
                   type="button"
                   (click)="socialStub('Apple')"
@@ -179,6 +189,9 @@ type Step = 'phone' | 'code';
 export class LoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly telegramCfg = inject(TELEGRAM_AUTH_CONFIG);
+
+  readonly telegramBotUsername = this.telegramCfg.botUsername;
 
   readonly step = signal<Step>('phone');
   readonly loading = signal(false);
@@ -233,6 +246,21 @@ export class LoginPage {
 
   socialStub(provider: string): void {
     this.error.set(`${provider} sign-in is coming soon. Use phone for now.`);
+  }
+
+  signInWithTelegram(user: TelegramLoginWidgetUser): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.auth.verifyTelegramWidget(user).subscribe({
+      next: () => {
+        this.loading.set(false);
+        void this.router.navigate(['/']);
+      },
+      error: (err) => {
+        this.loading.set(false);
+        this.error.set(extractMessage(err));
+      },
+    });
   }
 
   private normalizedPhone(): string {

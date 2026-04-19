@@ -10,6 +10,7 @@ import { AuthSessionDto, AuthTokensDto, AuthUserDto, SendOtpResponseDto } from '
 import { RefreshDto } from './dto/refresh.dto';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
+import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
@@ -59,6 +60,19 @@ export class AuthController {
   @ApiOkResponse({ type: AuthSessionDto })
   verifyTelegram(@Body() dto: TelegramAuthDto): Promise<AuthSessionDto> {
     return this.auth.verifyTelegram(dto.initData);
+  }
+
+  /**
+   * Telegram Login Widget entry-point (different wire shape from Mini App
+   * init-data). See apps/web for the client wiring.
+   */
+  @Public()
+  @Post('telegram/widget')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.telegram, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  verifyTelegramWidget(@Body() dto: TelegramWidgetAuthDto): Promise<AuthSessionDto> {
+    return this.auth.verifyTelegramWidget(dto);
   }
 
   @Public()

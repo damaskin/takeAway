@@ -7,7 +7,7 @@ import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto, SendOtpResponseDto } from './dto/auth-response.dto';
 import type { VerifyOtpDto } from './dto/verify-otp.dto';
 import { OtpService } from './services/otp.service';
-import { TelegramService } from './services/telegram.service';
+import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 
 @Injectable()
@@ -54,6 +54,24 @@ export class AuthService {
 
   async verifyTelegram(initData: string): Promise<AuthSessionDto> {
     const { user: tgUser } = this.telegram.verifyInitData(initData);
+    return this.finalizeTelegramSignIn(tgUser, 'TELEGRAM');
+  }
+
+  async verifyTelegramWidget(payload: TelegramLoginWidgetPayload): Promise<AuthSessionDto> {
+    const tgUser = this.telegram.verifyLoginWidget(payload);
+    // The widget is loaded on the web site, so record the device as WEB
+    // rather than TELEGRAM — the Mini App path keeps TELEGRAM for its own
+    // device rows.
+    return this.finalizeTelegramSignIn(tgUser, 'WEB');
+  }
+
+  /**
+   * Shared tail of both Telegram sign-in paths (Mini App init-data + Login
+   * Widget). Keys the user on `telegramUserId`; merging with existing
+   * phone-OTP users is a deliberate non-goal (no phone number exposed by
+   * either Telegram path, so we can't match reliably at login time).
+   */
+  private async finalizeTelegramSignIn(tgUser: TelegramUser, deviceType: 'TELEGRAM' | 'WEB'): Promise<AuthSessionDto> {
     const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || null;
     const locale = tgUser.language_code?.toLowerCase().startsWith('ru') ? 'RU' : 'EN';
 
@@ -70,7 +88,7 @@ export class AuthService {
     });
 
     const device = await this.prisma.device.create({
-      data: { userId: user.id, type: 'TELEGRAM', locale: user.locale },
+      data: { userId: user.id, type: deviceType, locale: user.locale },
     });
 
     const tokens = await this.tokens.issue(user.id, device.id);
