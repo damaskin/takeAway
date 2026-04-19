@@ -112,33 +112,31 @@ interface Step {
                 </button>
               </div>
 
-              <!-- ASAP / SCHEDULED — only for pickup (delivery is always ASAP in v1) -->
-              @if (fulfillmentType() === 'PICKUP') {
-                <div class="flex gap-3 w-full">
-                  <button
-                    type="button"
-                    (click)="selectMode('ASAP')"
-                    class="flex items-center justify-center w-full"
-                    [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                    [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                    [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
-                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                  >
-                    {{ 'web.checkout.pickupAsap' | translate }}
-                  </button>
-                  <button
-                    type="button"
-                    (click)="selectMode('SCHEDULED')"
-                    class="flex items-center justify-center w-full"
-                    [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                    [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                    [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
-                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                  >
-                    {{ 'web.checkout.pickupScheduled' | translate }}
-                  </button>
-                </div>
-              }
+              <!-- ASAP / SCHEDULED — works for both PICKUP and DELIVERY -->
+              <div class="flex gap-3 w-full">
+                <button
+                  type="button"
+                  (click)="selectMode('ASAP')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  {{ 'web.checkout.pickupAsap' | translate }}
+                </button>
+                <button
+                  type="button"
+                  (click)="selectMode('SCHEDULED')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  {{ 'web.checkout.pickupScheduled' | translate }}
+                </button>
+              </div>
 
               <!-- Delivery address form -->
               @if (fulfillmentType() === 'DELIVERY') {
@@ -215,13 +213,16 @@ interface Step {
                 <p
                   style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
                 >
-                  {{ 'common.readyBy' | translate: { time: readyTimeLabel() } }}
+                  {{
+                    (fulfillmentType() === 'DELIVERY' ? 'web.checkout.deliveryBy' : 'common.readyBy')
+                      | translate: { time: readyTimeLabel() }
+                  }}
                 </p>
                 <p
                   class="mt-1"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
                 >
-                  We'll start preparing at {{ prepStartLabel() }} so it's fresh when you arrive.
+                  {{ 'web.checkout.prepStartHint' | translate: { time: prepStartLabel() } }}
                 </p>
               </div>
             </section>
@@ -567,9 +568,6 @@ export class CheckoutPage implements OnInit {
 
   selectFulfillment(type: FulfillmentType): void {
     this.fulfillmentType.set(type);
-    // Delivery is always ASAP in v1. If the user toggled from SCHEDULED
-    // pickup, reset to ASAP so we don't send conflicting state to the API.
-    if (type === 'DELIVERY') this.mode.set('ASAP');
   }
 
   selectPayment(method: PaymentMethod): void {

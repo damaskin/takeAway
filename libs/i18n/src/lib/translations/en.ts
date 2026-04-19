@@ -185,6 +185,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryNotesPlaceholder: 'Building B, code 1234',
       deliveryFeeHint: 'A {{fee}} delivery fee will be added to your order total.',
       deliveryAddressRequired: 'Enter an address and city to deliver.',
+      deliveryBy: 'Delivery by {{time}}',
+      prepStartHint: "We'll start preparing at {{time}} so it's fresh on arrival.",
     },
     orderStatus: {
       status: {

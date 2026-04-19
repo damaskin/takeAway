@@ -185,6 +185,8 @@ export const TRANSLATIONS_RU = {
       deliveryNotesPlaceholder: 'Подъезд 2, код 1234',
       deliveryFeeHint: 'К стоимости заказа добавится {{fee}} за доставку.',
       deliveryAddressRequired: 'Укажите адрес и город для доставки.',
+      deliveryBy: 'Доставим к {{time}}',
+      prepStartHint: 'Начнём готовить в {{time}}, чтобы было свежее.',
     },
     orderStatus: {
       status: {
