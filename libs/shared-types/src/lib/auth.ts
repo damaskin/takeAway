@@ -29,7 +29,7 @@ export interface AuthSession extends AuthTokens {
   user: AuthUser;
 }
 
-export type UserRole = 'CUSTOMER' | 'STAFF' | 'STORE_MANAGER' | 'BRAND_ADMIN' | 'SUPER_ADMIN';
+export type UserRole = 'CUSTOMER' | 'STAFF' | 'STORE_MANAGER' | 'BRAND_ADMIN' | 'SUPER_ADMIN' | 'RIDER';
 
 export interface AuthUser {
   id: string;
