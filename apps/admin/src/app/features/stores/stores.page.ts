@@ -2,17 +2,19 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import { StoreEditorComponent } from './store-editor.component';
 
 /**
  * Admin Stores — pencil 6z8ZA.
  *
  * top bar (foam, 64px) — title + "Add store" CTA
- * content — grid of store cards with color-coded status chip, open/close toggle.
+ * content — grid of store cards with color-coded status chip, Edit/Hours
+ *   now open an inline editor panel under the card.
  */
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, StoreEditorComponent],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -77,19 +79,25 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
             <div class="flex" style="gap: 8px; margin-top: 4px">
               <button
                 type="button"
+                (click)="toggle(s.id, 'details')"
                 class="flex-1"
-                style="height: 36px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
+                style="height: 36px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary); cursor: pointer"
               >
-                {{ 'admin.stores.edit' | translate }}
+                {{ (editingId() === s.id ? 'common.close' : 'admin.stores.edit') | translate }}
               </button>
               <button
                 type="button"
+                (click)="toggle(s.id, 'hours')"
                 class="flex-1"
-                style="height: 36px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                style="height: 36px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; cursor: pointer"
               >
                 {{ 'admin.stores.hours' | translate }}
               </button>
             </div>
+
+            @if (editingId() === s.id) {
+              <app-store-editor [storeId]="s.id" (saveCompleted)="onSaved($event)" (closed)="closeEditor()" />
+            }
           </article>
         }
       </div>
@@ -106,6 +114,7 @@ export class StoresPage implements OnInit {
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly error = signal<string | null>(null);
+  readonly editingId = signal<string | null>(null);
 
   ngOnInit(): void {
     this.api.listStores().subscribe({
@@ -117,7 +126,18 @@ export class StoresPage implements OnInit {
     });
   }
 
-  /** Translation key; resolved with | translate in the template. */
+  toggle(id: string, _tab: 'details' | 'hours'): void {
+    this.editingId.set(this.editingId() === id ? null : id);
+  }
+
+  closeEditor(): void {
+    this.editingId.set(null);
+  }
+
+  onSaved(updated: StoreAdminDto): void {
+    this.stores.update((list) => list.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+  }
+
   statusLabel(status: StoreAdminDto['status']): string {
     if (status === 'OPEN') return 'admin.stores.status.OPEN';
     if (status === 'OVERLOADED') return 'admin.stores.status.OVERLOADED';
