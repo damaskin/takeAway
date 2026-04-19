@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -111,6 +112,7 @@ describe('PaymentsService.handleWebhook', () => {
         },
         { provide: RealtimeGateway, useValue: realtime },
         { provide: OrdersService, useValue: orders },
+        { provide: NotificationsService, useValue: { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) } },
         { provide: STRIPE_CLIENT, useValue: stripe },
       ],
     }).compile();

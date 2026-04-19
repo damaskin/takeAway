@@ -89,6 +89,20 @@ export class NotificationsService {
   private buildOrderStatusMessage(order: OrderLike, status: OrderStatus): PushMessage | null {
     const codeTag = `#${order.orderCode}`;
     switch (status) {
+      case 'CREATED':
+        return {
+          kind: 'order_status',
+          title: `Заказ ${codeTag} создан`,
+          body: `Ожидаем оплату. / Awaiting payment.`,
+          orderId: order.id,
+        };
+      case 'PAID':
+        return {
+          kind: 'order_status',
+          title: `Заказ ${codeTag} оплачен`,
+          body: `Передали на кухню. / Sent to the kitchen.`,
+          orderId: order.id,
+        };
       case 'ACCEPTED':
         return {
           kind: 'order_status',
@@ -127,15 +141,13 @@ export class NotificationsService {
           body: `Свяжитесь с нами, если это неожиданно. / Please contact us if unexpected.`,
           orderId: order.id,
         };
-      case 'CREATED':
-      case 'PAID':
       case 'IN_PROGRESS':
       case 'PICKED_UP':
       case 'EXPIRED':
       default:
-        // PAID confirmation is handled by the payment provider's own receipt;
-        // IN_PROGRESS is chatty; PICKED_UP the user already has the cup in
-        // hand. EXPIRED triggers a separate cleanup flow (not v1).
+        // IN_PROGRESS is chatty (kitchen picked it up — customer sees it in
+        // the UI anyway); PICKED_UP the user already has the cup in hand;
+        // EXPIRED triggers a separate cleanup flow (not v1).
         return null;
     }
   }
