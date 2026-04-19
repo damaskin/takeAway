@@ -329,6 +329,23 @@ export const TRANSLATIONS_RU = {
       promo: 'Промо',
       analytics: 'Аналитика',
       brands: 'Бренды',
+      settings: 'Настройки',
+    },
+    settings: {
+      title: 'Настройки бренда',
+      subtitle: 'Название, логотип и цвета для TMA.',
+      brandName: 'Название бренда',
+      logoUrl: 'Ссылка на логотип',
+      theme: {
+        title: 'Цвета темы',
+        hint: 'Переопределяют палитру Telegram в TMA.',
+        caramel: 'Акцент',
+        cream: 'Фон',
+        foam: 'Поверхность',
+        espresso: 'Текст',
+      },
+      saving: 'Сохраняем…',
+      saved: 'Сохранено',
     },
     brands: {
       title: 'Модерация брендов',

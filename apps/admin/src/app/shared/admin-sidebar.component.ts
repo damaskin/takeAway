@@ -91,6 +91,7 @@ export class AdminSidebarComponent {
     { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
     { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ['SUPER_ADMIN'] },
+    { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ['BRAND_ADMIN'] },
   ];
 
   readonly visibleItems = computed(() => {

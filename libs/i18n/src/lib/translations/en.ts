@@ -329,6 +329,23 @@ export const TRANSLATIONS_EN: TranslationTree = {
       promo: 'Promo',
       analytics: 'Analytics',
       brands: 'Brands',
+      settings: 'Settings',
+    },
+    settings: {
+      title: 'Brand settings',
+      subtitle: 'Edit your brand name, logo, and theme colors.',
+      brandName: 'Brand name',
+      logoUrl: 'Logo URL',
+      theme: {
+        title: 'Theme colors',
+        hint: 'These override the Telegram palette in TMA.',
+        caramel: 'Accent',
+        cream: 'Background',
+        foam: 'Surface',
+        espresso: 'Text',
+      },
+      saving: 'Saving…',
+      saved: 'Saved',
     },
     brands: {
       title: 'Brand moderation',
