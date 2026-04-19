@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1.7
+# Universal Angular SPA Dockerfile for this monorepo.
+# Pass --build-arg APP_NAME=web|admin|kds|tma.
+#
+# The final image only contains the built static assets under /dist.
+# It's not meant to run as a service — the deploy script extracts /dist
+# via `docker cp` into a host directory that the edge nginx mounts.
+
+ARG APP_NAME
+
+# ---------- builder ----------
+FROM node:22-alpine AS builder
+ARG APP_NAME
+
+RUN apk add --no-cache libc6-compat bash git && \
+    corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml nx.json tsconfig.base.json .npmrc* ./
+COPY apps apps
+COPY libs libs
+
+ENV NODE_OPTIONS=--max-old-space-size=3072
+ENV HUSKY=0
+RUN pnpm install --frozen-lockfile
+RUN pnpm exec nx build ${APP_NAME} --configuration=production
+
+# ---------- artifact ----------
+FROM alpine:3.20
+ARG APP_NAME
+
+# The Angular application builder emits either directly into the output
+# path or into a `browser/` subdirectory (when SSR is wired). Normalise
+# to `/dist` so the extract script doesn't care about the difference.
+COPY --from=builder /workspace/dist/apps/${APP_NAME} /raw
+RUN if [ -d /raw/browser ]; then \
+      mv /raw/browser /dist && rm -rf /raw; \
+    else \
+      mv /raw /dist; \
+    fi
+
+CMD ["/bin/sh", "-c", "echo 'This image is an artifact carrier — extract /dist via docker cp, do not run.' && exit 0"]

@@ -60,4 +60,9 @@ infra/.data/
 # Claude local state
 .claude/
 
+# Deploy secrets — private SSH keys, production env files
+deploy/ssh/*
+!deploy/ssh/.gitkeep
+deploy/.env.production
+
 .angular

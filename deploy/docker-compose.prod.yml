@@ -1,0 +1,95 @@
+# Production compose file for takeAway.
+#
+# Services:
+#   postgres — Postgres 16, persistent named volume
+#   redis    — Redis 7 with AOF persistence, persistent named volume
+#   api      — NestJS backend, talks to postgres+redis over the internal network
+#   nginx    — TLS-terminating edge that serves 4 SPAs (from host bind mount)
+#              and reverse-proxies /api requests to the api container
+#   certbot  — Let's Encrypt certificate issuance + renewal (one-shot entrypoint)
+#
+# Ports published to host:
+#   80, 443 (nginx) only. Postgres, Redis, API are all internal.
+
+name: takeaway
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-takeaway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-takeaway}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-takeaway} -d ${POSTGRES_DB:-takeaway}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: takeaway/api:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./.env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-takeaway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-takeaway}?schema=public
+      REDIS_URL: redis://redis:6379
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      # SPA static roots — populated by the extract-spa.sh script at deploy time
+      - /opt/takeaway/www:/usr/share/nginx/html:ro
+      # Let's Encrypt material
+      - /opt/takeaway/letsencrypt:/etc/letsencrypt:ro
+      - /opt/takeaway/certbot-webroot:/var/www/certbot:ro
+
+  certbot:
+    image: certbot/certbot:latest
+    # Not started by default — bring it up on demand via `docker compose run certbot ...`
+    profiles: ['tools']
+    volumes:
+      - /opt/takeaway/letsencrypt:/etc/letsencrypt
+      - /opt/takeaway/certbot-webroot:/var/www/certbot
+
+volumes:
+  postgres_data:
+  redis_data:

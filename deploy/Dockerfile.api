@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.7
+# Multistage Dockerfile for the NestJS API.
+# Builds with pnpm + nx, produces a slim runtime image that only contains
+# the compiled webpack bundle, Prisma client, and node_modules pruned to
+# what the bundle actually requires.
+
+# ---------- builder ----------
+FROM node:22-alpine AS builder
+
+RUN apk add --no-cache libc6-compat openssl curl bash git && \
+    corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+WORKDIR /workspace
+
+# Copy only the pieces needed to resolve dependencies first, so image
+# layers can be cached when only source changes.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml nx.json tsconfig.base.json .npmrc* ./
+COPY apps apps
+COPY libs libs
+
+# Cap memory so Angular/webpack builds survive on small VPS (CX22 = 4GB).
+ENV NODE_OPTIONS=--max-old-space-size=3072
+ENV HUSKY=0
+RUN pnpm install --frozen-lockfile
+
+# Generate Prisma client — needs schema.prisma to be present.
+RUN pnpm prisma:generate
+
+# Build the NestJS bundle.
+RUN pnpm exec nx build api --configuration=production
+
+# ---------- runtime ----------
+FROM node:22-alpine AS runtime
+
+RUN apk add --no-cache openssl curl tini && \
+    addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+# Nx/webpack produces a single bundle that imports everything it needs.
+# We still copy node_modules for Prisma engines + native deps that are
+# resolved at runtime.
+COPY --from=builder /workspace/dist/apps/api ./
+COPY --from=builder /workspace/apps/api/prisma ./prisma
+COPY --from=builder /workspace/node_modules ./node_modules
+COPY --from=builder /workspace/package.json ./package.json
+
+USER app
+
+EXPOSE 3000
+ENV NODE_ENV=production
+ENV API_HOST=0.0.0.0
+ENV API_PORT=3000
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "main.js"]
