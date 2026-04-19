@@ -7,6 +7,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -28,6 +29,7 @@ export class OrdersService {
     private readonly realtime: RealtimeGateway,
     private readonly promo: PromoService,
     private readonly loyalty: LoyaltyService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -39,12 +41,30 @@ export class OrdersService {
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw new BadRequestException('Cart is empty');
 
+    const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
+
+    // Validate delivery payload BEFORE pricing so a missing address returns
+    // a clean 400 instead of half-creating an order.
+    if (fulfillmentType === 'DELIVERY') {
+      if (!dto.deliveryAddressLine || !dto.deliveryCity) {
+        throw new BadRequestException('deliveryAddressLine and deliveryCity are required for DELIVERY orders');
+      }
+      // Reject DELIVERY for a store that hasn't opted in.
+      if (!cart.store.fulfillmentTypes.includes('DELIVERY')) {
+        throw new BadRequestException('This store does not support delivery');
+      }
+    }
+
     const pickupAt = this.resolvePickupAt(cart, dto);
 
     const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
       throw new BadRequestException('Cart total below store minimum');
     }
+
+    // Delivery fee — flat v1. Config key DELIVERY_FEE_CENTS (default $3.00).
+    // Distance-based pricing is a follow-up (see M6 plan PR 5).
+    const deliveryFeeCents = fulfillmentType === 'DELIVERY' ? Number(this.config.get('DELIVERY_FEE_CENTS')) || 300 : 0;
 
     // Resolve promo (if any) BEFORE the transaction — validation is cheap and
     // catching a bad code here keeps our transaction tight. Discounts get
@@ -58,7 +78,7 @@ export class OrdersService {
 
     const discountCents = promoResult?.discountCents ?? 0;
     const taxCents = 0;
-    const totalCents = Math.max(0, subtotalCents - discountCents + taxCents);
+    const totalCents = Math.max(0, subtotalCents - discountCents + taxCents + deliveryFeeCents);
     const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
 
     const order = await this.withUniqueOrderCode((orderCode) =>
@@ -68,7 +88,7 @@ export class OrdersService {
             userId,
             storeId: cart.storeId,
             status: 'CREATED',
-            fulfillmentType: dto.fulfillmentType ?? 'PICKUP',
+            fulfillmentType,
             pickupMode: dto.pickupMode,
             pickupAt,
             subtotalCents,
@@ -82,6 +102,13 @@ export class OrdersService {
             customerPhone: dto.customerPhone,
             notes: dto.notes,
             couponCode: dto.couponCode,
+            // Delivery bits — nullable / 0 when the order is PICKUP.
+            deliveryAddressLine: dto.deliveryAddressLine ?? null,
+            deliveryCity: dto.deliveryCity ?? null,
+            deliveryLatitude: dto.deliveryLatitude ?? null,
+            deliveryLongitude: dto.deliveryLongitude ?? null,
+            deliveryNotes: dto.deliveryNotes ?? null,
+            deliveryFeeCents,
             items: {
               create: cart.items.map((i) => ({
                 productSnapshot: this.snapshotItem(i) as Prisma.InputJsonValue,
@@ -398,6 +425,16 @@ export class OrdersService {
       pickedUpAt: order.pickedUpAt?.toISOString() ?? null,
       cancelledAt: order.cancelledAt?.toISOString() ?? null,
       expiredAt: order.expiredAt?.toISOString() ?? null,
+      deliveryAddressLine: order.deliveryAddressLine,
+      deliveryCity: order.deliveryCity,
+      deliveryLatitude: order.deliveryLatitude,
+      deliveryLongitude: order.deliveryLongitude,
+      deliveryNotes: order.deliveryNotes,
+      deliveryFeeCents: order.deliveryFeeCents,
+      deliveryDistanceM: order.deliveryDistanceM,
+      riderId: order.riderId,
+      outForDeliveryAt: order.outForDeliveryAt?.toISOString() ?? null,
+      deliveredAt: order.deliveredAt?.toISOString() ?? null,
     };
   }
 }

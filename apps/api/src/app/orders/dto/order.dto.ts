@@ -96,6 +96,38 @@ export class OrderDto {
 
   @ApiProperty({ nullable: true, type: String })
   expiredAt!: string | null;
+
+  // ── Delivery fields (null for PICKUP / DINE_IN orders) ──────────────────
+
+  @ApiProperty({ nullable: true, type: String })
+  deliveryAddressLine!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  deliveryCity!: string | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  deliveryLatitude!: number | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  deliveryLongitude!: number | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  deliveryNotes!: string | null;
+
+  @ApiProperty({ description: '0 for PICKUP / DINE_IN orders.' })
+  deliveryFeeCents!: number;
+
+  @ApiProperty({ nullable: true, type: Number, description: 'Distance store→customer in metres, when geocoded.' })
+  deliveryDistanceM!: number | null;
+
+  @ApiProperty({ nullable: true, type: String, description: 'Assigned rider user id.' })
+  riderId!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  outForDeliveryAt!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  deliveredAt!: string | null;
 }
 
 export class OrderSummaryDto {

@@ -11,8 +11,12 @@ export type OrderStatusString =
   | 'IN_PROGRESS'
   | 'READY'
   | 'PICKED_UP'
+  | 'OUT_FOR_DELIVERY'
+  | 'DELIVERED'
   | 'CANCELLED'
   | 'EXPIRED';
+
+export type FulfillmentTypeString = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
 
 export interface OrderView {
   id: string;
@@ -20,6 +24,7 @@ export interface OrderView {
   qrToken: string;
   status: OrderStatusString;
   pickupMode: 'ASAP' | 'SCHEDULED';
+  fulfillmentType?: FulfillmentTypeString;
   pickupAt: string;
   subtotalCents: number;
   totalCents: number;
@@ -37,17 +42,34 @@ export interface OrderView {
   createdAt: string;
   readyAt: string | null;
   cancelledAt: string | null;
+  // Delivery fields — null / 0 on PICKUP orders.
+  deliveryAddressLine?: string | null;
+  deliveryCity?: string | null;
+  deliveryLatitude?: number | null;
+  deliveryLongitude?: number | null;
+  deliveryNotes?: string | null;
+  deliveryFeeCents?: number;
+  riderId?: string | null;
+  outForDeliveryAt?: string | null;
+  deliveredAt?: string | null;
 }
 
 export interface CreateOrderInput {
   cartId: string;
   pickupMode: 'ASAP' | 'SCHEDULED';
   pickupAt?: string;
+  fulfillmentType?: FulfillmentTypeString;
   customerName?: string;
   customerPhone?: string;
   notes?: string;
   /** Promo / coupon code the customer typed at checkout, if any. */
   couponCode?: string;
+  // Delivery-only. Required when `fulfillmentType === 'DELIVERY'`.
+  deliveryAddressLine?: string;
+  deliveryCity?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
+  deliveryNotes?: string;
 }
 
 export interface OrderSummary {
