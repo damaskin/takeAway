@@ -30,7 +30,9 @@ interface PrismaMock {
 describe('DeliveryService', () => {
   let service: DeliveryService;
   let prisma: PrismaMock;
-  let realtime: jest.Mocked<Pick<RealtimeGateway, 'emitOrderStatusChanged' | 'emitKdsOrderChanged'>>;
+  let realtime: jest.Mocked<
+    Pick<RealtimeGateway, 'emitOrderStatusChanged' | 'emitKdsOrderChanged' | 'emitDispatchChanged'>
+  >;
   let notifications: { notifyOrderStatus: jest.Mock };
 
   const RIDER_ID = 'rider-1';
@@ -56,6 +58,7 @@ describe('DeliveryService', () => {
     realtime = {
       emitOrderStatusChanged: jest.fn(),
       emitKdsOrderChanged: jest.fn(),
+      emitDispatchChanged: jest.fn(),
     };
     notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
 
@@ -207,10 +210,7 @@ describe('DeliveryService', () => {
       const result = await service.selfAssign(ORDER_ID, RIDER_ID);
 
       expect(result).toEqual({ id: ORDER_ID, riderId: RIDER_ID });
-      // Dispatch change currently piggybacks on the KDS channel (orderId='*')
-      // — once PR #54 lands it moves to emitDispatchChanged. Assert via the
-      // generic `kind: 'updated'` payload so the test survives the swap.
-      expect(realtime.emitKdsOrderChanged).toHaveBeenCalledWith(
+      expect(realtime.emitDispatchChanged).toHaveBeenCalledWith(
         expect.objectContaining({ storeId: STORE_ID, kind: 'updated' }),
       );
     });
