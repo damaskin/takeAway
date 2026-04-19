@@ -47,12 +47,14 @@ async function main(): Promise<void> {
 
   const brand = await prisma.brand.upsert({
     where: { slug: 'takeaway' },
-    update: {},
+    update: { moderationStatus: 'APPROVED' },
     create: {
       slug: 'takeaway',
       name: 'takeAway',
       currency: 'USD',
       locale: 'EN',
+      moderationStatus: 'APPROVED',
+      moderatedAt: new Date(),
     },
   });
 
