@@ -617,6 +617,12 @@ export const TRANSLATIONS_RU = {
       deliveryNotesPlaceholder: 'Подъезд, этаж, код домофона…',
       deliveryFeeHint: 'К заказу добавится {{fee}} за доставку.',
       deliveryFeeRow: 'Доставка',
+      deliveryGeolocate: 'Поделиться локацией для точного тарифа',
+      deliveryGeolocateRetry: 'Обновить локацию',
+      deliveryGeolocateDenied: 'Локация не разрешена — базовый тариф.',
+      deliveryGeolocateUnsupported: 'Геолокация недоступна — базовый тариф.',
+      deliveryOutsideRadius: 'Вне зоны доставки этой точки.',
+      deliveryDistance: '≈ {{km}} до точки',
     },
     stores: {
       title: 'Выберите точку',
