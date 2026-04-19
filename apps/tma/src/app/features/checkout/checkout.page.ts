@@ -6,6 +6,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -152,9 +153,34 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             [placeholder]="'tma.checkout.deliveryNotesPlaceholder' | translate"
             style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
           />
+          <div class="flex items-center flex-wrap" style="gap: 8px">
+            <button
+              type="button"
+              (click)="requestLocation()"
+              [disabled]="locating()"
+              class="flex items-center disabled:opacity-50"
+              style="height: 36px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
+            >
+              📍
+              {{
+                (customerLat() != null ? 'tma.checkout.deliveryGeolocateRetry' : 'tma.checkout.deliveryGeolocate')
+                  | translate
+              }}
+            </button>
+            @if (deliveryDistanceM() != null) {
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                'tma.checkout.deliveryDistance' | translate: { km: formatKm(deliveryDistanceM()!) }
+              }}</span>
+            }
+          </div>
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
             {{ 'tma.checkout.deliveryFeeHint' | translate: { fee: price(deliveryFeeCents()) } }}
           </span>
+          @if (deliveryReason()) {
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); margin: 0">{{
+              deliveryReason()
+            }}</span>
+          }
         </div>
       }
 
@@ -269,6 +295,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
+  private readonly deliveryFeeApi = inject(DeliveryFeeApi);
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
@@ -280,11 +307,18 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   /** True iff the active store advertises DELIVERY in `fulfillmentTypes`. */
   readonly deliveryAvailable = signal(false);
-  /** Flat fee in cents, mirrors server `DELIVERY_FEE_CENTS` (default 300). */
+  /** Fee in cents — populated from /delivery/quote on store load + geolocation. */
   readonly deliveryFeeCents = signal(300);
+  readonly deliveryDistanceM = signal<number | null>(null);
   readonly deliveryAddress = signal('');
   readonly deliveryCity = signal('');
   readonly deliveryNotes = signal('');
+  readonly customerLat = signal<number | null>(null);
+  readonly customerLng = signal<number | null>(null);
+  readonly locating = signal(false);
+  /** OUTSIDE_RADIUS / permission-denied messages surfaced to the customer. */
+  readonly deliveryReason = signal<string | null>(null);
+  private activeStoreId: string | null = null;
 
   private detachBack: (() => void) | null = null;
 
@@ -295,12 +329,14 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         if (!first) return;
         this.storeName.set(first.name);
         this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
+        this.activeStoreId = first.id;
         this.cartService.load(first.id).subscribe({
           next: (c) => {
             this.cart.set(c);
             this.refreshMainButton();
           },
         });
+        this.refreshFeeQuote();
       },
     });
 
@@ -328,6 +364,57 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     if (type === 'DELIVERY') this.pickupMode.set('ASAP');
     this.tg.haptic('light');
     this.refreshMainButton();
+  }
+
+  requestLocation(): void {
+    if (!('geolocation' in navigator)) {
+      this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryGeolocateUnsupported'));
+      return;
+    }
+    this.locating.set(true);
+    this.tg.haptic('light');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.customerLat.set(pos.coords.latitude);
+        this.customerLng.set(pos.coords.longitude);
+        this.refreshFeeQuote();
+      },
+      () => {
+        this.locating.set(false);
+        this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryGeolocateDenied'));
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+    );
+  }
+
+  formatKm(metres: number): string {
+    if (metres < 1000) return `${metres} m`;
+    return `${(metres / 1000).toFixed(1)} km`;
+  }
+
+  private refreshFeeQuote(): void {
+    if (!this.activeStoreId) return;
+    this.locating.set(true);
+    this.deliveryFeeApi
+      .quote({
+        storeId: this.activeStoreId,
+        latitude: this.customerLat() ?? undefined,
+        longitude: this.customerLng() ?? undefined,
+      })
+      .subscribe({
+        next: (q) => {
+          this.locating.set(false);
+          this.deliveryFeeCents.set(q.feeCents);
+          this.deliveryDistanceM.set(q.distanceM);
+          if (!q.deliverable && q.reason === 'OUTSIDE_RADIUS') {
+            this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryOutsideRadius'));
+          } else {
+            this.deliveryReason.set(null);
+          }
+          this.refreshMainButton();
+        },
+        error: () => this.locating.set(false),
+      });
   }
 
   totalCents(subtotalCents: number): number {
@@ -363,6 +450,11 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
+    if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() && this.deliveryDistanceM() != null) {
+      // OUTSIDE_RADIUS — server would 400, so block at the button.
+      this.tg.hideMainButton();
+      return;
+    }
     const total = this.price(this.totalCents(c.subtotalCents));
     let key: string;
     if (this.fulfillmentType() === 'DELIVERY') {
@@ -391,6 +483,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
             deliveryAddressLine: this.deliveryAddress().trim(),
             deliveryCity: this.deliveryCity().trim(),
             deliveryNotes: this.deliveryNotes().trim() || undefined,
+            deliveryLatitude: this.customerLat() ?? undefined,
+            deliveryLongitude: this.customerLng() ?? undefined,
           }
         : {}),
     };

@@ -639,6 +639,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryNotesPlaceholder: 'Building, floor, door code…',
       deliveryFeeHint: 'A {{fee}} delivery fee will be added.',
       deliveryFeeRow: 'Delivery fee',
+      deliveryGeolocate: 'Share location for exact fee',
+      deliveryGeolocateRetry: 'Update location',
+      deliveryGeolocateDenied: 'Location denied — using flat fee.',
+      deliveryGeolocateUnsupported: 'Geolocation unavailable — using flat fee.',
+      deliveryOutsideRadius: 'Outside this store’s delivery area.',
+      deliveryDistance: '≈ {{km}} away',
     },
     stores: {
       title: 'Pick a store',
