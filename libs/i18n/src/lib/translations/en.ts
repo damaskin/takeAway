@@ -265,6 +265,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
       browseMenu: 'Browse menu',
     },
     profile: {
+      personalInfo: {
+        title: 'Personal info',
+        subtitle: 'These details appear on your orders.',
+        name: 'Name',
+        email: 'Email',
+        phone: 'Phone',
+        dob: 'Date of birth',
+        saving: 'Saving…',
+        saved: 'Saved.',
+      },
       signOut: 'Sign out',
       initials: 'G',
       tierGold: 'Gold',

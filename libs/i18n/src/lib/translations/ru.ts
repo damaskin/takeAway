@@ -265,6 +265,16 @@ export const TRANSLATIONS_RU = {
       browseMenu: 'Открыть меню',
     },
     profile: {
+      personalInfo: {
+        title: 'Личные данные',
+        subtitle: 'Эти поля подставляются в заказы.',
+        name: 'Имя',
+        email: 'Email',
+        phone: 'Телефон',
+        dob: 'Дата рождения',
+        saving: 'Сохраняем…',
+        saved: 'Сохранено.',
+      },
       signOut: 'Выйти',
       initials: 'Г',
       tierGold: 'Золотой',
