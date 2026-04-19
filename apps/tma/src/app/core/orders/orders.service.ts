@@ -59,6 +59,10 @@ export class OrdersApi {
     customerName?: string;
     notes?: string;
     couponCode?: string;
+    fulfillmentType?: 'PICKUP' | 'DELIVERY';
+    deliveryAddressLine?: string;
+    deliveryCity?: string;
+    deliveryNotes?: string;
   }): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders`, input);
   }

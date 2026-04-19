@@ -25,6 +25,7 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
   template: `
     <div class="admin-shell flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
       <!-- Sidebar (drawer on mobile) -->
+      <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events,@angular-eslint/template/interactive-supports-focus -->
       <div class="admin-sidebar-wrap" [class.admin-sidebar-open]="sidebarOpen()" (click)="onSidebarTap($event)">
         <app-admin-sidebar />
       </div>

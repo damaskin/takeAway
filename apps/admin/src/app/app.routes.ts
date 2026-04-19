@@ -79,6 +79,10 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/dispatch/dispatch.page').then((m) => m.DispatchPage),
       },
       {
+        path: 'riders',
+        loadComponent: () => import('./features/riders/riders.page').then((m) => m.AdminRidersPage),
+      },
+      {
         path: 'promo',
         loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
       },

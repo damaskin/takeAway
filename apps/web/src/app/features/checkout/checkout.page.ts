@@ -7,6 +7,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { PromoService } from '../../core/loyalty/loyalty.service';
+import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
@@ -112,33 +113,31 @@ interface Step {
                 </button>
               </div>
 
-              <!-- ASAP / SCHEDULED — only for pickup (delivery is always ASAP in v1) -->
-              @if (fulfillmentType() === 'PICKUP') {
-                <div class="flex gap-3 w-full">
-                  <button
-                    type="button"
-                    (click)="selectMode('ASAP')"
-                    class="flex items-center justify-center w-full"
-                    [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                    [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                    [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
-                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                  >
-                    {{ 'web.checkout.pickupAsap' | translate }}
-                  </button>
-                  <button
-                    type="button"
-                    (click)="selectMode('SCHEDULED')"
-                    class="flex items-center justify-center w-full"
-                    [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                    [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                    [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
-                    style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                  >
-                    {{ 'web.checkout.pickupScheduled' | translate }}
-                  </button>
-                </div>
-              }
+              <!-- ASAP / SCHEDULED — works for both PICKUP and DELIVERY -->
+              <div class="flex gap-3 w-full">
+                <button
+                  type="button"
+                  (click)="selectMode('ASAP')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'ASAP' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  {{ 'web.checkout.pickupAsap' | translate }}
+                </button>
+                <button
+                  type="button"
+                  (click)="selectMode('SCHEDULED')"
+                  class="flex items-center justify-center w-full"
+                  [style.background]="mode() === 'SCHEDULED' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                  [style.color]="mode() === 'SCHEDULED' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                  [style.border]="mode() === 'SCHEDULED' ? 'none' : '1px solid var(--color-border)'"
+                  style="padding: 12px 20px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                >
+                  {{ 'web.checkout.pickupScheduled' | translate }}
+                </button>
+              </div>
 
               <!-- Delivery address form -->
               @if (fulfillmentType() === 'DELIVERY') {
@@ -184,11 +183,38 @@ interface Step {
                       style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
                     />
                   </label>
+                  <div class="flex items-center flex-wrap" style="gap: 10px">
+                    <button
+                      type="button"
+                      (click)="requestLocation()"
+                      [disabled]="locating()"
+                      class="flex items-center disabled:opacity-50"
+                      style="height: 36px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-espresso)"
+                    >
+                      📍
+                      {{
+                        (customerLat() !== null
+                          ? 'web.checkout.deliveryGeolocateRetry'
+                          : 'web.checkout.deliveryGeolocate'
+                        ) | translate
+                      }}
+                    </button>
+                    @if (deliveryDistanceM() !== null) {
+                      <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                        'web.checkout.deliveryDistance' | translate: { km: formatKm(deliveryDistanceM()!) }
+                      }}</span>
+                    }
+                  </div>
                   <p
                     style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
                   >
                     {{ 'web.checkout.deliveryFeeHint' | translate: { fee: price(deliveryFeeCents()) } }}
                   </p>
+                  @if (deliveryReason()) {
+                    <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); margin: 0">
+                      {{ deliveryReason() }}
+                    </p>
+                  }
                 </div>
               }
 
@@ -215,13 +241,16 @@ interface Step {
                 <p
                   style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
                 >
-                  {{ 'common.readyBy' | translate: { time: readyTimeLabel() } }}
+                  {{
+                    (fulfillmentType() === 'DELIVERY' ? 'web.checkout.deliveryBy' : 'common.readyBy')
+                      | translate: { time: readyTimeLabel() }
+                  }}
                 </p>
                 <p
                   class="mt-1"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
                 >
-                  We'll start preparing at {{ prepStartLabel() }} so it's fresh when you arrive.
+                  {{ 'web.checkout.prepStartHint' | translate: { time: prepStartLabel() } }}
                 </p>
               </div>
             </section>
@@ -407,6 +436,8 @@ export class CheckoutPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  private readonly deliveryFeeApi = inject(DeliveryFeeApi);
+
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
@@ -416,8 +447,17 @@ export class CheckoutPage implements OnInit {
   readonly error = signal<string | null>(null);
   /** Whether the picked store advertises DELIVERY in `fulfillmentTypes`. */
   readonly deliveryAvailable = signal(false);
-  /** Flat fee in cents; in sync with server DELIVERY_FEE_CENTS default. */
+  /** Fee in cents — populated from /delivery/quote on store load and on geolocation. */
   readonly deliveryFeeCents = signal(300);
+  /** Straight-line distance in metres; null until the customer shares coords. */
+  readonly deliveryDistanceM = signal<number | null>(null);
+  /** Customer coords, if the browser granted geolocation. */
+  readonly customerLat = signal<number | null>(null);
+  readonly customerLng = signal<number | null>(null);
+  /** True while a geolocation / quote request is in flight. */
+  readonly locating = signal(false);
+  /** Surfaces OUTSIDE_RADIUS (and other server rejections) to the customer. */
+  readonly deliveryReason = signal<string | null>(null);
 
   // Promo state — promoCode() is the confirmed/applied code, promoInput() is
   // what's currently typed in the input.
@@ -428,6 +468,8 @@ export class CheckoutPage implements OnInit {
   readonly promoLoading = signal(false);
   /** Brand ID derived from the active store, needed for /promo/validate. */
   readonly brandId = signal<string | null>(null);
+  /** Store ID, needed for /delivery/quote. */
+  readonly activeStoreId = signal<string | null>(null);
 
   readonly contactForm = new FormGroup({
     customerName: new FormControl('', { nonNullable: true }),
@@ -472,6 +514,9 @@ export class CheckoutPage implements OnInit {
     if (!c || c.items.length === 0) return false;
     if (!this.authStore.isAuthenticated()) return false;
     if (this.mode() === 'SCHEDULED' && !this.scheduledAt()) return false;
+    // Outside the serviceable radius — server will 400 anyway, stop the
+    // customer at the button instead of letting them tap into an error.
+    if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() === 'OUTSIDE_RADIUS') return false;
     return true;
   });
 
@@ -482,7 +527,9 @@ export class CheckoutPage implements OnInit {
         next: (store) => {
           this.brandId.set(store.brandId);
           this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
+          this.activeStoreId.set(store.id);
           this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
+          this.refreshFeeQuote();
         },
       });
     } else {
@@ -492,11 +539,58 @@ export class CheckoutPage implements OnInit {
           if (first) {
             this.brandId.set(first.brandId);
             this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
+            this.activeStoreId.set(first.id);
             this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
+            this.refreshFeeQuote();
           }
         },
       });
     }
+  }
+
+  requestLocation(): void {
+    if (!('geolocation' in navigator)) {
+      this.deliveryReason.set(this.translate.instant('web.checkout.deliveryGeolocateUnsupported'));
+      return;
+    }
+    this.locating.set(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.customerLat.set(pos.coords.latitude);
+        this.customerLng.set(pos.coords.longitude);
+        this.refreshFeeQuote();
+      },
+      () => {
+        this.locating.set(false);
+        this.deliveryReason.set(this.translate.instant('web.checkout.deliveryGeolocateDenied'));
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+    );
+  }
+
+  private refreshFeeQuote(): void {
+    const storeId = this.activeStoreId();
+    if (!storeId) return;
+    this.locating.set(true);
+    this.deliveryFeeApi
+      .quote({
+        storeId,
+        latitude: this.customerLat() ?? undefined,
+        longitude: this.customerLng() ?? undefined,
+      })
+      .subscribe({
+        next: (q) => {
+          this.locating.set(false);
+          this.deliveryFeeCents.set(q.feeCents);
+          this.deliveryDistanceM.set(q.distanceM);
+          if (!q.deliverable && q.reason === 'OUTSIDE_RADIUS') {
+            this.deliveryReason.set(this.translate.instant('web.checkout.deliveryOutsideRadius'));
+          } else {
+            this.deliveryReason.set(null);
+          }
+        },
+        error: () => this.locating.set(false),
+      });
   }
 
   // ── Promo flow ──────────────────────────────────────────────────────────
@@ -567,9 +661,6 @@ export class CheckoutPage implements OnInit {
 
   selectFulfillment(type: FulfillmentType): void {
     this.fulfillmentType.set(type);
-    // Delivery is always ASAP in v1. If the user toggled from SCHEDULED
-    // pickup, reset to ASAP so we don't send conflicting state to the API.
-    if (type === 'DELIVERY') this.mode.set('ASAP');
   }
 
   selectPayment(method: PaymentMethod): void {
@@ -610,6 +701,8 @@ export class CheckoutPage implements OnInit {
             deliveryAddressLine: d.addressLine.trim(),
             deliveryCity: d.city.trim(),
             deliveryNotes: d.notes?.trim() || undefined,
+            deliveryLatitude: this.customerLat() ?? undefined,
+            deliveryLongitude: this.customerLng() ?? undefined,
           }
         : {}),
     };
@@ -635,6 +728,11 @@ export class CheckoutPage implements OnInit {
 
   private formatTime(date: Date): string {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  formatKm(metres: number): string {
+    if (metres < 1000) return `${metres} m`;
+    return `${(metres / 1000).toFixed(1)} km`;
   }
 
   private defaultScheduled(): string {
