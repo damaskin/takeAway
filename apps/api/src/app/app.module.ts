@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { FeaturesModule } from './config/config.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { HealthModule } from './health/health.module';
 import { KdsModule } from './kds/kds.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     }),
     PrismaModule,
     RedisModule,
+    FeaturesModule,
     UsersModule,
     AuthModule,
     CatalogModule,
