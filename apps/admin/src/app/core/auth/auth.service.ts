@@ -1,13 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type {
-  AuthSession,
-  AuthTokens,
-  AuthUser,
-  SendOtpRequest,
-  SendOtpResponse,
-  VerifyOtpRequest,
-} from '@takeaway/shared-types';
+import type { AuthSession, AuthTokens, AuthUser } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -19,13 +12,22 @@ export class AuthService {
   private readonly store = inject(AuthStore);
   private readonly api = inject(API_CONFIG);
 
-  sendOtp(body: SendOtpRequest): Observable<SendOtpResponse> {
-    return this.http.post<SendOtpResponse>(`${this.api.baseUrl}/auth/otp/send`, body);
-  }
-
-  verifyOtp(body: VerifyOtpRequest): Observable<AuthSession> {
+  /**
+   * Sign in via the Telegram Login Widget
+   * (https://core.telegram.org/widgets/login). The payload is forwarded
+   * verbatim; the server re-verifies the `hash` against the bot token.
+   */
+  verifyTelegramWidget(payload: {
+    id: number;
+    first_name: string;
+    last_name?: string;
+    username?: string;
+    photo_url?: string;
+    auth_date: number;
+    hash: string;
+  }): Observable<AuthSession> {
     return this.http
-      .post<AuthSession>(`${this.api.baseUrl}/auth/otp/verify`, { ...body, deviceType: 'WEB' })
+      .post<AuthSession>(`${this.api.baseUrl}/auth/telegram/widget`, payload)
       .pipe(tap((session) => this.store.set(session)));
   }
 
