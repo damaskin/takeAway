@@ -57,6 +57,51 @@ export class NotificationsService {
     }
   }
 
+  /**
+   * Notify staff of a brand when a new paid order lands for one of their
+   * stores. Targets:
+   *   - BRAND_ADMIN(s) who own the brand.
+   *   - STORE_MANAGER / STAFF assigned to the store via the UserStore pivot.
+   * Only users with a linked `telegramUserId` actually receive a push —
+   * the rest are silently skipped (they rely on the in-app realtime UI).
+   */
+  async notifyBrandStaffNewOrder(order: OrderLike): Promise<void> {
+    const store = await this.prisma.store.findUnique({
+      where: { id: order.storeId },
+      select: { brandId: true, name: true },
+    });
+    if (!store) return;
+
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        telegramUserId: { not: null },
+        blockedAt: null,
+        OR: [
+          { role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } },
+          { userStores: { some: { storeId: order.storeId } } },
+        ],
+      },
+      select: { id: true, locale: true, telegramUserId: true },
+    });
+    if (recipients.length === 0) return;
+
+    const message: PushMessage = {
+      kind: 'order_status',
+      title: `Новый заказ #${order.orderCode} · ${store.name}`,
+      body: `Оплачено, ждёт принятия на кухне. / New paid order awaiting the kitchen.`,
+      orderId: order.id,
+    };
+
+    await Promise.allSettled(
+      recipients.map((u) =>
+        this.telegram.send(
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
+          message,
+        ),
+      ),
+    );
+  }
+
   private async loadRecipient(userId: string): Promise<PushRecipient | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

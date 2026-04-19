@@ -6,6 +6,12 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <script>
+      // Telegram Login Widget bot username. Used by the /admin/telegram-link
+      // staff-link flow (not authentication — staff sign in with email +
+      // password). Public value; token stays server-side.
+      window.__TELEGRAM_BOT_USERNAME = 'takaway_tgbot';
+    </script>
   </head>
   <body>
     <app-root></app-root>

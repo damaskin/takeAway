@@ -107,6 +107,10 @@ export const appRoutes: Route[] = [
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.page').then((m) => m.AdminSettingsPage),
       },
+      {
+        path: 'telegram-link',
+        loadComponent: () => import('./features/telegram-link/telegram-link.page').then((m) => m.TelegramLinkPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

@@ -112,7 +112,13 @@ describe('PaymentsService.handleWebhook', () => {
         },
         { provide: RealtimeGateway, useValue: realtime },
         { provide: OrdersService, useValue: orders },
-        { provide: NotificationsService, useValue: { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: NotificationsService,
+          useValue: {
+            notifyOrderStatus: jest.fn().mockResolvedValue(undefined),
+            notifyBrandStaffNewOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: STRIPE_CLIENT, useValue: stripe },
       ],
     }).compile();
