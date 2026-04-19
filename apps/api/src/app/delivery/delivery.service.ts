@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { DeliveryTransition } from './dto/update-delivery-status.dto';
@@ -27,6 +28,7 @@ export class DeliveryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Dispatcher queue — READY delivery orders (assigned + unassigned) in a store. */
@@ -192,6 +194,18 @@ export class DeliveryService {
         occurredAt: now.toISOString(),
       },
       updated.userId,
+    );
+
+    // Push notification to the customer (Telegram today + iOS/Android stubs).
+    void this.notifications.notifyOrderStatus(
+      {
+        id: updated.id,
+        userId: updated.userId,
+        orderCode: updated.orderCode,
+        storeId: updated.storeId,
+        fulfillmentType: updated.fulfillmentType,
+      },
+      updated.status,
     );
 
     // OUT_FOR_DELIVERY removes the order from the KDS barista board since

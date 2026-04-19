@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Order, OrderStatus, Prisma } from '@prisma/client';
 
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -18,6 +19,7 @@ export class KdsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async listOpen(storeId: string) {
@@ -113,6 +115,20 @@ export class KdsService {
         occurredAt: new Date().toISOString(),
       },
       updated.userId,
+    );
+
+    // Fire-and-forget: a push failure shouldn't block the kitchen from
+    // advancing the order, so we don't await and don't let rejections
+    // escape — NotificationsService already swallows provider errors.
+    void this.notifications.notifyOrderStatus(
+      {
+        id: updated.id,
+        userId: updated.userId,
+        orderCode: updated.orderCode,
+        storeId: updated.storeId,
+        fulfillmentType: updated.fulfillmentType,
+      },
+      updated.status,
     );
 
     // Push to the kitchen board too. PICKED_UP orders leave the open list,
