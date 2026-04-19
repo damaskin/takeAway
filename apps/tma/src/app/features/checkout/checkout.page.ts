@@ -1,12 +1,16 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+
+type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
 /**
  * TMA Checkout — pencil u5mrZ.
@@ -22,7 +26,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [FormsModule, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
       <h1
@@ -31,11 +35,51 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         {{ 'tma.checkout.title' | translate }}
       </h1>
 
-      <!-- Pickup time -->
+      <!-- Fulfillment type (PICKUP / DELIVERY) — hidden if store doesn't offer delivery -->
+      @if (deliveryAvailable()) {
+        <div class="flex flex-col" style="gap: 12px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.fulfillment' | translate }}</span
+          >
+          <div class="flex" style="gap: 8px">
+            <button
+              type="button"
+              (click)="setFulfillment('PICKUP')"
+              class="flex-1"
+              [style.background]="fulfillmentType() === 'PICKUP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="fulfillmentType() === 'PICKUP' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="
+                fulfillmentType() === 'PICKUP' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+              "
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.fulfillmentPickup' | translate }}
+            </button>
+            <button
+              type="button"
+              (click)="setFulfillment('DELIVERY')"
+              class="flex-1"
+              [style.background]="fulfillmentType() === 'DELIVERY' ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="fulfillmentType() === 'DELIVERY' ? 'white' : 'var(--color-text-primary)'"
+              [style.border]="
+                fulfillmentType() === 'DELIVERY' ? '1px solid transparent' : '1px solid var(--color-border-light)'
+              "
+              style="height: 44px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+            >
+              {{ 'tma.checkout.fulfillmentDelivery' | translate }}
+            </button>
+          </div>
+        </div>
+      }
+
+      <!-- Pickup / delivery time — works for both fulfillment types -->
       <div class="flex flex-col" style="gap: 12px">
         <span
           style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-          >{{ 'tma.checkout.pickupWhen' | translate }}</span
+          >{{
+            (fulfillmentType() === 'DELIVERY' ? 'tma.checkout.deliveryWhen' : 'tma.checkout.pickupWhen') | translate
+          }}</span
         >
         <div class="flex" style="gap: 8px">
           <button
@@ -72,6 +116,73 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
           />
         }
       </div>
+
+      <!-- Delivery address form -->
+      @if (fulfillmentType() === 'DELIVERY') {
+        <div
+          class="flex flex-col"
+          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 12px"
+        >
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.deliveryAddressLabel' | translate }}</span
+          >
+          <input
+            type="text"
+            autocomplete="street-address"
+            [ngModel]="deliveryAddress()"
+            (ngModelChange)="deliveryAddress.set($event); refreshMainButton()"
+            name="deliveryAddress"
+            [placeholder]="'tma.checkout.deliveryAddressPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
+          />
+          <input
+            type="text"
+            autocomplete="address-level2"
+            [ngModel]="deliveryCity()"
+            (ngModelChange)="deliveryCity.set($event); refreshMainButton()"
+            name="deliveryCity"
+            [placeholder]="'tma.checkout.deliveryCityPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
+          />
+          <input
+            type="text"
+            [ngModel]="deliveryNotes()"
+            (ngModelChange)="deliveryNotes.set($event)"
+            name="deliveryNotes"
+            [placeholder]="'tma.checkout.deliveryNotesPlaceholder' | translate"
+            style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none"
+          />
+          <div class="flex items-center flex-wrap" style="gap: 8px">
+            <button
+              type="button"
+              (click)="requestLocation()"
+              [disabled]="locating()"
+              class="flex items-center disabled:opacity-50"
+              style="height: 36px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
+            >
+              📍
+              {{
+                (customerLat() !== null ? 'tma.checkout.deliveryGeolocateRetry' : 'tma.checkout.deliveryGeolocate')
+                  | translate
+              }}
+            </button>
+            @if (deliveryDistanceM() !== null) {
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                'tma.checkout.deliveryDistance' | translate: { km: formatKm(deliveryDistanceM()!) }
+              }}</span>
+            }
+          </div>
+          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
+            {{ 'tma.checkout.deliveryFeeHint' | translate: { fee: price(deliveryFeeCents()) } }}
+          </span>
+          @if (deliveryReason()) {
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); margin: 0">{{
+              deliveryReason()
+            }}</span>
+          }
+        </div>
+      }
 
       <!-- Store card -->
       @if (cart(); as c) {
@@ -120,6 +231,16 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
                 </div>
               }
               <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
+              @if (fulfillmentType() === 'DELIVERY') {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    'tma.checkout.deliveryFeeRow' | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(deliveryFeeCents())
+                  }}</span>
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
@@ -127,7 +248,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
-                  >{{ price(c.subtotalCents) }}</span
+                  >{{ price(totalCents(c.subtotalCents)) }}</span
                 >
               </div>
             </div>
@@ -174,6 +295,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
+  private readonly deliveryFeeApi = inject(DeliveryFeeApi);
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
@@ -181,6 +303,22 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly scheduledAt = signal<string>(this.defaultScheduledAt());
   readonly storeName = signal<string>('');
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
+
+  readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
+  /** True iff the active store advertises DELIVERY in `fulfillmentTypes`. */
+  readonly deliveryAvailable = signal(false);
+  /** Fee in cents — populated from /delivery/quote on store load + geolocation. */
+  readonly deliveryFeeCents = signal(300);
+  readonly deliveryDistanceM = signal<number | null>(null);
+  readonly deliveryAddress = signal('');
+  readonly deliveryCity = signal('');
+  readonly deliveryNotes = signal('');
+  readonly customerLat = signal<number | null>(null);
+  readonly customerLng = signal<number | null>(null);
+  readonly locating = signal(false);
+  /** OUTSIDE_RADIUS / permission-denied messages surfaced to the customer. */
+  readonly deliveryReason = signal<string | null>(null);
+  private activeStoreId: string | null = null;
 
   private detachBack: (() => void) | null = null;
 
@@ -190,12 +328,15 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         const first = list[0];
         if (!first) return;
         this.storeName.set(first.name);
+        this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
+        this.activeStoreId = first.id;
         this.cartService.load(first.id).subscribe({
           next: (c) => {
             this.cart.set(c);
             this.refreshMainButton();
           },
         });
+        this.refreshFeeQuote();
       },
     });
 
@@ -216,6 +357,68 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     this.refreshMainButton();
   }
 
+  setFulfillment(type: FulfillmentType): void {
+    this.fulfillmentType.set(type);
+    this.tg.haptic('light');
+    this.refreshMainButton();
+  }
+
+  requestLocation(): void {
+    if (!('geolocation' in navigator)) {
+      this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryGeolocateUnsupported'));
+      return;
+    }
+    this.locating.set(true);
+    this.tg.haptic('light');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.customerLat.set(pos.coords.latitude);
+        this.customerLng.set(pos.coords.longitude);
+        this.refreshFeeQuote();
+      },
+      () => {
+        this.locating.set(false);
+        this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryGeolocateDenied'));
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+    );
+  }
+
+  formatKm(metres: number): string {
+    if (metres < 1000) return `${metres} m`;
+    return `${(metres / 1000).toFixed(1)} km`;
+  }
+
+  private refreshFeeQuote(): void {
+    if (!this.activeStoreId) return;
+    this.locating.set(true);
+    this.deliveryFeeApi
+      .quote({
+        storeId: this.activeStoreId,
+        latitude: this.customerLat() ?? undefined,
+        longitude: this.customerLng() ?? undefined,
+      })
+      .subscribe({
+        next: (q) => {
+          this.locating.set(false);
+          this.deliveryFeeCents.set(q.feeCents);
+          this.deliveryDistanceM.set(q.distanceM);
+          if (!q.deliverable && q.reason === 'OUTSIDE_RADIUS') {
+            this.deliveryReason.set(this.translate.instant('tma.checkout.deliveryOutsideRadius'));
+          } else {
+            this.deliveryReason.set(null);
+          }
+          this.refreshMainButton();
+        },
+        error: () => this.locating.set(false),
+      });
+  }
+
+  totalCents(subtotalCents: number): number {
+    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
+    return subtotalCents + fee;
+  }
+
   onScheduledChange(e: Event): void {
     const input = e.target as HTMLInputElement;
     this.scheduledAt.set(input.value);
@@ -234,14 +437,28 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     )}`;
   }
 
-  private refreshMainButton(): void {
+  refreshMainButton(): void {
     const c = this.cart();
     if (!c || c.items.length === 0 || !this.authStore.isAuthenticated()) {
       this.tg.hideMainButton();
       return;
     }
-    const total = this.price(c.subtotalCents);
-    const key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+    if (this.fulfillmentType() === 'DELIVERY' && (!this.deliveryAddress().trim() || !this.deliveryCity().trim())) {
+      this.tg.hideMainButton();
+      return;
+    }
+    if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() && this.deliveryDistanceM() != null) {
+      // OUTSIDE_RADIUS — server would 400, so block at the button.
+      this.tg.hideMainButton();
+      return;
+    }
+    const total = this.price(this.totalCents(c.subtotalCents));
+    let key: string;
+    if (this.fulfillmentType() === 'DELIVERY') {
+      key = this.pickupMode() === 'SCHEDULED' ? 'tma.checkout.payDeliveryScheduled' : 'tma.checkout.payDelivery';
+    } else {
+      key = this.pickupMode() === 'ASAP' ? 'tma.checkout.payAsap' : 'tma.checkout.payScheduled';
+    }
     const label = this.translate.instant(key, { total });
     this.tg.setMainButton(label, () => this.placeOrder());
   }
@@ -250,8 +467,24 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     const c = this.cart();
     if (!c) return;
     this.tg.haptic('medium');
+    const isDelivery = this.fulfillmentType() === 'DELIVERY';
     const pickupAt = this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
-    this.orders.create({ cartId: c.id, pickupMode: this.pickupMode(), pickupAt }).subscribe({
+    const input = {
+      cartId: c.id,
+      pickupMode: this.pickupMode(),
+      pickupAt,
+      fulfillmentType: this.fulfillmentType(),
+      ...(isDelivery
+        ? {
+            deliveryAddressLine: this.deliveryAddress().trim(),
+            deliveryCity: this.deliveryCity().trim(),
+            deliveryNotes: this.deliveryNotes().trim() || undefined,
+            deliveryLatitude: this.customerLat() ?? undefined,
+            deliveryLongitude: this.customerLng() ?? undefined,
+          }
+        : {}),
+    };
+    this.orders.create(input).subscribe({
       next: (order) => void this.router.navigate(['/orders', order.id]),
       error: (err) => {
         const maybe = err as { error?: { message?: string }; message?: string };

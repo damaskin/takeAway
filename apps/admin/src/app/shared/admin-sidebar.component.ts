@@ -77,6 +77,7 @@ export class AdminSidebarComponent {
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores' },
     { icon: '🧾', label: 'admin.nav.orders', link: '/orders' },
     { icon: '🛵', label: 'admin.nav.dispatch', link: '/dispatch' },
+    { icon: '🧑‍✈️', label: 'admin.nav.riders', link: '/riders' },
     { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
   ];
