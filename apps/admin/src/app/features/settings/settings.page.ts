@@ -24,6 +24,22 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
   selector: 'app-admin-settings',
   standalone: true,
   imports: [ReactiveFormsModule, TranslatePipe],
+  styles: [
+    `
+      .status-pill[data-status='PENDING'] {
+        background: var(--color-amber);
+        color: white;
+      }
+      .status-pill[data-status='APPROVED'] {
+        background: var(--color-mint);
+        color: white;
+      }
+      .status-pill[data-status='REJECTED'] {
+        background: var(--color-berry);
+        color: white;
+      }
+    `,
+  ],
   template: `
     <section style="padding: 32px; max-width: 780px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -44,7 +60,9 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
         >
           <div class="flex items-center" style="gap: 16px">
             <div
-              style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); padding: 6px 12px; background: var(--color-cream); border-radius: 999px"
+              [attr.data-status]="brand()!.moderationStatus"
+              class="status-pill"
+              style="font-family: var(--font-sans); font-size: 13px; padding: 6px 12px; border-radius: 999px; font-weight: 600"
             >
               {{ 'admin.brands.status.' + brand()!.moderationStatus | translate }}
             </div>
@@ -52,6 +70,37 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
               brand()!.slug
             }}</span>
           </div>
+
+          @if (brand()!.moderationStatus === 'PENDING') {
+            <div
+              style="background: var(--color-cream); border-left: 3px solid var(--color-amber); padding: 12px 16px; border-radius: 8px"
+            >
+              <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary); margin: 0">
+                {{ 'admin.settings.pendingNotice' | translate }}
+              </p>
+            </div>
+          } @else if (brand()!.moderationStatus === 'REJECTED') {
+            <div
+              style="background: var(--color-cream); border-left: 3px solid var(--color-berry); padding: 12px 16px; border-radius: 8px"
+            >
+              <p
+                style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0 0 6px; font-weight: 600"
+              >
+                {{ 'admin.settings.rejectedTitle' | translate }}
+              </p>
+              @if (brand()!.moderationNote) {
+                <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary); margin: 0">
+                  {{ brand()!.moderationNote }}
+                </p>
+              } @else {
+                <p
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
+                >
+                  {{ 'admin.settings.rejectedGeneric' | translate }}
+                </p>
+              }
+            </div>
+          }
 
           <label class="flex flex-col" style="gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
