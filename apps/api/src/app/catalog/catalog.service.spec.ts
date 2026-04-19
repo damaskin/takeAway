@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
+import { FeatureFlagsService } from '../config/feature-flags.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 
@@ -49,7 +50,12 @@ describe('CatalogService', () => {
     };
 
     const moduleRef = await Test.createTestingModule({
-      providers: [CatalogService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        CatalogService,
+        { provide: PrismaService, useValue: prisma },
+        // Delivery enabled in tests so `fulfillmentTypes` passes through unchanged.
+        { provide: FeatureFlagsService, useValue: { deliveryEnabled: true } },
+      ],
     }).compile();
 
     service = moduleRef.get(CatalogService);

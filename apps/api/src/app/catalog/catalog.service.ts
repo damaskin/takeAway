@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { StoreFulfillment } from '@prisma/client';
 
+import { FeatureFlagsService } from '../config/feature-flags.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -10,7 +12,21 @@ const EARTH_RADIUS_METERS = 6371000;
 
 @Injectable()
 export class CatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly flags: FeatureFlagsService,
+  ) {}
+
+  /**
+   * Strip `DELIVERY` from a store's advertised fulfillment modes when the
+   * delivery module is globally disabled. Single gate at the catalog
+   * response layer — web/TMA toggles, checkout validators, and anything
+   * that reads `store.fulfillmentTypes` automatically see the right set.
+   */
+  private filterFulfillment(types: StoreFulfillment[]): StoreFulfillment[] {
+    if (this.flags.deliveryEnabled) return types;
+    return types.filter((t) => t !== 'DELIVERY');
+  }
 
   async listStores(query: ListStoresQueryDto): Promise<StoreListItemDto[]> {
     const stores = await this.prisma.store.findMany({
@@ -33,7 +49,7 @@ export class CatalogService {
         latitude: s.latitude,
         longitude: s.longitude,
         status: s.status,
-        fulfillmentTypes: s.fulfillmentTypes,
+        fulfillmentTypes: this.filterFulfillment(s.fulfillmentTypes),
         pickupPointType: s.pickupPointType,
         busyMeter: s.busyMeter,
         currentEtaSeconds: s.currentEtaSeconds,
@@ -66,7 +82,7 @@ export class CatalogService {
       latitude: store.latitude,
       longitude: store.longitude,
       status: store.status,
-      fulfillmentTypes: store.fulfillmentTypes,
+      fulfillmentTypes: this.filterFulfillment(store.fulfillmentTypes),
       pickupPointType: store.pickupPointType,
       busyMeter: store.busyMeter,
       currentEtaSeconds: store.currentEtaSeconds,

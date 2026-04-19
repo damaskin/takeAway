@@ -1,12 +1,16 @@
-import { Component } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+
+import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 
 interface NavItem {
   icon: string;
   label: string;
   link: string;
   exact?: boolean;
+  /** Optional runtime gate — hidden when the returned flag is false. */
+  requires?: 'deliveryEnabled';
 }
 
 /**
@@ -37,7 +41,7 @@ interface NavItem {
         >
       </div>
 
-      @for (item of navItems; track item.link) {
+      @for (item of visibleItems(); track item.link) {
         <a
           [routerLink]="item.link"
           routerLinkActive="admin-nav-active"
@@ -71,13 +75,20 @@ interface NavItem {
   ],
 })
 export class AdminSidebarComponent {
+  private readonly flags = inject(FeatureFlagsStore);
+
   readonly navItems: NavItem[] = [
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard' },
     { icon: '🍽', label: 'admin.nav.menu', link: '/menu' },
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores' },
     { icon: '🧾', label: 'admin.nav.orders', link: '/orders' },
-    { icon: '🛵', label: 'admin.nav.dispatch', link: '/dispatch' },
+    { icon: '🛵', label: 'admin.nav.dispatch', link: '/dispatch', requires: 'deliveryEnabled' },
     { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
   ];
+
+  readonly visibleItems = computed(() => {
+    const flags = this.flags.flags();
+    return this.navItems.filter((item) => !item.requires || flags[item.requires]);
+  });
 }

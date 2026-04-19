@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
+import { FeatureFlagsService } from '../config/feature-flags.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,6 +33,7 @@ export class OrdersService {
     private readonly loyalty: LoyaltyService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly flags: FeatureFlagsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -48,6 +50,13 @@ export class OrdersService {
     // Validate delivery payload BEFORE pricing so a missing address returns
     // a clean 400 instead of half-creating an order.
     if (fulfillmentType === 'DELIVERY') {
+      // Hard gate: even if a store has DELIVERY in its fulfillmentTypes
+      // (legacy seed data), refuse new orders while the module is off. The
+      // catalog layer already strips DELIVERY from public responses, so a
+      // client should never see the UI — this guard catches direct API calls.
+      if (!this.flags.deliveryEnabled) {
+        throw new BadRequestException('Delivery is not available at this time');
+      }
       if (!dto.deliveryAddressLine || !dto.deliveryCity) {
         throw new BadRequestException('deliveryAddressLine and deliveryCity are required for DELIVERY orders');
       }

@@ -3,17 +3,36 @@ import { Route, Router } from '@angular/router';
 
 import { anonymousGuard, authGuard } from './core/auth/auth.guard';
 import { AuthStore } from './core/auth/auth.store';
+import { FeatureFlagsStore } from './core/config/feature-flags.store';
+
+/**
+ * Route guard: blocks a delivery-only page when the module is disabled.
+ * Redirects to `/` so the user lands on the dashboard instead of a stuck
+ * loader.
+ */
+const deliveryEnabledGuard = () => {
+  const flags = inject(FeatureFlagsStore);
+  const router = inject(Router);
+  if (flags.deliveryEnabled()) return true;
+  return router.createUrlTree(['/']);
+};
 
 /**
  * Riders don't see the full admin shell — they land on a compact
  * `/rider` layout and can't click through to dashboard/menu/etc. The
  * `redirectRiderToRiderHome` guard intercepts `/` for them. Staff
  * and higher roles fall through to the normal shell.
+ *
+ * When delivery is disabled globally, RIDER users have no workspace;
+ * send them to `/login` rather than looping them onto `/rider` that
+ * the guard would bounce back.
  */
 const redirectRiderToRiderHome = () => {
   const store = inject(AuthStore);
+  const flags = inject(FeatureFlagsStore);
   const router = inject(Router);
   if (store.user()?.role === 'RIDER') {
+    if (!flags.deliveryEnabled()) return router.createUrlTree(['/login']);
     return router.createUrlTree(['/rider']);
   }
   return true;
@@ -28,6 +47,7 @@ export const appRoutes: Route[] = [
   {
     path: 'rider',
     canMatch: [authGuard],
+    canActivate: [deliveryEnabledGuard],
     loadComponent: () => import('./features/rider/rider.page').then((m) => m.RiderPage),
   },
   {
@@ -55,6 +75,7 @@ export const appRoutes: Route[] = [
       },
       {
         path: 'dispatch',
+        canActivate: [deliveryEnabledGuard],
         loadComponent: () => import('./features/dispatch/dispatch.page').then((m) => m.DispatchPage),
       },
       {
