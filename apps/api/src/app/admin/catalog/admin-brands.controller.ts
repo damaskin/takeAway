@@ -1,9 +1,10 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { BrandModerationStatus, Role } from '@prisma/client';
 
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { AdminCatalogService } from './admin-catalog.service';
+import { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
 @ApiTags('admin: brands')
@@ -14,8 +15,8 @@ export class AdminBrandsController {
   constructor(private readonly admin: AdminCatalogService) {}
 
   @Get()
-  list() {
-    return this.admin.listBrands();
+  list(@Query('status') status?: BrandModerationStatus) {
+    return this.admin.listBrands(status);
   }
 
   @Get(':id')
@@ -32,5 +33,10 @@ export class AdminBrandsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateBrandDto) {
     return this.admin.updateBrand(id, dto);
+  }
+
+  @Patch(':id/moderation')
+  setModeration(@Param('id') id: string, @Body() dto: SetBrandModerationDto) {
+    return this.admin.setBrandModeration(id, dto);
   }
 }
