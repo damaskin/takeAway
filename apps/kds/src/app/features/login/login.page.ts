@@ -1,17 +1,15 @@
 import { Component, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TELEGRAM_AUTH_CONFIG, TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from '@takeaway/ui-kit';
 
 import { AuthService } from '../../core/auth/auth.service';
-
-type Step = 'phone' | 'code';
 
 @Component({
   selector: 'app-kds-login',
   standalone: true,
-  imports: [ReactiveFormsModule, LanguageSwitcherComponent, TranslatePipe],
+  imports: [LanguageSwitcherComponent, TranslatePipe, TelegramLoginButtonComponent],
   template: `
     <main
       class="min-h-screen flex items-center justify-center"
@@ -31,58 +29,24 @@ type Step = 'phone' | 'code';
           <app-language-switcher />
         </div>
         <p class="mb-6" style="color: var(--color-text-secondary); font-family: var(--font-sans); font-size: 14px">
-          {{ (step() === 'phone' ? 'web.auth.signInPhone' : 'web.auth.enterCode') | translate }}
+          {{ 'kds.login.telegramPrompt' | translate }}
         </p>
 
-        @if (step() === 'phone') {
-          <form [formGroup]="phoneForm" (ngSubmit)="sendCode()" class="flex flex-col gap-3">
-            <input
-              formControlName="phone"
-              type="tel"
-              autocomplete="tel"
-              [placeholder]="'admin.login.phonePlaceholder' | translate"
-              class="px-4 py-3 outline-none"
-              style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px"
-            />
-            <button
-              type="submit"
-              [disabled]="phoneForm.invalid || loading()"
-              class="py-3 font-medium disabled:opacity-50"
-              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 15px; font-weight: 600"
-            >
-              {{ (loading() ? 'admin.login.sending' : 'admin.login.sendCode') | translate }}
-            </button>
-          </form>
+        @if (telegramBotUsername) {
+          <div class="flex justify-center py-4">
+            <lib-telegram-login-button [botUsername]="telegramBotUsername" (auth)="signInWithTelegram($event)" />
+          </div>
         } @else {
-          <form [formGroup]="codeForm" (ngSubmit)="verifyCode()" class="flex flex-col gap-3">
-            <input
-              formControlName="code"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              maxlength="6"
-              [placeholder]="'admin.login.codePlaceholder' | translate"
-              class="px-4 py-3 text-center text-xl tracking-[0.5em] outline-none"
-              style="background: var(--color-foam); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono)"
-            />
-            <button
-              type="submit"
-              [disabled]="codeForm.invalid || loading()"
-              class="py-3 font-medium disabled:opacity-50"
-              style="background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 15px; font-weight: 600"
-            >
-              {{ (loading() ? 'admin.login.verifying' : 'common.signIn') | translate }}
-            </button>
-            <button
-              type="button"
-              (click)="step.set('phone')"
-              class="py-2 text-sm"
-              style="color: var(--color-text-secondary); font-family: var(--font-sans)"
-            >
-              {{ 'admin.login.changeNumber' | translate }}
-            </button>
-          </form>
+          <p class="text-sm" style="color: var(--color-berry); font-family: var(--font-sans)">
+            {{ 'kds.login.telegramUnavailable' | translate }}
+          </p>
         }
 
+        @if (loading()) {
+          <p class="mt-4 text-sm" style="color: var(--color-text-secondary); font-family: var(--font-sans)">
+            {{ 'kds.login.signingIn' | translate }}
+          </p>
+        }
         @if (error()) {
           <p class="mt-4 text-sm" style="color: var(--color-berry); font-family: var(--font-sans)">{{ error() }}</p>
         }
@@ -94,54 +58,25 @@ export class KdsLoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
+  private readonly telegramCfg = inject(TELEGRAM_AUTH_CONFIG);
 
-  readonly step = signal<Step>('phone');
+  readonly telegramBotUsername = this.telegramCfg.botUsername;
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly phoneForm = new FormGroup({
-    phone: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/^\+[1-9]\d{6,14}$/)],
-    }),
-  });
-  readonly codeForm = new FormGroup({
-    code: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/^\d{6}$/)],
-    }),
-  });
-
-  sendCode(): void {
-    if (this.phoneForm.invalid) return;
+  signInWithTelegram(user: TelegramLoginWidgetUser): void {
     this.loading.set(true);
-    this.auth.sendOtp({ phone: this.phoneForm.controls.phone.value }).subscribe({
+    this.error.set(null);
+    this.auth.verifyTelegramWidget(user).subscribe({
       next: () => {
         this.loading.set(false);
-        this.step.set('code');
+        void this.router.navigate(['/']);
       },
       error: (err) => {
         this.loading.set(false);
         this.error.set(this.extractMessage(err));
       },
     });
-  }
-
-  verifyCode(): void {
-    if (this.codeForm.invalid) return;
-    this.loading.set(true);
-    this.auth
-      .verifyOtp({ phone: this.phoneForm.controls.phone.value, code: this.codeForm.controls.code.value })
-      .subscribe({
-        next: () => {
-          this.loading.set(false);
-          void this.router.navigate(['/']);
-        },
-        error: (err) => {
-          this.loading.set(false);
-          this.error.set(this.extractMessage(err));
-        },
-      });
   }
 
   private extractMessage(err: unknown): string {

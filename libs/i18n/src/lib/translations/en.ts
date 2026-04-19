@@ -283,17 +283,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
     login: {
       title: 'Sign in to admin',
       subtitle: 'Staff access only',
-      sending: 'Sending…',
-      verifying: 'Verifying…',
-      phoneLabel: 'Phone',
-      phonePlaceholder: '+971 50 123 4567',
-      phoneHint: 'Enter the phone in E.164 format (with +)',
-      codeLabel: 'Verification code',
-      codePlaceholder: '123456',
-      codeSentTo: 'Code sent to {{phone}}',
-      sendCode: 'Send code',
-      verifyCode: 'Sign in',
-      changeNumber: 'Change number',
+      telegramPrompt: 'Sign in with your Telegram account',
+      telegramUnavailable: 'Telegram sign-in is not configured for this deployment.',
+      signingIn: 'Signing in…',
     },
     layout: {
       adminTag: 'Admin',
@@ -544,6 +536,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
   kds: {
     login: {
       title: 'takeAway · Kitchen',
+      telegramPrompt: 'Sign in with your Telegram account',
+      telegramUnavailable: 'Telegram sign-in is not configured for this deployment.',
+      signingIn: 'Signing in…',
     },
     topbar: {
       inQueue: 'in queue',

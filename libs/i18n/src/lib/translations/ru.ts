@@ -283,17 +283,9 @@ export const TRANSLATIONS_RU = {
     login: {
       title: 'Вход в панель',
       subtitle: 'Для сотрудников бренда',
-      sending: 'Отправляем…',
-      verifying: 'Проверяем…',
-      phoneLabel: 'Телефон',
-      phonePlaceholder: '+971 50 123 4567',
-      phoneHint: 'Введите номер в формате E.164 (с +)',
-      codeLabel: 'Код подтверждения',
-      codePlaceholder: '123456',
-      codeSentTo: 'Код отправлен на {{phone}}',
-      sendCode: 'Отправить код',
-      verifyCode: 'Войти',
-      changeNumber: 'Сменить номер',
+      telegramPrompt: 'Войдите через ваш аккаунт Telegram',
+      telegramUnavailable: 'Вход через Telegram не настроен для этого окружения.',
+      signingIn: 'Входим…',
     },
     layout: {
       adminTag: 'Админ',
@@ -544,6 +536,9 @@ export const TRANSLATIONS_RU = {
   kds: {
     login: {
       title: 'takeAway · Кухня',
+      telegramPrompt: 'Войдите через ваш аккаунт Telegram',
+      telegramUnavailable: 'Вход через Telegram не настроен для этого окружения.',
+      signingIn: 'Входим…',
     },
     topbar: {
       inQueue: 'в очереди',
