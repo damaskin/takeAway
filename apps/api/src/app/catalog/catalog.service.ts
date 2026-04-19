@@ -30,7 +30,10 @@ export class CatalogService {
 
   async listStores(query: ListStoresQueryDto): Promise<StoreListItemDto[]> {
     const stores = await this.prisma.store.findMany({
-      where: { status: { not: 'CLOSED' } },
+      where: {
+        status: { not: 'CLOSED' },
+        brand: { moderationStatus: 'APPROVED' },
+      },
       orderBy: [{ currentEtaSeconds: 'asc' }, { name: 'asc' }],
     });
 
@@ -66,7 +69,10 @@ export class CatalogService {
 
   async getStore(idOrSlug: string): Promise<StoreDetailDto> {
     const store = await this.prisma.store.findFirst({
-      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
+      where: {
+        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
+        brand: { moderationStatus: 'APPROVED' },
+      },
       include: { workingHours: { orderBy: { weekday: 'asc' } } },
     });
     if (!store) throw new NotFoundException('Store not found');
@@ -105,7 +111,10 @@ export class CatalogService {
 
   async getMenu(storeIdOrSlug: string): Promise<MenuDto> {
     const store = await this.prisma.store.findFirst({
-      where: { OR: [{ id: storeIdOrSlug }, { slug: storeIdOrSlug }] },
+      where: {
+        OR: [{ id: storeIdOrSlug }, { slug: storeIdOrSlug }],
+        brand: { moderationStatus: 'APPROVED' },
+      },
       select: { id: true, slug: true, brandId: true },
     });
     if (!store) throw new NotFoundException('Store not found');
@@ -164,7 +173,11 @@ export class CatalogService {
 
   async getProduct(idOrSlug: string): Promise<ProductDetailDto> {
     const product = await this.prisma.product.findFirst({
-      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }], visible: true },
+      where: {
+        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
+        visible: true,
+        brand: { moderationStatus: 'APPROVED' },
+      },
       include: {
         variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
         modifiers: { orderBy: { sortOrder: 'asc' } },
