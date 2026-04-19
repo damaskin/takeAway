@@ -5,6 +5,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminCatalogModule } from './admin/catalog/admin-catalog.module';
+import { AdminRidersModule } from './admin/riders/admin-riders.module';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
@@ -41,6 +42,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     CatalogModule,
     AdminCatalogModule,
+    AdminRidersModule,
     CartModule,
     PromoModule,
     LoyaltyModule,

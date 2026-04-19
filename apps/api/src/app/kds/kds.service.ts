@@ -151,6 +151,17 @@ export class KdsService {
       });
     }
 
+    // DELIVERY orders: the dispatcher queue picks them up at READY and drops
+    // them at DELIVERED. Mirror the KDS event onto the dispatch channel so
+    // managers see new rows appear without a manual refresh.
+    if (updated.fulfillmentType === 'DELIVERY' && updated.status === 'READY') {
+      this.realtime.emitDispatchChanged({
+        storeId: updated.storeId,
+        kind: 'created',
+        orderId: updated.id,
+      });
+    }
+
     return {
       id: updated.id,
       status: updated.status,
