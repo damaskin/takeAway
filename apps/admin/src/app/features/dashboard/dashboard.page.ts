@@ -33,8 +33,8 @@ interface DashboardOrder {
   standalone: true,
   imports: [TranslatePipe],
   template: `
-    <section style="padding: 32px; display: flex; flex-direction: column; gap: 24px">
-      <header class="flex items-end justify-between" style="gap: 24px">
+    <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
+      <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
         <div class="flex flex-col" style="gap: 4px">
           <h1
             style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-espresso); margin: 0"
@@ -64,7 +64,7 @@ interface DashboardOrder {
       </header>
 
       <!-- KPI grid -->
-      <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
         @for (kpi of kpis(); track kpi.label) {
           <article
             class="flex flex-col"
@@ -91,7 +91,7 @@ interface DashboardOrder {
       </div>
 
       <!-- Two-column body -->
-      <div class="grid" style="grid-template-columns: 2fr 1fr; gap: 16px">
+      <div class="dashboard-body grid" style="grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px">
         <!-- Live orders -->
         <article
           class="flex flex-col"
@@ -186,6 +186,15 @@ interface DashboardOrder {
       </div>
     </section>
   `,
+  styles: [
+    `
+      @media (max-width: 768px) {
+        .dashboard-body {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    `,
+  ],
 })
 export class DashboardPage implements OnInit {
   private readonly store = inject(AuthStore);

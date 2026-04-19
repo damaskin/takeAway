@@ -25,7 +25,7 @@ interface HowStep {
   template: `
     <!-- Store locator section — pencil IzEzR -->
     <section
-      style="background: var(--color-foam); padding: 64px 80px; display: flex; flex-direction: column; gap: 32px"
+      style="background: var(--color-foam); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); display: flex; flex-direction: column; gap: 32px"
     >
       <div class="flex items-end justify-between flex-wrap" style="gap: 24px">
         <div class="flex flex-col" style="gap: 8px">
@@ -81,7 +81,7 @@ interface HowStep {
 
     <!-- Menu highlights — pencil HjOL8 -->
     <section
-      style="background: var(--color-cream); padding: 64px 80px; display: flex; flex-direction: column; gap: 32px"
+      style="background: var(--color-cream); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); display: flex; flex-direction: column; gap: 32px"
     >
       <div class="flex items-end justify-between flex-wrap" style="gap: 24px">
         <div class="flex flex-col" style="gap: 8px">
@@ -170,9 +170,9 @@ interface HowStep {
     <section
       id="loyalty"
       class="flex items-center"
-      style="background: var(--color-foam); padding: 64px 80px; gap: 48px; flex-wrap: wrap"
+      style="background: var(--color-foam); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); gap: 48px; flex-wrap: wrap"
     >
-      <div class="flex flex-col flex-1" style="gap: 24px; min-width: 360px">
+      <div class="flex flex-col flex-1" style="gap: 24px; min-width: min(360px, 100%)">
         <span
           class="inline-flex items-center self-start"
           style="gap: 6px; height: 28px; padding: 0 12px; background: var(--color-caramel-light); border-radius: 999px"
@@ -224,7 +224,7 @@ interface HowStep {
     <!-- Gift cards — pencil RWxHF -->
     <section
       class="flex items-center"
-      style="background: var(--color-cream); padding: 64px 80px; gap: 48px; flex-wrap: wrap"
+      style="background: var(--color-cream); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); gap: 48px; flex-wrap: wrap"
     >
       <div
         class="flex items-center justify-center"
@@ -232,7 +232,7 @@ interface HowStep {
       >
         🎁
       </div>
-      <div class="flex flex-col flex-1" style="gap: 24px; min-width: 360px">
+      <div class="flex flex-col flex-1" style="gap: 24px; min-width: min(360px, 100%)">
         <h2
           style="font-family: var(--font-display); font-size: 40px; font-weight: 700; color: var(--color-espresso); line-height: 1.1"
         >
@@ -255,7 +255,7 @@ interface HowStep {
 
     <!-- Footer — pencil O5wdQ -->
     <footer
-      style="background: var(--color-espresso); padding: 64px 80px 40px; display: flex; flex-direction: column; gap: 48px"
+      style="background: var(--color-espresso); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px) 40px; display: flex; flex-direction: column; gap: 48px"
     >
       <div class="flex items-start justify-between flex-wrap" style="gap: 32px">
         <div class="flex flex-col" style="max-width: 280px; gap: 16px">
@@ -297,10 +297,10 @@ interface HowStep {
     <!-- Hero — pencil SNCQE (bottom banner) -->
     <section
       class="flex flex-col items-center justify-center text-center"
-      style="background: var(--color-caramel); padding: 80px 120px; gap: 32px; min-height: 600px"
+      style="background: var(--color-caramel); padding: clamp(48px, 10vw, 80px) clamp(20px, 7vw, 120px); gap: 32px; min-height: 600px"
     >
       <h1
-        style="font-family: var(--font-display); font-size: 56px; font-weight: 700; color: var(--color-cream); line-height: 1.05; max-width: 900px"
+        style="font-family: var(--font-display); font-size: clamp(32px, 7vw, 56px); font-weight: 700; color: var(--color-cream); line-height: 1.05; max-width: 900px"
       >
         {{ 'web.home.closing.title' | translate }}
       </h1>

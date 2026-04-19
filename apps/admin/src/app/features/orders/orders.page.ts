@@ -18,8 +18,8 @@ type StatusFilter = OrderStatus | 'ALL';
   imports: [TranslatePipe],
   template: `
     <div
-      class="flex items-center justify-between"
-      style="height: 64px; padding: 0 24px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+      class="flex items-center justify-between flex-wrap"
+      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
       <div class="flex items-center" style="gap: 16px">
         <h1
@@ -42,7 +42,7 @@ type StatusFilter = OrderStatus | 'ALL';
             [placeholder]="'admin.orders.searchPlaceholder' | translate"
             (input)="onSearch($event)"
             class="outline-none bg-transparent"
-            style="width: 280px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
+            style="width: 100%; max-width: 280px; min-width: 140px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
           />
         </div>
         <button
@@ -57,11 +57,14 @@ type StatusFilter = OrderStatus | 'ALL';
       </div>
     </div>
 
-    <section style="padding: 24px; display: grid; grid-template-columns: 1fr 260px; gap: 24px; align-items: start">
+    <section
+      class="orders-shell"
+      style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start"
+    >
       <!-- Orders table -->
       <article
         class="flex flex-col"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden; min-width: 0"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden; min-width: 0; overflow-x: auto"
       >
         @if (loading() && orders().length === 0) {
           <p
@@ -192,6 +195,15 @@ type StatusFilter = OrderStatus | 'ALL';
       </aside>
     </section>
   `,
+  styles: [
+    `
+      @media (max-width: 900px) {
+        .orders-shell {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    `,
+  ],
 })
 export class AdminOrdersPage implements OnInit {
   private readonly api = inject(AdminOrdersApi);

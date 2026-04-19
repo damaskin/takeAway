@@ -31,6 +31,8 @@ export const TRANSLATIONS_RU = {
     readyBy: 'Готово к {{time}}',
     search: 'Поиск',
     soldOut: 'Закончилось',
+    menu: 'Меню',
+    close: 'Закрыть',
     user: 'Пользователь',
     requestFailed: 'Запрос не выполнен',
     genericError: 'Что-то пошло не так, попробуйте снова',

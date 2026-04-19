@@ -28,9 +28,9 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
   standalone: true,
   imports: [RouterLink, TranslatePipe],
   template: `
-    <section class="flex" style="height: calc(100vh - 72px); overflow: hidden">
+    <section class="stores-shell flex" style="height: calc(100vh - 72px); overflow: hidden">
       <!-- Map area -->
-      <div class="relative flex-1" style="background: var(--color-latte); overflow: hidden">
+      <div class="stores-map relative flex-1" style="background: var(--color-latte); overflow: hidden">
         <!-- Street grid pattern -->
         <div
           style="position: absolute; inset: 0; background-image:
@@ -82,7 +82,7 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
 
       <!-- Sidebar -->
       <aside
-        class="flex flex-col"
+        class="stores-sidebar flex flex-col"
         style="width: 480px; background: var(--color-foam); border-left: 1px solid var(--color-border-light); padding: 24px; gap: 20px; overflow-y: auto"
       >
         <!-- Head -->
@@ -172,6 +172,27 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
       </aside>
     </section>
   `,
+  styles: [
+    `
+      @media (max-width: 900px) {
+        .stores-shell {
+          flex-direction: column;
+          height: auto;
+          min-height: calc(100vh - 72px);
+        }
+        .stores-map {
+          flex: 0 0 240px !important;
+          min-height: 240px;
+        }
+        .stores-sidebar {
+          width: 100% !important;
+          border-left: none !important;
+          border-top: 1px solid var(--color-border-light);
+          padding: 16px !important;
+        }
+      }
+    `,
+  ],
 })
 export class StoresListPage implements OnInit {
   private readonly catalog = inject(CatalogService);

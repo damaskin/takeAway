@@ -25,7 +25,8 @@ import {
     <!-- Top bar -->
     <div
       class="flex items-center justify-between"
-      style="height: 64px; padding: 0 24px; background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
+      class="flex-wrap"
+      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
       <div class="flex items-center" style="gap: 16px">
         <h1
@@ -62,7 +63,10 @@ import {
       </div>
     </div>
 
-    <section style="padding: 24px; display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start">
+    <section
+      class="menu-shell"
+      style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start"
+    >
       <!-- Categories rail -->
       <aside
         class="flex flex-col"
@@ -149,7 +153,7 @@ import {
       <!-- Product table -->
       <section
         class="flex flex-col"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0; overflow-x: auto"
       >
         <header class="flex items-center justify-between">
           <h2
@@ -234,7 +238,7 @@ import {
             [formGroup]="productForm"
             (ngSubmit)="createProduct()"
             class="grid"
-            style="grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 12px; padding: 16px; background: var(--color-cream); border-radius: 16px"
+            style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; padding: 16px; background: var(--color-cream); border-radius: 16px"
           >
             <input
               formControlName="name"
@@ -295,6 +299,15 @@ import {
       </p>
     }
   `,
+  styles: [
+    `
+      @media (max-width: 900px) {
+        .menu-shell {
+          grid-template-columns: 1fr !important;
+        }
+      }
+    `,
+  ],
 })
 export class MenuPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
