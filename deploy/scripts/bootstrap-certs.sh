@@ -8,7 +8,12 @@ set -euo pipefail
 
 CERT_DIR=/opt/takeaway/letsencrypt/live/takeaway.million-sales.ru
 
-if [ -f "$CERT_DIR/fullchain.pem" ] && [ -f "$CERT_DIR/privkey.pem" ]; then
+# Once certbot runs, cert files become symlinks into archive/ which is
+# mode 700 root:root — the deploy user can see the symlinks but not read
+# their targets. Use -L / -f so the check passes in both states (real
+# bootstrap file present OR certbot symlink present).
+has_file() { [ -L "$1" ] || [ -f "$1" ]; }
+if has_file "$CERT_DIR/fullchain.pem" && has_file "$CERT_DIR/privkey.pem"; then
   echo "cert already present at $CERT_DIR — skipping bootstrap"
   exit 0
 fi
