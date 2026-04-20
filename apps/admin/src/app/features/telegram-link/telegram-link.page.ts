@@ -76,17 +76,7 @@ export class TelegramLinkPage {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  readonly linkedId = (): number | null => {
-    // BigInt on the server maps to a numeric string in JSON; we don't
-    // want to render the raw hint here — stash a boolean via session?
-    // Instead expose a derived signal that just flags 'linked'.
-    const user = this.store.user();
-    // We don't currently serialize telegramUserId to the frontend — rely on
-    // the POST response to flag linked-state within this page's lifetime.
-    return user && (user as { telegramUserId?: number | null }).telegramUserId
-      ? Number((user as { telegramUserId?: number }).telegramUserId)
-      : null;
-  };
+  readonly linkedId = (): string | null => this.store.user()?.telegramUserId ?? null;
 
   onTelegramAuth(payload: TelegramLoginWidgetUser): void {
     this.loading.set(true);
@@ -94,15 +84,9 @@ export class TelegramLinkPage {
     this.auth.linkTelegram(payload).subscribe({
       next: () => {
         this.loading.set(false);
-        // Force a visible acknowledgement by reading /auth/me — the widget's
-        // synchronous response doesn't include the telegramUserId field we
-        // use to flag linked-state above.
-        this.auth.me().subscribe({
-          next: (u) => {
-            const session = this.store.session();
-            if (session) this.store.set({ ...session, user: u });
-          },
-        });
+        // linkTelegram's response is the updated AuthUser (now including
+        // telegramUserId) and the service already wrote it into the store;
+        // no extra /auth/me round-trip needed.
       },
       error: (err) => {
         this.loading.set(false);

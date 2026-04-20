@@ -37,6 +37,14 @@ export interface AuthUser {
   locale: 'EN' | 'RU';
   currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
   role: UserRole;
+  /**
+   * Telegram chat id the user's account is linked to. `null` means the
+   * account has no Telegram bound — for staff it means they haven't
+   * completed the /admin/telegram-link flow yet; for CUSTOMER it's
+   * expected (customers sign in via Telegram and the id is set there).
+   * Serialized as a string because the upstream BigInt overflows JSON.
+   */
+  telegramUserId: string | null;
 }
 
 export interface RefreshRequest {

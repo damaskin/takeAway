@@ -22,6 +22,13 @@ export class AuthUserDto {
 
   @ApiProperty({ enum: Role })
   role!: Role;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Telegram chat id if linked (BigInt serialized as string)',
+  })
+  telegramUserId!: string | null;
 }
 
 export class AuthTokensDto {

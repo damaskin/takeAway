@@ -71,6 +71,7 @@ export class BusinessService {
         locale: user.locale,
         currency: user.currency,
         role: user.role,
+        telegramUserId: user.telegramUserId?.toString() ?? null,
       },
     };
 
