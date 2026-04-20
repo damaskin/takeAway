@@ -177,7 +177,7 @@ export class ProfilePage implements OnInit {
     { icon: '👤', label: 'web.profile.sections.personal', link: '/profile/personal' },
     { icon: '💳', label: 'web.profile.sections.payment' },
     { icon: '🎁', label: 'web.profile.sections.gift' },
-    { icon: '🔔', label: 'web.profile.sections.notifications' },
+    { icon: '🔔', label: 'web.profile.sections.notifications', link: '/profile/notifications' },
     { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
   ];
 
