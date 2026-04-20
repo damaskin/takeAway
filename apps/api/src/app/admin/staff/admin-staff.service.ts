@@ -68,6 +68,9 @@ export class AdminStaffService {
         data: {
           email,
           passwordHash,
+          // Force rotation on first login — invited staff shouldn't keep
+          // the temp password the BRAND_ADMIN typed in.
+          passwordMustChange: true,
           name: input.name ?? null,
           role: input.role,
         },

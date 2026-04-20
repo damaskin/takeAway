@@ -57,7 +57,31 @@ export class AuthService {
       data: { userId: user.id, type: 'WEB', locale: user.locale },
     });
     const tokens = await this.tokens.issue(user.id, device.id);
-    return { ...tokens, user: this.toAuthUser(user) };
+    const session: AuthSessionDto = { ...tokens, user: this.toAuthUser(user) };
+    if (user.passwordMustChange) {
+      session.mustChangePassword = true;
+    }
+    return session;
+  }
+
+  /**
+   * Self-service password change for an authenticated staff user. Verifies
+   * the current password before setting the new one; clears the
+   * `passwordMustChange` flag on success.
+   */
+  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.passwordHash) throw new UnauthorizedException('Account has no password set');
+    if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw new UnauthorizedException('Account cannot change password here');
+
+    const ok = await this.passwords.compare(currentPassword, user.passwordHash);
+    if (!ok) throw new UnauthorizedException('Current password is incorrect');
+
+    const hash = await this.passwords.hash(newPassword);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hash, passwordMustChange: false },
+    });
   }
 
   /**
@@ -97,7 +121,7 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: record.userId },
-        data: { passwordHash: newHash },
+        data: { passwordHash: newHash, passwordMustChange: false },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: record.id },

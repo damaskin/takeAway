@@ -307,6 +307,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       signingIn: 'Signing in…',
       forgot: 'Forgot password?',
     },
+    changePassword: {
+      title: 'Set a new password',
+      subtitle: 'You were invited with a temporary password. Please pick a new one before continuing.',
+      current: 'Current password',
+      next: 'New password',
+      save: 'Save',
+      saving: 'Saving…',
+    },
     forgot: {
       title: 'Forgot password',
       subtitle: "Enter your email — we'll send you a reset link.",
