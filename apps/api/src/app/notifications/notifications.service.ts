@@ -45,6 +45,8 @@ export class NotificationsService {
 
     const recipient = await this.loadRecipient(order.userId);
     if (!recipient) return;
+    // User opted out of order push on /profile/notifications.
+    if (!recipient.notifyOrderUpdates) return;
 
     // Parallel fan-out; log provider results for debugging but never throw.
     const results = await Promise.allSettled(
@@ -102,13 +104,14 @@ export class NotificationsService {
     );
   }
 
-  private async loadRecipient(userId: string): Promise<PushRecipient | null> {
+  private async loadRecipient(userId: string): Promise<(PushRecipient & { notifyOrderUpdates: boolean }) | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true,
         locale: true,
         telegramUserId: true,
+        notifyOrderUpdates: true,
         devices: {
           where: { pushToken: { not: null } },
           select: { pushToken: true, type: true },
@@ -120,6 +123,7 @@ export class NotificationsService {
       userId: user.id,
       telegramUserId: user.telegramUserId,
       locale: user.locale,
+      notifyOrderUpdates: user.notifyOrderUpdates,
       pushTokens: user.devices
         .filter((d): d is { pushToken: string; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' } => Boolean(d.pushToken))
         .map((d) => ({ token: d.pushToken, deviceType: d.type })),

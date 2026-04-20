@@ -218,6 +218,10 @@ model User {
   currency       Currency  @default(USD)
   telegramUserId BigInt?   @unique
   role           Role      @default(CUSTOMER)
+  /// Customer-facing push toggles. Staff push (new-order for a brand,
+  /// rider-assigned) ignores these — it's operational, not promotional.
+  notifyOrderUpdates Boolean @default(true)
+  notifyPromotions   Boolean @default(true)
   blockedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

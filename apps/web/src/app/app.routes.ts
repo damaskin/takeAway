@@ -58,6 +58,11 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/personal-info.page').then((m) => m.PersonalInfoPage),
       },
+      {
+        path: 'profile/notifications',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/notifications.page').then((m) => m.ProfileNotificationsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

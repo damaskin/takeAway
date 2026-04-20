@@ -21,6 +21,7 @@ import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.
 import { PasswordForgotDto } from './dto/password-forgot.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
 import { PasswordResetDto } from './dto/password-reset.dto';
+import { NotificationPrefsDto, UpdateNotificationPrefsDto } from './dto/notification-prefs.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
@@ -137,6 +138,36 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return this.auth.toAuthUser(dbUser);
+  }
+
+  @Get('me/notifications')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: NotificationPrefsDto })
+  async myNotifications(@CurrentUser() user: AuthenticatedUser): Promise<NotificationPrefsDto> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { notifyOrderUpdates: true, notifyPromotions: true },
+    });
+    if (!row) throw new NotFoundException('User not found');
+    return row;
+  }
+
+  @Patch('me/notifications')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: NotificationPrefsDto })
+  async updateMyNotifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateNotificationPrefsDto,
+  ): Promise<NotificationPrefsDto> {
+    const data: Record<string, boolean> = {};
+    if (dto.notifyOrderUpdates !== undefined) data['notifyOrderUpdates'] = dto.notifyOrderUpdates;
+    if (dto.notifyPromotions !== undefined) data['notifyPromotions'] = dto.notifyPromotions;
+    const row = await this.prisma.user.update({
+      where: { id: user.id },
+      data,
+      select: { notifyOrderUpdates: true, notifyPromotions: true },
+    });
+    return row;
   }
 
   @Patch('me')

@@ -265,6 +265,14 @@ export const TRANSLATIONS_RU = {
       browseMenu: 'Открыть меню',
     },
     profile: {
+      notifications: {
+        title: 'Уведомления',
+        subtitle: 'Выберите, какие пуши хотите получать. Настройки можно менять в любой момент.',
+        orderUpdates: 'Статусы заказов',
+        orderUpdatesHint: 'Смена статусов активных заказов (создан, оплачен, готов, доставлен).',
+        promotions: 'Акции',
+        promotionsHint: 'Скидки, новинки, открытие новых уровней лояльности.',
+      },
       personalInfo: {
         title: 'Личные данные',
         subtitle: 'Эти поля подставляются в заказы.',

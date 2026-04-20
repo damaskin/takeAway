@@ -265,6 +265,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       browseMenu: 'Browse menu',
     },
     profile: {
+      notifications: {
+        title: 'Notifications',
+        subtitle: 'Choose which pushes you want to receive. You can change this anytime.',
+        orderUpdates: 'Order updates',
+        orderUpdatesHint: 'Status changes on your active orders (created, paid, ready, delivered).',
+        promotions: 'Promotions',
+        promotionsHint: 'Discounts, new items, loyalty tier unlocks.',
+      },
       personalInfo: {
         title: 'Personal info',
         subtitle: 'These details appear on your orders.',
