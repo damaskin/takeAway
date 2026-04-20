@@ -41,4 +41,10 @@ export class AuthTokensDto {
 export class AuthSessionDto extends AuthTokensDto {
   @ApiProperty({ type: AuthUserDto })
   user!: AuthUserDto;
+
+  @ApiProperty({
+    required: false,
+    description: 'True when the user was invited with a temp password and must rotate it before continuing.',
+  })
+  mustChangePassword?: boolean;
 }

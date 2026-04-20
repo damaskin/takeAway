@@ -211,6 +211,10 @@ model User {
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
   /// set a password.
   passwordHash   String?
+  /// Set to `true` when an admin invites the user with a temp password.
+  /// The admin app routes a forced /change-password flow on login until
+  /// the user rotates the hash, at which point this flips to `false`.
+  passwordMustChange Boolean  @default(false)
   name           String?
   dateOfBirth    DateTime?
   avatarUrl      String?

@@ -9,6 +9,7 @@ interface StoredSession {
   accessTokenExpiresInSeconds: number;
   refreshTokenExpiresInSeconds: number;
   user: AuthUser;
+  mustChangePassword?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -19,6 +20,7 @@ export class AuthStore {
   readonly user = computed<AuthUser | null>(() => this._session()?.user ?? null);
   readonly isAuthenticated = computed(() => this._session() !== null);
   readonly accessToken = computed<string | null>(() => this._session()?.accessToken ?? null);
+  readonly mustChangePassword = computed<boolean>(() => !!this._session()?.mustChangePassword);
 
   set(session: AuthSession): void {
     const stored: StoredSession = {
@@ -27,9 +29,18 @@ export class AuthStore {
       accessTokenExpiresInSeconds: session.accessTokenExpiresInSeconds,
       refreshTokenExpiresInSeconds: session.refreshTokenExpiresInSeconds,
       user: session.user,
+      mustChangePassword: session.mustChangePassword,
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  }
+
+  clearMustChangePassword(): void {
+    const current = this._session();
+    if (!current) return;
+    const next = { ...current, mustChangePassword: false };
+    this._session.set(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   }
 
   /** See web/auth.store.ts for context — silent-refresh token swap. */

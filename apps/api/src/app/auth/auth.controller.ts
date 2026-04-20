@@ -18,6 +18,7 @@ import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.dto';
+import { PasswordChangeSelfDto } from './dto/password-change-self.dto';
 import { PasswordForgotDto } from './dto/password-forgot.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
 import { PasswordResetDto } from './dto/password-reset.dto';
@@ -73,6 +74,19 @@ export class AuthController {
   @ApiNoContentResponse()
   async passwordReset(@Body() dto: PasswordResetDto): Promise<void> {
     await this.auth.resetPassword(dto.token, dto.newPassword);
+  }
+
+  /**
+   * Self-service password change. Used by the admin / KDS 'change your
+   * temp password' flow after an invited staff signs in for the first
+   * time. Requires the current password and replaces the stored hash.
+   */
+  @Post('password/change')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiNoContentResponse()
+  async passwordChangeSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: PasswordChangeSelfDto): Promise<void> {
+    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword);
   }
 
   @Public()

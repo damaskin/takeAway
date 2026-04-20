@@ -43,6 +43,12 @@ export class AuthService {
     return this.http.post<void>(`${this.api.baseUrl}/auth/password/reset`, body);
   }
 
+  changePassword(body: { currentPassword: string; newPassword: string }): Observable<void> {
+    return this.http
+      .post<void>(`${this.api.baseUrl}/auth/password/change`, body)
+      .pipe(tap(() => this.store.clearMustChangePassword()));
+  }
+
   linkTelegram(payload: TelegramLoginPayload): Observable<AuthUser> {
     return this.http.post<AuthUser>(`${this.api.baseUrl}/auth/telegram/link`, payload).pipe(
       tap((user) => {

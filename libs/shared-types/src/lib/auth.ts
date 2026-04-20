@@ -25,6 +25,17 @@ export interface AuthTokens {
 
 export interface AuthSession extends AuthTokens {
   user: AuthUser;
+  /**
+   * `true` when the user was invited with a temporary password and must
+   * rotate it before using the app. Clients should redirect to a
+   * change-password screen before the normal landing page.
+   */
+  mustChangePassword?: boolean;
+}
+
+export interface PasswordChangeSelfRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export type UserRole = 'CUSTOMER' | 'STAFF' | 'STORE_MANAGER' | 'BRAND_ADMIN' | 'SUPER_ADMIN' | 'RIDER';

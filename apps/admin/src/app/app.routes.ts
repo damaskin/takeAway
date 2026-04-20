@@ -6,6 +6,17 @@ import { AuthStore } from './core/auth/auth.store';
 import { FeatureFlagsStore } from './core/config/feature-flags.store';
 
 /**
+ * If the signed-in user was invited with a temp password, force them to
+ * the change-password screen before they can reach any other page.
+ */
+const forcePasswordChange = () => {
+  const store = inject(AuthStore);
+  const router = inject(Router);
+  if (store.mustChangePassword()) return router.createUrlTree(['/change-password']);
+  return true;
+};
+
+/**
  * Route guard: blocks a delivery-only page when the module is disabled.
  * Redirects to `/` so the user lands on the dashboard instead of a stuck
  * loader.
@@ -54,6 +65,11 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/reset-password/reset-password.page').then((m) => m.ResetPasswordPage),
   },
   {
+    path: 'change-password',
+    canMatch: [authGuard],
+    loadComponent: () => import('./features/change-password/change-password.page').then((m) => m.ChangePasswordPage),
+  },
+  {
     path: 'rider',
     canMatch: [authGuard],
     canActivate: [deliveryEnabledGuard],
@@ -62,7 +78,7 @@ export const appRoutes: Route[] = [
   {
     path: '',
     canMatch: [authGuard],
-    canActivate: [redirectRiderToRiderHome],
+    canActivate: [forcePasswordChange, redirectRiderToRiderHome],
     loadComponent: () => import('./features/layout/admin-layout.page').then((m) => m.AdminLayoutPage),
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
