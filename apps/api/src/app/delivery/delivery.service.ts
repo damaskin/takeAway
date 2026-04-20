@@ -108,6 +108,17 @@ export class DeliveryService {
     });
 
     this.emitDispatchChange(updated.storeId, updated.id, 'updated');
+    void this.notifications.notifyRider(
+      {
+        id: updated.id,
+        userId: updated.userId,
+        orderCode: updated.orderCode,
+        storeId: updated.storeId,
+        fulfillmentType: updated.fulfillmentType,
+      },
+      riderId,
+      'assigned',
+    );
     return { id: updated.id, riderId: updated.riderId };
   }
 

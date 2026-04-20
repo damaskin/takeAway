@@ -58,6 +58,32 @@ export class NotificationsService {
   }
 
   /**
+   * Ping a single rider that a delivery order was handed to them. Fires on
+   * manager assignment and on the READY transition when a rider is already
+   * bound to the order (`notifyRiderReady`).
+   */
+  async notifyRider(orderLike: OrderLike, riderId: string, kind: 'assigned' | 'ready'): Promise<void> {
+    const recipient = await this.loadRecipient(riderId);
+    if (!recipient) return;
+    const codeTag = `#${orderLike.orderCode}`;
+    const message: PushMessage =
+      kind === 'assigned'
+        ? {
+            kind: 'order_status',
+            title: `Новый заказ ${codeTag}`,
+            body: `Вам назначили доставку. / You've been assigned a delivery.`,
+            orderId: orderLike.id,
+          }
+        : {
+            kind: 'order_ready',
+            title: `Заказ ${codeTag} готов`,
+            body: `Можно забирать и везти клиенту. / Ready to pick up and deliver.`,
+            orderId: orderLike.id,
+          };
+    await this.telegram.send(recipient, message);
+  }
+
+  /**
    * Notify staff of a brand when a new paid order lands for one of their
    * stores. Targets:
    *   - BRAND_ADMIN(s) who own the brand.
