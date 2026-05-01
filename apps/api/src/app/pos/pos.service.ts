@@ -26,6 +26,9 @@ import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
 import type {
   IPosProvider,
   IikoCredentials,
+  ImportedMenu,
+  ImportedStopListEntry,
+  ImportedStoreDraft,
   PosCredentials,
   PosIntegrationCtx,
   PosSettings,
@@ -168,13 +171,13 @@ export class PosService {
   }
 
   /**
-   * Enqueues a MENU or STOP_LIST sync. Returns the freshly-created
+   * Enqueues a STORES, MENU or STOP_LIST sync. Returns the freshly-created
    * PosSyncJob row so the UI can subscribe to its progress.
    */
   async enqueueSync(
     user: AuthenticatedUser,
     provider: PosProvider,
-    kind: Extract<PosSyncJobKind, 'MENU' | 'STOP_LIST'>,
+    kind: Extract<PosSyncJobKind, 'STORES' | 'MENU' | 'STOP_LIST'>,
     brandId?: string,
   ): Promise<PosSyncJobDto> {
     const targetBrandId = await this.resolveBrandId(user, brandId);
@@ -348,5 +351,247 @@ export class PosService {
       where: { id: syncJobId },
       data: total !== undefined ? { progress, total } : { progress },
     });
+  }
+
+  // ── Importers (called from PosSyncProcessor) ────────────────────────────
+
+  /**
+   * Upserts {@link Store} rows for the brand by `(externalProvider, externalId)`.
+   * Lat/lng/timezone are required for native takeAway stores (used by ETA
+   * and proximity), so we leave the row's existing geo data untouched on
+   * update and stamp safe placeholders on insert. The brand admin still
+   * needs to land on the store editor to fill geo before customers see it.
+   */
+  async upsertImportedStores(
+    integrationId: string,
+    drafts: ImportedStoreDraft[],
+  ): Promise<{ created: number; updated: number }> {
+    const integration = await this.prisma.posIntegration.findUnique({
+      where: { id: integrationId },
+      select: { brandId: true, provider: true, brand: { select: { currency: true } } },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+
+    let created = 0;
+    let updated = 0;
+    for (const d of drafts) {
+      const existing = await this.prisma.store.findFirst({
+        where: { brandId: integration.brandId, externalProvider: integration.provider, externalId: d.externalId },
+        select: { id: true },
+      });
+      if (existing) {
+        await this.prisma.store.update({
+          where: { id: existing.id },
+          data: {
+            name: d.name,
+            addressLine: d.addressLine ?? undefined,
+            city: d.city ?? undefined,
+            country: d.country ?? undefined,
+          },
+        });
+        updated += 1;
+      } else {
+        await this.prisma.store.create({
+          data: {
+            brandId: integration.brandId,
+            slug: this.posSlug(integration.provider, 'store', d.externalId),
+            name: d.name,
+            addressLine: d.addressLine ?? '—',
+            city: d.city ?? '—',
+            country: d.country ?? '—',
+            latitude: d.latitude ?? 0,
+            longitude: d.longitude ?? 0,
+            timezone: d.timezone ?? 'UTC',
+            currency: integration.brand.currency,
+            externalProvider: integration.provider,
+            externalId: d.externalId,
+          },
+        });
+        created += 1;
+      }
+    }
+    return { created, updated };
+  }
+
+  /**
+   * Upserts an {@link ImportedMenu} (categories + products) into the brand.
+   * Modifiers are forwarded to a parallel pass once we have a real importer
+   * for them — Poster M2 returns an empty modifiers list.
+   *
+   * Strategy: resolve every external category/product to its takeAway id
+   * via `(brandId, externalProvider, externalId)`. New rows pick a stable
+   * slug `pos-<provider>-<externalId>` so re-imports never collide. We
+   * leave existing locally-managed (`externalId is null`) rows alone.
+   */
+  async upsertImportedMenu(
+    integrationId: string,
+    menu: ImportedMenu,
+  ): Promise<{ categories: { created: number; updated: number }; products: { created: number; updated: number } }> {
+    const integration = await this.prisma.posIntegration.findUnique({
+      where: { id: integrationId },
+      select: { brandId: true, provider: true },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+    const { brandId, provider } = integration;
+
+    const categoryIdByExternal = new Map<string, string>();
+    const counts = {
+      categories: { created: 0, updated: 0 },
+      products: { created: 0, updated: 0 },
+    };
+
+    for (const c of menu.categories) {
+      const existing = await this.prisma.category.findFirst({
+        where: { brandId, externalProvider: provider, externalId: c.externalId },
+        select: { id: true },
+      });
+      if (existing) {
+        await this.prisma.category.update({
+          where: { id: existing.id },
+          data: { name: c.name, sortOrder: c.sortOrder ?? undefined },
+        });
+        categoryIdByExternal.set(c.externalId, existing.id);
+        counts.categories.updated += 1;
+      } else {
+        const created = await this.prisma.category.create({
+          data: {
+            brandId,
+            slug: this.posSlug(provider, 'category', c.externalId),
+            name: c.name,
+            sortOrder: c.sortOrder ?? 0,
+            externalProvider: provider,
+            externalId: c.externalId,
+          },
+          select: { id: true },
+        });
+        categoryIdByExternal.set(c.externalId, created.id);
+        counts.categories.created += 1;
+      }
+    }
+
+    for (const p of menu.products) {
+      const categoryId = categoryIdByExternal.get(p.categoryExternalId);
+      if (!categoryId) {
+        // Provider gave us a product whose category wasn't in the same
+        // payload — skip rather than crash. The next sync usually picks
+        // it up once both sides agree.
+        this.logger.warn(`Skipping product ${p.externalId}: category ${p.categoryExternalId} not in import set`);
+        continue;
+      }
+      const existing = await this.prisma.product.findFirst({
+        where: { brandId, externalProvider: provider, externalId: p.externalId },
+        select: { id: true },
+      });
+      if (existing) {
+        await this.prisma.product.update({
+          where: { id: existing.id },
+          data: {
+            categoryId,
+            name: p.name,
+            description: p.description ?? null,
+            basePriceCents: p.basePriceCents,
+            prepTimeSeconds: p.prepTimeSeconds ?? undefined,
+            imageUrls: p.imageUrls ?? undefined,
+          },
+        });
+        counts.products.updated += 1;
+      } else {
+        await this.prisma.product.create({
+          data: {
+            brandId,
+            categoryId,
+            slug: this.posSlug(provider, 'product', p.externalId),
+            name: p.name,
+            description: p.description ?? null,
+            basePriceCents: p.basePriceCents,
+            prepTimeSeconds: p.prepTimeSeconds ?? 180,
+            imageUrls: p.imageUrls ?? [],
+            externalProvider: provider,
+            externalId: p.externalId,
+          },
+        });
+        counts.products.created += 1;
+      }
+    }
+
+    return counts;
+  }
+
+  /**
+   * Replaces the stop-list contributed by this provider with the new set.
+   * Stop-list entries imported by other providers (or added manually) stay
+   * untouched — we filter the wipe by joining through a Product owned by
+   * the integration's provider.
+   *
+   * `storeExternalId === '*'` is treated as "every Store of this brand".
+   */
+  async upsertImportedStopList(
+    integrationId: string,
+    entries: ImportedStopListEntry[],
+  ): Promise<{ wiped: number; created: number }> {
+    const integration = await this.prisma.posIntegration.findUnique({
+      where: { id: integrationId },
+      select: { brandId: true, provider: true },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+    const { brandId, provider } = integration;
+
+    const wiped = await this.prisma.stopListEntry.deleteMany({
+      where: {
+        product: { brandId, externalProvider: provider },
+        store: { brandId },
+      },
+    });
+
+    if (entries.length === 0) return { wiped: wiped.count, created: 0 };
+
+    const products = await this.prisma.product.findMany({
+      where: { brandId, externalProvider: provider },
+      select: { id: true, externalId: true },
+    });
+    const productIdByExternal = new Map(products.map((p) => [p.externalId ?? '', p.id]));
+
+    const stores = await this.prisma.store.findMany({
+      where: { brandId },
+      select: { id: true, externalId: true, externalProvider: true },
+    });
+    const storeIdsAll = stores.map((s) => s.id);
+    const storeIdByExternal = new Map(
+      stores.filter((s) => s.externalProvider === provider && s.externalId).map((s) => [s.externalId as string, s.id]),
+    );
+
+    const tuples = new Set<string>();
+    for (const e of entries) {
+      const productId = productIdByExternal.get(e.productExternalId);
+      if (!productId) continue;
+      if (e.storeExternalId === '*') {
+        for (const sid of storeIdsAll) tuples.add(`${sid}|${productId}`);
+      } else {
+        const sid = storeIdByExternal.get(e.storeExternalId);
+        if (sid) tuples.add(`${sid}|${productId}`);
+      }
+    }
+
+    if (tuples.size === 0) return { wiped: wiped.count, created: 0 };
+    const data = Array.from(tuples).flatMap((t) => {
+      const [storeId, productId] = t.split('|');
+      return storeId && productId ? [{ storeId, productId }] : [];
+    });
+    await this.prisma.stopListEntry.createMany({ data, skipDuplicates: true });
+    return { wiped: wiped.count, created: data.length };
+  }
+
+  /**
+   * Builds a stable slug for a row imported from a POS. Used at insert-time
+   * so re-syncs find the same row through `(brandId, externalProvider,
+   * externalId)`. Locally-managed rows (with their own slugs) are never
+   * touched.
+   */
+  private posSlug(
+    provider: PosProvider,
+    kind: 'store' | 'category' | 'product' | 'modifier',
+    externalId: string,
+  ): string {
+    return `pos-${provider.toLowerCase()}-${kind}-${externalId}`;
   }
 }

@@ -112,6 +112,10 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/settings/settings.page').then((m) => m.AdminSettingsPage),
       },
       {
+        path: 'integrations',
+        loadComponent: () => import('./features/integrations/integrations.page').then((m) => m.AdminIntegrationsPage),
+      },
+      {
         path: 'telegram-link',
         loadComponent: () => import('./features/telegram-link/telegram-link.page').then((m) => m.TelegramLinkPage),
       },
