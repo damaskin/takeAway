@@ -50,6 +50,17 @@ export class PosController {
     await this.pos.disconnect(user, provider, brandId);
   }
 
+  @Post('sync/stores/:provider')
+  @ApiOkResponse({ type: PosSyncJobDto })
+  @ApiQuery({ name: 'brandId', required: false })
+  syncStores(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('provider') provider: PosProvider,
+    @Query('brandId') brandId?: string,
+  ): Promise<PosSyncJobDto> {
+    return this.pos.enqueueSync(user, provider, PosSyncJobKind.STORES, brandId);
+  }
+
   @Post('sync/menu/:provider')
   @ApiOkResponse({ type: PosSyncJobDto })
   @ApiQuery({ name: 'brandId', required: false })

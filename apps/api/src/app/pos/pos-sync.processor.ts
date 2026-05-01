@@ -10,19 +10,15 @@ import { PosterProvider } from './providers/poster.provider';
 import type { IPosProvider, SyncProgressCtx } from './providers/pos-provider.interface';
 
 /**
- * BullMQ worker for the POS sync queue. One handler dispatches by
- * {@link PosSyncJobKind} into the right provider method, marking the
- * matching {@link PosSyncJob} row as RUNNING / COMPLETED / FAILED along
- * the way.
+ * BullMQ worker for the POS sync queue. Dispatches by {@link PosSyncJobKind}
+ * to the right provider method, then funnels the result through the matching
+ * `PosService.upsertImported*` helper so the data actually lands in our
+ * Store / Category / Product / StopListEntry tables.
  *
- * Failure is recorded against both the job row and the parent
- * PosIntegration (`status: ERROR`, `lastErrorMessage` populated). BullMQ
- * itself retries per the queue config; the row only flips to FAILED on
- * the final attempt — see {@link onFailed}.
- *
- * Side-effects (writing imported menus into Category/Product/etc.) are
- * deferred to M2 — for now we just plumb progress through the provider
- * layer and persist whatever it returns to the syncJob row's metadata.
+ * Failure flow: the job row + parent PosIntegration both get the error
+ * message, integration flips to `ERROR`. BullMQ retries are configured at
+ * the queue level (currently disabled — first failure becomes a final
+ * failure to keep the operator-facing surface honest).
  */
 @Processor(POS_SYNC_QUEUE)
 export class PosSyncProcessor extends WorkerHost {
@@ -58,15 +54,27 @@ export class PosSyncProcessor extends WorkerHost {
       };
 
       switch (kind) {
-        case PosSyncJobKind.MENU:
-          await provider.importMenu(ctx, progress);
+        case PosSyncJobKind.STORES: {
+          const drafts = await provider.listStores(ctx);
+          const result = await this.pos.upsertImportedStores(integrationId, drafts);
+          this.logger.log(`STORES sync ok: created=${result.created} updated=${result.updated}`);
           break;
-        case PosSyncJobKind.STOP_LIST:
-          await provider.importStopList(ctx, progress);
+        }
+        case PosSyncJobKind.MENU: {
+          const menu = await provider.importMenu(ctx, progress);
+          const result = await this.pos.upsertImportedMenu(integrationId, menu);
+          this.logger.log(
+            `MENU sync ok: categories ${result.categories.created}/${result.categories.updated}, ` +
+              `products ${result.products.created}/${result.products.updated}`,
+          );
           break;
-        case PosSyncJobKind.STORES:
-          await provider.listStores(ctx);
+        }
+        case PosSyncJobKind.STOP_LIST: {
+          const entries = await provider.importStopList(ctx, progress);
+          const result = await this.pos.upsertImportedStopList(integrationId, entries);
+          this.logger.log(`STOP_LIST sync ok: wiped=${result.wiped} created=${result.created}`);
           break;
+        }
         case PosSyncJobKind.ORDER_PUSH:
           throw new Error('ORDER_PUSH is wired in M3 — should not be enqueued yet');
       }
