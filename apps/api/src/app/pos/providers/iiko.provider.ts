@@ -29,6 +29,28 @@ interface IikoAccessTokenResponse {
   token: string;
 }
 
+interface IikoOrganizationRow {
+  id: string;
+  name: string;
+  country?: string;
+}
+
+interface IikoTerminalGroupItem {
+  id: string;
+  organizationId: string;
+  name: string;
+  address?: string;
+  timeZone?: string;
+}
+
+interface IikoTerminalGroupsResponse {
+  terminalGroups?: { organizationId: string; items: IikoTerminalGroupItem[] }[];
+}
+
+interface IikoOrganizationsResponse {
+  organizations?: IikoOrganizationRow[];
+}
+
 /**
  * Adapter for the iiko Cloud (api-ru.iiko.services) public API.
  *
@@ -60,8 +82,37 @@ export class IikoProvider implements IPosProvider {
     await this.fetchAccessToken(integration, { force: true });
   }
 
-  async listStores(_integration: PosIntegrationCtx): Promise<ImportedStoreDraft[]> {
-    throw new NotImplementedException('iiko store import is not available yet (M2)');
+  async listStores(integration: PosIntegrationCtx): Promise<ImportedStoreDraft[]> {
+    const settings = integration.settings as IikoSettings;
+    const explicitOrgId = settings.organizationId?.trim();
+
+    const orgIds = explicitOrgId
+      ? [explicitOrgId]
+      : ((await this.callAuthed<IikoOrganizationsResponse>(integration, '/api/1/organizations', {})).organizations?.map(
+          (o) => o.id,
+        ) ?? []);
+    if (orgIds.length === 0) {
+      // Auth worked but the account has no organizations — surface as a
+      // proper provider error instead of silently returning [].
+      throw new BadGatewayException('iiko returned no organizations for these credentials');
+    }
+
+    const groups = await this.callAuthed<IikoTerminalGroupsResponse>(integration, '/api/1/terminal_groups', {
+      organizationIds: orgIds,
+    });
+
+    const drafts: ImportedStoreDraft[] = [];
+    for (const bucket of groups.terminalGroups ?? []) {
+      for (const item of bucket.items ?? []) {
+        drafts.push({
+          externalId: item.id,
+          name: item.name?.trim() || `Terminal ${item.id}`,
+          addressLine: item.address?.trim() || undefined,
+          timezone: item.timeZone || undefined,
+        });
+      }
+    }
+    return drafts;
   }
 
   async importMenu(_integration: PosIntegrationCtx, _ctx: SyncProgressCtx): Promise<ImportedMenu> {
@@ -117,7 +168,41 @@ export class IikoProvider implements IPosProvider {
     }
   }
 
-  private http(host: string): AxiosInstance {
+  /**
+   * POSTs to an iiko endpoint with the bearer token attached. Reuses the
+   * Redis-cached access token; on 401 we drop the cache once and retry.
+   */
+  private async callAuthed<T>(integration: PosIntegrationCtx, path: string, body: unknown): Promise<T> {
+    const settings = integration.settings as IikoSettings;
+    const host = settings.apiHost ?? DEFAULT_API_HOST;
+    const tryCall = async (token: string): Promise<T> => {
+      const response = await this.http(host).post<T>(path, body, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    };
+
+    try {
+      const token = await this.fetchAccessToken(integration);
+      return await tryCall(token);
+    } catch (err) {
+      if (err instanceof AxiosError && err.response?.status === 401) {
+        // Token rotated under us — drop the cache and retry once.
+        await this.redis.del(`pos:iiko:token:${integration.row.id}`);
+        const fresh = await this.fetchAccessToken(integration, { force: true });
+        return await tryCall(fresh);
+      }
+      if (err instanceof AxiosError && err.response) {
+        const status = err.response.status;
+        if (status === 401 || status === 403) throw new UnauthorizedException('iiko rejected the apiLogin');
+        this.logger.warn(`iiko ${path} failed (${status}): ${JSON.stringify(err.response.data ?? {})}`);
+        throw new BadGatewayException(`iiko gateway returned HTTP ${status}`);
+      }
+      throw err;
+    }
+  }
+
+  protected http(host: string): AxiosInstance {
     return axios.create({
       baseURL: host,
       timeout: REQUEST_TIMEOUT_MS,
