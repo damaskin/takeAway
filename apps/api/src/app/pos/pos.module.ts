@@ -1,10 +1,14 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PosCronService } from './pos-cron.service';
 import { POS_SYNC_QUEUE } from './pos-sync.queue';
 import { PosSyncProcessor } from './pos-sync.processor';
+import { PosWebhooksController } from './pos-webhooks.controller';
 import { PosController } from './pos.controller';
 import { PosService } from './pos.service';
 import { IikoProvider } from './providers/iiko.provider';
@@ -25,6 +29,8 @@ import { PosterProvider } from './providers/poster.provider';
 @Module({
   imports: [
     AuthModule,
+    NotificationsModule,
+    ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -43,8 +49,8 @@ import { PosterProvider } from './providers/poster.provider';
     }),
     BullModule.registerQueue({ name: POS_SYNC_QUEUE }),
   ],
-  controllers: [PosController],
-  providers: [PosService, IikoProvider, PosterProvider, PosSyncProcessor],
+  controllers: [PosController, PosWebhooksController],
+  providers: [PosService, IikoProvider, PosterProvider, PosSyncProcessor, PosCronService],
   exports: [PosService],
 })
 export class PosModule {}

@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { PosSyncJobKind } from '@prisma/client';
 import { Job } from 'bullmq';
@@ -10,19 +10,15 @@ import { PosterProvider } from './providers/poster.provider';
 import type { IPosProvider, SyncProgressCtx } from './providers/pos-provider.interface';
 
 /**
- * BullMQ worker for the POS sync queue. One handler dispatches by
- * {@link PosSyncJobKind} into the right provider method, marking the
- * matching {@link PosSyncJob} row as RUNNING / COMPLETED / FAILED along
- * the way.
+ * BullMQ worker for the POS sync queue. Dispatches by {@link PosSyncJobKind}
+ * to the right provider method, then funnels the result through the matching
+ * `PosService.upsertImported*` helper so the data actually lands in our
+ * Store / Category / Product / StopListEntry tables.
  *
- * Failure is recorded against both the job row and the parent
- * PosIntegration (`status: ERROR`, `lastErrorMessage` populated). BullMQ
- * itself retries per the queue config; the row only flips to FAILED on
- * the final attempt — see {@link onFailed}.
- *
- * Side-effects (writing imported menus into Category/Product/etc.) are
- * deferred to M2 — for now we just plumb progress through the provider
- * layer and persist whatever it returns to the syncJob row's metadata.
+ * Failure flow: each thrown error inside `process` is mirrored onto both the
+ * `PosSyncJob` row and the parent `PosIntegration` (status → ERROR). BullMQ
+ * retries the job per its options; only when the *final* attempt fails do we
+ * Telegram-alert the BRAND_ADMIN — see {@link onFailed}.
  */
 @Processor(POS_SYNC_QUEUE)
 export class PosSyncProcessor extends WorkerHost {
@@ -58,26 +54,63 @@ export class PosSyncProcessor extends WorkerHost {
       };
 
       switch (kind) {
-        case PosSyncJobKind.MENU:
-          await provider.importMenu(ctx, progress);
+        case PosSyncJobKind.STORES: {
+          const drafts = await provider.listStores(ctx);
+          const result = await this.pos.upsertImportedStores(integrationId, drafts);
+          this.logger.log(`STORES sync ok: created=${result.created} updated=${result.updated}`);
           break;
-        case PosSyncJobKind.STOP_LIST:
-          await provider.importStopList(ctx, progress);
+        }
+        case PosSyncJobKind.MENU: {
+          const menu = await provider.importMenu(ctx, progress);
+          const result = await this.pos.upsertImportedMenu(integrationId, menu);
+          this.logger.log(
+            `MENU sync ok: categories ${result.categories.created}/${result.categories.updated}, ` +
+              `products ${result.products.created}/${result.products.updated}`,
+          );
           break;
-        case PosSyncJobKind.STORES:
-          await provider.listStores(ctx);
+        }
+        case PosSyncJobKind.STOP_LIST: {
+          const entries = await provider.importStopList(ctx, progress);
+          const result = await this.pos.upsertImportedStopList(integrationId, entries);
+          this.logger.log(`STOP_LIST sync ok: wiped=${result.wiped} created=${result.created}`);
           break;
-        case PosSyncJobKind.ORDER_PUSH:
-          throw new Error('ORDER_PUSH is wired in M3 — should not be enqueued yet');
+        }
+        case PosSyncJobKind.ORDER_PUSH: {
+          const orderId = typeof job.data.args?.['orderId'] === 'string' ? job.data.args['orderId'] : null;
+          if (!orderId) throw new Error('ORDER_PUSH job missing orderId');
+          const orderForPush = await this.pos.loadOrderForPush(orderId, integrationId);
+          const { posExternalId } = await provider.pushOrder(ctx, orderForPush);
+          await this.pos._persistOrderPushResult(orderId, posExternalId);
+          this.logger.log(`ORDER_PUSH ok: order=${orderId} posExternalId=${posExternalId}`);
+          break;
+        }
       }
 
       await this.pos._markJobCompleted(syncJobId, integrationId);
     } catch (err) {
       const message = (err as Error).message ?? 'unknown error';
       this.logger.warn(`POS sync ${kind} failed for integration=${integrationId}: ${message}`);
+      // Mirror onto the row immediately so the admin UI sees the partial
+      // failure even before BullMQ retries kick in. The terminal alert
+      // (Telegram) waits until {@link onFailed} confirms no more attempts.
       await this.pos._markJobFailed(syncJobId, integrationId, message);
       throw err;
     }
+  }
+
+  /**
+   * Fires once per failed job, including each retry. We only Telegram-alert
+   * on the *final* attempt — earlier failures stay quiet because BullMQ is
+   * still working through its backoff schedule.
+   */
+  @OnWorkerEvent('failed')
+  async onFailed(job: Job<PosSyncJobPayload>, err: Error): Promise<void> {
+    const maxAttempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < maxAttempts) return;
+    if (job.data.kind !== PosSyncJobKind.ORDER_PUSH) return;
+    const orderId = typeof job.data.args?.['orderId'] === 'string' ? job.data.args['orderId'] : null;
+    if (!orderId) return;
+    await this.pos._alertOrderPushFailure(job.data.integrationId, orderId, err.message);
   }
 
   /**

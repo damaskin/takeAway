@@ -56,6 +56,11 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'signup',
+    canMatch: [anonymousGuard],
+    loadComponent: () => import('./features/signup/signup.page').then((m) => m.SignupPage),
+  },
+  {
     path: 'forgot-password',
     canMatch: [anonymousGuard],
     loadComponent: () => import('./features/forgot-password/forgot-password.page').then((m) => m.ForgotPasswordPage),
@@ -126,6 +131,10 @@ export const appRoutes: Route[] = [
       {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.page').then((m) => m.AdminSettingsPage),
+      },
+      {
+        path: 'integrations',
+        loadComponent: () => import('./features/integrations/integrations.page').then((m) => m.AdminIntegrationsPage),
       },
       {
         path: 'telegram-link',
