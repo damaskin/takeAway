@@ -18,12 +18,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
+import type { CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
 const MAX_SCHEDULED_LEAD_HOURS = 24;
 const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
+/**
+ * Proximity thresholds for the "I'm here" flow. HERE fires a push to the
+ * kitchen ("customer has arrived"); NEARBY is a softer heads-up ("start
+ * the drink now, they're 2 minutes out").
+ */
+const CUSTOMER_HERE_RADIUS_M = 50;
+const CUSTOMER_NEARBY_RADIUS_M = 500;
+/** Status gate — we don't notify the kitchen about arrivals for terminal orders. */
+const LOCATION_TRACKABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY']);
+const EARTH_RADIUS_METERS = 6_371_000;
 
 @Injectable()
 export class OrdersService {
@@ -388,6 +399,93 @@ export class OrdersService {
     return this.toOrderDto(updated);
   }
 
+  /**
+   * Records the customer's current location for an open pickup/delivery order
+   * and decides whether to escalate to CUSTOMER_NEARBY / CUSTOMER_HERE.
+   *
+   * Idempotency: we never emit the same proximity level twice for an order
+   * (checked via existing OrderEvent). That keeps the kitchen from getting
+   * a push every 10 seconds while the user walks the final block.
+   *
+   * An explicit `iAmHere` tap on the web page forces a HERE event even if
+   * the phone's GPS reports them further than 50 m — the barista's signal
+   * is the customer's intent, not their coordinates.
+   */
+  async recordCustomerLocation(
+    userId: string,
+    orderId: string,
+    lat: number,
+    lng: number,
+    iAmHere: boolean,
+  ): Promise<CustomerLocationResultDto> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: { select: { latitude: true, longitude: true, brandId: true, name: true } } },
+    });
+    if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+    if (!LOCATION_TRACKABLE_STATUSES.has(order.status)) {
+      throw new BadRequestException(`Cannot record location for an order in status ${order.status}`);
+    }
+
+    const distanceM = haversineMeters(lat, lng, order.store.latitude, order.store.longitude);
+    const proximity: 'FAR' | 'NEARBY' | 'HERE' = iAmHere
+      ? 'HERE'
+      : distanceM <= CUSTOMER_HERE_RADIUS_M
+        ? 'HERE'
+        : distanceM <= CUSTOMER_NEARBY_RADIUS_M
+          ? 'NEARBY'
+          : 'FAR';
+
+    if (proximity === 'FAR') {
+      return { recorded: false, proximity, distanceM };
+    }
+
+    const eventType = proximity === 'HERE' ? 'CUSTOMER_HERE' : 'CUSTOMER_NEARBY';
+    const existing = await this.prisma.orderEvent.findFirst({
+      where: { orderId, type: eventType },
+      select: { id: true },
+    });
+    if (existing) {
+      // We already told the kitchen about this level — skip the double-push
+      // but still report the current proximity back to the client.
+      return { recorded: false, proximity, distanceM };
+    }
+
+    await this.prisma.orderEvent.create({
+      data: {
+        orderId,
+        type: eventType,
+        actorId: userId,
+        payload: { distanceM, lat, lng, iAmHere } satisfies Prisma.InputJsonValue,
+      },
+    });
+
+    // Broadcast to the KDS board so the customer-arrival chip lights up
+    // without a manual refresh. The row itself hasn't changed, but we lean
+    // on the existing "updated" kind — the kitchen client looks up the
+    // latest events for this order when it repaints.
+    this.realtime.emitKdsOrderChanged({
+      storeId: order.storeId,
+      kind: 'updated',
+      orderId: order.id,
+      order: { id: order.id, customerProximity: proximity, distanceM },
+    });
+
+    // Only HERE warrants a Telegram ping. NEARBY is a UI hint — we don't
+    // wake a busy barista's phone for "will arrive in 2 minutes".
+    if (proximity === 'HERE') {
+      void this.notifications.notifyBrandStaffCustomerArrived({
+        id: order.id,
+        userId: order.userId,
+        orderCode: order.orderCode,
+        storeId: order.storeId,
+        fulfillmentType: order.fulfillmentType,
+      });
+    }
+
+    return { recorded: true, proximity, distanceM };
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private resolvePickupAt(
@@ -496,4 +594,12 @@ export class OrdersService {
       deliveredAt: order.deliveredAt?.toISOString() ?? null,
     };
   }
+}
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number): number => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(a)));
 }

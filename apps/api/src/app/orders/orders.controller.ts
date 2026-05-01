@@ -6,6 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
@@ -34,6 +35,22 @@ export class OrdersController {
   @ApiOkResponse({ type: OrderDto })
   cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<OrderDto> {
     return this.orders.cancel(user.id, id);
+  }
+
+  /**
+   * Customer pings their location. We classify proximity (FAR/NEARBY/HERE)
+   * and — on the first transition to each level — fire an OrderEvent + KDS
+   * broadcast + (for HERE) Telegram ping. Idempotent: safe to call on a
+   * timer from the web order-status page.
+   */
+  @Post('orders/:id/location')
+  @ApiOkResponse({ type: CustomerLocationResultDto })
+  recordLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CustomerLocationDto,
+  ): Promise<CustomerLocationResultDto> {
+    return this.orders.recordCustomerLocation(user.id, id, dto.lat, dto.lng, dto.iAmHere ?? false);
   }
 
   @Get('me/orders')

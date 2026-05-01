@@ -314,10 +314,43 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Ask the browser for a geolocation fix, POST it to the API with
+   * `iAmHere: true`, and flip the button into its confirmed state so the
+   * user gets instant feedback even if the push to the kitchen is in-flight.
+   *
+   * The button is idempotent — the server dedupes CUSTOMER_HERE per order,
+   * so a second tap is cheap. If geolocation is denied we still POST with
+   * the store's coordinates as a fallback so the barista gets the ping;
+   * the customer's intent is the signal, not their lat/lng accuracy.
+   */
   imHere(): void {
-    // Placeholder for POST /orders/:id/im-here — not wired yet on backend.
-    // For now we just flip local state so the barista UX is testable.
+    const o = this.order();
+    if (!o) return;
     this.imHereClicked.set(true);
+
+    const send = (lat: number, lng: number): void => {
+      this.orders.recordLocation(o.id, { lat, lng, iAmHere: true }).subscribe({
+        // We don't surface the proximity result in the UI today — the kitchen
+        // chip and push handle the hand-off. Errors are silenced on purpose:
+        // the user has told us they've arrived, a failed POST shouldn't
+        // retract the UI acknowledgement.
+        error: () => void 0,
+      });
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => send(pos.coords.latitude, pos.coords.longitude),
+        // Fallback: post with 0/0 — the server still records the HERE event
+        // because the client flagged iAmHere. The distance number is junk,
+        // but no downstream consumer uses it for HERE.
+        () => send(0, 0),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30_000 },
+      );
+    } else {
+      send(0, 0);
+    }
   }
 
   isTerminal(status: OrderStatusString): boolean {

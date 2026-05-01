@@ -102,6 +102,49 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * Ping brand staff when a customer taps "I'm here" or crosses the 50 m
+   * geofence around the store. Same recipient fan-out rules as
+   * {@link notifyBrandStaffNewOrder} — only Telegram-linked accounts get
+   * a push; the rest rely on the KDS realtime chip.
+   */
+  async notifyBrandStaffCustomerArrived(order: OrderLike): Promise<void> {
+    const store = await this.prisma.store.findUnique({
+      where: { id: order.storeId },
+      select: { brandId: true, name: true },
+    });
+    if (!store) return;
+
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        telegramUserId: { not: null },
+        blockedAt: null,
+        OR: [
+          { role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } },
+          { userStores: { some: { storeId: order.storeId } } },
+        ],
+      },
+      select: { id: true, locale: true, telegramUserId: true },
+    });
+    if (recipients.length === 0) return;
+
+    const message: PushMessage = {
+      kind: 'order_status',
+      title: `Клиент у стойки · #${order.orderCode}`,
+      body: `Подошёл за заказом — выдайте, пожалуйста. / Customer has arrived for pickup.`,
+      orderId: order.id,
+    };
+
+    await Promise.allSettled(
+      recipients.map((u) =>
+        this.telegram.send(
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
+          message,
+        ),
+      ),
+    );
+  }
+
   private async loadRecipient(userId: string): Promise<PushRecipient | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

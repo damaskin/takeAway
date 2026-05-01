@@ -72,6 +72,12 @@ export interface CreateOrderInput {
   deliveryNotes?: string;
 }
 
+export interface CustomerLocationResult {
+  recorded: boolean;
+  proximity: 'FAR' | 'NEARBY' | 'HERE';
+  distanceM: number | null;
+}
+
 export interface OrderSummary {
   id: string;
   orderCode: string;
@@ -101,6 +107,13 @@ export class OrdersApi {
 
   cancel(id: string): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
+  }
+
+  recordLocation(
+    id: string,
+    body: { lat: number; lng: number; iAmHere?: boolean },
+  ): Observable<CustomerLocationResult> {
+    return this.http.post<CustomerLocationResult>(`${this.api.baseUrl}/orders/${id}/location`, body);
   }
 
   createPaymentIntent(orderId: string): Observable<{ clientSecret: string }> {
