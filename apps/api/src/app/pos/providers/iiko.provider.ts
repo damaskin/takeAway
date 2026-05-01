@@ -45,6 +45,13 @@ interface IikoAccessTokenResponse {
 @Injectable()
 export class IikoProvider implements IPosProvider {
   readonly kind = 'IIKO' as const;
+  /**
+   * iiko Cloud has no public webhook channel for stop-list changes, so the
+   * cron poller is the only way to keep our copy fresh. Stays `false` until
+   * `importStopList` lands (M5+) — flipping it earlier would just keep the
+   * cron enqueueing jobs that immediately fail with NotImplementedException.
+   */
+  readonly supportsStopListPolling = false;
   private readonly logger = new Logger(IikoProvider.name);
 
   constructor(private readonly redis: RedisService) {}

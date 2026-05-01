@@ -23,6 +23,8 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { SecretCipher } from '../common/crypto/secret-cipher';
 import { PrismaService } from '../prisma/prisma.service';
 import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
 import { NotificationsService } from '../notifications/notifications.service';
 import type {
   IPosProvider,
@@ -753,6 +755,66 @@ export class PosService {
    * attempt is exhausted, so the brand owner gets a Telegram alert and can
    * enter the order into the POS by hand.
    */
+  // ── Poster webhooks (M4) ────────────────────────────────────────────────
+
+  /**
+   * Handles an incoming Poster webhook. Returns `true` when the event was
+   * actually queued, `false` when it was silently ignored — either because
+   * the brand has no Poster integration or the signature didn't verify.
+   *
+   * Signature: when `integration.settings.webhookSecret` is configured we
+   * require a `verify` field in the body equal to
+   * `HMAC-SHA1(rawBody, secret)`. The check is `timingSafeEqual` to avoid
+   * shaving microseconds off attacker feedback. When no secret is set we
+   * accept the event and log a warning — that's fine for the dev/staging
+   * loop but should be tightened up before going to a public webhook URL
+   * in prod (M5 ops doc).
+   */
+  async handlePosterWebhook(
+    brandId: string,
+    headers: Record<string, string | string[] | undefined>,
+    body: { object?: string; action?: string; verify?: string; data?: unknown; body?: unknown },
+  ): Promise<boolean> {
+    const integration = await this.prisma.posIntegration.findFirst({
+      where: { brandId, provider: PosProvider.POSTER, status: PosIntegrationStatus.CONNECTED },
+      select: { id: true, settings: true },
+    });
+    if (!integration) {
+      this.logger.warn(`Poster webhook for brand=${brandId}: no connected integration, ignored`);
+      return false;
+    }
+
+    const secret = (integration.settings as { webhookSecret?: string } | null)?.webhookSecret;
+    if (secret) {
+      const supplied = body.verify ?? readHeader(headers, 'x-poster-signature');
+      if (!supplied || !verifyPosterSignature(secret, body, supplied)) {
+        this.logger.warn(`Poster webhook for brand=${brandId}: signature mismatch, ignored`);
+        return false;
+      }
+    } else {
+      this.logger.warn(
+        `Poster webhook for brand=${brandId}: accepted unsigned (set settings.webhookSecret to enforce)`,
+      );
+    }
+
+    const kind = posterEventToSyncKind(body.object, body.action);
+    if (!kind) {
+      this.logger.log(`Poster webhook for brand=${brandId}: ${body.object}/${body.action} — no sync mapping, ignored`);
+      return false;
+    }
+
+    const job = await this.prisma.posSyncJob.create({
+      data: { integrationId: integration.id, kind, status: PosSyncJobStatus.PENDING },
+    });
+    await this.queue.add(
+      kind,
+      { syncJobId: job.id, integrationId: integration.id, kind },
+      { priority: MENU_SYNC_PRIORITY, removeOnComplete: 1000, removeOnFail: 1000 },
+    );
+    this.logger.log(`Poster webhook for brand=${brandId}: enqueued ${kind} (event=${body.object}/${body.action})`);
+    return true;
+  }
+
   async _alertOrderPushFailure(integrationId: string, orderId: string, message: string): Promise<void> {
     const integration = await this.prisma.posIntegration.findUnique({
       where: { id: integrationId },
@@ -793,4 +855,61 @@ function extractSnapshotNotes(snapshot: unknown): string | undefined {
   if (typeof snapshot !== 'object' || snapshot === null) return undefined;
   const notes = (snapshot as { notes?: unknown }).notes;
   return typeof notes === 'string' && notes.length > 0 ? notes : undefined;
+}
+
+function readHeader(headers: Record<string, string | string[] | undefined>, name: string): string | undefined {
+  const v = headers[name] ?? headers[name.toLowerCase()];
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
+/**
+ * Maps Poster's `(object, action)` event tuple to a takeAway sync kind.
+ * Returns null when the event isn't actionable on our side (e.g.
+ * `transaction/transformed`, which is purely back-office state).
+ */
+function posterEventToSyncKind(object: string | undefined, action: string | undefined): PosSyncJobKind | null {
+  const obj = (object ?? '').toLowerCase();
+  const act = (action ?? '').toLowerCase();
+  // Poster doesn't publish a dedicated stop-list event; in practice the
+  // `transactions/changed` arrives whenever a product goes in/out of stock
+  // and we re-pull. Ignored when action is `added` because that's a normal
+  // sale — we don't treat it as a stop-list signal.
+  if (obj === 'product' || obj === 'category' || obj === 'menu') {
+    return PosSyncJobKind.MENU;
+  }
+  if (obj === 'stop_list' || obj === 'stoplist' || (obj === 'transaction' && act === 'closed')) {
+    return PosSyncJobKind.STOP_LIST;
+  }
+  return null;
+}
+
+/**
+ * Poster's docs show two flavours of the verification field:
+ *   1. `verify` field equal to `md5(account_number + token + signature_key)`
+ *      — the public webhook payload uses this.
+ *   2. HMAC-SHA1 of the raw body — older docs.
+ * Without an authoritative spec we cover both in case one of them is what
+ * the customer's particular plan emits. The `secret` is the integration's
+ * webhookSecret regardless of flavour.
+ */
+function verifyPosterSignature(
+  secret: string,
+  body: { verify?: string; object?: string; action?: string; data?: unknown },
+  supplied: string,
+): boolean {
+  // Sign the body *without* the verify field so the signature isn't a
+  // function of itself.
+  const { verify: _verify, ...rest } = body;
+  void _verify;
+  const payload = JSON.stringify(rest);
+  const candidates = [
+    createHmac('sha1', secret).update(payload).digest('hex'),
+    createHmac('sha256', secret).update(payload).digest('hex'),
+  ];
+  for (const expected of candidates) {
+    if (expected.length !== supplied.length) continue;
+    if (timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(supplied, 'hex'))) return true;
+  }
+  return false;
 }

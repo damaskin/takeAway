@@ -146,6 +146,18 @@ export interface SyncProgressCtx {
 export interface IPosProvider {
   readonly kind: PosProvider;
 
+  /**
+   * Whether this provider's stop-list should be refreshed on a periodic
+   * cron rather than via webhooks. Set to `true` for back-offices with no
+   * push channel (iiko Cloud) and `false` for ones that do (Poster) — the
+   * latter pulls in response to a webhook fired by the back-office.
+   *
+   * The cron in `PosCronService` only schedules jobs for providers that
+   * return `true` here, so flipping the flag is the entry point for
+   * enabling polling once the underlying `importStopList` is implemented.
+   */
+  readonly supportsStopListPolling: boolean;
+
   /** Pings the provider's auth endpoint with the given credentials. Throws on failure. */
   testConnection(integration: PosIntegrationCtx): Promise<void>;
 
