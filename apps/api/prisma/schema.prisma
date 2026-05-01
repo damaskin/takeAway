@@ -200,6 +200,40 @@ enum BrandModerationStatus {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POS integrations enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Supported back-office / POS providers a Brand can plug in. A new value
+/// here is the entry point for adding a new IPosProvider implementation
+/// (r-keeper, Frontpad, 1С, …).
+enum PosProvider {
+  IIKO
+  POSTER
+}
+
+enum PosIntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+/// What a sync job intends to do. MENU / STOP_LIST / STORES are pulls from
+/// the POS; ORDER_PUSH is a push of one order out to the POS.
+enum PosSyncJobKind {
+  MENU
+  STOP_LIST
+  STORES
+  ORDER_PUSH
+}
+
+enum PosSyncJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Identity
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -222,21 +256,21 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  devices          Device[]
-  oauthAccounts    OAuthAccount[]
+  devices             Device[]
+  oauthAccounts       OAuthAccount[]
   passwordResetTokens PasswordResetToken[]
-  ownedBrands      Brand[] @relation("BrandOwner")
-  carts            Cart[]
-  orders           Order[]
-  loyaltyAccount   LoyaltyAccount?
-  pointsLedger     PointsLedger[]
-  promoRedemptions PromoRedemption[]
+  ownedBrands         Brand[]              @relation("BrandOwner")
+  carts               Cart[]
+  orders              Order[]
+  loyaltyAccount      LoyaltyAccount?
+  pointsLedger        PointsLedger[]
+  promoRedemptions    PromoRedemption[]
   // Multi-store scope for staff/rider roles. Empty for CUSTOMER; brand-admin
   // and super-admin bypass the pivot entirely (see UserStoreScopeService).
-  userStores       UserStore[]
+  userStores          UserStore[]
   // Delivery orders assigned to this user (RIDER). SetNull on delete so we
   // can remove riders without wiping the order history.
-  assignedDeliveries Order[]         @relation("RiderDeliveries")
+  assignedDeliveries  Order[]              @relation("RiderDeliveries")
 
   @@index([createdAt])
 }
@@ -310,49 +344,56 @@ model Brand {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
-  owner      User?      @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  stores     Store[]
-  categories Category[]
-  products   Product[]
-  promos     Promo[]
+  owner           User?            @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  stores          Store[]
+  categories      Category[]
+  products        Product[]
+  promos          Promo[]
+  posIntegrations PosIntegration[]
 
   @@index([moderationStatus])
   @@index([ownerId])
 }
 
 model Store {
-  id                String             @id @default(cuid())
-  brandId           String
-  slug              String             @unique
-  name              String
-  addressLine       String
-  city              String
-  country           String
-  latitude          Float
-  longitude         Float
-  timezone          String             @default("UTC")
-  currency          Currency
-  phone             String?
-  email             String?
-  status            StoreStatus        @default(OPEN)
-  fulfillmentTypes  StoreFulfillment[]
-  pickupPointType   PickupPointType    @default(COUNTER)
+  id                    String             @id @default(cuid())
+  brandId               String
+  slug                  String             @unique
+  name                  String
+  addressLine           String
+  city                  String
+  country               String
+  latitude              Float
+  longitude             Float
+  timezone              String             @default("UTC")
+  currency              Currency
+  phone                 String?
+  email                 String?
+  status                StoreStatus        @default(OPEN)
+  fulfillmentTypes      StoreFulfillment[]
+  pickupPointType       PickupPointType    @default(COUNTER)
   // 0..100 — higher means kitchen is busier.
-  busyMeter         Int                @default(0)
+  busyMeter             Int                @default(0)
   // Cached ETA for an ASAP order placed now, in seconds.
-  currentEtaSeconds Int                @default(600)
-  minOrderCents     Int                @default(0)
-  heroImageUrl      String?
-  galleryUrls       String[]           @default([])
+  currentEtaSeconds     Int                @default(600)
+  minOrderCents         Int                @default(0)
+  heroImageUrl          String?
+  galleryUrls           String[]           @default([])
   // Per-store delivery fee overrides. All nullable — `null` means "inherit
   // the DELIVERY_FEE_* env defaults". Set on franchisees or high-density
   // stores that need their own economics.
-  deliveryFeeBaseCents   Int?
-  deliveryFeePerKmCents  Int?
-  deliveryFreeRadiusM    Int?
-  deliveryMaxRadiusM     Int?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  deliveryFeeBaseCents  Int?
+  deliveryFeePerKmCents Int?
+  deliveryFreeRadiusM   Int?
+  deliveryMaxRadiusM    Int?
+  /// Set when this row was imported from an external POS (iiko / Poster).
+  /// Null for stores created natively through the admin UI.
+  externalProvider      PosProvider?
+  /// Provider-side identifier (iiko terminalGroupId or organization-derived
+  /// id, Poster spot id). Unique within (brandId, externalProvider).
+  externalId            String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   brand           Brand              @relation(fields: [brandId], references: [id], onDelete: Restrict)
   workingHours    StoreWorkingHour[]
@@ -361,6 +402,7 @@ model Store {
   orders          Order[]
   userStores      UserStore[]
 
+  @@unique([brandId, externalProvider, externalId])
   @@index([brandId])
   @@index([country, city])
   @@index([latitude, longitude])
@@ -403,52 +445,59 @@ model StoreWorkingHour {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Category {
-  id            String   @id @default(cuid())
-  brandId       String
-  slug          String
-  name          String
-  description   String?
-  iconUrl       String?
-  sortOrder     Int      @default(0)
+  id               String       @id @default(cuid())
+  brandId          String
+  slug             String
+  name             String
+  description      String?
+  iconUrl          String?
+  sortOrder        Int          @default(0)
   // Optional availability window — minutes since local midnight.
-  availableFrom Int?
-  availableTo   Int?
-  visible       Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  availableFrom    Int?
+  availableTo      Int?
+  visible          Boolean      @default(true)
+  /// External-POS link. See {@link Store.externalProvider}.
+  externalProvider PosProvider?
+  externalId       String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
   products Product[]
 
   @@unique([brandId, slug])
+  @@unique([brandId, externalProvider, externalId])
   @@index([brandId, sortOrder])
 }
 
 model Product {
-  id              String    @id @default(cuid())
-  brandId         String
-  categoryId      String
-  slug            String
-  name            String
-  description     String?
-  basePriceCents  Int
+  id               String       @id @default(cuid())
+  brandId          String
+  categoryId       String
+  slug             String
+  name             String
+  description      String?
+  basePriceCents   Int
   // Base preparation time in seconds; variations/modifiers add deltas.
-  prepTimeSeconds Int       @default(180)
-  caffeineLevel   Int? // 0..4 cups
-  calories        Int?
-  proteinsGrams   Float?
-  fatsGrams       Float?
-  carbsGrams      Float?
-  allergens       String[]  @default([])
-  dietTags        DietTag[] @default([])
-  imageUrls       String[]  @default([])
-  visible         Boolean   @default(true)
-  sortOrder       Int       @default(0)
+  prepTimeSeconds  Int          @default(180)
+  caffeineLevel    Int? // 0..4 cups
+  calories         Int?
+  proteinsGrams    Float?
+  fatsGrams        Float?
+  carbsGrams       Float?
+  allergens        String[]     @default([])
+  dietTags         DietTag[]    @default([])
+  imageUrls        String[]     @default([])
+  visible          Boolean      @default(true)
+  sortOrder        Int          @default(0)
   // Seasonal window; null = always available.
-  availableFrom   DateTime?
-  availableTo     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  availableFrom    DateTime?
+  availableTo      DateTime?
+  /// External-POS link. See {@link Store.externalProvider}.
+  externalProvider PosProvider?
+  externalId       String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   brand           Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
   category        Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -458,6 +507,7 @@ model Product {
   cartItems       CartItem[]
 
   @@unique([brandId, slug])
+  @@unique([brandId, externalProvider, externalId])
   @@index([categoryId, sortOrder])
   @@index([brandId, visible])
 }
@@ -478,19 +528,24 @@ model Variation {
 }
 
 model Modifier {
-  id                   String @id @default(cuid())
+  id                   String       @id @default(cuid())
   productId            String
   slug                 String
   name                 String
-  priceDeltaCents      Int    @default(0)
-  prepTimeDeltaSeconds Int    @default(0)
-  minCount             Int    @default(0)
-  maxCount             Int    @default(1)
-  sortOrder            Int    @default(0)
+  priceDeltaCents      Int          @default(0)
+  prepTimeDeltaSeconds Int          @default(0)
+  minCount             Int          @default(0)
+  maxCount             Int          @default(1)
+  sortOrder            Int          @default(0)
+  /// External-POS link. See {@link Store.externalProvider}. Scoped per
+  /// product, not brand, because POS modifier ids are local to the parent.
+  externalProvider     PosProvider?
+  externalId           String?
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, slug])
+  @@unique([productId, externalProvider, externalId])
   @@index([productId, sortOrder])
 }
 
@@ -560,28 +615,28 @@ model CartItem {
 }
 
 model Order {
-  id              String          @id @default(cuid())
-  userId          String
-  storeId         String
-  status          OrderStatus     @default(CREATED)
-  fulfillmentType FulfillmentType @default(PICKUP)
-  pickupMode      PickupMode      @default(ASAP)
+  id                  String          @id @default(cuid())
+  userId              String
+  storeId             String
+  status              OrderStatus     @default(CREATED)
+  fulfillmentType     FulfillmentType @default(PICKUP)
+  pickupMode          PickupMode      @default(ASAP)
   // UTC. For ASAP it's the moment we expect to hand it over.
-  pickupAt        DateTime
-  subtotalCents   Int
-  discountCents   Int             @default(0)
-  taxCents        Int             @default(0)
-  totalCents      Int
-  currency        Currency
+  pickupAt            DateTime
+  subtotalCents       Int
+  discountCents       Int             @default(0)
+  taxCents            Int             @default(0)
+  totalCents          Int
+  currency            Currency
   // 4-digit human-readable code shown to the customer and barista.
-  orderCode       String          @unique
+  orderCode           String          @unique
   // Opaque token embedded in the pickup QR; independent of the short code.
-  qrToken         String          @unique
-  paymentIntentId String?
-  customerName    String?
-  customerPhone   String?
-  notes           String?
-  couponCode      String?
+  qrToken             String          @unique
+  paymentIntentId     String?
+  customerName        String?
+  customerPhone       String?
+  notes               String?
+  couponCode          String?
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.
@@ -590,21 +645,24 @@ model Order {
   deliveryLatitude    Float?
   deliveryLongitude   Float?
   deliveryNotes       String?
-  deliveryFeeCents    Int     @default(0)
+  deliveryFeeCents    Int             @default(0)
   /// Estimated distance from store to delivery address (metres). Optional —
   /// geocoding/distance estimation is a follow-up, stored here when available.
   deliveryDistanceM   Int?
   riderId             String?
+  /// Identifier of the corresponding order in the external POS (iiko orderId
+  /// or Poster transactionId), set after a successful ORDER_PUSH job.
+  posExternalId       String?
   // Status timeline — denormalized from OrderEvent for quick queries.
-  createdAt       DateTime        @default(now())
-  acceptedAt      DateTime?
-  startedAt       DateTime?
-  readyAt         DateTime?
-  pickedUpAt      DateTime?
-  outForDeliveryAt DateTime?
-  deliveredAt      DateTime?
-  cancelledAt     DateTime?
-  expiredAt       DateTime?
+  createdAt           DateTime        @default(now())
+  acceptedAt          DateTime?
+  startedAt           DateTime?
+  readyAt             DateTime?
+  pickedUpAt          DateTime?
+  outForDeliveryAt    DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  expiredAt           DateTime?
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
   store           Store            @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -764,4 +822,62 @@ model PromoRedemption {
 
   @@index([promoId])
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POS integrations
+//
+// One Brand may attach multiple providers in principle (one row per provider),
+// although in practice a brand operates on a single back-office. Credentials
+// are stored as opaque AES-256-GCM ciphertext — never plain — and the cipher
+// is keyed off env POS_CREDENTIALS_KEY. The plain-shape of credentials is
+// provider-specific and lives in the IPosProvider layer; the DB doesn't care.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PosIntegration {
+  id                    String               @id @default(cuid())
+  brandId               String
+  provider              PosProvider
+  /// AES-256-GCM ciphertext: base64(iv || authTag || cipher). Decrypted only
+  /// in IPosProvider implementations through SecretCipher.
+  credentialsCiphertext String
+  status                PosIntegrationStatus @default(DISCONNECTED)
+  /// Provider-specific non-secret config (iiko organizationId, Poster
+  /// account name, polling cadence overrides, etc.). Schema is enforced in
+  /// the provider layer, not in the DB.
+  settings              Json                 @default("{}")
+  lastSyncAt            DateTime?
+  lastErrorMessage      String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  brand Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  jobs  PosSyncJob[]
+
+  @@unique([brandId, provider])
+  @@index([brandId])
+  @@index([status])
+}
+
+/// One row per scheduled / running / finished sync attempt against a
+/// {@link PosIntegration}. The same row is updated as the BullMQ worker
+/// progresses so the admin UI can poll or subscribe over WS.
+model PosSyncJob {
+  id            String           @id @default(cuid())
+  integrationId String
+  kind          PosSyncJobKind
+  status        PosSyncJobStatus @default(PENDING)
+  /// 0..total. Kept in sync with BullMQ job progress as the worker runs.
+  progress      Int              @default(0)
+  total         Int              @default(0)
+  errorMessage  String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime         @default(now())
+
+  integration PosIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
+  @@index([integrationId, kind, createdAt])
+  @@index([status])
 }

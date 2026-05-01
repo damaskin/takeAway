@@ -13,6 +13,7 @@ import { BusinessModule } from './business/business.module';
 import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { SecretCipherModule } from './common/crypto/secret-cipher.module';
 import { FeaturesModule } from './config/config.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { HealthModule } from './health/health.module';
@@ -21,6 +22,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
+import { PosModule } from './pos/pos.module';
 import { PromoModule } from './promo/promo.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -44,6 +46,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     RedisModule,
     StorageModule,
+    SecretCipherModule,
     FeaturesModule,
     UsersModule,
     AuthModule,
@@ -58,6 +61,7 @@ import { UsersModule } from './users/users.module';
     LoyaltyModule,
     OrdersModule,
     PaymentsModule,
+    PosModule,
     RealtimeModule,
     KdsModule,
     DeliveryModule,
