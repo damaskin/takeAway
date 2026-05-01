@@ -62,9 +62,12 @@ import { AuthService } from '../../core/auth/auth.service';
           </button>
         </form>
 
-        <div class="mt-4 flex justify-between text-sm">
+        <div class="mt-4 flex justify-between items-center text-sm">
           <a routerLink="/forgot-password" style="color: var(--color-caramel)">
             {{ 'admin.login.forgot' | translate }}
+          </a>
+          <a routerLink="/signup" style="color: var(--color-caramel); font-weight: 600">
+            {{ 'admin.login.signupCta' | translate }}
           </a>
         </div>
 

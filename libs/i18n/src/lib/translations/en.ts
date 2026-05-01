@@ -306,6 +306,23 @@ export const TRANSLATIONS_EN: TranslationTree = {
       signIn: 'Sign in',
       signingIn: 'Signing in…',
       forgot: 'Forgot password?',
+      signupCta: 'Register a business →',
+    },
+    signup: {
+      title: 'Register your business',
+      subtitle:
+        'Create a brand account in minutes. We approve new brands within 1 business day; you can configure your menu and POS right away.',
+      brandName: 'Brand name',
+      brandNamePlaceholder: 'Morning Brew Café',
+      ownerName: 'Your name',
+      email: 'Work email',
+      password: 'Password',
+      passwordHint: 'At least 8 characters.',
+      phone: 'Phone (optional)',
+      create: 'Create account',
+      creating: 'Creating…',
+      haveAccount: 'Already have an account?',
+      signIn: 'Sign in',
     },
     forgot: {
       title: 'Forgot password',
