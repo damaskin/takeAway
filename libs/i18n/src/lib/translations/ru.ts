@@ -314,6 +314,23 @@ export const TRANSLATIONS_RU = {
       signIn: 'Войти',
       signingIn: 'Входим…',
       forgot: 'Забыли пароль?',
+      signupCta: 'Зарегистрировать бизнес →',
+    },
+    signup: {
+      title: 'Регистрация бизнеса',
+      subtitle:
+        'Создайте аккаунт бренда за минуту. Новые бренды одобряются в течение 1 рабочего дня; настраивать меню и POS можно сразу.',
+      brandName: 'Название бренда',
+      brandNamePlaceholder: 'Morning Brew Café',
+      ownerName: 'Ваше имя',
+      email: 'Рабочий email',
+      password: 'Пароль',
+      passwordHint: 'Минимум 8 символов.',
+      phone: 'Телефон (необязательно)',
+      create: 'Создать аккаунт',
+      creating: 'Создаём…',
+      haveAccount: 'Уже есть аккаунт?',
+      signIn: 'Войти',
     },
     changePassword: {
       title: 'Смените пароль',
