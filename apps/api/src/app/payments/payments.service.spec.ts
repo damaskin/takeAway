@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
+import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { PaymentsService } from './payments.service';
@@ -117,6 +118,12 @@ describe('PaymentsService.handleWebhook', () => {
           useValue: {
             notifyOrderStatus: jest.fn().mockResolvedValue(undefined),
             notifyBrandStaffNewOrder: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: PosService,
+          useValue: {
+            enqueueOrderPushIfApplicable: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: STRIPE_CLIENT, useValue: stripe },

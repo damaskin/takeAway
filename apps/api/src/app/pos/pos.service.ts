@@ -23,12 +23,15 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { SecretCipher } from '../common/crypto/secret-cipher';
 import { PrismaService } from '../prisma/prisma.service';
 import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
+import { NotificationsService } from '../notifications/notifications.service';
 import type {
   IPosProvider,
   IikoCredentials,
   ImportedMenu,
   ImportedStopListEntry,
   ImportedStoreDraft,
+  OrderForPush,
+  OrderForPushItem,
   PosCredentials,
   PosIntegrationCtx,
   PosSettings,
@@ -38,6 +41,9 @@ import { IikoProvider } from './providers/iiko.provider';
 import { PosterProvider } from './providers/poster.provider';
 import type { PosIntegrationDto, PosSyncJobDto } from './dto/pos-status.dto';
 
+const ORDER_PUSH_PRIORITY = 1;
+const ORDER_PUSH_ATTEMPTS = 3;
+const ORDER_PUSH_BACKOFF_MS = 30_000;
 const MENU_SYNC_PRIORITY = 10;
 const JOB_HISTORY_LIMIT = 25;
 
@@ -63,6 +69,7 @@ export class PosService {
     private readonly scope: BrandScopeService,
     private readonly iiko: IikoProvider,
     private readonly poster: PosterProvider,
+    private readonly notifications: NotificationsService,
     @InjectQueue(POS_SYNC_QUEUE) private readonly queue: Queue<PosSyncJobPayload>,
   ) {
     this.providers = { IIKO: this.iiko, POSTER: this.poster };
@@ -594,4 +601,196 @@ export class PosService {
   ): string {
     return `pos-${provider.toLowerCase()}-${kind}-${externalId}`;
   }
+
+  // ── Outgoing orders (M3) ────────────────────────────────────────────────
+
+  /**
+   * Best-effort enqueue of an outgoing-order push triggered on PAID. Silent
+   * skip when:
+   *   - the brand has no CONNECTED PosIntegration
+   *   - the order already has a posExternalId (prevents double-push on
+   *     replayed Stripe webhooks)
+   * The order keeps flowing through KDS regardless — we never fail the
+   * payment webhook because the POS isn't reachable.
+   *
+   * Retries: BullMQ `attempts: 3` with 30s exponential backoff. The final
+   * failure (or any earlier hard-validation reject) triggers a Telegram
+   * alert to the BRAND_ADMIN through {@link NotificationsService}.
+   */
+  async enqueueOrderPushIfApplicable(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, posExternalId: true, store: { select: { brandId: true } } },
+    });
+    if (!order || order.posExternalId) return;
+
+    const integration = await this.prisma.posIntegration.findFirst({
+      where: { brandId: order.store.brandId, status: PosIntegrationStatus.CONNECTED },
+      select: { id: true },
+    });
+    if (!integration) return;
+
+    const job = await this.prisma.posSyncJob.create({
+      data: {
+        integrationId: integration.id,
+        kind: PosSyncJobKind.ORDER_PUSH,
+        status: PosSyncJobStatus.PENDING,
+      },
+    });
+
+    await this.queue.add(
+      PosSyncJobKind.ORDER_PUSH,
+      { syncJobId: job.id, integrationId: integration.id, kind: PosSyncJobKind.ORDER_PUSH, args: { orderId } },
+      {
+        priority: ORDER_PUSH_PRIORITY,
+        attempts: ORDER_PUSH_ATTEMPTS,
+        backoff: { type: 'exponential', delay: ORDER_PUSH_BACKOFF_MS },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      },
+    );
+  }
+
+  /**
+   * Resolves an Order into the {@link OrderForPush} shape consumed by
+   * IPosProvider implementations. Maps internal product/modifier ids to
+   * the integration provider's external identifiers; items that aren't
+   * mapped are silently dropped (the provider then decides whether the
+   * remaining items are enough to push).
+   */
+  async loadOrderForPush(orderId: string, integrationId: string): Promise<OrderForPush> {
+    const integration = await this.prisma.posIntegration.findUnique({
+      where: { id: integrationId },
+      select: { provider: true },
+    });
+    if (!integration) throw new NotFoundException('Integration not found');
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, store: { select: { externalProvider: true, externalId: true } } },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.store.externalProvider !== integration.provider || !order.store.externalId) {
+      throw new BadRequestException(`Order ${order.id} cannot push: store has no ${integration.provider} mapping`);
+    }
+
+    const productInternalIds = order.items
+      .map((it) => extractSnapshotId(it.productSnapshot))
+      .filter((id): id is string => typeof id === 'string');
+
+    const products = productInternalIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productInternalIds } },
+          select: { id: true, externalProvider: true, externalId: true },
+        })
+      : [];
+    const productExternalById = new Map(
+      products
+        .filter((p) => p.externalProvider === integration.provider && p.externalId)
+        .map((p) => [p.id, p.externalId as string]),
+    );
+
+    const modifierIds = new Set<string>();
+    for (const it of order.items) {
+      const map = extractSnapshotModifiers(it.productSnapshot);
+      for (const id of Object.keys(map)) modifierIds.add(id);
+    }
+    const modifiers = modifierIds.size
+      ? await this.prisma.modifier.findMany({
+          where: { id: { in: [...modifierIds] } },
+          select: { id: true, externalProvider: true, externalId: true },
+        })
+      : [];
+    const modifierExternalById = new Map(
+      modifiers
+        .filter((m) => m.externalProvider === integration.provider && m.externalId)
+        .map((m) => [m.id, m.externalId as string]),
+    );
+
+    const items: OrderForPushItem[] = [];
+    for (const it of order.items) {
+      const productInternalId = extractSnapshotId(it.productSnapshot);
+      const productExternalId = productInternalId ? productExternalById.get(productInternalId) : undefined;
+      if (!productExternalId) continue;
+      const modifiersMap = extractSnapshotModifiers(it.productSnapshot);
+      const itemModifiers = Object.entries(modifiersMap).flatMap(([id, count]) => {
+        const externalId = modifierExternalById.get(id);
+        return externalId && count > 0 ? [{ externalId, count }] : [];
+      });
+      items.push({
+        productExternalId,
+        quantity: it.quantity,
+        unitPriceCents: it.unitPriceCents,
+        modifiers: itemModifiers,
+        notes: extractSnapshotNotes(it.productSnapshot),
+      });
+    }
+
+    return {
+      id: order.id,
+      orderCode: order.orderCode,
+      storeExternalId: order.store.externalId,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      notes: order.notes,
+      items,
+      totalCents: order.totalCents,
+      currency: order.currency,
+    };
+  }
+
+  /**
+   * Marks the Order with the provider-side identifier returned by
+   * {@link IPosProvider.pushOrder}. Called from the BullMQ worker on success.
+   */
+  async _persistOrderPushResult(orderId: string, posExternalId: string): Promise<void> {
+    await this.prisma.order.update({ where: { id: orderId }, data: { posExternalId } });
+  }
+
+  /**
+   * Final-failure hook: the BullMQ worker calls this after the last retry
+   * attempt is exhausted, so the brand owner gets a Telegram alert and can
+   * enter the order into the POS by hand.
+   */
+  async _alertOrderPushFailure(integrationId: string, orderId: string, message: string): Promise<void> {
+    const integration = await this.prisma.posIntegration.findUnique({
+      where: { id: integrationId },
+      select: { brandId: true },
+    });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { orderCode: true },
+    });
+    if (!integration || !order) return;
+    await this.notifications.notifyBrandAdminPosError({
+      brandId: integration.brandId,
+      orderCode: order.orderCode,
+      message,
+    });
+  }
+}
+
+function extractSnapshotId(snapshot: unknown): string | null {
+  if (typeof snapshot !== 'object' || snapshot === null) return null;
+  const id = (snapshot as { id?: unknown }).id;
+  return typeof id === 'string' ? id : null;
+}
+
+function extractSnapshotModifiers(snapshot: unknown): Record<string, number> {
+  if (typeof snapshot !== 'object' || snapshot === null) return {};
+  const raw = (snapshot as { modifiers?: unknown }).modifiers;
+  if (typeof raw !== 'object' || raw === null) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === 'number' ? v : typeof v === 'string' ? parseInt(v, 10) : NaN;
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return out;
+}
+
+function extractSnapshotNotes(snapshot: unknown): string | undefined {
+  if (typeof snapshot !== 'object' || snapshot === null) return undefined;
+  const notes = (snapshot as { notes?: unknown }).notes;
+  return typeof notes === 'string' && notes.length > 0 ? notes : undefined;
 }

@@ -130,6 +130,40 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * Telegram-pings every BRAND_ADMIN of a brand when an outgoing POS push
+   * has exhausted its retry budget. Same fan-out shape as
+   * {@link notifyBrandStaffNewOrder} but scoped to brand owners — store
+   * staff don't act on POS-integration health.
+   */
+  async notifyBrandAdminPosError(input: { brandId: string; orderCode: string; message: string }): Promise<void> {
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        telegramUserId: { not: null },
+        blockedAt: null,
+        role: 'BRAND_ADMIN',
+        ownedBrands: { some: { id: input.brandId } },
+      },
+      select: { id: true, locale: true, telegramUserId: true },
+    });
+    if (recipients.length === 0) return;
+
+    const message: PushMessage = {
+      kind: 'order_status',
+      title: `POS: заказ #${input.orderCode} не ушёл в кассу`,
+      body: `${input.message}. Заказ нужно ввести в POS вручную. / Order failed to push to your POS — enter it manually.`,
+    };
+
+    await Promise.allSettled(
+      recipients.map((u) =>
+        this.telegram.send(
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
+          message,
+        ),
+      ),
+    );
+  }
+
   private async loadRecipient(userId: string): Promise<(PushRecipient & { notifyOrderUpdates: boolean }) | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
