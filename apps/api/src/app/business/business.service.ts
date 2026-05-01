@@ -1,5 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { BrandModerationStatus, Currency, Locale, Role } from '@prisma/client';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BrandModerationStatus, Currency, Locale, Prisma, Role } from '@prisma/client';
 
 import { PasswordService } from '../auth/services/password.service';
 import { TokensService } from '../auth/services/tokens.service';
@@ -12,6 +12,8 @@ const MAX_SLUG_COLLISIONS = 50;
 
 @Injectable()
 export class BusinessService {
+  private readonly logger = new Logger(BusinessService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
@@ -31,30 +33,36 @@ export class BusinessService {
     const slug = await this.allocateBrandSlug(dto.brandName);
     const passwordHash = await this.passwords.hash(dto.password);
 
-    const { brand, user } = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email,
-          passwordHash,
-          name: dto.ownerName,
-          phone: dto.phone,
-          role: Role.BRAND_ADMIN,
-          locale: dto.locale ?? Locale.EN,
-          currency: dto.currency ?? Currency.USD,
-        },
+    let result: Awaited<ReturnType<typeof this.runRegisterTx>>;
+    try {
+      result = await this.runRegisterTx({
+        email,
+        passwordHash,
+        ownerName: dto.ownerName,
+        phone: dto.phone,
+        locale: dto.locale ?? Locale.EN,
+        currency: dto.currency ?? Currency.USD,
+        slug,
+        brandName: dto.brandName,
       });
-      const brand = await tx.brand.create({
-        data: {
-          slug,
-          name: dto.brandName,
-          ownerId: user.id,
-          currency: dto.currency ?? Currency.USD,
-          locale: dto.locale ?? Locale.EN,
-          moderationStatus: BrandModerationStatus.PENDING,
-        },
-      });
-      return { brand, user };
-    });
+    } catch (err) {
+      // Race window between the email-uniqueness check above and the User
+      // create — two simultaneous registrations of the same email both pass
+      // findUnique, then one of them trips Prisma's unique constraint. Map
+      // it back to the same friendly Conflict the up-front check produces.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        this.logger.warn(`Race-condition duplicate during register for ${email}: ${err.message}`);
+        throw new ConflictException('An account with this email already exists');
+      }
+      // Anything else gets logged with full stack so the admin terminal
+      // shows what actually went wrong instead of a bare 500.
+      this.logger.error(
+        `register failed for email=${email}: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw err;
+    }
+    const { brand, user } = result;
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
@@ -86,6 +94,42 @@ export class BusinessService {
     };
   }
 
+  private runRegisterTx(input: {
+    email: string;
+    passwordHash: string;
+    ownerName: string;
+    phone: string | undefined;
+    locale: Locale;
+    currency: Currency;
+    slug: string;
+    brandName: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: input.email,
+          passwordHash: input.passwordHash,
+          name: input.ownerName,
+          phone: input.phone,
+          role: Role.BRAND_ADMIN,
+          locale: input.locale,
+          currency: input.currency,
+        },
+      });
+      const brand = await tx.brand.create({
+        data: {
+          slug: input.slug,
+          name: input.brandName,
+          ownerId: user.id,
+          currency: input.currency,
+          locale: input.locale,
+          moderationStatus: BrandModerationStatus.PENDING,
+        },
+      });
+      return { brand, user };
+    });
+  }
+
   /**
    * kebab-case the brand name, fall back to `brand-<cuid-suffix>` if the
    * input has no alphanumerics, and append `-2`, `-3`… on collision. Retries
@@ -108,7 +152,7 @@ export class BusinessService {
 function slugify(input: string): string {
   return input
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[̀-ͯ]/g, '') // strip accents
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
