@@ -29,6 +29,24 @@ interface PosterEnvelope<T> {
   error?: { code: number; message: string };
 }
 
+interface PosterIncomingProduct {
+  product_id: number;
+  count: number;
+  modifications?: { m: number; a: number }[];
+}
+
+interface PosterIncomingOrderBody {
+  spot_id: number;
+  phone: string;
+  client_name: string;
+  products: PosterIncomingProduct[];
+  comment?: string;
+}
+
+interface PosterIncomingOrderResponse {
+  incoming_order_id?: string | number;
+}
+
 interface PosterCategoryRow {
   category_id: number | string;
   category_name: string;
@@ -160,8 +178,81 @@ export class PosterProvider implements IPosProvider {
     return entries;
   }
 
-  async pushOrder(_integration: PosIntegrationCtx, _order: OrderForPush): Promise<{ posExternalId: string }> {
-    throw new NotImplementedException('Poster outgoing orders are not available yet (M3)');
+  async pushOrder(integration: PosIntegrationCtx, order: OrderForPush): Promise<{ posExternalId: string }> {
+    const spotId = Number(order.storeExternalId);
+    if (!Number.isFinite(spotId) || spotId <= 0) {
+      throw new BadGatewayException(
+        `Cannot push order ${order.orderCode}: store has no Poster spot mapping (externalId=${order.storeExternalId})`,
+      );
+    }
+
+    const products: PosterIncomingProduct[] = [];
+    for (const item of order.items) {
+      const productId = Number(item.productExternalId);
+      if (!Number.isFinite(productId) || productId <= 0) {
+        // Mixed-catalog brand — locally-managed items can't be sent to Poster.
+        // Skip them with a warning so the order still partially syncs.
+        this.logger.warn(`Skipping order item with non-Poster product ${item.productExternalId}`);
+        continue;
+      }
+      const modifications = item.modifiers
+        .map((m) => ({ m: Number(m.externalId), a: m.count }))
+        .filter((m) => Number.isFinite(m.m) && m.m > 0 && m.a > 0);
+      products.push({
+        product_id: productId,
+        count: item.quantity,
+        modifications: modifications.length > 0 ? modifications : undefined,
+      });
+    }
+    if (products.length === 0) {
+      throw new BadGatewayException(`Cannot push order ${order.orderCode}: no Poster-mapped items`);
+    }
+
+    const credentials = integration.credentials as PosterCredentials;
+    const settings = integration.settings as PosterSettings;
+    const host = settings.apiHost ?? DEFAULT_API_HOST;
+
+    const body: PosterIncomingOrderBody = {
+      spot_id: spotId,
+      phone: order.customerPhone ?? '',
+      client_name: order.customerName ?? '',
+      products,
+      comment: this.buildPosterComment(order),
+    };
+
+    try {
+      const response = await this.http(host).post<PosterEnvelope<PosterIncomingOrderResponse>>(
+        '/api/incomingOrders.createIncomingOrder',
+        body,
+        { params: { token: credentials.token } },
+      );
+      if (response.data.error) {
+        const code = response.data.error.code;
+        if (code === 35 || code === 1 || code === 5) {
+          throw new UnauthorizedException(`Poster: ${response.data.error.message}`);
+        }
+        throw new BadGatewayException(`Poster pushOrder error ${code}: ${response.data.error.message}`);
+      }
+      const incoming = response.data.response;
+      const posExternalId = incoming?.incoming_order_id != null ? String(incoming.incoming_order_id) : null;
+      if (!posExternalId) throw new BadGatewayException('Poster did not return incoming_order_id');
+      return { posExternalId };
+    } catch (err) {
+      if (err instanceof UnauthorizedException || err instanceof BadGatewayException) throw err;
+      if (err instanceof AxiosError && err.response) {
+        const status = err.response.status;
+        if (status === 401 || status === 403) throw new UnauthorizedException('Poster rejected the token');
+        this.logger.warn(`Poster pushOrder failed (${status}): ${JSON.stringify(err.response.data ?? {})}`);
+        throw new BadGatewayException(`Poster gateway returned HTTP ${status}`);
+      }
+      throw err;
+    }
+  }
+
+  private buildPosterComment(order: OrderForPush): string {
+    const lines = [`takeAway #${order.orderCode}`];
+    if (order.notes) lines.push(order.notes);
+    return lines.join(' · ');
   }
 
   async subscribeWebhooks(_integration: PosIntegrationCtx, _callbackUrl: string): Promise<void> {

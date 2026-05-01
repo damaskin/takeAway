@@ -177,4 +177,88 @@ describe('PosterProvider', () => {
     expect(typeof (real as unknown as { http: (h: string) => AxiosInstance }).http).toBe('function');
     expect(axios).toBeDefined();
   });
+
+  it('pushOrder posts to incomingOrders.createIncomingOrder and returns the id', async () => {
+    const calls: { path: string; body: unknown; params: Record<string, string> }[] = [];
+    const fake = {
+      post: jest.fn(async (path: string, body: unknown, config?: { params?: Record<string, string> }) => {
+        calls.push({ path, body, params: config?.params ?? {} });
+        return { data: { response: { incoming_order_id: 'inc-42' } } };
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestablePosterProvider(fake);
+    const result = await provider.pushOrder(ctxFor(), {
+      id: 'order-1',
+      orderCode: '1234',
+      storeExternalId: '7',
+      customerName: 'Anya',
+      customerPhone: '+380501112233',
+      notes: 'no sugar',
+      currency: 'EUR',
+      totalCents: 350,
+      items: [
+        {
+          productExternalId: '100',
+          quantity: 2,
+          unitPriceCents: 150,
+          modifiers: [{ externalId: '5', count: 1 }],
+        },
+      ],
+    });
+    expect(result).toEqual({ posExternalId: 'inc-42' });
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    if (!call) throw new Error('expected one captured call');
+    expect(call.path).toBe('/api/incomingOrders.createIncomingOrder');
+    expect(call.params['token']).toBe('tk_test');
+    expect(call.body).toMatchObject({
+      spot_id: 7,
+      phone: '+380501112233',
+      client_name: 'Anya',
+      products: [{ product_id: 100, count: 2, modifications: [{ m: 5, a: 1 }] }],
+    });
+    const body = call.body as { comment?: string };
+    expect(body.comment).toContain('1234');
+    expect(body.comment).toContain('no sugar');
+  });
+
+  it('pushOrder rejects when no items map to Poster', async () => {
+    const fake = { post: jest.fn() } as unknown as AxiosInstance;
+    const provider = new TestablePosterProvider(fake);
+    await expect(
+      provider.pushOrder(ctxFor(), {
+        id: 'o',
+        orderCode: '0001',
+        storeExternalId: '1',
+        customerName: null,
+        customerPhone: null,
+        notes: null,
+        currency: 'EUR',
+        totalCents: 0,
+        items: [
+          // Locally-managed item — externalId is not a Poster id.
+          { productExternalId: 'local-only', quantity: 1, unitPriceCents: 100, modifiers: [] },
+        ],
+      }),
+    ).rejects.toThrow(/no Poster-mapped items/);
+    expect(fake.post).not.toHaveBeenCalled();
+  });
+
+  it('pushOrder rejects when the store has no Poster spot id', async () => {
+    const fake = { post: jest.fn() } as unknown as AxiosInstance;
+    const provider = new TestablePosterProvider(fake);
+    await expect(
+      provider.pushOrder(ctxFor(), {
+        id: 'o',
+        orderCode: '0001',
+        storeExternalId: 'not-a-number',
+        customerName: null,
+        customerPhone: null,
+        notes: null,
+        currency: 'EUR',
+        totalCents: 0,
+        items: [{ productExternalId: '100', quantity: 1, unitPriceCents: 100, modifiers: [] }],
+      }),
+    ).rejects.toThrow(/spot mapping/);
+  });
 });

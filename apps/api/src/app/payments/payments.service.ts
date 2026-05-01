@@ -11,6 +11,7 @@ import type { Prisma } from '@prisma/client';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
+import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
@@ -43,6 +44,7 @@ export class PaymentsService {
     private readonly realtime: RealtimeGateway,
     private readonly orders: OrdersService,
     private readonly notifications: NotificationsService,
+    private readonly pos: PosService,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
   ) {}
 
@@ -199,6 +201,17 @@ export class PaymentsService {
       // the store get a Telegram notification so they aren't waiting on
       // the polling dashboard.
       void this.notifications.notifyBrandStaffNewOrder(orderLike);
+      // Push the order downstream to the connected POS (iiko / Poster).
+      // Best-effort fire-and-forget: the queue handles retries internally,
+      // and the brand admin gets a Telegram alert if the push exhausts its
+      // retry budget. Never blocks the payment webhook.
+      void this.pos.enqueueOrderPushIfApplicable(orderLike.id).catch((err: unknown) => {
+        this.logger.error(
+          `[pos] failed to enqueue order push for order=${orderLike.id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
     }
 
     // Credit loyalty points. Fire-and-forget: a ledger hiccup must not roll

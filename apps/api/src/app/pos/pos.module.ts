@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { POS_SYNC_QUEUE } from './pos-sync.queue';
 import { PosSyncProcessor } from './pos-sync.processor';
 import { PosController } from './pos.controller';
@@ -25,6 +26,7 @@ import { PosterProvider } from './providers/poster.provider';
 @Module({
   imports: [
     AuthModule,
+    NotificationsModule,
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
