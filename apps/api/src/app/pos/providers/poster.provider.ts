@@ -100,6 +100,13 @@ interface PosterSpotRow {
 @Injectable()
 export class PosterProvider implements IPosProvider {
   readonly kind = 'POSTER' as const;
+  /**
+   * Poster pushes stop-list / menu changes via webhook (see
+   * `POST /pos/webhooks/poster/:brandId`), so periodic polling is wasted
+   * traffic. The webhook endpoint enqueues the matching MENU / STOP_LIST
+   * job in response to each event.
+   */
+  readonly supportsStopListPolling = false;
   private readonly logger = new Logger(PosterProvider.name);
 
   async testConnection(integration: PosIntegrationCtx): Promise<void> {
