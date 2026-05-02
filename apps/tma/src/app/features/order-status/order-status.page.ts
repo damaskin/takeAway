@@ -84,6 +84,17 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
           }
         </div>
 
+        @if (!isTerminal(o.status)) {
+          <button
+            type="button"
+            (click)="imHere()"
+            class="w-full flex items-center justify-center"
+            style="background: var(--color-caramel); color: var(--color-foam); height: 52px; border-radius: 14px; font-family: var(--font-sans); font-size: 15px; font-weight: 600; margin-top: 4px"
+          >
+            {{ (imHereClicked() ? 'common.confirm' : 'web.orderStatus.iAmHere') | translate }}
+          </button>
+        }
+
         <!-- Order summary -->
         <section class="w-full flex flex-col" style="gap: 12px; margin-top: 12px">
           <h2
@@ -131,6 +142,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
+  readonly imHereClicked = signal(false);
 
   // Labels are translation keys — resolved with | translate in the template.
   readonly timelineSteps = [
@@ -189,6 +201,28 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     if (status === 'PICKED_UP') return '🎉';
     if (status === 'IN_PROGRESS') return '☕';
     return '⏱';
+  }
+
+  isTerminal(status: OrderStatusString): boolean {
+    return status === 'PICKED_UP' || status === 'CANCELLED' || status === 'EXPIRED';
+  }
+
+  imHere(): void {
+    const o = this.order();
+    if (!o) return;
+    this.imHereClicked.set(true);
+    this.tg.haptic('medium');
+    const send = (lat: number, lng: number) =>
+      this.orders.reportLocation(o.id, { lat, lng, iAmHere: true }).subscribe({ error: () => undefined });
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => send(pos.coords.latitude, pos.coords.longitude),
+        () => send(0, 0),
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 },
+      );
+    } else {
+      send(0, 0);
+    }
   }
 
   isStepDone(current: OrderStatusString, step: OrderStatusString): boolean {

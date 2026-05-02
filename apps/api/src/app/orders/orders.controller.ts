@@ -6,6 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
@@ -34,6 +35,25 @@ export class OrdersController {
   @ApiOkResponse({ type: OrderDto })
   cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<OrderDto> {
     return this.orders.cancel(user.id, id);
+  }
+
+  /**
+   * Geofencing ping from the customer's order-status screen. The client
+   * fires it on a coarse interval while the order is in CREATED..READY,
+   * and once explicitly with `iAmHere=true` when the user taps the button.
+   *
+   * Server classifies distance to the store and records a one-shot
+   * `CUSTOMER_NEARBY` / `CUSTOMER_HERE` event so the KDS chip lights up
+   * exactly once per level.
+   */
+  @Post('orders/:id/location')
+  @ApiOkResponse({ type: CustomerLocationResultDto })
+  reportLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CustomerLocationDto,
+  ): Promise<CustomerLocationResultDto> {
+    return this.orders.recordCustomerLocation(user.id, id, dto);
   }
 
   @Get('me/orders')

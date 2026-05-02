@@ -315,9 +315,32 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   }
 
   imHere(): void {
-    // Placeholder for POST /orders/:id/im-here — not wired yet on backend.
-    // For now we just flip local state so the barista UX is testable.
+    const o = this.order();
+    if (!o) return;
     this.imHereClicked.set(true);
+
+    const send = (lat: number, lng: number) =>
+      this.orders.reportLocation(o.id, { lat, lng, iAmHere: true }).subscribe({
+        error: () => {
+          // Soft fallback: keep the button "confirmed" — the staff already
+          // see the order via realtime, so a transport blip shouldn't make
+          // the UI feel broken to the customer.
+        },
+      });
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => send(pos.coords.latitude, pos.coords.longitude),
+        // No coords (permission denied / timeout) — still record the
+        // explicit "I'm here" tap by sending zeros + iAmHere flag; the
+        // server's iAmHere short-circuit treats it as HERE regardless of
+        // distance.
+        () => send(0, 0),
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 },
+      );
+    } else {
+      send(0, 0);
+    }
   }
 
   isTerminal(status: OrderStatusString): boolean {

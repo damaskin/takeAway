@@ -103,6 +103,16 @@ export class OrdersApi {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
   }
 
+  reportLocation(
+    id: string,
+    body: { lat: number; lng: number; iAmHere?: boolean },
+  ): Observable<{ level: 'FAR' | 'NEARBY' | 'HERE'; distanceM: number; recorded: boolean }> {
+    return this.http.post<{ level: 'FAR' | 'NEARBY' | 'HERE'; distanceM: number; recorded: boolean }>(
+      `${this.api.baseUrl}/orders/${id}/location`,
+      body,
+    );
+  }
+
   createPaymentIntent(orderId: string): Observable<{ clientSecret: string }> {
     return this.http.post<{ clientSecret: string }>(`${this.api.baseUrl}/payments/intent`, { orderId });
   }

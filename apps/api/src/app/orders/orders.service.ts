@@ -18,12 +18,25 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
+import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
 const MAX_SCHEDULED_LEAD_HOURS = 24;
 const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
+/** Distance buckets for the "I'm here" geofence, in meters. */
+const NEARBY_RADIUS_M = 300;
+const HERE_RADIUS_M = 60;
+/** Statuses where a location ping still makes sense — terminal states reject. */
+const LOCATION_TRACKABLE_STATUSES = new Set<string>([
+  'CREATED',
+  'PAID',
+  'ACCEPTED',
+  'IN_PROGRESS',
+  'READY',
+  'OUT_FOR_DELIVERY',
+]);
 
 @Injectable()
 export class OrdersService {
@@ -388,6 +401,87 @@ export class OrdersService {
     return this.toOrderDto(updated);
   }
 
+  /**
+   * Record a customer-proximity ping. Computes haversine distance to the
+   * store, classifies into FAR/NEARBY/HERE, and writes a one-shot
+   * `CUSTOMER_NEARBY` / `CUSTOMER_HERE` event when the level escalates.
+   * Already-fired levels are silently no-op so the client can ping freely.
+   *
+   * On HERE we also broadcast a KDS update so the kitchen sees the
+   * customer arrived, and Telegram-ping store staff once.
+   */
+  async recordCustomerLocation(
+    userId: string,
+    orderId: string,
+    dto: CustomerLocationDto,
+  ): Promise<CustomerLocationResultDto> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        store: { select: { latitude: true, longitude: true } },
+        events: {
+          where: { type: { in: ['CUSTOMER_NEARBY', 'CUSTOMER_HERE'] } },
+          select: { type: true },
+        },
+      },
+    });
+    if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+    if (!LOCATION_TRACKABLE_STATUSES.has(order.status)) {
+      throw new BadRequestException(`Cannot report location for order in status ${order.status}`);
+    }
+
+    const distanceM = haversineMeters(dto.lat, dto.lng, order.store.latitude, order.store.longitude);
+    const level: 'FAR' | 'NEARBY' | 'HERE' =
+      dto.iAmHere || distanceM <= HERE_RADIUS_M ? 'HERE' : distanceM <= NEARBY_RADIUS_M ? 'NEARBY' : 'FAR';
+
+    const alreadyHere = order.events.some((e) => e.type === 'CUSTOMER_HERE');
+    const alreadyNearby = order.events.some((e) => e.type === 'CUSTOMER_NEARBY');
+
+    let recorded = false;
+    if (level === 'HERE' && !alreadyHere) {
+      await this.prisma.orderEvent.create({
+        data: {
+          orderId,
+          type: 'CUSTOMER_HERE',
+          actorId: userId,
+          payload: { distanceM, lat: dto.lat, lng: dto.lng } satisfies Prisma.InputJsonValue,
+        },
+      });
+      recorded = true;
+      this.realtime.emitKdsOrderChanged({
+        storeId: order.storeId,
+        kind: 'updated',
+        orderId: order.id,
+        order: null,
+      });
+      void this.notifications.notifyStaffCustomerHere({
+        id: order.id,
+        userId: order.userId,
+        orderCode: order.orderCode,
+        storeId: order.storeId,
+        fulfillmentType: order.fulfillmentType,
+      });
+    } else if (level === 'NEARBY' && !alreadyNearby && !alreadyHere) {
+      await this.prisma.orderEvent.create({
+        data: {
+          orderId,
+          type: 'CUSTOMER_NEARBY',
+          actorId: userId,
+          payload: { distanceM, lat: dto.lat, lng: dto.lng } satisfies Prisma.InputJsonValue,
+        },
+      });
+      recorded = true;
+      this.realtime.emitKdsOrderChanged({
+        storeId: order.storeId,
+        kind: 'updated',
+        orderId: order.id,
+        order: null,
+      });
+    }
+
+    return { level, distanceM: Math.round(distanceM), recorded };
+  }
+
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private resolvePickupAt(
@@ -496,4 +590,14 @@ export class OrdersService {
       deliveredAt: order.deliveredAt?.toISOString() ?? null,
     };
   }
+}
+
+/** Great-circle distance in meters between two WGS-84 coords. */
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
