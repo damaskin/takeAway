@@ -390,6 +390,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       riders: 'Riders',
       promo: 'Promo',
       giftCards: 'Gift cards',
+      campaigns: 'Campaigns',
       analytics: 'Analytics',
       brands: 'Brands',
       settings: 'Settings',
@@ -651,6 +652,45 @@ export const TRANSLATIONS_EN: TranslationTree = {
           '5': 'Fri',
           '6': 'Sat',
         },
+      },
+    },
+    campaigns: {
+      title: 'Marketing campaigns',
+      subtitle:
+        'Compose a push, Telegram or email broadcast for the customers of your brand. Drafts are saved; clicking Send fans the message out immediately.',
+      saveDraft: 'Save draft',
+      send: 'Send now',
+      sending: 'Sending…',
+      empty: 'No campaigns yet — compose one above.',
+      fields: {
+        title: 'Title',
+        body: 'Body',
+        channel: 'Channel',
+        audience: 'Audience',
+      },
+      channels: {
+        PUSH: 'Push (browser / app)',
+        TELEGRAM: 'Telegram',
+        EMAIL: 'Email',
+      },
+      audiences: {
+        ALL: 'All customers',
+        HAS_ORDERED: 'Customers who paid for an order',
+        INACTIVE_30D: 'Inactive 30+ days',
+      },
+      status: {
+        DRAFT: 'Draft',
+        SCHEDULED: 'Scheduled',
+        SENDING: 'Sending',
+        SENT: 'Sent',
+        FAILED: 'Failed',
+      },
+      col: {
+        title: 'Campaign',
+        channel: 'Channel',
+        audience: 'Audience',
+        status: 'Status',
+        delivered: 'Sent / Targeted',
       },
     },
     giftCards: {

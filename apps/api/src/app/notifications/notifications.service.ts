@@ -177,6 +177,54 @@ export class NotificationsService {
   }
 
   /**
+   * Generic broadcast helper used by the marketing campaign engine. Sends
+   * a `generic`-kind PushMessage to a single user via the requested
+   * channel. Returns true when at least one transport accepted the
+   * message; the campaign service uses that to update sent/failed counters.
+   *
+   * Honors the user's `notifyPromotions` flag — opted-out users are
+   * silently skipped (treated as "no recipient" rather than "failure").
+   */
+  async sendCampaignTo(
+    userId: string,
+    channel: 'PUSH' | 'TELEGRAM',
+    title: string,
+    body: string,
+  ): Promise<'sent' | 'opted_out' | 'failed'> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        locale: true,
+        telegramUserId: true,
+        notifyPromotions: true,
+        devices: { where: { pushToken: { not: null } }, select: { pushToken: true, type: true } },
+      },
+    });
+    if (!user || !user.notifyPromotions) return 'opted_out';
+
+    const recipient: PushRecipient = {
+      userId: user.id,
+      telegramUserId: user.telegramUserId,
+      locale: user.locale,
+      pushTokens: user.devices
+        .filter((d): d is { pushToken: string; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' } => Boolean(d.pushToken))
+        .map((d) => ({ token: d.pushToken, deviceType: d.type })),
+    };
+    const message: PushMessage = { kind: 'generic', title, body };
+
+    if (channel === 'TELEGRAM') {
+      const ok = await this.telegram.send(recipient, message).catch(() => false);
+      return ok ? 'sent' : 'failed';
+    }
+    // PUSH — fan out across APNs / FCM / WebPush; success = any one accepted.
+    const results = await Promise.allSettled(
+      [this.apns, this.fcm, this.webpush].map((p) => p.send(recipient, message)),
+    );
+    return results.some((r) => r.status === 'fulfilled' && r.value === true) ? 'sent' : 'failed';
+  }
+
+  /**
    * Telegram-pings every BRAND_ADMIN of a brand when an outgoing POS push
    * has exhausted its retry budget. Same fan-out shape as
    * {@link notifyBrandStaffNewOrder} but scoped to brand owners — store

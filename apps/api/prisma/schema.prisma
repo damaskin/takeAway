@@ -401,9 +401,60 @@ model Brand {
   promos          Promo[]
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
+  campaigns       Campaign[]
 
   @@index([moderationStatus])
   @@index([ownerId])
+}
+
+/// Brand-driven outbound campaign. v1 is synchronous "send now" — admin
+/// composes copy in the dashboard and the service fans out via push /
+/// Telegram / email immediately. Counters are stamped after the fan-out
+/// so the admin can see how many users we reached vs. opted out.
+model Campaign {
+  id           String           @id @default(cuid())
+  brandId      String
+  title        String
+  body         String
+  channel      CampaignChannel
+  audience     CampaignAudience @default(ALL)
+  status       CampaignStatus   @default(DRAFT)
+  /// Target / sent / failed counters stamped during send.
+  targetCount  Int              @default(0)
+  sentCount    Int              @default(0)
+  failedCount  Int              @default(0)
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, status])
+  @@index([brandId, createdAt])
+}
+
+enum CampaignChannel {
+  PUSH
+  TELEGRAM
+  EMAIL
+}
+
+enum CampaignAudience {
+  /// Every customer in the brand's order history.
+  ALL
+  /// Customers who placed at least one paid order.
+  HAS_ORDERED
+  /// Customers whose last paid order is older than 30 days.
+  INACTIVE_30D
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
 }
 
 model Store {
