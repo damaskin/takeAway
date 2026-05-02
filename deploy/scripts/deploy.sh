@@ -20,6 +20,28 @@ if [ ! -f .env.production ]; then
 fi
 set -a; source ./.env.production; set +a
 
+# Pre-flight: vars the API hard-requires on boot. A missing one used to put
+# the api container into a CrashLoopBackOff with nginx serving 502 — fail
+# fast here instead of after a 20-minute SPA build.
+REQUIRED_VARS=(
+  DATABASE_URL
+  REDIS_URL
+  JWT_ACCESS_SECRET
+  JWT_REFRESH_SECRET
+  POS_CREDENTIALS_KEY
+)
+missing=0
+for v in "${REQUIRED_VARS[@]}"; do
+  if [ -z "${!v:-}" ]; then
+    echo "ERROR: $v is required in .env.production but is empty/unset." >&2
+    missing=1
+  fi
+done
+if [ "$missing" = "1" ]; then
+  echo "Generate POS_CREDENTIALS_KEY with: openssl rand -hex 32" >&2
+  exit 1
+fi
+
 echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
 mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
 # Ensure docker compose auto-picks the production env for variable substitution.
