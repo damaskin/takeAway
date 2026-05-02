@@ -131,6 +131,50 @@ export class NotificationsService {
   }
 
   /**
+   * Ping store staff once when a customer geofence resolves to HERE.
+   * Targets the same audience as new-paid-order push (BRAND_ADMINs of the
+   * brand + STORE_MANAGER/STAFF assigned to the store), but copy is the
+   * "customer arrived" variant. Idempotency lives at the call site
+   * (one-shot CUSTOMER_HERE event), so this just fans out.
+   */
+  async notifyStaffCustomerHere(order: OrderLike): Promise<void> {
+    const store = await this.prisma.store.findUnique({
+      where: { id: order.storeId },
+      select: { brandId: true, name: true },
+    });
+    if (!store) return;
+
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        telegramUserId: { not: null },
+        blockedAt: null,
+        OR: [
+          { role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } },
+          { userStores: { some: { storeId: order.storeId } } },
+        ],
+      },
+      select: { id: true, locale: true, telegramUserId: true },
+    });
+    if (recipients.length === 0) return;
+
+    const message: PushMessage = {
+      kind: 'order_status',
+      title: `Клиент приехал · #${order.orderCode}`,
+      body: `Гость на месте, заберите готовый заказ. / Customer is at the store — hand off the order.`,
+      orderId: order.id,
+    };
+
+    await Promise.allSettled(
+      recipients.map((u) =>
+        this.telegram.send(
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
+          message,
+        ),
+      ),
+    );
+  }
+
+  /**
    * Telegram-pings every BRAND_ADMIN of a brand when an outgoing POS push
    * has exhausted its retry budget. Same fan-out shape as
    * {@link notifyBrandStaffNewOrder} but scoped to brand owners — store

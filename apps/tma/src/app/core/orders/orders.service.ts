@@ -71,6 +71,16 @@ export class OrdersApi {
     return this.http.get<OrderView>(`${this.api.baseUrl}/orders/${id}`);
   }
 
+  reportLocation(
+    id: string,
+    body: { lat: number; lng: number; iAmHere?: boolean },
+  ): Observable<{ level: 'FAR' | 'NEARBY' | 'HERE'; distanceM: number; recorded: boolean }> {
+    return this.http.post<{ level: 'FAR' | 'NEARBY' | 'HERE'; distanceM: number; recorded: boolean }>(
+      `${this.api.baseUrl}/orders/${id}/location`,
+      body,
+    );
+  }
+
   listMine(group: 'ACTIVE' | 'HISTORY' | 'ALL' = 'ALL', take = 20): Observable<OrderSummary[]> {
     return this.http.get<OrderSummary[]>(`${this.api.baseUrl}/me/orders?group=${group}&take=${take}`);
   }
