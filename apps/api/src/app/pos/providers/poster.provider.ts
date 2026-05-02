@@ -21,8 +21,21 @@ import type {
   SyncProgressCtx,
 } from './pos-provider.interface';
 
-const DEFAULT_API_HOST = 'https://joinposter.com';
 const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Resolve the Poster API host for an integration. Real Poster accounts
+ * answer on their own subdomain — `https://{accountName}.joinposter.com` —
+ * not on the bare apex domain. The apex returns "Method Not Allowed" for
+ * every API method, which used to surface as a 502 on connect.
+ *
+ * Honor an explicit `settings.apiHost` override so private deployments /
+ * tests can pin a different host.
+ */
+function posterApiHost(accountName: string, override?: string): string {
+  if (override) return override;
+  return `https://${accountName}.joinposter.com`;
+}
 
 interface PosterEnvelope<T> {
   response?: T;
@@ -110,7 +123,12 @@ export class PosterProvider implements IPosProvider {
   private readonly logger = new Logger(PosterProvider.name);
 
   async testConnection(integration: PosIntegrationCtx): Promise<void> {
-    await this.call<unknown>(integration, '/api/access.ping');
+    // settings.getAllSettings is a cheap GET that every Poster account
+    // exposes regardless of role, and crucially works on dev (Moldovan)
+    // accounts where access.ping returns "Method Not Allowed". Calling
+    // it with an invalid token triggers a Poster error code that
+    // {@link call} maps to 401, which is what we want here.
+    await this.call<unknown>(integration, '/api/settings.getAllSettings');
   }
 
   async listStores(integration: PosIntegrationCtx): Promise<ImportedStoreDraft[]> {
@@ -217,7 +235,7 @@ export class PosterProvider implements IPosProvider {
 
     const credentials = integration.credentials as PosterCredentials;
     const settings = integration.settings as PosterSettings;
-    const host = settings.apiHost ?? DEFAULT_API_HOST;
+    const host = posterApiHost(credentials.accountName, settings.apiHost);
 
     const body: PosterIncomingOrderBody = {
       spot_id: spotId,
@@ -274,7 +292,7 @@ export class PosterProvider implements IPosProvider {
   private async call<T>(integration: PosIntegrationCtx, path: string, params: Record<string, string> = {}): Promise<T> {
     const credentials = integration.credentials as PosterCredentials;
     const settings = integration.settings as PosterSettings;
-    const host = settings.apiHost ?? DEFAULT_API_HOST;
+    const host = posterApiHost(credentials.accountName, settings.apiHost);
     try {
       const response = await this.http(host).get<PosterEnvelope<T>>(path, {
         params: { ...params, token: credentials.token },
