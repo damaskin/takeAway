@@ -24,8 +24,7 @@ set -a; source ./.env.production; set +a
 # the api container into a CrashLoopBackOff with nginx serving 502 — fail
 # fast here instead of after a 20-minute SPA build.
 REQUIRED_VARS=(
-  DATABASE_URL
-  REDIS_URL
+  POSTGRES_PASSWORD
   JWT_ACCESS_SECRET
   JWT_REFRESH_SECRET
   POS_CREDENTIALS_KEY
