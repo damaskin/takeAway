@@ -16,6 +16,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { SecretCipherModule } from './common/crypto/secret-cipher.module';
 import { FeaturesModule } from './config/config.module';
 import { DeliveryModule } from './delivery/delivery.module';
+import { DevicesModule } from './devices/devices.module';
 import { HealthModule } from './health/health.module';
 import { KdsModule } from './kds/kds.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
@@ -66,6 +67,7 @@ import { UsersModule } from './users/users.module';
     KdsModule,
     DeliveryModule,
     NotificationsModule,
+    DevicesModule,
     AnalyticsModule,
     HealthModule,
   ],

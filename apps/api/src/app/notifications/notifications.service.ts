@@ -6,6 +6,7 @@ import { ApnsPushProvider } from './providers/apns.provider';
 import { FcmPushProvider } from './providers/fcm.provider';
 import type { PushMessage, PushProvider, PushRecipient } from './providers/push-provider.interface';
 import { TelegramPushProvider } from './providers/telegram-push.provider';
+import { WebPushProvider } from './providers/web-push.provider';
 
 interface OrderLike {
   id: string;
@@ -34,8 +35,9 @@ export class NotificationsService {
     private readonly telegram: TelegramPushProvider,
     private readonly apns: ApnsPushProvider,
     private readonly fcm: FcmPushProvider,
+    private readonly webpush: WebPushProvider,
   ) {
-    this.providers = [this.telegram, this.apns, this.fcm];
+    this.providers = [this.telegram, this.apns, this.fcm, this.webpush];
   }
 
   /** Push a customer-facing notification for an order status transition. */

@@ -272,6 +272,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         orderUpdatesHint: 'Status changes on your active orders (created, paid, ready, delivered).',
         promotions: 'Promotions',
         promotionsHint: 'Discounts, new items, loyalty tier unlocks.',
+        browserPush: 'Browser push',
+        browserPushHint: 'Order ready alerts on this device, even if the tab is closed.',
+        browserPushBlocked: 'Browser blocked notifications. Allow them in your site settings and try again.',
       },
       personalInfo: {
         title: 'Personal info',
