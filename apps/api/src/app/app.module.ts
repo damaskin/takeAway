@@ -19,6 +19,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
+import { ReferralsModule } from './referrals/referrals.module';
 import { KdsModule } from './kds/kds.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -70,6 +71,7 @@ import { UsersModule } from './users/users.module';
     NotificationsModule,
     DevicesModule,
     GiftCardsModule,
+    ReferralsModule,
     AnalyticsModule,
     HealthModule,
   ],

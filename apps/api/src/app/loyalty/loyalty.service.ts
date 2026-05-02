@@ -102,6 +102,23 @@ export class LoyaltyService {
     });
   }
 
+  /**
+   * Flat-amount EARN credit not tied to an order subtotal — used by the
+   * referral bonus (and any future signup / birthday / win-back rewards).
+   * Goes through the same ledger/tier path as regular order credits, so
+   * recent activity and tier progression include it.
+   */
+  async creditBonus(userId: string, amount: number, reason: string, tx: PrismaTx, orderId?: string): Promise<void> {
+    if (amount <= 0) return;
+    const account = await this.ensureAccount(userId, tx);
+    await this.applyDelta(account, amount, 'EARN', `bonus:${reason}`, tx, {
+      orderId,
+      type: PointsEntryType.EARN,
+      reason,
+      metadata: null,
+    });
+  }
+
   /** Debit points when a promo consumes them. */
   async debit(userId: string, orderId: string | null, amount: number, reason: string, tx: PrismaTx): Promise<void> {
     if (amount <= 0) return;
