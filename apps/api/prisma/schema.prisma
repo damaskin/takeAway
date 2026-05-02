@@ -279,6 +279,7 @@ model User {
   // Delivery orders assigned to this user (RIDER). SetNull on delete so we
   // can remove riders without wiping the order history.
   assignedDeliveries  Order[]              @relation("RiderDeliveries")
+  giftCardsPurchased  GiftCard[]           @relation("GiftCardsPurchased")
 
   @@index([createdAt])
 }
@@ -358,6 +359,7 @@ model Brand {
   products        Product[]
   promos          Promo[]
   posIntegrations PosIntegration[]
+  giftCards       GiftCard[]
 
   @@index([moderationStatus])
   @@index([ownerId])
@@ -622,6 +624,61 @@ model CartItem {
   @@index([cartId])
 }
 
+/// Prepaid balance tied to a single brand (or to an order placed at any
+/// of its stores). For v1 the purchase path is admin-driven (a brand
+/// admin issues a card and shares the code out-of-band); the customer
+/// types the code at checkout in the same field as a promo code, and
+/// the redemption is applied as a discount.
+model GiftCard {
+  id                 String         @id @default(cuid())
+  /// Human-typed code, normalized to uppercase A–Z0–9, no separators.
+  code               String         @unique
+  brandId            String
+  initialAmountCents Int
+  balanceCents       Int
+  currency           Currency
+  status             GiftCardStatus @default(ACTIVE)
+  /// User who paid for the card (null when admin-issued).
+  purchaserUserId    String?
+  recipientEmail     String?
+  recipientName      String?
+  message            String?
+  /// Optional expiry; null = never expires.
+  expiresAt          DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  brand        Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  purchaser    User?                 @relation("GiftCardsPurchased", fields: [purchaserUserId], references: [id], onDelete: SetNull)
+  redemptions  GiftCardRedemption[]
+
+  @@index([brandId, status])
+  @@index([purchaserUserId])
+}
+
+enum GiftCardStatus {
+  ACTIVE
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+/// One redemption row per Order that consumed gift-card balance. We
+/// allow partial redemption — a customer with a $50 card can apply
+/// $20 to one order and $30 to a later order.
+model GiftCardRedemption {
+  id          String   @id @default(cuid())
+  giftCardId  String
+  orderId     String   @unique
+  amountCents Int
+  createdAt   DateTime @default(now())
+
+  giftCard GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId])
+}
+
 model Order {
   id                  String          @id @default(cuid())
   userId              String
@@ -645,6 +702,11 @@ model Order {
   customerPhone       String?
   notes               String?
   couponCode          String?
+  /// Gift-card code typed at checkout (normalized). Mirrored here so we
+  /// keep the original code alongside the redemption row even if the
+  /// gift card is later cancelled.
+  giftCardCode        String?
+  giftCardCents       Int             @default(0)
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.
@@ -677,9 +739,10 @@ model Order {
   rider           User?            @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
   items           OrderItem[]
   events          OrderEvent[]
-  payments        Payment[]
-  pointsEntries   PointsLedger[]
-  promoRedemption PromoRedemption?
+  payments         Payment[]
+  pointsEntries    PointsLedger[]
+  promoRedemption  PromoRedemption?
+  giftCardRedemption GiftCardRedemption?
 
   @@index([userId, createdAt])
   @@index([storeId, status])

@@ -73,6 +73,12 @@ export class OrderDto {
   @ApiProperty({ nullable: true, type: String })
   couponCode!: string | null;
 
+  @ApiProperty({ nullable: true, type: String })
+  giftCardCode!: string | null;
+
+  @ApiProperty()
+  giftCardCents!: number;
+
   @ApiProperty({ type: [OrderItemDto] })
   items!: OrderItemDto[];
 

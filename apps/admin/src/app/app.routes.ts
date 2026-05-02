@@ -121,6 +121,10 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
       },
       {
+        path: 'gift-cards',
+        loadComponent: () => import('./features/gift-cards/gift-cards.page').then((m) => m.AdminGiftCardsPage),
+      },
+      {
         path: 'analytics',
         loadComponent: () => import('./features/analytics/analytics.page').then((m) => m.AdminAnalyticsPage),
       },

@@ -12,6 +12,7 @@ import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
+import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -51,6 +52,7 @@ export class OrdersService {
     private readonly flags: FeatureFlagsService,
     private readonly deliveryFee: DeliveryFeeService,
     private readonly mail: MailService,
+    private readonly giftCards: GiftCardsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -126,8 +128,28 @@ export class OrdersService {
 
     const discountCents = promoResult?.discountCents ?? 0;
     const taxCents = 0;
-    const totalCents = Math.max(0, subtotalCents - discountCents + taxCents + deliveryFeeCents);
     const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
+
+    // Gift card — applied AFTER promo discount and BEFORE delivery fee, so a
+    // promo never expands the gift card draw. Validation throws on a bad
+    // code so the customer sees a clean 400.
+    let giftCardCents = 0;
+    let giftCardId: string | null = null;
+    let normalizedGiftCode: string | null = null;
+    if (dto.giftCardCode) {
+      const remainingPayable = Math.max(0, subtotalCents - discountCents);
+      const validated = await this.giftCards.validateForOrder({
+        code: dto.giftCardCode,
+        brandId: cart.store.brandId,
+        subtotalCents: remainingPayable,
+        currency: cart.store.currency,
+      });
+      giftCardCents = validated.amountCents;
+      giftCardId = validated.giftCardId;
+      normalizedGiftCode = dto.giftCardCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    }
+
+    const totalCents = Math.max(0, subtotalCents - discountCents - giftCardCents + taxCents + deliveryFeeCents);
 
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
@@ -150,6 +172,8 @@ export class OrdersService {
             customerPhone: dto.customerPhone,
             notes: dto.notes,
             couponCode: dto.couponCode,
+            giftCardCode: normalizedGiftCode,
+            giftCardCents,
             // Delivery bits — nullable / 0 when the order is PICKUP.
             deliveryAddressLine: dto.deliveryAddressLine ?? null,
             deliveryCity: dto.deliveryCity ?? null,
@@ -190,6 +214,14 @@ export class OrdersService {
             created.id,
             tx,
           );
+        }
+
+        if (giftCardId && giftCardCents > 0) {
+          await this.giftCards.applyRedemption(tx, {
+            giftCardId,
+            orderId: created.id,
+            amountCents: giftCardCents,
+          });
         }
 
         await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -618,6 +650,8 @@ export class OrdersService {
       customerPhone: order.customerPhone,
       notes: order.notes,
       couponCode: order.couponCode,
+      giftCardCode: order.giftCardCode,
+      giftCardCents: order.giftCardCents,
       items: order.items.map<OrderItemDto>((i) => ({
         id: i.id,
         productSnapshot: (i.productSnapshot as Record<string, unknown>) ?? {},
