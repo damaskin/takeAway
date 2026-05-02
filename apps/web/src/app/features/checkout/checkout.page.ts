@@ -291,6 +291,17 @@ interface Step {
                   >
                 </div>
               }
+              @if (giftCardCents() > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
+                    >🎁 {{ giftCardCode() }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
+                    >− {{ price(giftCardCents()) }}</span
+                  >
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
@@ -345,6 +356,51 @@ interface Step {
                   [style.color]="discountCents() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
                 >
                   {{ promoStatus() }}
+                </span>
+              }
+            </section>
+
+            <!-- Gift card -->
+            <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
+              <span
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+                >{{ 'web.checkout.giftCardLabel' | translate }}</span
+              >
+              <div
+                class="flex items-center"
+                style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
+              >
+                <span style="color: var(--color-text-tertiary)">🎁</span>
+                <input
+                  [value]="giftCardInput()"
+                  (input)="onGiftCardInput($event)"
+                  type="text"
+                  placeholder="GIFTABCD1234"
+                  class="flex-1 outline-none bg-transparent"
+                  style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-primary); text-transform: uppercase"
+                />
+                <button
+                  type="button"
+                  (click)="applyGiftCard()"
+                  [disabled]="!giftCardInput() || giftCardLoading()"
+                  class="flex items-center justify-center disabled:opacity-50"
+                  style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                >
+                  @if (giftCardLoading()) {
+                    …
+                  } @else if (giftCardCents() > 0) {
+                    {{ 'common.clear' | translate }}
+                  } @else {
+                    {{ 'common.apply' | translate }}
+                  }
+                </button>
+              </div>
+              @if (giftCardStatus()) {
+                <span
+                  style="font-family: var(--font-sans); font-size: 12px"
+                  [style.color]="giftCardCents() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
+                >
+                  {{ giftCardStatus() }}
                 </span>
               }
             </section>
@@ -466,6 +522,13 @@ export class CheckoutPage implements OnInit {
   readonly discountCents = signal(0);
   readonly promoStatus = signal<string | null>(null);
   readonly promoLoading = signal(false);
+
+  // Gift card state — same toggle pattern as promo.
+  readonly giftCardInput = signal('');
+  readonly giftCardCode = signal<string | null>(null);
+  readonly giftCardCents = signal(0);
+  readonly giftCardStatus = signal<string | null>(null);
+  readonly giftCardLoading = signal(false);
   /** Brand ID derived from the active store, needed for /promo/validate. */
   readonly brandId = signal<string | null>(null);
   /** Store ID, needed for /delivery/quote. */
@@ -650,9 +713,50 @@ export class CheckoutPage implements OnInit {
     this.promoStatus.set(null);
   }
 
+  // ── Gift card flow ──────────────────────────────────────────────────────
+
+  onGiftCardInput(event: Event): void {
+    this.giftCardInput.set((event.target as HTMLInputElement).value.trim().toUpperCase());
+    if (this.giftCardCode() && this.giftCardInput() !== this.giftCardCode()) {
+      this.clearGiftCard();
+    }
+  }
+
+  applyGiftCard(): void {
+    if (this.giftCardCents() > 0) {
+      this.clearGiftCard();
+      return;
+    }
+    const code = this.giftCardInput();
+    const cart = this.cart();
+    if (!code || !cart) return;
+    this.giftCardLoading.set(true);
+    this.giftCardStatus.set(null);
+    this.orders.validateGiftCard({ code, cartId: cart.id }).subscribe({
+      next: (res) => {
+        this.giftCardLoading.set(false);
+        this.giftCardCode.set(code);
+        this.giftCardCents.set(res.applicableCents);
+        this.giftCardStatus.set(
+          this.translate.instant('web.checkout.giftCardApplied', { amount: this.price(res.applicableCents) }),
+        );
+      },
+      error: (err) => {
+        this.giftCardLoading.set(false);
+        this.giftCardStatus.set(extractMessage(err));
+      },
+    });
+  }
+
+  clearGiftCard(): void {
+    this.giftCardCode.set(null);
+    this.giftCardCents.set(0);
+    this.giftCardStatus.set(null);
+  }
+
   totalCents(subtotalCents: number): number {
     const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
-    return Math.max(0, subtotalCents - this.discountCents() + fee);
+    return Math.max(0, subtotalCents - this.discountCents() - this.giftCardCents() + fee);
   }
 
   selectMode(mode: PickupMode): void {
@@ -696,6 +800,7 @@ export class CheckoutPage implements OnInit {
       customerName: v.customerName || undefined,
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
+      giftCardCode: this.giftCardCode() ?? undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: d.addressLine.trim(),

@@ -64,6 +64,8 @@ export interface CreateOrderInput {
   notes?: string;
   /** Promo / coupon code the customer typed at checkout, if any. */
   couponCode?: string;
+  /** Gift-card code, applied after promo and before delivery fee. */
+  giftCardCode?: string;
   // Delivery-only. Required when `fulfillmentType === 'DELIVERY'`.
   deliveryAddressLine?: string;
   deliveryCity?: string;
@@ -101,6 +103,16 @@ export class OrdersApi {
 
   cancel(id: string): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
+  }
+
+  validateGiftCard(body: {
+    code: string;
+    cartId: string;
+  }): Observable<{ applicableCents: number; remainingCents: number; currency: string }> {
+    return this.http.post<{ applicableCents: number; remainingCents: number; currency: string }>(
+      `${this.api.baseUrl}/gift-cards/validate`,
+      body,
+    );
   }
 
   reportLocation(

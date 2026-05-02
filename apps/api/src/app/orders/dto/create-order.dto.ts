@@ -47,6 +47,12 @@ export class CreateOrderDto {
   @MaxLength(60)
   couponCode?: string;
 
+  @ApiPropertyOptional({ description: 'Gift card code, applied as a discount.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  giftCardCode?: string;
+
   // ── Delivery fields (required when fulfillmentType === 'DELIVERY') ──────
 
   @ApiPropertyOptional({ description: 'Street line. Required for DELIVERY orders.' })
