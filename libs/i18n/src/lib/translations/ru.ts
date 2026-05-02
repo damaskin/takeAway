@@ -390,6 +390,7 @@ export const TRANSLATIONS_RU = {
       riders: 'Курьеры',
       promo: 'Промо',
       giftCards: 'Подарочные карты',
+      campaigns: 'Рассылки',
       analytics: 'Аналитика',
       brands: 'Бренды',
       settings: 'Настройки',
@@ -650,6 +651,45 @@ export const TRANSLATIONS_RU = {
           '5': 'Пт',
           '6': 'Сб',
         },
+      },
+    },
+    campaigns: {
+      title: 'Маркетинговые рассылки',
+      subtitle:
+        'Соберите push, Telegram или email-рассылку для клиентов вашего бренда. Черновик сохраняется, по «Отправить» сообщение уходит сразу.',
+      saveDraft: 'Сохранить черновик',
+      send: 'Отправить',
+      sending: 'Отправляем…',
+      empty: 'Рассылок пока нет — соберите первую выше.',
+      fields: {
+        title: 'Заголовок',
+        body: 'Текст',
+        channel: 'Канал',
+        audience: 'Аудитория',
+      },
+      channels: {
+        PUSH: 'Push (браузер / приложение)',
+        TELEGRAM: 'Telegram',
+        EMAIL: 'Email',
+      },
+      audiences: {
+        ALL: 'Все клиенты',
+        HAS_ORDERED: 'С хотя бы одним оплаченным заказом',
+        INACTIVE_30D: 'Не возвращались 30+ дней',
+      },
+      status: {
+        DRAFT: 'Черновик',
+        SCHEDULED: 'Запланирована',
+        SENDING: 'Отправляется',
+        SENT: 'Отправлена',
+        FAILED: 'Ошибка',
+      },
+      col: {
+        title: 'Рассылка',
+        channel: 'Канал',
+        audience: 'Аудитория',
+        status: 'Статус',
+        delivered: 'Доставлено / Выбрано',
       },
     },
     giftCards: {

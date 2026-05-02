@@ -17,6 +17,7 @@ import { SecretCipherModule } from './common/crypto/secret-cipher.module';
 import { FeaturesModule } from './config/config.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
 import { ReferralsModule } from './referrals/referrals.module';
@@ -72,6 +73,7 @@ import { UsersModule } from './users/users.module';
     DevicesModule,
     GiftCardsModule,
     ReferralsModule,
+    CampaignsModule,
     AnalyticsModule,
     HealthModule,
   ],
