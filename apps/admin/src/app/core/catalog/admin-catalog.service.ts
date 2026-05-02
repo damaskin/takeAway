@@ -48,6 +48,70 @@ export interface UpdateStoreInput {
   minOrderCents?: number;
 }
 
+export interface CreateStoreInput {
+  brandId: string;
+  slug: string;
+  name: string;
+  addressLine: string;
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  currency: string;
+  timezone?: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface VariationAdminDto {
+  id: string;
+  type: 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
+  name: string;
+  priceDeltaCents: number;
+  prepTimeDeltaSeconds: number;
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+export interface ModifierAdminDto {
+  id: string;
+  slug: string;
+  name: string;
+  priceDeltaCents: number;
+  prepTimeDeltaSeconds: number;
+  minCount: number;
+  maxCount: number;
+  sortOrder: number;
+}
+
+export interface ProductDetailDto extends ProductAdminDto {
+  variations: VariationAdminDto[];
+  modifiers: ModifierAdminDto[];
+}
+
+export interface CreateVariationInput {
+  type: VariationAdminDto['type'];
+  name: string;
+  priceDeltaCents?: number;
+  prepTimeDeltaSeconds?: number;
+  isDefault?: boolean;
+  sortOrder?: number;
+}
+
+export type UpdateVariationInput = Partial<CreateVariationInput>;
+
+export interface CreateModifierInput {
+  slug: string;
+  name: string;
+  priceDeltaCents?: number;
+  prepTimeDeltaSeconds?: number;
+  minCount?: number;
+  maxCount?: number;
+  sortOrder?: number;
+}
+
+export type UpdateModifierInput = Partial<CreateModifierInput>;
+
 export interface CategoryAdminDto {
   id: string;
   brandId: string;
@@ -123,8 +187,44 @@ export class AdminCatalogApi {
     return this.http.get<StoreAdminDto>(`${this.api.baseUrl}/admin/stores/${id}`);
   }
 
+  getProduct(id: string): Observable<ProductDetailDto> {
+    return this.http.get<ProductDetailDto>(`${this.api.baseUrl}/admin/products/${id}`);
+  }
+
+  createVariation(productId: string, input: CreateVariationInput): Observable<VariationAdminDto> {
+    return this.http.post<VariationAdminDto>(`${this.api.baseUrl}/admin/products/${productId}/variations`, input);
+  }
+
+  updateVariation(variationId: string, input: UpdateVariationInput): Observable<VariationAdminDto> {
+    return this.http.patch<VariationAdminDto>(`${this.api.baseUrl}/admin/products/variations/${variationId}`, input);
+  }
+
+  deleteVariation(variationId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/products/variations/${variationId}`);
+  }
+
+  createModifier(productId: string, input: CreateModifierInput): Observable<ModifierAdminDto> {
+    return this.http.post<ModifierAdminDto>(`${this.api.baseUrl}/admin/products/${productId}/modifiers`, input);
+  }
+
+  updateModifier(modifierId: string, input: UpdateModifierInput): Observable<ModifierAdminDto> {
+    return this.http.patch<ModifierAdminDto>(`${this.api.baseUrl}/admin/products/modifiers/${modifierId}`, input);
+  }
+
+  deleteModifier(modifierId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/products/modifiers/${modifierId}`);
+  }
+
   updateStore(id: string, input: UpdateStoreInput): Observable<StoreAdminDto> {
     return this.http.patch<StoreAdminDto>(`${this.api.baseUrl}/admin/stores/${id}`, input);
+  }
+
+  createStore(input: CreateStoreInput): Observable<StoreAdminDto> {
+    return this.http.post<StoreAdminDto>(`${this.api.baseUrl}/admin/stores`, input);
+  }
+
+  deleteStore(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${id}`);
   }
 
   replaceWorkingHours(id: string, hours: StoreWorkingHourDto[]): Observable<StoreWorkingHourDto[]> {

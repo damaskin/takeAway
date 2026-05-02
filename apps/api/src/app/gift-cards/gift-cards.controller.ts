@@ -63,6 +63,29 @@ export class GiftCardsController {
     };
   }
 
+  /** Customer self-service — list of cards redeemed against the caller's orders. */
+  @Get('me/gift-cards')
+  @ApiOkResponse({
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          orderId: { type: 'string' },
+          orderCode: { type: 'string' },
+          code: { type: 'string' },
+          amountCents: { type: 'number' },
+          currency: { type: 'string' },
+          brandName: { type: 'string' },
+          createdAt: { type: 'string' },
+        },
+      },
+    },
+  })
+  listMine(@CurrentUser() user: AuthenticatedUser) {
+    return this.cards.listMine(user.id);
+  }
+
   // ── Admin (BRAND_ADMIN scoped) ────────────────────────────────────────────
 
   @Get('admin/gift-cards')

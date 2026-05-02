@@ -68,6 +68,21 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/referrals.page').then((m) => m.ProfileReferralsPage),
       },
+      {
+        path: 'profile/loyalty',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/loyalty.page').then((m) => m.ProfileLoyaltyPage),
+      },
+      {
+        path: 'profile/payment-methods',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/payment-methods.page').then((m) => m.PaymentMethodsPage),
+      },
+      {
+        path: 'profile/gift-cards',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/gift-cards.page').then((m) => m.ProfileGiftCardsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },

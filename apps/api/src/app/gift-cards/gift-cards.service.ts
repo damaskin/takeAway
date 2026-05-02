@@ -132,6 +132,42 @@ export class GiftCardsService {
     return this.prisma.giftCard.findMany({ where: { brandId }, orderBy: { createdAt: 'desc' } });
   }
 
+  /**
+   * Customer-facing list of gift cards the user has redeemed against
+   * their orders. We don't have a "purchased by user" relation in v1
+   * (cards are admin-issued), so this is always the redemption history.
+   */
+  async listMine(userId: string): Promise<
+    Array<{
+      orderId: string;
+      orderCode: string;
+      code: string;
+      amountCents: number;
+      currency: string;
+      brandName: string;
+      createdAt: string;
+    }>
+  > {
+    const rows = await this.prisma.giftCardRedemption.findMany({
+      where: { order: { userId } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: {
+        giftCard: { include: { brand: { select: { name: true } } } },
+        order: { select: { orderCode: true } },
+      },
+    });
+    return rows.map((r) => ({
+      orderId: r.orderId,
+      orderCode: r.order.orderCode,
+      code: r.giftCard.code,
+      amountCents: r.amountCents,
+      currency: r.giftCard.currency,
+      brandName: r.giftCard.brand.name,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
   /** Admin cancel — refuses if any redemptions already exist. */
   async cancel(brandId: string, giftCardId: string): Promise<GiftCard> {
     const card = await this.prisma.giftCard.findUnique({ where: { id: giftCardId } });

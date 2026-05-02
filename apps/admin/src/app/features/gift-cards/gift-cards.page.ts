@@ -149,7 +149,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
                 </td>
                 <td style="padding: 10px 14px">{{ card.recipientName || card.recipientEmail || '—' }}</td>
                 <td style="padding: 10px 14px; color: var(--color-text-secondary)">
-                  {{ card.createdAt | slice: 0 : 10 }}
+                  {{ formatDate(card.createdAt) }}
                 </td>
                 <td style="padding: 10px 14px; text-align: right">
                   @if (card.status === 'ACTIVE') {
@@ -241,6 +241,10 @@ export class AdminGiftCardsPage {
         this.error.set(extractMessage(err) ?? this.translate.instant('common.genericError'));
       },
     });
+  }
+
+  formatDate(iso: string): string {
+    return iso.slice(0, 10);
   }
 
   price(cents: number, currency: string): string {

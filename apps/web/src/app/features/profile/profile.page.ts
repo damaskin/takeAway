@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LanguageSwitcherComponent } from '@takeaway/i18n';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -30,7 +31,7 @@ interface ProfileSection {
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, LanguageSwitcherComponent],
   template: `
     @if (store.user(); as user) {
       <section
@@ -135,6 +136,20 @@ interface ProfileSection {
             }
           }
 
+          <!-- Language switcher -->
+          <div
+            class="flex items-center"
+            style="height: 56px; padding: 0 20px; background: var(--color-foam); border-radius: 14px; gap: 16px"
+          >
+            <span style="color: var(--color-text-secondary); font-size: 18px">🌐</span>
+            <span
+              class="flex-1 text-left"
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+              >{{ 'web.profile.sections.language' | translate }}</span
+            >
+            <app-language-switcher />
+          </div>
+
           <!-- Logout -->
           <button
             type="button"
@@ -175,11 +190,11 @@ export class ProfilePage implements OnInit {
   readonly sections: ProfileSection[] = [
     { icon: '🧾', label: 'web.profile.sections.myOrders', link: '/orders' },
     { icon: '👤', label: 'web.profile.sections.personal', link: '/profile/personal' },
-    { icon: '💳', label: 'web.profile.sections.payment' },
-    { icon: '🎁', label: 'web.profile.sections.gift' },
+    { icon: '💳', label: 'web.profile.sections.payment', link: '/profile/payment-methods' },
+    { icon: '🎁', label: 'web.profile.sections.gift', link: '/profile/gift-cards' },
     { icon: '🤝', label: 'web.profile.sections.referrals', link: '/profile/referrals' },
     { icon: '🔔', label: 'web.profile.sections.notifications', link: '/profile/notifications' },
-    { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
+    { icon: '⭐', label: 'web.profile.sections.loyalty', link: '/profile/loyalty' },
   ];
 
   initials(name?: string | null): string {
