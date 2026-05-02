@@ -8,6 +8,7 @@ import {
   type CategoryAdminDto,
   type ProductAdminDto,
 } from '../../core/catalog/admin-catalog.service';
+import { ProductOptionsPanelComponent } from './product-options-panel.component';
 
 /**
  * Admin Menu Management — pencil oKo7M.
@@ -20,7 +21,7 @@ import {
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, TranslatePipe, ProductOptionsPanelComponent],
   template: `
     <!-- Top bar -->
     <div
@@ -93,28 +94,49 @@ import {
         }
 
         @for (cat of categories(); track cat.id) {
-          <button
-            type="button"
-            (click)="selectCategory(cat.id)"
-            class="flex items-center justify-between"
+          <div
+            class="flex items-center"
             [style.background]="selectedCategoryId() === cat.id ? 'var(--color-caramel-light)' : 'transparent'"
-            [style.color]="selectedCategoryId() === cat.id ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
-            style="height: 40px; padding: 0 12px; border-radius: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left"
+            style="border-radius: 10px"
           >
-            <span>{{ cat.name }}</span>
-            @if (!cat.visible) {
-              <span
-                style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
-                >{{ 'admin.menu.hidden' | translate }}</span
-              >
-            }
-          </button>
+            <button
+              type="button"
+              (click)="selectCategory(cat.id)"
+              class="flex-1 flex items-center justify-between"
+              [style.color]="selectedCategoryId() === cat.id ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
+              style="height: 40px; padding: 0 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left; background: transparent"
+            >
+              <span>{{ cat.name }}</span>
+              @if (!cat.visible) {
+                <span
+                  style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
+                  >{{ 'admin.menu.hidden' | translate }}</span
+                >
+              }
+            </button>
+            <button
+              type="button"
+              (click)="openCategoryEdit(cat)"
+              [title]="'common.change' | translate"
+              style="width: 28px; height: 28px; color: var(--color-text-tertiary); margin-right: 2px"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              (click)="deleteCategory(cat)"
+              [title]="'admin.menu.deleteCategory' | translate"
+              style="width: 28px; height: 28px; color: var(--color-berry); margin-right: 6px"
+            >
+              ×
+            </button>
+          </div>
         }
 
         @if (categoryFormOpen()) {
           <form
             [formGroup]="categoryForm"
-            (ngSubmit)="createCategory()"
+            (ngSubmit)="submitCategory()"
             class="flex flex-col"
             style="gap: 8px; margin-top: 12px"
           >
@@ -126,8 +148,13 @@ import {
             <input
               formControlName="slug"
               [placeholder]="'admin.menu.product.slug' | translate"
-              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px; font-family: var(--font-mono)"
+              [readonly]="!!editingCategoryId()"
+              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
             />
+            <label class="flex items-center" style="gap: 8px; font-family: var(--font-sans); font-size: 13px">
+              <input type="checkbox" formControlName="visible" />
+              <span>{{ 'admin.menu.fields.visible' | translate }}</span>
+            </label>
             <div class="flex" style="gap: 8px">
               <button
                 type="submit"
@@ -135,11 +162,11 @@ import {
                 class="flex-1 disabled:opacity-50"
                 style="height: 36px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
               >
-                {{ 'admin.menu.create' | translate }}
+                {{ (editingCategoryId() ? 'common.save' : 'admin.menu.create') | translate }}
               </button>
               <button
                 type="button"
-                (click)="categoryFormOpen.set(false)"
+                (click)="closeCategoryForm()"
                 style="padding: 0 12px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
               >
                 {{ 'common.cancel' | translate }}
@@ -217,7 +244,24 @@ import {
                   <td style="padding: 12px; text-align: center">
                     <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
                   </td>
-                  <td style="padding: 12px; text-align: right">
+                  <td style="padding: 12px; text-align: right; white-space: nowrap">
+                    <button
+                      type="button"
+                      (click)="toggleOptions(p.id)"
+                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px"
+                    >
+                      {{
+                        (expandedProductId() === p.id ? 'admin.menu.product.hideOptions' : 'admin.menu.product.options')
+                          | translate
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      (click)="openProductEdit(p)"
+                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px"
+                    >
+                      {{ 'common.change' | translate }}
+                    </button>
                     <button
                       type="button"
                       (click)="deleteProduct(p)"
@@ -227,6 +271,13 @@ import {
                     </button>
                   </td>
                 </tr>
+                @if (expandedProductId() === p.id) {
+                  <tr>
+                    <td colspan="5" style="padding: 0 12px 16px 12px">
+                      <app-product-options-panel [productId]="p.id" />
+                    </td>
+                  </tr>
+                }
               }
             </tbody>
           </table>
@@ -235,7 +286,7 @@ import {
         @if (productFormOpen()) {
           <form
             [formGroup]="productForm"
-            (ngSubmit)="createProduct()"
+            (ngSubmit)="submitProduct()"
             class="grid"
             style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; padding: 16px; background: var(--color-cream); border-radius: 16px"
           >
@@ -247,6 +298,7 @@ import {
             <input
               formControlName="slug"
               [placeholder]="'admin.menu.product.slug' | translate"
+              [readonly]="!!editingProductId()"
               style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
             />
             <input
@@ -277,11 +329,11 @@ import {
                 class="disabled:opacity-50"
                 style="height: 40px; padding: 0 20px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
               >
-                {{ 'admin.menu.product.createCta' | translate }}
+                {{ (editingProductId() ? 'common.save' : 'admin.menu.product.createCta') | translate }}
               </button>
               <button
                 type="button"
-                (click)="productFormOpen.set(false)"
+                (click)="closeProductForm()"
                 style="padding: 0 16px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
               >
                 {{ 'common.cancel' | translate }}
@@ -317,7 +369,10 @@ export class MenuPage implements OnInit {
   readonly selectedCategoryId = signal<string | null>(null);
   readonly products = signal<ProductAdminDto[]>([]);
   readonly categoryFormOpen = signal(false);
+  readonly editingCategoryId = signal<string | null>(null);
   readonly productFormOpen = signal(false);
+  readonly editingProductId = signal<string | null>(null);
+  readonly expandedProductId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
@@ -328,6 +383,7 @@ export class MenuPage implements OnInit {
       nonNullable: true,
       validators: [Validators.required, Validators.pattern(/^[a-z0-9-]+$/)],
     }),
+    visible: new FormControl(true, { nonNullable: true }),
   });
 
   readonly productForm = new FormGroup({
@@ -360,35 +416,114 @@ export class MenuPage implements OnInit {
   }
 
   openCategoryForm(): void {
-    this.categoryForm.reset();
+    this.editingCategoryId.set(null);
+    this.categoryForm.reset({ name: '', slug: '', visible: true });
     this.categoryFormOpen.set(true);
   }
 
+  openCategoryEdit(cat: CategoryAdminDto): void {
+    this.editingCategoryId.set(cat.id);
+    this.categoryForm.reset({ name: cat.name, slug: cat.slug, visible: cat.visible });
+    this.categoryFormOpen.set(true);
+  }
+
+  closeCategoryForm(): void {
+    this.categoryFormOpen.set(false);
+    this.editingCategoryId.set(null);
+  }
+
   openProductForm(): void {
+    this.editingProductId.set(null);
     this.productForm.reset({ name: '', slug: '', basePriceCents: 0, prepTimeSeconds: 180, description: '' });
     this.productFormOpen.set(true);
   }
 
-  createCategory(): void {
+  openProductEdit(p: ProductAdminDto): void {
+    this.editingProductId.set(p.id);
+    this.productForm.reset({
+      name: p.name,
+      slug: p.slug,
+      basePriceCents: p.basePriceCents,
+      prepTimeSeconds: p.prepTimeSeconds,
+      description: p.description ?? '',
+    });
+    this.productFormOpen.set(true);
+  }
+
+  closeProductForm(): void {
+    this.productFormOpen.set(false);
+    this.editingProductId.set(null);
+  }
+
+  toggleOptions(productId: string): void {
+    this.expandedProductId.update((cur) => (cur === productId ? null : productId));
+  }
+
+  submitCategory(): void {
     if (this.categoryForm.invalid) return;
     const brand = this.brand();
     if (!brand) return;
-    const { name, slug } = this.categoryForm.getRawValue();
+    const { name, slug, visible } = this.categoryForm.getRawValue();
+    const editingId = this.editingCategoryId();
+    if (editingId) {
+      this.api.updateCategory(editingId, { name, visible }).subscribe({
+        next: () => {
+          this.closeCategoryForm();
+          this.loadCategories(brand.id);
+        },
+        error: (err) => this.error.set(this.extractMessage(err)),
+      });
+      return;
+    }
     this.api.createCategory({ brandId: brand.id, name, slug, sortOrder: this.categories().length }).subscribe({
       next: () => {
-        this.categoryFormOpen.set(false);
+        this.closeCategoryForm();
         this.loadCategories(brand.id);
       },
       error: (err) => this.error.set(this.extractMessage(err)),
     });
   }
 
-  createProduct(): void {
+  deleteCategory(cat: CategoryAdminDto): void {
+    const msg = this.translate.instant('admin.menu.deleteCategoryConfirm', { name: cat.name });
+    if (!confirm(msg)) return;
+    const brand = this.brand();
+    this.api.deleteCategory(cat.id).subscribe({
+      next: () => {
+        if (this.selectedCategoryId() === cat.id) {
+          this.selectedCategoryId.set(null);
+          this.products.set([]);
+        }
+        if (brand) this.loadCategories(brand.id);
+      },
+      error: (err) => this.error.set(this.extractMessage(err)),
+    });
+  }
+
+  submitProduct(): void {
     if (this.productForm.invalid) return;
     const brand = this.brand();
     const categoryId = this.selectedCategoryId();
     if (!brand || !categoryId) return;
     const v = this.productForm.getRawValue();
+    const editingId = this.editingProductId();
+    if (editingId) {
+      this.api
+        .updateProduct(editingId, {
+          name: v.name,
+          basePriceCents: Number(v.basePriceCents),
+          prepTimeSeconds: Number(v.prepTimeSeconds),
+          description: v.description || null,
+        })
+        .subscribe({
+          next: () => {
+            this.closeProductForm();
+            this.loadProducts(categoryId);
+          },
+          error: (err) => this.error.set(this.extractMessage(err)),
+        });
+      return;
+    }
     this.api
       .createProduct({
         brandId: brand.id,
@@ -401,7 +536,7 @@ export class MenuPage implements OnInit {
       })
       .subscribe({
         next: () => {
-          this.productFormOpen.set(false);
+          this.closeProductForm();
           this.loadProducts(categoryId);
         },
         error: (err) => this.error.set(this.extractMessage(err)),
