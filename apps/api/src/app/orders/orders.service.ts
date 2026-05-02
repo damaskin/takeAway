@@ -15,6 +15,7 @@ import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
@@ -53,6 +54,7 @@ export class OrdersService {
     private readonly deliveryFee: DeliveryFeeService,
     private readonly mail: MailService,
     private readonly giftCards: GiftCardsService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -383,6 +385,14 @@ export class OrdersService {
 
     await this.prisma.$transaction(async (tx) => {
       await this.loyalty.creditForOrder(order.userId, order.id, order.subtotalCents, multiplier, tx);
+      // Referral bonus — fires once per (referee, referrer) pair on the
+      // referee's first paid order. Service no-ops if the user wasn't
+      // referred or the row is already REWARDED.
+      await this.referrals.grantBonusOnFirstPaidOrder({
+        userId: order.userId,
+        orderId: order.id,
+        tx,
+      });
     });
   }
 

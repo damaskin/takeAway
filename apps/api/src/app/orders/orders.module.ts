@@ -8,6 +8,7 @@ import { MailModule } from '../mail/mail.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PromoModule } from '../promo/promo.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
@@ -21,6 +22,7 @@ import { OrdersService } from './orders.service';
     DeliveryModule,
     MailModule,
     GiftCardsModule,
+    ReferralsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

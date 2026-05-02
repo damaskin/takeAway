@@ -281,7 +281,48 @@ model User {
   assignedDeliveries  Order[]              @relation("RiderDeliveries")
   giftCardsPurchased  GiftCard[]           @relation("GiftCardsPurchased")
 
+  // Referral program — every user gets a unique code lazily on first read.
+  // referredByUserId points at the user whose code unlocked this account's
+  // first-order bonus. Locked at the moment the apply endpoint fires; we
+  // never overwrite it.
+  referralCode        String?              @unique
+  referredByUserId    String?
+  referredBy          User?                @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referees            User[]               @relation("ReferredBy")
+  referralsAsReferrer Referral[]           @relation("ReferralsAsReferrer")
+  referralsAsReferee  Referral[]           @relation("ReferralsAsReferee")
+
   @@index([createdAt])
+  @@index([referredByUserId])
+}
+
+/// Pairs a referrer with a referee and tracks whether the bonus has been
+/// granted. Created the moment a customer applies a friend's code (status
+/// PENDING). Flipped to REWARDED on the referee's first PAID order — at
+/// which point both sides receive a points credit through PointsLedger.
+model Referral {
+  id                     String         @id @default(cuid())
+  referrerId             String
+  refereeId              String
+  status                 ReferralStatus @default(PENDING)
+  /// Order that triggered the reward. Null until status flips to REWARDED.
+  rewardOrderId          String?
+  refereePointsCredited  Int            @default(0)
+  referrerPointsCredited Int            @default(0)
+  createdAt              DateTime       @default(now())
+  rewardedAt             DateTime?
+
+  referrer User @relation("ReferralsAsReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User @relation("ReferralsAsReferee", fields: [refereeId], references: [id], onDelete: Cascade)
+
+  @@unique([refereeId])
+  @@index([referrerId, status])
+}
+
+enum ReferralStatus {
+  PENDING
+  REWARDED
+  CANCELLED
 }
 
 model Device {

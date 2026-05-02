@@ -63,6 +63,11 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/notifications.page').then((m) => m.ProfileNotificationsPage),
       },
+      {
+        path: 'profile/referrals',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/referrals.page').then((m) => m.ProfileReferralsPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },
