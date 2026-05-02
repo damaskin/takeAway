@@ -162,6 +162,19 @@ const JOB_REFRESH_INTERVAL_MS = 3000;
                       <span class="form-label">{{ 'admin.integrations.poster.accountName' | translate }}</span>
                       <input formControlName="accountName" type="text" class="form-input" autocomplete="off" />
                     </label>
+                    <label class="flex flex-col" style="gap: 4px">
+                      <span class="form-label">{{ 'admin.integrations.poster.accountNumber' | translate }}</span>
+                      <input
+                        formControlName="accountNumber"
+                        type="text"
+                        inputmode="numeric"
+                        class="form-input"
+                        autocomplete="off"
+                      />
+                      <span style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary)">
+                        {{ 'admin.integrations.poster.accountNumberHint' | translate }}
+                      </span>
+                    </label>
                   } @else {
                     <label class="flex flex-col" style="gap: 4px">
                       <span class="form-label">{{ 'admin.integrations.iiko.apiLogin' | translate }}</span>
@@ -260,6 +273,7 @@ export class AdminIntegrationsPage implements OnInit, OnDestroy {
     POSTER: new FormGroup({
       token: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
       accountName: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+      accountNumber: new FormControl('', { nonNullable: true }),
     }),
     IIKO: new FormGroup({
       apiLogin: new FormControl('', { nonNullable: true, validators: [Validators.required] }),

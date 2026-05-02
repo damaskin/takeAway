@@ -466,7 +466,13 @@ export const TRANSLATIONS_RU = {
         stopList: 'Обновить стоп-лист',
         disconnect: 'Отключить',
       },
-      poster: { token: 'API-токен', accountName: 'Поддомен аккаунта' },
+      poster: {
+        token: 'API-токен',
+        accountName: 'Поддомен аккаунта',
+        accountNumber: 'Account number',
+        accountNumberHint:
+          'Числовой ID аккаунта Poster (Настройки → Аккаунт → ID). Нужен, чтобы webhook от приложения находил ваш бренд.',
+      },
       iiko: { apiLogin: 'API-логин', organizationId: 'ID организации' },
       connect: 'Подключить',
       connecting: 'Подключаем…',

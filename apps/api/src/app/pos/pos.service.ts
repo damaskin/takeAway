@@ -1,4 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
   ConflictException,
@@ -23,7 +24,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { SecretCipher } from '../common/crypto/secret-cipher';
 import { PrismaService } from '../prisma/prisma.service';
 import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import type {
@@ -38,6 +39,7 @@ import type {
   PosIntegrationCtx,
   PosSettings,
   PosterCredentials,
+  PosterSettings,
 } from './providers/pos-provider.interface';
 import { IikoProvider } from './providers/iiko.provider';
 import { PosterProvider } from './providers/poster.provider';
@@ -72,6 +74,7 @@ export class PosService {
     private readonly iiko: IikoProvider,
     private readonly poster: PosterProvider,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
     @InjectQueue(POS_SYNC_QUEUE) private readonly queue: Queue<PosSyncJobPayload>,
   ) {
     this.providers = { IIKO: this.iiko, POSTER: this.poster };
@@ -94,6 +97,16 @@ export class PosService {
     const brandId = await this.resolveBrandId(user, input.brandId);
     const credentials = this.shapeCredentials(input.provider, input.credentials);
     const settings = (input.settings ?? {}) as PosSettings;
+
+    // Poster-specific: lift `accountNumber` from the raw credentials bag (the
+    // admin form puts it next to the token) into PosterSettings so the
+    // webhook handler can resolve the integration without decrypting.
+    if (input.provider === PosProvider.POSTER) {
+      const accountNumber = input.credentials['accountNumber']?.trim();
+      if (accountNumber) {
+        (settings as PosterSettings).accountNumber = accountNumber;
+      }
+    }
 
     const provider = this.providers[input.provider];
     const transientCtx: PosIntegrationCtx = {
@@ -756,6 +769,87 @@ export class PosService {
    * enter the order into the POS by hand.
    */
   // ── Poster webhooks (M4) ────────────────────────────────────────────────
+
+  /**
+   * Multi-tenant entrypoint matching the Poster app-catalog flow: a single
+   * webhook URL is configured at the application level, and Poster fans
+   * events for every connected account into it. We use `account_number`
+   * from the body to find the right `PosIntegration` (stored in
+   * `settings.accountNumber` so we don't have to decrypt every row).
+   *
+   * Signature is verified against `POSTER_APPLICATION_SECRET` per the
+   * documented scheme: `verify === md5(account_number || access_token || application_secret)`.
+   * The access_token is the per-integration token we already hold; the
+   * application_secret is shared across all installs of our app.
+   */
+  async handlePosterAppWebhook(
+    accountNumber: string | null,
+    headers: Record<string, string | string[] | undefined>,
+    body: { object?: string; action?: string; verify?: string; data?: unknown; body?: unknown },
+  ): Promise<boolean> {
+    if (!accountNumber) {
+      this.logger.warn('Poster app webhook: missing account_number in body, ignored');
+      return false;
+    }
+
+    // Resolve the integration via the indexed (well, JSON-path) settings
+    // field. Poster doesn't sign with brandId, so we MUST pin the lookup
+    // to the account_number it sent.
+    const integrations = await this.prisma.posIntegration.findMany({
+      where: {
+        provider: PosProvider.POSTER,
+        status: PosIntegrationStatus.CONNECTED,
+        settings: { path: ['accountNumber'], equals: accountNumber },
+      },
+      select: { id: true, brandId: true, settings: true, credentialsCiphertext: true },
+    });
+    if (integrations.length === 0) {
+      this.logger.warn(`Poster app webhook for account=${accountNumber}: no matching integration, ignored`);
+      return false;
+    }
+    const integration = integrations[0]!;
+
+    const appSecret = this.config.get<string>('POSTER_APPLICATION_SECRET');
+    if (appSecret) {
+      const credentials = this.cipher.decryptJson<PosCredentials>(integration.credentialsCiphertext);
+      if (credentials.kind !== 'POSTER') return false;
+      const expected = createHash('md5').update(`${accountNumber}${credentials.token}${appSecret}`).digest('hex');
+      const supplied = body.verify ?? '';
+      if (
+        !supplied ||
+        expected.length !== supplied.length ||
+        !timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(supplied.toLowerCase(), 'hex'))
+      ) {
+        this.logger.warn(`Poster app webhook for account=${accountNumber}: signature mismatch, ignored`);
+        return false;
+      }
+    } else {
+      this.logger.warn(
+        `Poster app webhook for account=${accountNumber}: accepted unsigned (set POSTER_APPLICATION_SECRET to enforce)`,
+      );
+    }
+
+    const kind = posterEventToSyncKind(body.object, body.action);
+    if (!kind) {
+      this.logger.log(
+        `Poster app webhook for account=${accountNumber}: ${body.object}/${body.action} — no sync mapping, ignored`,
+      );
+      return false;
+    }
+
+    const job = await this.prisma.posSyncJob.create({
+      data: { integrationId: integration.id, kind, status: PosSyncJobStatus.PENDING },
+    });
+    await this.queue.add(
+      kind,
+      { syncJobId: job.id, integrationId: integration.id, kind },
+      { priority: MENU_SYNC_PRIORITY, removeOnComplete: 1000, removeOnFail: 1000 },
+    );
+    this.logger.log(
+      `Poster app webhook for brand=${integration.brandId} account=${accountNumber}: enqueued ${kind} (event=${body.object}/${body.action})`,
+    );
+    return true;
+  }
 
   /**
    * Handles an incoming Poster webhook. Returns `true` when the event was

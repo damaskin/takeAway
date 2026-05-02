@@ -36,6 +36,15 @@ export interface IikoSettings {
 export interface PosterSettings {
   /** Override for the Poster API host. Defaults to `${accountName}.joinposter.com`. */
   apiHost?: string;
+  /**
+   * Numeric account id Poster sends in `account_number` on webhooks. Stored
+   * here (not in encrypted credentials) so the webhook handler can resolve
+   * the integration without decrypting every Poster row in the table.
+   * Set on connect; null until the OAuth callback or the admin types it in.
+   */
+  accountNumber?: string;
+  /** Per-integration HMAC secret for legacy webhook flavours that sign per-tenant. */
+  webhookSecret?: string;
 }
 
 export type PosSettings = IikoSettings | PosterSettings;
