@@ -32,6 +32,28 @@ interface PosterWebhookBody {
 export class PosWebhooksController {
   constructor(private readonly pos: PosService) {}
 
+  /**
+   * App-level Poster webhook. Poster sends events for ALL connected
+   * accounts to a single URL configured in the application settings;
+   * we resolve the right integration by `account_number` from the body.
+   */
+  @Public()
+  @Post('poster')
+  @HttpCode(HttpStatus.OK)
+  async posterApp(
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @Body() body: PosterWebhookBody & { account_number?: string | number },
+  ): Promise<{ accepted: boolean }> {
+    const accountNumber = body.account_number == null ? null : String(body.account_number);
+    const accepted = await this.pos.handlePosterAppWebhook(accountNumber, headers, body);
+    return { accepted };
+  }
+
+  /**
+   * Legacy per-tenant webhook. Pre-dates the app-catalog flow — kept so
+   * existing single-tenant pilots don't break. New onboardings use the
+   * URL above.
+   */
   @Public()
   @Post('poster/:brandId')
   @HttpCode(HttpStatus.OK)

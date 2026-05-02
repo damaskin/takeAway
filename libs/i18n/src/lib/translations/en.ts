@@ -465,7 +465,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         stopList: 'Refresh stop-list',
         disconnect: 'Disconnect',
       },
-      poster: { token: 'API token', accountName: 'Account subdomain' },
+      poster: {
+        token: 'API token',
+        accountName: 'Account subdomain',
+        accountNumber: 'Account number',
+        accountNumberHint:
+          'Numeric account id from Poster (Settings → Account → ID). Required so the app webhook can route events to your brand.',
+      },
       iiko: { apiLogin: 'API login', organizationId: 'Organization ID' },
       connect: 'Connect',
       connecting: 'Connecting…',
