@@ -2,10 +2,10 @@ import { BadRequestException, Injectable, Logger, UnauthorizedException } from '
 import { ConfigService } from '@nestjs/config';
 import { Role, type User } from '@prisma/client';
 
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
-import { MailService } from './services/mail.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';

@@ -13,6 +13,7 @@ import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
@@ -49,6 +50,7 @@ export class OrdersService {
     private readonly notifications: NotificationsService,
     private readonly flags: FeatureFlagsService,
     private readonly deliveryFee: DeliveryFeeService,
+    private readonly mail: MailService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -350,6 +352,58 @@ export class OrdersService {
     await this.prisma.$transaction(async (tx) => {
       await this.loyalty.creditForOrder(order.userId, order.id, order.subtotalCents, multiplier, tx);
     });
+  }
+
+  /**
+   * Mail fan-out on a successful PAID transition. Always sends a receipt,
+   * and additionally a welcome message when this is the user's first paid
+   * order (counted by `Order.status='PAID'` siblings excluding this one).
+   *
+   * Best-effort — MailService swallows transport errors. Intentionally
+   * keyed off Order.id (not Payment.id) so a manual /admin retry path
+   * still exercises the same logic if we ever wire one.
+   */
+  async sendPaymentMail(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: true,
+        store: { select: { name: true } },
+        user: { select: { email: true, name: true } },
+      },
+    });
+    if (!order || !order.user.email) return;
+
+    const receipt = {
+      orderCode: order.orderCode,
+      storeName: order.store?.name ?? '',
+      currency: order.currency,
+      subtotalCents: order.subtotalCents,
+      discountCents: order.discountCents,
+      deliveryFeeCents: order.deliveryFeeCents,
+      totalCents: order.totalCents,
+      items: order.items.map((i) => {
+        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
+        const name = typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item';
+        return { name, quantity: i.quantity, totalCents: i.totalCents };
+      }),
+    };
+
+    void this.mail.sendOrderReceipt(order.user.email, receipt);
+
+    // Welcome message — sent once, on the first paid order. We compare to
+    // any earlier PAID order for this user (the current one is already
+    // PAID at the call site, so we look for siblings).
+    const earlier = await this.prisma.order.count({
+      where: {
+        userId: order.userId,
+        status: { in: ['PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'] },
+        id: { not: order.id },
+      },
+    });
+    if (earlier === 0) {
+      void this.mail.sendWelcome(order.user.email, order.user.name);
+    }
   }
 
   async cancel(userId: string, orderId: string): Promise<OrderDto> {

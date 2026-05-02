@@ -226,6 +226,10 @@ export class PaymentsService {
           }`,
         );
       }
+
+      // Receipt + first-time welcome email. MailService is fault-tolerant
+      // (transport errors only log), so fire-and-forget is safe here.
+      void this.orders.sendPaymentMail(updatedOrder.id);
     }
   }
 

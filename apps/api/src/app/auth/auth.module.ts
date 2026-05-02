@@ -5,13 +5,13 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
+import { MailModule } from '../mail/mail.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { BrandScopeService } from './services/brand-scope.service';
-import { MailService } from './services/mail.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
@@ -21,6 +21,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 @Module({
   imports: [
     UsersModule,
+    MailModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -45,7 +46,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   providers: [
     AuthService,
     PasswordService,
-    MailService,
     TokensService,
     TelegramService,
     UserStoreScopeService,
