@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { API_CONFIG } from '../../core/api/api.config';
+import { WebPushService } from '../../core/push/web-push.service';
 
 interface NotificationPrefs {
   notifyOrderUpdates: boolean;
@@ -83,6 +84,30 @@ interface NotificationPrefs {
                 style="width: 22px; height: 22px; cursor: pointer"
               />
             </label>
+
+            @if (browserPushSupported) {
+              <label
+                class="flex items-center"
+                style="height: 56px; padding: 0 16px; gap: 12px; cursor: pointer; border-radius: 12px"
+              >
+                <span class="flex-1 flex flex-col" style="gap: 2px">
+                  <span
+                    style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+                    >{{ 'web.profile.notifications.browserPush' | translate }}</span
+                  >
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                    'web.profile.notifications.browserPushHint' | translate
+                  }}</span>
+                </span>
+                <input
+                  type="checkbox"
+                  [checked]="browserPushEnabled()"
+                  (change)="toggleBrowserPush($event)"
+                  [disabled]="browserPushBusy()"
+                  style="width: 22px; height: 22px; cursor: pointer"
+                />
+              </label>
+            }
           </div>
         } @else if (error()) {
           <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">{{ error() }}</p>
@@ -99,16 +124,53 @@ export class ProfileNotificationsPage {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
+  private readonly webPush = inject(WebPushService);
 
   readonly prefs = signal<NotificationPrefs | null>(null);
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
+
+  readonly browserPushSupported = this.webPush.isSupported();
+  readonly browserPushEnabled = signal(false);
+  readonly browserPushBusy = signal(false);
 
   constructor() {
     this.http.get<NotificationPrefs>(`${this.api.baseUrl}/auth/me/notifications`).subscribe({
       next: (p) => this.prefs.set(p),
       error: (err) => this.error.set(this.extractMessage(err)),
     });
+    if (this.browserPushSupported) {
+      void this.refreshBrowserPushState();
+    }
+  }
+
+  async toggleBrowserPush(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const next = input.checked;
+    this.browserPushBusy.set(true);
+    try {
+      const ok = next ? await this.webPush.ensureSubscribed() : (await this.webPush.unsubscribe(), false);
+      this.browserPushEnabled.set(ok);
+      input.checked = ok;
+      if (next && !ok) {
+        // Permission denied / unsupported / VAPID missing — show a soft hint.
+        this.error.set(this.translate.instant('web.profile.notifications.browserPushBlocked'));
+      } else {
+        this.error.set(null);
+      }
+    } finally {
+      this.browserPushBusy.set(false);
+    }
+  }
+
+  private async refreshBrowserPushState(): Promise<void> {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      this.browserPushEnabled.set(Boolean(sub) && Notification.permission === 'granted');
+    } catch {
+      this.browserPushEnabled.set(false);
+    }
   }
 
   toggle(key: keyof NotificationPrefs, event: Event): void {

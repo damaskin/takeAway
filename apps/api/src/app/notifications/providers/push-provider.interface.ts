@@ -18,7 +18,7 @@ export interface PushMessage {
 
 export interface PushProvider {
   /** Human-readable provider id for logging. */
-  readonly id: 'telegram' | 'apns' | 'fcm';
+  readonly id: 'telegram' | 'apns' | 'fcm' | 'webpush';
   /** Non-fatal: providers should swallow their own errors and return false. */
   send(recipient: PushRecipient, message: PushMessage): Promise<boolean>;
 }
