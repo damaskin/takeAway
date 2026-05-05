@@ -17,6 +17,7 @@
 
 - **iiko Cloud sync (M5)**: parity with Poster. `/api/1/nomenclature` для menu import, `/api/1/stop_lists` для periodic poller (30 мин cron), `/api/1/order/create` для outgoing orders. Provider требует pinned `settings.organizationId` для menu и orders. Inline product modifiers переносятся как `Modifier` rows. См. обновлённый `docs/integrations.md`.
 - **Stripe refund flow в admin**: `POST /admin/orders/:id/refund` — full или partial возврат. Optimistically обновляет `Payment.refundedCents`/`PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN видит всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
+- **Analytics на materialized view**: миграция создаёт `mv_orders_daily` (per-(brand, store, day) роллап с `orderCount`, `revenueCents`, `slaHits/Total`, `pickupSecSum/Count`). `AnalyticsRefreshService` каждые 5 минут делает `REFRESH MATERIALIZED VIEW CONCURRENTLY`. Endpoints `dashboardSummary`, `revenueSeries`, `storePerformance` теперь читают MV вместо raw `Order` сканов; `topProducts`/`cohort` пока остались на live tables и помечены как кандидаты на следующий MV.
 
 ### Docs
 

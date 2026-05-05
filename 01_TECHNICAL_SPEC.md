@@ -17,7 +17,7 @@
 | **M2** Pre-order core            | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here» |
 | **M3** Лояльность                | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)            |
 | **M4** Push / Email / Telegram   | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff |
-| **M5** Admin расширенный         | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized views для аналитики не во всех модулях |
+| **M5** Admin расширенный         | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
 | **M6** Mobile (Flutter)          | ❌     | Не начато                                                                                                            |
 | **M7** Scale & polish            | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                     |
 
@@ -313,7 +313,7 @@ takeaway/
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
-- **Analytics**: summary, revenue, top-products, cohort, stores. Materialized views — частично.
+- **Analytics**: summary, revenue, top-products, cohort, stores. `mv_orders_daily` materialized view (PostgreSQL) с уникальным индексом `(brandId, storeId, day)` агрегирует non-CANCELLED orders и питает summary/revenue/stores; refresh каждые 5 минут через `AnalyticsRefreshService` (`REFRESH MATERIALIZED VIEW CONCURRENTLY`). top-products и cohort пока читают live `OrderItem`/`User`.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
 - **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд).
@@ -464,7 +464,18 @@ Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
           targetCount, sentCount, failedCount, scheduledAt?, sentAt?)
 ```
 
-### 5.6. POS integrations
+### 5.6. Analytics (materialized views)
+
+```
+mv_orders_daily (brandId, storeId, day, orderCount, revenueCents,
+                 slaHits, slaTotal, pickupSecSum, pickupSecCount)
+  unique (brandId, storeId, day)
+  refreshed every 5 min via REFRESH MATERIALIZED VIEW CONCURRENTLY
+```
+
+Источник: `Order` join `Store` для не-`CANCELLED` заказов, агрегация по UTC-дню. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает endpoints `/admin/analytics/{summary,revenue,stores}`.
+
+### 5.7. POS integrations
 
 ```
 PosIntegration (id, brandId, provider[POSTER|IIKO], credentialsCiphertext (AES-256-GCM),
