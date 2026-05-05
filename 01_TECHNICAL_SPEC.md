@@ -1,6 +1,48 @@
 # takeAway — Technical Specification (MVP)
 
-> **Ключевая механика продукта — pre-order first.** Клиент делает предзаказ, следит за ETA и статусом, приходит к готовому заказу и забирает без очереди. Все архитектурные и UX-решения подчинены этой механике. Курьерская доставка — опциональная фича в v1.5, не входит в core MVP.
+> **Ключевая механика продукта — pre-order first.** Клиент делает предзаказ, следит за ETA и статусом, приходит к готовому заказу и забирает без очереди. Все архитектурные и UX-решения подчинены этой механике. Курьерская доставка добавлена как полноценный второй канал получения (см. секцию 7 и 0.2).
+
+## 0. Текущее состояние реализации
+
+> Синхронизируется при каждом значимом изменении кода/инфры/roadmap. Источник истины — `git log` + структура `apps/`/`libs/` + `docs/`.
+
+**Стадия:** активная разработка, релиз `v0.5.0-pos-integrations`. Локальный snapshot — после коммита `83adc1a` (2026-04-20+).
+
+### 0.1. Прогресс по milestones
+
+| Milestone                        | Статус | Комментарий                                                                                                          |
+| -------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| **M0** Фундамент                 | ✅     | Nx + pnpm 10, Node 22+, docker-compose (pg, redis, MinIO, mailhog), NestJS 11 + Prisma 6, Angular 21 (web/tma/admin/kds), CI |
+| **M1** Auth + Catalog            | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны          |
+| **M2** Pre-order core            | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here» |
+| **M3** Лояльность                | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)            |
+| **M4** Push / Email / Telegram   | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff |
+| **M5** Admin расширенный         | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized views для аналитики не во всех модулях |
+| **M6** Mobile (Flutter)          | ❌     | Не начато                                                                                                            |
+| **M7** Scale & polish            | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                     |
+
+### 0.2. Треки за пределами оригинального ТЗ
+
+| Трек                              | Статус | Комментарий                                                                                                       |
+| --------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
+| **POS integrations**              | 🟡     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko — M5+ pending. AES-256-GCM для credentials. См. `docs/integrations.md`. |
+| **Multi-brand SaaS**              | ✅     | Brand registration + moderation (banners, rejection notes), `BrandScopeService` для scope-проверок, brand-themed UI overrides, BRAND_ADMIN роль с ограничением catalog-эндпоинтов |
+| **Delivery (расширена с v1.5)**   | 🟡     | TMA geolocation для доставки, scheduled delivery, riders + dispatch admin UI, per-store fee overrides, Telegram push rider при назначении. Не курьерская сеть — модель «бренд организует своего курьера». |
+| **Storage / CDN**                 | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.million-sales.ru`, brand logo uploader                       |
+| **Notifications prefs**           | ✅     | Per-user prefs: order updates / promotions, force password rotation для invited staff                              |
+
+### 0.3. Реальный стек (расхождения с разделом 2)
+
+- **Node 22+**, **pnpm 10.33+** (раздел 2 называл общее, тут зафиксировано конкретно)
+- **Nx 22.6.5** (Turborepo не используется)
+- **Angular 21.2** (раздел 2 говорит «19+» исторически — следует читать как «21+»)
+- **NestJS 11** + Prisma **6.19**, BullMQ **5.74**, Stripe SDK **22**, Socket.io **4.8**, nodemailer **8**
+- **Email:** SMTP через nodemailer (Mailgun/Postmark из ТЗ — не подключены)
+- **Storage:** MinIO + Cloudflare-style CDN (Cloudflare R2 из ТЗ — не подключен)
+
+### 0.4. База данных
+
+16 миграций, последняя `20260420_password_must_change`. Ключевые домены реализованы: User/Auth, Brand+Store+scope, Catalog, Cart, Order+Events, Payment, Loyalty/Promo/GiftCard/Referral, Device+Notification, POS credentials, Delivery (rider/dispatch), Campaign.
 
 ## 1. Архитектура верхнего уровня
 
@@ -369,69 +411,78 @@ OpenAPI 3.1 — источник правды, от него генерируе�
 
 ## 7. Этапы разработки (дорожная карта)
 
-### M0 — Фундамент (fundament)
+> Сводный статус — в секции 0.1. Здесь — расшифровка пунктов и оставшийся объём.
 
-- Монорепо (pnpm + Nx)
-- docker-compose (pg, redis, minio, mailhog)
-- NestJS скелет, Prisma-схема, первые миграции
-- GitHub Actions CI (lint, test, build)
-- Angular скелеты для web / tma / admin / kds
+### M0 — Фундамент (fundament) ✅
 
-### M1 — Auth + Catalog
+- Монорепо (pnpm + Nx) ✅
+- docker-compose (pg, redis, minio, mailhog) ✅
+- NestJS скелет, Prisma-схема, первые миграции ✅
+- GitHub Actions CI (lint, test, build) ✅
+- Angular скелеты для web / tma / admin / kds ✅
 
-- OTP auth, JWT
-- CRUD меню в admin
-- Публичное API каталога
-- Web: экраны каталога, карточки продукта
-- TMA: адаптация под Telegram
+### M1 — Auth + Catalog ✅
 
-### M2 — Pre-order core (Cart + Checkout + Live status)
+- OTP auth, JWT ✅ (+ password auth, OAuth Google/Apple/Telegram)
+- CRUD меню в admin ✅
+- Публичное API каталога ✅
+- Web: экраны каталога, карточки продукта ✅
+- TMA: адаптация под Telegram ✅
 
-- Cart sync между устройствами с live-ETA
-- Чекаут с выбором точки и pickup time (ASAP / scheduled)
-- Stripe Payment Intents + webhook
-- Order creation с генерацией order code + QR
-- Live-status экран: WebSocket, таймер ETA, push-уведомления
-- Геофенсинг «я в пути» (опционально в M2, обязательно в M3)
-- KDS: базовая панель с dual-timer, колонки NEW/IN_PROGRESS/READY
+### M2 — Pre-order core (Cart + Checkout + Live status) ✅
 
-### M3 — Лояльность
+- Cart sync между устройствами с live-ETA ✅
+- Чекаут с выбором точки и pickup time (ASAP / scheduled) ✅
+- Stripe Payment Intents + webhook ✅
+- Order creation с генерацией order code + QR ✅
+- Live-status экран: WebSocket, таймер ETA, push-уведомления ✅
+- Геофенсинг «я в пути» ✅ (`/orders/:id/im-here` + ping endpoint)
+- KDS: базовая панель с dual-timer, колонки NEW/IN_PROGRESS/READY ✅
 
-- Loyalty accounts, начисление/списание
-- Промокоды
-- Подарочные карты
-- Рефералка
+### M3 — Лояльность ✅
 
-### M4 — Push / Email / Telegram
+- Loyalty accounts, начисление/списание ✅
+- Промокоды ✅
+- Подарочные карты ✅ (`gift-cards` модуль + admin issue UI + redemption на checkout)
+- Рефералка ✅ (код на пользователя, бонус обеим сторонам с первого оплаченного заказа)
 
-- FCM push для web (VAPID) и TMA
-- Email templates (welcome, receipt)
-- Telegram bot для уведомлений
+### M4 — Push / Email / Telegram ✅
 
-### M5 — Admin panel расширенная
+- ~~FCM push~~ → Web push через VAPID + `/devices` ✅ (FCM не подключали)
+- Email templates (welcome, receipt) ✅ — через nodemailer/SMTP (не Mailgun)
+- Telegram bot для уведомлений ✅ — пуши на rider/brand staff
 
-- Аналитика (через materialized views)
-- Маркетинговые кампании
-- Multi-store управление
+### M5 — Admin panel расширенная 🟡
 
-### M6 — Mobile apps (Flutter)
+- Аналитика 🟡 — модуль есть, materialized views точечно
+- Маркетинговые кампании ✅ (push/Telegram/email broadcast for brands)
+- Multi-store управление ✅ (per-store fee overrides, inline store editor, multi-brand scope)
+- Staff roster: invite managers + kitchen staff ✅ (вне исходного ТЗ)
+- Brand moderation (banners + rejection note) ✅ (вне исходного ТЗ)
+
+### M6 — Mobile apps (Flutter) ❌
 
 - Копия web-функционала
 - Push, Apple/Google Pay, biometric auth
 - Публикация в App Store / Google Play
 
-### M7 — Scale & polish
+### M7 — Scale & polish ❌
 
 - Наблюдаемость, алерты
 - Load testing
 - A/B testing framework
-- White-label / multi-tenant
+- White-label / multi-tenant (часть multi-brand уже в проде, см. секцию 0.2)
+
+### Доп. треки (вне исходного roadmap)
+
+- **POS integrations** 🟡 — iiko + Poster (см. `docs/integrations.md`). Сделано: Poster menu/stop-list (M2), outgoing orders (M3), webhooks (M4). Pending: iiko M5+ poll/orders.
+- **Delivery v1** 🟡 — riders, dispatch, scheduled delivery, geolocation в TMA, per-store fees. Pending: расширение метрик и SLA.
 
 ## 8. Вне скоупа MVP
 
-- **Курьерская доставка** — опциональная фича на v1.5, не входит в core pre-order MVP
+- ~~Курьерская доставка~~ — реализована как трек delivery v1 (riders, dispatch, scheduled). Бренд отвечает за своих курьеров; собственная курьерская сеть в скоуп не входит.
 - Dine-in заказы с обслуживанием за столом (только базовый dine-in pickup)
-- Собственный POS-терминал
+- Собственный POS-терминал (вместо этого — **интеграция с iiko/Poster**, см. `docs/integrations.md`)
 - Интеграция с Uber Eats / DoorDash
 - Инвентарный учёт ингредиентов
 - Мультивалютность в одном заказе
