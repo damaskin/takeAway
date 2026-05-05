@@ -339,75 +339,283 @@ takeaway/
 
 ## 5. Модель данных (ключевые сущности)
 
+> Источник истины — `apps/api/prisma/schema.prisma` (16 миграций). Все денежные суммы — **в центах** (`*Cents`-поля Int), все длительности — **в секундах** (`*Seconds`).
+
+### 5.1. Identity / Auth
+
 ```
-User (id, phone, email, name, locale, currency, tgUserId, createdAt)
-Device (id, userId, type, token, locale)
-Store (id, brandId, name, address, geo, workingHours, status, pickupPointType, busyMeter, currentEtaMinutes)
-Category (id, storeId|brandId, name, order, availableFrom, availableTo)
-Product (id, categoryId, name, description, basePrice, images, nutrition, tags, prepTimeSeconds)
-Variation (id, productId, type[size|temp|milk], name, priceDelta, prepTimeDeltaSeconds)
-Modifier (id, productId, name, priceDelta, minCount, maxCount, prepTimeDeltaSeconds)
-Cart (id, userId, storeId, items, etaMinutes, updatedAt)
-CartItem (id, cartId, productId, variations[], modifiers[], quantity, notes)
-Order (id, userId, storeId, items, subtotal, discount, tax, total, status, pickupMode[ASAP|SCHEDULED], pickupAt, orderCode, qrToken, paymentIntentId, createdAt, acceptedAt, startedAt, readyAt, pickedUpAt, expiredAt)
-OrderItem (id, orderId, product snapshot json, quantity, price)
-OrderEvent (id, orderId, type, actorId, payload, createdAt)  // audit trail для статусов и геофенс-событий
-Payment (id, orderId, provider, intentId, status, amount, currency, refunds[])
-LoyaltyAccount (userId, balance, tier, tierProgress)
-LoyaltyTxn (id, userId, delta, reason, orderId)
-Coupon (code, type, value, validFrom, validTo, usageLimit, perUserLimit)
-Subscription (id, userId, planId, status, stripeSubId)
-GiftCard (code, amount, balance, senderId, recipientEmail, status)
-Notification (id, userId, channel, type, payload, readAt)
+User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, currency,
+      telegramUserId?, role[CUSTOMER|RIDER|STAFF|STORE_MANAGER|BRAND_ADMIN|SUPER_ADMIN],
+      notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?)
+Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, locale, lastSeenAt)
+OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
+PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
+Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardOrderId?,
+          referrerPointsCredited, refereePointsCredited)
 ```
+
+### 5.2. Tenancy / Stores
+
+```
+Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
+       moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?)
+Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
+       status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
+       busyMeter, currentEtaSeconds, minOrderCents,
+       deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
+       externalProvider?[POSTER|IIKO], externalId?)
+UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
+StoreWorkingHour (storeId, weekday[0..6], opensAt, closesAt, isClosed)
+```
+
+### 5.3. Catalog
+
+```
+Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible,
+          externalProvider?, externalId?)
+Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
+         caffeineLevel?, calories?, P/F/C, allergens[], dietTags[VEGAN|GLUTEN_FREE|...],
+         imageUrls[], visible, sortOrder, availableFrom?, availableTo?,
+         externalProvider?, externalId?)
+Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
+           prepTimeDeltaSeconds, isDefault)
+Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
+          minCount, maxCount, externalProvider?, externalId?)
+StopListEntry (id, storeId, productId, reason?, expiresAt?)
+```
+
+### 5.4. Cart / Order / Payment
+
+```
+Cart (id, userId, storeId, subtotalCents, etaSeconds)             // unique(userId, storeId)
+CartItem (id, cartId, productId, quantity, variationIds[], modifiersJson, unitPriceCents,
+          unitPrepSeconds, notes?)
+Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKED_UP|
+         OUT_FOR_DELIVERY|DELIVERED|CANCELLED|EXPIRED|REFUNDED],
+       fulfillmentType[PICKUP|DINE_IN|DELIVERY], pickupMode[ASAP|SCHEDULED], pickupAt,
+       subtotalCents, discountCents, taxCents, totalCents, currency,
+       orderCode (4-digit unique), qrToken (opaque),
+       paymentIntentId?, customerName?, customerPhone?, notes?,
+       couponCode?, giftCardCode?, giftCardCents,
+       deliveryAddress*?, deliveryLat?, deliveryLng?, deliveryFeeCents, deliveryDistanceM?,
+       riderId?,                                                   // FK → User (RIDER)
+       posExternalId?,                                             // iiko/Poster order id
+       acceptedAt?, startedAt?, readyAt?, pickedUpAt?,
+       outForDeliveryAt?, deliveredAt?, cancelledAt?, expiredAt?)
+OrderItem (id, orderId, productSnapshot (json), quantity, unitPriceCents, totalCents)
+OrderEvent (id, orderId, type[STATUS_CHANGED|GEOFENCE_NEAR|GEOFENCE_HERE|RIDER_ASSIGNED|...],
+            actorId?, payload?, createdAt)
+Payment (id, orderId, provider[STRIPE|TELEGRAM_PAY|...], providerRef?,
+         status[PENDING|REQUIRES_ACTION|PAID|FAILED|REFUNDED], amountCents, refundedCents,
+         currency, rawJson?)
+```
+
+### 5.5. Loyalty / Promo / Gift cards / Campaigns
+
+```
+LoyaltyAccount (id, userId unique, pointsBalance, lifetimePoints, tier[SILVER|GOLD|PLATINUM])
+PointsLedger (id, loyaltyAccountId, userId, orderId?, type[EARN|SPEND|EXPIRE|ADJUST],
+              amount (signed), reason, metadata?)
+Promo (id, brandId, code, label, type[PERCENT|FIXED|BOGO|POINTS_MULTIPLIER],
+       value, minSubtotalCents?, maxRedemptions, perUserLimit, startsAt, endsAt,
+       status[DRAFT|ACTIVE|PAUSED|EXPIRED])
+PromoRedemption (id, promoId, userId, orderId unique, discountCents)
+GiftCard (id, code unique, brandId, initialAmountCents, balanceCents, currency,
+          status[ACTIVE|REDEEMED|EXPIRED|CANCELLED], purchaserUserId?, recipientEmail?,
+          expiresAt?)
+GiftCardRedemption (id, giftCardId, orderId unique, amountCents)
+Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
+          audience[ALL|HAS_ORDERED|INACTIVE_30D],
+          status[DRAFT|SCHEDULED|SENDING|SENT|FAILED],
+          targetCount, sentCount, failedCount, scheduledAt?, sentAt?)
+```
+
+### 5.6. POS integrations
+
+```
+PosIntegration (id, brandId, provider[POSTER|IIKO], credentialsCiphertext (AES-256-GCM),
+                status[DISCONNECTED|CONNECTED|ERROR], settings (json),
+                lastSyncAt?, lastErrorMessage?)             // unique(brandId, provider)
+PosSyncJob (id, integrationId, kind[STORES|MENU|STOP_LIST|ORDER_PUSH|WEBHOOK],
+            status[PENDING|RUNNING|SUCCESS|FAILED], progress, total, errorMessage?,
+            startedAt?, finishedAt?)
+```
+
+External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `externalProvider + externalId` для двусторонней связи с iiko/Poster.
 
 ## 6. API Contract (основные endpoints)
 
-```
-POST   /auth/otp/send                { phone }
-POST   /auth/otp/verify              { phone, code } → { accessToken, refreshToken }
-POST   /auth/oauth/:provider
-POST   /auth/telegram                { initData } → tokens
-POST   /auth/refresh
-POST   /auth/logout
+> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Telegram (TMA initData / widget), а staff/RIDER — через email + password (с force-rotate при инвайте).
 
+### 6.1. Auth & Identity
+
+```
+POST   /auth/password/login          { email, password } → tokens
+POST   /auth/password/forgot         { email }
+POST   /auth/password/reset          { token, password }
+POST   /auth/password/change         { oldPassword, newPassword }    (auth)
+POST   /auth/telegram                { initData } → tokens           (TMA)
+POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens
+POST   /auth/telegram/link           { initData }                    (auth, привязка TG к существующему юзеру)
+POST   /auth/refresh                 { refreshToken }
+POST   /auth/logout
+GET    /auth/me
+```
+
+### 6.2. Профиль и уведомления
+
+```
 GET    /me
 PATCH  /me
+GET    /me/notifications             (notify-prefs)
+PATCH  /me/notifications             { notifyOrderUpdates?, notifyPromotions? }
 GET    /me/orders
-GET    /me/loyalty
-
-GET    /stores?lat=&lng=&radius=     // включая currentEtaMinutes и busyMeter
-GET    /stores/:id
-GET    /stores/:id/eta               // точный ETA для заданного cart
-
-GET    /stores/:id/menu              (категории + продукты + модификаторы)
-GET    /products/:id
-
-POST   /cart                         // upsert, возвращает etaMinutes
-GET    /cart
-DELETE /cart/items/:itemId
-
-POST   /orders                       { cartId, pickupMode, pickupAt?, couponCode? } → { id, orderCode, qrToken, etaMinutes }
-GET    /orders/:id
-POST   /orders/:id/im-here           // ручной триггер «клиент у точки»
-POST   /orders/:id/location-update   { lat, lng } // для геофенсинга (опционально)
-POST   /orders/:id/cancel
-POST   /orders/:id/refund            (admin)
-
-POST   /payments/intent              { orderId }
-POST   /payments/webhook             (Stripe)
-
-POST   /coupons/validate             { code, cartId }
-
-POST   /loyalty/redeem               { orderId, points }
-
-WS     /ws                          (события: order.statusChanged, order.etaUpdated, order.customerNearby, store.stopList, store.busyMeter, notification)
-
-/admin/*                             (отдельный набор под JWT + RBAC)
-/kds/*                               (для экрана баристы)
+GET    /me/gift-cards
+GET    /me/referrals                 → { code, stats }
+POST   /me/referrals/apply           { code }
 ```
 
-OpenAPI 3.1 — источник правды, от него генерируется типизированный клиент для Angular и Flutter.
+### 6.3. Catalog
+
+```
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter
+GET    /stores/:idOrSlug
+GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
+GET    /products/:idOrSlug
+```
+
+### 6.4. Cart / Order / Payment
+
+```
+GET    /cart
+POST   /cart/items                   { productId, quantity, variationIds[], modifiers{} } → { cart, etaSeconds }
+PATCH  /cart/items/:itemId
+DELETE /cart/items/:itemId
+DELETE /cart
+
+POST   /orders                       { cartId, pickupMode, pickupAt?, couponCode?, giftCardCode?, fulfillmentType, deliveryAddress? } → { id, orderCode, qrToken, etaSeconds }
+GET    /orders/:id
+POST   /orders/:id/cancel
+POST   /orders/:id/location          { lat, lng }  // геофенсинг (триггер «I'm here» при попадании в радиус)
+
+POST   /payments/intent              { orderId } → { clientSecret }
+POST   /payments/webhook             (Stripe)
+```
+
+### 6.5. Promo / Gift cards / Loyalty
+
+```
+POST   /promo/validate               { code, cartId }
+POST   /promo/preview                { code, cartId } → { discountCents, finalTotalCents }
+POST   /gift-cards/validate          { code, cartId } → { balanceCents, applicableCents }
+GET    /loyalty                      → { balance, tier, lifetimePoints, recentEntries[] }
+```
+
+### 6.6. Devices (web push)
+
+```
+GET    /devices/vapid-public-key
+POST   /devices                      { type, pushToken, locale }
+DELETE /devices                      { pushToken }
+```
+
+### 6.7. Delivery (riders + dispatch)
+
+```
+POST   /delivery/quote               { storeId, lat, lng } → { feeCents, distanceM, etaSeconds }
+GET    /delivery/queue               (STORE_MANAGER / SUPER) — заказы для назначения
+GET    /delivery/riders              (managerial)
+POST   /delivery/orders/:id/assign   { riderId }
+GET    /delivery/my                  (RIDER) — мои заказы
+POST   /delivery/orders/:id/self-assign       (RIDER)
+PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVERED
+```
+
+### 6.8. Brand owner / Business signup
+
+```
+POST   /business/register            { brand, contact, ... } → { brand: { moderationStatus: PENDING } }
+GET    /my-brand                     (BRAND_ADMIN)
+PATCH  /my-brand                     (PATCH-только для approved брендов)
+POST   /my-brand/logo                (multipart → S3/MinIO)
+```
+
+### 6.9. Admin (JWT + RBAC: SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER)
+
+```
+# Каталог (scope to brand для BRAND_ADMIN)
+GET/POST/PATCH                       /admin/brands[, /:id, /:id/moderation]
+GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder
+GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility
+                                                    + POST/PATCH/DELETE /admin/products/:id/variations[/...]
+                                                    + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
+GET/POST/PATCH/DELETE  /admin/stores[/:id]
+PUT                    /admin/stores/:id/working-hours
+GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]
+
+# Staff / Riders (per-store scope)
+GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
+GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
+
+# Orders / Promo / Gift cards / Campaigns
+GET                    /admin/orders                     (фильтрация по store/brand/status)
+GET/POST/PATCH         /admin/promo[/:id/status]
+GET/POST/DELETE        /admin/gift-cards[/:id]
+GET/POST               /admin/campaigns
+POST                   /admin/campaigns/:id/send         (синхронный fan-out)
+DELETE                 /admin/campaigns/:id
+
+# Аналитика
+GET                    /admin/analytics/summary
+GET                    /admin/analytics/revenue
+GET                    /admin/analytics/top-products
+GET                    /admin/analytics/cohort
+GET                    /admin/analytics/stores
+
+# POS
+GET                    /admin/pos/status
+POST                   /admin/pos/connect              { provider, credentials, settings }
+DELETE                 /admin/pos/disconnect/:provider
+POST                   /admin/pos/sync/stores/:provider
+POST                   /admin/pos/sync/menu/:provider
+POST                   /admin/pos/sync/stop-list/:provider
+GET                    /admin/pos/jobs/:provider
+```
+
+### 6.10. KDS (экран баристы)
+
+```
+GET    /kds/orders
+POST   /kds/orders/:id/accept
+POST   /kds/orders/:id/start
+POST   /kds/orders/:id/ready
+POST   /kds/orders/:id/picked-up
+```
+
+### 6.11. POS webhooks (incoming)
+
+```
+POST   /pos/webhooks/poster                    (app-level webhook — multi-brand routing)
+POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, переходный)
+```
+
+### 6.12. Health / Config
+
+```
+GET    /health                       → { status, db, redis, queues }
+GET    /config/features              → { features: { campaigns, giftCards, referrals, ... } }
+```
+
+### 6.13. WebSocket
+
+```
+WS     /ws                          (события: order.statusChanged, order.etaUpdated,
+                                              order.customerNearby, order.riderAssigned,
+                                              store.stopList, store.busyMeter,
+                                              pos.syncJob.progress, notification)
+```
+
+OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter (M6) тот же контракт через `openapi-generator`.
 
 ## 7. Этапы разработки (дорожная карта)
 
