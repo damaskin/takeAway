@@ -18,7 +18,7 @@
 | **M3** Лояльность                | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)            |
 | **M4** Push / Email / Telegram   | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff |
 | **M5** Admin расширенный         | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
-| **M6** Mobile (Flutter)          | ❌     | Не начато                                                                                                            |
+| **M6** Mobile (Flutter)          | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается. |
 | **M7** Scale & polish            | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                     |
 
 ### 0.2. Треки за пределами оригинального ТЗ
@@ -718,11 +718,18 @@ OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, о
 - Staff roster: invite managers + kitchen staff ✅ (вне исходного ТЗ)
 - Brand moderation (banners + rejection note) ✅ (вне исходного ТЗ)
 
-### M6 — Mobile apps (Flutter) ❌
+### M6 — Mobile apps (Flutter) 🟡 (kickoff)
 
-- Копия web-функционала
-- Push, Apple/Google Pay, biometric auth
-- Публикация в App Store / Google Play
+PR-разбивка зафиксирована в `apps/mobile/README.md`:
+
+- **PR1** bootstrap: `flutter create`, CI `flutter analyze && flutter test`
+- **PR2** Dart API client: генерация из OpenAPI через `openapi-generator-cli` (template `dart-dio`), Dio interceptors auth/refresh
+- **PR3** Auth: Telegram deep-link + email+password fallback, secure storage refresh token
+- **PR4** Каталог + cart с live-ETA
+- **PR5** Чекаут + Stripe PaymentSheet (Apple Pay / Google Pay)
+- **PR6** Order status: Socket.io live, QR + I'm here
+- **PR7** Push: Firebase FCM/APNS + `/devices` registration, deep-links
+- **PR8** Profile/orders history + store submission
 
 ### M7 — Scale & polish ❌
 

@@ -1,0 +1,68 @@
+name: takeaway_mobile
+description: takeAway customer mobile app — pre-order coffee and food.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State + DI
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Routing
+  go_router: ^14.2.0
+
+  # Networking — generated dio client lives in libs/api-client-dart, this app
+  # depends on it via path. Until that PR lands the import will fail to
+  # resolve; that is expected and tracked in M6 PR2.
+  dio: ^5.5.0
+  retrofit: ^4.4.0
+
+  # Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  flutter_secure_storage: ^9.2.2
+
+  # Realtime — order status WS
+  socket_io_client: ^2.0.3+1
+
+  # Push (FCM + APNS via Firebase)
+  firebase_core: ^3.5.0
+  firebase_messaging: ^15.1.3
+
+  # Auth (server-issued tokens; Telegram flow uses url_launcher + universal links)
+  url_launcher: ^6.3.0
+  sign_in_with_apple: ^6.1.2
+  google_sign_in: ^6.2.1
+
+  # Payments
+  flutter_stripe: ^11.1.0
+
+  # Maps
+  mapbox_gl: ^0.20.0
+
+  # UI helpers
+  qr_flutter: ^4.1.0
+  intl: ^0.19.0
+  cached_network_image: ^3.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  riverpod_generator: ^2.4.0
+  build_runner: ^2.4.11
+  retrofit_generator: ^9.1.4
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+  generate: true
