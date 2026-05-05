@@ -310,7 +310,7 @@ takeaway/
 - **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов, sort-order, visibility, stop-list per store. Массовые операции — точечно.
 - **Store management**: inline editor (details + working hours), stop-list, **per-store delivery fee overrides**.
 - **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
-- **Orders**: `/admin/orders` живой фид. Refund — backlog.
+- **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
 - **Analytics**: summary, revenue, top-products, cohort, stores. Materialized views — частично.
@@ -593,6 +593,7 @@ GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
 
 # Orders / Promo / Gift cards / Campaigns
 GET                    /admin/orders                     (фильтрация по store/brand/status)
+POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
 GET/POST/PATCH         /admin/promo[/:id/status]
 GET/POST/DELETE        /admin/gift-cards[/:id]
 GET/POST               /admin/campaigns
