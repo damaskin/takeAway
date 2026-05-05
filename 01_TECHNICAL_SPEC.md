@@ -25,7 +25,7 @@
 
 | Трек                              | Статус | Комментарий                                                                                                       |
 | --------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| **POS integrations**              | 🟡     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko — M5+ pending. AES-256-GCM для credentials. См. `docs/integrations.md`. |
+| **POS integrations**              | ✅     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko: import + stop-list (cron) + outgoing orders (M5). AES-256-GCM для credentials. См. `docs/integrations.md`. |
 | **Multi-brand SaaS**              | ✅     | Brand registration + moderation (banners, rejection notes), `BrandScopeService` для scope-проверок, brand-themed UI overrides, BRAND_ADMIN роль с ограничением catalog-эндпоинтов |
 | **Delivery (расширена с v1.5)**   | 🟡     | TMA geolocation для доставки, scheduled delivery, riders + dispatch admin UI, per-store fee overrides, Telegram push rider при назначении. Не курьерская сеть — модель «бренд организует своего курьера». |
 | **Storage / CDN**                 | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.million-sales.ru`, brand logo uploader                       |
@@ -178,7 +178,7 @@ takeaway/
 | Web Push (VAPID)   | Push для web/PWA + TMA      | ✅ через `web-push`                                          |
 | Telegram Bot API   | Уведомления rider/staff/cu  | ✅ TG push + TMA initData auth + Telegram Login Widget       |
 | MinIO + CDN        | Object storage              | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
-| iiko Cloud         | POS импорт меню/стоп-листа  | 🟡 M5+ pending                                               |
+| iiko Cloud         | POS меню/stop-list/orders   | ✅ menu + stop-list (cron) + outgoing orders                 |
 | Poster             | POS + outgoing orders       | ✅ menu/stop-list/orders/webhooks                            |
 | Twilio (SMS OTP)   | SMS OTP                     | ❌ не подключено (customer auth идёт через Telegram)         |
 | Firebase FCM       | Mobile push                 | ❌ нужно для M6 (Flutter)                                    |
@@ -354,7 +354,7 @@ takeaway/
 
 - **Pluggable**: `IPosProvider` интерфейс, провайдер выбирается через enum `PosProvider`
 - **Poster** (joinposter.com): ✅ menu import (M2), stop-list (M2), outgoing orders (M3), webhooks (M4) — app-level + per-brand routing
-- **iiko Cloud**: 🟡 partially (M5+) — connect и менеджмент, sync — pending
+- **iiko Cloud**: ✅ M5 — connect, listStores, importMenu (`/api/1/nomenclature`), importStopList (через cron `PosCronService`, `/api/1/stop_lists`), pushOrder (`/api/1/order/create`). Требует pinned `settings.organizationId` для menu и pushOrder.
 - **Credentials**: AES-256-GCM шифрование (`POS_CREDENTIALS_KEY`, 32 bytes hex), хранятся в `PosIntegration.credentialsCiphertext`. См. `docs/integrations.md`.
 - **Sync jobs**: `PosSyncJob` с прогрессом — UI в admin отображает live-статус
 - **External-id linking**: Store / Category / Product / Modifier хранят `externalProvider + externalId` для двусторонней связи
@@ -717,7 +717,7 @@ OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, о
 
 ### Доп. треки (вне исходного roadmap)
 
-- **POS integrations** 🟡 — iiko + Poster (см. `docs/integrations.md`). Сделано: Poster menu/stop-list (M2), outgoing orders (M3), webhooks (M4). Pending: iiko M5+ poll/orders.
+- **POS integrations** ✅ — iiko + Poster (см. `docs/integrations.md`). Poster: menu/stop-list (M2), outgoing orders (M3), webhooks (M4). iiko: menu/stop-list (cron poll, M5), outgoing orders (M5). Все credentials — AES-256-GCM.
 - **Delivery v1** 🟡 — riders, dispatch, scheduled delivery, geolocation в TMA, per-store fees. Pending: расширение метрик и SLA.
 
 ## 8. Вне скоупа MVP

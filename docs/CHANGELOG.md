@@ -13,6 +13,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **iiko Cloud sync (M5)**: parity with Poster. `/api/1/nomenclature` для menu import, `/api/1/stop_lists` для periodic poller (30 мин cron), `/api/1/order/create` для outgoing orders. Provider требует pinned `settings.organizationId` для menu и orders. Inline product modifiers переносятся как `Modifier` rows. См. обновлённый `docs/integrations.md`.
+
 ### Docs
 
 - Раздел 0 ТЗ: добавлено «Текущее состояние реализации» — таблица milestones M0–M7, треки за пределами roadmap (POS, multi-brand, delivery, storage, notify-prefs), реальные версии стека, статус БД (16 миграций).
