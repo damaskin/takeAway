@@ -110,39 +110,43 @@ takeaway/
 
 ## 2. Технологический стек
 
-### 2.1. Frontend (Angular)
+### 2.1. Frontend (Angular) — фактически
 
-- **Angular 21+** со standalone components и signals
-- **State**: NgRx Signal Store (или Akita для более простого API)
-- **UI Kit**: Tailwind CSS 4 + собственные компоненты, потом расширяем через CDK
-- **Forms**: Reactive Forms + Zod-подобная валидация через `@angular/forms` + `zod`
-- **HTTP**: HttpClient + interceptors (auth, retry, error handling)
-- **Router**: Angular Router с lazy loading
-- **i18n**: `@ngx-translate/core` (JSON-словари, легко добавлять языки)
-- **PWA**: Angular Service Worker, offline catalog cache
-- **Telegram Mini App**: `@twa-dev/sdk` или нативный `window.Telegram.WebApp`
+- **Angular 21.2** со standalone components и signals
+- **State**: native Angular signals (без отдельного store-фреймворка). NgRx Signal Store / Akita из исходного ТЗ не подключены — просто не понадобились. Возвращаемся к этому, если разрастётся cross-feature state.
+- **UI Kit**: Tailwind CSS **4.2** + `@tailwindcss/postcss`, общие компоненты в `libs/ui-kit` (включая `telegram-login-button`)
+- **Forms**: Reactive Forms + `class-validator`-DTO с бэкенда (zod пока не подключён)
+- **HTTP**: HttpClient + interceptors (auth, refresh, error)
+- **Router**: Angular Router с lazy loading на каждой feature-папке
+- **i18n**: `@ngx-translate/core` 17 — словари в `libs/i18n`
+- **PWA**: Angular Service Worker (web), offline catalog cache
+- **Telegram Mini App**: нативный `window.Telegram.WebApp` + `auth/telegram` initData flow
 - **Realtime**: Socket.io client для статусов заказов
-- **Analytics**: Mixpanel SDK + Sentry SDK
-- **Build**: Vite через Angular ESBuild (ng build --configuration=production)
+- **Analytics**: Mixpanel/Sentry — пока не подключены (плановое M7)
+- **Build**: Angular ESBuild (`@angular/build`)
 
-### 2.2. Backend (NestJS)
+### 2.2. Backend (NestJS) — фактически
 
-- **NestJS 11** (TypeScript, Fastify adapter для скорости)
-- **Database**: PostgreSQL 16 + **Prisma** (type-safe, миграции, отличный DX)
-- **Cache / session / rate limit**: Redis 7
-- **Queue**: BullMQ (на Redis) для уведомлений, email, webhook
-- **Realtime**: `@nestjs/websockets` + Socket.io
-- **Auth**: JWT (access 15m) + refresh tokens (7d, в Redis), Passport strategies
-- **OAuth**: Google, Apple, Telegram (для TMA)
+- **NestJS 11** на **FastifyAdapter** (`@nestjs/platform-fastify`, `trustProxy: true`)
+- **Database**: PostgreSQL 16 + **Prisma 6.19** (16 миграций, см. 5.x)
+- **Cache / session / rate limit**: Redis 7 через **ioredis 5**, `@nestjs/throttler`
+- **Queue**: **BullMQ 5.74** (`@nestjs/bullmq`) для push/email/Telegram broadcast и POS sync
+- **Realtime**: `@nestjs/websockets` + Socket.io 4.8 (`@nestjs/platform-socket.io`)
+- **Auth**:
+  - JWT через `@nestjs/jwt` + `passport-jwt` + `@nestjs/passport`
+  - **Password (bcrypt 6)** для staff/RIDER + **Telegram initData** для customer + OAuth (Google/Apple через `OAuthAccount`)
+  - Refresh tokens, force-rotate при инвайте (`passwordMustChange`)
+  - **OTP / SMS** — не подключено (Twilio/MessageBird из ТЗ резерв на будущее)
 - **Validation**: `class-validator` + `class-transformer` + DTO
-- **OpenAPI**: `@nestjs/swagger` — авто-генерация клиента для фронта
-- **Payments**: Stripe SDK (Payment Intents, Setup Intents, Customer)
-- **Storage**: Cloudflare R2 (S3-compatible) через `@aws-sdk/client-s3`
-- **Email**: Mailgun / Postmark через API
-- **SMS OTP**: Twilio / MessageBird
-- **Push**: Firebase Admin SDK (FCM) + APNS
-- **Logs**: Pino structured logs → Loki
-- **Monitoring**: Sentry (errors) + Prometheus (metrics) + Grafana
+- **OpenAPI**: `@nestjs/swagger` 11 — источник для `libs/api-client`
+- **Scheduling**: `@nestjs/schedule` для периодических джобов (POS pull, истечение gift-cards и т.п.)
+- **Payments**: **Stripe SDK 22** (Payment Intents + webhook)
+- **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.million-sales.ru`. Cloudflare R2 — потенциальная замена.
+- **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset). Mailgun/Postmark — резерв.
+- **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**. FCM/APNS — будущий M6 (mobile).
+- **Telegram**: бот через прямые вызовы Telegram Bot API (push на rider, brand staff, customer)
+- **Logs**: Pino 10 structured logs
+- **Monitoring**: Sentry/Prometheus/Grafana — плановое M7
 
 ### 2.3. Mobile (v2)
 
@@ -155,40 +159,47 @@ takeaway/
 - **Maps**: `google_maps_flutter` или `mapbox_gl`
 - **Payments**: `flutter_stripe`
 
-### 2.4. Инфраструктура
+### 2.4. Инфраструктура — фактически
 
-- **Runtime**: Docker контейнеры
-- **Dev**: docker-compose (Postgres, Redis, MinIO, Mailhog, api)
-- **Staging / Prod**: Kubernetes (k3s / Hetzner) или Render / Railway на старте
-- **CI/CD**: GitHub Actions → build, test, lint, docker push, deploy
-- **CDN**: Cloudflare
-- **Secrets**: Doppler / 1Password / Vault
-- **DNS**: Cloudflare
-- **Backup**: daily pg_dump → S3, 30d retention
+- **Runtime**: Docker контейнеры (Dockerfile.api для NestJS, Dockerfile.spa для Angular bundles)
+- **Dev**: `docker compose -f infra/docker-compose.yml up` — Postgres 16 (host port 55432), Redis 7, MinIO. Mailhog не подключён (тестовая почта пишется на реальный SMTP).
+- **Staging / Prod**: docker-compose на VPS (`deploy/docker-compose.prod.yml`, nginx, scripts, ssh). Kubernetes — будущий M7.
+- **CI/CD**: GitHub Actions, preflight без `DATABASE_URL`/`REDIS_URL` (выводятся из compose), deploy guardrail
+- **CDN**: `cdn.takeaway.million-sales.ru` (через MinIO)
+- **Secrets**: env-файлы в SSH-deploy. Doppler/Vault — потенциально M7.
+- **Backup**: pg_dump в S3-compatible — план
 
-### 2.5. Third-party
+### 2.5. Third-party — фактическое состояние
 
-| Сервис           | Назначение               | Почему                             |
-| ---------------- | ------------------------ | ---------------------------------- |
-| Stripe           | Основной процессинг      | Глобальный охват, Apple/Google Pay |
-| Twilio           | SMS OTP                  | Глобально, API стабильное          |
-| Firebase         | Push (FCM) + Crashlytics | Бесплатно, стандарт                |
-| Mapbox           | Карты, геокодинг         | Дешевле Google, кастомные стили    |
-| Mailgun          | Транзакционный email     | Хорошая deliverability             |
-| Sentry           | Ошибки и perf            | Поддержка Angular, NestJS, Flutter |
-| Mixpanel         | Продуктовая аналитика    | Воронки, когорты, ретеншн          |
-| Telegram Bot API | Уведомления + TMA        | Критично для Telegram канала       |
+| Сервис             | Назначение                  | Статус                                                       |
+| ------------------ | --------------------------- | ------------------------------------------------------------ |
+| Stripe             | Платежи                     | ✅ Payment Intents + webhook                                 |
+| SMTP (nodemailer)  | Транзакционный email        | ✅ welcome, receipt, password reset                          |
+| Web Push (VAPID)   | Push для web/PWA + TMA      | ✅ через `web-push`                                          |
+| Telegram Bot API   | Уведомления rider/staff/cu  | ✅ TG push + TMA initData auth + Telegram Login Widget       |
+| MinIO + CDN        | Object storage              | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
+| iiko Cloud         | POS импорт меню/стоп-листа  | 🟡 M5+ pending                                               |
+| Poster             | POS + outgoing orders       | ✅ menu/stop-list/orders/webhooks                            |
+| Twilio (SMS OTP)   | SMS OTP                     | ❌ не подключено (customer auth идёт через Telegram)         |
+| Firebase FCM       | Mobile push                 | ❌ нужно для M6 (Flutter)                                    |
+| Mapbox             | Карты / геокодинг           | ❌ не подключено (используем нативные браузерные карты пока) |
+| Sentry / Mixpanel  | Errors + product analytics  | ❌ запланировано на M7                                       |
 
 ## 3. Функциональные требования
 
-### 3.1. Модуль авторизации
+### 3.1. Модуль авторизации — фактически
 
-- Регистрация/логин по телефону с OTP (SMS)
-- Социальный вход: Google, Apple
-- Авторизация в TMA через `initData` (HMAC проверка)
-- JWT + refresh tokens, logout invalidates refresh
-- Профиль: имя, email, телефон, дата рождения, фото, язык, валюта
-- Мультидевайсность
+Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
+
+- **Customer**: вход через **Telegram** (TMA `initData` с HMAC + Telegram Login Widget на web). Никакой пароль не нужен.
+- **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
+- **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
+- **OAuth**: Google, Apple, Telegram через `OAuthAccount` (привязка к существующему юзеру)
+- **JWT + refresh tokens**, logout invalidates refresh.
+- **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
+- Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
+- Мультидевайсность через таблицу `Device` (push token, locale, lastSeenAt)
+- **OTP / SMS**: не реализовано (резерв для рынков, где нет Telegram).
 
 ### 3.2. Каталог / меню
 
@@ -241,7 +252,7 @@ takeaway/
   4. Промокод / применение баллов
   5. Комментарий к заказу
   6. Оплата: Stripe Card / Apple Pay / Google Pay / Telegram Pay (только в TMA)
-- Тип получения: `PICKUP` (default), `DINE_IN` (secondary, если точка поддерживает), `DELIVERY` (v1.5, вне core MVP)
+- Тип получения: `PICKUP` (default), `DINE_IN` (secondary, если точка поддерживает), **`DELIVERY` — реализовано** (см. 3.11) с per-store fee overrides
 - Минимальная сумма заказа (конфигурируется per store)
 - Расчёт итога: subtotal − discount + taxes = total
 - VAT по точке (разные страны)
@@ -249,81 +260,104 @@ takeaway/
 
 ### 3.5. Заказы и live-статус
 
-- Статусы: `CREATED` → `PAID` → `ACCEPTED` → `IN_PROGRESS` → `READY` → `PICKED_UP` / `CANCELLED` / `EXPIRED`
-- **Live-таймер ETA** — пересчёт каждые 10 секунд на основе данных с KDS
-- Real-time обновление через WebSocket + fallback polling каждые 15 сек
-- **Уведомления** (push + Telegram + SMS в критичных случаях):
-  - `PAID` — «Заказ принят, готовим к 8:35»
-  - `IN_PROGRESS` — «Твой кофе уже делают ☕»
-  - `READY` — «Заказ готов. Код: 4832. Отсек B3» (с deep-link на карту)
-  - `PICKED_UP` — чек + «Оставь отзыв»
-  - `LATE` (клиент опаздывает к своему времени) — «Твой заказ ждёт тебя, ETA?»
-- **Geofencing**: при входе в радиус 300м от точки триггер отправляет на KDS сигнал «клиент в пути» — бариста может начать готовить ASAP-заказ
-- **Order code & QR** — 4-значный код и QR на экране статуса, можно показать бариста или отсканировать на pickup-терминале
-- **I'm here** кнопка — ручная альтернатива геофенсингу: «я у двери, начинайте»
-- История заказов с фильтрами
-- «Повторить заказ» одной кнопкой (с новым pickup time)
-- Отмена заказа возможна только до `IN_PROGRESS` (с автоматическим возвратом)
-- Если клиент не пришёл через N минут после `READY` → статус `EXPIRED`, отправка предупреждения, конфигурируемая политика утилизации/hold
-- Refund через Stripe API (частичный/полный)
-- Чек/квитанция в PDF по email
+- Статусы pickup-флоу: `CREATED` → `PAID` → `ACCEPTED` → `IN_PROGRESS` → `READY` → `PICKED_UP` / `CANCELLED` / `EXPIRED`
+- Статусы delivery-флоу: после `READY` → `OUT_FOR_DELIVERY` → `DELIVERED` (см. 3.11)
+- **Live-таймер ETA** на базе `currentEtaSeconds` точки + prep-time товаров
+- Real-time через WebSocket (Socket.io); fallback polling — на стороне клиента
+- **Уведомления** (web push + Telegram; SMS — резерв):
+  - `PAID` — receipt email + push + welcome (для нового customer)
+  - `READY` — push + Telegram (с order code и pickup инструкцией)
+  - `RIDER_ASSIGNED` — Telegram push на rider, push на customer
+  - Маркетинговые broadcast — через Campaigns (см. 3.9)
+- **Geofencing**: `POST /orders/:id/location` принимает координаты клиента → автотриггер `GEOFENCE_NEAR` (300м) и `GEOFENCE_HERE` (50м или явный «I'm here»)
+- **Order code & QR** — 4-значный `orderCode` (unique) + opaque `qrToken`. Поддержка обоих в KDS.
+- **I'm here** — кнопка в UI клиента, эквивалент ручному `GEOFENCE_HERE` event'у
+- История заказов с фильтрами (`/me/orders`)
+- «Повторить заказ» — план (UI ещё не везде)
+- Отмена: `POST /orders/:id/cancel` (refund — отдельный flow, admin)
+- `EXPIRED` через job по `pickupAt`-таймеру
+- Чек по email — да, через nodemailer (welcome + receipt). PDF — план.
 
 ### 3.6. Программа лояльности
 
-- **Баллы**: X% с каждой покупки (настраивается), списание при оплате (1 балл = 1 валюта)
-- **Уровни**: Bronze / Silver / Gold / Platinum по сумме покупок за 3 месяца
-- **Бонусы уровней**: повышенный кэшбек, ранний доступ к новинкам, бесплатная доставка (v2)
-- **Купоны и промокоды**: процент / фикс / N-й бесплатно / на конкретный товар
-- **Рефералка**: инвайт-ссылка → бонус обоим при первой покупке
-- **Подписки (Coffeepass)**: N напитков в день за фикс/месяц, отдельная ветка заказов
-- **Геймификация**: челленджи ("5 эспрессо за неделю → бесплатный круассан")
+- **Баллы**: `LoyaltyAccount.pointsBalance` + append-only `PointsLedger` (типы: `EARN` / `SPEND` / `EXPIRE` / `ADJUST`)
+- **Уровни** (фактический enum): `SILVER` / `GOLD` / `PLATINUM` (Bronze в реализации нет — упрощено)
+- **Промокоды**: `Promo` с типами `PERCENT` / `FIXED` / `BOGO` / `POINTS_MULTIPLIER`, лимиты на total/per-user
+- **Рефералка**: реализовано — каждый юзер получает уникальный код, бонус обеим сторонам начисляется на первом PAID-заказе реферала
+- **Подписки (Coffeepass)**: НЕ реализовано — кандидат на v1.x
+- **Геймификация**: НЕ реализовано — далёкий backlog
 
 ### 3.7. Подарочные карты
 
-- Номинал на выбор
-- Дизайн (шаблон + фото пользователя, как у Drinkit)
-- Отправка по email / ссылка + сообщение
-- Активация через код, пополнение кошелька получателя
-- Интеграция со Stripe как payment method
+- Реализовано как admin-driven flow (v1):
+  - Brand admin выпускает карту через `/admin/gift-cards` → код шарится клиенту out-of-band
+  - Клиент вводит код в чекаут (рядом с промо), баланс применяется как скидка через `GiftCardRedemption`
+  - Поддержка частичного погашения (баланс остаётся)
+- НЕ реализовано в v1: customer-facing покупка карты со Stripe, кастомный дизайн/шаблон, email с подарком
 
 ### 3.8. Уведомления
 
-- Push (FCM + APNS): статусы заказов, маркетинг, стоп-лист
-- Email: чеки, welcome, reset password, маркетинг
-- Telegram bot: статусы заказов для TMA-пользователей
-- Управление подписками пользователя на каналы
+- **Push** (web/PWA/TMA): через **VAPID** (`web-push`), регистрация устройств в `Device`. FCM/APNS — для M6 Flutter.
+- **Email**: nodemailer/SMTP — welcome (на первом PAID), receipt (на PAID), password reset.
+- **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе, customer статусы заказов.
+- **Per-user prefs**: `notifyOrderUpdates` + `notifyPromotions` через `PATCH /me/notifications`. Operational push (rider/brand staff) prefs не учитывает.
+- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D.
 
 ### 3.9. Admin panel
 
-- Роли: `SUPER_ADMIN`, `BRAND_ADMIN`, `STORE_MANAGER`, `STAFF`, `ANALYST`
-- **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов, массовое изменение цен, копирование между точками
-- **Store management**: CRUD точек, часы работы, стоп-лист, принтеры
-- **Orders**: живой фид заказов, поиск, refund
-- **Promo / loyalty**: создание купонов, настройка уровней, подписок
-- **Gift cards**: выпуск, отчёты
-- **Users**: поиск, блокировка, ручная выдача баллов
-- **Analytics**: revenue, orders per hour, AOV, top items, retention, funnel
-- **Content**: баннеры на главной, push-кампании, пуш по сегментам
-- **Franchise (v2)**: multi-tenant, отдельные бренды
+- **Роли** (фактический enum): `SUPER_ADMIN`, `BRAND_ADMIN`, `STORE_MANAGER`, `STAFF`, `RIDER`, `CUSTOMER`. `ANALYST` из исходного ТЗ — нет, аналитика доступна `BRAND_ADMIN`/`SUPER_ADMIN`.
+- **Brand registration + moderation**: бизнес заходит через `/business/register` → `Brand.moderationStatus = PENDING` → SUPER_ADMIN approve/reject с note. До approval бренд видит баннер модерации.
+- **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов, sort-order, visibility, stop-list per store. Массовые операции — точечно.
+- **Store management**: inline editor (details + working hours), stop-list, **per-store delivery fee overrides**.
+- **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
+- **Orders**: `/admin/orders` живой фид. Refund — backlog.
+- **Promo / Gift cards**: CRUD + статусы.
+- **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
+- **Analytics**: summary, revenue, top-products, cohort, stores. Materialized views — частично.
+- **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
+- **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
+- **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд).
 
 ### 3.10. KDS (экран баристы)
 
-- Одно устройство на точку (iPad / Android tablet / браузер)
-- Авторизация по PIN / QR
-- Колонки: `NEW` / `IN PROGRESS` / `READY`
-- Drag between или кнопки "В работу → Готово"
-- Звук при новом заказе
+- Одно устройство на точку (iPad / Android tablet / браузер) — отдельное Angular-приложение `apps/kds`
+- Авторизация: email + password (`auth/password/login`) — PIN/QR-логин не реализованы (план на v1.x)
+- Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
+- Звук при новом заказе — да
 - **Dual timer на карточке**:
   - Время до pickup (обещанное клиенту) — основной
   - Время с момента принятия — вспомогательный
-  - Цветовая индикация: зелёный (в запасе), жёлтый (пора начать), красный (опаздываем)
+  - Цветовая индикация: зелёный / жёлтый / красный
 - **Customer proximity alerts**:
-  - «Клиент в пути» (геофенсинг 300м)
-  - «Клиент у двери» (ручное `I'm here` + геофенсинг 50м)
-- **Order code** и номер отсека отображаются большим шрифтом для быстрой сортировки
-- Отображение комментариев, имени клиента, способа получения
-- Отдельная колонка `READY` с именами клиентов и обратным таймером до pickup
-- Печать на кухонный принтер (v2)
+  - «Клиент в пути» — `GEOFENCE_NEAR` event (300м)
+  - «Клиент у двери» — `GEOFENCE_HERE` (ручной «I'm here» + 50м auto)
+- **Order code** + opaque QR token отображаются большим шрифтом
+- Отображение комментариев, имени клиента, способа получения, delivery flag
+- Отдельная колонка READY — да (с обратным таймером)
+- Печать на кухонный принтер — план (v2)
+
+### 3.11. Delivery (расширение оригинального ТЗ)
+
+Доставка реализована в модели «бренд организует своих курьеров», без курьерской сети takeAway:
+
+- **Заказ**: `fulfillmentType = DELIVERY`, поля `deliveryAddress*`, `deliveryLat/Lng`, `deliveryFeeCents`, `deliveryDistanceM` снепшотятся на Order. Адрес и fee неизменны после создания.
+- **Quote**: `POST /delivery/quote` считает fee и distance до адреса по координатам
+- **Per-store overrides**: `Store.deliveryFee*` (base/perKm/freeRadiusM/maxRadiusM) — null = глобальный env-default
+- **Dispatch (manager)**: `/delivery/queue` + `/delivery/orders/:id/assign { riderId }`, `/delivery/riders` — staff scoped per-store
+- **Rider workflow**: `/delivery/my`, `/delivery/orders/:id/self-assign`, `PATCH /delivery/orders/:id/status` для `OUT_FOR_DELIVERY` → `DELIVERED`
+- **Уведомления**: Telegram push на rider при назначении, push клиенту на каждом переходе
+- **TMA**: TMA-приложение умеет сразу запросить geolocation для адреса доставки; поддерживается scheduled delivery
+
+### 3.12. POS integrations (расширение оригинального ТЗ)
+
+Реализованы внешние back-office интеграции для брендов, у которых уже есть iiko или Poster:
+
+- **Pluggable**: `IPosProvider` интерфейс, провайдер выбирается через enum `PosProvider`
+- **Poster** (joinposter.com): ✅ menu import (M2), stop-list (M2), outgoing orders (M3), webhooks (M4) — app-level + per-brand routing
+- **iiko Cloud**: 🟡 partially (M5+) — connect и менеджмент, sync — pending
+- **Credentials**: AES-256-GCM шифрование (`POS_CREDENTIALS_KEY`, 32 bytes hex), хранятся в `PosIntegration.credentialsCiphertext`. См. `docs/integrations.md`.
+- **Sync jobs**: `PosSyncJob` с прогрессом — UI в admin отображает live-статус
+- **External-id linking**: Store / Category / Product / Modifier хранят `externalProvider + externalId` для двусторонней связи
 
 ## 4. Нефункциональные требования
 
