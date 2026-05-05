@@ -276,7 +276,7 @@ takeaway/
 - «Повторить заказ» — план (UI ещё не везде)
 - Отмена: `POST /orders/:id/cancel` (refund — отдельный flow, admin)
 - `EXPIRED` через job по `pickupAt`-таймеру
-- Чек по email — да, через nodemailer (welcome + receipt). PDF — план.
+- Чек по email — да, через nodemailer (welcome + receipt). **PDF attachment** через `pdfkit` (Helvetica, ASCII-only) — для receipt с Cyrillic/non-ASCII PDF не прикладывается, идёт только HTML (custom font для UTF-8 — backlog). `POST /me/orders/:id/resend-receipt` для повторной отправки.
 
 ### 3.6. Программа лояльности
 
@@ -515,6 +515,7 @@ PATCH  /me
 GET    /me/notifications             (notify-prefs)
 PATCH  /me/notifications             { notifyOrderUpdates?, notifyPromotions? }
 GET    /me/orders
+POST   /me/orders/:id/resend-receipt   → { ok: true }       (PAID-and-later only)
 GET    /me/gift-cards
 GET    /me/referrals                 → { code, stats }
 POST   /me/referrals/apply           { code }

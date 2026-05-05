@@ -56,6 +56,12 @@ export class OrdersController {
     return this.orders.recordCustomerLocation(user.id, id, dto);
   }
 
+  @Post('me/orders/:id/resend-receipt')
+  @ApiOkResponse({ description: 'Receipt re-sent to the user email on file.' })
+  resendReceipt(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<{ ok: true }> {
+    return this.orders.resendReceipt(user.id, id);
+  }
+
   @Get('me/orders')
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'group', required: false, enum: ['ACTIVE', 'HISTORY', 'ALL'] })
