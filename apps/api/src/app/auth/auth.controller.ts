@@ -18,6 +18,7 @@ import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.dto';
+import { KdsPinLoginDto } from './dto/kds-pin-login.dto';
 import { PasswordChangeSelfDto } from './dto/password-change-self.dto';
 import { PasswordForgotDto } from './dto/password-forgot.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
@@ -39,6 +40,10 @@ const limits = {
   passwordReset: 10 * DEV_MULTIPLIER,
   telegram: 20 * DEV_MULTIPLIER,
   refresh: 20 * DEV_MULTIPLIER,
+  // PIN auth on a shared tablet — generous enough for a clumsy barista, tight
+  // enough that brute-forcing 10⁴ combos still trips the per-IP limiter long
+  // before it lands.
+  kdsPin: 8 * DEV_MULTIPLIER,
 };
 
 @ApiTags('auth')
@@ -57,6 +62,21 @@ export class AuthController {
   @ApiOkResponse({ type: AuthSessionDto })
   passwordLogin(@Body() dto: PasswordLoginDto): Promise<AuthSessionDto> {
     return this.auth.loginWithPassword(dto.email, dto.password);
+  }
+
+  /**
+   * KDS lockscreen PIN login. Rate-limited per-IP — production allows
+   * 8 attempts per minute, which is plenty for a real barista mistyping
+   * once or twice and a brute-forcer can't enumerate 10⁴–10⁶ PINs through
+   * it before the per-IP limiter trips.
+   */
+  @Public()
+  @Post('kds/pin')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.kdsPin, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  kdsPinLogin(@Body() dto: KdsPinLoginDto): Promise<AuthSessionDto> {
+    return this.auth.loginWithKdsPin(dto.storeId, dto.pin);
   }
 
   @Public()

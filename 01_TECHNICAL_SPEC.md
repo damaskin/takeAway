@@ -321,7 +321,7 @@ takeaway/
 ### 3.10. KDS (экран баристы)
 
 - Одно устройство на точку (iPad / Android tablet / браузер) — отдельное Angular-приложение `apps/kds`
-- Авторизация: email + password (`auth/password/login`) — PIN/QR-логин не реализованы (план на v1.x)
+- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`. UI lockscreen в `apps/kds` — отдельный заход, API готов.
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
 - Звук при новом заказе — да
 - **Dual timer на карточке**:
@@ -380,7 +380,8 @@ takeaway/
 ```
 User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, currency,
       telegramUserId?, role[CUSTOMER|RIDER|STAFF|STORE_MANAGER|BRAND_ADMIN|SUPER_ADMIN],
-      notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?)
+      notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?,
+      kdsPinHash?, kdsPinStoreId?)                            // KDS lockscreen PIN, scoped to one store
 Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, locale, lastSeenAt)
 OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
 PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
@@ -496,6 +497,7 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ```
 POST   /auth/password/login          { email, password } → tokens
+POST   /auth/kds/pin                  { storeId, pin } → tokens   (KDS lockscreen, STAFF/STORE_MANAGER, 4–6 digits)
 POST   /auth/password/forgot         { email }
 POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
@@ -601,6 +603,7 @@ GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]
 
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
+PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
 GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
 
 # Orders / Promo / Gift cards / Campaigns
