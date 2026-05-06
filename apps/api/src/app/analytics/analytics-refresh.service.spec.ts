@@ -26,7 +26,10 @@ describe('AnalyticsRefreshService', () => {
   it('skips a concurrent run if one is already in flight', async () => {
     let resolveFirst!: () => void;
     const firstCall = new Promise<void>((res) => (resolveFirst = res));
-    const exec = jest.fn().mockImplementationOnce(() => firstCall).mockResolvedValue(0);
+    const exec = jest
+      .fn()
+      .mockImplementationOnce(() => firstCall)
+      .mockResolvedValue(0);
     const { service } = await buildService(exec);
 
     const inflight = service.refreshOrdersDaily();

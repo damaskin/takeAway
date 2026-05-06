@@ -331,10 +331,7 @@ export class IikoProvider implements IPosProvider {
    * we fan out via `/api/1/organizations`. Pass `requireOrg: true` to throw
    * when the account exposes zero orgs (the auth-worked-but-empty case).
    */
-  private async resolveOrgIds(
-    integration: PosIntegrationCtx,
-    opts: { requireOrg: boolean },
-  ): Promise<string[]> {
+  private async resolveOrgIds(integration: PosIntegrationCtx, opts: { requireOrg: boolean }): Promise<string[]> {
     const explicit = (integration.settings as IikoSettings).organizationId?.trim();
     if (explicit) return [explicit];
 

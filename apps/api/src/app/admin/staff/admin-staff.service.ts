@@ -122,7 +122,7 @@ export class AdminStaffService {
     if (!rostered) throw new NotFoundException('Staff is not rostered for this store');
 
     const target = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!target || ![Role.STORE_MANAGER, Role.STAFF].includes(target.role)) {
+    if (!target || (target.role !== Role.STORE_MANAGER && target.role !== Role.STAFF)) {
       throw new NotFoundException('User is not eligible for a KDS PIN');
     }
 

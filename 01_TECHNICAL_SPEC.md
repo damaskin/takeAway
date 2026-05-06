@@ -10,26 +10,26 @@
 
 ### 0.1. Прогресс по milestones
 
-| Milestone                        | Статус | Комментарий                                                                                                          |
-| -------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| **M0** Фундамент                 | ✅     | Nx + pnpm 10, Node 22+, docker-compose (pg, redis, MinIO, mailhog), NestJS 11 + Prisma 6, Angular 21 (web/tma/admin/kds), CI |
-| **M1** Auth + Catalog            | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны          |
-| **M2** Pre-order core            | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here» |
-| **M3** Лояльность                | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)            |
-| **M4** Push / Email / Telegram   | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff |
-| **M5** Admin расширенный         | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
-| **M6** Mobile (Flutter)          | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается. |
-| **M7** Scale & polish            | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                     |
+| Milestone                      | Статус | Комментарий                                                                                                                                                                                                                                         |
+| ------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **M0** Фундамент               | ✅     | Nx + pnpm 10, Node 22+, docker-compose (pg, redis, MinIO, mailhog), NestJS 11 + Prisma 6, Angular 21 (web/tma/admin/kds), CI                                                                                                                        |
+| **M1** Auth + Catalog          | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны                                                                                                                                         |
+| **M2** Pre-order core          | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here»                                                                                               |
+| **M3** Лояльность              | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)                                                                                                                                           |
+| **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff                                                                                                                     |
+| **M5** Admin расширенный       | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
+| **M6** Mobile (Flutter)        | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается.                                                                                              |
+| **M7** Scale & polish          | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                                                                                                                                                    |
 
 ### 0.2. Треки за пределами оригинального ТЗ
 
-| Трек                              | Статус | Комментарий                                                                                                       |
-| --------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| **POS integrations**              | ✅     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko: import + stop-list (cron) + outgoing orders (M5). AES-256-GCM для credentials. См. `docs/integrations.md`. |
-| **Multi-brand SaaS**              | ✅     | Brand registration + moderation (banners, rejection notes), `BrandScopeService` для scope-проверок, brand-themed UI overrides, BRAND_ADMIN роль с ограничением catalog-эндпоинтов |
-| **Delivery (расширена с v1.5)**   | 🟡     | TMA geolocation для доставки, scheduled delivery, riders + dispatch admin UI, per-store fee overrides, Telegram push rider при назначении. Не курьерская сеть — модель «бренд организует своего курьера». |
-| **Storage / CDN**                 | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.million-sales.ru`, brand logo uploader                       |
-| **Notifications prefs**           | ✅     | Per-user prefs: order updates / promotions, force password rotation для invited staff                              |
+| Трек                            | Статус | Комментарий                                                                                                                                                                                                                                 |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **POS integrations**            | ✅     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko: import + stop-list (cron) + outgoing orders (M5). AES-256-GCM для credentials. См. `docs/integrations.md`. |
+| **Multi-brand SaaS**            | ✅     | Brand registration + moderation (banners, rejection notes), `BrandScopeService` для scope-проверок, brand-themed UI overrides, BRAND_ADMIN роль с ограничением catalog-эндпоинтов                                                           |
+| **Delivery (расширена с v1.5)** | 🟡     | TMA geolocation для доставки, scheduled delivery, riders + dispatch admin UI, per-store fee overrides, Telegram push rider при назначении. Не курьерская сеть — модель «бренд организует своего курьера».                                   |
+| **Storage / CDN**               | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.million-sales.ru`, brand logo uploader                                                                                                                                                |
+| **Notifications prefs**         | ✅     | Per-user prefs: order updates / promotions, force password rotation для invited staff                                                                                                                                                       |
 
 ### 0.3. Реальный стек (расхождения с разделом 2)
 
@@ -171,19 +171,19 @@ takeaway/
 
 ### 2.5. Third-party — фактическое состояние
 
-| Сервис             | Назначение                  | Статус                                                       |
-| ------------------ | --------------------------- | ------------------------------------------------------------ |
-| Stripe             | Платежи                     | ✅ Payment Intents + webhook                                 |
-| SMTP (nodemailer)  | Транзакционный email        | ✅ welcome, receipt, password reset                          |
-| Web Push (VAPID)   | Push для web/PWA + TMA      | ✅ через `web-push`                                          |
-| Telegram Bot API   | Уведомления rider/staff/cu  | ✅ TG push + TMA initData auth + Telegram Login Widget       |
-| MinIO + CDN        | Object storage              | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
-| iiko Cloud         | POS меню/stop-list/orders   | ✅ menu + stop-list (cron) + outgoing orders                 |
-| Poster             | POS + outgoing orders       | ✅ menu/stop-list/orders/webhooks                            |
-| Twilio (SMS OTP)   | SMS OTP                     | ❌ не подключено (customer auth идёт через Telegram)         |
-| Firebase FCM       | Mobile push                 | ❌ нужно для M6 (Flutter)                                    |
-| Mapbox             | Карты / геокодинг           | ❌ не подключено (используем нативные браузерные карты пока) |
-| Sentry / Mixpanel  | Errors + product analytics  | ❌ запланировано на M7                                       |
+| Сервис            | Назначение                 | Статус                                                       |
+| ----------------- | -------------------------- | ------------------------------------------------------------ |
+| Stripe            | Платежи                    | ✅ Payment Intents + webhook                                 |
+| SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset                          |
+| Web Push (VAPID)  | Push для web/PWA + TMA     | ✅ через `web-push`                                          |
+| Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login Widget       |
+| MinIO + CDN       | Object storage             | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
+| iiko Cloud        | POS меню/stop-list/orders  | ✅ menu + stop-list (cron) + outgoing orders                 |
+| Poster            | POS + outgoing orders      | ✅ menu/stop-list/orders/webhooks                            |
+| Twilio (SMS OTP)  | SMS OTP                    | ❌ не подключено (customer auth идёт через Telegram)         |
+| Firebase FCM      | Mobile push                | ❌ нужно для M6 (Flutter)                                    |
+| Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока) |
+| Sentry / Mixpanel | Errors + product analytics | ❌ запланировано на M7                                       |
 
 ## 3. Функциональные требования
 

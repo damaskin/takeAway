@@ -190,7 +190,14 @@ describe('IikoProvider', () => {
       },
     ]);
     expect(menu.modifiers).toEqual([
-      { externalId: 'mod-1', productExternalId: 'p-1', name: 'Extra shot', priceDeltaCents: 100, minCount: 0, maxCount: 2 },
+      {
+        externalId: 'mod-1',
+        productExternalId: 'p-1',
+        name: 'Extra shot',
+        priceDeltaCents: 100,
+        minCount: 0,
+        maxCount: 2,
+      },
     ]);
     // Total covers the 3 non-Modifier dishes; advance fires once for the partial flush.
     expect(progress.setTotal).toHaveBeenCalledWith(3);
@@ -250,12 +257,12 @@ describe('IikoProvider', () => {
   });
 
   it('pushOrder posts /api/1/order/create with mapped items and returns posExternalId', async () => {
-    let capturedBody: any = null;
+    let capturedBody: Record<string, unknown> | null = null;
     const fake = {
       post: jest.fn(async (path: string, body: unknown) => {
         if (path === '/api/1/access_token') return { data: { token: 'tk-push' } };
         if (path === '/api/1/order/create') {
-          capturedBody = body;
+          capturedBody = body as Record<string, unknown>;
           return { data: { orderInfo: { id: 'iiko-order-9' } } };
         }
         throw new Error(`unexpected path ${path}`);
@@ -282,10 +289,15 @@ describe('IikoProvider', () => {
     });
 
     expect(result).toEqual({ posExternalId: 'iiko-order-9' });
-    expect(capturedBody.organizationId).toBe('org-pinned');
-    expect(capturedBody.terminalGroupId).toBe('tg-A');
-    expect(capturedBody.order.externalNumber).toBe('4832');
-    expect(capturedBody.order.items).toEqual([
+    const body = capturedBody as unknown as {
+      organizationId: string;
+      terminalGroupId: string;
+      order: { externalNumber: string; items: unknown[]; id: string };
+    };
+    expect(body.organizationId).toBe('org-pinned');
+    expect(body.terminalGroupId).toBe('tg-A');
+    expect(body.order.externalNumber).toBe('4832');
+    expect(body.order.items).toEqual([
       {
         type: 'Product',
         productId: 'p-1',
@@ -294,8 +306,8 @@ describe('IikoProvider', () => {
         comment: undefined,
       },
     ]);
-    expect(typeof capturedBody.order.id).toBe('string');
-    expect(capturedBody.order.id.length).toBeGreaterThan(10); // uuid-ish
+    expect(typeof body.order.id).toBe('string');
+    expect(body.order.id.length).toBeGreaterThan(10); // uuid-ish
   });
 
   it('pushOrder throws when settings.organizationId is missing', async () => {

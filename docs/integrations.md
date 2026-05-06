@@ -7,10 +7,10 @@ integration, and for **ops** dealing with credentials in production.
 
 Two providers are wired today:
 
-| Provider                | Menu import | Stop-list | Outgoing orders | Incoming changes         |
-| ----------------------- | ----------- | --------- | --------------- | ------------------------ |
-| Poster (joinposter.com) | ✅ M2       | ✅ M2     | ✅ M3           | ✅ Webhooks (M4)         |
-| iiko Cloud              | ✅ M5       | ✅ M5     | ✅ M5           | Polling (every 30 min)   |
+| Provider                | Menu import | Stop-list | Outgoing orders | Incoming changes       |
+| ----------------------- | ----------- | --------- | --------------- | ---------------------- |
+| Poster (joinposter.com) | ✅ M2       | ✅ M2     | ✅ M3           | ✅ Webhooks (M4)       |
+| iiko Cloud              | ✅ M5       | ✅ M5     | ✅ M5           | Polling (every 30 min) |
 
 Adding a third provider is a matter of dropping in an `IPosProvider`
 implementation and an enum value in `PosProvider`. See

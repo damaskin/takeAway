@@ -64,6 +64,7 @@ const buildModule = async (prisma: ReturnType<typeof buildPrisma>) => {
         provide: NotificationsService,
         useValue: { notifyBrandAdminPosError: jest.fn().mockResolvedValue(undefined) },
       },
+      { provide: ConfigService, useValue: { get: jest.fn(() => undefined) } },
       { provide: getQueueToken(POS_SYNC_QUEUE), useValue: queue },
     ],
   }).compile();

@@ -84,7 +84,7 @@ export class AuthService {
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
-    if (![Role.STORE_MANAGER, Role.STAFF].includes(user.role)) throw generic;
+    if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },

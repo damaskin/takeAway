@@ -143,7 +143,8 @@ export class PaymentsService {
     // Stripe payment_intent reference. Skip everything still PENDING /
     // REQUIRES_ACTION / FAILED — Stripe will reject a refund against those.
     const payment = order.payments.find(
-      (p) => p.provider === 'STRIPE' && p.providerRef && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
+      (p) =>
+        p.provider === 'STRIPE' && p.providerRef && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
     );
     if (!payment) {
       throw new BadRequestException(`Order ${orderId} has no captured Stripe payment to refund`);
@@ -176,7 +177,8 @@ export class PaymentsService {
     }
 
     const newRefunded = payment.refundedCents + amount;
-    const newStatus: 'REFUNDED' | 'PARTIALLY_REFUNDED' = newRefunded >= payment.amountCents ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+    const newStatus: 'REFUNDED' | 'PARTIALLY_REFUNDED' =
+      newRefunded >= payment.amountCents ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
 
     await this.prisma.$transaction([
       this.prisma.payment.update({

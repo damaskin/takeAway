@@ -135,13 +135,7 @@ export class MailService implements OnModuleInit {
   }
 
   /** Public helper so other services can queue transactional messages through the same transport. */
-  async send(
-    to: string,
-    subject: string,
-    text: string,
-    html?: string,
-    attachments?: MailAttachment[],
-  ): Promise<void> {
+  async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
     const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
     if (!this.transporter) {
       this.logger.warn(

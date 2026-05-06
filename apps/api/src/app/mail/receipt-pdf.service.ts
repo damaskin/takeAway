@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const PDFDocument = require('pdfkit') as typeof import('pdfkit');
 
 export interface ReceiptForPdf {
@@ -45,7 +45,11 @@ export class ReceiptPdfService {
 
     return await new Promise<Buffer | null>((resolve) => {
       const chunks: Buffer[] = [];
-      const doc = new PDFDocument({ size: 'A4', margin: 50, info: { Title: `takeAway receipt #${receipt.orderCode}` } });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 50,
+        info: { Title: `takeAway receipt #${receipt.orderCode}` },
+      });
       const timeout = setTimeout(() => {
         this.logger.warn(`receipt #${receipt.orderCode} PDF render timed out`);
         try {
@@ -63,7 +67,9 @@ export class ReceiptPdfService {
       });
       doc.on('error', (err: unknown) => {
         clearTimeout(timeout);
-        this.logger.error(`receipt #${receipt.orderCode} PDF render failed: ${err instanceof Error ? err.message : err}`);
+        this.logger.error(
+          `receipt #${receipt.orderCode} PDF render failed: ${err instanceof Error ? err.message : err}`,
+        );
         resolve(null);
       });
 

@@ -66,6 +66,7 @@ describe('PaymentsService.handleWebhook', () => {
 
     orders = {
       creditLoyaltyForPayment: jest.fn().mockResolvedValue(undefined),
+      sendPaymentMail: jest.fn().mockResolvedValue(undefined),
     };
 
     // Add items to the mocked findUnique for the KDS payload enrichment step.
@@ -223,23 +224,46 @@ describe('PaymentsService.refundOrder', () => {
 
   it('refunds the remaining balance when amountCents is omitted, marks payment REFUNDED', async () => {
     const { service, refundsCreate, updateCalls, eventCalls } = await buildService([
-      { id: 'pay-1', provider: 'STRIPE', providerRef: 'pi_1', status: 'SUCCEEDED', amountCents: 1000, refundedCents: 0 },
+      {
+        id: 'pay-1',
+        provider: 'STRIPE',
+        providerRef: 'pi_1',
+        status: 'SUCCEEDED',
+        amountCents: 1000,
+        refundedCents: 0,
+      },
     ]);
     const result = await service.refundOrder('order-r', { actorId: 'admin-x', reason: 'requested_by_customer' });
     expect(refundsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ payment_intent: 'pi_1', amount: 1000, reason: 'requested_by_customer' }),
     );
     expect(updateCalls[0]).toEqual(expect.objectContaining({ data: { refundedCents: 1000, status: 'REFUNDED' } }));
-    expect(eventCalls[0]).toEqual(expect.objectContaining({ data: expect.objectContaining({ type: 'REFUND_ISSUED', actorId: 'admin-x' }) }));
-    expect(result).toEqual({ refundId: 're_test_1', refundedCents: 1000, remainingCents: 0, paymentStatus: 'REFUNDED' });
+    expect(eventCalls[0]).toEqual(
+      expect.objectContaining({ data: expect.objectContaining({ type: 'REFUND_ISSUED', actorId: 'admin-x' }) }),
+    );
+    expect(result).toEqual({
+      refundId: 're_test_1',
+      refundedCents: 1000,
+      remainingCents: 0,
+      paymentStatus: 'REFUNDED',
+    });
   });
 
   it('partial refund leaves status PARTIALLY_REFUNDED', async () => {
     const { service, updateCalls } = await buildService([
-      { id: 'pay-2', provider: 'STRIPE', providerRef: 'pi_2', status: 'SUCCEEDED', amountCents: 1000, refundedCents: 0 },
+      {
+        id: 'pay-2',
+        provider: 'STRIPE',
+        providerRef: 'pi_2',
+        status: 'SUCCEEDED',
+        amountCents: 1000,
+        refundedCents: 0,
+      },
     ]);
     const result = await service.refundOrder('order-r', { amountCents: 300, actorId: 'admin-x' });
-    expect(updateCalls[0]).toEqual(expect.objectContaining({ data: { refundedCents: 300, status: 'PARTIALLY_REFUNDED' } }));
+    expect(updateCalls[0]).toEqual(
+      expect.objectContaining({ data: { refundedCents: 300, status: 'PARTIALLY_REFUNDED' } }),
+    );
     expect(result.paymentStatus).toBe('PARTIALLY_REFUNDED');
     expect(result.remainingCents).toBe(700);
   });
@@ -253,14 +277,28 @@ describe('PaymentsService.refundOrder', () => {
 
   it('rejects when the payment is already fully refunded', async () => {
     const { service } = await buildService([
-      { id: 'pay-4', provider: 'STRIPE', providerRef: 'pi_4', status: 'PARTIALLY_REFUNDED', amountCents: 500, refundedCents: 500 },
+      {
+        id: 'pay-4',
+        provider: 'STRIPE',
+        providerRef: 'pi_4',
+        status: 'PARTIALLY_REFUNDED',
+        amountCents: 500,
+        refundedCents: 500,
+      },
     ]);
     await expect(service.refundOrder('order-r', { actorId: 'admin-x' })).rejects.toThrow(/already fully refunded/);
   });
 
   it('rejects amount that exceeds the remaining balance', async () => {
     const { service } = await buildService([
-      { id: 'pay-5', provider: 'STRIPE', providerRef: 'pi_5', status: 'SUCCEEDED', amountCents: 1000, refundedCents: 700 },
+      {
+        id: 'pay-5',
+        provider: 'STRIPE',
+        providerRef: 'pi_5',
+        status: 'SUCCEEDED',
+        amountCents: 1000,
+        refundedCents: 700,
+      },
     ]);
     await expect(service.refundOrder('order-r', { actorId: 'admin-x', amountCents: 500 })).rejects.toThrow(
       /exceeds remaining balance 300/,

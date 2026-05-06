@@ -464,10 +464,10 @@ export class OrdersService {
     // HTML-only when the receipt has non-ASCII content (Cyrillic etc.) that
     // pdfkit's bundled Helvetica can't draw. Don't block the email on a
     // PDF failure.
-    const pdf = await this.receiptPdf
-      .render({ ...receipt, issuedAt: order.createdAt.toISOString() })
-      .catch(() => null);
-    const attachments = pdf ? [{ filename: `receipt-${order.orderCode}.pdf`, content: pdf, contentType: 'application/pdf' }] : undefined;
+    const pdf = await this.receiptPdf.render({ ...receipt, issuedAt: order.createdAt.toISOString() }).catch(() => null);
+    const attachments = pdf
+      ? [{ filename: `receipt-${order.orderCode}.pdf`, content: pdf, contentType: 'application/pdf' }]
+      : undefined;
     void this.mail.sendOrderReceipt(order.user.email, receipt, attachments);
 
     // Welcome message — sent once, on the first paid order. We compare to
