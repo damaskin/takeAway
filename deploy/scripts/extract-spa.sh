@@ -38,6 +38,16 @@ for app in "${APPS[@]}"; do
   # container and needs read+execute on the webroot dirs, so open up.
   chmod -R a+rX "$tmp"
 
+  # Stamp the SPA bundle with the build version triple so every browser
+  # session can fetch /version.json (and the lib-version-badge component
+  # can render it). BUILD_* are exported by deploy.sh.
+  if [ -n "${BUILD_VERSION:-}" ]; then
+    cat > "$tmp/version.json" <<JSON
+{ "version": "${BUILD_VERSION}", "commit": "${BUILD_COMMIT:-unknown}", "builtAt": "${BUILD_TIME:-unknown}", "app": "${app}" }
+JSON
+    chmod a+r "$tmp/version.json"
+  fi
+
   # Atomically swap.
   if [ -d "$WEBROOT/$app" ]; then
     rm -rf "$WEBROOT/${app}.old"

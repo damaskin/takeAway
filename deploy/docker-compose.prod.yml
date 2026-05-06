@@ -86,6 +86,13 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.api
+      args:
+        # Inherits from the shell when set (deploy.sh exports them); falls
+        # back to "dev" / "unknown" so a manual `docker compose build api`
+        # outside of deploy.sh still produces a working image.
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     image: takeaway/api:local
     restart: unless-stopped
     depends_on:
