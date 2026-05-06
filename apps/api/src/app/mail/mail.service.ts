@@ -100,6 +100,7 @@ export class MailService implements OnModuleInit {
       totalCents: number;
       items: Array<{ name: string; quantity: number; totalCents: number }>;
     },
+    attachments?: MailAttachment[],
   ): Promise<void> {
     const subject = `Чек по заказу #${receipt.orderCode} / takeAway receipt #${receipt.orderCode}`;
     const fmt = (cents: number) => formatMoney(cents, receipt.currency);
@@ -130,25 +131,35 @@ export class MailService implements OnModuleInit {
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
       <p><strong>Total:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
     `;
-    await this.send(email, subject, text, html);
+    await this.send(email, subject, text, html, attachments);
   }
 
   /** Public helper so other services can queue transactional messages through the same transport. */
-  async send(to: string, subject: string, text: string, html?: string): Promise<void> {
+  async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
     const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
     if (!this.transporter) {
       this.logger.warn(
-        `[mail] (stub — SMTP_HOST not set) to=${to} subject=${JSON.stringify(subject)} body=${text.slice(0, 200)}`,
+        `[mail] (stub — SMTP_HOST not set) to=${to} subject=${JSON.stringify(subject)} body=${text.slice(0, 200)}` +
+          (attachments?.length ? ` attachments=${attachments.length}` : ''),
       );
       return;
     }
     try {
-      await this.transporter.sendMail({ from, to, subject, text, html });
-      this.logger.log(`[mail] sent to=${to} subject=${JSON.stringify(subject)}`);
+      await this.transporter.sendMail({ from, to, subject, text, html, attachments });
+      this.logger.log(
+        `[mail] sent to=${to} subject=${JSON.stringify(subject)}` +
+          (attachments?.length ? ` attachments=${attachments.length}` : ''),
+      );
     } catch (err) {
       this.logger.error(`[mail] delivery failed to=${to}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
 }
 
 function escapeHtml(s: string): string {

@@ -15,6 +15,7 @@ import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
+import { ReceiptPdfService } from '../mail/receipt-pdf.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -28,6 +29,15 @@ const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
 const MAX_SCHEDULED_LEAD_HOURS = 24;
 const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
+const RECEIPT_RESEND_STATUSES = new Set<string>([
+  'PAID',
+  'ACCEPTED',
+  'IN_PROGRESS',
+  'READY',
+  'PICKED_UP',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+]);
 /** Distance buckets for the "I'm here" geofence, in meters. */
 const NEARBY_RADIUS_M = 300;
 const HERE_RADIUS_M = 60;
@@ -53,6 +63,7 @@ export class OrdersService {
     private readonly flags: FeatureFlagsService,
     private readonly deliveryFee: DeliveryFeeService,
     private readonly mail: MailService,
+    private readonly receiptPdf: ReceiptPdfService,
     private readonly giftCards: GiftCardsService,
     private readonly referrals: ReferralsService,
   ) {}
@@ -405,6 +416,24 @@ export class OrdersService {
    * keyed off Order.id (not Payment.id) so a manual /admin retry path
    * still exercises the same logic if we ever wire one.
    */
+  /**
+   * Re-send the receipt for an order the customer already paid for. Only
+   * orders past CREATED qualify — re-sending a receipt for an unpaid or
+   * cancelled order would mislead the customer.
+   */
+  async resendReceipt(userId: string, orderId: string): Promise<{ ok: true }> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, userId: true, status: true },
+    });
+    if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+    if (!RECEIPT_RESEND_STATUSES.has(order.status)) {
+      throw new BadRequestException(`Cannot resend receipt for order in status ${order.status}`);
+    }
+    await this.sendPaymentMail(orderId);
+    return { ok: true };
+  }
+
   async sendPaymentMail(orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -431,7 +460,15 @@ export class OrdersService {
       }),
     };
 
-    void this.mail.sendOrderReceipt(order.user.email, receipt);
+    // Render PDF asynchronously and attach when available — falls back to
+    // HTML-only when the receipt has non-ASCII content (Cyrillic etc.) that
+    // pdfkit's bundled Helvetica can't draw. Don't block the email on a
+    // PDF failure.
+    const pdf = await this.receiptPdf.render({ ...receipt, issuedAt: order.createdAt.toISOString() }).catch(() => null);
+    const attachments = pdf
+      ? [{ filename: `receipt-${order.orderCode}.pdf`, content: pdf, contentType: 'application/pdf' }]
+      : undefined;
+    void this.mail.sendOrderReceipt(order.user.email, receipt, attachments);
 
     // Welcome message — sent once, on the first paid order. We compare to
     // any earlier PAID order for this user (the current one is already

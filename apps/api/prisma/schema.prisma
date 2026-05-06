@@ -261,9 +261,16 @@ model User {
   notifyOrderUpdates Boolean @default(true)
   notifyPromotions   Boolean @default(true)
   blockedAt      DateTime?
+  /// HMAC-SHA256 of (storeId + pin + KDS_PIN_SECRET). Staff sign in to the KDS
+  /// app on a shared tablet by typing this short PIN on a per-store lockscreen.
+  /// Scoped to one store at a time — staff working two stores get two PINs
+  /// or use email+password instead. NULL when the user has no KDS access.
+  kdsPinHash      String?
+  kdsPinStoreId   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  kdsPinStore         Store?               @relation("KdsPinStore", fields: [kdsPinStoreId], references: [id], onDelete: SetNull)
   devices             Device[]
   oauthAccounts       OAuthAccount[]
   passwordResetTokens PasswordResetToken[]
@@ -503,6 +510,7 @@ model Store {
   carts           Cart[]
   orders          Order[]
   userStores      UserStore[]
+  kdsPinUsers     User[]             @relation("KdsPinStore")
 
   @@unique([brandId, externalProvider, externalId])
   @@index([brandId])

@@ -13,6 +13,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **iiko Cloud sync (M5)**: parity with Poster. `/api/1/nomenclature` для menu import, `/api/1/stop_lists` для periodic poller (30 мин cron), `/api/1/order/create` для outgoing orders. Provider требует pinned `settings.organizationId` для menu и orders. Inline product modifiers переносятся как `Modifier` rows. См. обновлённый `docs/integrations.md`.
+- **Stripe refund flow в admin**: `POST /admin/orders/:id/refund` — full или partial возврат. Optimistically обновляет `Payment.refundedCents`/`PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN видит всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
+- **Analytics на materialized view**: миграция создаёт `mv_orders_daily` (per-(brand, store, day) роллап с `orderCount`, `revenueCents`, `slaHits/Total`, `pickupSecSum/Count`). `AnalyticsRefreshService` каждые 5 минут делает `REFRESH MATERIALIZED VIEW CONCURRENTLY`. Endpoints `dashboardSummary`, `revenueSeries`, `storePerformance` теперь читают MV вместо raw `Order` сканов; `topProducts`/`cohort` пока остались на live tables и помечены как кандидаты на следующий MV.
+- **PDF receipt**: чек прикладывается PDF-аттачментом к welcome/receipt письму через `pdfkit` (built-in Helvetica). Для receipt с non-ASCII (Cyrillic и др.) PDF не генерируется — идёт только HTML, чтобы не плодить broken glyphs. Customer может повторно запросить чек: `POST /me/orders/:id/resend-receipt`. Зависимости: `pdfkit` ^0.15, `@types/pdfkit`. Только в API контейнере (Angular bundles не задеты).
+- **KDS PIN auth (API)**: 4–6 цифр на staff-юзера, scoped to one store. Endpoints — `POST /auth/kds/pin` (login), `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin` (admin set/clear). PIN хранится как `HMAC-SHA256(storeId|pin)` с key `KDS_PIN_SECRET` — O(1) lookup без bcrypt. Per-store unique enforced partial index. UI lockscreen в `apps/kds` — отдельный заход.
+- **M6 Flutter kickoff**: scaffold `apps/mobile/` с `pubspec.yaml` (Riverpod, go_router, Dio + Retrofit, Hive, flutter_secure_storage, socket_io_client, firebase_messaging, sign_in_with_apple, google_sign_in, flutter_stripe, mapbox_gl, qr_flutter), минимальный `lib/main.dart`, README с PR-разбивкой M6 PR1–PR8. До `flutter create` собирать нечем — это первый шаг по PR1.
+
 ### Docs
 
 - Раздел 0 ТЗ: добавлено «Текущее состояние реализации» — таблица milestones M0–M7, треки за пределами roadmap (POS, multi-brand, delivery, storage, notify-prefs), реальные версии стека, статус БД (16 миграций).

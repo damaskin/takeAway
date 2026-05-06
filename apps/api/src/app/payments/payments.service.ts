@@ -25,6 +25,14 @@ type StripeLike = {
     create: (params: Record<string, any>) => Promise<{ id: string; client_secret: string | null; status: string }>;
     retrieve: (id: string) => Promise<{ id: string; client_secret: string | null; status: string }>;
   };
+  refunds: {
+    create: (params: {
+      payment_intent: string;
+      amount?: number;
+      reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer';
+      metadata?: Record<string, string>;
+    }) => Promise<{ id: string; amount: number; status: string; charge?: string | null }>;
+  };
   webhooks: {
     constructEvent: (
       body: Buffer | string,
@@ -33,6 +41,25 @@ type StripeLike = {
     ) => { type: string; data: { object: any } };
   };
 };
+
+export type RefundReason = 'duplicate' | 'fraudulent' | 'requested_by_customer';
+
+export interface RefundOptions {
+  /** Optional partial amount in cents. Omit to refund the remaining balance. */
+  amountCents?: number;
+  reason?: RefundReason;
+  /** Caller (admin) — recorded on the OrderEvent for audit. */
+  actorId: string;
+  /** Free-form note from the admin UI. Stored on the event payload. */
+  note?: string;
+}
+
+export interface RefundResult {
+  refundId: string;
+  refundedCents: number;
+  remainingCents: number;
+  paymentStatus: 'REFUNDED' | 'PARTIALLY_REFUNDED';
+}
 
 @Injectable()
 export class PaymentsService {
@@ -89,6 +116,108 @@ export class PaymentsService {
       throw new ServiceUnavailableException('Stripe did not return a client secret');
     }
     return { clientSecret: intent.client_secret };
+  }
+
+  /**
+   * Issue a refund (full or partial) for a paid order. Called from the admin
+   * UI / API when ops decides to give money back. Optimistically updates the
+   * `Payment` row in our DB so the admin sees the change immediately; the
+   * eventual `charge.refunded` webhook is still consumed by `onRefunded` and
+   * acts as a confirmation (idempotent — same providerRef + amount).
+   *
+   * The order's own `OrderStatus` is NOT touched here on purpose — refund
+   * is about money, not lifecycle. If the customer cancelled, the cancel
+   * already moved status to `CANCELLED`; if not, the order can still be
+   * fulfilled and refunded for goodwill.
+   */
+  async refundOrder(orderId: string, opts: RefundOptions): Promise<RefundResult> {
+    if (!this.stripe) throw new ServiceUnavailableException('Stripe is not configured on this deployment');
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: { orderBy: { createdAt: 'desc' } } },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Use the most recent successful (or partially-refunded) payment with a
+    // Stripe payment_intent reference. Skip everything still PENDING /
+    // REQUIRES_ACTION / FAILED — Stripe will reject a refund against those.
+    const payment = order.payments.find(
+      (p) =>
+        p.provider === 'STRIPE' && p.providerRef && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
+    );
+    if (!payment) {
+      throw new BadRequestException(`Order ${orderId} has no captured Stripe payment to refund`);
+    }
+    const remaining = payment.amountCents - payment.refundedCents;
+    if (remaining <= 0) {
+      throw new BadRequestException(`Order ${orderId} is already fully refunded`);
+    }
+
+    const amount = opts.amountCents ?? remaining;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Refund amount must be a positive integer (cents)');
+    }
+    if (amount > remaining) {
+      throw new BadRequestException(`Refund amount ${amount} exceeds remaining balance ${remaining}`);
+    }
+
+    let stripeRefund: { id: string; amount: number; status: string };
+    try {
+      stripeRefund = await this.stripe.refunds.create({
+        payment_intent: payment.providerRef!,
+        amount,
+        reason: opts.reason,
+        metadata: { orderId, actorId: opts.actorId },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown Stripe error';
+      this.logger.warn(`Stripe refund failed for order=${orderId}: ${message}`);
+      throw new BadRequestException(`Stripe refused the refund: ${message}`);
+    }
+
+    const newRefunded = payment.refundedCents + amount;
+    const newStatus: 'REFUNDED' | 'PARTIALLY_REFUNDED' =
+      newRefunded >= payment.amountCents ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+
+    await this.prisma.$transaction([
+      this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { refundedCents: newRefunded, status: newStatus },
+      }),
+      this.prisma.orderEvent.create({
+        data: {
+          orderId,
+          type: 'REFUND_ISSUED',
+          actorId: opts.actorId,
+          payload: {
+            amount,
+            reason: opts.reason ?? null,
+            note: opts.note ?? null,
+            providerRef: payment.providerRef,
+            stripeRefundId: stripeRefund.id,
+            source: 'admin',
+          } satisfies Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+
+    this.realtime.emitOrderStatusChanged(
+      {
+        orderId,
+        status: order.status,
+        etaSeconds: 0,
+        occurredAt: new Date().toISOString(),
+      },
+      order.userId,
+    );
+
+    return {
+      refundId: stripeRefund.id,
+      refundedCents: newRefunded,
+      remainingCents: payment.amountCents - newRefunded,
+      paymentStatus: newStatus,
+    };
   }
 
   async handleWebhook(rawBody: Buffer, signature: string | undefined): Promise<void> {

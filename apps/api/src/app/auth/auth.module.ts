@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { BrandScopeService } from './services/brand-scope.service';
+import { KdsPinService } from './services/kds-pin.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
@@ -46,6 +47,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   providers: [
     AuthService,
     PasswordService,
+    KdsPinService,
     TokensService,
     TelegramService,
     UserStoreScopeService,
@@ -55,6 +57,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, TokensService],
+  exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, KdsPinService, TokensService],
 })
 export class AuthModule {}

@@ -6,6 +6,7 @@ import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
+import { KdsPinService } from './services/kds-pin.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly tokens: TokensService,
     private readonly telegram: TelegramService,
     private readonly passwords: PasswordService,
+    private readonly kdsPins: KdsPinService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
   ) {}
@@ -62,6 +64,33 @@ export class AuthService {
       session.mustChangePassword = true;
     }
     return session;
+  }
+
+  /**
+   * KDS PIN login. Issued from the kitchen tablet's lockscreen — short
+   * numeric PIN scoped to one store. Returns the same shape as the password
+   * login so the KDS app can reuse the same JWT/refresh wiring; the device
+   * is tagged `WEB` for now (KDS web runs in a browser).
+   */
+  async loginWithKdsPin(storeId: string, pin: string): Promise<AuthSessionDto> {
+    const generic = new UnauthorizedException('Invalid PIN');
+    if (!this.kdsPins.isValidFormat(pin)) throw generic;
+
+    const expected = this.kdsPins.hash(storeId, pin);
+    const user = await this.prisma.user.findFirst({
+      where: { kdsPinStoreId: storeId, kdsPinHash: expected },
+    });
+    if (!user) throw generic;
+    if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
+    // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
+    // (those roles use email+password from the admin app, not the tablet).
+    if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
+
+    const device = await this.prisma.device.create({
+      data: { userId: user.id, type: 'WEB', locale: user.locale },
+    });
+    const tokens = await this.tokens.issue(user.id, device.id);
+    return { ...tokens, user: this.toAuthUser(user) };
   }
 
   /**
