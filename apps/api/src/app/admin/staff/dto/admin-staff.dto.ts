@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
-const ALLOWED_ROLES = [Role.STORE_MANAGER, Role.STAFF] as const;
+const ALLOWED_ROLES = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] as const;
 type StaffRole = (typeof ALLOWED_ROLES)[number];
 
 export class AddStaffDto {

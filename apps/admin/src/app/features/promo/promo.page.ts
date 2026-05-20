@@ -1,8 +1,9 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminPromoApi } from '../../core/promo/promo.service';
 
 type FilterKey = 'All' | 'Running' | 'Scheduled' | 'Expired' | 'Paused' | 'Draft';
@@ -276,6 +277,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
 export class AdminPromoPage implements OnInit {
   private readonly api = inject(AdminPromoApi);
   private readonly translate = inject(TranslateService);
+  private readonly activeBrand = inject(ActiveBrandService);
 
   readonly filter = signal<FilterKey>('All');
   readonly filters: FilterKey[] = ['All', 'Running', 'Scheduled', 'Paused', 'Draft', 'Expired'];
@@ -337,13 +339,34 @@ export class AdminPromoPage implements OnInit {
 
   readonly runningCount = computed(() => this.promos().filter((p) => p.status === 'RUNNING').length);
 
+  constructor() {
+    // Re-list whenever the active brand changes.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      if (!brandId) {
+        this.promos.set([]);
+        return;
+      }
+      this.loading.set(true);
+      this.api.list(brandId).subscribe({
+        next: (list) => {
+          this.promos.set(list);
+          this.loading.set(false);
+        },
+        error: () => this.loading.set(false),
+      });
+    });
+  }
+
   ngOnInit(): void {
-    this.refresh();
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
   }
 
   refresh(): void {
+    const brandId = this.activeBrand.activeId();
+    if (!brandId) return;
     this.loading.set(true);
-    this.api.list().subscribe({
+    this.api.list(brandId).subscribe({
       next: (list) => {
         this.promos.set(list);
         this.loading.set(false);
@@ -358,12 +381,8 @@ export class AdminPromoPage implements OnInit {
   }
 
   submit(): void {
-    const first = this.promos()[0];
-    const brandId = first?.brandId;
+    const brandId = this.activeBrand.activeId();
     if (!brandId) {
-      // Bootstrap case: no promos yet → we need to know which brand we're in.
-      // For M3 we rely on having at least one seeded promo; future UI will
-      // surface a brand picker.
       this.formError.set(this.translate.instant('admin.promo.errors.noBrand'));
       return;
     }

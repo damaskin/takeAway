@@ -19,7 +19,7 @@ import {
 
 @ApiTags('admin: products')
 @ApiBearerAuth()
-@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.MENU_EDITOR)
 @Controller('admin/products')
 export class AdminProductsController {
   constructor(

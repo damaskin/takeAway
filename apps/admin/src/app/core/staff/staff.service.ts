@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
 
-export type StaffRole = 'STORE_MANAGER' | 'STAFF';
+export type StaffRole = 'STORE_MANAGER' | 'STAFF' | 'MENU_EDITOR';
 
 export interface StaffRoster {
   userId: string;

@@ -406,6 +406,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     layout: {
       adminTag: 'Admin',
+      brand: 'Brand',
     },
     nav: {
       dashboard: 'Dashboard',
@@ -435,7 +436,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       email: 'Email',
       name: 'Name',
       roleLabel: 'Role',
-      role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff' },
+      role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       tempPassword: 'Temporary password',
       tempPasswordHint:
         'Give this to the user privately — they should change it via /forgot-password on first sign-in.',

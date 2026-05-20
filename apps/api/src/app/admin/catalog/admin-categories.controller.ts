@@ -11,7 +11,7 @@ import { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dt
 
 @ApiTags('admin: categories')
 @ApiBearerAuth()
-@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.MENU_EDITOR)
 @Controller('admin/categories')
 export class AdminCategoriesController {
   constructor(

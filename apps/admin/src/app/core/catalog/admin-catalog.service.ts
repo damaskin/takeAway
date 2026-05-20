@@ -178,6 +178,15 @@ export class AdminCatalogApi {
     return this.http.get<BrandDto[]>(`${this.api.baseUrl}/admin/brands`);
   }
 
+  /**
+   * Brands the current user can act on. SUPER_ADMIN gets every brand;
+   * BRAND_ADMIN gets owned brands; staff/managers/riders get brands that
+   * own a store they're assigned to. Powers the active-brand selector.
+   */
+  listMyBrands(): Observable<BrandDto[]> {
+    return this.http.get<BrandDto[]>(`${this.api.baseUrl}/admin/brands/mine`);
+  }
+
   listStores(brandId?: string): Observable<StoreAdminDto[]> {
     const params = brandId ? { brandId } : undefined;
     return this.http.get<StoreAdminDto[]>(`${this.api.baseUrl}/admin/stores`, { params });

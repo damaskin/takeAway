@@ -10,7 +10,7 @@ import { AddStaffDto } from './dto/admin-staff.dto';
 
 @ApiTags('admin: staff')
 @ApiBearerAuth()
-@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER)
 @Controller('admin/stores/:storeId/staff')
 export class AdminStaffController {
   constructor(private readonly staff: AdminStaffService) {}

@@ -5,6 +5,8 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { AuthStore } from '../core/auth/auth.store';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 
+import { ADMIN_ROLES, type AdminRole } from '../core/permissions/permissions';
+
 interface NavItem {
   icon: string;
   label: string;
@@ -13,7 +15,7 @@ interface NavItem {
   /** Optional runtime gate — hidden when the returned flag is false. */
   requires?: 'deliveryEnabled';
   /** Role gate — item is hidden for users whose role is not in this list. */
-  roles?: ReadonlyArray<'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'STAFF' | 'RIDER'>;
+  roles?: ReadonlyArray<AdminRole>;
 }
 
 /**
@@ -82,25 +84,37 @@ export class AdminSidebarComponent {
   private readonly authStore = inject(AuthStore);
 
   readonly navItems: NavItem[] = [
-    { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard' },
-    { icon: '🍽', label: 'admin.nav.menu', link: '/menu' },
-    { icon: '🏬', label: 'admin.nav.stores', link: '/stores' },
-    { icon: '🧾', label: 'admin.nav.orders', link: '/orders' },
-    { icon: '🛵', label: 'admin.nav.dispatch', link: '/dispatch', requires: 'deliveryEnabled' },
-    { icon: '🧑‍✈️', label: 'admin.nav.riders', link: '/riders', requires: 'deliveryEnabled' },
-    { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ['SUPER_ADMIN', 'BRAND_ADMIN'] },
-    { icon: '🎟', label: 'admin.nav.promo', link: '/promo' },
-    { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ['SUPER_ADMIN', 'BRAND_ADMIN'] },
-    { icon: '📣', label: 'admin.nav.campaigns', link: '/campaigns', roles: ['SUPER_ADMIN', 'BRAND_ADMIN'] },
-    { icon: '📊', label: 'admin.nav.analytics', link: '/analytics' },
-    { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ['SUPER_ADMIN'] },
-    { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ['BRAND_ADMIN'] },
-    { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ['SUPER_ADMIN', 'BRAND_ADMIN'] },
+    { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
+    { icon: '🍽', label: 'admin.nav.menu', link: '/menu', roles: ADMIN_ROLES.menu },
+    { icon: '🏬', label: 'admin.nav.stores', link: '/stores', roles: ADMIN_ROLES.stores },
+    { icon: '🧾', label: 'admin.nav.orders', link: '/orders', roles: ADMIN_ROLES.orders },
+    {
+      icon: '🛵',
+      label: 'admin.nav.dispatch',
+      link: '/dispatch',
+      requires: 'deliveryEnabled',
+      roles: ADMIN_ROLES.dispatch,
+    },
+    {
+      icon: '🧑‍✈️',
+      label: 'admin.nav.riders',
+      link: '/riders',
+      requires: 'deliveryEnabled',
+      roles: ADMIN_ROLES.riders,
+    },
+    { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ADMIN_ROLES.staff },
+    { icon: '🎟', label: 'admin.nav.promo', link: '/promo', roles: ADMIN_ROLES.promo },
+    { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ADMIN_ROLES.giftCards },
+    { icon: '📣', label: 'admin.nav.campaigns', link: '/campaigns', roles: ADMIN_ROLES.campaigns },
+    { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
+    { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ADMIN_ROLES.brands },
+    { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ADMIN_ROLES.settings },
+    { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ADMIN_ROLES.integrations },
     {
       icon: '📨',
       label: 'admin.nav.telegramLink',
       link: '/telegram-link',
-      roles: ['BRAND_ADMIN', 'STORE_MANAGER', 'STAFF'],
+      roles: ADMIN_ROLES.telegramLink,
     },
   ];
 

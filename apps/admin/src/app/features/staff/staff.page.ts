@@ -146,6 +146,7 @@ import { AddStaffRequest, StaffRoster, StaffService } from '../../core/staff/sta
                 >
                   <option value="STORE_MANAGER">{{ 'admin.staff.role.STORE_MANAGER' | translate }}</option>
                   <option value="STAFF">{{ 'admin.staff.role.STAFF' | translate }}</option>
+                  <option value="MENU_EDITOR">{{ 'admin.staff.role.MENU_EDITOR' | translate }}</option>
                 </select>
               </label>
               <label class="flex flex-col" style="gap: 4px">
@@ -221,7 +222,7 @@ export class AdminStaffPage implements OnInit {
   readonly form = new FormGroup({
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
     name: new FormControl('', { nonNullable: true }),
-    role: new FormControl<'STORE_MANAGER' | 'STAFF'>('STAFF', { nonNullable: true }),
+    role: new FormControl<'STORE_MANAGER' | 'STAFF' | 'MENU_EDITOR'>('STAFF', { nonNullable: true }),
     tempPassword: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(8), Validators.maxLength(128)],

@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Currency, Prisma, PromoStatus, PromoType } from '@prisma/client';
 
+import type { BrandScopeService } from '../auth/services/brand-scope.service';
+import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ApplyPromoInput,
@@ -112,13 +114,24 @@ export class PromoService {
   // Admin CRUD
   // ────────────────────────────────────────────────────────────────────────
 
-  async list(brandId?: string): Promise<PromoDto[]> {
+  /**
+   * `scope` semantics match BrandScopeService.resolveBrandIds:
+   * `null` = no filter (SUPER_ADMIN), array = restrict to those brands.
+   */
+  async list(scope: string[] | null): Promise<PromoDto[]> {
     const promos = await this.prisma.promo.findMany({
-      where: brandId ? { brandId } : undefined,
+      where: scope === null ? undefined : { brandId: { in: scope } },
       include: { _count: { select: { redemptions: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return promos.map((p) => this.toDto(p, p._count.redemptions));
+  }
+
+  /** Throws if the promo's brand is outside the caller's scope. */
+  async assertOwned(user: AuthenticatedUser, promoId: string, scope: BrandScopeService): Promise<void> {
+    const promo = await this.prisma.promo.findUnique({ where: { id: promoId }, select: { brandId: true } });
+    if (!promo) throw new NotFoundException('Promo not found');
+    await scope.assertBrand(user, promo.brandId);
   }
 
   async create(dto: CreatePromoDto): Promise<PromoDto> {

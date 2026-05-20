@@ -407,6 +407,7 @@ export const TRANSLATIONS_RU = {
     },
     layout: {
       adminTag: 'Админ',
+      brand: 'Бренд',
     },
     nav: {
       dashboard: 'Панель',
@@ -436,7 +437,7 @@ export const TRANSLATIONS_RU = {
       email: 'Email',
       name: 'Имя',
       roleLabel: 'Роль',
-      role: { STORE_MANAGER: 'Менеджер', STAFF: 'Кухня' },
+      role: { STORE_MANAGER: 'Менеджер', STAFF: 'Кухня', MENU_EDITOR: 'Редактор меню' },
       tempPassword: 'Временный пароль',
       tempPasswordHint: 'Передайте лично — сотрудник должен сменить пароль через /forgot-password при первом входе.',
       addCta: 'Пригласить',

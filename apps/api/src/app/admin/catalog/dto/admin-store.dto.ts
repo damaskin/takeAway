@@ -104,15 +104,20 @@ export class CreateStoreDto {
   @IsEnum(StoreStatus)
   status?: StoreStatus;
 
-  @ApiProperty({ enum: StoreFulfillment, isArray: true })
+  // Optional so the simple "create store" form doesn't have to surface the
+  // pickup machinery up front — defaults to [TAKEAWAY] in the service. The
+  // store-editor lets ops widen it later.
+  @ApiPropertyOptional({ enum: StoreFulfillment, isArray: true, default: ['TAKEAWAY'] })
+  @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
   @IsEnum(StoreFulfillment, { each: true })
-  fulfillmentTypes!: StoreFulfillment[];
+  fulfillmentTypes?: StoreFulfillment[];
 
-  @ApiProperty({ enum: PickupPointType })
+  @ApiPropertyOptional({ enum: PickupPointType, default: 'COUNTER' })
+  @IsOptional()
   @IsEnum(PickupPointType)
-  pickupPointType!: PickupPointType;
+  pickupPointType?: PickupPointType;
 
   @ApiPropertyOptional({ minimum: 0 })
   @IsOptional()

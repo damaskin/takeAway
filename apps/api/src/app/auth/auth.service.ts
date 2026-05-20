@@ -19,6 +19,7 @@ const PASSWORD_LOGIN_ROLES: ReadonlySet<Role> = new Set([
   Role.SUPER_ADMIN,
   Role.BRAND_ADMIN,
   Role.STORE_MANAGER,
+  Role.MENU_EDITOR,
   Role.STAFF,
   Role.RIDER,
 ]);

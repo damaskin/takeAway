@@ -33,7 +33,7 @@ export class AdminStaffService {
     const rows = await this.prisma.userStore.findMany({
       where: {
         storeId,
-        user: { role: { in: [Role.STORE_MANAGER, Role.STAFF] } },
+        user: { role: { in: [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] } },
       },
       include: { user: { select: { id: true, email: true, name: true, role: true, blockedAt: true } } },
       orderBy: { createdAt: 'desc' },
@@ -77,7 +77,11 @@ export class AdminStaffService {
         select: { id: true },
       });
       userId = created.id;
-    } else if (existing.role === Role.STORE_MANAGER || existing.role === Role.STAFF) {
+    } else if (
+      existing.role === Role.STORE_MANAGER ||
+      existing.role === Role.STAFF ||
+      existing.role === Role.MENU_EDITOR
+    ) {
       userId = existing.id;
       if (existing.role !== input.role) {
         await this.prisma.user.update({ where: { id: userId }, data: { role: input.role } });
@@ -105,7 +109,7 @@ export class AdminStaffService {
   async remove(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
     await this.assertStore(storeId, user);
     const deleted = await this.prisma.userStore.deleteMany({
-      where: { storeId, userId, user: { role: { in: [Role.STORE_MANAGER, Role.STAFF] } } },
+      where: { storeId, userId, user: { role: { in: [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] } } },
     });
     if (deleted.count === 0) {
       throw new NotFoundException('Staff is not rostered for this store');

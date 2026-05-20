@@ -43,6 +43,15 @@ export class AdminCatalogService {
     });
   }
 
+  /** Minimal brand list filtered to the caller's scope. `null` = no filter. */
+  listBrandsForScope(scope: BrandScope) {
+    return this.prisma.brand.findMany({
+      where: scope === null ? undefined : { id: { in: scope } },
+      orderBy: { name: 'asc' },
+      select: { id: true, slug: true, name: true, currency: true, locale: true, logoUrl: true },
+    });
+  }
+
   async getBrand(id: string) {
     const brand = await this.prisma.brand.findUnique({
       where: { id },
@@ -96,10 +105,14 @@ export class AdminCatalogService {
 
   createStore(dto: CreateStoreDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
-    const { workingHours, ...rest } = dto;
+    const { workingHours, fulfillmentTypes, ...rest } = dto;
     return this.prisma.store.create({
       data: {
         ...rest,
+        // Default to pure pickup when the caller doesn't specify — covers
+        // the simple "add store" UI flow. `pickupPointType` has a Prisma
+        // default (COUNTER) so no override needed here.
+        fulfillmentTypes: fulfillmentTypes?.length ? fulfillmentTypes : ['TAKEAWAY'],
         workingHours: workingHours?.length ? { create: workingHours } : undefined,
       },
       include: { workingHours: true },

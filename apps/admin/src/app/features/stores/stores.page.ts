@@ -1,13 +1,9 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
-import {
-  AdminCatalogApi,
-  type BrandDto,
-  type CreateStoreInput,
-  type StoreAdminDto,
-} from '../../core/catalog/admin-catalog.service';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { AdminCatalogApi, type CreateStoreInput, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { StoreEditorComponent } from './store-editor.component';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
@@ -264,10 +260,10 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
 export class StoresPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
+  private readonly activeBrand = inject(ActiveBrandService);
 
   readonly currencies = CURRENCIES;
   readonly stores = signal<StoreAdminDto[]>([]);
-  readonly brand = signal<BrandDto | null>(null);
   readonly error = signal<string | null>(null);
   readonly editingId = signal<string | null>(null);
   readonly deletingId = signal<string | null>(null);
@@ -299,14 +295,27 @@ export class StoresPage implements OnInit {
     email: new FormControl<string>('', { nonNullable: true }),
   });
 
+  constructor() {
+    // Refetch the store list whenever the active brand changes (selector in
+    // the top bar). Skip while no brand is resolved yet — loading state is
+    // owned by ActiveBrandService.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      if (!brandId) {
+        this.stores.set([]);
+        return;
+      }
+      this.api.listStores(brandId).subscribe({
+        next: (list) => this.stores.set(list),
+        error: (err) => this.error.set(extractMessage(err) ?? this.translate.instant('admin.stores.loadFailed')),
+      });
+    });
+  }
+
   ngOnInit(): void {
-    this.api.listBrands().subscribe({
-      next: (brands) => this.brand.set(brands[0] ?? null),
-    });
-    this.api.listStores().subscribe({
-      next: (list) => this.stores.set(list),
-      error: (err) => this.error.set(extractMessage(err) ?? this.translate.instant('admin.stores.loadFailed')),
-    });
+    // Brand list is normally loaded once by AdminLayoutPage; trigger here as
+    // a safety net for direct navigation / hot-reload.
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
   }
 
   toggleCreateForm(): void {
@@ -315,7 +324,7 @@ export class StoresPage implements OnInit {
   }
 
   submitCreate(): void {
-    const brand = this.brand();
+    const brand = this.activeBrand.active();
     if (!brand) {
       this.createError.set(this.translate.instant('admin.stores.noBrand'));
       return;
