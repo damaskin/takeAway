@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-CERT_DIR=/opt/takeaway/letsencrypt/live/takeaway.million-sales.ru
+CERT_DIR=/opt/takeaway/letsencrypt/live/takeaway.md
 
 # Once certbot runs, cert files become symlinks into archive/ which is
 # mode 700 root:root — the deploy user can see the symlinks but not read
@@ -23,7 +23,7 @@ mkdir -p "$CERT_DIR"
 openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
   -keyout "$CERT_DIR/privkey.pem" \
   -out "$CERT_DIR/fullchain.pem" \
-  -subj "/CN=bootstrap.takeaway.million-sales.ru" \
+  -subj "/CN=bootstrap.takeaway.md" \
   >/dev/null 2>&1
 
 chmod 600 "$CERT_DIR/privkey.pem"

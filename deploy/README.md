@@ -39,11 +39,11 @@ Still to do:
 1. **DNS** — point these A-records at the server IP:
 
    ```
-   takeaway.million-sales.ru
-   api.takeaway.million-sales.ru
-   admin.takeaway.million-sales.ru
-   kds.takeaway.million-sales.ru
-   tma.takeaway.million-sales.ru
+   takeaway.md
+   api.takeaway.md
+   admin.takeaway.md
+   kds.takeaway.md
+   tma.takeaway.md
    ```
 
 2. **Clone the repo** to `/opt/takeaway/repo`:

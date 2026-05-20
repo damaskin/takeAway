@@ -43,7 +43,7 @@ services:
 
   minio:
     # Self-hosted S3-compatible object storage for brand logos and other
-    # uploads. Exposed publicly only via nginx at cdn.takeaway.million-sales.ru;
+    # uploads. Exposed publicly only via nginx at cdn.takeaway.md;
     # the API reaches it internally on http://minio:9000.
     image: minio/minio:latest
     restart: unless-stopped

@@ -115,7 +115,7 @@ Poster pushes menu / stop-list changes as webhooks. To receive them:
    integration via:
 
    ```bash
-   curl -X POST https://api.takeaway.million-sales.ru/api/admin/pos/connect \
+   curl -X POST https://api.takeaway.md/api/admin/pos/connect \
      -H "Authorization: Bearer $JWT" \
      -H "Content-Type: application/json" \
      -d '{"provider":"POSTER","credentials":{...},"settings":{"webhookSecret":"..."}}'

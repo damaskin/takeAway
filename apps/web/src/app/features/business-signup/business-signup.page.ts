@@ -35,7 +35,7 @@ import { BusinessService } from '../../core/business/business.service';
               {{ 'web.business.pendingBody' | translate }}
             </p>
             <a
-              href="https://admin.takeaway.million-sales.ru"
+              href="https://admin.takeaway.md"
               class="inline-flex items-center justify-center"
               style="height: 48px; padding: 0 24px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); font-family: var(--font-sans); font-weight: 600; text-decoration: none"
             >

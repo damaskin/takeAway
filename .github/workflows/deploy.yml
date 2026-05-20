@@ -37,7 +37,7 @@ jobs:
       - name: Health check
         run: |
           for i in 1 2 3 4 5; do
-            if curl -sSf https://api.takeaway.million-sales.ru/api/health > /tmp/health.json; then
+            if curl -sSf https://api.takeaway.md/api/health > /tmp/health.json; then
               echo "API healthy:"; cat /tmp/health.json
               exit 0
             fi
