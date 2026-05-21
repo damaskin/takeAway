@@ -49,6 +49,12 @@ export const TRANSLATIONS_RU = {
       hours: '{{n}} ч назад',
       days: '{{n}} дн назад',
     },
+    map: {
+      buildRoute: 'Построить маршрут',
+      pickupLocation: 'Где забрать',
+      yourLocation: 'Вы здесь',
+      locationDenied: 'Местоположение недоступно',
+    },
   },
   nav: {
     menu: 'Меню',
@@ -686,6 +692,7 @@ export const TRANSLATIONS_RU = {
         currency: 'Валюта',
         latitude: 'Широта',
         longitude: 'Долгота',
+        pickOnMap: 'Перетащите маркер, чтобы задать точку',
         timezone: 'Часовой пояс',
         phone: 'Телефон',
         email: 'Email',
@@ -703,6 +710,7 @@ export const TRANSLATIONS_RU = {
         address: 'Адрес',
         city: 'Город',
         country: 'Страна (ISO-2)',
+        location: 'Расположение',
         phone: 'Телефон',
         email: 'Email',
         minOrder: 'Мин. заказ (копейки)',

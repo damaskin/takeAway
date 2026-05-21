@@ -28,6 +28,8 @@ export interface StoreAdminDto {
   addressLine?: string;
   city: string;
   country: string;
+  latitude: number;
+  longitude: number;
   status: 'OPEN' | 'CLOSED' | 'OVERLOADED';
   currency: string;
   phone?: string | null;
@@ -42,6 +44,8 @@ export interface UpdateStoreInput {
   addressLine?: string;
   city?: string;
   country?: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string | null;
   email?: string | null;
   status?: 'OPEN' | 'CLOSED' | 'OVERLOADED';

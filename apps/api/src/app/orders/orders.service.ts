@@ -265,7 +265,10 @@ export class OrdersService {
   async getForUser(userId: string, orderId: string): Promise<OrderDto> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true, store: { select: { name: true } } },
+      include: {
+        items: true,
+        store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+      },
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
     return this.toOrderDto(order);
@@ -468,7 +471,10 @@ export class OrdersService {
           },
         },
       },
-      include: { items: true, store: { select: { name: true } } },
+      include: {
+        items: true,
+        store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+      },
     });
 
     this.realtime.emitOrderStatusChanged(
@@ -638,7 +644,12 @@ export class OrdersService {
         unitPriceCents: number;
         totalCents: number;
       }>;
-      store?: { name?: string | null } | null;
+      store?: {
+        name?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        addressLine?: string | null;
+      } | null;
     },
   ): OrderDto {
     return {
@@ -656,6 +667,9 @@ export class OrdersService {
       currency: order.currency,
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeLatitude: order.store?.latitude ?? 0,
+      storeLongitude: order.store?.longitude ?? 0,
+      storeAddress: order.store?.addressLine ?? null,
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       notes: order.notes,

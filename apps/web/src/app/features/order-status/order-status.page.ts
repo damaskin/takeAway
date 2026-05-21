@@ -1,5 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { buildDirectionsUrl } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
 
@@ -25,7 +27,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
 @Component({
   selector: 'app-order-status',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, LeafletMapComponent],
   template: `
     @if (order(); as o) {
       <section class="max-w-3xl mx-auto px-6 py-10 flex flex-col items-center" style="gap: var(--spacing-lg)">
@@ -132,12 +134,22 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             >
               📍 {{ o.storeName }}
             </span>
+            @if (o.storeAddress) {
+              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
+                {{ o.storeAddress }}
+              </span>
+            }
             @if (minutesToPickup() > 0 && !isTerminal(o.status)) {
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
                 🚶 Pickup in ~{{ minutesToPickup() }} min
               </span>
             }
           </div>
+          @if (hasStoreLocation()) {
+            <div style="width: 100%; height: 200px; overflow: hidden; border-radius: 12px">
+              <lib-leaflet-map [markers]="storeMarkers()" [userPosition]="userPos()" [interactive]="false" />
+            </div>
+          }
           <a
             [href]="mapsUrl()"
             target="_blank"
@@ -152,7 +164,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               text-decoration: none;
             "
           >
-            {{ 'web.orderStatus.openMaps' | translate }}
+            {{ (hasStoreLocation() ? 'common.map.buildRoute' : 'web.orderStatus.openMaps') | translate }}
           </a>
         </article>
 
@@ -215,6 +227,18 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
   readonly now = signal(Date.now());
   readonly imHereClicked = signal(false);
+  readonly userPos = signal<LatLng | null>(null);
+
+  readonly hasStoreLocation = computed(() => {
+    const o = this.order();
+    return !!o && (o.storeLatitude !== 0 || o.storeLongitude !== 0);
+  });
+
+  readonly storeMarkers = computed<MapMarker[]>(() => {
+    const o = this.order();
+    if (!o || !this.hasStoreLocation()) return [];
+    return [{ id: o.storeId, lat: o.storeLatitude, lng: o.storeLongitude, label: o.storeName, kind: 'store' }];
+  });
 
   private detachSocket: (() => void) | null = null;
   private tickSub: Subscription | null = null;
@@ -299,6 +323,15 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     });
 
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));
+
+    // Best-effort customer position for the pickup map — silent on denial.
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => this.userPos.set({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => undefined,
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 },
+      );
+    }
   }
 
   ngOnDestroy(): void {
@@ -363,9 +396,12 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   }
 
   mapsUrl(): string {
-    // Fallback — real coords land with M5 analytics/map integration.
-    const store = this.order()?.storeName ?? '';
-    return `https://maps.google.com/?q=${encodeURIComponent(store)}`;
+    const o = this.order();
+    if (o && this.hasStoreLocation()) {
+      return buildDirectionsUrl({ lat: o.storeLatitude, lng: o.storeLongitude });
+    }
+    // Fallback when the store has no coordinates yet — search by name.
+    return `https://maps.google.com/?q=${encodeURIComponent(o?.storeName ?? '')}`;
   }
 
   private stepStyle(completed: boolean, current: boolean): { background: string; color: string } {

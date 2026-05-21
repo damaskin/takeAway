@@ -1,5 +1,6 @@
 import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -11,7 +12,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, StoreEditorComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, StoreEditorComponent, LeafletMapComponent],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -150,6 +151,14 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
               style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
             />
           </label>
+          <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+              'admin.stores.fields.pickOnMap' | translate
+            }}</span>
+            <div style="height: 240px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border)">
+              <lib-leaflet-map [pickable]="true" [markers]="pickerMarkers()" (markerMoved)="onPickerMoved($event)" />
+            </div>
+          </div>
           <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px">
             <button
               type="button"
@@ -295,6 +304,9 @@ export class StoresPage implements OnInit {
     email: new FormControl<string>('', { nonNullable: true }),
   });
 
+  /** Marker for the create-form map picker — mirrors the lat/lng controls. */
+  readonly pickerMarkers = signal<MapMarker[]>([]);
+
   constructor() {
     // Refetch the store list whenever the active brand changes (selector in
     // the top bar). Skip while no brand is resolved yet — loading state is
@@ -310,6 +322,17 @@ export class StoresPage implements OnInit {
         error: (err) => this.error.set(extractMessage(err) ?? this.translate.instant('admin.stores.loadFailed')),
       });
     });
+
+    // Keep the picker marker in sync when lat/lng are typed manually.
+    this.createForm.valueChanges.subscribe((v) => {
+      if (typeof v.latitude === 'number' && typeof v.longitude === 'number') {
+        this.pickerMarkers.set([{ id: 'new', lat: v.latitude, lng: v.longitude, kind: 'store' }]);
+      }
+    });
+  }
+
+  onPickerMoved(p: LatLng): void {
+    this.createForm.patchValue({ latitude: p.lat, longitude: p.lng });
   }
 
   ngOnInit(): void {

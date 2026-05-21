@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -14,35 +15,27 @@ const FILTER_LABELS: Record<Filter, string> = {
   FAV: 'web.stores.filters.fav',
 };
 
-const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D94B5E'];
-
 /**
  * Web Store Locator — pencil A11 (0BWUe).
  *
  * Layout:
- *   mapArea (fill, latte tint) — faux street grid + color-coded pins
+ *   mapArea (fill) — Leaflet/OSM map with a marker per store
  *   sidebar (480px, foam, 24px padding) — title + count, filter chips, store cards
  */
 @Component({
   selector: 'app-stores-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, LeafletMapComponent],
   template: `
     <section class="stores-shell flex" style="height: calc(100vh - 72px); overflow: hidden">
       <!-- Map area -->
       <div class="stores-map relative flex-1" style="background: var(--color-latte); overflow: hidden">
-        <!-- Street grid pattern -->
-        <div
-          style="position: absolute; inset: 0; background-image:
-            linear-gradient(180deg, rgba(213, 201, 181, 0.8) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(213, 201, 181, 0.8) 1px, transparent 1px);
-            background-size: 180px 180px, 150px 150px; opacity: 0.7"
-        ></div>
+        <lib-leaflet-map [markers]="storeMarkers()" (markerClicked)="selectedId.set($event)" />
 
-        <!-- Map top bar -->
+        <!-- Map top bar (overlay) -->
         <div
           class="absolute flex items-center"
-          style="top: 20px; left: 20px; right: 20px; height: 56px; padding: 0 20px; gap: 12px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; box-shadow: var(--shadow-soft)"
+          style="top: 20px; left: 20px; right: 20px; height: 56px; padding: 0 20px; gap: 12px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; box-shadow: var(--shadow-soft); z-index: 400"
         >
           <span style="color: var(--color-text-secondary); font-size: 18px">🔍</span>
           <input
@@ -59,25 +52,6 @@ const PIN_COLORS = ['var(--color-caramel)', '#7BC4A4', '#E9A84B', '#A39888', '#D
             {{ 'web.stores.useLocation' | translate }}
           </button>
         </div>
-
-        <!-- Pins — positioned on a 960×700 virtual canvas -->
-        @for (store of stores(); track store.id; let i = $index) {
-          <button
-            type="button"
-            (click)="selectStore(store)"
-            class="absolute flex items-center justify-center"
-            [style.top.%]="pinPosition(i).y"
-            [style.left.%]="pinPosition(i).x"
-            [style.background]="pinColor(i)"
-            [style.transform]="
-              selectedId() === store.id ? 'translate(-50%, -100%) scale(1.15)' : 'translate(-50%, -100%)'
-            "
-            [style.boxShadow]="selectedId() === store.id ? '0 6px 16px rgba(0,0,0,0.25)' : 'var(--shadow-soft)'"
-            style="width: 40px; height: 40px; border-radius: 9999px; color: white; font-size: 16px; transition: transform 150ms ease"
-          >
-            ☕
-          </button>
-        }
       </div>
 
       <!-- Sidebar -->
@@ -213,6 +187,10 @@ export class StoresListPage implements OnInit {
     return list;
   });
 
+  readonly storeMarkers = computed<MapMarker[]>(() =>
+    this.filteredStores().map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
+  );
+
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
       next: (list) => {
@@ -227,10 +205,6 @@ export class StoresListPage implements OnInit {
     this.filter.set(f);
   }
 
-  selectStore(store: StoreListItem): void {
-    this.selectedId.set(store.id);
-  }
-
   filterLabel(f: Filter): string {
     return FILTER_LABELS[f];
   }
@@ -242,21 +216,6 @@ export class StoresListPage implements OnInit {
   distanceLabel(meters: number): string {
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(1)} km`;
-  }
-
-  pinColor(idx: number): string {
-    return PIN_COLORS[idx % PIN_COLORS.length] ?? 'var(--color-caramel)';
-  }
-
-  /** Deterministic "map" coordinates so pins don't jump between renders. */
-  pinPosition(idx: number): { x: number; y: number } {
-    // Pseudo-random but stable spread across 15-85% of map width/height.
-    const xs = [22, 44, 66, 34, 58, 78, 18, 52, 70, 28];
-    const ys = [34, 20, 58, 70, 44, 26, 60, 72, 40, 54];
-    return {
-      x: xs[idx % xs.length] ?? 50,
-      y: ys[idx % ys.length] ?? 50,
-    };
   }
 
   /** Returns a translation key; the template runs it through the translate pipe. */

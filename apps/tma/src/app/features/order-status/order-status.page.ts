@@ -1,5 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { buildDirectionsUrl } from '@takeaway/utils';
 import { interval, type Subscription } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -19,7 +21,7 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 @Component({
   selector: 'app-tma-order-status',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, LeafletMapComponent],
   template: `
     @if (order(); as o) {
       <section
@@ -129,6 +131,28 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
             </div>
           </div>
         </section>
+
+        <!-- Pickup location -->
+        @if (hasStoreLocation()) {
+          <section class="w-full flex flex-col" style="gap: 12px">
+            <h2
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
+            >
+              {{ 'common.map.pickupLocation' | translate }}
+            </h2>
+            <div style="width: 100%; height: 180px; overflow: hidden; border-radius: 14px">
+              <lib-leaflet-map [markers]="storeMarkers()" [userPosition]="userPos()" [interactive]="false" />
+            </div>
+            <button
+              type="button"
+              (click)="openRoute()"
+              class="w-full flex items-center justify-center"
+              style="background: var(--color-caramel); color: var(--color-foam); height: 48px; border-radius: 14px; font-family: var(--font-sans); font-size: 15px; font-weight: 600"
+            >
+              {{ 'common.map.buildRoute' | translate }}
+            </button>
+          </section>
+        }
       </section>
     }
   `,
@@ -143,6 +167,18 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
   readonly imHereClicked = signal(false);
+  readonly userPos = signal<LatLng | null>(null);
+
+  readonly hasStoreLocation = computed(() => {
+    const o = this.order();
+    return !!o && (o.storeLatitude !== 0 || o.storeLongitude !== 0);
+  });
+
+  readonly storeMarkers = computed<MapMarker[]>(() => {
+    const o = this.order();
+    if (!o || !this.hasStoreLocation()) return [];
+    return [{ id: o.storeId, lat: o.storeLatitude, lng: o.storeLongitude, label: o.storeName, kind: 'store' }];
+  });
 
   // Labels are translation keys — resolved with | translate in the template.
   readonly timelineSteps = [
@@ -178,6 +214,22 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));
     this.detachBack = this.tg.setBackButton(() => void this.router.navigate(['/']));
+
+    // Best-effort customer position for the pickup map — silent on denial.
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => this.userPos.set({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => undefined,
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 30_000 },
+      );
+    }
+  }
+
+  openRoute(): void {
+    const o = this.order();
+    if (!o || !this.hasStoreLocation()) return;
+    this.tg.haptic('light');
+    window.open(buildDirectionsUrl({ lat: o.storeLatitude, lng: o.storeLongitude }), '_blank');
   }
 
   ngOnDestroy(): void {

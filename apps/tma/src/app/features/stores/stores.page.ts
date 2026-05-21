@@ -1,6 +1,7 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -18,7 +19,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-stores',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
       <h1
@@ -41,30 +42,12 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
         />
       </div>
 
-      <!-- Map tile -->
-      <div
-        class="relative"
-        style="height: 160px; border-radius: 16px; overflow: hidden; background: var(--color-latte)"
-      >
-        <div
-          style="position: absolute; inset: 0; background-image:
-            linear-gradient(180deg, rgba(213, 201, 181, 0.8) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(213, 201, 181, 0.8) 1px, transparent 1px);
-            background-size: 90px 90px, 70px 70px; opacity: 0.7"
-        ></div>
-        <div
-          class="absolute flex items-center justify-center"
-          style="top: 40%; left: 30%; width: 28px; height: 28px; border-radius: 9999px; background: var(--color-caramel); color: white; font-size: 14px; transform: translate(-50%, -100%)"
-        >
-          ☕
+      <!-- Map -->
+      @if (storeMarkers().length > 0) {
+        <div style="height: 160px; border-radius: 16px; overflow: hidden">
+          <lib-leaflet-map [markers]="storeMarkers()" />
         </div>
-        <div
-          class="absolute flex items-center justify-center"
-          style="top: 60%; left: 60%; width: 28px; height: 28px; border-radius: 9999px; background: #7bc4a4; color: white; font-size: 14px; transform: translate(-50%, -100%)"
-        >
-          ☕
-        </div>
-      </div>
+      }
 
       <span
         style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso); margin-top: 4px"
@@ -117,6 +100,10 @@ export class TmaStoresPage implements OnInit {
   private readonly translate = inject(TranslateService);
 
   readonly stores = signal<StoreListItem[]>([]);
+
+  readonly storeMarkers = computed<MapMarker[]>(() =>
+    this.stores().map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
+  );
 
   ngOnInit(): void {
     this.catalog.listStores().subscribe({ next: (s) => this.stores.set(s) });

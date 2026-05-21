@@ -61,6 +61,15 @@ export class OrderDto {
   @ApiProperty()
   storeName!: string;
 
+  @ApiProperty({ description: 'Store location — used to render the pickup map.' })
+  storeLatitude!: number;
+
+  @ApiProperty()
+  storeLongitude!: number;
+
+  @ApiProperty({ nullable: true, type: String })
+  storeAddress!: string | null;
+
   @ApiProperty({ nullable: true, type: String })
   customerName!: string | null;
 

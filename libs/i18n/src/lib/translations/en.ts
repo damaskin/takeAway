@@ -50,6 +50,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       hours: '{{n}}h ago',
       days: '{{n}}d ago',
     },
+    map: {
+      buildRoute: 'Build route',
+      pickupLocation: 'Pickup location',
+      yourLocation: 'You are here',
+      locationDenied: 'Location unavailable',
+    },
   },
   nav: {
     menu: 'Menu',
@@ -686,6 +692,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         currency: 'Currency',
         latitude: 'Latitude',
         longitude: 'Longitude',
+        pickOnMap: 'Drag the marker to set the location',
         timezone: 'Timezone',
         phone: 'Phone',
         email: 'Email',
@@ -703,6 +710,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         address: 'Address line',
         city: 'City',
         country: 'Country (ISO-2)',
+        location: 'Location',
         phone: 'Phone',
         email: 'Email',
         minOrder: 'Min order (cents)',
