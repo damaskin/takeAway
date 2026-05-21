@@ -78,12 +78,13 @@ docker compose -f docker-compose.prod.yml up -d api nginx minio
 # and any nginx/*.conf edits (new vhosts, new snippets, etc.).
 docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true
 
-echo "==> [5/5] pruning stale Docker build cache + dangling images"
+echo "==> [5/5] pruning Docker build cache + dangling images"
 # The build cache speeds up rebuilds but grows unbounded across deploys —
-# a full disk has taken down prod before. Keep the last 7 days of cache
-# (so back-to-back deploys still hit it), drop anything older, and remove
-# images no container references anymore. Never touches volumes / data.
-docker builder prune -f --filter "until=168h" || true
+# a single deploy adds several GB, and a full disk has taken down prod
+# before. Cap the cache at 3 GB (keeps recent layers so back-to-back
+# deploys stay fast, evicts the oldest beyond that) and drop images no
+# container references anymore. Never touches volumes / data.
+docker builder prune -f --max-used-space=3GB || docker builder prune -f || true
 docker image prune -f || true
 
 echo "done."
