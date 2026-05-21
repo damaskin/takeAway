@@ -1,15 +1,34 @@
 import { Injectable, signal } from '@angular/core';
 
+/** Edge insets reported by Telegram (Bot API 8.0+). */
+interface TelegramInset {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+type TelegramEvent =
+  | 'themeChanged'
+  | 'viewportChanged'
+  | 'fullscreenChanged'
+  | 'safeAreaChanged'
+  | 'contentSafeAreaChanged';
+
 interface TelegramWebApp {
   initData: string;
   initDataUnsafe?: { user?: { first_name?: string; last_name?: string } };
   colorScheme?: 'light' | 'dark';
   themeParams?: Record<string, string>;
+  // Bot API 8.0+ — undefined on older Telegram clients.
+  isFullscreen?: boolean;
+  safeAreaInset?: TelegramInset;
+  contentSafeAreaInset?: TelegramInset;
   ready: () => void;
   expand: () => void;
   close: () => void;
-  onEvent?: (event: 'themeChanged' | 'viewportChanged', cb: () => void) => void;
-  offEvent?: (event: 'themeChanged' | 'viewportChanged', cb: () => void) => void;
+  onEvent?: (event: TelegramEvent, cb: () => void) => void;
+  offEvent?: (event: TelegramEvent, cb: () => void) => void;
   MainButton: {
     setText: (text: string) => void;
     show: () => void;
@@ -60,10 +79,20 @@ export class TelegramBridgeService {
   constructor() {
     if (this.isAvailable()) {
       this.applyTelegramTheme();
-      window.Telegram?.WebApp?.onEvent?.('themeChanged', () => {
+      this.applySafeArea();
+      const tg = window.Telegram?.WebApp;
+      tg?.onEvent?.('themeChanged', () => {
         this.colorScheme.set(window.Telegram?.WebApp?.colorScheme ?? 'light');
         this.applyTelegramTheme();
       });
+      // In fullscreen mode Telegram draws its own close / menu controls over
+      // the top of the webview. safeAreaInset covers device notches;
+      // contentSafeAreaInset covers Telegram's own header controls. We sum
+      // both and expose them as a CSS var so the app header clears them.
+      const onSafeAreaChange = () => this.applySafeArea();
+      tg?.onEvent?.('safeAreaChanged', onSafeAreaChange);
+      tg?.onEvent?.('contentSafeAreaChanged', onSafeAreaChange);
+      tg?.onEvent?.('fullscreenChanged', onSafeAreaChange);
     }
   }
 
@@ -105,6 +134,21 @@ export class TelegramBridgeService {
 
   haptic(style: 'light' | 'medium' | 'heavy' = 'light'): void {
     window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
+  }
+
+  /**
+   * Writes the combined top inset (device safe area + Telegram's content
+   * safe area) into `--tg-safe-area-top`. The app shell pads its top by
+   * this value so the header never sits under Telegram's fullscreen
+   * close / menu buttons. Both insets are 0 outside fullscreen and on
+   * Telegram clients older than Bot API 8.0.
+   */
+  private applySafeArea(): void {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) return;
+    const safeTop = tg.safeAreaInset?.top ?? 0;
+    const contentTop = tg.contentSafeAreaInset?.top ?? 0;
+    document.documentElement.style.setProperty('--tg-safe-area-top', `${safeTop + contentTop}px`);
   }
 
   /**

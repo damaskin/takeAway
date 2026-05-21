@@ -15,4 +15,9 @@ body {
   color: var(--tg-theme-text-color, var(--color-espresso));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Clear Telegram's fullscreen close / menu controls. The var is set by
+     TelegramBridgeService; it is 0 outside fullscreen so layout is
+     unchanged in the normal (non-fullscreen) mode. */
+  box-sizing: border-box;
+  padding-top: var(--tg-safe-area-top, 0px);
 }
