@@ -34,7 +34,9 @@ const ME = 'MENU_EDITOR' as const;
 const ST = 'STAFF' as const;
 
 export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
-  dashboard: [SA, BA, SM, ST],
+  // Dashboard surfaces revenue + NPS — financial stats, so kitchen STAFF
+  // is excluded. STORE_MANAGER keeps it as an operational shift summary.
+  dashboard: [SA, BA, SM],
   menu: [SA, BA, SM, ME],
   stores: [SA, BA, SM, ST],
   orders: [SA, BA, SM, ST],
@@ -48,7 +50,9 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   brands: [SA],
   settings: [SA, BA],
   integrations: [SA, BA],
-  telegramLink: [BA, SM, ME, ST],
+  // Telegram account-link drives order push notifications — MENU_EDITOR
+  // doesn't receive order events, so it's excluded.
+  telegramLink: [BA, SM, ST],
 };
 
 export function canAccess(role: AdminRole | undefined | null, key: NavKey): boolean {
