@@ -106,6 +106,22 @@ export class AdminStaffService {
     return entry;
   }
 
+  async changeRole(storeId: string, userId: string, role: Role, user: AuthenticatedUser) {
+    await this.assertStore(storeId, user);
+    const pivot = await this.prisma.userStore.findUnique({
+      where: { userId_storeId: { userId, storeId } },
+      include: { user: { select: { role: true } } },
+    });
+    if (!pivot) throw new NotFoundException('Staff is not rostered for this store');
+    if (![Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR].includes(pivot.user.role)) {
+      throw new ForbiddenException('Cannot change role of a non-staff user here');
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { role } });
+    const entry = (await this.list(storeId, user)).find((r) => r.userId === userId);
+    if (!entry) throw new NotFoundException('Staff was updated but could not be reloaded');
+    return entry;
+  }
+
   async remove(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
     await this.assertStore(storeId, user);
     const deleted = await this.prisma.userStore.deleteMany({

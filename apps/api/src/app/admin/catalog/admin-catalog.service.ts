@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BrandModerationStatus } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BrandModerationStatus, Role } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
@@ -14,6 +14,8 @@ function assertInScope(scope: BrandScope, brandId: string): void {
     throw new ForbiddenException('Resource belongs to a brand outside your scope');
   }
 }
+import type { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
+import { PasswordService } from '../../auth/services/password.service';
 import type { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import type {
   CreateModifierDto,
@@ -29,7 +31,10 @@ import type { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './d
 
 @Injectable()
 export class AdminCatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly passwords: PasswordService,
+  ) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
   listBrands(status?: BrandModerationStatus) {
@@ -83,6 +88,47 @@ export class AdminCatalogService {
         moderatedAt: new Date(),
       },
     });
+  }
+
+  async getBrandOwner(brandId: string) {
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { owner: { select: { id: true, email: true, name: true } } },
+    });
+    if (!brand) throw new NotFoundException('Brand not found');
+    return brand.owner ?? null;
+  }
+
+  async setBrandOwner(brandId: string, dto: SetBrandOwnerDto) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } });
+    if (!brand) throw new NotFoundException('Brand not found');
+
+    const email = dto.email.toLowerCase();
+    let user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true },
+    });
+
+    if (!user) {
+      if (!dto.tempPassword)
+        throw new BadRequestException('tempPassword is required when creating a new owner account');
+      const passwordHash = await this.passwords.hash(dto.tempPassword);
+      user = await this.prisma.user.create({
+        data: { email, passwordHash, passwordMustChange: true, name: dto.name ?? null, role: Role.BRAND_ADMIN },
+        select: { id: true, role: true },
+      });
+    } else if (user.role === Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Cannot assign SUPER_ADMIN as brand owner');
+    } else if (user.role !== Role.BRAND_ADMIN) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { role: Role.BRAND_ADMIN } });
+    }
+
+    const updated = await this.prisma.brand.update({
+      where: { id: brandId },
+      data: { ownerId: user.id },
+      select: { owner: { select: { id: true, email: true, name: true } } },
+    });
+    return updated.owner;
   }
 
   // ── Stores ────────────────────────────────────────────────────────────────

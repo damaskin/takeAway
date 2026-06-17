@@ -22,6 +22,18 @@ export interface AddStaffRequest {
   tempPassword: string;
 }
 
+export interface BrandOwner {
+  id: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface SetOwnerRequest {
+  email: string;
+  name?: string;
+  tempPassword?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class StaffService {
   private readonly http = inject(HttpClient);
@@ -35,7 +47,19 @@ export class StaffService {
     return this.http.post<StaffRoster>(`${this.api.baseUrl}/admin/stores/${storeId}/staff`, body);
   }
 
+  changeRole(storeId: string, userId: string, role: StaffRole): Observable<StaffRoster> {
+    return this.http.patch<StaffRoster>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/role`, { role });
+  }
+
   remove(storeId: string, userId: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}`);
+  }
+
+  getOwner(brandId: string): Observable<BrandOwner | null> {
+    return this.http.get<BrandOwner | null>(`${this.api.baseUrl}/admin/brands/${brandId}/owner`);
+  }
+
+  setOwner(brandId: string, body: SetOwnerRequest): Observable<BrandOwner> {
+    return this.http.patch<BrandOwner>(`${this.api.baseUrl}/admin/brands/${brandId}/owner`, body);
   }
 }

@@ -7,6 +7,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminCatalogService } from './admin-catalog.service';
+import { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
 import { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
@@ -60,5 +61,17 @@ export class AdminBrandsController {
   @Roles(Role.SUPER_ADMIN)
   setModeration(@Param('id') id: string, @Body() dto: SetBrandModerationDto) {
     return this.admin.setBrandModeration(id, dto);
+  }
+
+  @Get(':id/owner')
+  @Roles(Role.SUPER_ADMIN)
+  getOwner(@Param('id') id: string) {
+    return this.admin.getBrandOwner(id);
+  }
+
+  @Patch(':id/owner')
+  @Roles(Role.SUPER_ADMIN)
+  setOwner(@Param('id') id: string, @Body() dto: SetBrandOwnerDto) {
+    return this.admin.setBrandOwner(id, dto);
   }
 }

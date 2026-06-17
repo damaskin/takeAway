@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const ALLOWED_ROLES = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] as const;
-type StaffRole = (typeof ALLOWED_ROLES)[number];
+export type StaffRole = (typeof ALLOWED_ROLES)[number];
 
 export class AddStaffDto {
   @ApiProperty({ example: 'manager@brand.com' })
@@ -27,4 +27,10 @@ export class AddStaffDto {
   @MinLength(8)
   @MaxLength(128)
   tempPassword!: string;
+}
+
+export class ChangeStaffRoleDto {
+  @ApiProperty({ enum: ALLOWED_ROLES })
+  @IsIn(ALLOWED_ROLES)
+  role!: StaffRole;
 }
