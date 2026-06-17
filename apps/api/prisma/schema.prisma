@@ -33,6 +33,7 @@ enum Currency {
   AED
   THB
   IDR
+  MDL
 }
 
 enum DeviceType {

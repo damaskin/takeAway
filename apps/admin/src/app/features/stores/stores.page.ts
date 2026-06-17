@@ -7,7 +7,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 import { AdminCatalogApi, type CreateStoreInput, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { StoreEditorComponent } from './store-editor.component';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL'] as const;
 
 @Component({
   selector: 'app-stores',

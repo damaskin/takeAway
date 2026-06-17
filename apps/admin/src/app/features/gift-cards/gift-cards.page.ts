@@ -20,7 +20,7 @@ interface GiftCardRow {
   createdAt: string;
 }
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL'] as const;
 
 /**
  * Brand-admin gift card roster + manual issue. v1: codes are admin-issued

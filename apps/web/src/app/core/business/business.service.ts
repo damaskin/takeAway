@@ -12,7 +12,7 @@ export interface BusinessRegisterRequest {
   email: string;
   password: string;
   phone?: string;
-  currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
+  currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR' | 'MDL';
   locale?: 'EN' | 'RU';
 }
 
