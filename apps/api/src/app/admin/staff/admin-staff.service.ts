@@ -113,7 +113,8 @@ export class AdminStaffService {
       include: { user: { select: { role: true } } },
     });
     if (!pivot) throw new NotFoundException('Staff is not rostered for this store');
-    if (![Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR].includes(pivot.user.role)) {
+    const staffRoles: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
+    if (!staffRoles.includes(pivot.user.role)) {
       throw new ForbiddenException('Cannot change role of a non-staff user here');
     }
     await this.prisma.user.update({ where: { id: userId }, data: { role } });
