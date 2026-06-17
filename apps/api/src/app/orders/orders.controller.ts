@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -17,6 +19,7 @@ export class OrdersController {
   constructor(
     private readonly orders: OrdersService,
     private readonly scope: UserStoreScopeService,
+    private readonly brandScope: BrandScopeService,
   ) {}
 
   @Post('orders')
@@ -84,11 +87,13 @@ export class OrdersController {
     @Query('status') status?: string,
     @Query('take') take?: string,
   ): Promise<OrderSummaryDto[]> {
-    // Per-user store scope: STORE_MANAGER is narrowed to their UserStore set;
-    // BRAND_ADMIN / SUPER_ADMIN pass through (scope = '*').
     const scope = await this.scope.getScope(user.id, user.role);
+    // BRAND_ADMIN must only see orders from their own brands — resolve and enforce.
+    const brandIds =
+      user.role === Role.BRAND_ADMIN ? ((await this.brandScope.resolveBrandIds(user)) ?? undefined) : undefined;
     return this.orders.listForAdmin({
       brandId,
+      brandIds,
       storeId,
       status,
       take: take ? Number(take) : undefined,

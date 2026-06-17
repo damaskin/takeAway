@@ -300,6 +300,8 @@ export class OrdersService {
    */
   async listForAdmin(params: {
     brandId?: string;
+    /** Brand-level scope for BRAND_ADMIN — intersection with explicit brandId if provided. */
+    brandIds?: string[];
     storeId?: string;
     status?: string;
     take?: number;
@@ -325,7 +327,18 @@ export class OrdersService {
     } else if (params.storeId) {
       where.storeId = params.storeId;
     }
-    if (params.brandId) where.store = { brandId: params.brandId };
+    // Brand-level scope: BRAND_ADMIN is restricted to their owned brands.
+    // If the caller also passed an explicit ?brandId= we intersect the two sets.
+    if (params.brandIds && params.brandIds.length > 0) {
+      if (params.brandId) {
+        if (!params.brandIds.includes(params.brandId)) return [];
+        where.store = { brandId: params.brandId };
+      } else {
+        where.store = { brandId: { in: params.brandIds } };
+      }
+    } else if (params.brandId) {
+      where.store = { brandId: params.brandId };
+    }
     if (params.status) where.status = params.status as Prisma.OrderWhereInput['status'];
 
     const orders = await this.prisma.order.findMany({
