@@ -102,8 +102,8 @@ interface PosterSpotRow {
  * {@link PosIntegration.credentialsCiphertext} on demand.
  *
  * Mapping decisions (M2):
- *   - Cents = round(parseFloat(price) * 100). Poster prices are decimal
- *     strings in the brand currency.
+ *   - Cents = round(parseFloat(price)). Poster already reports prices in
+ *     minor units (kopecks) — "2200" means 22.00 — so no ×100 conversion.
  *   - Per-spot prices: we take the maximum across spots as the listed
  *     basePrice (the brand admin can override per-store later).
  *   - Hidden / out_of_stock at the *product* level → stop-list entry on
@@ -341,8 +341,11 @@ function posterPriceCents(p: PosterProductRow): number | null {
 
   const eat = (raw: string | number | undefined): void => {
     if (raw === undefined || raw === null || raw === '') return;
+    // Poster returns money in minor units (kopecks) already — e.g. "2200"
+    // means 22.00. Our basePriceCents is also minor units, so take the value
+    // as-is. (An earlier version multiplied by 100, inflating every price 100×.)
     const n = typeof raw === 'string' ? parseFloat(raw) : raw;
-    if (Number.isFinite(n) && n > 0) collect.push(Math.round(n * 100));
+    if (Number.isFinite(n) && n > 0) collect.push(Math.round(n));
   };
 
   if (typeof p.price === 'string' || typeof p.price === 'number') {
