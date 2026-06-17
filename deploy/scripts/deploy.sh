@@ -13,6 +13,14 @@ set -euo pipefail
 DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DEPLOY_DIR"
 
+COMPOSE_FILES=(-f docker-compose.prod.yml)
+SHARED_EDGE=0
+if [ -f docker-compose.shared-edge.override.yml ]; then
+  COMPOSE_FILES+=(-f docker-compose.shared-edge.override.yml)
+  SHARED_EDGE=1
+fi
+compose() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
+
 echo "==> loading .env.production"
 if [ ! -f .env.production ]; then
   echo "ERROR: deploy/.env.production missing. Copy from .env.production.example and fill in." >&2
@@ -51,15 +59,15 @@ ln -sf .env.production "$DEPLOY_DIR/.env"
 bash "$DEPLOY_DIR/scripts/bootstrap-certs.sh"
 
 echo "==> [1/4] building + starting api + dependencies"
-docker compose -f docker-compose.prod.yml build api
-docker compose -f docker-compose.prod.yml up -d postgres redis minio
+compose build api
+compose up -d postgres redis minio
 # One-shot bucket setup. Safe to re-run; exits 0 when the bucket is ready.
-docker compose -f docker-compose.prod.yml up minio-init --exit-code-from minio-init || true
+compose up minio-init --exit-code-from minio-init || true
 
 # Wait briefly for postgres to become healthy before running migrations.
 echo "==> waiting for postgres to become healthy"
 for i in $(seq 1 30); do
-  if docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U "${POSTGRES_USER:-takeaway}" -d "${POSTGRES_DB:-takeaway}" >/dev/null 2>&1; then
+  if compose exec -T postgres pg_isready -U "${POSTGRES_USER:-takeaway}" -d "${POSTGRES_DB:-takeaway}" >/dev/null 2>&1; then
     echo "postgres ready"
     break
   fi
@@ -73,10 +81,18 @@ echo "==> [3/4] applying prisma migrations"
 bash "$DEPLOY_DIR/scripts/migrate.sh"
 
 echo "==> [4/4] bringing up api + nginx, reloading config"
-docker compose -f docker-compose.prod.yml up -d api nginx minio
-# If nginx was already running, force a reload so it picks up SPA changes
-# and any nginx/*.conf edits (new vhosts, new snippets, etc.).
-docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true
+compose up -d api nginx minio
+if [ "$SHARED_EDGE" = "1" ]; then
+  # edge-nginx does SNI passthrough to takeaway-nginx-1 — takeaway containers
+  # must NOT join rayn-prod_default (causes Prisma P1000: wrong postgres).
+  if [ -f /opt/rayn-repo/infra/deploy/docker-compose.prod.yml ]; then
+    (cd /opt/rayn-repo/infra/deploy && docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx nginx -s reload) 2>/dev/null || true
+  fi
+else
+  # If nginx was already running, force a reload so it picks up SPA changes
+  # and any nginx/*.conf edits (new vhosts, new snippets, etc.).
+  compose exec -T nginx nginx -s reload 2>/dev/null || true
+fi
 
 echo "==> [5/5] pruning Docker build cache + dangling images"
 # The build cache speeds up rebuilds but grows unbounded across deploys —
@@ -88,5 +104,5 @@ docker builder prune -f --max-used-space=3GB || docker builder prune -f || true
 docker image prune -f || true
 
 echo "done."
-docker compose -f docker-compose.prod.yml ps
+compose ps
 df -h /
