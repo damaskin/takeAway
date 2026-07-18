@@ -968,6 +968,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         kcal: '{{calories}} kcal',
       },
       signInPrompt: 'Sign in within Telegram to add items to the cart.',
+      addFailed: 'Could not add this item to the cart. Please try again.',
       cta: {
         add: 'Add · {{total}}',
       },

@@ -5,6 +5,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
+import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -154,6 +155,15 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
           </div>
         }
 
+        @if (error()) {
+          <p
+            class="text-center"
+            style="font-family: var(--font-sans); font-size: 12px; color: var(--color-danger, #c0392b)"
+          >
+            {{ error() }}
+          </p>
+        }
+
         @if (!authStore.isAuthenticated()) {
           <p
             class="text-center"
@@ -173,9 +183,11 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly cartService = inject(CartService);
   private readonly tg = inject(TelegramBridgeService);
   private readonly translate = inject(TranslateService);
+  private readonly activeStore = inject(ActiveStoreService);
   readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
+  readonly error = signal<string | null>(null);
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
   private storeId: string | null = null;
@@ -204,12 +216,20 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) return;
-    this.catalog.listStores().subscribe({
-      next: (list) => {
-        const first = list[0];
-        if (first) this.storeId = first.id;
-      },
-    });
+    // The store the customer opened this product from. Falling back to the
+    // first store in the catalog would add the item to an unrelated store's
+    // cart once more than one brand is live, so only use it as a last resort.
+    const active = this.activeStore.current();
+    if (active) {
+      this.storeId = active;
+    } else {
+      this.catalog.listStores().subscribe({
+        next: (list) => {
+          const first = list[0];
+          if (first) this.storeId = first.id;
+        },
+      });
+    }
     this.catalog.getProduct(slug).subscribe({
       next: (p) => {
         this.product.set(p);
@@ -320,6 +340,10 @@ export class TmaProductPage implements OnInit, OnDestroy {
       })
       .subscribe({
         next: () => void this.router.navigate(['/checkout']),
+        // Without this the request failing left the button looking inert —
+        // the customer taps "add" and nothing at all happens.
+        error: (err: { error?: { message?: string }; message?: string }) =>
+          this.error.set(err.error?.message ?? err.message ?? this.translate.instant('tma.product.addFailed')),
       });
   }
 }

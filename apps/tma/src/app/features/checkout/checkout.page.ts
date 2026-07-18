@@ -5,6 +5,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
+import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
@@ -290,6 +291,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
 export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly cartService = inject(CartService);
   private readonly catalog = inject(CatalogService);
+  private readonly activeStore = inject(ActiveStoreService);
   private readonly orders = inject(OrdersApi);
   private readonly tg = inject(TelegramBridgeService);
   private readonly router = inject(Router);
@@ -323,14 +325,18 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private detachBack: (() => void) | null = null;
 
   ngOnInit(): void {
+    // Check out the store the customer actually shopped in. Using the first
+    // catalog entry loaded an unrelated (empty) cart once a second brand went
+    // live, which hid the pay button and made ordering look broken.
+    const activeId = this.activeStore.current();
     this.catalog.listStores().subscribe({
       next: (list) => {
-        const first = list[0];
-        if (!first) return;
-        this.storeName.set(first.name);
-        this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
-        this.activeStoreId = first.id;
-        this.cartService.load(first.id).subscribe({
+        const store = (activeId ? list.find((s) => s.id === activeId) : null) ?? list[0];
+        if (!store) return;
+        this.storeName.set(store.name);
+        this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
+        this.activeStoreId = store.id;
+        this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
             this.refreshMainButton();

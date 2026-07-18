@@ -968,6 +968,7 @@ export const TRANSLATIONS_RU = {
         kcal: '{{calories}} ккал',
       },
       signInPrompt: 'Войдите в Telegram, чтобы добавить в корзину.',
+      addFailed: 'Не удалось добавить товар в корзину. Попробуйте ещё раз.',
       cta: {
         add: 'Добавить · {{total}}',
       },
