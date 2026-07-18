@@ -16,6 +16,7 @@ import {
   PosSyncJobStatus,
   Prisma,
   Role,
+  StoreFulfillment,
 } from '@prisma/client';
 import { Queue } from 'bullmq';
 
@@ -425,6 +426,11 @@ export class PosService {
             longitude: d.longitude ?? 0,
             timezone: d.timezone ?? 'UTC',
             currency: integration.brand.currency,
+            // POS providers don't model fulfillment, so seed the one mode
+            // every counter supports. Without it the store advertises no way
+            // to be served and the storefront can't offer delivery/pickup
+            // toggles at all; the brand admin can widen this later.
+            fulfillmentTypes: [StoreFulfillment.TAKEAWAY],
             externalProvider: integration.provider,
             externalId: d.externalId,
           },
