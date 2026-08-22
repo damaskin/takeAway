@@ -4,6 +4,8 @@
   "peerDependencies": {
     "@angular/core": "^21.2.0",
     "@angular/common": "~21.2.0",
+    "@angular/router": "^21.2.0",
+    "@sentry/angular": "^10.70.0",
     "rxjs": "^7.8.0"
   },
   "sideEffects": false

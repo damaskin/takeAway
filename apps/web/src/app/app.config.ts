@@ -8,7 +8,9 @@ import { API_CONFIG, DEFAULT_API_CONFIG } from './core/api/api.config';
 import {
   SOCIAL_AUTH_CONFIG,
   TELEGRAM_AUTH_CONFIG,
+  provideSentry,
   resolveSocialAuthConfig,
+  resolveSpaSentryConfig,
   resolveTelegramBotUsername,
   type TelegramAuthConfig,
 } from '@takeaway/ui-kit';
@@ -28,5 +30,6 @@ export const appConfig: ApplicationConfig = {
     { provide: TELEGRAM_AUTH_CONFIG, useValue: telegramConfig },
     { provide: SOCIAL_AUTH_CONFIG, useValue: resolveSocialAuthConfig() },
     ...provideTakeawayI18n(),
+    ...provideSentry(resolveSpaSentryConfig('web')),
   ],
 };

@@ -38,6 +38,13 @@ for app in "${APPS[@]}"; do
   # container and needs read+execute on the webroot dirs, so open up.
   chmod -R a+rX "$tmp"
 
+  # Put the version on a window global as well, so Sentry can tag an issue
+  # with the exact deploy it came from. index.html is the same runtime-config
+  # channel the DSN and the OAuth client ids already use.
+  if [ -n "${BUILD_VERSION:-}" ] && [ -f "$tmp/index.html" ]; then
+    sed -i "s|<head>|<head><script>window.__BUILD_VERSION='${BUILD_VERSION}';</script>|" "$tmp/index.html"
+  fi
+
   # Stamp the SPA bundle with the build version triple so every browser
   # session can fetch /version.json (and the lib-version-badge component
   # can render it). BUILD_* are exported by deploy.sh.

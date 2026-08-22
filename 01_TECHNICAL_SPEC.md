@@ -678,7 +678,8 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ### 6.12. Health / Config
 
 ```
-GET    /health                       → { status, db, redis, queues }
+GET    /health                       // liveness + build triple (version/commit/builtAt)
+GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
 GET    /config/features              → { features: { campaigns, giftCards, referrals, ... } }
 ```
 

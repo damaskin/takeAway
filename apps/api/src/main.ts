@@ -1,3 +1,6 @@
+// Must stay first — see the file for why the ordering is load-bearing.
+import { sentryEnabled } from './instrument';
+
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -5,6 +8,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app/app.module';
+import { SentryExceptionFilter } from './app/common/observability/sentry-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }), {
@@ -15,6 +19,8 @@ async function bootstrap(): Promise<void> {
 
   const globalPrefix = process.env['API_GLOBAL_PREFIX'] ?? 'api';
   app.setGlobalPrefix(globalPrefix);
+
+  app.useGlobalFilters(new SentryExceptionFilter());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -101,6 +107,7 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(Logger);
   logger.log(`🚀 takeAway API running on http://${host}:${port}/${globalPrefix}`);
   logger.log(`📖 Swagger available at http://${host}:${port}/${globalPrefix}/docs`);
+  logger.log(sentryEnabled ? '🛰  Sentry error reporting is on' : '🛰  Sentry is off (no SENTRY_DSN)');
 }
 
 void bootstrap();
