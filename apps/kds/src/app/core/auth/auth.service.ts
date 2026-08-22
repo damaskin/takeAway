@@ -17,4 +17,15 @@ export class AuthService {
       .post<AuthSession>(`${this.api.baseUrl}/auth/password/login`, body)
       .pipe(tap((session) => this.store.set(session)));
   }
+
+  /**
+   * PIN sign-in for the shared kitchen tablet. Scoped to one store, so the
+   * barista types four digits instead of a work email and an eight-character
+   * password on a screen the whole queue can see.
+   */
+  loginWithPin(storeId: string, pin: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin })
+      .pipe(tap((session) => this.store.set(session)));
+  }
 }

@@ -633,6 +633,7 @@ PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
 GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
 
 # Orders / Promo / Gift cards / Campaigns
+GET    /admin/orders/:id             → состав, платежи, возвраты, лента событий (scope как у списка; 404 вне scope)
 GET                    /admin/orders                     (фильтрация по store/brand/status)
 POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
 GET/POST/PATCH         /admin/promo[/:id/status]

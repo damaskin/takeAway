@@ -26,6 +26,7 @@ import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
+import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
@@ -372,6 +373,88 @@ export class OrdersService {
       include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
     });
     return orders.map((o) => this.toSummary(o));
+  }
+
+  /**
+   * One order, in full, for the admin detail panel. Scope is enforced the
+   * same way the list is: a manager who edits the id in the URL gets a 404,
+   * not somebody else's customer.
+   */
+  async getForAdmin(orderId: string, scopeStoreIds?: string[]): Promise<AdminOrderDetailDto> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: true,
+        payments: { orderBy: { createdAt: 'asc' } },
+        events: { orderBy: { createdAt: 'asc' } },
+        store: { select: { name: true } },
+        user: { select: { email: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (scopeStoreIds && !scopeStoreIds.includes(order.storeId)) {
+      // Deliberately the same error as "no such order" — confirming that an
+      // order exists in a store you cannot see is itself a leak.
+      throw new NotFoundException('Order not found');
+    }
+
+    const paidCents = order.payments
+      .filter((p) => p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED')
+      .reduce((sum, p) => sum + p.amountCents, 0);
+    const refundedCents = order.payments.reduce((sum, p) => sum + p.refundedCents, 0);
+
+    return {
+      id: order.id,
+      orderCode: order.orderCode,
+      status: order.status,
+      fulfillmentType: order.fulfillmentType,
+      pickupMode: order.pickupMode,
+      pickupAt: order.pickupAt.toISOString(),
+      createdAt: order.createdAt.toISOString(),
+      storeId: order.storeId,
+      storeName: order.store?.name ?? '',
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      customerEmail: order.user?.email ?? null,
+      notes: order.notes,
+      currency: order.currency,
+      subtotalCents: order.subtotalCents,
+      discountCents: order.discountCents,
+      taxCents: order.taxCents,
+      deliveryFeeCents: order.deliveryFeeCents,
+      giftCardCents: order.giftCardCents,
+      totalCents: order.totalCents,
+      couponCode: order.couponCode,
+      giftCardCode: order.giftCardCode,
+      refundedCents,
+      refundableCents: Math.max(0, paidCents - refundedCents),
+      items: order.items.map((i) => {
+        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
+        return {
+          id: i.id,
+          name: typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item',
+          quantity: i.quantity,
+          unitPriceCents: i.unitPriceCents,
+          totalCents: i.totalCents,
+        };
+      }),
+      payments: order.payments.map((p) => ({
+        id: p.id,
+        provider: p.provider,
+        status: p.status,
+        amountCents: p.amountCents,
+        refundedCents: p.refundedCents,
+        providerRef: p.providerRef,
+        createdAt: p.createdAt.toISOString(),
+      })),
+      events: order.events.map((e) => ({
+        id: e.id,
+        type: e.type,
+        createdAt: e.createdAt.toISOString(),
+        actorId: e.actorId,
+        payload: e.payload,
+      })),
+    };
   }
 
   private toSummary(o: {
