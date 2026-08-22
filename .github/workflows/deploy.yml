@@ -93,64 +93,36 @@ jobs:
                git checkout -f -B '$DEPLOY_BRANCH' 'origin/$DEPLOY_BRANCH'
                bash deploy/scripts/deploy.sh"
 
-      - name: Record the commit that should now be live
-        id: target
+      # Smoke tests run ON THE SERVER, via `curl --resolve`, bypassing DNS and
+      # Cloudflare. Asking from a GitHub runner would also be testing the CDN:
+      # a bot challenge served to the runner would fail a perfectly good
+      # deploy. The script asserts the API is serving *this* commit (a
+      # container that failed to restart keeps answering 200 from the previous
+      # build), that Postgres and Redis are reachable, and that no SPA is
+      # 502ing behind a stale edge upstream. It creates no production data.
+      - name: Smoke test (on the server)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
         run: |
-          sha=$(ssh -i ~/.ssh/deploy_key \
-                    -o UserKnownHostsFile=~/.ssh/known_hosts \
-                    -o StrictHostKeyChecking=yes -o BatchMode=yes \
-                    "$DEPLOY_USER@$DEPLOY_HOST" \
-                    "git -C /opt/takeaway/repo rev-parse HEAD")
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "expecting the API to serve $sha"
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "bash /opt/takeaway/repo/deploy/scripts/smoke-test.sh"
 
-      # The old gate only asked whether *something* answered 200, so a deploy
-      # where the api container never restarted reported success while the
-      # previous build kept serving. /api/health returns the commit it was
-      # built from, so ask for that one.
-      - name: Wait for the API to serve this commit
-        env:
-          EXPECTED: ${{ steps.target.outputs.sha }}
+      # Informational only. The stack is already proven healthy from inside the
+      # host; this just says whether the public path through Cloudflare agrees.
+      # A failure here is a CDN or DNS problem, not a bad build, so it must not
+      # fail the deploy.
+      - name: Public reachability (informational)
+        continue-on-error: true
         run: |
-          for i in $(seq 1 18); do
-            body=$(curl -sS --max-time 10 "$API_HEALTH_URL" 2>/dev/null || true)
-            live=$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)
-            if [ "$live" = "$EXPECTED" ]; then
-              echo "API is serving $live"
-              printf '%s\n' "$body" | jq .
-              exit 0
-            fi
-            if [ -n "$live" ]; then
-              echo "attempt $i: API is up but serving $live, waiting for $EXPECTED"
-            else
-              echo "attempt $i: no answer from $API_HEALTH_URL"
-            fi
-            sleep 10
-          done
-          echo "::error::After 3 minutes the API is not serving $EXPECTED. \
-          If it is up on an older commit the container did not restart; if it \
-          is unreachable and every domain 502s, takeaway-nginx-1 was recreated \
-          and the edge still holds the old upstream — \
-          'docker exec edge-nginx nginx -s reload'."
-          exit 1
-
-      # Liveness is not usefulness. /ready talks to Postgres and Redis and
-      # answers 503 when either is down, so a migration that left the database
-      # unreachable fails the deploy instead of shipping quietly.
-      - name: Readiness — Postgres + Redis
-        run: |
-          for i in $(seq 1 12); do
-            code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 10 \
-                     "$API_HEALTH_URL/ready" 2>/dev/null || echo 000)
-            if [ "$code" = "200" ]; then
-              echo "dependencies healthy"; jq . /tmp/ready.json; exit 0
-            fi
-            echo "attempt $i: /ready answered $code"
-            [ -s /tmp/ready.json ] && jq . /tmp/ready.json || true
-            sleep 10
-          done
-          echo "::error::API is live but not ready — a dependency is down."
-          exit 1
+          code=$(curl -sS -o /tmp/pub.json -w '%{http_code}' --max-time 15 "$API_HEALTH_URL" || echo 000)
+          echo "public /api/health -> $code"
+          [ -s /tmp/pub.json ] && cat /tmp/pub.json || true
+          if [ "$code" != "200" ]; then
+            echo "::warning::Public health check returned $code while the server-side \
+          smoke test passed. The application is fine; look at Cloudflare or DNS."
+          fi

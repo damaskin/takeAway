@@ -26,10 +26,17 @@ Two consequences worth internalising:
 - **Certificates are ours.** The edge only moves bytes; `issue-cert.sh` and
   `renew-cert.sh` still run here.
 - **Recreating `takeaway-nginx-1` needs an edge reload.** The edge caches the
-  upstream address, so a fresh container means `docker exec edge-nginx nginx
--s reload` — otherwise every domain serves 502. `deploy.sh` does this for
-  you whenever `docker-compose.shared-edge.override.yml` is present on the
-  host.
+  upstream address, so a fresh container means every domain serves 502 until
+  it reloads. `deploy.sh` does this whenever
+  `docker-compose.shared-edge.override.yml` is present on the host; by hand it
+  is `bash deploy/scripts/edge-nginx.sh reload`.
+
+  Do not hardcode the edge container's name. The neighbouring project's runbook
+  calls it `rayn-prod-nginx-1` (the compose-generated container name) while
+  their workflow and our handover notes both say `edge-nginx` (the compose
+  service name). `edge-nginx.sh` tries both and then discovers it, because
+  guessing wrong makes the reload a silent no-op and the resulting outage looks
+  like our bug.
 
 ### Do not
 
@@ -42,6 +49,19 @@ Two consequences worth internalising:
   existing volume.
 - **Do not commit `.env.production`, anything under `deploy/ssh/`, or host
   keys.**
+- **Do not restart, recreate or `docker compose down` anything belonging to the
+  neighbouring project.** Reloading its nginx is the one sanctioned
+  interaction, and `edge-nginx.sh` is how we do it. Its tree lives at
+  `/opt/rayn-repo/infra/deploy`; certbot for the shared host is driven from
+  there too.
+
+### Dead addresses
+
+`62.238.4.92` and `80.87.110.232` are former homes of this installation. The
+first was hardcoded in the deploy workflow for months after it stopped being
+ours; the provider has since reassigned it, and it now answers SSH with a
+different host key. Never point a deploy at either, and never repair a host-key
+mismatch with `ssh-keyscan` — that trusts whoever happens to answer.
 
 ### Branch
 
@@ -69,6 +89,9 @@ deploy/
     issue-cert.sh           One-off Let's Encrypt issuance for all subdomains
     renew-cert.sh           Weekly cron renewal with automatic nginx reload
     migrate.sh              Prisma migrate deploy
+    edge-nginx.sh           Find / validate / reload the shared edge nginx
+    smoke-test.sh           Post-deploy gate, run on the server (see Deploying)
+    server-check.sh         Read-only diagnostics — first step of any investigation
     backup-to-github.sh     Nightly encrypted dump (see Daily operations)
   ssh/                      SSH keypair for CI/CD (gitignored)
 ```
@@ -90,16 +113,22 @@ cdn.takeaway.md
 ## Deploying
 
 **Normally: push to `infra/migrate-takeaway-md`.** The `Deploy to production`
-workflow runs `deploy.sh` over SSH, then waits until `/api/health` reports the
-commit it just deployed and `/api/health/ready` answers 200. It needs four
-repository secrets:
+workflow runs `deploy.sh` over SSH, then runs `deploy/scripts/smoke-test.sh`
+**on the server** — via `curl --resolve`, so it bypasses DNS and Cloudflare and
+tests only the stack we own. The gate asserts the API is serving the commit
+just deployed (a container that failed to restart keeps answering 200 from the
+previous build), that Postgres and Redis are reachable, and that no SPA is
+502ing behind a stale edge upstream. The public check that follows is
+informational: a Cloudflare problem is not a bad build.
 
-| Secret               | Notes                                    |
-| -------------------- | ---------------------------------------- |
-| `DEPLOY_HOST`        | Server address                           |
-| `DEPLOY_USER`        | Optional; defaults to `deploy`           |
-| `DEPLOY_SSH_KEY`     | Private key for that user                |
-| `DEPLOY_KNOWN_HOSTS` | The server's **public host key**, pinned |
+It needs four repository secrets:
+
+| Secret               | Notes                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DEPLOY_HOST`        | Server address                                                                                                                                                                 |
+| `DEPLOY_USER`        | Optional; defaults to `deploy`. The neighbouring project deploys to this host as `root` — if auth fails as `deploy`, that key is probably only in `/root/.ssh/authorized_keys` |
+| `DEPLOY_SSH_KEY`     | Private key for that user                                                                                                                                                      |
+| `DEPLOY_KNOWN_HOSTS` | The server's **public host key**, pinned                                                                                                                                       |
 
 `DEPLOY_KNOWN_HOSTS` is the one that bites. If the workflow says there is no
 entry for the host, take the key from the provider console or from
@@ -187,9 +216,11 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
 
 ## Troubleshooting
 
-| Symptom                                | Cause                                                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Every domain serves 502                | `takeaway-nginx-1` was recreated; the edge still holds the old upstream. `docker exec edge-nginx nginx -s reload`. |
-| Prisma P1000 on boot                   | The api container joined `rayn-prod_default` and is resolving the wrong `postgres`. Detach it.                     |
-| API container will not open its volume | `init-env-production.sh` was run against live prod and rotated the Postgres password.                              |
-| Deploy dies mid-build, disk full       | Shared 15 GiB disk. `docker builder prune -f` and `docker image prune -f`.                                         |
+| Symptom                                | Cause                                                                                                                               |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Anything at all, before you theorise   | Run `bash deploy/scripts/server-check.sh` on the box. Read-only; reports checkout, env, containers, edge, health, SPAs, disk, logs. |
+| Every domain serves 502                | `takeaway-nginx-1` was recreated; the edge still holds the old upstream. `bash deploy/scripts/edge-nginx.sh reload`.                |
+| `bad interpreter: ...^M`               | A script was committed with CRLF from a Windows checkout. `.gitattributes` pins `*.sh` to LF; re-checkout the file.                 |
+| Prisma P1000 on boot                   | The api container joined `rayn-prod_default` and is resolving the wrong `postgres`. Detach it.                                      |
+| API container will not open its volume | `init-env-production.sh` was run against live prod and rotated the Postgres password.                                               |
+| Deploy dies mid-build, disk full       | Shared 15 GiB disk. `docker builder prune -f` and `docker image prune -f`.                                                          |
