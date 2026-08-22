@@ -6,7 +6,7 @@
 
 > Синхронизируется при каждом значимом изменении кода/инфры/roadmap. Источник истины — `git log` + структура `apps/`/`libs/` + `docs/`.
 
-**Стадия:** активная разработка, релиз `v0.5.0-pos-integrations`. Локальный snapshot — после коммита `83adc1a` (2026-04-20+).
+**Стадия:** подготовка к пилоту. Закрыты треки авторизации, честного ETA, слотов, налогов, наблюдаемости, PWA, списания баллов и e2e. Единственный незакрытый блокер — приём платежей: провайдер меняется на банковский эквайринг, ждём документацию.
 
 ### 0.1. Прогресс по milestones
 
@@ -16,10 +16,19 @@
 | **M1** Auth + Catalog          | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны                                                                                                                                         |
 | **M2** Pre-order core          | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here»                                                                                               |
 | **M3** Лояльность              | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)                                                                                                                                           |
-| **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff                                                                                                                     |
+| **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff, операционные алерты в Telegram                                                                                     |
 | **M5** Admin расширенный       | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
 | **M6** Mobile (Flutter)        | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается.                                                                                              |
-| **M7** Scale & polish          | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                                                                                                                                                    |
+| **M7** Scale & polish          | 🟡     | Sentry на API и всех четырёх SPA, readiness-проба с Postgres + Redis (деплой-гейт смотрит на неё), операционные алерты. Нагрузочное тестирование и A/B — не начаты                                                                                  |
+
+### 0.1a. Что осталось до пилота
+
+| Блок                           | Статус | Комментарий                                                                                                              |
+| ------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **Приём платежей**             | ❌     | Единственный блокер. Stripe-бэкенд написан, фронтенда нет ни в одном клиенте; провайдер меняется на банковский эквайринг |
+| Гейт «не готовим неоплаченное» | ❌     | `CREATED` пока в `OPEN_STATUSES` у KDS. Убирать тем же PR, которым включается оплата                                     |
+| Нагрузочный прогон часа пик    | ❌     | 60 заказов в час на точку                                                                                                |
+| Пилот в одной локации          | ❌     | Две недели с ручным откатом                                                                                              |
 
 ### 0.2. Треки за пределами оригинального ТЗ
 
