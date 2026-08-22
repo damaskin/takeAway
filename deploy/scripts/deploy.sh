@@ -99,16 +99,46 @@ bash "$DEPLOY_DIR/scripts/migrate.sh"
 
 echo "==> [4/4] bringing up api + nginx, reloading config"
 compose up -d api nginx minio
+# Reload our own nginx first, so it picks up vhost / snippet changes.
+compose exec -T nginx nginx -s reload 2>/dev/null || true
+
 if [ "$SHARED_EDGE" = "1" ]; then
-  # edge-nginx does SNI passthrough to takeaway-nginx-1 — takeaway containers
-  # must NOT join rayn-prod_default (causes Prisma P1000: wrong postgres).
+  # edge-nginx fronts us with SNI passthrough (ssl_preread) and caches the
+  # upstream address, so a recreated takeaway-nginx-1 leaves it pointing at a
+  # container that no longer exists — every domain 502s until the edge
+  # reloads. This step is therefore load-bearing, not best-effort.
+  #
+  # (Reloading is all we do to the edge. takeAway containers must NOT join
+  # rayn-prod_default: the other project's postgres resolves there and Prisma
+  # dies with P1000 on credentials that are not ours.)
+  edge_reloaded=0
+
+  # Preferred: drive it through the other project's compose file, if the
+  # checkout is where it used to be.
   if [ -f /opt/rayn-repo/infra/deploy/docker-compose.prod.yml ]; then
-    (cd /opt/rayn-repo/infra/deploy && docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx nginx -s reload) 2>/dev/null || true
+    if (cd /opt/rayn-repo/infra/deploy \
+        && docker compose --env-file .env.prod -f docker-compose.prod.yml \
+             exec -T nginx nginx -s reload) >/dev/null 2>&1; then
+      edge_reloaded=1
+    fi
   fi
-else
-  # If nginx was already running, force a reload so it picks up SPA changes
-  # and any nginx/*.conf edits (new vhosts, new snippets, etc.).
-  compose exec -T nginx nginx -s reload 2>/dev/null || true
+
+  # Fallback: talk to the container directly. This is what actually works on
+  # the current host — the compose path above silently did nothing once the
+  # neighbouring repo moved, and the 502s that followed looked like our bug.
+  if [ "$edge_reloaded" = "0" ] && docker exec edge-nginx nginx -s reload >/dev/null 2>&1; then
+    edge_reloaded=1
+  fi
+
+  if [ "$edge_reloaded" = "1" ]; then
+    echo "    edge-nginx reloaded"
+  else
+    # Deliberately not fatal: the deploy itself succeeded, and failing here
+    # would strand a good build. But it must be shouted, because the symptom
+    # is a total outage that looks nothing like a reload problem.
+    echo "!!  WARNING: could not reload edge-nginx." >&2
+    echo "!!  If the site 502s, run: docker exec edge-nginx nginx -s reload" >&2
+  fi
 fi
 
 echo "==> [5/5] pruning Docker build cache + dangling images"

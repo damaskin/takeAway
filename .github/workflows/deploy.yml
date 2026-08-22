@@ -1,48 +1,156 @@
 name: Deploy to production
 
+# Production is built from the branch below, not from `main`. The two lines
+# diverged in May and were reunified in August; the server checkout at
+# /opt/takeaway/repo tracks this branch, so the deploy has to follow it.
+# Changing where production deploys from is a one-line edit here plus a
+# `git checkout` on the box.
+
 on:
   push:
-    branches: [main]
+    branches: [infra/migrate-takeaway-md]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/deploy.yml'
   workflow_dispatch:
 
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+env:
+  DEPLOY_BRANCH: infra/migrate-takeaway-md
+  API_HEALTH_URL: https://api.takeaway.md/api/health
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Configure SSH
+      # Fail here, by name, rather than three steps later with a cryptic ssh
+      # error. A deploy that cannot reach the server should say which secret
+      # is missing.
+      - name: Preflight — required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          missing=0
+          for v in DEPLOY_HOST DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository secret $v is not set."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+
+          # The host key must already be pinned. Do NOT "fix" a failure here
+          # with ssh-keyscan against the IP: keyscan trusts whoever answers,
+          # and this deploy previously pointed at an address that had been
+          # decommissioned and reassigned. Take the key from the Hetzner
+          # console or from `cat /etc/ssh/ssh_host_ed25519_key.pub` over a
+          # session you already trust, then put it in DEPLOY_KNOWN_HOSTS.
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for $DEPLOY_HOST. \
+          Add the server's public host key — from the provider console or the \
+          server itself, never from ssh-keyscan against the IP."
+            exit 1
+          fi
 
       - name: Run deploy.sh on production
         env:
-          HOST: 62.238.4.92
-          USER: deploy
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts "$USER@$HOST" \
-            "set -e; cd /opt/takeaway/repo && git fetch origin && git reset --hard origin/main && bash deploy/scripts/deploy.sh"
+          # No `git clean` on the remote: .env.production and the host-local
+          # docker-compose.shared-edge.override.yml are untracked on purpose,
+          # and cleaning them takes production down.
+          #
+          # `checkout -f -B` also repairs a checkout that has drifted onto
+          # another branch or a detached HEAD, which a plain reset would not.
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=20 \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "set -euo pipefail
+               cd /opt/takeaway/repo
+               git fetch --prune origin '$DEPLOY_BRANCH'
+               git checkout -f -B '$DEPLOY_BRANCH' 'origin/$DEPLOY_BRANCH'
+               bash deploy/scripts/deploy.sh"
 
-      - name: Health check
+      - name: Record the commit that should now be live
+        id: target
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
         run: |
-          for i in 1 2 3 4 5; do
-            if curl -sSf https://api.takeaway.md/api/health > /tmp/health.json; then
-              echo "API healthy:"; cat /tmp/health.json
+          sha=$(ssh -i ~/.ssh/deploy_key \
+                    -o UserKnownHostsFile=~/.ssh/known_hosts \
+                    -o StrictHostKeyChecking=yes -o BatchMode=yes \
+                    "$DEPLOY_USER@$DEPLOY_HOST" \
+                    "git -C /opt/takeaway/repo rev-parse HEAD")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "expecting the API to serve $sha"
+
+      # The old gate only asked whether *something* answered 200, so a deploy
+      # where the api container never restarted reported success while the
+      # previous build kept serving. /api/health returns the commit it was
+      # built from, so ask for that one.
+      - name: Wait for the API to serve this commit
+        env:
+          EXPECTED: ${{ steps.target.outputs.sha }}
+        run: |
+          for i in $(seq 1 18); do
+            body=$(curl -sS --max-time 10 "$API_HEALTH_URL" 2>/dev/null || true)
+            live=$(printf '%s' "$body" | jq -r '.commit // empty' 2>/dev/null || true)
+            if [ "$live" = "$EXPECTED" ]; then
+              echo "API is serving $live"
+              printf '%s\n' "$body" | jq .
               exit 0
             fi
-            echo "attempt $i failed, retrying in 10s"
+            if [ -n "$live" ]; then
+              echo "attempt $i: API is up but serving $live, waiting for $EXPECTED"
+            else
+              echo "attempt $i: no answer from $API_HEALTH_URL"
+            fi
             sleep 10
           done
-          echo "API health check failed after 5 attempts"
+          echo "::error::After 3 minutes the API is not serving $EXPECTED. \
+          If it is up on an older commit the container did not restart; if it \
+          is unreachable and every domain 502s, takeaway-nginx-1 was recreated \
+          and the edge still holds the old upstream — \
+          'docker exec edge-nginx nginx -s reload'."
+          exit 1
+
+      # Liveness is not usefulness. /ready talks to Postgres and Redis and
+      # answers 503 when either is down, so a migration that left the database
+      # unreachable fails the deploy instead of shipping quietly.
+      - name: Readiness — Postgres + Redis
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -sS -o /tmp/ready.json -w '%{http_code}' --max-time 10 \
+                     "$API_HEALTH_URL/ready" 2>/dev/null || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "dependencies healthy"; jq . /tmp/ready.json; exit 0
+            fi
+            echo "attempt $i: /ready answered $code"
+            [ -s /tmp/ready.json ] && jq . /tmp/ready.json || true
+            sleep 10
+          done
+          echo "::error::API is live but not ready — a dependency is down."
           exit 1

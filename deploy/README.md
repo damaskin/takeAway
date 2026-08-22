@@ -89,7 +89,26 @@ cdn.takeaway.md
 
 ## Deploying
 
-The normal path, from your machine:
+**Normally: push to `infra/migrate-takeaway-md`.** The `Deploy to production`
+workflow runs `deploy.sh` over SSH, then waits until `/api/health` reports the
+commit it just deployed and `/api/health/ready` answers 200. It needs four
+repository secrets:
+
+| Secret               | Notes                                    |
+| -------------------- | ---------------------------------------- |
+| `DEPLOY_HOST`        | Server address                           |
+| `DEPLOY_USER`        | Optional; defaults to `deploy`           |
+| `DEPLOY_SSH_KEY`     | Private key for that user                |
+| `DEPLOY_KNOWN_HOSTS` | The server's **public host key**, pinned |
+
+`DEPLOY_KNOWN_HOSTS` is the one that bites. If the workflow says there is no
+entry for the host, take the key from the provider console or from
+`cat /etc/ssh/ssh_host_ed25519_key.pub` over a session you already trust —
+**never** from `ssh-keyscan` against the IP. Keyscan trusts whatever answers,
+and this deploy already spent months pointed at an address that had been
+decommissioned and reassigned to someone else.
+
+The manual path, from your machine:
 
 ```bash
 ssh deploy@<host>
