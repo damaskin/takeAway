@@ -3,6 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { PickupSlot } from '@takeaway/shared-types';
+import { computeTax } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -334,6 +335,16 @@ interface Step {
                   >
                 </div>
               }
+              @if (taxCents(c.subtotalCents) > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    (taxIncluded() ? 'common.taxIncluded' : 'common.tax') | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(taxCents(c.subtotalCents))
+                  }}</span>
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
@@ -568,6 +579,9 @@ export class CheckoutPage implements OnInit {
   readonly brandId = signal<string | null>(null);
   /** Store ID, needed for /delivery/quote. */
   readonly activeStoreId = signal<string | null>(null);
+  /** Store tax config — the same numbers the server settles the order with. */
+  readonly taxRateBps = signal(0);
+  readonly taxIncludedInPrice = signal(true);
 
   readonly contactForm = new FormGroup({
     customerName: new FormControl('', { nonNullable: true }),
@@ -624,6 +638,8 @@ export class CheckoutPage implements OnInit {
           this.brandId.set(store.brandId);
           this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
           this.activeStoreId.set(store.id);
+          this.taxRateBps.set(store.taxRateBps);
+          this.taxIncludedInPrice.set(store.taxIncludedInPrice);
           this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
           this.refreshFeeQuote();
         },
@@ -636,6 +652,8 @@ export class CheckoutPage implements OnInit {
             this.brandId.set(first.brandId);
             this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
             this.activeStoreId.set(first.id);
+            this.taxRateBps.set(first.taxRateBps);
+            this.taxIncludedInPrice.set(first.taxIncludedInPrice);
             this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
             this.refreshFeeQuote();
           }
@@ -787,9 +805,32 @@ export class CheckoutPage implements OnInit {
     this.giftCardStatus.set(null);
   }
 
+  /**
+   * Runs the server's own tax function so the figure on the button is the
+   * figure that gets charged. A tax-exclusive store would otherwise quote
+   * 20.00 and take 21.75.
+   */
+  private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
+    return computeTax({
+      subtotalCents,
+      discountCents: this.discountCents(),
+      deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
+      giftCardCents: this.giftCardCents(),
+      taxRateBps: this.taxRateBps(),
+      taxIncludedInPrice: this.taxIncludedInPrice(),
+    });
+  }
+
   totalCents(subtotalCents: number): number {
-    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
-    return Math.max(0, subtotalCents - this.discountCents() - this.giftCardCents() + fee);
+    return this.breakdown(subtotalCents).totalCents;
+  }
+
+  taxCents(subtotalCents: number): number {
+    return this.breakdown(subtotalCents).taxCents;
+  }
+
+  taxIncluded(): boolean {
+    return this.taxIncludedInPrice();
   }
 
   selectMode(mode: PickupMode): void {

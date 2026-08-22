@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { computeTax } from '@takeaway/utils';
 import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
@@ -158,7 +159,6 @@ export class OrdersService {
     }
 
     const discountCents = promoResult?.discountCents ?? 0;
-    const taxCents = 0;
     const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
 
     // Gift card — applied AFTER promo discount and BEFORE delivery fee, so a
@@ -180,7 +180,16 @@ export class OrdersService {
       normalizedGiftCode = dto.giftCardCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
     }
 
-    const totalCents = Math.max(0, subtotalCents - discountCents - giftCardCents + taxCents + deliveryFeeCents);
+    // Tax is settled before the gift card: a gift card is a way of paying,
+    // and paying with one does not make the sale tax-free.
+    const { taxCents, totalCents } = computeTax({
+      subtotalCents,
+      discountCents,
+      deliveryFeeCents,
+      giftCardCents,
+      taxRateBps: cart.store.taxRateBps,
+      taxIncludedInPrice: cart.store.taxIncludedInPrice,
+    });
 
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
@@ -459,7 +468,7 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         items: true,
-        store: { select: { name: true } },
+        store: { select: { name: true, taxIncludedInPrice: true } },
         user: { select: { email: true, name: true } },
       },
     });
@@ -472,6 +481,8 @@ export class OrdersService {
       subtotalCents: order.subtotalCents,
       discountCents: order.discountCents,
       deliveryFeeCents: order.deliveryFeeCents,
+      taxCents: order.taxCents,
+      taxIncluded: order.store?.taxIncludedInPrice ?? true,
       totalCents: order.totalCents,
       items: order.items.map((i) => {
         const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};

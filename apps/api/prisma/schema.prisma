@@ -496,6 +496,14 @@ model Store {
   /// the ETA promise honest instead of just optimistic.
   slotCapacity          Int                @default(8)
   minOrderCents         Int                @default(0)
+  /// Sales tax in basis points: 500 = 5% (UAE), 2000 = 20% (UK). 0 disables
+  /// the tax line entirely. Per store, not per brand — a chain can straddle
+  /// two countries.
+  taxRateBps            Int                @default(0)
+  /// True where the displayed menu price already contains the tax (UAE, UK,
+  /// EU retail); false where it is added at the till (most of the US). This
+  /// changes what the customer pays, not just what the receipt prints.
+  taxIncludedInPrice    Boolean            @default(true)
   heroImageUrl          String?
   galleryUrls           String[]           @default([])
   // Per-store delivery fee overrides. All nullable — `null` means "inherit

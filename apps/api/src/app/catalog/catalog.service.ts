@@ -64,6 +64,8 @@ export class CatalogService {
         pickupPointType: s.pickupPointType,
         busyMeter: s.busyMeter,
         currentEtaSeconds: s.baseEtaSeconds + (waits.get(s.id) ?? 0),
+        taxRateBps: s.taxRateBps,
+        taxIncludedInPrice: s.taxIncludedInPrice,
         currency: s.currency,
         heroImageUrl: s.heroImageUrl,
         distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
@@ -129,6 +131,8 @@ export class CatalogService {
       busyMeter: store.busyMeter,
       currentEtaSeconds:
         store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store.id, store.kitchenParallelism)),
+      taxRateBps: store.taxRateBps,
+      taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,
       heroImageUrl: store.heroImageUrl,
       distanceMeters: null,

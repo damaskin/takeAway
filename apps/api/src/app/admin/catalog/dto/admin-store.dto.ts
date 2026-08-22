@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsInt,
@@ -152,6 +153,25 @@ export class CreateStoreDto {
   @Min(1)
   @Max(100)
   slotCapacity?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 10000,
+    description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 removes the tax line.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  taxRateBps?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'True where the menu price already contains the tax (UAE, UK, EU); false where it is added at the till.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  taxIncludedInPrice?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

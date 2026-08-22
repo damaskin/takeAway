@@ -265,8 +265,17 @@ takeaway/
 - **Часы работы точки** проверяются при создании заказа и при выдаче слотов — в таймзоне точки (`Intl`, не фиксированный сдвиг), с поддержкой ночных смен. Точка без расписания считается работающей круглосуточно
 - **Стоп-лист** блокирует добавление в корзину, изменение позиции и создание заказа. Записи с истёкшим `expiresAt` не блокируют
 - Минимальная сумма заказа (конфигурируется per store)
-- Расчёт итога: subtotal − discount + taxes = total
-- VAT по точке (разные страны)
+- Расчёт итога (`computeTax` в `@takeaway/utils`, общая функция для API и обоих чекаутов):
+
+  ```
+  taxable = max(0, subtotal − discount) + deliveryFee
+  налог в цене:  tax = taxable × rate / (10000 + rate);  total = taxable − giftCard
+  налог сверху:  tax = taxable × rate / 10000;           total = taxable + tax − giftCard
+  ```
+
+  Подарочная карта вычитается после налога — это способ оплаты, а не скидка
+
+- **VAT по точке**: `Store.taxRateBps` (500 = 5%, 2000 = 20%) и `Store.taxIncludedInPrice`. Второй флаг меняет сумму к оплате, а не только строку в чеке: в ОАЭ / Великобритании / ЕС цена налог уже содержит, в США он добавляется на кассе
 - После оплаты: генерация **order code** (4-значный) и **QR-кода** для получения
 - **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом
 
@@ -409,6 +418,7 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
        busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
+       taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки

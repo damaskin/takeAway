@@ -26,6 +26,10 @@ export interface StoreListItem {
   pickupPointType: PickupPointType;
   busyMeter: number;
   currentEtaSeconds: number;
+  /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */
+  taxRateBps: number;
+  /** True when the listed prices already include the tax. */
+  taxIncludedInPrice: boolean;
   currency: string;
   heroImageUrl: string | null;
   distanceMeters: number | null;

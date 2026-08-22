@@ -27,6 +27,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     now: 'just now',
     total: 'Total',
     subtotal: 'Subtotal',
+    tax: 'Tax',
+    taxIncluded: 'Incl. tax',
     discount: 'Discount',
     readyIn: 'Ready in {{min}} min',
     readyBy: 'Ready by {{time}}',

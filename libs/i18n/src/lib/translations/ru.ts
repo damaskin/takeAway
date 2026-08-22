@@ -26,6 +26,8 @@ export const TRANSLATIONS_RU = {
     now: 'только что',
     total: 'Итого',
     subtotal: 'Сумма',
+    tax: 'Налог',
+    taxIncluded: 'В том числе налог',
     discount: 'Скидка',
     readyIn: 'Готово через {{min}} мин',
     readyBy: 'Готово к {{time}}',

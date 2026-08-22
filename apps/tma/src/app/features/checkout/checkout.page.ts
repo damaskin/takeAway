@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { PickupSlot } from '@takeaway/shared-types';
+import { computeTax } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -271,6 +272,16 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
                   }}</span>
                 </div>
               }
+              @if (taxCents(c.subtotalCents) > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    (taxIncluded() ? 'common.taxIncluded' : 'common.tax') | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(taxCents(c.subtotalCents))
+                  }}</span>
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
@@ -352,6 +363,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** OUTSIDE_RADIUS / permission-denied messages surfaced to the customer. */
   readonly deliveryReason = signal<string | null>(null);
   private activeStoreId: string | null = null;
+  /** Store tax config — the same numbers the server settles the order with. */
+  readonly taxRateBps = signal(0);
+  readonly taxIncludedInPrice = signal(true);
 
   private detachBack: (() => void) | null = null;
 
@@ -363,6 +377,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.storeName.set(first.name);
         this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
         this.activeStoreId = first.id;
+        this.taxRateBps.set(first.taxRateBps);
+        this.taxIncludedInPrice.set(first.taxIncludedInPrice);
         this.cartService.load(first.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -448,9 +464,31 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       });
   }
 
+  /**
+   * Runs the server's own tax function so the figure on the Telegram main
+   * button is the figure that gets charged.
+   */
+  private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
+    return computeTax({
+      subtotalCents,
+      discountCents: 0,
+      deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
+      giftCardCents: 0,
+      taxRateBps: this.taxRateBps(),
+      taxIncludedInPrice: this.taxIncludedInPrice(),
+    });
+  }
+
   totalCents(subtotalCents: number): number {
-    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
-    return subtotalCents + fee;
+    return this.breakdown(subtotalCents).totalCents;
+  }
+
+  taxCents(subtotalCents: number): number {
+    return this.breakdown(subtotalCents).taxCents;
+  }
+
+  taxIncluded(): boolean {
+    return this.taxIncludedInPrice();
   }
 
   selectSlot(slot: PickupSlot): void {

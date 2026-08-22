@@ -23,6 +23,8 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     baseEtaSeconds: 360,
     kitchenParallelism: 2,
     slotCapacity: 8,
+    taxRateBps: 0,
+    taxIncludedInPrice: true,
     currency: 'AED',
     heroImageUrl: null,
     timezone: 'Asia/Dubai',
