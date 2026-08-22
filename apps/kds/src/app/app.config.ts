@@ -3,6 +3,8 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideTakeawayI18n } from '@takeaway/i18n';
 
+import { provideSentry, resolveSpaSentryConfig } from '@takeaway/ui-kit';
+
 import { appRoutes } from './app.routes';
 import { API_CONFIG, DEFAULT_API_CONFIG } from './core/api/api.config';
 import { authInterceptor } from './core/auth/auth.interceptor';
@@ -14,5 +16,6 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     { provide: API_CONFIG, useValue: DEFAULT_API_CONFIG },
     ...provideTakeawayI18n(),
+    ...provideSentry(resolveSpaSentryConfig('kds')),
   ],
 };

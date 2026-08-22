@@ -7,6 +7,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
@@ -59,6 +60,12 @@ export class OrdersController {
     return this.orders.recordCustomerLocation(user.id, id, dto);
   }
 
+  @Post('me/orders/:id/resend-receipt')
+  @ApiOkResponse({ description: 'Receipt re-sent to the user email on file.' })
+  resendReceipt(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<{ ok: true }> {
+    return this.orders.resendReceipt(user.id, id);
+  }
+
   @Get('me/orders')
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'group', required: false, enum: ['ACTIVE', 'HISTORY', 'ALL'] })
@@ -99,5 +106,21 @@ export class OrdersController {
       take: take ? Number(take) : undefined,
       scopeStoreIds: scope === '*' ? undefined : [...scope],
     });
+  }
+
+  /**
+   * One order in full — items, payments, refunds and the event timeline.
+   * The refund endpoint has existed since M5 with nothing in the interface
+   * able to reach it; this is what the refund button reads.
+   */
+  @Get('admin/orders/:id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN', 'STORE_MANAGER')
+  @ApiOkResponse({ type: AdminOrderDetailDto })
+  async getAdminOrder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') orderId: string,
+  ): Promise<AdminOrderDetailDto> {
+    const scope = await this.scope.getScope(user.id, user.role);
+    return this.orders.getForAdmin(orderId, scope === '*' ? undefined : [...scope]);
   }
 }

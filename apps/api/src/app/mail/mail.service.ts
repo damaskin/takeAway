@@ -97,9 +97,13 @@ export class MailService implements OnModuleInit {
       subtotalCents: number;
       discountCents: number;
       deliveryFeeCents: number;
+      taxCents: number;
+      /** True when the tax is already inside the prices above. */
+      taxIncluded: boolean;
       totalCents: number;
       items: Array<{ name: string; quantity: number; totalCents: number }>;
     },
+    attachments?: MailAttachment[],
   ): Promise<void> {
     const subject = `Чек по заказу #${receipt.orderCode} / takeAway receipt #${receipt.orderCode}`;
     const fmt = (cents: number) => formatMoney(cents, receipt.currency);
@@ -125,30 +129,52 @@ export class MailService implements OnModuleInit {
       <table style="width:100%;border-collapse:collapse;margin:12px 0">${itemsHtml}</table>
       ${receipt.discountCents > 0 ? `<p>Скидка: −${escapeHtml(fmt(receipt.discountCents))}</p>` : ''}
       ${receipt.deliveryFeeCents > 0 ? `<p>Доставка: ${escapeHtml(fmt(receipt.deliveryFeeCents))}</p>` : ''}
+      ${taxLine(receipt.taxCents, receipt.taxIncluded, fmt)}
       <p><strong>Итого:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
       <hr />
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
       <p><strong>Total:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
     `;
-    await this.send(email, subject, text, html);
+    await this.send(email, subject, text, html, attachments);
   }
 
   /** Public helper so other services can queue transactional messages through the same transport. */
-  async send(to: string, subject: string, text: string, html?: string): Promise<void> {
+  async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
     const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
     if (!this.transporter) {
       this.logger.warn(
-        `[mail] (stub — SMTP_HOST not set) to=${to} subject=${JSON.stringify(subject)} body=${text.slice(0, 200)}`,
+        `[mail] (stub — SMTP_HOST not set) to=${to} subject=${JSON.stringify(subject)} body=${text.slice(0, 200)}` +
+          (attachments?.length ? ` attachments=${attachments.length}` : ''),
       );
       return;
     }
     try {
-      await this.transporter.sendMail({ from, to, subject, text, html });
-      this.logger.log(`[mail] sent to=${to} subject=${JSON.stringify(subject)}`);
+      await this.transporter.sendMail({ from, to, subject, text, html, attachments });
+      this.logger.log(
+        `[mail] sent to=${to} subject=${JSON.stringify(subject)}` +
+          (attachments?.length ? ` attachments=${attachments.length}` : ''),
+      );
     } catch (err) {
       this.logger.error(`[mail] delivery failed to=${to}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
+/**
+ * The tax line. Worded differently depending on whether the tax sits inside
+ * the prices above or was added to them — "including VAT" and "VAT" are
+ * different claims, and only one of them is true for a given store.
+ */
+function taxLine(taxCents: number, included: boolean, fmt: (cents: number) => string): string {
+  if (taxCents <= 0) return '';
+  const amount = escapeHtml(fmt(taxCents));
+  return included ? `<p>В том числе налог / incl. tax: ${amount}</p>` : `<p>Налог / tax: ${amount}</p>`;
 }
 
 function escapeHtml(s: string): string {

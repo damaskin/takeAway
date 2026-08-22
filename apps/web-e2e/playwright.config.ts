@@ -39,7 +39,17 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Honour a browser supplied by the image rather than downloading
+        // one. Build environments often ship a Chromium that does not match
+        // the revision @playwright/test expects, and failing on a revision
+        // mismatch is a worse outcome than using the browser that is there.
+        // Unset locally → Playwright's own managed browser, as usual.
+        ...(process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE']
+          ? { launchOptions: { executablePath: process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'] } }
+          : {}),
+      },
     },
   ],
 });

@@ -13,6 +13,24 @@ export class LoyaltyService {
   me(): Observable<LoyaltyAccount> {
     return this.http.get<LoyaltyAccount>(`${this.api.baseUrl}/loyalty/me`);
   }
+
+  /**
+   * How many points can go toward this order, and what they are worth.
+   * The server clamps the ask to the balance and to the order value, and
+   * clamps it again when the order is created — checkout renders what the
+   * quote says rather than doing the arithmetic itself.
+   */
+  quoteRedemption(points: number, payableCents: number): Observable<RedeemQuote> {
+    return this.http.post<RedeemQuote>(`${this.api.baseUrl}/loyalty/redeem/quote`, { points, payableCents });
+  }
+}
+
+export interface RedeemQuote {
+  points: number;
+  discountCents: number;
+  balance: number;
+  pointValueCents: number;
+  minPoints: number;
 }
 
 @Injectable({ providedIn: 'root' })

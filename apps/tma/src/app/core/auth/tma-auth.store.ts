@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import type { AuthSession, AuthUser } from '@takeaway/shared-types';
+import type { AuthSession, AuthTokens, AuthUser } from '@takeaway/shared-types';
 
 const STORAGE_KEY = 'takeaway.tma.session';
 
@@ -26,6 +26,29 @@ export class TmaAuthStore {
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+  }
+
+  /**
+   * Swap in a rotated token pair after a silent `/auth/refresh`, keeping the
+   * user we already have. Returns false when there is no session to update,
+   * which the caller reads as "fall back to a fresh init-data sign-in".
+   */
+  setTokens(tokens: AuthTokens): boolean {
+    const current = this._session();
+    if (!current) return false;
+    const next: StoredSession = {
+      ...current,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
+    this._session.set(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return true;
+  }
+
+  /** Read the refresh token imperatively, outside the reactive graph. */
+  refreshToken(): string | null {
+    return this._session()?.refreshToken ?? null;
   }
 
   clear(): void {

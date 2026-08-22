@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 
@@ -19,7 +20,11 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     fulfillmentTypes: ['TAKEAWAY'],
     pickupPointType: 'SHELF',
     busyMeter: 35,
-    currentEtaSeconds: 360,
+    baseEtaSeconds: 360,
+    kitchenParallelism: 2,
+    slotCapacity: 8,
+    taxRateBps: 0,
+    taxIncludedInPrice: true,
     currency: 'AED',
     heroImageUrl: null,
     timezone: 'Asia/Dubai',
@@ -39,6 +44,7 @@ describe('CatalogService', () => {
     stopListEntry: { findMany: jest.Mock };
     category: { findMany: jest.Mock };
     product: { findFirst: jest.Mock };
+    order: { groupBy: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -47,6 +53,8 @@ describe('CatalogService', () => {
       stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
       category: { findMany: jest.fn().mockResolvedValue([]) },
       product: { findFirst: jest.fn() },
+      // No outstanding work, so the live ETA collapses to the store's base.
+      order: { groupBy: jest.fn().mockResolvedValue([]) },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -55,6 +63,9 @@ describe('CatalogService', () => {
         { provide: PrismaService, useValue: prisma },
         // Delivery enabled in tests so `fulfillmentTypes` passes through unchanged.
         { provide: FeatureFlagsService, useValue: { deliveryEnabled: true } },
+        // Real service against the mocked client — the ETA arithmetic is
+        // part of what these assertions are checking.
+        KitchenLoadService,
       ],
     }).compile();
 

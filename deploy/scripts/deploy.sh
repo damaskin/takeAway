@@ -49,6 +49,16 @@ if [ "$missing" = "1" ]; then
   exit 1
 fi
 
+# Compute the version triple once and export it to every downstream step
+# (Dockerfile.api ARGs, extract-spa.sh's version.json writer). Tags are not
+# required — `git describe --always` falls back to a short SHA, and `--dirty`
+# flags any local edits the deploy user might have applied on the box.
+BUILD_VERSION="$(git -C "$(cd "$DEPLOY_DIR/.." && pwd)" describe --tags --always --dirty 2>/dev/null || echo dev)"
+BUILD_COMMIT="$(git -C "$(cd "$DEPLOY_DIR/.." && pwd)" rev-parse HEAD 2>/dev/null || echo unknown)"
+BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+export BUILD_VERSION BUILD_COMMIT BUILD_TIME
+echo "==> build version: $BUILD_VERSION ($BUILD_COMMIT) at $BUILD_TIME"
+
 echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
 mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
 # Ensure docker compose auto-picks the production env for variable substitution.
@@ -59,7 +69,14 @@ ln -sf .env.production "$DEPLOY_DIR/.env"
 bash "$DEPLOY_DIR/scripts/bootstrap-certs.sh"
 
 echo "==> [1/4] building + starting api + dependencies"
-compose build api
+# `compose` carries the shared-edge override; the build args stamp the
+# version triple that /api/health, /version.json and the Sentry release all
+# read back.
+compose build \
+  --build-arg "BUILD_VERSION=$BUILD_VERSION" \
+  --build-arg "BUILD_COMMIT=$BUILD_COMMIT" \
+  --build-arg "BUILD_TIME=$BUILD_TIME" \
+  api
 compose up -d postgres redis minio
 # One-shot bucket setup. Safe to re-run; exits 0 when the bucket is ready.
 compose up minio-init --exit-code-from minio-init || true

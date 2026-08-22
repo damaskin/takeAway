@@ -2,6 +2,8 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import type { PickupSlot } from '@takeaway/shared-types';
+import { computeTax } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -109,12 +111,41 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           </button>
         </div>
         @if (pickupMode() === 'SCHEDULED') {
-          <input
-            type="datetime-local"
-            [value]="scheduledAt()"
-            (change)="onScheduledChange($event)"
-            style="height: 44px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-          />
+          @if (slotsLoading()) {
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+              'common.loading' | translate
+            }}</span>
+          } @else if (slots().length === 0) {
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">{{
+              'tma.checkout.noSlots' | translate
+            }}</span>
+          } @else {
+            <div class="flex flex-wrap" style="gap: 8px">
+              @for (slot of slots(); track slot.startsAt) {
+                <button
+                  type="button"
+                  [disabled]="!slot.available"
+                  (click)="selectSlot(slot)"
+                  [style.background]="scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-foam)'"
+                  [style.color]="
+                    slot.available
+                      ? scheduledAt() === slot.startsAt
+                        ? 'white'
+                        : 'var(--color-text-primary)'
+                      : 'var(--color-text-secondary)'
+                  "
+                  [style.border]="
+                    scheduledAt() === slot.startsAt ? '1px solid transparent' : '1px solid var(--color-border-light)'
+                  "
+                  [style.opacity]="slot.available ? '1' : '0.45'"
+                  [style.textDecoration]="slot.available ? 'none' : 'line-through'"
+                  style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                >
+                  {{ slotLabel(slot) }}
+                </button>
+              }
+            </div>
+          }
         }
       </div>
 
@@ -242,6 +273,16 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
                   }}</span>
                 </div>
               }
+              @if (taxCents(c.subtotalCents) > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    (taxIncluded() ? 'common.taxIncluded' : 'common.tax') | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(taxCents(c.subtotalCents))
+                  }}</span>
+                </div>
+              }
               <div class="flex items-center justify-between">
                 <span
                   style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
@@ -302,7 +343,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
   readonly pickupMode = signal<'ASAP' | 'SCHEDULED'>('ASAP');
-  readonly scheduledAt = signal<string>(this.defaultScheduledAt());
+  /** ISO start of the chosen slot; empty until the customer picks one. */
+  readonly scheduledAt = signal<string>('');
+  readonly slots = signal<PickupSlot[]>([]);
+  readonly slotsLoading = signal(false);
   readonly storeName = signal<string>('');
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
@@ -321,6 +365,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** OUTSIDE_RADIUS / permission-denied messages surfaced to the customer. */
   readonly deliveryReason = signal<string | null>(null);
   private activeStoreId: string | null = null;
+  /** Store tax config — the same numbers the server settles the order with. */
+  readonly taxRateBps = signal(0);
+  readonly taxIncludedInPrice = signal(true);
 
   private detachBack: (() => void) | null = null;
 
@@ -336,6 +383,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.storeName.set(store.name);
         this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
         this.activeStoreId = store.id;
+        this.taxRateBps.set(store.taxRateBps);
+        this.taxIncludedInPrice.set(store.taxIncludedInPrice);
         this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -360,6 +409,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
     this.pickupMode.set(mode);
     this.tg.haptic('light');
+    if (mode === 'SCHEDULED') this.loadSlots();
     this.refreshMainButton();
   }
 
@@ -420,32 +470,83 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       });
   }
 
-  totalCents(subtotalCents: number): number {
-    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
-    return subtotalCents + fee;
+  /**
+   * Runs the server's own tax function so the figure on the Telegram main
+   * button is the figure that gets charged.
+   */
+  private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
+    return computeTax({
+      subtotalCents,
+      discountCents: 0,
+      deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
+      giftCardCents: 0,
+      taxRateBps: this.taxRateBps(),
+      taxIncludedInPrice: this.taxIncludedInPrice(),
+    });
   }
 
-  onScheduledChange(e: Event): void {
-    const input = e.target as HTMLInputElement;
-    this.scheduledAt.set(input.value);
+  totalCents(subtotalCents: number): number {
+    return this.breakdown(subtotalCents).totalCents;
+  }
+
+  taxCents(subtotalCents: number): number {
+    return this.breakdown(subtotalCents).taxCents;
+  }
+
+  taxIncluded(): boolean {
+    return this.taxIncludedInPrice();
+  }
+
+  selectSlot(slot: PickupSlot): void {
+    if (!slot.available) return;
+    this.scheduledAt.set(slot.startsAt);
+    this.tg.haptic('light');
     this.refreshMainButton();
+  }
+
+  slotLabel(slot: PickupSlot): string {
+    return new Date(slot.startsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /**
+   * Fetched only when the customer asks to schedule: these are the store's
+   * live occupancy, and a copy held behind an ASAP order goes stale.
+   */
+  private loadSlots(): void {
+    const storeId = this.activeStoreId;
+    if (!storeId) return;
+    this.slotsLoading.set(true);
+    this.catalog.getPickupSlots(storeId).subscribe({
+      next: (slots) => {
+        this.slots.set(slots);
+        this.slotsLoading.set(false);
+        const current = this.scheduledAt();
+        const stillValid = slots.some((s) => s.startsAt === current && s.available);
+        if (!stillValid) {
+          this.scheduledAt.set(slots.find((s) => s.available)?.startsAt ?? '');
+        }
+        this.refreshMainButton();
+      },
+      error: () => {
+        this.slots.set([]);
+        this.slotsLoading.set(false);
+        this.refreshMainButton();
+      },
+    });
   }
 
   price(cents: number): string {
     return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
   }
 
-  private defaultScheduledAt(): string {
-    const d = new Date(Date.now() + 30 * 60 * 1000);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-      d.getMinutes(),
-    )}`;
-  }
-
   refreshMainButton(): void {
     const c = this.cart();
     if (!c || c.items.length === 0 || !this.authStore.isAuthenticated()) {
+      this.tg.hideMainButton();
+      return;
+    }
+    // A scheduled order needs a slot the store can actually honour.
+    if (this.pickupMode() === 'SCHEDULED' && !this.scheduledAt()) {
       this.tg.hideMainButton();
       return;
     }
@@ -474,7 +575,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     if (!c) return;
     this.tg.haptic('medium');
     const isDelivery = this.fulfillmentType() === 'DELIVERY';
-    const pickupAt = this.pickupMode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined;
+    const pickupAt = this.pickupMode() === 'SCHEDULED' ? this.scheduledAt() : undefined;
     const input = {
       cartId: c.id,
       pickupMode: this.pickupMode(),

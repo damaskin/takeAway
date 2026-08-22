@@ -26,9 +26,26 @@ export interface StoreListItem {
   pickupPointType: PickupPointType;
   busyMeter: number;
   currentEtaSeconds: number;
+  /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */
+  taxRateBps: number;
+  /** True when the listed prices already include the tax. */
+  taxIncludedInPrice: boolean;
   currency: string;
   heroImageUrl: string | null;
   distanceMeters: number | null;
+}
+
+/**
+ * One 15-minute handover window. Full slots still come back, marked
+ * unavailable, so checkout can grey them out — a missing time reads as a
+ * bug, a greyed-out one reads as a busy morning.
+ */
+export interface PickupSlot {
+  startsAt: string;
+  endsAt: string;
+  taken: number;
+  capacity: number;
+  available: boolean;
 }
 
 export interface StoreWorkingHour {

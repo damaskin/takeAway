@@ -1,22 +1,17 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { VersionBadgeComponent } from '@takeaway/ui-kit';
 
-import { TmaAuthService } from './core/auth/tma-auth.service';
-import { TelegramBridgeService } from './core/telegram/telegram-bridge.service';
-
+/**
+ * Root shell. Deliberately empty of lifecycle work: the Telegram handshake
+ * (`ready`/`expand`) and the init-data sign-in both run in the app
+ * initializer, before this ever renders, so no screen can appear ahead of
+ * its session.
+ */
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet],
-  template: `<router-outlet />`,
+  imports: [RouterOutlet, VersionBadgeComponent],
+  template: `<router-outlet /><lib-version-badge />`,
 })
-export class App implements OnInit {
-  private readonly tg = inject(TelegramBridgeService);
-  private readonly auth = inject(TmaAuthService);
-
-  ngOnInit(): void {
-    this.tg.ready();
-    this.tg.expand();
-    this.auth.autoSignIn();
-  }
-}
+export class App {}

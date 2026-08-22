@@ -2,7 +2,12 @@
   "name": "@takeaway/ui-kit",
   "version": "0.0.1",
   "peerDependencies": {
-    "@angular/core": "^21.2.0"
+    "@angular/core": "^21.2.0",
+    "@angular/common": "~21.2.0",
+    "@angular/router": "^21.2.0",
+    "@sentry/angular": "^10.70.0",
+    "leaflet": "^1.9.4",
+    "rxjs": "^7.8.0"
   },
   "sideEffects": false
 }
