@@ -6,6 +6,14 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <script>
+      // Sentry for this SPA. The browser DSN is public by design; leave it
+      // empty to disable reporting (the normal state in local dev).
+      // __BUILD_VERSION is stamped by deploy/scripts/extract-spa.sh so an
+      // issue points at an exact deploy.
+      window.__SENTRY_DSN = '';
+      window.__SENTRY_ENVIRONMENT = 'development';
+    </script>
   </head>
   <body>
     <app-root></app-root>

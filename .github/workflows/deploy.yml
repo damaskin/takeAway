@@ -34,15 +34,21 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts "$USER@$HOST" \
             "set -e; cd /opt/takeaway/repo && git fetch origin && git reset --hard origin/main && bash deploy/scripts/deploy.sh"
 
-      - name: Health check
+      # /api/health only proves the process is up — it stayed green with
+      # Postgres face-down. /api/health/ready talks to Postgres and Redis
+      # and answers 503 when either is unreachable, so a release that
+      # cannot serve a single order fails the gate instead of shipping.
+      - name: Readiness check
         run: |
           for i in 1 2 3 4 5; do
-            if curl -sSf https://api.takeaway.million-sales.ru/api/health > /tmp/health.json; then
-              echo "API healthy:"; cat /tmp/health.json
+            if curl -sSf https://api.takeaway.million-sales.ru/api/health/ready > /tmp/ready.json; then
+              echo "API ready:"; cat /tmp/ready.json
               exit 0
             fi
-            echo "attempt $i failed, retrying in 10s"
+            echo "attempt $i not ready yet, retrying in 10s"
+            cat /tmp/ready.json 2>/dev/null || true
             sleep 10
           done
-          echo "API health check failed after 5 attempts"
+          echo "API never became ready after 5 attempts"
+          cat /tmp/ready.json 2>/dev/null || true
           exit 1

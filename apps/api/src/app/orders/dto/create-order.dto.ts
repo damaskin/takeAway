@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FulfillmentType, PickupMode } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDate, IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreateOrderDto {
   @ApiProperty()
@@ -52,6 +52,16 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(40)
   giftCardCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Loyalty points to spend. Clamped server-side to the balance and to the order value — never trusted as sent.',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  pointsToSpend?: number;
 
   // ── Delivery fields (required when fulfillmentType === 'DELIVERY') ──────
 

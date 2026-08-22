@@ -34,6 +34,9 @@ describe('PaymentsService.handleWebhook', () => {
     status: 'CREATED',
     subtotalCents: 500,
     totalCents: 500,
+    // The live timer counts down to the handover we already promised, so
+    // the fixture needs one. Six minutes out.
+    pickupAt: new Date(Date.now() + 6 * 60_000),
   };
 
   beforeEach(async () => {
@@ -49,7 +52,7 @@ describe('PaymentsService.handleWebhook', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       } as unknown as PrismaService['payment'],
       store: {
-        findUnique: jest.fn().mockResolvedValue({ currentEtaSeconds: 300 }),
+        findUnique: jest.fn().mockResolvedValue(null),
       } as unknown as PrismaService['store'],
       $transaction: jest.fn((ops: unknown[]) => {
         // Our service uses $transaction([prisma.payment.updateMany, prisma.order.update])

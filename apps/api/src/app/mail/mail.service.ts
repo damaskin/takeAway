@@ -97,6 +97,9 @@ export class MailService implements OnModuleInit {
       subtotalCents: number;
       discountCents: number;
       deliveryFeeCents: number;
+      taxCents: number;
+      /** True when the tax is already inside the prices above. */
+      taxIncluded: boolean;
       totalCents: number;
       items: Array<{ name: string; quantity: number; totalCents: number }>;
     },
@@ -126,6 +129,7 @@ export class MailService implements OnModuleInit {
       <table style="width:100%;border-collapse:collapse;margin:12px 0">${itemsHtml}</table>
       ${receipt.discountCents > 0 ? `<p>Скидка: −${escapeHtml(fmt(receipt.discountCents))}</p>` : ''}
       ${receipt.deliveryFeeCents > 0 ? `<p>Доставка: ${escapeHtml(fmt(receipt.deliveryFeeCents))}</p>` : ''}
+      ${taxLine(receipt.taxCents, receipt.taxIncluded, fmt)}
       <p><strong>Итого:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
       <hr />
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
@@ -160,6 +164,17 @@ export interface MailAttachment {
   filename: string;
   content: Buffer;
   contentType?: string;
+}
+
+/**
+ * The tax line. Worded differently depending on whether the tax sits inside
+ * the prices above or was added to them — "including VAT" and "VAT" are
+ * different claims, and only one of them is true for a given store.
+ */
+function taxLine(taxCents: number, included: boolean, fmt: (cents: number) => string): string {
+  if (taxCents <= 0) return '';
+  const amount = escapeHtml(fmt(taxCents));
+  return included ? `<p>В том числе налог / incl. tax: ${amount}</p>` : `<p>Налог / tax: ${amount}</p>`;
 }
 
 function escapeHtml(s: string): string {

@@ -483,9 +483,27 @@ model Store {
   pickupPointType       PickupPointType    @default(COUNTER)
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
-  // Cached ETA for an ASAP order placed now, in seconds.
-  currentEtaSeconds     Int                @default(600)
+  /// Fixed overhead on every order here, in seconds: ringing it up, plating,
+  /// handover. This is NOT the ETA a customer sees — that is this value plus
+  /// the live queue wait plus their own prep time. See KitchenLoadService.
+  baseEtaSeconds        Int                @default(600)
+  /// How many orders this kitchen genuinely works at once. Queue wait is
+  /// outstanding work divided by this, so it is the one knob that decides
+  /// how fast a morning rush drains.
+  kitchenParallelism    Int                @default(2)
+  /// Most orders this store will hand over inside one 15-minute slot. Once
+  /// a slot is full it stops being offered at checkout, which is what keeps
+  /// the ETA promise honest instead of just optimistic.
+  slotCapacity          Int                @default(8)
   minOrderCents         Int                @default(0)
+  /// Sales tax in basis points: 500 = 5% (UAE), 2000 = 20% (UK). 0 disables
+  /// the tax line entirely. Per store, not per brand — a chain can straddle
+  /// two countries.
+  taxRateBps            Int                @default(0)
+  /// True where the displayed menu price already contains the tax (UAE, UK,
+  /// EU retail); false where it is added at the till (most of the US). This
+  /// changes what the customer pays, not just what the receipt prints.
+  taxIncludedInPrice    Boolean            @default(true)
   heroImageUrl          String?
   galleryUrls           String[]           @default([])
   // Per-store delivery fee overrides. All nullable — `null` means "inherit
@@ -798,6 +816,14 @@ model Order {
   // Opaque token embedded in the pickup QR; independent of the short code.
   qrToken             String          @unique
   paymentIntentId     String?
+  /// Seconds the customer waits once the kitchen starts on their order —
+  /// the longest single item, because a barista pulls a shot while the milk
+  /// steams. Snapshotted at creation so a later menu edit cannot rewrite it.
+  prepSeconds         Int             @default(0)
+  /// Seconds of kitchen time this order consumes, summed across items. This
+  /// is what loads the queue for everyone behind it, and it is deliberately
+  /// a different number from prepSeconds.
+  workSeconds         Int             @default(0)
   customerName        String?
   customerPhone       String?
   notes               String?
@@ -807,6 +833,11 @@ model Order {
   /// gift card is later cancelled.
   giftCardCode        String?
   giftCardCents       Int             @default(0)
+  /// Loyalty points the customer burned on this order, and what they were
+  /// worth. Kept separate from `discountCents` so a receipt can say
+  /// "you spent 250 points" rather than just showing a smaller number.
+  pointsSpent         Int             @default(0)
+  pointsDiscountCents Int             @default(0)
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.
@@ -848,6 +879,9 @@ model Order {
   @@index([storeId, status])
   @@index([status, pickupAt])
   @@index([riderId, status])
+  // Slot occupancy counts scan one store's handovers inside a 15-minute
+  // window, on every checkout render.
+  @@index([storeId, pickupAt])
 }
 
 model OrderItem {

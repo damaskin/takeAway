@@ -9,6 +9,9 @@ export interface ReceiptForPdf {
   subtotalCents: number;
   discountCents: number;
   deliveryFeeCents: number;
+  taxCents: number;
+  /** True when the tax is already inside the prices above. */
+  taxIncluded: boolean;
   totalCents: number;
   items: Array<{ name: string; quantity: number; totalCents: number }>;
   /** ISO-8601 of when the order was paid; printed as the receipt date. */
@@ -132,6 +135,7 @@ export class ReceiptPdfService {
     writeRow('Subtotal', fmt(receipt.subtotalCents));
     if (receipt.discountCents > 0) writeRow('Discount', `-${fmt(receipt.discountCents)}`);
     if (receipt.deliveryFeeCents > 0) writeRow('Delivery', fmt(receipt.deliveryFeeCents));
+    if (receipt.taxCents > 0) writeRow(receipt.taxIncluded ? 'Incl. tax' : 'Tax', fmt(receipt.taxCents));
     writeRow('Total', fmt(receipt.totalCents), true);
 
     doc.moveDown(2);

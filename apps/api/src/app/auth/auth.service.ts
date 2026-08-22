@@ -1,21 +1,22 @@
 import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Role, type User } from '@prisma/client';
+import { Locale, OAuthProvider, Role, type User } from '@prisma/client';
 
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
 import { KdsPinService } from './services/kds-pin.service';
+import { OAuthIdentityService, type OAuthIdentity, type OAuthProviderKey } from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 
 const PASSWORD_RESET_TTL_SECONDS = 60 * 60; // 1 hour
 
-// Roles that can authenticate with email+password. CUSTOMER is always
-// Telegram-driven — they never set a password, and we refuse the login flow
-// for them outright even if a hash existed.
+// Roles that can authenticate with email+password. Customers never set a
+// password — they sign in with Telegram, Google or Apple — so we refuse the
+// login flow for them outright even if a hash somehow existed.
 const PASSWORD_LOGIN_ROLES: ReadonlySet<Role> = new Set([
   Role.SUPER_ADMIN,
   Role.BRAND_ADMIN,
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly tokens: TokensService,
     private readonly telegram: TelegramService,
+    private readonly oauth: OAuthIdentityService,
     private readonly passwords: PasswordService,
     private readonly kdsPins: KdsPinService,
     private readonly mail: MailService,
@@ -41,8 +43,8 @@ export class AuthService {
 
   /**
    * Staff / admin sign-in with email + password. Customer accounts are
-   * rejected even if a password hash is somehow present — they must use
-   * Telegram on web / TMA.
+   * rejected even if a password hash is somehow present — they sign in with
+   * Telegram, Google or Apple.
    */
   async loginWithPassword(email: string, password: string): Promise<AuthSessionDto> {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
@@ -216,6 +218,93 @@ export class AuthService {
       data: { userId: user.id, type: deviceType, locale: user.locale },
     });
 
+    const tokens = await this.tokens.issue(user.id, device.id);
+    return { ...tokens, user: this.toAuthUser(user) };
+  }
+
+  /**
+   * Customer sign-in with Google or Apple. The client obtains an OpenID
+   * Connect ID token from the provider's SDK and posts it here; we verify
+   * the signature, issuer and audience before trusting a single claim.
+   *
+   * `fallbackName` only matters for Apple, which reveals the user's name
+   * exactly once — in the first authorization response, never in the token.
+   */
+  async loginWithOAuth(
+    provider: OAuthProviderKey,
+    idToken: string,
+    fallbackName?: string | null,
+  ): Promise<AuthSessionDto> {
+    const identity = await this.oauth.verify(provider, idToken);
+    return this.finalizeOAuthSignIn(identity, fallbackName ?? null);
+  }
+
+  /**
+   * Resolve the identity to a user and issue a session. Three paths, in
+   * order:
+   *
+   *   1. We have seen this provider subject before — sign that user in.
+   *   2. The provider vouches for an email we already know — link the
+   *      social account to it, so a customer who started on Telegram and
+   *      later taps "Continue with Google" lands in the same profile
+   *      instead of a duplicate with an empty order history.
+   *   3. Otherwise create a fresh customer.
+   *
+   * Case 2 deliberately refuses staff and admin accounts. Those sign in
+   * with email + password on purpose, and letting a social login walk into
+   * one would mean anyone who can create a Google account on the brand's
+   * domain inherits its privileges.
+   */
+  private async finalizeOAuthSignIn(identity: OAuthIdentity, fallbackName: string | null): Promise<AuthSessionDto> {
+    const provider = OAuthProvider[identity.provider];
+    const name = identity.name ?? fallbackName;
+    const email = identity.email?.toLowerCase() ?? null;
+    const locale = identity.locale?.toLowerCase().startsWith('ru') ? Locale.RU : Locale.EN;
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const link = await tx.oAuthAccount.findUnique({
+        where: {
+          provider_providerUserId: { provider, providerUserId: identity.providerUserId },
+        },
+        include: { user: true },
+      });
+      if (link) {
+        // Backfill a name only while we have none — never overwrite one the
+        // customer edited in their profile.
+        if (name && !link.user.name) {
+          return tx.user.update({ where: { id: link.userId }, data: { name } });
+        }
+        return link.user;
+      }
+
+      if (email && identity.emailVerified) {
+        const byEmail = await tx.user.findUnique({ where: { email } });
+        if (byEmail) {
+          if (byEmail.role !== Role.CUSTOMER) {
+            throw new UnauthorizedException('This email belongs to a staff account — sign in with your password');
+          }
+          await tx.oAuthAccount.create({
+            data: { userId: byEmail.id, provider, providerUserId: identity.providerUserId },
+          });
+          return name && !byEmail.name ? tx.user.update({ where: { id: byEmail.id }, data: { name } }) : byEmail;
+        }
+      }
+
+      return tx.user.create({
+        data: {
+          email,
+          name,
+          locale,
+          oauthAccounts: { create: { provider, providerUserId: identity.providerUserId } },
+        },
+      });
+    });
+
+    if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
+
+    const device = await this.prisma.device.create({
+      data: { userId: user.id, type: 'WEB', locale: user.locale },
+    });
     const tokens = await this.tokens.issue(user.id, device.id);
     return { ...tokens, user: this.toAuthUser(user) };
   }

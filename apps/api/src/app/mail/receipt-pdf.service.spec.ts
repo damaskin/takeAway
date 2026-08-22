@@ -10,6 +10,8 @@ describe('ReceiptPdfService', () => {
     subtotalCents: 850,
     discountCents: 50,
     deliveryFeeCents: 0,
+    taxCents: 0,
+    taxIncluded: true,
     totalCents: 800,
     items: [
       { name: 'Latte', quantity: 2, totalCents: 600 },

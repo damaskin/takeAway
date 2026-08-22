@@ -2,11 +2,13 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import type { PickupSlot } from '@takeaway/shared-types';
+import { computeTax } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
-import { PromoService } from '../../core/loyalty/loyalty.service';
+import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 
@@ -219,22 +221,53 @@ interface Step {
               }
 
               @if (mode() === 'SCHEDULED') {
-                <label class="flex flex-col gap-1">
+                <div class="flex flex-col gap-1">
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
                     >{{ 'web.checkout.pickupAtLabel' | translate }}</span
                   >
-                  <input
-                    type="datetime-local"
-                    [value]="scheduledAt()"
-                    (change)="onScheduledChange($event)"
-                    [min]="minScheduled"
-                    style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
-                  />
+
+                  @if (slotsLoading()) {
+                    <span style="font-size: 13px; color: var(--color-text-tertiary)">{{
+                      'common.loading' | translate
+                    }}</span>
+                  } @else if (slots().length === 0) {
+                    <span style="font-size: 13px; color: var(--color-berry)">{{
+                      'web.checkout.noSlots' | translate
+                    }}</span>
+                  } @else {
+                    <div class="flex flex-wrap" style="gap: 8px">
+                      @for (slot of slots(); track slot.startsAt) {
+                        <button
+                          type="button"
+                          [disabled]="!slot.available"
+                          (click)="selectSlot(slot)"
+                          [title]="slot.available ? '' : ('web.checkout.slotFull' | translate)"
+                          [style.background]="
+                            scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-cream)'
+                          "
+                          [style.color]="
+                            slot.available
+                              ? scheduledAt() === slot.startsAt
+                                ? 'var(--color-foam)'
+                                : 'var(--color-espresso)'
+                              : 'var(--color-text-tertiary)'
+                          "
+                          [style.borderColor]="scheduledAt() === slot.startsAt ? 'transparent' : 'var(--color-border)'"
+                          [style.cursor]="slot.available ? 'pointer' : 'not-allowed'"
+                          [style.textDecoration]="slot.available ? 'none' : 'line-through'"
+                          style="padding: 8px 14px; border: 1px solid; border-radius: 999px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
+                        >
+                          {{ slotLabel(slot) }}
+                        </button>
+                      }
+                    </div>
+                  }
+
                   <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
                     'web.checkout.scheduledHint' | translate
                   }}</span>
-                </label>
+                </div>
               }
 
               <div>
@@ -291,6 +324,17 @@ interface Step {
                   >
                 </div>
               }
+              @if (pointsDiscountCents() > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
+                    >🏆 {{ 'web.checkout.pointsSpent' | translate: { points: pointsSpent() } }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
+                    >− {{ price(pointsDiscountCents()) }}</span
+                  >
+                </div>
+              }
               @if (giftCardCents() > 0) {
                 <div class="flex items-center justify-between">
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
@@ -300,6 +344,16 @@ interface Step {
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
                     >− {{ price(giftCardCents()) }}</span
                   >
+                </div>
+              }
+              @if (taxCents(c.subtotalCents) > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    (taxIncluded() ? 'common.taxIncluded' : 'common.tax') | translate
+                  }}</span>
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    price(taxCents(c.subtotalCents))
+                  }}</span>
                 </div>
               }
               <div class="flex items-center justify-between">
@@ -314,6 +368,64 @@ interface Step {
                 </span>
               </div>
             </section>
+
+            <!-- Loyalty points -->
+            @if (pointsBalance() >= pointsMin()) {
+              <section
+                data-testid="points-section"
+                class="w-full"
+                style="max-width: 500px; display: flex; flex-direction: column; gap: 8px"
+              >
+                <div class="flex items-center justify-between">
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+                    >{{ 'web.checkout.pointsLabel' | translate }}</span
+                  >
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                    'web.checkout.pointsBalance' | translate: { points: pointsBalance() }
+                  }}</span>
+                </div>
+
+                <div
+                  class="flex items-center"
+                  style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
+                >
+                  <span style="color: var(--color-text-tertiary)">🏆</span>
+                  <input
+                    [value]="pointsInput()"
+                    (input)="onPointsInput($event)"
+                    type="number"
+                    min="0"
+                    [max]="pointsBalance()"
+                    class="flex-1 outline-none bg-transparent"
+                    style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-primary)"
+                  />
+                  <button
+                    type="button"
+                    data-testid="points-apply"
+                    (click)="pointsSpent() > 0 ? clearPoints() : applyPoints()"
+                    [disabled]="pointsLoading()"
+                    class="flex items-center justify-center disabled:opacity-50"
+                    style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                  >
+                    @if (pointsLoading()) {
+                      …
+                    } @else if (pointsSpent() > 0) {
+                      {{ 'common.clear' | translate }}
+                    } @else {
+                      {{ 'common.apply' | translate }}
+                    }
+                  </button>
+                </div>
+                @if (pointsStatus()) {
+                  <span
+                    style="font-family: var(--font-sans); font-size: 12px"
+                    [style.color]="pointsSpent() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
+                    >{{ pointsStatus() }}</span
+                  >
+                }
+              </section>
+            }
 
             <!-- Promo code -->
             <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
@@ -488,6 +600,7 @@ export class CheckoutPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly orders = inject(OrdersApi);
   private readonly promo = inject(PromoService);
+  private readonly loyalty = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -498,7 +611,10 @@ export class CheckoutPage implements OnInit {
   readonly mode = signal<PickupMode>('ASAP');
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly payment = signal<PaymentMethod>('APPLE_PAY');
-  readonly scheduledAt = signal<string>(this.defaultScheduled());
+  /** ISO start of the chosen slot; empty until the customer picks one. */
+  readonly scheduledAt = signal<string>('');
+  readonly slots = signal<PickupSlot[]>([]);
+  readonly slotsLoading = signal(false);
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
   /** Whether the picked store advertises DELIVERY in `fulfillmentTypes`. */
@@ -523,6 +639,16 @@ export class CheckoutPage implements OnInit {
   readonly promoStatus = signal<string | null>(null);
   readonly promoLoading = signal(false);
 
+  // Loyalty points — the balance comes from the server and so does the
+  // quote, because both are server state the client must not invent.
+  readonly pointsBalance = signal(0);
+  readonly pointsMin = signal(100);
+  readonly pointsInput = signal(0);
+  readonly pointsSpent = signal(0);
+  readonly pointsDiscountCents = signal(0);
+  readonly pointsStatus = signal<string | null>(null);
+  readonly pointsLoading = signal(false);
+
   // Gift card state — same toggle pattern as promo.
   readonly giftCardInput = signal('');
   readonly giftCardCode = signal<string | null>(null);
@@ -533,6 +659,9 @@ export class CheckoutPage implements OnInit {
   readonly brandId = signal<string | null>(null);
   /** Store ID, needed for /delivery/quote. */
   readonly activeStoreId = signal<string | null>(null);
+  /** Store tax config — the same numbers the server settles the order with. */
+  readonly taxRateBps = signal(0);
+  readonly taxIncludedInPrice = signal(true);
 
   readonly contactForm = new FormGroup({
     customerName: new FormControl('', { nonNullable: true }),
@@ -544,8 +673,6 @@ export class CheckoutPage implements OnInit {
     city: new FormControl('', { nonNullable: true }),
     notes: new FormControl('', { nonNullable: true }),
   });
-
-  readonly minScheduled = this.toLocalInput(new Date(Date.now() + 10 * 60_000));
 
   readonly readyAt = computed<Date>(() => {
     if (this.mode() === 'ASAP') {
@@ -584,6 +711,13 @@ export class CheckoutPage implements OnInit {
   });
 
   ngOnInit(): void {
+    // Balance up front: the points section only renders when there is
+    // enough to redeem, and an empty section is worse than none.
+    this.loyalty.me().subscribe({
+      next: (account) => this.pointsBalance.set(account.pointsBalance),
+      error: () => this.pointsBalance.set(0),
+    });
+
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
       this.catalog.getStore(storeSlug).subscribe({
@@ -591,6 +725,8 @@ export class CheckoutPage implements OnInit {
           this.brandId.set(store.brandId);
           this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
           this.activeStoreId.set(store.id);
+          this.taxRateBps.set(store.taxRateBps);
+          this.taxIncludedInPrice.set(store.taxIncludedInPrice);
           this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
           this.refreshFeeQuote();
         },
@@ -603,6 +739,8 @@ export class CheckoutPage implements OnInit {
             this.brandId.set(first.brandId);
             this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
             this.activeStoreId.set(first.id);
+            this.taxRateBps.set(first.taxRateBps);
+            this.taxIncludedInPrice.set(first.taxIncludedInPrice);
             this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
             this.refreshFeeQuote();
           }
@@ -748,19 +886,93 @@ export class CheckoutPage implements OnInit {
     });
   }
 
+  onPointsInput(event: Event): void {
+    const raw = Number((event.target as HTMLInputElement).value);
+    this.pointsInput.set(Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0);
+    if (this.pointsSpent() > 0) this.clearPoints();
+  }
+
+  applyPoints(): void {
+    const cart = this.cart();
+    if (!cart) return;
+    const payable = Math.max(0, cart.subtotalCents - this.discountCents());
+
+    this.pointsLoading.set(true);
+    this.pointsStatus.set(null);
+    this.loyalty.quoteRedemption(this.pointsInput(), payable).subscribe({
+      next: (quote) => {
+        this.pointsLoading.set(false);
+        this.pointsBalance.set(quote.balance);
+        this.pointsMin.set(quote.minPoints);
+        this.pointsSpent.set(quote.points);
+        this.pointsDiscountCents.set(quote.discountCents);
+        if (quote.points === 0) {
+          // The server refused: too few points, too small an order, or an
+          // empty balance. Say which rather than silently doing nothing.
+          this.pointsStatus.set(this.translate.instant('web.checkout.pointsTooFew', { min: quote.minPoints }));
+          return;
+        }
+        this.pointsInput.set(quote.points);
+        this.pointsStatus.set(
+          this.translate.instant('web.checkout.pointsApplied', {
+            points: quote.points,
+            amount: this.price(quote.discountCents),
+          }),
+        );
+      },
+      error: (err) => {
+        this.pointsLoading.set(false);
+        this.pointsStatus.set(extractMessage(err));
+      },
+    });
+  }
+
+  clearPoints(): void {
+    this.pointsSpent.set(0);
+    this.pointsDiscountCents.set(0);
+    this.pointsStatus.set(null);
+  }
+
   clearGiftCard(): void {
     this.giftCardCode.set(null);
     this.giftCardCents.set(0);
     this.giftCardStatus.set(null);
   }
 
+  /**
+   * Runs the server's own tax function so the figure on the button is the
+   * figure that gets charged. A tax-exclusive store would otherwise quote
+   * 20.00 and take 21.75.
+   */
+  private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
+    return computeTax({
+      subtotalCents,
+      // Points behave as a discount, not a payment: the merchant is
+      // lowering the price, so the taxable base falls with it. A gift card
+      // is the opposite — see computeTax.
+      discountCents: this.discountCents() + this.pointsDiscountCents(),
+      deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
+      giftCardCents: this.giftCardCents(),
+      taxRateBps: this.taxRateBps(),
+      taxIncludedInPrice: this.taxIncludedInPrice(),
+    });
+  }
+
   totalCents(subtotalCents: number): number {
-    const fee = this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0;
-    return Math.max(0, subtotalCents - this.discountCents() - this.giftCardCents() + fee);
+    return this.breakdown(subtotalCents).totalCents;
+  }
+
+  taxCents(subtotalCents: number): number {
+    return this.breakdown(subtotalCents).taxCents;
+  }
+
+  taxIncluded(): boolean {
+    return this.taxIncludedInPrice();
   }
 
   selectMode(mode: PickupMode): void {
     this.mode.set(mode);
+    if (mode === 'SCHEDULED') this.loadSlots();
   }
 
   selectFulfillment(type: FulfillmentType): void {
@@ -771,8 +983,40 @@ export class CheckoutPage implements OnInit {
     this.payment.set(method);
   }
 
-  onScheduledChange(event: Event): void {
-    this.scheduledAt.set((event.target as HTMLInputElement).value);
+  selectSlot(slot: PickupSlot): void {
+    if (!slot.available) return;
+    this.scheduledAt.set(slot.startsAt);
+  }
+
+  slotLabel(slot: PickupSlot): string {
+    return this.formatTime(new Date(slot.startsAt));
+  }
+
+  /**
+   * Slots are only fetched when the customer actually asks to schedule —
+   * they are the store's live occupancy, so there is no point holding a
+   * stale copy behind an ASAP order.
+   */
+  private loadSlots(): void {
+    const storeId = this.activeStoreId();
+    if (!storeId) return;
+    this.slotsLoading.set(true);
+    this.catalog.getPickupSlots(storeId).subscribe({
+      next: (slots) => {
+        this.slots.set(slots);
+        this.slotsLoading.set(false);
+        // Pre-select the earliest slot the store can still honour.
+        const current = this.scheduledAt();
+        const stillValid = slots.some((s) => s.startsAt === current && s.available);
+        if (!stillValid) {
+          this.scheduledAt.set(slots.find((s) => s.available)?.startsAt ?? '');
+        }
+      },
+      error: () => {
+        this.slots.set([]);
+        this.slotsLoading.set(false);
+      },
+    });
   }
 
   placeOrder(): void {
@@ -795,12 +1039,13 @@ export class CheckoutPage implements OnInit {
     const input = {
       cartId: c.id,
       pickupMode: this.mode(),
-      pickupAt: this.mode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined,
+      pickupAt: this.mode() === 'SCHEDULED' ? this.scheduledAt() : undefined,
       fulfillmentType: this.fulfillmentType(),
       customerName: v.customerName || undefined,
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
       giftCardCode: this.giftCardCode() ?? undefined,
+      pointsToSpend: this.pointsSpent() || undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: d.addressLine.trim(),
@@ -838,19 +1083,6 @@ export class CheckoutPage implements OnInit {
   formatKm(metres: number): string {
     if (metres < 1000) return `${metres} m`;
     return `${(metres / 1000).toFixed(1)} km`;
-  }
-
-  private defaultScheduled(): string {
-    return this.toLocalInput(new Date(Date.now() + 30 * 60_000));
-  }
-
-  private toLocalInput(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const mi = String(date.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${d}T${h}:${mi}`;
   }
 }
 

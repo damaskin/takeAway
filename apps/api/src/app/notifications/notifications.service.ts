@@ -344,13 +344,18 @@ export class NotificationsService {
           body: `Свяжитесь с нами, если это неожиданно. / Please contact us if unexpected.`,
           orderId: order.id,
         };
+      case 'EXPIRED':
+        return {
+          kind: 'order_status',
+          title: `Заказ ${codeTag} отменён — оплата не прошла`,
+          body: `Промокод и подарочная карта возвращены. / Your promo code and gift card have been returned.`,
+          orderId: order.id,
+        };
       case 'IN_PROGRESS':
       case 'PICKED_UP':
-      case 'EXPIRED':
       default:
         // IN_PROGRESS is chatty (kitchen picked it up — customer sees it in
-        // the UI anyway); PICKED_UP the user already has the cup in hand;
-        // EXPIRED triggers a separate cleanup flow (not v1).
+        // the UI anyway); PICKED_UP the user already has the cup in hand.
         return null;
     }
   }

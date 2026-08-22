@@ -5,6 +5,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
@@ -100,5 +101,21 @@ export class OrdersController {
       take: take ? Number(take) : undefined,
       scopeStoreIds: scope === '*' ? undefined : [...scope],
     });
+  }
+
+  /**
+   * One order in full — items, payments, refunds and the event timeline.
+   * The refund endpoint has existed since M5 with nothing in the interface
+   * able to reach it; this is what the refund button reads.
+   */
+  @Get('admin/orders/:id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN', 'STORE_MANAGER')
+  @ApiOkResponse({ type: AdminOrderDetailDto })
+  async getAdminOrder(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') orderId: string,
+  ): Promise<AdminOrderDetailDto> {
+    const scope = await this.scope.getScope(user.id, user.role);
+    return this.orders.getForAdmin(orderId, scope === '*' ? undefined : [...scope]);
   }
 }

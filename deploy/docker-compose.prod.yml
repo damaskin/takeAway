@@ -106,7 +106,11 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-takeaway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-takeaway}?schema=public
       REDIS_URL: redis://redis:6379
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      # /api/health only proves the process is alive — it answered "ok" with
+      # Postgres face-down. /api/health/ready talks to Postgres and Redis and
+      # returns 503 when either is unreachable, so "healthy" here means the
+      # container can actually serve an order.
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health/ready']
       interval: 10s
       timeout: 5s
       retries: 6

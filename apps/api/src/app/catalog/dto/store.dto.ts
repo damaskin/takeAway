@@ -55,8 +55,14 @@ export class StoreListItemDto {
   @ApiProperty({ description: '0..100' })
   busyMeter!: number;
 
-  @ApiProperty({ description: 'ETA for an ASAP order, in seconds' })
+  @ApiProperty({ description: 'ETA for an ASAP order, in seconds. Store overhead plus the live queue.' })
   currentEtaSeconds!: number;
+
+  @ApiProperty({ description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 = no tax line.' })
+  taxRateBps!: number;
+
+  @ApiProperty({ description: 'True when the listed prices already include the tax.' })
+  taxIncludedInPrice!: boolean;
 
   @ApiProperty({ enum: Currency })
   currency!: Currency;

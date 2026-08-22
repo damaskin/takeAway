@@ -6,7 +6,7 @@
 
 > Синхронизируется при каждом значимом изменении кода/инфры/roadmap. Источник истины — `git log` + структура `apps/`/`libs/` + `docs/`.
 
-**Стадия:** активная разработка, релиз `v0.5.0-pos-integrations`. Локальный snapshot — после коммита `83adc1a` (2026-04-20+).
+**Стадия:** подготовка к пилоту. Закрыты треки авторизации, честного ETA, слотов, налогов, наблюдаемости, PWA, списания баллов и e2e. Единственный незакрытый блокер — приём платежей: провайдер меняется на банковский эквайринг, ждём документацию.
 
 ### 0.1. Прогресс по milestones
 
@@ -16,10 +16,19 @@
 | **M1** Auth + Catalog          | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны                                                                                                                                         |
 | **M2** Pre-order core          | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here»                                                                                               |
 | **M3** Лояльность              | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)                                                                                                                                           |
-| **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff                                                                                                                     |
+| **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff, операционные алерты в Telegram                                                                                     |
 | **M5** Admin расширенный       | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
 | **M6** Mobile (Flutter)        | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается.                                                                                              |
-| **M7** Scale & polish          | ❌     | Только базовые health-эндпоинты и preflight в CI                                                                                                                                                                                                    |
+| **M7** Scale & polish          | 🟡     | Sentry на API и всех четырёх SPA, readiness-проба с Postgres + Redis (деплой-гейт смотрит на неё), операционные алерты. Нагрузочное тестирование и A/B — не начаты                                                                                  |
+
+### 0.1a. Что осталось до пилота
+
+| Блок                           | Статус | Комментарий                                                                                                              |
+| ------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **Приём платежей**             | ❌     | Единственный блокер. Stripe-бэкенд написан, фронтенда нет ни в одном клиенте; провайдер меняется на банковский эквайринг |
+| Гейт «не готовим неоплаченное» | ❌     | `CREATED` пока в `OPEN_STATUSES` у KDS. Убирать тем же PR, которым включается оплата                                     |
+| Нагрузочный прогон часа пик    | ❌     | 60 заказов в час на точку                                                                                                |
+| Пилот в одной локации          | ❌     | Две недели с ручным откатом                                                                                              |
 
 ### 0.2. Треки за пределами оригинального ТЗ
 
@@ -191,15 +200,23 @@ takeaway/
 
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
-- **Customer**: вход через **Telegram** (TMA `initData` с HMAC + Telegram Login Widget на web). Никакой пароль не нужен.
+- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login Widget**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
+- **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
-- **OAuth**: Google, Apple, Telegram через `OAuthAccount` (привязка к существующему юзеру)
+- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты.
 - **JWT + refresh tokens**, logout invalidates refresh.
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
 - Мультидевайсность через таблицу `Device` (push token, locale, lastSeenAt)
-- **OTP / SMS**: не реализовано (резерв для рынков, где нет Telegram).
+- **OTP / SMS**: не реализовано. Раньше это был единственный запасной путь для рынков без Telegram — Google и Apple его закрывают.
+
+### 3.1a. PWA (web)
+
+- Манифест + иконки 192/512 (обычные и maskable) + apple-touch-icon и iOS-мета-теги. Ярлыки на «Мои заказы» и «Точки рядом»
+- Service worker регистрируется при старте приложения, не при включении пушей
+- Офлайн: кэшируется только оболочка и иконки. Ответы `/api/*` не кэшируются никогда — устаревший ETA хуже честной ошибки
+- nginx: `sw.js` отдаётся с `no-store` (иначе годовой `immutable`-кэш заморозил бы воркер навсегда), `.webmanifest` — с `application/manifest+json`
 
 ### 3.2. Каталог / меню
 
@@ -236,15 +253,23 @@ takeaway/
 - Корзина привязана к выбранной точке
 - При смене точки — предупреждение, если товара нет
 - Корзина синкается между устройствами через user_id (Redis)
-- **Расчёт времени готовности на лету**: при добавлении каждого товара бэкенд возвращает обновлённый ETA исходя из:
-  - Текущей загрузки точки (очередь заказов в KDS)
-  - Сложности состава (модификаторы влияют на время приготовления)
-  - Количества баристов онлайн
+- **Расчёт времени готовности на лету** (`KitchenLoadService`). ETA пересчитывается при каждом изменении корзины и ещё раз при чтении — очередь движется без нас:
+
+  ```
+  eta = Store.baseEtaSeconds + невыполненная работа точки / Store.kitchenParallelism + prepSeconds заказа
+  ```
+
+  - `baseEtaSeconds` — постоянная накладная точки: пробить, собрать, выдать
+  - невыполненная работа — сумма `Order.workSeconds` по статусам `CREATED / PAID / ACCEPTED / IN_PROGRESS`; заказ `IN_PROGRESS` считается наполовину сделанным
+  - `prepSeconds` — самая долгая позиция в заказе (не сумма): бариста тянет шот, пока взбивается молоко
+  - `workSeconds` — сумма по позициям с учётом количества: сколько заказ стоит кухне. Заказ из четырёх напитков грузит бар вчетверо сильнее, чем заставляет ждать своего клиента, поэтому это два разных числа
+  - Оба снимаются на заказ в момент создания — правка меню задним числом не переписывает историю
+
 - **Pickup time picker** — ключевой элемент чекаута:
   - `ASAP` (готово через ~X мин, таймер показывается крупно)
-  - `Scheduled` — выбор конкретного времени из доступных слотов с 5-минутным шагом
-  - Скользящее окно 15 мин до 24 ч вперёд
-  - Для ASAP — показываем погрешность (±2 мин)
+  - `Scheduled` — выбор из 15-минутных окон, которые точка успевает обслужить (`GET /stores/:id/pickup-slots`, 12 часов вперёд)
+  - Вместимость окна — `Store.slotCapacity`. Заполненное окно приходит помеченным и рисуется вычеркнутым, а не пропадает
+  - Проверка вместимости повторяется при создании заказа, включая ASAP: экран чекаута успевает устареть, и двое клиентов могут выбрать последнее окно одновременно
 - Чекаут:
   1. Выбор точки (если не выбрана) — с показом «готово через X мин»
   2. **Pickup time** (ASAP / scheduled) — центральный элемент
@@ -253,10 +278,22 @@ takeaway/
   5. Комментарий к заказу
   6. Оплата: Stripe Card / Apple Pay / Google Pay / Telegram Pay (только в TMA)
 - Тип получения: `PICKUP` (default), `DINE_IN` (secondary, если точка поддерживает), **`DELIVERY` — реализовано** (см. 3.11) с per-store fee overrides
+- **Часы работы точки** проверяются при создании заказа и при выдаче слотов — в таймзоне точки (`Intl`, не фиксированный сдвиг), с поддержкой ночных смен. Точка без расписания считается работающей круглосуточно
+- **Стоп-лист** блокирует добавление в корзину, изменение позиции и создание заказа. Записи с истёкшим `expiresAt` не блокируют
 - Минимальная сумма заказа (конфигурируется per store)
-- Расчёт итога: subtotal − discount + taxes = total
-- VAT по точке (разные страны)
+- Расчёт итога (`computeTax` в `@takeaway/utils`, общая функция для API и обоих чекаутов):
+
+  ```
+  taxable = max(0, subtotal − discount) + deliveryFee
+  налог в цене:  tax = taxable × rate / (10000 + rate);  total = taxable − giftCard
+  налог сверху:  tax = taxable × rate / 10000;           total = taxable + tax − giftCard
+  ```
+
+  Подарочная карта вычитается после налога — это способ оплаты, а не скидка
+
+- **VAT по точке**: `Store.taxRateBps` (500 = 5%, 2000 = 20%) и `Store.taxIncludedInPrice`. Второй флаг меняет сумму к оплате, а не только строку в чеке: в ОАЭ / Великобритании / ЕС цена налог уже содержит, в США он добавляется на кассе
 - После оплаты: генерация **order code** (4-значный) и **QR-кода** для получения
+- **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом
 
 ### 3.5. Заказы и live-статус
 
@@ -396,7 +433,8 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?)
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
-       busyMeter, currentEtaSeconds, minOrderCents,
+       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
+       taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
@@ -430,8 +468,9 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        fulfillmentType[PICKUP|DINE_IN|DELIVERY], pickupMode[ASAP|SCHEDULED], pickupAt,
        subtotalCents, discountCents, taxCents, totalCents, currency,
        orderCode (4-digit unique), qrToken (opaque),
-       paymentIntentId?, customerName?, customerPhone?, notes?,
-       couponCode?, giftCardCode?, giftCardCents,
+       paymentIntentId?, prepSeconds, workSeconds,                  // см. 3.4 — разные числа
+       customerName?, customerPhone?, notes?,
+       couponCode?, giftCardCode?, giftCardCents, pointsSpent, pointsDiscountCents,
        deliveryAddress*?, deliveryLat?, deliveryLng?, deliveryFeeCents, deliveryDistanceM?,
        riderId?,                                                   // FK → User (RIDER)
        posExternalId?,                                             // iiko/Poster order id
@@ -491,7 +530,7 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ## 6. API Contract (основные endpoints)
 
-> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Telegram (TMA initData / widget), а staff/RIDER — через email + password (с force-rotate при инвайте).
+> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Google, Apple или Telegram (widget на web, initData в TMA), а staff/RIDER — через email + password (с force-rotate при инвайте).
 
 ### 6.1. Auth & Identity
 
@@ -501,6 +540,8 @@ POST   /auth/kds/pin                  { storeId, pin } → tokens   (KDS lockscr
 POST   /auth/password/forgot         { email }
 POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
+POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
+POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 POST   /auth/telegram                { initData } → tokens           (TMA)
 POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens
 POST   /auth/telegram/link           { initData }                    (auth, привязка TG к существующему юзеру)
@@ -530,6 +571,7 @@ GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busy
 GET    /stores/:idOrSlug
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug
+GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
 ### 6.4. Cart / Order / Payment
@@ -607,6 +649,7 @@ PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
 GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
 
 # Orders / Promo / Gift cards / Campaigns
+GET    /admin/orders/:id             → состав, платежи, возвраты, лента событий (scope как у списка; 404 вне scope)
 GET                    /admin/orders                     (фильтрация по store/brand/status)
 POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
 GET/POST/PATCH         /admin/promo[/:id/status]
@@ -652,7 +695,8 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ### 6.12. Health / Config
 
 ```
-GET    /health                       → { status, db, redis, queues }
+GET    /health                       // liveness + build triple (version/commit/builtAt)
+GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
 GET    /config/features              → { features: { campaigns, giftCards, referrals, ... } }
 ```
 
