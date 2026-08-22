@@ -57,3 +57,47 @@ jobs:
 
       - name: Build (affected)
         run: pnpm nx affected -t build --parallel=3
+
+  # Separate job so a browser download does not slow the fast feedback loop
+  # above. The e2e suite drives the real Angular app against a stateful fake
+  # API, so it needs no Postgres and no Redis — and it had been failing
+  # silently for months because nothing ever ran it.
+  e2e:
+    name: Customer journey (e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the journey suite
+        run: pnpm nx e2e web-e2e
+
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: dist/.playwright/apps/web-e2e
+          retention-days: 7

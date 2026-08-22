@@ -371,7 +371,11 @@ interface Step {
 
             <!-- Loyalty points -->
             @if (pointsBalance() >= pointsMin()) {
-              <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
+              <section
+                data-testid="points-section"
+                class="w-full"
+                style="max-width: 500px; display: flex; flex-direction: column; gap: 8px"
+              >
                 <div class="flex items-center justify-between">
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
@@ -398,6 +402,7 @@ interface Step {
                   />
                   <button
                     type="button"
+                    data-testid="points-apply"
                     (click)="pointsSpent() > 0 ? clearPoints() : applyPoints()"
                     [disabled]="pointsLoading()"
                     class="flex items-center justify-center disabled:opacity-50"
