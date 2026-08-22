@@ -98,10 +98,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
         step3Body: 'Skip the queue — by code or QR.',
       },
       loyalty: {
-        title: 'takeAway Coffeepass',
+        badge: 'Rewards',
+        title: 'takeAway Rewards',
         subtitle: 'Earn points on every order, get free drinks, early access to new items and birthday gifts.',
         points: '2,450 points earned',
-        cta: 'Join Coffeepass',
+        cta: 'Start earning',
       },
       gift: {
         title: 'Gift cards',

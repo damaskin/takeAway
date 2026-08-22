@@ -1,0 +1,35 @@
+{
+  "name": "takeAway — Pre-order. Skip the queue.",
+  "short_name": "takeAway",
+  "description": "Pre-order coffee and food, watch it being made, and pick it up without waiting.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f3eb",
+  "theme_color": "#c77d3b",
+  "categories": ["food", "lifestyle", "shopping"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "My orders",
+      "short_name": "Orders",
+      "description": "Track an order you have already placed",
+      "url": "/orders?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Nearby stores",
+      "short_name": "Stores",
+      "description": "Find a store and see how soon it can have your order ready",
+      "url": "/stores?source=pwa-shortcut",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
