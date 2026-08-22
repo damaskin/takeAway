@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import type { GiftCardsService } from '../gift-cards/gift-cards.service';
+import type { LoyaltyService } from '../loyalty/loyalty.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { PromoService } from '../promo/promo.service';
@@ -25,6 +26,7 @@ interface Harness {
   prisma: { order: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
+  loyalty: { releaseForOrder: jest.Mock };
   realtime: { emitOrderStatusChanged: jest.Mock; emitKdsOrderChanged: jest.Mock };
   notifications: { notifyOrderStatus: jest.Mock };
 }
@@ -48,6 +50,7 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
 
   const promo = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const giftCards = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
+  const loyalty = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitOrderStatusChanged: jest.fn(), emitKdsOrderChanged: jest.fn() };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
 
@@ -59,11 +62,12 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
     config,
     promo as unknown as PromoService,
     giftCards as unknown as GiftCardsService,
+    loyalty as unknown as LoyaltyService,
     notifications as unknown as NotificationsService,
     realtime as unknown as RealtimeGateway,
   );
 
-  return { service, tx, prisma, promo, giftCards, realtime, notifications };
+  return { service, tx, prisma, promo, giftCards, loyalty, realtime, notifications };
 }
 
 describe('OrderExpiryService', () => {
@@ -94,6 +98,7 @@ describe('OrderExpiryService', () => {
 
       expect(h.promo.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
       expect(h.giftCards.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
+      expect(h.loyalty.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
     });
 
     it('records why the order died, not just that it did', async () => {
@@ -118,6 +123,7 @@ describe('OrderExpiryService', () => {
       // Nothing released, nothing announced — that customer keeps their coffee.
       expect(h.promo.releaseForOrder).not.toHaveBeenCalled();
       expect(h.giftCards.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.loyalty.releaseForOrder).not.toHaveBeenCalled();
       expect(h.tx.order.update).not.toHaveBeenCalled();
       expect(h.realtime.emitOrderStatusChanged).not.toHaveBeenCalled();
     });
@@ -157,13 +163,16 @@ describe('OrderExpiryService', () => {
       const before = Date.now();
 
       await h.service.sweep();
+      const after = Date.now();
 
       const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
       expect(where.status).toBe('CREATED');
-      const cutoff = where.createdAt.lt as Date;
-      // Twenty minutes back, give or take the time the call took.
-      expect(before - cutoff.getTime()).toBeGreaterThanOrEqual(20 * 60_000);
-      expect(before - cutoff.getTime()).toBeLessThan(20 * 60_000 + 5_000);
+      // The cutoff is twenty minutes behind whenever the sweep ran, which
+      // is somewhere in [before, after]. Bracketing both ends keeps this
+      // honest without depending on how long the call took.
+      const cutoff = (where.createdAt.lt as Date).getTime();
+      expect(cutoff).toBeGreaterThanOrEqual(before - 20 * 60_000);
+      expect(cutoff).toBeLessThanOrEqual(after - 20 * 60_000);
     });
 
     it('keeps going when one order refuses to expire', async () => {

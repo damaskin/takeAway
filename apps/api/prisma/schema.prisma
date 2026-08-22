@@ -833,6 +833,11 @@ model Order {
   /// gift card is later cancelled.
   giftCardCode        String?
   giftCardCents       Int             @default(0)
+  /// Loyalty points the customer burned on this order, and what they were
+  /// worth. Kept separate from `discountCents` so a receipt can say
+  /// "you spent 250 points" rather than just showing a smaller number.
+  pointsSpent         Int             @default(0)
+  pointsDiscountCents Int             @default(0)
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.

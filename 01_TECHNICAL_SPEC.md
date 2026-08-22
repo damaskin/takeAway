@@ -461,7 +461,7 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        orderCode (4-digit unique), qrToken (opaque),
        paymentIntentId?, prepSeconds, workSeconds,                  // см. 3.4 — разные числа
        customerName?, customerPhone?, notes?,
-       couponCode?, giftCardCode?, giftCardCents,
+       couponCode?, giftCardCode?, giftCardCents, pointsSpent, pointsDiscountCents,
        deliveryAddress*?, deliveryLat?, deliveryLng?, deliveryFeeCents, deliveryDistanceM?,
        riderId?,                                                   // FK → User (RIDER)
        posExternalId?,                                             // iiko/Poster order id

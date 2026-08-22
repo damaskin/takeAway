@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus, Prisma } from '@prisma/client';
 
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
@@ -37,6 +38,7 @@ export class OrderExpiryService {
     private readonly config: ConfigService,
     private readonly promo: PromoService,
     private readonly giftCards: GiftCardsService,
+    private readonly loyalty: LoyaltyService,
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
   ) {}
@@ -94,6 +96,7 @@ export class OrderExpiryService {
 
       await this.promo.releaseForOrder(tx, orderId);
       await this.giftCards.releaseForOrder(tx, orderId);
+      await this.loyalty.releaseForOrder(tx, orderId);
 
       return tx.order.update({
         where: { id: orderId },

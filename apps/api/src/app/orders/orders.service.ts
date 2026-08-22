@@ -159,8 +159,19 @@ export class OrdersService {
       throw new BadRequestException(promoResult.reason ?? 'Promo code invalid');
     }
 
-    const discountCents = promoResult?.discountCents ?? 0;
+    const promoDiscountCents = promoResult?.discountCents ?? 0;
     const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
+
+    // Loyalty points, quoted against what is still payable after the promo.
+    // Treated as a discount, not a payment: the merchant is reducing the
+    // price, so it reduces the taxable base — unlike a gift card, which was
+    // bought with money and only settles what is owed.
+    const pointsQuote = await this.loyalty.quoteRedemption(
+      userId,
+      dto.pointsToSpend ?? 0,
+      Math.max(0, subtotalCents - promoDiscountCents),
+    );
+    const discountCents = promoDiscountCents + pointsQuote.discountCents;
 
     // Gift card — applied AFTER promo discount and BEFORE delivery fee, so a
     // promo never expands the gift card draw. Validation throws on a bad
@@ -217,6 +228,8 @@ export class OrdersService {
             couponCode: dto.couponCode,
             giftCardCode: normalizedGiftCode,
             giftCardCents,
+            pointsSpent: pointsQuote.points,
+            pointsDiscountCents: pointsQuote.discountCents,
             // Delivery bits — nullable / 0 when the order is PICKUP.
             deliveryAddressLine: dto.deliveryAddressLine ?? null,
             deliveryCity: dto.deliveryCity ?? null,
@@ -255,6 +268,19 @@ export class OrdersService {
               userId,
             },
             created.id,
+            tx,
+          );
+        }
+
+        if (pointsQuote.points > 0) {
+          // Inside the transaction, so the debit and the order that spends
+          // it are all-or-nothing. debit() re-checks the balance, which
+          // closes the window between quoting and creating.
+          await this.loyalty.debit(
+            userId,
+            created.id,
+            pointsQuote.points,
+            `Order ${created.orderCode} · −${pointsQuote.points} pts`,
             tx,
           );
         }
@@ -612,6 +638,7 @@ export class OrdersService {
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.promo.releaseForOrder(tx, orderId);
       await this.giftCards.releaseForOrder(tx, orderId);
+      await this.loyalty.releaseForOrder(tx, orderId);
 
       return tx.order.update({
         where: { id: orderId },

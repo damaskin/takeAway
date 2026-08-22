@@ -8,7 +8,7 @@ import { computeTax } from '@takeaway/utils';
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
-import { PromoService } from '../../core/loyalty/loyalty.service';
+import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 
@@ -324,6 +324,17 @@ interface Step {
                   >
                 </div>
               }
+              @if (pointsDiscountCents() > 0) {
+                <div class="flex items-center justify-between">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
+                    >🏆 {{ 'web.checkout.pointsSpent' | translate: { points: pointsSpent() } }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
+                    >− {{ price(pointsDiscountCents()) }}</span
+                  >
+                </div>
+              }
               @if (giftCardCents() > 0) {
                 <div class="flex items-center justify-between">
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
@@ -357,6 +368,59 @@ interface Step {
                 </span>
               </div>
             </section>
+
+            <!-- Loyalty points -->
+            @if (pointsBalance() >= pointsMin()) {
+              <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
+                <div class="flex items-center justify-between">
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+                    >{{ 'web.checkout.pointsLabel' | translate }}</span
+                  >
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                    'web.checkout.pointsBalance' | translate: { points: pointsBalance() }
+                  }}</span>
+                </div>
+
+                <div
+                  class="flex items-center"
+                  style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
+                >
+                  <span style="color: var(--color-text-tertiary)">🏆</span>
+                  <input
+                    [value]="pointsInput()"
+                    (input)="onPointsInput($event)"
+                    type="number"
+                    min="0"
+                    [max]="pointsBalance()"
+                    class="flex-1 outline-none bg-transparent"
+                    style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-primary)"
+                  />
+                  <button
+                    type="button"
+                    (click)="pointsSpent() > 0 ? clearPoints() : applyPoints()"
+                    [disabled]="pointsLoading()"
+                    class="flex items-center justify-center disabled:opacity-50"
+                    style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                  >
+                    @if (pointsLoading()) {
+                      …
+                    } @else if (pointsSpent() > 0) {
+                      {{ 'common.clear' | translate }}
+                    } @else {
+                      {{ 'common.apply' | translate }}
+                    }
+                  </button>
+                </div>
+                @if (pointsStatus()) {
+                  <span
+                    style="font-family: var(--font-sans); font-size: 12px"
+                    [style.color]="pointsSpent() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
+                    >{{ pointsStatus() }}</span
+                  >
+                }
+              </section>
+            }
 
             <!-- Promo code -->
             <section class="w-full" style="max-width: 500px; display: flex; flex-direction: column; gap: 8px">
@@ -531,6 +595,7 @@ export class CheckoutPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly orders = inject(OrdersApi);
   private readonly promo = inject(PromoService);
+  private readonly loyalty = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -568,6 +633,16 @@ export class CheckoutPage implements OnInit {
   readonly discountCents = signal(0);
   readonly promoStatus = signal<string | null>(null);
   readonly promoLoading = signal(false);
+
+  // Loyalty points — the balance comes from the server and so does the
+  // quote, because both are server state the client must not invent.
+  readonly pointsBalance = signal(0);
+  readonly pointsMin = signal(100);
+  readonly pointsInput = signal(0);
+  readonly pointsSpent = signal(0);
+  readonly pointsDiscountCents = signal(0);
+  readonly pointsStatus = signal<string | null>(null);
+  readonly pointsLoading = signal(false);
 
   // Gift card state — same toggle pattern as promo.
   readonly giftCardInput = signal('');
@@ -631,6 +706,13 @@ export class CheckoutPage implements OnInit {
   });
 
   ngOnInit(): void {
+    // Balance up front: the points section only renders when there is
+    // enough to redeem, and an empty section is worse than none.
+    this.loyalty.me().subscribe({
+      next: (account) => this.pointsBalance.set(account.pointsBalance),
+      error: () => this.pointsBalance.set(0),
+    });
+
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
       this.catalog.getStore(storeSlug).subscribe({
@@ -799,6 +881,53 @@ export class CheckoutPage implements OnInit {
     });
   }
 
+  onPointsInput(event: Event): void {
+    const raw = Number((event.target as HTMLInputElement).value);
+    this.pointsInput.set(Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0);
+    if (this.pointsSpent() > 0) this.clearPoints();
+  }
+
+  applyPoints(): void {
+    const cart = this.cart();
+    if (!cart) return;
+    const payable = Math.max(0, cart.subtotalCents - this.discountCents());
+
+    this.pointsLoading.set(true);
+    this.pointsStatus.set(null);
+    this.loyalty.quoteRedemption(this.pointsInput(), payable).subscribe({
+      next: (quote) => {
+        this.pointsLoading.set(false);
+        this.pointsBalance.set(quote.balance);
+        this.pointsMin.set(quote.minPoints);
+        this.pointsSpent.set(quote.points);
+        this.pointsDiscountCents.set(quote.discountCents);
+        if (quote.points === 0) {
+          // The server refused: too few points, too small an order, or an
+          // empty balance. Say which rather than silently doing nothing.
+          this.pointsStatus.set(this.translate.instant('web.checkout.pointsTooFew', { min: quote.minPoints }));
+          return;
+        }
+        this.pointsInput.set(quote.points);
+        this.pointsStatus.set(
+          this.translate.instant('web.checkout.pointsApplied', {
+            points: quote.points,
+            amount: this.price(quote.discountCents),
+          }),
+        );
+      },
+      error: (err) => {
+        this.pointsLoading.set(false);
+        this.pointsStatus.set(extractMessage(err));
+      },
+    });
+  }
+
+  clearPoints(): void {
+    this.pointsSpent.set(0);
+    this.pointsDiscountCents.set(0);
+    this.pointsStatus.set(null);
+  }
+
   clearGiftCard(): void {
     this.giftCardCode.set(null);
     this.giftCardCents.set(0);
@@ -813,7 +942,10 @@ export class CheckoutPage implements OnInit {
   private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
     return computeTax({
       subtotalCents,
-      discountCents: this.discountCents(),
+      // Points behave as a discount, not a payment: the merchant is
+      // lowering the price, so the taxable base falls with it. A gift card
+      // is the opposite — see computeTax.
+      discountCents: this.discountCents() + this.pointsDiscountCents(),
       deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
       giftCardCents: this.giftCardCents(),
       taxRateBps: this.taxRateBps(),
@@ -908,6 +1040,7 @@ export class CheckoutPage implements OnInit {
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
       giftCardCode: this.giftCardCode() ?? undefined,
+      pointsToSpend: this.pointsSpent() || undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: d.addressLine.trim(),
