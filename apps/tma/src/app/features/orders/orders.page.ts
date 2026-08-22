@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -11,8 +11,12 @@ type Tab = 'ACTIVE' | 'HISTORY';
 /**
  * TMA Orders History — pencil 3Srti.
  *
- * Hits /me/orders?group= on tab switch. Only authenticated users see orders
- * (unauth TMA sessions show a login prompt instead of hitting the API).
+ * Hits /me/orders?group= whenever the tab changes or the session lands.
+ *
+ * There is no signed-out state to design for: inside Telegram the session
+ * is established before the first render. Being without one here means the
+ * API could not be reached, so the empty state says exactly that and the
+ * route guard keeps retrying behind it.
  */
 @Component({
   selector: 'app-tma-orders',
@@ -60,16 +64,16 @@ type Tab = 'ACTIVE' | 'HISTORY';
           class="flex flex-col items-center"
           style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: 32px 16px; gap: 10px"
         >
-          <span style="font-size: 28px">🔐</span>
+          <span style="font-size: 28px">📡</span>
           <span
             style="font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
-            >{{ 'tma.orders.signInTitle' | translate }}</span
+            >{{ 'tma.orders.offlineTitle' | translate }}</span
           >
           <p
             class="text-center"
             style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
           >
-            {{ 'tma.orders.signInSubtitle' | translate }}
+            {{ 'tma.orders.offlineSubtitle' | translate }}
           </p>
         </div>
       } @else if (loading()) {
@@ -156,7 +160,7 @@ type Tab = 'ACTIVE' | 'HISTORY';
     <app-tma-tab-bar />
   `,
 })
-export class TmaOrdersPage implements OnInit {
+export class TmaOrdersPage {
   readonly authStore = inject(TmaAuthStore);
   private readonly ordersApi = inject(OrdersApi);
 
@@ -166,18 +170,20 @@ export class TmaOrdersPage implements OnInit {
 
   readonly hasActive = computed(() => this.orders().some((o) => this.isActive(o.status)));
 
-  ngOnInit(): void {
-    if (this.authStore.isAuthenticated()) {
-      this.fetchFor(this.tab());
-    }
+  constructor() {
+    // Refetch on tab change and, crucially, the moment a late session
+    // arrives — the guard may resolve one after this screen has rendered.
+    effect(() => {
+      const tab = this.tab();
+      if (this.authStore.isAuthenticated()) {
+        this.fetchFor(tab);
+      }
+    });
   }
 
   switchTab(tab: Tab): void {
     if (this.tab() === tab) return;
     this.tab.set(tab);
-    if (this.authStore.isAuthenticated()) {
-      this.fetchFor(tab);
-    }
   }
 
   /** Returns a translation key — resolved via | translate in the template. */

@@ -24,6 +24,7 @@ import { PasswordForgotDto } from './dto/password-forgot.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
 import { PasswordResetDto } from './dto/password-reset.dto';
 import { NotificationPrefsDto, UpdateNotificationPrefsDto } from './dto/notification-prefs.dto';
+import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
@@ -44,6 +45,9 @@ const limits = {
   // enough that brute-forcing 10⁴ combos still trips the per-IP limiter long
   // before it lands.
   kdsPin: 8 * DEV_MULTIPLIER,
+  // Social sign-in. A failed attempt costs us a JWKS lookup at worst, but
+  // the endpoint mints sessions, so keep it in the same band as Telegram.
+  oauth: 20 * DEV_MULTIPLIER,
 };
 
 @ApiTags('auth')
@@ -117,6 +121,33 @@ export class AuthController {
   @ApiOkResponse({ type: AuthSessionDto })
   verifyTelegram(@Body() dto: TelegramAuthDto): Promise<AuthSessionDto> {
     return this.auth.verifyTelegram(dto.initData);
+  }
+
+  /**
+   * Customer sign-in with Google. The client runs Google Identity Services,
+   * which hands back a `credential` — that is the ID token we expect here.
+   */
+  @Public()
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.oauth, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  signInWithGoogle(@Body() dto: OAuthLoginDto): Promise<AuthSessionDto> {
+    return this.auth.loginWithOAuth('GOOGLE', dto.idToken);
+  }
+
+  /**
+   * Customer sign-in with Apple. `name` is only ever populated on the very
+   * first consent — Apple never repeats it, so the client forwards it once
+   * and we persist it then or not at all.
+   */
+  @Public()
+  @Post('apple')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.oauth, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  signInWithApple(@Body() dto: OAuthLoginDto): Promise<AuthSessionDto> {
+    return this.auth.loginWithOAuth('APPLE', dto.idToken, dto.name);
   }
 
   /**

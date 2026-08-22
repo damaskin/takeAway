@@ -1,10 +1,39 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { catchError, switchMap, throwError } from 'rxjs';
 
+import { TmaAuthService } from './tma-auth.service';
 import { TmaAuthStore } from './tma-auth.store';
 
+/**
+ * Attaches the bearer token and, on a 401, quietly rebuilds the session and
+ * replays the request.
+ *
+ * The Mini App has no login screen to fall back to, so a 401 must never
+ * reach the customer as one. Telegram's `initData` stays valid for the life
+ * of the web view, which means an expired access token is always
+ * recoverable without asking them anything — a checkout tapped twenty
+ * minutes after opening the bot just works.
+ */
 export const tmaAuthInterceptor: HttpInterceptorFn = (req, next) => {
-  const token = inject(TmaAuthStore).accessToken();
-  const authed = token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
-  return next(authed);
+  const store = inject(TmaAuthStore);
+  const auth = inject(TmaAuthService);
+
+  return next(withToken(req, store.accessToken())).pipe(
+    catchError((err: HttpErrorResponse) => {
+      if (err.status !== 401) return throwError(() => err);
+      // Never recurse through the endpoints that mint tokens.
+      if (req.url.includes('/auth/telegram') || req.url.includes('/auth/refresh')) {
+        return throwError(() => err);
+      }
+
+      return auth
+        .recoverSession()
+        .pipe(switchMap((token) => (token ? next(withToken(req, token)) : throwError(() => err))));
+    }),
+  );
 };
+
+function withToken(req: HttpRequest<unknown>, token: string | null): HttpRequest<unknown> {
+  return token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
+}

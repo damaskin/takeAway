@@ -11,6 +11,17 @@
       // The widget only works for a domain registered against this bot via
       // BotFather's /setdomain (e.g. `http://localhost:4200` in dev).
       window.__TELEGRAM_BOT_USERNAME = 'takaway_tgbot';
+
+      // Social sign-in. All three are public identifiers — the secrets stay
+      // on the API. Each must also be listed in the API's
+      // GOOGLE_OAUTH_CLIENT_IDS / APPLE_OAUTH_CLIENT_IDS, or the server
+      // rejects the token. Leave a value empty to hide that button.
+      window.__GOOGLE_CLIENT_ID = '';
+      // Apple *Services ID*, not the app bundle id.
+      window.__APPLE_CLIENT_ID = '';
+      // Must match a Return URL registered against the Services ID.
+      // Empty falls back to the current origin.
+      window.__APPLE_REDIRECT_URI = '';
     </script>
   </head>
   <body>

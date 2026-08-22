@@ -5,7 +5,13 @@ import { provideTakeawayI18n } from '@takeaway/i18n';
 
 import { appRoutes } from './app.routes';
 import { API_CONFIG, DEFAULT_API_CONFIG } from './core/api/api.config';
-import { TELEGRAM_AUTH_CONFIG, resolveTelegramBotUsername, type TelegramAuthConfig } from '@takeaway/ui-kit';
+import {
+  SOCIAL_AUTH_CONFIG,
+  TELEGRAM_AUTH_CONFIG,
+  resolveSocialAuthConfig,
+  resolveTelegramBotUsername,
+  type TelegramAuthConfig,
+} from '@takeaway/ui-kit';
 
 import { authInterceptor } from './core/auth/auth.interceptor';
 
@@ -20,6 +26,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     { provide: API_CONFIG, useValue: DEFAULT_API_CONFIG },
     { provide: TELEGRAM_AUTH_CONFIG, useValue: telegramConfig },
+    { provide: SOCIAL_AUTH_CONFIG, useValue: resolveSocialAuthConfig() },
     ...provideTakeawayI18n(),
   ],
 };

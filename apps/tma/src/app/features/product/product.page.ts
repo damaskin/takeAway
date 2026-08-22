@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -159,7 +159,7 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
             class="text-center"
             style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
           >
-            {{ 'tma.product.signInPrompt' | translate }}
+            {{ 'tma.product.offlinePrompt' | translate }}
           </p>
         }
       }
@@ -200,6 +200,17 @@ export class TmaProductPage implements OnInit, OnDestroy {
     for (const m of p.modifiers) total += (counts[m.id] ?? 0) * m.priceDeltaCents;
     return total;
   });
+
+  constructor() {
+    // The session can land after this screen renders (a retry from the
+    // route guard). Bring the Telegram main button back when it does,
+    // instead of leaving the customer looking at a dead product page.
+    effect(() => {
+      if (this.authStore.isAuthenticated() && this.product()) {
+        this.refreshMainButton();
+      }
+    });
+  }
 
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');

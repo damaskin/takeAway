@@ -191,15 +191,16 @@ takeaway/
 
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
-- **Customer**: вход через **Telegram** (TMA `initData` с HMAC + Telegram Login Widget на web). Никакой пароль не нужен.
+- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login Widget**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
+- **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
-- **OAuth**: Google, Apple, Telegram через `OAuthAccount` (привязка к существующему юзеру)
+- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты.
 - **JWT + refresh tokens**, logout invalidates refresh.
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
 - Мультидевайсность через таблицу `Device` (push token, locale, lastSeenAt)
-- **OTP / SMS**: не реализовано (резерв для рынков, где нет Telegram).
+- **OTP / SMS**: не реализовано. Раньше это был единственный запасной путь для рынков без Telegram — Google и Apple его закрывают.
 
 ### 3.2. Каталог / меню
 
@@ -491,7 +492,7 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ## 6. API Contract (основные endpoints)
 
-> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Telegram (TMA initData / widget), а staff/RIDER — через email + password (с force-rotate при инвайте).
+> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Google, Apple или Telegram (widget на web, initData в TMA), а staff/RIDER — через email + password (с force-rotate при инвайте).
 
 ### 6.1. Auth & Identity
 
@@ -501,6 +502,8 @@ POST   /auth/kds/pin                  { storeId, pin } → tokens   (KDS lockscr
 POST   /auth/password/forgot         { email }
 POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
+POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
+POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 POST   /auth/telegram                { initData } → tokens           (TMA)
 POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens
 POST   /auth/telegram/link           { initData }                    (auth, привязка TG к существующему юзеру)
