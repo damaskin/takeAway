@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { AuthModule } from '../auth/auth.module';
 import { CartModule } from '../cart/cart.module';
@@ -11,6 +12,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PromoModule } from '../promo/promo.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ReferralsModule } from '../referrals/referrals.module';
+import { OrderExpiryService } from './order-expiry.service';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
@@ -27,9 +29,10 @@ import { OrdersService } from './orders.service';
     ReferralsModule,
     KitchenModule,
     CartModule,
+    ScheduleModule.forRoot(),
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
-  exports: [OrdersService],
+  providers: [OrdersService, OrderExpiryService],
+  exports: [OrdersService, OrderExpiryService],
 })
 export class OrdersModule {}

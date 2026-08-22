@@ -512,20 +512,28 @@ export class OrdersService {
       throw new BadRequestException(`Cannot cancel an order in status ${order.status}`);
     }
 
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-        events: {
-          create: {
-            type: 'CANCELLED',
-            actorId: userId,
-            payload: { from: order.status } satisfies Prisma.InputJsonValue,
+    // Give back the promo redemption and the gift-card balance in the same
+    // transaction as the cancellation. Both were taken at creation, and a
+    // cancelled order that keeps holding them costs the customer twice.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.promo.releaseForOrder(tx, orderId);
+      await this.giftCards.releaseForOrder(tx, orderId);
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          events: {
+            create: {
+              type: 'CANCELLED',
+              actorId: userId,
+              payload: { from: order.status } satisfies Prisma.InputJsonValue,
+            },
           },
         },
-      },
-      include: { items: true, store: { select: { name: true } } },
+        include: { items: true, store: { select: { name: true } } },
+      });
     });
 
     this.realtime.emitOrderStatusChanged(
