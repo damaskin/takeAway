@@ -20,6 +20,9 @@ function makeService(overrides: Partial<PrismaStub> = {}): {
         baseEtaSeconds: 300,
         kitchenParallelism: 2,
         slotCapacity: 4,
+        timezone: 'UTC',
+        // Open around the clock, so these cases isolate capacity from hours.
+        workingHours: [],
       }),
     },
     order: {
@@ -222,6 +225,53 @@ describe('KitchenLoadService', () => {
       const where = prisma.order.count.mock.calls[0]?.[0]?.where;
       expect(where.pickupAt.gte.toISOString()).toBe('2026-08-22T08:15:00.000Z');
       expect(where.pickupAt.lt.toISOString()).toBe('2026-08-22T08:30:00.000Z');
+    });
+  });
+
+  describe('opening hours', () => {
+    /** Open 08:00-10:00 UTC every day. */
+    const morningOnly = {
+      store: {
+        findUnique: jest.fn().mockResolvedValue({
+          baseEtaSeconds: 300,
+          kitchenParallelism: 2,
+          slotCapacity: 4,
+          timezone: 'UTC',
+          workingHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+            weekday,
+            opensAt: 8 * 60,
+            closesAt: 10 * 60,
+            isClosed: false,
+          })),
+        }),
+      },
+    };
+
+    it('offers no slots outside opening hours', async () => {
+      const { service } = makeService(morningOnly);
+
+      const slots = await service.pickupSlots('store-1', new Date('2026-08-22T06:00:00.000Z'), 12);
+
+      expect(slots).not.toHaveLength(0);
+      const outside = slots.filter((s) => {
+        const hour = s.startsAt.getUTCHours();
+        return hour < 8 || hour >= 10;
+      });
+      // Closed windows are dropped, not greyed out — a struck-through 03:00
+      // is noise where a full 08:15 is information.
+      expect(outside).toEqual([]);
+    });
+
+    it('rejects a handover the store will not be open for', async () => {
+      const { service } = makeService(morningOnly);
+      await expect(service.assertOpenAt('store-1', new Date('2026-08-22T03:00:00.000Z'))).rejects.toThrow(
+        'closed at that time',
+      );
+    });
+
+    it('accepts a handover inside opening hours', async () => {
+      const { service } = makeService(morningOnly);
+      await expect(service.assertOpenAt('store-1', new Date('2026-08-22T09:00:00.000Z'))).resolves.toBeUndefined();
     });
   });
 

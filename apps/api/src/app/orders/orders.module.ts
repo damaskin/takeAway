@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
+import { CartModule } from '../cart/cart.module';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { GiftCardsModule } from '../gift-cards/gift-cards.module';
 import { KitchenModule } from '../kitchen/kitchen.module';
@@ -25,6 +26,7 @@ import { OrdersService } from './orders.service';
     GiftCardsModule,
     ReferralsModule,
     KitchenModule,
+    CartModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

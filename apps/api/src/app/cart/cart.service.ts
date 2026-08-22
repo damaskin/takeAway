@@ -42,6 +42,8 @@ export class CartService {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
+    await this.assertNotOnStopList(dto.storeId, [product.id]);
+
     const priced = this.priceItem(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
     const cart = await this.prisma.cart.upsert({
@@ -72,6 +74,8 @@ export class CartService {
       include: { cart: true, product: { include: { variations: true, modifiers: true } } },
     });
     if (!item || item.cart.userId !== userId) throw new NotFoundException('Item not found');
+
+    await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
     const variationIds = dto.variationIds ?? item.variationIds;
     const modifiers = dto.modifiers ?? (item.modifiersJson as Record<string, number>);
@@ -179,6 +183,31 @@ export class CartService {
     const { prepSeconds } = this.kitchen.timings(items);
     const quote = await this.kitchen.quote(storeId, prepSeconds);
     return quote.etaSeconds;
+  }
+
+  /**
+   * Refuse products the store has taken off sale.
+   *
+   * The catalogue already flags them with `onStopList`, but that is a hint
+   * for the UI — nothing stopped a stale screen, a deep link or a direct
+   * API call from putting an out-of-stock item on the kitchen board. An
+   * entry with a past `expiresAt` has auto-restocked and does not block.
+   */
+  async assertNotOnStopList(storeId: string, productIds: readonly string[]): Promise<void> {
+    if (productIds.length === 0) return;
+
+    const stopped = await this.prisma.stopListEntry.findMany({
+      where: {
+        storeId,
+        productId: { in: [...productIds] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { product: { select: { name: true } } },
+    });
+    if (stopped.length === 0) return;
+
+    const names = stopped.map((e) => e.product.name).join(', ');
+    throw new BadRequestException(`Currently unavailable at this store: ${names}`);
   }
 
   private async loadProduct(productId: string) {

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { OrderStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { isOpenAt, type WorkingHour } from './opening-hours';
 
 /**
  * Orders that still owe the kitchen work. CREATED and PAID are queued but
@@ -55,6 +56,8 @@ export interface StoreCapacity {
   baseEtaSeconds: number;
   kitchenParallelism: number;
   slotCapacity: number;
+  timezone: string;
+  workingHours: WorkingHour[];
 }
 
 /**
@@ -148,6 +151,9 @@ export class KitchenLoadService {
     const slots: PickupSlot[] = [];
     for (let t = start.getTime(); t < end.getTime(); t += SLOT_MS) {
       const startsAt = new Date(t);
+      // Closed windows are dropped rather than greyed out. A struck-through
+      // 03:00 is noise; a full 08:15 is information.
+      if (!isOpenAt(store.workingHours, startsAt, store.timezone)) continue;
       const taken = counts.get(t) ?? 0;
       slots.push({
         startsAt,
@@ -158,6 +164,18 @@ export class KitchenLoadService {
       });
     }
     return slots;
+  }
+
+  /**
+   * Refuse a handover the store will not be there for. Working hours are
+   * editable in admin and enforced nowhere else, so an order scheduled for
+   * 3am used to sail straight onto the kitchen board.
+   */
+  async assertOpenAt(storeId: string, at: Date): Promise<void> {
+    const store = await this.capacityFor(storeId);
+    if (!isOpenAt(store.workingHours, at, store.timezone)) {
+      throw new BadRequestException('The store is closed at that time');
+    }
   }
 
   /**
@@ -201,7 +219,15 @@ export class KitchenLoadService {
   async capacityFor(storeId: string): Promise<StoreCapacity> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: { baseEtaSeconds: true, kitchenParallelism: true, slotCapacity: true },
+      select: {
+        baseEtaSeconds: true,
+        kitchenParallelism: true,
+        slotCapacity: true,
+        timezone: true,
+        workingHours: {
+          select: { weekday: true, opensAt: true, closesAt: true, isClosed: true },
+        },
+      },
     });
     if (!store) throw new NotFoundException('Store not found');
     return store;

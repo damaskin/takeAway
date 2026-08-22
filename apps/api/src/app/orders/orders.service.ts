@@ -12,6 +12,7 @@ import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
+import { CartService } from '../cart/cart.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -68,6 +69,7 @@ export class OrdersService {
     private readonly giftCards: GiftCardsService,
     private readonly referrals: ReferralsService,
     private readonly kitchen: KitchenLoadService,
+    private readonly cart: CartService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -100,7 +102,17 @@ export class OrdersService {
       }
     }
 
+    // An item can go on the stop-list between the customer filling their
+    // basket and tapping pay. Re-check here, not just on add-to-cart.
+    await this.cart.assertNotOnStopList(
+      cart.storeId,
+      cart.items.map((i) => i.productId),
+    );
+
     const pickupAt = await this.resolvePickupAt(cart, dto);
+    // Working hours are edited in admin and were enforced nowhere: a 3am
+    // handover used to land straight on the kitchen board.
+    await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
     // Capacity applies to ASAP too. Without it a rush simply pushes every
     // quoted ETA out, which is the failure this whole model exists to stop.
     await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);
