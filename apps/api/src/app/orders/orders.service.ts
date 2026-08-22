@@ -13,6 +13,7 @@ import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
 import { ReceiptPdfService } from '../mail/receipt-pdf.service';
@@ -66,6 +67,7 @@ export class OrdersService {
     private readonly receiptPdf: ReceiptPdfService,
     private readonly giftCards: GiftCardsService,
     private readonly referrals: ReferralsService,
+    private readonly kitchen: KitchenLoadService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -98,7 +100,11 @@ export class OrdersService {
       }
     }
 
-    const pickupAt = this.resolvePickupAt(cart, dto);
+    const pickupAt = await this.resolvePickupAt(cart, dto);
+    // Capacity applies to ASAP too. Without it a rush simply pushes every
+    // quoted ETA out, which is the failure this whole model exists to stop.
+    await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);
+    const { prepSeconds, workSeconds } = this.kitchen.timings(cart.items);
 
     const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
@@ -174,6 +180,8 @@ export class OrdersService {
             fulfillmentType,
             pickupMode: dto.pickupMode,
             pickupAt,
+            prepSeconds,
+            workSeconds,
             subtotalCents,
             discountCents,
             taxCents,
@@ -617,13 +625,18 @@ export class OrdersService {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
-  private resolvePickupAt(
-    cart: Cart & { store: { currentEtaSeconds: number }; items: CartItem[] },
-    dto: CreateOrderDto,
-  ): Date {
+  /**
+   * When we promise to hand the order over.
+   *
+   * ASAP is quoted against the store's live queue rather than the value
+   * cached on the cart — that number was right when the customer last
+   * touched their basket, and four orders may have landed since.
+   */
+  private async resolvePickupAt(cart: Cart & { items: CartItem[] }, dto: CreateOrderDto): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
-      const etaSeconds = cart.etaSeconds > 0 ? cart.etaSeconds : cart.store.currentEtaSeconds;
-      return new Date(Date.now() + etaSeconds * 1000);
+      const { prepSeconds } = this.kitchen.timings(cart.items);
+      const quote = await this.kitchen.quote(cart.storeId, prepSeconds);
+      return new Date(Date.now() + quote.etaSeconds * 1000);
     }
     if (!dto.pickupAt) {
       throw new BadRequestException('pickupAt is required for SCHEDULED pickup mode');

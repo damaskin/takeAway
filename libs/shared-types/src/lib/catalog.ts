@@ -31,6 +31,19 @@ export interface StoreListItem {
   distanceMeters: number | null;
 }
 
+/**
+ * One 15-minute handover window. Full slots still come back, marked
+ * unavailable, so checkout can grey them out — a missing time reads as a
+ * bug, a greyed-out one reads as a busy morning.
+ */
+export interface PickupSlot {
+  startsAt: string;
+  endsAt: string;
+  taken: number;
+  capacity: number;
+  available: boolean;
+}
+
 export interface StoreWorkingHour {
   weekday: number;
   opensAt: number;

@@ -2,8 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import type { StoreFulfillment } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
+import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
 import type { ProductDetailDto } from './dto/product.dto';
 import type { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
@@ -15,6 +17,7 @@ export class CatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly flags: FeatureFlagsService,
+    private readonly kitchen: KitchenLoadService,
   ) {}
 
   /**
@@ -34,8 +37,13 @@ export class CatalogService {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
       },
-      orderBy: [{ currentEtaSeconds: 'asc' }, { name: 'asc' }],
+      orderBy: [{ name: 'asc' }],
     });
+
+    // One grouped query for every store's live queue, rather than one per
+    // pin. `currentEtaSeconds` on the wire is now a computed figure: the
+    // store's fixed overhead plus what the queue owes.
+    const waits = await this.kitchen.queueWaitByStore(stores);
 
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
     const radius = query.radius ?? 5000;
@@ -55,7 +63,7 @@ export class CatalogService {
         fulfillmentTypes: this.filterFulfillment(s.fulfillmentTypes),
         pickupPointType: s.pickupPointType,
         busyMeter: s.busyMeter,
-        currentEtaSeconds: s.currentEtaSeconds,
+        currentEtaSeconds: s.baseEtaSeconds + (waits.get(s.id) ?? 0),
         currency: s.currency,
         heroImageUrl: s.heroImageUrl,
         distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
@@ -65,6 +73,31 @@ export class CatalogService {
         if (a.distanceMeters !== null && b.distanceMeters !== null) return a.distanceMeters - b.distanceMeters;
         return a.currentEtaSeconds - b.currentEtaSeconds;
       });
+  }
+
+  /**
+   * Scheduled pickup windows a customer may actually choose. Resolves the
+   * slug first so the public API keeps taking either form.
+   */
+  async getPickupSlots(idOrSlug: string): Promise<PickupSlotDto[]> {
+    const store = await this.prisma.store.findFirst({
+      where: {
+        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
+        status: { not: 'CLOSED' },
+        brand: { moderationStatus: 'APPROVED' },
+      },
+      select: { id: true },
+    });
+    if (!store) throw new NotFoundException('Store not found');
+
+    const slots = await this.kitchen.pickupSlots(store.id);
+    return slots.map((slot) => ({
+      startsAt: slot.startsAt.toISOString(),
+      endsAt: slot.endsAt.toISOString(),
+      taken: slot.taken,
+      capacity: slot.capacity,
+      available: slot.available,
+    }));
   }
 
   async getStore(idOrSlug: string): Promise<StoreDetailDto> {
@@ -94,7 +127,8 @@ export class CatalogService {
       fulfillmentTypes: this.filterFulfillment(store.fulfillmentTypes),
       pickupPointType: store.pickupPointType,
       busyMeter: store.busyMeter,
-      currentEtaSeconds: store.currentEtaSeconds,
+      currentEtaSeconds:
+        store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store.id, store.kitchenParallelism)),
       currency: store.currency,
       heroImageUrl: store.heroImageUrl,
       distanceMeters: null,

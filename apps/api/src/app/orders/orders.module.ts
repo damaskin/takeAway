@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { GiftCardsModule } from '../gift-cards/gift-cards.module';
+import { KitchenModule } from '../kitchen/kitchen.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { MailModule } from '../mail/mail.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -23,6 +24,7 @@ import { OrdersService } from './orders.service';
     MailModule,
     GiftCardsModule,
     ReferralsModule,
+    KitchenModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

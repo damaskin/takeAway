@@ -22,6 +22,7 @@ import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { KdsModule } from './kds/kds.module';
+import { KitchenModule } from './kitchen/kitchen.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
@@ -60,6 +61,7 @@ import { UsersModule } from './users/users.module';
     AdminCatalogModule,
     AdminRidersModule,
     AdminStaffModule,
+    KitchenModule,
     CartModule,
     PromoModule,
     LoyaltyModule,

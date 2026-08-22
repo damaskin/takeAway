@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import type { PickupSlot } from '@takeaway/shared-types';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -219,22 +220,53 @@ interface Step {
               }
 
               @if (mode() === 'SCHEDULED') {
-                <label class="flex flex-col gap-1">
+                <div class="flex flex-col gap-1">
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
                     >{{ 'web.checkout.pickupAtLabel' | translate }}</span
                   >
-                  <input
-                    type="datetime-local"
-                    [value]="scheduledAt()"
-                    (change)="onScheduledChange($event)"
-                    [min]="minScheduled"
-                    style="padding: 12px 14px; border: 1px solid var(--color-border); background: var(--color-cream); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso); outline: none"
-                  />
+
+                  @if (slotsLoading()) {
+                    <span style="font-size: 13px; color: var(--color-text-tertiary)">{{
+                      'common.loading' | translate
+                    }}</span>
+                  } @else if (slots().length === 0) {
+                    <span style="font-size: 13px; color: var(--color-berry)">{{
+                      'web.checkout.noSlots' | translate
+                    }}</span>
+                  } @else {
+                    <div class="flex flex-wrap" style="gap: 8px">
+                      @for (slot of slots(); track slot.startsAt) {
+                        <button
+                          type="button"
+                          [disabled]="!slot.available"
+                          (click)="selectSlot(slot)"
+                          [title]="slot.available ? '' : ('web.checkout.slotFull' | translate)"
+                          [style.background]="
+                            scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-cream)'
+                          "
+                          [style.color]="
+                            slot.available
+                              ? scheduledAt() === slot.startsAt
+                                ? 'var(--color-foam)'
+                                : 'var(--color-espresso)'
+                              : 'var(--color-text-tertiary)'
+                          "
+                          [style.borderColor]="scheduledAt() === slot.startsAt ? 'transparent' : 'var(--color-border)'"
+                          [style.cursor]="slot.available ? 'pointer' : 'not-allowed'"
+                          [style.textDecoration]="slot.available ? 'none' : 'line-through'"
+                          style="padding: 8px 14px; border: 1px solid; border-radius: 999px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
+                        >
+                          {{ slotLabel(slot) }}
+                        </button>
+                      }
+                    </div>
+                  }
+
                   <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
                     'web.checkout.scheduledHint' | translate
                   }}</span>
-                </label>
+                </div>
               }
 
               <div>
@@ -498,7 +530,10 @@ export class CheckoutPage implements OnInit {
   readonly mode = signal<PickupMode>('ASAP');
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly payment = signal<PaymentMethod>('APPLE_PAY');
-  readonly scheduledAt = signal<string>(this.defaultScheduled());
+  /** ISO start of the chosen slot; empty until the customer picks one. */
+  readonly scheduledAt = signal<string>('');
+  readonly slots = signal<PickupSlot[]>([]);
+  readonly slotsLoading = signal(false);
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
   /** Whether the picked store advertises DELIVERY in `fulfillmentTypes`. */
@@ -544,8 +579,6 @@ export class CheckoutPage implements OnInit {
     city: new FormControl('', { nonNullable: true }),
     notes: new FormControl('', { nonNullable: true }),
   });
-
-  readonly minScheduled = this.toLocalInput(new Date(Date.now() + 10 * 60_000));
 
   readonly readyAt = computed<Date>(() => {
     if (this.mode() === 'ASAP') {
@@ -761,6 +794,7 @@ export class CheckoutPage implements OnInit {
 
   selectMode(mode: PickupMode): void {
     this.mode.set(mode);
+    if (mode === 'SCHEDULED') this.loadSlots();
   }
 
   selectFulfillment(type: FulfillmentType): void {
@@ -771,8 +805,40 @@ export class CheckoutPage implements OnInit {
     this.payment.set(method);
   }
 
-  onScheduledChange(event: Event): void {
-    this.scheduledAt.set((event.target as HTMLInputElement).value);
+  selectSlot(slot: PickupSlot): void {
+    if (!slot.available) return;
+    this.scheduledAt.set(slot.startsAt);
+  }
+
+  slotLabel(slot: PickupSlot): string {
+    return this.formatTime(new Date(slot.startsAt));
+  }
+
+  /**
+   * Slots are only fetched when the customer actually asks to schedule —
+   * they are the store's live occupancy, so there is no point holding a
+   * stale copy behind an ASAP order.
+   */
+  private loadSlots(): void {
+    const storeId = this.activeStoreId();
+    if (!storeId) return;
+    this.slotsLoading.set(true);
+    this.catalog.getPickupSlots(storeId).subscribe({
+      next: (slots) => {
+        this.slots.set(slots);
+        this.slotsLoading.set(false);
+        // Pre-select the earliest slot the store can still honour.
+        const current = this.scheduledAt();
+        const stillValid = slots.some((s) => s.startsAt === current && s.available);
+        if (!stillValid) {
+          this.scheduledAt.set(slots.find((s) => s.available)?.startsAt ?? '');
+        }
+      },
+      error: () => {
+        this.slots.set([]);
+        this.slotsLoading.set(false);
+      },
+    });
   }
 
   placeOrder(): void {
@@ -795,7 +861,7 @@ export class CheckoutPage implements OnInit {
     const input = {
       cartId: c.id,
       pickupMode: this.mode(),
-      pickupAt: this.mode() === 'SCHEDULED' ? new Date(this.scheduledAt()).toISOString() : undefined,
+      pickupAt: this.mode() === 'SCHEDULED' ? this.scheduledAt() : undefined,
       fulfillmentType: this.fulfillmentType(),
       customerName: v.customerName || undefined,
       notes: v.notes || undefined,
@@ -838,19 +904,6 @@ export class CheckoutPage implements OnInit {
   formatKm(metres: number): string {
     if (metres < 1000) return `${metres} m`;
     return `${(metres / 1000).toFixed(1)} km`;
-  }
-
-  private defaultScheduled(): string {
-    return this.toLocalInput(new Date(Date.now() + 30 * 60_000));
-  }
-
-  private toLocalInput(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    const h = String(date.getHours()).padStart(2, '0');
-    const mi = String(date.getMinutes()).padStart(2, '0');
-    return `${y}-${m}-${d}T${h}:${mi}`;
   }
 }
 

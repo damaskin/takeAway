@@ -483,8 +483,18 @@ model Store {
   pickupPointType       PickupPointType    @default(COUNTER)
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
-  // Cached ETA for an ASAP order placed now, in seconds.
-  currentEtaSeconds     Int                @default(600)
+  /// Fixed overhead on every order here, in seconds: ringing it up, plating,
+  /// handover. This is NOT the ETA a customer sees — that is this value plus
+  /// the live queue wait plus their own prep time. See KitchenLoadService.
+  baseEtaSeconds        Int                @default(600)
+  /// How many orders this kitchen genuinely works at once. Queue wait is
+  /// outstanding work divided by this, so it is the one knob that decides
+  /// how fast a morning rush drains.
+  kitchenParallelism    Int                @default(2)
+  /// Most orders this store will hand over inside one 15-minute slot. Once
+  /// a slot is full it stops being offered at checkout, which is what keeps
+  /// the ETA promise honest instead of just optimistic.
+  slotCapacity          Int                @default(8)
   minOrderCents         Int                @default(0)
   heroImageUrl          String?
   galleryUrls           String[]           @default([])
@@ -798,6 +808,14 @@ model Order {
   // Opaque token embedded in the pickup QR; independent of the short code.
   qrToken             String          @unique
   paymentIntentId     String?
+  /// Seconds the customer waits once the kitchen starts on their order —
+  /// the longest single item, because a barista pulls a shot while the milk
+  /// steams. Snapshotted at creation so a later menu edit cannot rewrite it.
+  prepSeconds         Int             @default(0)
+  /// Seconds of kitchen time this order consumes, summed across items. This
+  /// is what loads the queue for everyone behind it, and it is deliberately
+  /// a different number from prepSeconds.
+  workSeconds         Int             @default(0)
   customerName        String?
   customerPhone       String?
   notes               String?
@@ -848,6 +866,9 @@ model Order {
   @@index([storeId, status])
   @@index([status, pickupAt])
   @@index([riderId, status])
+  // Slot occupancy counts scan one store's handovers inside a 15-minute
+  // window, on every checkout render.
+  @@index([storeId, pickupAt])
 }
 
 model OrderItem {

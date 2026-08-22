@@ -272,15 +272,15 @@ export class PaymentsService {
       }),
     ]);
 
-    const store = await this.prisma.store.findUnique({
-      where: { id: updatedOrder.storeId },
-      select: { currentEtaSeconds: true },
-    });
+    // Count down to the handover time we already promised this customer,
+    // rather than re-reading a store-wide figure. They were told 08:42; the
+    // live timer has to agree with that, not with the queue's average.
+    const etaSeconds = Math.max(0, Math.round((updatedOrder.pickupAt.getTime() - Date.now()) / 1000));
     this.realtime.emitOrderStatusChanged(
       {
         orderId: updatedOrder.id,
         status: updatedOrder.status,
-        etaSeconds: store?.currentEtaSeconds ?? 0,
+        etaSeconds,
         occurredAt: new Date().toISOString(),
       },
       updatedOrder.userId,

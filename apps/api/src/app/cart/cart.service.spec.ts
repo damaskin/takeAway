@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartService } from './cart.service';
 
@@ -8,7 +9,13 @@ describe('CartService pricing', () => {
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [CartService, { provide: PrismaService, useValue: {} }],
+      providers: [
+        CartService,
+        { provide: PrismaService, useValue: {} },
+        // These cases only exercise priceItem, which never reaches the
+        // kitchen — the provider is here to satisfy the constructor.
+        { provide: KitchenLoadService, useValue: {} },
+      ],
     }).compile();
 
     service = moduleRef.get(CartService);

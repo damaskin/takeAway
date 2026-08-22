@@ -237,15 +237,23 @@ takeaway/
 - Корзина привязана к выбранной точке
 - При смене точки — предупреждение, если товара нет
 - Корзина синкается между устройствами через user_id (Redis)
-- **Расчёт времени готовности на лету**: при добавлении каждого товара бэкенд возвращает обновлённый ETA исходя из:
-  - Текущей загрузки точки (очередь заказов в KDS)
-  - Сложности состава (модификаторы влияют на время приготовления)
-  - Количества баристов онлайн
+- **Расчёт времени готовности на лету** (`KitchenLoadService`). ETA пересчитывается при каждом изменении корзины и ещё раз при чтении — очередь движется без нас:
+
+  ```
+  eta = Store.baseEtaSeconds + невыполненная работа точки / Store.kitchenParallelism + prepSeconds заказа
+  ```
+
+  - `baseEtaSeconds` — постоянная накладная точки: пробить, собрать, выдать
+  - невыполненная работа — сумма `Order.workSeconds` по статусам `CREATED / PAID / ACCEPTED / IN_PROGRESS`; заказ `IN_PROGRESS` считается наполовину сделанным
+  - `prepSeconds` — самая долгая позиция в заказе (не сумма): бариста тянет шот, пока взбивается молоко
+  - `workSeconds` — сумма по позициям с учётом количества: сколько заказ стоит кухне. Заказ из четырёх напитков грузит бар вчетверо сильнее, чем заставляет ждать своего клиента, поэтому это два разных числа
+  - Оба снимаются на заказ в момент создания — правка меню задним числом не переписывает историю
+
 - **Pickup time picker** — ключевой элемент чекаута:
   - `ASAP` (готово через ~X мин, таймер показывается крупно)
-  - `Scheduled` — выбор конкретного времени из доступных слотов с 5-минутным шагом
-  - Скользящее окно 15 мин до 24 ч вперёд
-  - Для ASAP — показываем погрешность (±2 мин)
+  - `Scheduled` — выбор из 15-минутных окон, которые точка успевает обслужить (`GET /stores/:id/pickup-slots`, 12 часов вперёд)
+  - Вместимость окна — `Store.slotCapacity`. Заполненное окно приходит помеченным и рисуется вычеркнутым, а не пропадает
+  - Проверка вместимости повторяется при создании заказа, включая ASAP: экран чекаута успевает устареть, и двое клиентов могут выбрать последнее окно одновременно
 - Чекаут:
   1. Выбор точки (если не выбрана) — с показом «готово через X мин»
   2. **Pickup time** (ASAP / scheduled) — центральный элемент
@@ -397,7 +405,7 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?)
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
-       busyMeter, currentEtaSeconds, minOrderCents,
+       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
@@ -431,7 +439,8 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        fulfillmentType[PICKUP|DINE_IN|DELIVERY], pickupMode[ASAP|SCHEDULED], pickupAt,
        subtotalCents, discountCents, taxCents, totalCents, currency,
        orderCode (4-digit unique), qrToken (opaque),
-       paymentIntentId?, customerName?, customerPhone?, notes?,
+       paymentIntentId?, prepSeconds, workSeconds,                  // см. 3.4 — разные числа
+       customerName?, customerPhone?, notes?,
        couponCode?, giftCardCode?, giftCardCents,
        deliveryAddress*?, deliveryLat?, deliveryLng?, deliveryFeeCents, deliveryDistanceM?,
        riderId?,                                                   // FK → User (RIDER)
@@ -533,6 +542,7 @@ GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busy
 GET    /stores/:idOrSlug
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug
+GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
 ### 6.4. Cart / Order / Payment

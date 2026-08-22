@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Modifier, Product, Variation } from '@prisma/client';
 
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
 import type { CartDto, CartItemDto } from './dto/cart.dto';
@@ -14,7 +15,10 @@ interface PricedItem {
 
 @Injectable()
 export class CartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly kitchen: KitchenLoadService,
+  ) {}
 
   async getForUserAndStore(userId: string, storeId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
@@ -24,7 +28,11 @@ export class CartService {
     if (!cart) {
       return this.emptyCartShape(userId, storeId);
     }
-    return this.toDto(cart);
+    // Re-quote on read: the stored value was right when the cart last
+    // changed, but the queue moves on without us. A customer who opened the
+    // app ten minutes ago should not be shown a wait from ten minutes ago.
+    const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
+    return this.toDto({ ...cart, etaSeconds });
   }
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
@@ -143,18 +151,12 @@ export class CartService {
   private async recalculate(cartId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { id: cartId },
-      include: {
-        items: { include: { product: { select: { name: true } } } },
-        store: { select: { currentEtaSeconds: true } },
-      },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
     if (!cart) throw new NotFoundException('Cart not found');
 
     const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
-    const maxItemPrep = cart.items.reduce((max, i) => Math.max(max, i.unitPrepSeconds), 0);
-    // Store baseline accounts for queue + staffing; single-item prep is the
-    // serial bottleneck. Sum-of-all would double-count parallel work.
-    const etaSeconds = cart.items.length === 0 ? 0 : cart.store.currentEtaSeconds + maxItemPrep;
+    const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
 
     await this.prisma.cart.update({
       where: { id: cart.id },
@@ -162,6 +164,21 @@ export class CartService {
     });
 
     return this.toDto({ ...cart, subtotalCents, etaSeconds });
+  }
+
+  /**
+   * ETA for what is in the cart right now, against the store's live queue.
+   * Zero for an empty cart — there is nothing to wait for, and quoting the
+   * queue wait alone would show a countdown for no order.
+   */
+  private async quoteEta(
+    storeId: string,
+    items: readonly { quantity: number; unitPrepSeconds: number }[],
+  ): Promise<number> {
+    if (items.length === 0) return 0;
+    const { prepSeconds } = this.kitchen.timings(items);
+    const quote = await this.kitchen.quote(storeId, prepSeconds);
+    return quote.etaSeconds;
   }
 
   private async loadProduct(productId: string) {

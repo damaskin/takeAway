@@ -120,6 +120,39 @@ export class CreateStoreDto {
   @Min(0)
   minOrderCents?: number;
 
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 3600,
+    description: 'Fixed per-order overhead in seconds. The queue wait is added on top.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  baseEtaSeconds?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 20,
+    description: 'Orders this kitchen genuinely works at once. Drives how fast a rush drains.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  kitchenParallelism?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    description: 'Most handovers this store will promise inside one 15-minute slot.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  slotCapacity?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsUrl()
