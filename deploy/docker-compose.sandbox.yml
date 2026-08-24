@@ -1,0 +1,103 @@
+# Isolated staging stack for testing the Agroprombank integration.
+#
+# Deliberately NOT the production stack: its own compose project name, its own
+# network, its own volumes, its own database. Nothing here is shared with
+# `docker-compose.prod.yml`, so bringing this up or tearing it down cannot
+# touch live orders.
+#
+# It also runs a *fake* bank (`agro-mock`). That is the whole point — it lets
+# the flow be exercised before the bank issues merchant credentials — and it is
+# exactly why this file must never be merged into the production stack.
+#
+# Bring up:  docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox up -d --build
+# Tear down: docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox down -v
+#
+# Published to the host: the API on ${SANDBOX_API_PORT} only.
+
+name: takeaway-agrotest
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: takeaway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sandbox}
+      POSTGRES_DB: takeaway_sandbox
+    volumes:
+      - sandbox_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U takeaway -d takeaway_sandbox']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agro-mock:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agro-mock
+    image: takeaway/agro-mock:sandbox
+    restart: unless-stopped
+    environment:
+      AGRO_MOCK_PORT: 8899
+      AGRO_MOCK_KEY_DIR: /secrets
+    volumes:
+      # Shared with the API: the mock generates the sandbox key pair here on
+      # first boot, the API signs with the merchant half and verifies replies
+      # against the bank half.
+      - sandbox_secrets:/secrets
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: takeaway/api:sandbox
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      agro-mock:
+        condition: service_started
+    ports:
+      - '${SANDBOX_API_PORT:-3100}:3000'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://takeaway:${POSTGRES_PASSWORD:-sandbox}@postgres:5432/takeaway_sandbox?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: 60m
+      POS_CREDENTIALS_KEY: ${POS_CREDENTIALS_KEY}
+      # Agroprombank, pointed at the fake gateway.
+      AGROPROMBANK_ENABLED: 'true'
+      AGROPROMBANK_ENDPOINT: http://agro-mock:8899/merchant/MerchantCAPService.asmx
+      AGROPROMBANK_MERCHANT_ID: M00012345
+      AGROPROMBANK_TERMINAL_ID: E1016682
+      AGROPROMBANK_PRIVATE_KEY_FILE: /secrets/merchant-private-key.pem
+      AGROPROMBANK_BANK_CERTIFICATE_FILE: /secrets/bank-public-key.pem
+      AGROPROMBANK_VERIFY_RESPONSES: 'true'
+      AGROPROMBANK_INVOICE_PREFIX: sbx
+      DELIVERY_ENABLED: 'true'
+    volumes:
+      - sandbox_secrets:/secrets:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+volumes:
+  sandbox_postgres_data:
+  sandbox_secrets:

@@ -17,7 +17,11 @@ import { fileURLToPath } from 'node:url';
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const KEY_DIR = resolve(HERE, '../../.secrets/agroprombank');
+// Overridable so the staging container can share one key directory with the
+// API through a mounted volume.
+export const KEY_DIR = process.env['AGRO_MOCK_KEY_DIR']
+  ? resolve(process.env['AGRO_MOCK_KEY_DIR'])
+  : resolve(HERE, '../../.secrets/agroprombank');
 
 export interface DevKeys {
   merchantPrivateKeyPath: string;
