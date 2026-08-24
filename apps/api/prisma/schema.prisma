@@ -34,6 +34,9 @@ enum Currency {
   THB
   IDR
   MDL
+  /// Transnistrian rouble (ПМР). No ISO 4217 code exists; the PRB directory
+  /// used by Agroprombank numbers it `000`.
+  RUP
 }
 
 enum DeviceType {
@@ -135,6 +138,26 @@ enum PaymentProvider {
   TELEGRAM
   APPLE_PAY
   GOOGLE_PAY
+  /// ЗАО «Агропромбанк» — tokenized card payments in the «Клевер» scheme.
+  AGROPROMBANK
+}
+
+/// Lifecycle of a card bound to the merchant through a payment provider.
+/// DEACTIVATED — we (or the customer) unbound it; REVOKED — the bank stopped
+/// honouring the token, e.g. the card was cancelled or blocked at the issuer.
+enum CardTokenStatus {
+  ACTIVE
+  DEACTIVATED
+  REVOKED
+}
+
+/// Two-step card binding: we ask the bank for a request id, it SMSes a
+/// one-time password, the customer types it back.
+enum CardBindingStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  EXPIRED
 }
 
 enum PaymentStatus {
@@ -240,31 +263,31 @@ enum PosSyncJobStatus {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id             String    @id @default(cuid())
-  phone          String?   @unique
-  email          String?   @unique
+  id                 String    @id @default(cuid())
+  phone              String?   @unique
+  email              String?   @unique
   /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
   /// set a password.
-  passwordHash   String?
+  passwordHash       String?
   /// Set to `true` when an admin invites the user with a temp password.
   /// The admin app routes a forced /change-password flow on login until
   /// the user rotates the hash, at which point this flips to `false`.
-  passwordMustChange Boolean  @default(false)
-  name           String?
-  dateOfBirth    DateTime?
-  avatarUrl      String?
-  locale         Locale    @default(EN)
-  currency       Currency  @default(USD)
-  telegramUserId BigInt?   @unique
-  role           Role      @default(CUSTOMER)
+  passwordMustChange Boolean   @default(false)
+  name               String?
+  dateOfBirth        DateTime?
+  avatarUrl          String?
+  locale             Locale    @default(EN)
+  currency           Currency  @default(USD)
+  telegramUserId     BigInt?   @unique
+  role               Role      @default(CUSTOMER)
   /// Customer-facing push toggles. Staff push (new-order for a brand,
   /// rider-assigned) ignores these — it's operational, not promotional.
-  notifyOrderUpdates Boolean @default(true)
-  notifyPromotions   Boolean @default(true)
-  blockedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  notifyOrderUpdates Boolean   @default(true)
+  notifyPromotions   Boolean   @default(true)
+  blockedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   devices             Device[]
   oauthAccounts       OAuthAccount[]
@@ -282,17 +305,20 @@ model User {
   // can remove riders without wiping the order history.
   assignedDeliveries  Order[]              @relation("RiderDeliveries")
   giftCardsPurchased  GiftCard[]           @relation("GiftCardsPurchased")
+  // Cards bound to the merchant for tokenized payments (Agroprombank).
+  cardTokens          CardToken[]
+  cardBindings        CardBindingRequest[]
 
   // Referral program — every user gets a unique code lazily on first read.
   // referredByUserId points at the user whose code unlocked this account's
   // first-order bonus. Locked at the moment the apply endpoint fires; we
   // never overwrite it.
-  referralCode        String?              @unique
+  referralCode        String?    @unique
   referredByUserId    String?
-  referredBy          User?                @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
-  referees            User[]               @relation("ReferredBy")
-  referralsAsReferrer Referral[]           @relation("ReferralsAsReferrer")
-  referralsAsReferee  Referral[]           @relation("ReferralsAsReferee")
+  referredBy          User?      @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referees            User[]     @relation("ReferredBy")
+  referralsAsReferrer Referral[] @relation("ReferralsAsReferrer")
+  referralsAsReferee  Referral[] @relation("ReferralsAsReferee")
 
   @@index([createdAt])
   @@index([referredByUserId])
@@ -414,21 +440,21 @@ model Brand {
 /// Telegram / email immediately. Counters are stamped after the fan-out
 /// so the admin can see how many users we reached vs. opted out.
 model Campaign {
-  id           String           @id @default(cuid())
-  brandId      String
-  title        String
-  body         String
-  channel      CampaignChannel
-  audience     CampaignAudience @default(ALL)
-  status       CampaignStatus   @default(DRAFT)
+  id          String           @id @default(cuid())
+  brandId     String
+  title       String
+  body        String
+  channel     CampaignChannel
+  audience    CampaignAudience @default(ALL)
+  status      CampaignStatus   @default(DRAFT)
   /// Target / sent / failed counters stamped during send.
-  targetCount  Int              @default(0)
-  sentCount    Int              @default(0)
-  failedCount  Int              @default(0)
-  scheduledAt  DateTime?
-  sentAt       DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  targetCount Int              @default(0)
+  sentCount   Int              @default(0)
+  failedCount Int              @default(0)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
@@ -742,9 +768,9 @@ model GiftCard {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
-  brand        Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  purchaser    User?                 @relation("GiftCardsPurchased", fields: [purchaserUserId], references: [id], onDelete: SetNull)
-  redemptions  GiftCardRedemption[]
+  brand       Brand                @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  purchaser   User?                @relation("GiftCardsPurchased", fields: [purchaserUserId], references: [id], onDelete: SetNull)
+  redemptions GiftCardRedemption[]
 
   @@index([brandId, status])
   @@index([purchaserUserId])
@@ -828,14 +854,14 @@ model Order {
   cancelledAt         DateTime?
   expiredAt           DateTime?
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  store           Store            @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  rider           User?            @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
-  items           OrderItem[]
-  events          OrderEvent[]
-  payments         Payment[]
-  pointsEntries    PointsLedger[]
-  promoRedemption  PromoRedemption?
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  rider              User?               @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
+  items              OrderItem[]
+  events             OrderEvent[]
+  payments           Payment[]
+  pointsEntries      PointsLedger[]
+  promoRedemption    PromoRedemption?
   giftCardRedemption GiftCardRedemption?
 
   @@index([userId, createdAt])
@@ -876,19 +902,106 @@ model Payment {
   id            String          @id @default(cuid())
   orderId       String
   provider      PaymentProvider @default(STRIPE)
-  providerRef   String? // Stripe PaymentIntent id, Telegram charge id, etc.
+  providerRef   String? // Stripe PaymentIntent id, Agroprombank operationid, etc.
   status        PaymentStatus   @default(PENDING)
   amountCents   Int
+  /// Tip routed to a recipient token alongside the payment (Agroprombank).
+  tipCents      Int             @default(0)
   refundedCents Int             @default(0)
   currency      Currency
+  /// Merchant-side operation identifier sent to Agroprombank as `invoiceid`.
+  /// Every later call (reverse, refund, status) addresses the operation by
+  /// this value, and the bank requires it to stay unique forever.
+  invoiceId     String?         @unique
+  /// Card the charge was made against, for tokenized providers.
+  cardTokenId   String?
   rawJson       Json?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cardToken CardToken? @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([providerRef])
+  @@index([cardTokenId])
+  @@index([provider, status])
+}
+
+/// A card the customer bound to the merchant, stored as an opaque provider
+/// token — no PAN, no expiry, nothing that could be replayed elsewhere.
+///
+/// The token is still a bearer credential (it authorises charges without any
+/// customer action), so it is kept encrypted at rest with the same AES-256-GCM
+/// key as the POS credentials. `tokenFingerprint` is a SHA-256 of the
+/// plaintext so we can look a token up and enforce uniqueness without
+/// decrypting every row.
+model CardToken {
+  id               String          @id @default(cuid())
+  userId           String
+  provider         PaymentProvider @default(AGROPROMBANK)
+  tokenCipher      String
+  tokenFingerprint String
+  /// Masked PAN as the bank returns it, e.g. `9104 **** **** 1234`.
+  maskedPan        String?
+  /// Masked cardholder embossing, e.g. `MA*** *******`.
+  embossing        String?
+  /// Issuer code the customer picked when binding (see CARD_INSTITUTES).
+  institute        String?
+  /// Customer-visible label; defaults to the masked PAN.
+  label            String?
+  status           CardTokenStatus @default(ACTIVE)
+  /// Last `cardstate` the bank reported: 1 active, -1 inactive.
+  cardState        Int?
+  isDefault        Boolean         @default(false)
+  lastCheckedAt    DateTime?
+  lastUsedAt       DateTime?
+  deactivatedAt    DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  bindings CardBindingRequest[]
+
+  // The bank derives the token from card + merchant, not from our user, so two
+  // accounts sharing one physical card get the same token. Scoping uniqueness
+  // to the user lets both of them keep a card rather than one silently
+  // stealing the other's row.
+  @@unique([userId, tokenFingerprint])
+  @@index([tokenFingerprint])
+  @@index([userId, status])
+}
+
+/// One attempt at binding a card. Holds only what the bank needs to re-issue
+/// the one-time password; the customer's input is never persisted beyond the
+/// last four digits and the phone number the SMS went to.
+model CardBindingRequest {
+  id            String            @id @default(cuid())
+  userId        String
+  provider      PaymentProvider   @default(AGROPROMBANK)
+  /// `requestid` returned by NewTokenRequest.
+  bankRequestId String
+  lastDigits    String
+  /// Mobile number for the one-time password, or the prepaid card id.
+  phone         String
+  institute     String
+  /// Whether the bank was asked to drop the customer's previous tokens.
+  deactivateOld Boolean           @default(false)
+  status        CardBindingStatus @default(PENDING)
+  attempts      Int               @default(0)
+  failureReason String?
+  cardTokenId   String?
+  expiresAt     DateTime
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardToken CardToken? @relation(fields: [cardTokenId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, bankRequestId])
+  @@index([userId, status])
+  @@index([expiresAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

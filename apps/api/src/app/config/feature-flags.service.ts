@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+export interface FeatureFlagsSnapshot {
+  deliveryEnabled: boolean;
+  agroprombankEnabled: boolean;
+}
+
 /**
  * Runtime feature flags. Single source of truth for the server — every
  * delivery gate (store feed filter, order validation, dispatcher endpoints)
@@ -25,9 +30,18 @@ export class FeatureFlagsService {
     return this.parseBool(this.config.get<string>('DELIVERY_ENABLED'));
   }
 
+  /**
+   * Agroprombank («Клевер») card payments. When off, the clients hide card
+   * binding and the pay-by-card button; the API refuses the routes anyway, so
+   * this only keeps customers from meeting a dead end.
+   */
+  get agroprombankEnabled(): boolean {
+    return this.parseBool(this.config.get<string>('AGROPROMBANK_ENABLED'));
+  }
+
   /** Serialized payload for the `/config/features` endpoint. */
-  snapshot(): { deliveryEnabled: boolean } {
-    return { deliveryEnabled: this.deliveryEnabled };
+  snapshot(): FeatureFlagsSnapshot {
+    return { deliveryEnabled: this.deliveryEnabled, agroprombankEnabled: this.agroprombankEnabled };
   }
 
   private parseBool(raw: string | undefined): boolean {

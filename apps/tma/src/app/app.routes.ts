@@ -27,6 +27,10 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/order-status/order-status.page').then((m) => m.TmaOrderStatusPage),
   },
   {
+    path: 'cards',
+    loadComponent: () => import('./features/payment-cards/payment-cards.page').then((m) => m.TmaPaymentCardsPage),
+  },
+  {
     path: 'profile',
     loadComponent: () => import('./features/profile/profile.page').then((m) => m.TmaProfilePage),
   },

@@ -5,6 +5,7 @@ import { OrdersService } from '../orders/orders.service';
 import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsService } from './payments.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
@@ -66,6 +67,7 @@ describe('PaymentsService.handleWebhook', () => {
 
     orders = {
       creditLoyaltyForPayment: jest.fn().mockResolvedValue(undefined),
+      sendPaymentMail: jest.fn().mockResolvedValue(undefined),
     };
 
     // Add items to the mocked findUnique for the KDS payload enrichment step.
@@ -106,6 +108,10 @@ describe('PaymentsService.handleWebhook', () => {
     const module = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        // The post-payment fan-out is provider-agnostic and lives in
+        // OrderSettlementService; wire the real one so this test still covers
+        // the whole path from webhook to KDS broadcast.
+        OrderSettlementService,
         { provide: PrismaService, useValue: prisma },
         {
           provide: StripeConfig,

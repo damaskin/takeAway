@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
@@ -8,6 +9,8 @@ interface ProfileRow {
   icon: string;
   label: string;
   value?: string;
+  /** Router path; rows without one are not wired up yet. */
+  route?: string;
 }
 
 /**
@@ -81,6 +84,7 @@ interface ProfileRow {
         @for (row of rows; track row.label; let last = $last) {
           <button
             type="button"
+            (click)="open(row)"
             class="flex items-center"
             [style.borderBottom]="last ? 'none' : '1px solid var(--color-border-light)'"
             style="height: 52px; padding: 0 16px; gap: 14px"
@@ -118,15 +122,20 @@ interface ProfileRow {
 export class TmaProfilePage {
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
+  private readonly router = inject(Router);
 
   // Labels and value are translation keys — resolved with | translate in the template.
   readonly rows: ProfileRow[] = [
     { icon: '👤', label: 'web.profile.sections.personal' },
-    { icon: '💳', label: 'web.profile.sections.payment' },
+    { icon: '💳', label: 'web.profile.sections.payment', route: '/cards' },
     { icon: '🎁', label: 'web.profile.sections.gift' },
     { icon: '🔔', label: 'web.profile.sections.notifications' },
     { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
   ];
+
+  open(row: ProfileRow): void {
+    if (row.route) void this.router.navigate([row.route]);
+  }
 
   displayName(): string {
     return this.authStore.user()?.name || this.translate.instant('tma.profile.fallbackName');
