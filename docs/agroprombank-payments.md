@@ -205,7 +205,62 @@ Telegram mini app:
 - With no card bound, or with the flag off, checkout places the order unpaid —
   exactly how it behaved before this integration.
 
-## 9. Going live checklist
+## 9. Testing before the bank issues credentials
+
+Nothing here can talk to the real gateway without a bank-issued certificate, so
+the repo ships a sandbox that speaks the same protocol —
+`apps/api/src/app/payments/agroprombank/testing/sandbox-bank.ts`. It verifies
+our signature and signs its own replies, so a broken canonicalization fails
+against it exactly as it would fail against the bank.
+
+The same implementation backs three things, which is why they cannot drift:
+
+| Surface                                            | Command                                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Protocol test suite                                | `npx jest --config apps/api/jest.config.cts --testPathPatterns agroprombank` |
+| Standalone gateway for local dev                   | `pnpm agro:mock`                                                             |
+| Sandbox stack (API + Postgres + Redis + fake bank) | `deploy/docker-compose.sandbox.yml`                                          |
+
+Local development against the mock:
+
+```bash
+pnpm agro:dev-keys
+```
+
+That prints the environment to paste into `.env` — endpoint, merchant id and
+the generated key paths. Then `pnpm agro:mock` in one terminal and the API in
+another.
+
+Test affordances the sandbox offers, since there is no real SMS:
+
+- `GET /__sandbox/otp/:requestid` — the one-time password the bank "sent"
+- `GET /__sandbox/state` — every token request, token and operation
+- card ending `0000` refuses to bind
+- an amount of exactly `66600` is declined for insufficient funds
+
+### Sandbox stack
+
+`deploy/docker-compose.sandbox.yml` brings up an isolated stack — its own
+compose project, network, volumes and database, so it cannot touch production:
+
+```bash
+docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox up -d --build
+```
+
+The API binds to **loopback only**. Docker publishes ports straight into
+iptables and bypasses ufw, so a normal port mapping would put a gateway backed
+by a fake bank on the public internet. Reach it through a tunnel:
+
+```bash
+ssh -L 3100:127.0.0.1:3100 <host>
+```
+
+`tools/agroprombank-mock/smoke.mjs` then walks the whole customer path against
+it — bind a card, order, charge, settle, refund, decline, unbind — asserting
+the outcome at each step. It is re-runnable; it clears what the previous run
+left behind.
+
+## 10. Going live checklist
 
 - [ ] Merchant certificate generated with the E-Commerce terminal purpose and
       installed as `AGROPROMBANK_PRIVATE_KEY_FILE`.
