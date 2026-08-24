@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 
-import { CARD_INSTITUTES } from '../agroprombank.config';
+import { CARD_INSTITUTES } from '../constants';
 
 const INSTITUTE_CODES = CARD_INSTITUTES.map((i) => i.code);
 

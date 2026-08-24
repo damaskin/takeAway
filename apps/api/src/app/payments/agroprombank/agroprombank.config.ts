@@ -2,18 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'node:fs';
 
-/** Bank-issued issuer codes a customer picks from when binding a card. */
-export const CARD_INSTITUTES = [
-  { code: '0001', name: 'ЗАО «Агропромбанк»' },
-  { code: '0002', name: 'ОАО «Эксимбанк»' },
-  { code: '0003', name: 'ЗАО «Сбербанк»' },
-] as const;
+import { DEFAULT_ENDPOINT, DEFAULT_NAMESPACE } from './constants';
 
-export type CardInstituteCode = (typeof CARD_INSTITUTES)[number]['code'];
-
-export const DEFAULT_ENDPOINT = 'https://ws.agroprombank.com/merchant/MerchantCAPService.asmx';
-/** `targetNamespace` of MerchantCAPService.asmx — also the SOAPAction prefix. */
-export const DEFAULT_NAMESPACE = 'http://services.agroprombank.com';
+// Re-exported so existing imports keep working; the definitions live in a
+// framework-free module that standalone tooling can also import.
+export { CARD_INSTITUTES, DEFAULT_ENDPOINT, DEFAULT_NAMESPACE, type CardInstituteCode } from './constants';
 
 /**
  * Configuration for the Agroprombank («Клевер») recurring-payments gateway.
