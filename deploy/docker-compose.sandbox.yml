@@ -73,7 +73,11 @@ services:
       agro-mock:
         condition: service_started
     ports:
-      - '${SANDBOX_API_PORT:-3100}:3000'
+      # Bound to loopback deliberately. Docker publishes ports straight into
+      # iptables, bypassing ufw — a `3100:3000` mapping would put a gateway
+      # backed by a *fake* bank on the public internet. Reach it with:
+      #   ssh -L 3100:127.0.0.1:3100 <host>
+      - '127.0.0.1:${SANDBOX_API_PORT:-3100}:3000'
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://takeaway:${POSTGRES_PASSWORD:-sandbox}@postgres:5432/takeaway_sandbox?schema=public

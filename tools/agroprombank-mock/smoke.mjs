@@ -48,7 +48,9 @@ async function api(method, path, body) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      // Only when there really is a body: Fastify rejects an empty body that
+      // claims to be JSON, which would make a bodyless DELETE look like a 400.
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -86,6 +88,20 @@ const customer = await prisma.user.upsert({
 });
 token = mintToken(customer.id);
 ok('покупатель готов', customer.id);
+
+// Wipe what an earlier run left behind so the script can be re-run as-is.
+const priorOrders = await prisma.order.findMany({ where: { userId: customer.id }, select: { id: true } });
+const priorOrderIds = priorOrders.map((o) => o.id);
+await prisma.pointsLedger.deleteMany({ where: { userId: customer.id } });
+await prisma.payment.deleteMany({ where: { orderId: { in: priorOrderIds } } });
+await prisma.orderEvent.deleteMany({ where: { orderId: { in: priorOrderIds } } });
+await prisma.orderItem.deleteMany({ where: { orderId: { in: priorOrderIds } } });
+await prisma.order.deleteMany({ where: { id: { in: priorOrderIds } } });
+await prisma.cartItem.deleteMany({ where: { cart: { userId: customer.id } } });
+await prisma.cart.deleteMany({ where: { userId: customer.id } });
+await prisma.cardBindingRequest.deleteMany({ where: { userId: customer.id } });
+await prisma.cardToken.deleteMany({ where: { userId: customer.id } });
+ok('состояние прошлого прогона очищено', `заказов: ${priorOrderIds.length}`);
 
 // ── Card binding ────────────────────────────────────────────────────────────
 step('Привязка карты: два шага с одноразовым паролем из СМС');
