@@ -30,6 +30,7 @@
     "prisma:reset": "prisma migrate reset --schema=apps/api/prisma/schema.prisma --force",
     "agro:mock": "tsx tools/agroprombank-mock/server.ts",
     "agro:dev-keys": "tsx tools/agroprombank-mock/dev-keys.ts",
+    "agro:probe": "tsx tools/agroprombank-probe.ts",
     "prepare": "husky"
   },
   "prisma": {
