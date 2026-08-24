@@ -50,6 +50,9 @@ services:
     environment:
       AGRO_MOCK_PORT: 8899
       AGRO_MOCK_KEY_DIR: /secrets
+      # The API container runs as a different user; these are throwaway
+      # sandbox keys, so relaxing the mode is fine here and only here.
+      AGRO_MOCK_KEY_MODE: shared
     volumes:
       # Shared with the API: the mock generates the sandbox key pair here on
       # first boot, the API signs with the merchant half and verifies replies

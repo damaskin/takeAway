@@ -23,6 +23,16 @@ export const KEY_DIR = process.env['AGRO_MOCK_KEY_DIR']
   ? resolve(process.env['AGRO_MOCK_KEY_DIR'])
   : resolve(HERE, '../../.secrets/agroprombank');
 
+/**
+ * File mode for the generated private keys — owner-only by default.
+ *
+ * The staging stack shares one key directory between two containers running as
+ * different users, so it sets `shared` (0644). That is acceptable only because
+ * these are throwaway sandbox keys; bank-issued material must never be world
+ * readable.
+ */
+const PRIVATE_KEY_MODE = process.env['AGRO_MOCK_KEY_MODE'] === 'shared' ? 0o644 : 0o600;
+
 export interface DevKeys {
   merchantPrivateKeyPath: string;
   merchantPublicKeyPath: string;
@@ -51,7 +61,7 @@ export function ensureDevKeys(): DevKeys {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     });
-    writeFileSync(privatePath, privateKey, { mode: 0o600 });
+    writeFileSync(privatePath, privateKey, { mode: PRIVATE_KEY_MODE });
     writeFileSync(publicPath, publicKey, { mode: 0o644 });
     // eslint-disable-next-line no-console
     console.log(`[dev-keys] generated ${side} key pair → ${privatePath}`);
