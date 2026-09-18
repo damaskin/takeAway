@@ -1,12 +1,19 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { IsString, Matches } from 'class-validator';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminStaffService } from './admin-staff.service';
 import { AddStaffDto, ChangeStaffRoleDto } from './dto/admin-staff.dto';
+
+class SetKdsPinDto {
+  @IsString()
+  @Matches(/^[0-9]{4,6}$/)
+  pin!: string;
+}
 
 @ApiTags('admin: staff')
 @ApiBearerAuth()
@@ -48,5 +55,26 @@ export class AdminStaffController {
     @Param('userId') userId: string,
   ): Promise<void> {
     await this.staff.remove(storeId, userId, user);
+  }
+
+  @Put(':userId/kds-pin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async setKdsPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Param('userId') userId: string,
+    @Body() dto: SetKdsPinDto,
+  ): Promise<void> {
+    await this.staff.setKdsPin(storeId, userId, dto.pin, user);
+  }
+
+  @Delete(':userId/kds-pin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async clearKdsPin(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('storeId') storeId: string,
+    @Param('userId') userId: string,
+  ): Promise<void> {
+    await this.staff.clearKdsPin(storeId, userId, user);
   }
 }

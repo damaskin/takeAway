@@ -37,7 +37,12 @@ function base64url(input) {
 function mintToken(userId) {
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = base64url(
-    JSON.stringify({ sub: userId, jti: randomUUID(), iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 }),
+    JSON.stringify({
+      sub: userId,
+      jti: randomUUID(),
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }),
   );
   const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
@@ -107,14 +112,22 @@ ok('состояние прошлого прогона очищено', `зак�
 step('Привязка карты: два шага с одноразовым паролем из СМС');
 
 const institutes = await api('GET', '/payments/agroprombank/institutes');
-check(institutes.status === 200 && institutes.body.length === 3, 'список банков-эмитентов отдан', `${institutes.body?.length} шт.`);
+check(
+  institutes.status === 200 && institutes.body.length === 3,
+  'список банков-эмитентов отдан',
+  `${institutes.body?.length} шт.`,
+);
 
 const started = await api('POST', '/payments/agroprombank/cards/bind', {
   lastDigits: '0578',
   phone: '77712345',
   institute: '0001',
 });
-check(started.status === 201 || started.status === 200, 'запрос на привязку принят', JSON.stringify(started.body).slice(0, 120));
+check(
+  started.status === 201 || started.status === 200,
+  'запрос на привязку принят',
+  JSON.stringify(started.body).slice(0, 120),
+);
 const bindingId = started.body?.bindingId;
 
 const otpRes = await fetch(`${MOCK}/__sandbox/state`).then((r) => r.json());
@@ -136,7 +149,10 @@ check(
 );
 
 const cards = await api('GET', '/payments/agroprombank/cards');
-check(cards.status === 200 && cards.body.length === 1 && cards.body[0].isDefault, 'карта в списке и назначена основной');
+check(
+  cards.status === 200 && cards.body.length === 1 && cards.body[0].isDefault,
+  'карта в списке и назначена основной',
+);
 
 // ── Order ───────────────────────────────────────────────────────────────────
 step('Заказ: корзина → оформление');
@@ -145,7 +161,11 @@ const cart = await api('POST', '/cart/items', { storeId: store.id, productId: pr
 check(cart.status === 200 || cart.status === 201, 'товар добавлен в корзину', `итого ${cart.body?.subtotalCents} коп.`);
 
 const order = await api('POST', '/orders', { cartId: cart.body.id, pickupMode: 'ASAP', fulfillmentType: 'PICKUP' });
-check(order.status === 200 || order.status === 201, 'заказ создан', `№${order.body?.orderCode}, статус ${order.body?.status}`);
+check(
+  order.status === 200 || order.status === 201,
+  'заказ создан',
+  `№${order.body?.orderCode}, статус ${order.body?.status}`,
+);
 check(order.body?.status === 'CREATED', 'заказ пока не оплачен');
 const orderId = order.body?.id;
 
@@ -155,13 +175,20 @@ step('Оплата привязанной картой');
 const paid = await api('POST', '/payments/agroprombank/pay', { orderId, cardId });
 check(paid.status === 200 || paid.status === 201, 'платёж проведён', `HTTP ${paid.status}`);
 check(paid.body?.status === 'SUCCEEDED', 'банк подтвердил списание', `operationid=${paid.body?.operationId}`);
-check(Boolean(paid.body?.authCode) && Boolean(paid.body?.rrn), 'разобран блок карточной транзакции', `authcode=${paid.body?.authCode}, rrn=${paid.body?.rrn}`);
+check(
+  Boolean(paid.body?.authCode) && Boolean(paid.body?.rrn),
+  'разобран блок карточной транзакции',
+  `authcode=${paid.body?.authCode}, rrn=${paid.body?.rrn}`,
+);
 
 const settled = await prisma.order.findUnique({ where: { id: orderId } });
 check(settled?.status === 'PAID', 'заказ переведён в PAID');
 
 const events = await prisma.orderEvent.findMany({ where: { orderId }, orderBy: { createdAt: 'desc' } });
-check(events.some((e) => e.type === 'PAYMENT_SUCCEEDED'), 'записано событие PAYMENT_SUCCEEDED');
+check(
+  events.some((e) => e.type === 'PAYMENT_SUCCEEDED'),
+  'записано событие PAYMENT_SUCCEEDED',
+);
 
 const payment = await prisma.payment.findFirst({ where: { orderId } });
 check(payment?.invoiceId?.startsWith('sbx'), 'invoiceid выдан с префиксом окружения', payment?.invoiceId);
@@ -169,7 +196,11 @@ check(payment?.provider === 'AGROPROMBANK' && payment?.status === 'SUCCEEDED', '
 
 step('Повторная оплата того же заказа не должна списать деньги дважды');
 const again = await api('POST', '/payments/agroprombank/pay', { orderId, cardId });
-check(again.body?.paymentId === paid.body?.paymentId, 'вернулся тот же платёж, нового списания нет', again.body?.paymentId);
+check(
+  again.body?.paymentId === paid.body?.paymentId,
+  'вернулся тот же платёж, нового списания нет',
+  again.body?.paymentId,
+);
 const paymentCount = await prisma.payment.count({ where: { orderId } });
 check(paymentCount === 1, 'в базе по-прежнему один платёж');
 
@@ -187,12 +218,18 @@ const afterRefund = await prisma.payment.findUnique({ where: { id: payment.id } 
 check(afterRefund?.status === 'PARTIALLY_REFUNDED', 'статус платежа — частично возвращён');
 check(afterRefund?.refundedCents === half, 'сумма возврата записана', `${half} коп.`);
 
-const tooMuch = await api('POST', `/admin/payments/agroprombank/${payment.id}/refund`, { amountCents: payment.amountCents });
+const tooMuch = await api('POST', `/admin/payments/agroprombank/${payment.id}/refund`, {
+  amountCents: payment.amountCents,
+});
 check(tooMuch.status === 400, 'возврат сверх остатка отклонён', `HTTP ${tooMuch.status}`);
 
 step('Операция в реестре банка');
 const described = await api('GET', `/admin/payments/agroprombank/${payment.id}`);
-check(described.status === 200 && described.body?.invoiceid === payment.invoiceId, 'банк отдал свою запись об операции', `state=${described.body?.state}`);
+check(
+  described.status === 200 && described.body?.invoiceid === payment.invoiceId,
+  'банк отдал свою запись об операции',
+  `state=${described.body?.state}`,
+);
 
 // ── Declines ────────────────────────────────────────────────────────────────
 step('Отказ банка: недостаточно средств');

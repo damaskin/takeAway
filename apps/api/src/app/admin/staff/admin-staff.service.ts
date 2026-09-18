@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
+import { KdsPinService } from '../../auth/services/kds-pin.service';
 import { PasswordService } from '../../auth/services/password.service';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
@@ -25,6 +26,7 @@ export class AdminStaffService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly kdsPins: KdsPinService,
     private readonly scope: BrandScopeService,
   ) {}
 
@@ -121,6 +123,51 @@ export class AdminStaffService {
     const entry = (await this.list(storeId, user)).find((r) => r.userId === userId);
     if (!entry) throw new NotFoundException('Staff was updated but could not be reloaded');
     return entry;
+  }
+
+  /**
+   * Sets (or rotates) the KDS PIN for a staff member at a specific store.
+   * The user must already be rostered in this store. PIN must be 4–6 digits;
+   * uniqueness within the store is DB-enforced via the partial unique index
+   * `User_kdsPin_uniq` — a duplicate PIN throws 409.
+   */
+  async setKdsPin(storeId: string, userId: string, pin: string, user: AuthenticatedUser): Promise<void> {
+    await this.assertStore(storeId, user);
+    if (!this.kdsPins.isValidFormat(pin)) {
+      throw new ConflictException('PIN must be 4 to 6 digits');
+    }
+
+    const rostered = await this.prisma.userStore.findUnique({
+      where: { userId_storeId: { userId, storeId } },
+    });
+    if (!rostered) throw new NotFoundException('Staff is not rostered for this store');
+
+    const target = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!target || (target.role !== Role.STORE_MANAGER && target.role !== Role.STAFF)) {
+      throw new NotFoundException('User is not eligible for a KDS PIN');
+    }
+
+    const hash = this.kdsPins.hash(storeId, pin);
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { kdsPinHash: hash, kdsPinStoreId: storeId },
+      });
+    } catch (err) {
+      // Map the partial-unique-index collision to a friendly 409.
+      if (err instanceof Error && err.message.includes('User_kdsPin_uniq')) {
+        throw new ConflictException('Another staff at this store already uses this PIN');
+      }
+      throw err;
+    }
+  }
+
+  async clearKdsPin(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
+    await this.assertStore(storeId, user);
+    await this.prisma.user.updateMany({
+      where: { id: userId, kdsPinStoreId: storeId },
+      data: { kdsPinHash: null, kdsPinStoreId: null },
+    });
   }
 
   async remove(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {

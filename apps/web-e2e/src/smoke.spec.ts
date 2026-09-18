@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { useEnglish } from './support/locale';
+
 /**
  * Smoke tests for the web app. These only touch UI that renders without a
  * live API: chrome (nav, hero copy), empty-state fallbacks, and the
@@ -9,6 +11,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('takeAway web — smoke', () => {
   test.beforeEach(async ({ page }) => {
+    await useEnglish(page);
     // Return an empty stores list so Home renders its own layout without
     // tripping over connection errors against a missing API.
     await page.route('**/api/stores*', (route) =>
@@ -31,11 +34,19 @@ test.describe('takeAway web — smoke', () => {
     await expect(page.getByRole('link', { name: 'Order' }).first()).toBeVisible();
   });
 
-  test('login page renders the phone form', async ({ page }) => {
+  test('login page offers the configured sign-in providers', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible();
-    await expect(page.getByPlaceholder(/50 123 4567/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Continue' })).toBeVisible();
+    await expect(page.getByText(/choose how you would like to sign in/i)).toBeVisible();
+    // Telegram is the one provider configured in a default build (Google
+    // and Apple client ids are blank in index.html), so its widget host is
+    // what must be here. This is the guard against the provider block
+    // vanishing entirely — the state that leaves customers with no way in.
+    // Attached, not visible: the widget's own iframe comes from
+    // telegram.org and never loads in an offline test run, so the host
+    // element has no size. Its presence is the thing worth asserting.
+    await expect(page.locator('lib-telegram-login-button')).toBeAttached();
+    await expect(page.getByText(/terms and privacy policy/i)).toBeVisible();
   });
 
   test('stores page renders the map chrome + nearby sidebar', async ({ page }) => {

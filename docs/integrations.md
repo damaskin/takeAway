@@ -7,10 +7,10 @@ integration, and for **ops** dealing with credentials in production.
 
 Two providers are wired today:
 
-| Provider                | Menu import | Stop-list | Outgoing orders | Incoming changes         |
-| ----------------------- | ----------- | --------- | --------------- | ------------------------ |
-| Poster (joinposter.com) | ✅ M2       | ✅ M2     | ✅ M3           | ✅ Webhooks (M4)         |
-| iiko Cloud              | ⚙ M5+      | ⚙ M5+    | ⚙ M5+          | Polling (when M5+ lands) |
+| Provider                | Menu import | Stop-list | Outgoing orders | Incoming changes       |
+| ----------------------- | ----------- | --------- | --------------- | ---------------------- |
+| Poster (joinposter.com) | ✅ M2       | ✅ M2     | ✅ M3           | ✅ Webhooks (M4)       |
+| iiko Cloud              | ✅ M5       | ✅ M5     | ✅ M5           | Polling (every 30 min) |
 
 Adding a third provider is a matter of dropping in an `IPosProvider`
 implementation and an enum value in `PosProvider`. See
@@ -135,12 +135,10 @@ random scanners can't enumerate brands.
 
 ## 3. Connect iiko Cloud
 
-Currently the iiko adapter implements `testConnection` and
-`listStores` only. Menu / stop-list / outgoing orders land in M5+ when
-a real iiko-Cloud test account is available. The plug-in shape is
-identical to Poster — flipping the provider's `supportsStopListPolling`
-flag from `false` to `true` opts it into the every-30-min cron poller
-(see `PosCronService`).
+The iiko Cloud adapter has parity with Poster as of M5: connect,
+list stores, import menu, pull stop-list (cron), push paid orders.
+There is no incoming-webhook channel from iiko, so stop-list freshness
+is bounded by the every-30-min poll in `PosCronService`.
 
 ### Step 1 — Get iiko credentials
 
@@ -149,16 +147,19 @@ In the iiko Cloud admin (manager.iikoweb.ru → Settings → API):
 1. Create an API user. Note the **apiLogin** — a single short string
    that doubles as both the login and the password (iiko Cloud
    convention).
-2. Note the **organization id** if you want takeAway to pin to one
-   organisation rather than fan out across every organisation the
-   `apiLogin` has access to. Optional.
+2. Note the **organization id** of the brand. iiko Cloud lets one
+   `apiLogin` span multiple organisations — `listStores` fans out
+   automatically, but **menu import and outgoing orders both require
+   exactly one pinned `organizationId`**. If your brand operates more
+   than one iiko organisation, run a separate takeAway brand per
+   organisation.
 
 ### Step 2 — Connect in takeAway
 
-`/integrations`, iiko card → paste `apiLogin` (and optional
-`organizationId`) → **Connect**. takeAway exchanges it for a bearer
-token at `/api/1/access_token` and caches the token in Redis for 50
-minutes; further imports reuse it.
+`/integrations`, iiko card → paste `apiLogin` and `organizationId` →
+**Connect**. takeAway exchanges the credentials for a bearer token at
+`/api/1/access_token` and caches the token in Redis for 50 minutes;
+further imports reuse it.
 
 ### Step 3 — Import stores
 
@@ -167,11 +168,47 @@ when `organizationId` is set) and `/api/1/terminal_groups`, then
 upserts every terminal group as a `Store`. The terminal-group id is
 saved as `Store.externalId`.
 
-### Step 4 — Other operations
+### Step 4 — Import menu
 
-Currently throw `NotImplementedException`. The endpoints (and the
-admin-UI buttons) exist; clicking them just produces a `FAILED` job
-with a clear "not available yet" message. Will land in M5+.
+Click **Import menu**. takeAway calls `/api/1/nomenclature` for the
+pinned organisation and upserts:
+
+- iiko `groups[]` → `Category` rows (rows with `isDeleted: true`
+  skipped).
+- iiko `products[]` of type `Dish` / `Goods` → `Product` rows. Price
+  comes from `sizePrices[].price.currentPrice` (max across menu-included
+  sizes, converted to cents). Free items, deleted rows, and rows with
+  no `groupId` are dropped.
+- Modifier products referenced from `products[].modifiers[]` are
+  imported as `Modifier` rows on the parent product. Modifier-only
+  rows themselves are not surfaced to customers as standalone
+  products.
+
+### Step 5 — Stop-list (automatic)
+
+Once connected, `PosCronService` calls `/api/1/stop_lists` every 30
+minutes for every CONNECTED iiko integration and upserts the result
+into `StopListEntry`. Items with `balance ≤ 0` are interpreted as
+stopped; everything else is in stock.
+
+You can also force a sync from the admin UI — same endpoint, just
+out-of-band.
+
+### Step 6 — Outgoing orders (automatic)
+
+Every paid takeAway order whose `Store.externalProvider === 'IIKO'`
+is enqueued for push as part of the existing `enqueueOrderPushIfApplicable`
+flow. The worker calls `/api/1/order/create` with:
+
+- `organizationId` from the integration settings,
+- `terminalGroupId` from `Store.externalId`,
+- a fresh UUID v4 as the iiko `order.id`,
+- `externalNumber = orderCode` so the kitchen sees the same 4-digit
+  code customers see,
+- one item per order line, with modifier ids translated through
+  `Modifier.externalId`.
+
+The provider-side `orderInfo.id` is stored in `Order.posExternalId`.
 
 ---
 
@@ -218,8 +255,10 @@ Open `Recent jobs` and read the `errorMessage`. Common ones:
 - `iiko returned no organizations for these credentials` — the
   `apiLogin` doesn't have access to any organisation in the iiko admin
   panel. Re-check the user's role.
-- `NotImplementedException: ... is not available yet` — iiko-only,
-  the deliverable hasn't shipped yet.
+- `iiko menu import requires settings.organizationId` — pin a single
+  organisation on the integration; menu import does not fan out.
+- `Cannot push order ... settings.organizationId is not pinned` — same
+  cause, blocks outgoing orders.
 
 **Orders aren't reaching Poster after PAID.**
 

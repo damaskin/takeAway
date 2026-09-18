@@ -11,6 +11,13 @@
       // staff-link flow (not authentication — staff sign in with email +
       // password). Public value; token stays server-side.
       window.__TELEGRAM_BOT_USERNAME = 'takaway_tgbot';
+
+      // Sentry for this SPA. The browser DSN is public by design; leave it
+      // empty to disable reporting (the normal state in local dev).
+      // __BUILD_VERSION is stamped by deploy/scripts/extract-spa.sh so an
+      // issue points at an exact deploy.
+      window.__SENTRY_DSN = '';
+      window.__SENTRY_ENVIRONMENT = 'development';
     </script>
   </head>
   <body>

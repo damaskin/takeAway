@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsInt,
@@ -124,6 +125,58 @@ export class CreateStoreDto {
   @IsInt()
   @Min(0)
   minOrderCents?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 3600,
+    description: 'Fixed per-order overhead in seconds. The queue wait is added on top.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3600)
+  baseEtaSeconds?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 20,
+    description: 'Orders this kitchen genuinely works at once. Drives how fast a rush drains.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  kitchenParallelism?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    description: 'Most handovers this store will promise inside one 15-minute slot.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  slotCapacity?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 10000,
+    description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 removes the tax line.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  taxRateBps?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'True where the menu price already contains the tax (UAE, UK, EU); false where it is added at the till.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  taxIncludedInPrice?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

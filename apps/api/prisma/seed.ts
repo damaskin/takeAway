@@ -75,7 +75,7 @@ async function main(): Promise<void> {
       fulfillmentTypes: ['TAKEAWAY', 'DINE_IN'],
       pickupPointType: 'SHELF',
       busyMeter: 35,
-      currentEtaSeconds: 360,
+      baseEtaSeconds: 360,
       workingHours: {
         create: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
           weekday,
@@ -103,7 +103,7 @@ async function main(): Promise<void> {
       fulfillmentTypes: ['TAKEAWAY'],
       pickupPointType: 'COUNTER',
       busyMeter: 60,
-      currentEtaSeconds: 540,
+      baseEtaSeconds: 540,
       workingHours: {
         create: [1, 2, 3, 4, 5].map((weekday) => ({
           weekday,

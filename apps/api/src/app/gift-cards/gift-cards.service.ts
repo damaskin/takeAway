@@ -80,6 +80,32 @@ export class GiftCardsService {
     }
   }
 
+  /**
+   * Put the money back on the card when an order never completes.
+   *
+   * The balance is drawn down at order creation, so an abandoned checkout
+   * silently ate part of a gift someone paid for. Restores the balance,
+   * drops the redemption row, and reopens a card that the redemption had
+   * flipped to REDEEMED.
+   *
+   * Safe to call for an order that never used a gift card.
+   */
+  async releaseForOrder(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
+    const redemption = await tx.giftCardRedemption.findUnique({ where: { orderId } });
+    if (!redemption) return;
+
+    await tx.giftCardRedemption.delete({ where: { id: redemption.id } });
+    const card = await tx.giftCard.update({
+      where: { id: redemption.giftCardId },
+      data: { balanceCents: { increment: redemption.amountCents } },
+    });
+    // Only reopen a card we ourselves drained. CANCELLED and EXPIRED are
+    // deliberate states and must survive a refund.
+    if (card.status === 'REDEEMED' && card.balanceCents > 0) {
+      await tx.giftCard.update({ where: { id: card.id }, data: { status: 'ACTIVE' } });
+    }
+  }
+
   // ── Admin issue ──────────────────────────────────────────────────────────
 
   /**

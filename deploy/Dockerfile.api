@@ -45,6 +45,17 @@ COPY --from=builder /workspace/apps/api/prisma ./prisma
 COPY --from=builder /workspace/node_modules ./node_modules
 COPY --from=builder /workspace/package.json ./package.json
 
+# Version metadata — passed via --build-arg from deploy.sh and surfaced
+# at runtime through GET /api/health. Stays at the bottom so changes to
+# the version triple don't bust the heavy node_modules / pnpm-install
+# layer cache above.
+ARG BUILD_VERSION=dev
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ENV BUILD_VERSION=$BUILD_VERSION
+ENV BUILD_COMMIT=$BUILD_COMMIT
+ENV BUILD_TIME=$BUILD_TIME
+
 USER app
 
 EXPOSE 3000

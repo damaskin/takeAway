@@ -18,6 +18,20 @@ const TIER_THRESHOLDS: Array<{ tier: LoyaltyTier; min: number }> = [
 /** 1 point per whole dollar (100 cents). Adjust centrally here. */
 const POINTS_PER_CENT = 1 / 100;
 
+/**
+ * What a point is worth when spent, in cents. Paired with the earn rate
+ * above this is a 1% return, which is deliberately modest: points are a
+ * reason to come back, not a discount scheme, and a generous rate is very
+ * hard to walk back once customers have banked a balance.
+ */
+const POINT_VALUE_CENTS = 1;
+
+/**
+ * Floor on a redemption. Burning nine points to save nine cents wastes
+ * everyone's attention and clutters the ledger.
+ */
+const MIN_REDEEMABLE_POINTS = 100;
+
 type PrismaTx = Prisma.TransactionClient;
 
 @Injectable()
@@ -119,6 +133,68 @@ export class LoyaltyService {
     });
   }
 
+  /**
+   * Work out what a customer may actually spend, given what they asked
+   * for, what they have, and what the order costs.
+   *
+   * Returns zero rather than throwing when a redemption is not possible —
+   * an empty balance or a tiny order is a normal state, not an error, and
+   * the checkout should quietly show no points row.
+   */
+  async quoteRedemption(
+    userId: string,
+    requestedPoints: number,
+    payableCents: number,
+  ): Promise<{ points: number; discountCents: number }> {
+    const none = { points: 0, discountCents: 0 };
+    if (!Number.isFinite(requestedPoints) || requestedPoints < MIN_REDEEMABLE_POINTS) return none;
+    if (payableCents <= 0) return none;
+
+    const account = await this.ensureAccount(userId);
+    // Three ceilings: what they asked for, what they hold, and what the
+    // order is worth. Points must never turn into a cash refund.
+    const affordable = Math.min(
+      Math.floor(requestedPoints),
+      account.pointsBalance,
+      Math.floor(payableCents / POINT_VALUE_CENTS),
+    );
+    if (affordable < MIN_REDEEMABLE_POINTS) return none;
+
+    return { points: affordable, discountCents: affordable * POINT_VALUE_CENTS };
+  }
+
+  /** Value of a point in cents — the checkout needs it to render a preview. */
+  get pointValueCents(): number {
+    return POINT_VALUE_CENTS;
+  }
+
+  /** Fewest points worth redeeming. */
+  get minRedeemablePoints(): number {
+    return MIN_REDEEMABLE_POINTS;
+  }
+
+  /**
+   * Put points back when an order never completes. Mirrors the promo and
+   * gift-card release: the balance is drawn at order creation, so an
+   * abandoned checkout would otherwise eat points the customer earned.
+   */
+  async releaseForOrder(tx: PrismaTx, orderId: string): Promise<void> {
+    const spend = await tx.pointsLedger.findFirst({
+      where: { orderId, type: PointsEntryType.SPEND },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!spend) return;
+
+    const account = await this.ensureAccount(spend.userId, tx);
+    await this.applyDelta(account, Math.abs(spend.amount), 'EARN', `refund:${orderId}`, tx, {
+      orderId,
+      type: PointsEntryType.EARN,
+      reason: `Refunded ${Math.abs(spend.amount)} pts from order ${orderId}`,
+      metadata: null,
+      countsTowardLifetime: false,
+    });
+  }
+
   /** Debit points when a promo consumes them. */
   async debit(userId: string, orderId: string | null, amount: number, reason: string, tx: PrismaTx): Promise<void> {
     if (amount <= 0) return;
@@ -145,10 +221,18 @@ export class LoyaltyService {
       type: PointsEntryType;
       reason: string;
       metadata: Prisma.InputJsonValue | null;
+      /**
+       * Whether a positive delta advances the tier. False for giving back
+       * points a cancelled order had taken: that is undoing a spend, not
+       * earning, and counting it would let a customer promote themselves
+       * by ordering and cancelling.
+       */
+      countsTowardLifetime?: boolean;
     },
   ): Promise<void> {
     const nextBalance = account.pointsBalance + delta;
-    const nextLifetime = delta > 0 ? account.lifetimePoints + delta : account.lifetimePoints;
+    const earns = delta > 0 && entry.countsTowardLifetime !== false;
+    const nextLifetime = earns ? account.lifetimePoints + delta : account.lifetimePoints;
     const nextTier = this.tierFor(nextLifetime);
 
     await tx.loyaltyAccount.update({

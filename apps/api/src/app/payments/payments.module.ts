@@ -5,6 +5,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PosModule } from '../pos/pos.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { AdminPaymentsController } from './admin-payments.controller';
 import { AgroprombankAdminController } from './agroprombank/agroprombank-admin.controller';
 import { AgroprombankClient } from './agroprombank/agroprombank.client';
 import { AgroprombankConfig } from './agroprombank/agroprombank.config';
@@ -31,7 +32,7 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
  */
 @Module({
   imports: [AuthModule, RealtimeModule, OrdersModule, NotificationsModule, PosModule],
-  controllers: [PaymentsController, AgroprombankController, AgroprombankAdminController],
+  controllers: [PaymentsController, AdminPaymentsController, AgroprombankController, AgroprombankAdminController],
   providers: [
     OrderSettlementService,
     PaymentsService,

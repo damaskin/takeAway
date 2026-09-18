@@ -31,6 +31,28 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
+  /**
+   * Sign in with Google. `idToken` is the `credential` handed back by
+   * Google Identity Services; the server re-verifies it against Google's
+   * JWKS before trusting a claim.
+   */
+  signInWithGoogle(idToken: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/google`, { idToken })
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
+  /**
+   * Sign in with Apple. `name` is only ever present on the customer's very
+   * first consent — Apple never sends it again, so it has to travel with
+   * this one call or the account stays nameless.
+   */
+  signInWithApple(idToken: string, name?: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/apple`, name ? { idToken, name } : { idToken })
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
   refresh(refreshToken: string): Observable<AuthTokens> {
     return this.http.post<AuthTokens>(`${this.api.baseUrl}/auth/refresh`, { refreshToken });
   }

@@ -141,10 +141,203 @@ describe('IikoProvider', () => {
     await expect(provider.listStores(ctxFor())).rejects.toThrow(/no organizations/);
   });
 
+  it('importMenu translates iiko nomenclature into ImportedMenu, dropping Modifier-typed rows', async () => {
+    const fake = {
+      post: jest.fn(async (path: string, body: unknown) => {
+        if (path === '/api/1/access_token') return { data: { token: 'tk-menu' } };
+        if (path === '/api/1/nomenclature') {
+          expect(body).toEqual({ organizationId: 'org-pinned' });
+          return {
+            data: {
+              groups: [
+                { id: 'grp-1', name: 'Coffee', order: 0, isDeleted: false },
+                { id: 'grp-deleted', name: 'Old', isDeleted: true },
+              ],
+              products: [
+                {
+                  id: 'p-1',
+                  type: 'Dish',
+                  name: 'Latte',
+                  description: 'Smooth',
+                  groupId: 'grp-1',
+                  sizePrices: [{ price: { currentPrice: 4.5, isIncludedInMenu: true } }],
+                  modifiers: [{ id: 'mod-1', minAmount: 0, maxAmount: 2 }],
+                  imageLinks: ['https://cdn/x.jpg'],
+                },
+                { id: 'mod-1', type: 'Modifier', name: 'Extra shot', price: 1.0 },
+                { id: 'p-2', type: 'Dish', name: 'Free coffee', groupId: 'grp-1', price: 0 }, // dropped: zero price
+                { id: 'p-3', type: 'Dish', name: 'No category', price: 3.0 }, // dropped: no group
+              ],
+            },
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestableIikoProvider(fakeRedis(), fake);
+    const progress = { setTotal: jest.fn(async () => undefined), advance: jest.fn(async () => undefined) };
+    const menu = await provider.importMenu(ctxFor({ organizationId: 'org-pinned' }), progress);
+
+    expect(menu.categories).toEqual([{ externalId: 'grp-1', name: 'Coffee', sortOrder: 0 }]);
+    expect(menu.products).toEqual([
+      {
+        externalId: 'p-1',
+        categoryExternalId: 'grp-1',
+        name: 'Latte',
+        description: 'Smooth',
+        basePriceCents: 450,
+        imageUrls: ['https://cdn/x.jpg'],
+      },
+    ]);
+    expect(menu.modifiers).toEqual([
+      {
+        externalId: 'mod-1',
+        productExternalId: 'p-1',
+        name: 'Extra shot',
+        priceDeltaCents: 100,
+        minCount: 0,
+        maxCount: 2,
+      },
+    ]);
+    // Total covers the 3 non-Modifier dishes; advance fires once for the partial flush.
+    expect(progress.setTotal).toHaveBeenCalledWith(3);
+  });
+
+  it('importMenu refuses to run without a pinned organizationId', async () => {
+    const fake = {
+      post: jest.fn(async (path: string) => {
+        if (path === '/api/1/access_token') return { data: { token: 'tk' } };
+        throw new Error(`unexpected path ${path}`);
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestableIikoProvider(fakeRedis(), fake);
+    const progress = { setTotal: jest.fn(), advance: jest.fn() };
+    await expect(provider.importMenu(ctxFor(), progress)).rejects.toThrow(/settings\.organizationId/);
+  });
+
+  it('importStopList emits one entry per terminal-group×product with non-positive balance', async () => {
+    const fake = {
+      post: jest.fn(async (path: string, body: unknown) => {
+        if (path === '/api/1/access_token') return { data: { token: 'tk-sl' } };
+        if (path === '/api/1/stop_lists') {
+          expect(body).toEqual({ organizationIds: ['org-pinned'] });
+          return {
+            data: {
+              terminalGroupStopLists: [
+                {
+                  organizationId: 'org-pinned',
+                  items: [
+                    {
+                      terminalGroupId: 'tg-A',
+                      items: [
+                        { productId: 'p-1', balance: 0 },
+                        { productId: 'p-2', balance: 5 }, // in stock — skipped
+                        { productId: 'p-3', balance: -1 },
+                      ],
+                    },
+                    { terminalGroupId: 'tg-B', items: [{ productId: 'p-1', balance: 0 }] },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestableIikoProvider(fakeRedis(), fake);
+    const progress = { setTotal: jest.fn(), advance: jest.fn() };
+    const entries = await provider.importStopList(ctxFor({ organizationId: 'org-pinned' }), progress);
+
+    expect(entries).toEqual([
+      { storeExternalId: 'tg-A', productExternalId: 'p-1' },
+      { storeExternalId: 'tg-A', productExternalId: 'p-3' },
+      { storeExternalId: 'tg-B', productExternalId: 'p-1' },
+    ]);
+  });
+
+  it('pushOrder posts /api/1/order/create with mapped items and returns posExternalId', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    const fake = {
+      post: jest.fn(async (path: string, body: unknown) => {
+        if (path === '/api/1/access_token') return { data: { token: 'tk-push' } };
+        if (path === '/api/1/order/create') {
+          capturedBody = body as Record<string, unknown>;
+          return { data: { orderInfo: { id: 'iiko-order-9' } } };
+        }
+        throw new Error(`unexpected path ${path}`);
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestableIikoProvider(fakeRedis(), fake);
+    const result = await provider.pushOrder(ctxFor({ organizationId: 'org-pinned' }), {
+      id: 'order-internal',
+      orderCode: '4832',
+      storeExternalId: 'tg-A',
+      customerName: 'Ivan',
+      customerPhone: '+71234567890',
+      notes: 'No sugar',
+      items: [
+        {
+          productExternalId: 'p-1',
+          quantity: 2,
+          unitPriceCents: 450,
+          modifiers: [{ externalId: 'mod-1', count: 1 }],
+        },
+      ],
+      totalCents: 1000,
+      currency: 'USD',
+    });
+
+    expect(result).toEqual({ posExternalId: 'iiko-order-9' });
+    const body = capturedBody as unknown as {
+      organizationId: string;
+      terminalGroupId: string;
+      order: { externalNumber: string; items: unknown[]; id: string };
+    };
+    expect(body.organizationId).toBe('org-pinned');
+    expect(body.terminalGroupId).toBe('tg-A');
+    expect(body.order.externalNumber).toBe('4832');
+    expect(body.order.items).toEqual([
+      {
+        type: 'Product',
+        productId: 'p-1',
+        amount: 2,
+        modifiers: [{ productId: 'mod-1', amount: 1 }],
+        comment: undefined,
+      },
+    ]);
+    expect(typeof body.order.id).toBe('string');
+    expect(body.order.id.length).toBeGreaterThan(10); // uuid-ish
+  });
+
+  it('pushOrder throws when settings.organizationId is missing', async () => {
+    const fake = {
+      post: jest.fn(async (path: string) => {
+        if (path === '/api/1/access_token') return { data: { token: 'tk' } };
+        throw new Error(`unexpected path ${path}`);
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestableIikoProvider(fakeRedis(), fake);
+    await expect(
+      provider.pushOrder(ctxFor(), {
+        id: 'o',
+        orderCode: '0001',
+        storeExternalId: 'tg-A',
+        customerName: null,
+        customerPhone: null,
+        notes: null,
+        items: [{ productExternalId: 'p-1', quantity: 1, unitPriceCents: 100, modifiers: [] }],
+        totalCents: 100,
+        currency: 'USD',
+      }),
+    ).rejects.toThrow(/organizationId/);
+  });
+
   // Smoke that production class wires axios.
   it('production class exposes an axios instance', () => {
     const real = new IikoProvider(fakeRedis());
     expect(typeof (real as unknown as { http: () => AxiosInstance }).http).toBe('function');
+    expect(real.supportsStopListPolling).toBe(true);
     expect(axios).toBeDefined();
   });
 });

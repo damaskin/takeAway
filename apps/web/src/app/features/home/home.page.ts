@@ -178,7 +178,7 @@ interface HowStep {
           style="gap: 6px; height: 28px; padding: 0 12px; background: var(--color-caramel-light); border-radius: 999px"
         >
           <span style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
-            >🏆 Coffeepass</span
+            >🏆 {{ 'web.home.loyalty.badge' | translate }}</span
           >
         </span>
         <h2
@@ -208,9 +208,9 @@ interface HowStep {
           style="padding: 24px; background: linear-gradient(135deg, var(--color-caramel) 0%, #a0612a 100%); border-radius: 20px; gap: 16px; min-height: 220px"
         >
           <div class="flex items-center justify-between">
-            <span style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: white"
-              >Coffeepass</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: white">{{
+              'web.home.loyalty.badge' | translate
+            }}</span>
             <span style="font-family: var(--font-sans); font-size: 12px; color: rgba(255,255,255,0.7)">GOLD</span>
           </div>
           <span style="font-family: var(--font-sans); font-size: 40px; font-weight: 700; color: white">2,450</span>

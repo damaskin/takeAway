@@ -98,7 +98,26 @@ Still to do:
   ```bash
   docker compose -f docker-compose.prod.yml exec postgres psql -U takeaway
   ```
-- **Backup DB:**
+- **Backup DB (nightly, automated):** `deploy/scripts/backup-to-github.sh`, driven by cron.
+  It dumps, compresses and encrypts in one pipe — the plaintext never reaches
+  disk — keeps 14 days locally and mirrors the ciphertext into a private git
+  repo. Requires `BACKUP_ENCRYPTION_KEY` and refuses to run without it: the
+  dump holds customer names, emails, phones and order history, and git
+  history keeps everything ever pushed, forever, across every clone. Losing a
+  night's backup is recoverable; publishing a plaintext customer database is
+  not. Destroying the key renders every copy unreadable, which is how an
+  erasure request is honoured against immutable backups.
+
+- **Restore from a backup:**
+
+  ```bash
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+    -pass env:BACKUP_ENCRYPTION_KEY -in pg-YYYY-MM-DD.sql.gz.enc \
+    | gunzip \
+    | docker compose -f docker-compose.prod.yml exec -T postgres psql -U takeaway takeaway
+  ```
+
+- **Ad-hoc dump (unencrypted — keep it on the box):**
   ```bash
   docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U takeaway takeaway | gzip > backup-$(date +%F).sql.gz
   ```

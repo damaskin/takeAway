@@ -81,6 +81,20 @@ export class PromoService {
    * creation pipeline. Throws BadRequestException if the code is no longer
    * valid (race condition after validate()).
    */
+  /**
+   * Hand the promo back when an order never completes.
+   *
+   * Redemption is recorded the moment the order is created, so an
+   * abandoned checkout used to burn the customer's one-per-user allowance
+   * and a slot of the campaign's total. Deleting the row restores both —
+   * `validate` counts rows, it does not keep a separate counter.
+   *
+   * Safe to call for an order that never carried a promo.
+   */
+  async releaseForOrder(tx: PrismaTx, orderId: string): Promise<void> {
+    await tx.promoRedemption.deleteMany({ where: { orderId } });
+  }
+
   async applyAndRedeem(input: ApplyPromoInput, orderId: string, tx: PrismaTx): Promise<ApplyPromoResultDto> {
     const res = await this.validate(input.userId, input.code, input.brandId, input.subtotalCents);
     if (!res.valid || !res.promo) {

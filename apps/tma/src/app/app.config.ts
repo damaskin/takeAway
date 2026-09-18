@@ -1,11 +1,14 @@
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideTakeawayI18n } from '@takeaway/i18n';
+
+import { provideSentry, resolveSpaSentryConfig } from '@takeaway/ui-kit';
 
 import { appRoutes } from './app.routes';
 import { API_CONFIG, DEFAULT_API_CONFIG } from './core/api/api.config';
 import { tmaAuthInterceptor } from './core/auth/tma-auth.interceptor';
+import { initialiseTmaSession } from './core/auth/tma-auth.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -14,5 +17,10 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([tmaAuthInterceptor])),
     { provide: API_CONFIG, useValue: DEFAULT_API_CONFIG },
     ...provideTakeawayI18n(),
+    ...provideSentry(resolveSpaSentryConfig('tma')),
+    // Trade Telegram's initData for a session before the first screen
+    // renders. The Mini App has no sign-in step, so this is the only place
+    // authentication happens.
+    provideAppInitializer(initialiseTmaSession),
   ],
 };

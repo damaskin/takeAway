@@ -67,7 +67,7 @@ export class OrderSettlementService {
       updatedOrder = await orderUpdate;
     }
 
-    await this.broadcastStatus(updatedOrder);
+    this.broadcastStatus(updatedOrder);
     if (updatedOrder.status === 'PAID') {
       await this.pushToKds(updatedOrder);
       this.notifyAndFulfil(updatedOrder);
@@ -78,16 +78,18 @@ export class OrderSettlementService {
     return updatedOrder;
   }
 
-  private async broadcastStatus(order: Order): Promise<void> {
-    const store = await this.prisma.store.findUnique({
-      where: { id: order.storeId },
-      select: { currentEtaSeconds: true },
-    });
+  /**
+   * Counts down to the handover time we already promised this customer,
+   * rather than re-reading a store-wide figure. They were told 08:42; the
+   * live timer has to agree with that, not with the queue's average.
+   */
+  private broadcastStatus(order: Order): void {
+    const etaSeconds = Math.max(0, Math.round((order.pickupAt.getTime() - Date.now()) / 1000));
     this.realtime.emitOrderStatusChanged(
       {
         orderId: order.id,
         status: order.status,
-        etaSeconds: store?.currentEtaSeconds ?? 0,
+        etaSeconds,
         occurredAt: new Date().toISOString(),
       },
       order.userId,

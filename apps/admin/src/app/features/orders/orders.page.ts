@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminOrdersApi, type AdminOrderSummary, type OrderStatusString } from '../../core/orders/orders.service';
+import { OrderDetailPanelComponent } from './order-detail-panel.component';
 
 type OrderStatus = OrderStatusString;
 type StatusFilter = OrderStatus | 'ALL';
@@ -15,7 +16,7 @@ type StatusFilter = OrderStatus | 'ALL';
 @Component({
   selector: 'app-admin-orders',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, OrderDetailPanelComponent],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -123,7 +124,11 @@ type StatusFilter = OrderStatus | 'ALL';
             </thead>
             <tbody>
               @for (o of filtered(); track o.id) {
-                <tr style="border-top: 1px solid var(--color-border-light)">
+                <tr
+                  style="border-top: 1px solid var(--color-border-light); cursor: pointer"
+                  (click)="openOrder(o.id)"
+                  [style.background]="selectedOrderId() === o.id ? 'var(--color-caramel-light)' : 'transparent'"
+                >
                   <td
                     style="padding: 12px 16px; font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--color-caramel)"
                   >
@@ -194,6 +199,10 @@ type StatusFilter = OrderStatus | 'ALL';
         </div>
       </aside>
     </section>
+
+    @if (selectedOrderId(); as id) {
+      <app-order-detail-panel [orderId]="id" (closed)="selectedOrderId.set(null)" (refunded)="refresh()" />
+    }
   `,
   styles: [
     `
@@ -213,6 +222,8 @@ export class AdminOrdersPage implements OnInit {
   readonly search = signal('');
   readonly loading = signal(false);
   readonly orders = signal<AdminOrderSummary[]>([]);
+  /** Which order's detail drawer is open, if any. */
+  readonly selectedOrderId = signal<string | null>(null);
 
   readonly statusFilters: Array<{ key: StatusFilter; label: string }> = [
     { key: 'ALL', label: 'admin.orders.filters.all' },
@@ -252,6 +263,10 @@ export class AdminOrdersPage implements OnInit {
 
   setStatus(s: StatusFilter): void {
     this.activeStatus.set(s);
+  }
+
+  openOrder(id: string): void {
+    this.selectedOrderId.set(id);
   }
 
   statusCount(key: StatusFilter): number {

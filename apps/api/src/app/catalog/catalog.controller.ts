@@ -4,6 +4,7 @@ import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { CatalogService } from './catalog.service';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
+import { PickupSlotDto } from './dto/pickup-slot.dto';
 import { MenuDto, ProductDetailDto } from './dto/product.dto';
 import { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
 
@@ -23,6 +24,17 @@ export class CatalogController {
   @ApiOkResponse({ type: StoreDetailDto })
   getStore(@Param('idOrSlug') idOrSlug: string): Promise<StoreDetailDto> {
     return this.catalog.getStore(idOrSlug);
+  }
+
+  /**
+   * Scheduled pickup windows for the next twelve hours. Checkout renders
+   * these instead of a free time field — a customer can only ask for a time
+   * the kitchen can actually hit.
+   */
+  @Get('stores/:idOrSlug/pickup-slots')
+  @ApiOkResponse({ type: PickupSlotDto, isArray: true })
+  getPickupSlots(@Param('idOrSlug') idOrSlug: string): Promise<PickupSlotDto[]> {
+    return this.catalog.getPickupSlots(idOrSlug);
   }
 
   @Get('stores/:idOrSlug/menu')

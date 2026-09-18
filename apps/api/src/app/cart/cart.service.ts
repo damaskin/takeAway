@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Modifier, Product, Variation } from '@prisma/client';
 
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
 import type { CartDto, CartItemDto } from './dto/cart.dto';
@@ -14,7 +15,10 @@ interface PricedItem {
 
 @Injectable()
 export class CartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly kitchen: KitchenLoadService,
+  ) {}
 
   async getForUserAndStore(userId: string, storeId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
@@ -24,7 +28,11 @@ export class CartService {
     if (!cart) {
       return this.emptyCartShape(userId, storeId);
     }
-    return this.toDto(cart);
+    // Re-quote on read: the stored value was right when the cart last
+    // changed, but the queue moves on without us. A customer who opened the
+    // app ten minutes ago should not be shown a wait from ten minutes ago.
+    const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
+    return this.toDto({ ...cart, etaSeconds });
   }
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
@@ -33,6 +41,8 @@ export class CartService {
     if (product.brandId !== (await this.getStoreBrandId(dto.storeId))) {
       throw new BadRequestException('Product does not belong to this store brand');
     }
+
+    await this.assertNotOnStopList(dto.storeId, [product.id]);
 
     const priced = this.priceItem(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
@@ -64,6 +74,8 @@ export class CartService {
       include: { cart: true, product: { include: { variations: true, modifiers: true } } },
     });
     if (!item || item.cart.userId !== userId) throw new NotFoundException('Item not found');
+
+    await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
     const variationIds = dto.variationIds ?? item.variationIds;
     const modifiers = dto.modifiers ?? (item.modifiersJson as Record<string, number>);
@@ -143,18 +155,12 @@ export class CartService {
   private async recalculate(cartId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { id: cartId },
-      include: {
-        items: { include: { product: { select: { name: true } } } },
-        store: { select: { currentEtaSeconds: true } },
-      },
+      include: { items: { include: { product: { select: { name: true } } } } },
     });
     if (!cart) throw new NotFoundException('Cart not found');
 
     const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
-    const maxItemPrep = cart.items.reduce((max, i) => Math.max(max, i.unitPrepSeconds), 0);
-    // Store baseline accounts for queue + staffing; single-item prep is the
-    // serial bottleneck. Sum-of-all would double-count parallel work.
-    const etaSeconds = cart.items.length === 0 ? 0 : cart.store.currentEtaSeconds + maxItemPrep;
+    const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
 
     await this.prisma.cart.update({
       where: { id: cart.id },
@@ -162,6 +168,46 @@ export class CartService {
     });
 
     return this.toDto({ ...cart, subtotalCents, etaSeconds });
+  }
+
+  /**
+   * ETA for what is in the cart right now, against the store's live queue.
+   * Zero for an empty cart — there is nothing to wait for, and quoting the
+   * queue wait alone would show a countdown for no order.
+   */
+  private async quoteEta(
+    storeId: string,
+    items: readonly { quantity: number; unitPrepSeconds: number }[],
+  ): Promise<number> {
+    if (items.length === 0) return 0;
+    const { prepSeconds } = this.kitchen.timings(items);
+    const quote = await this.kitchen.quote(storeId, prepSeconds);
+    return quote.etaSeconds;
+  }
+
+  /**
+   * Refuse products the store has taken off sale.
+   *
+   * The catalogue already flags them with `onStopList`, but that is a hint
+   * for the UI — nothing stopped a stale screen, a deep link or a direct
+   * API call from putting an out-of-stock item on the kitchen board. An
+   * entry with a past `expiresAt` has auto-restocked and does not block.
+   */
+  async assertNotOnStopList(storeId: string, productIds: readonly string[]): Promise<void> {
+    if (productIds.length === 0) return;
+
+    const stopped = await this.prisma.stopListEntry.findMany({
+      where: {
+        storeId,
+        productId: { in: [...productIds] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { product: { select: { name: true } } },
+    });
+    if (stopped.length === 0) return;
+
+    const names = stopped.map((e) => e.product.name).join(', ');
+    throw new BadRequestException(`Currently unavailable at this store: ${names}`);
   }
 
   private async loadProduct(productId: string) {
