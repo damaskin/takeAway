@@ -35,8 +35,31 @@ You generate your own key pair; the bank issues the matching certificate.
    **«Пластиковые карты» → «Система E-Commerce» → «Сертификат E-Commerce терминала»**.
 4. Mark the key as exportable, and do **not** password-protect it — the server
    reads the PEM unattended at boot.
-5. After the bank issues the certificate, export it from the Windows certificate
-   store and convert the container to PEM.
+5. Keep the key identifier the CA shows on the last screen. The bank checks it
+   against the request when the application for the certificate is signed, and
+   the CA does not show it again.
+6. Take the documents the CA regulations list to the bank. The certificate is
+   issued off the request; nothing in the integration can be exercised against
+   the real gateway until it is.
+7. Once issued, export the key pair from the Windows certificate store as a
+   `.pfx` and split it into the two PEMs the API reads:
+
+   ```bash
+   # private key — AGROPROMBANK_PRIVATE_KEY_FILE
+   openssl pkcs12 -in merchant.pfx -nocerts -nodes -out agroprombank-private-key.pem
+   # our own certificate — AGROPROMBANK_CERTIFICATE_FILE, only needed when
+   # AGROPROMBANK_INCLUDE_KEYINFO is on
+   openssl pkcs12 -in merchant.pfx -clcerts -nokeys -out agroprombank-certificate.pem
+   ```
+
+   `-nodes` leaves the key unencrypted, which is the point: the API reads it at
+   boot with nobody there to type a passphrase. Both files belong on the server
+   only, readable by the API user and nobody else (`chmod 600`).
+
+8. Ask the bank for its own signing certificate as well —
+   `AGROPROMBANK_BANK_CERTIFICATE_FILE`. Without it the service refuses to
+   start unless `AGROPROMBANK_VERIFY_RESPONSES=false`, and with verification
+   off nothing but TLS separates a real "payment succeeded" from a forged one.
 
 The private key must live only on the server. The documentation is explicit
 that storing key material client-side (mobile app, browser) compromises the
