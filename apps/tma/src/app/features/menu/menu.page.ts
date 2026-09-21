@@ -3,6 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
 
+import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { BrandThemeService } from '../../core/theme/brand-theme.service';
@@ -107,6 +108,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly catalog = inject(CatalogService);
   private readonly tg = inject(TelegramBridgeService);
   private readonly brandTheme = inject(BrandThemeService);
+  private readonly activeStore = inject(ActiveStoreService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -132,6 +134,9 @@ export class TmaMenuPage implements OnInit, OnDestroy {
     this.catalog.getStore(slug).subscribe({
       next: (s) => {
         this.store.set(s);
+        // Remember which store the customer is shopping in — the product and
+        // checkout pages have no store segment in their route and rely on it.
+        this.activeStore.set(s.id);
         this.brandTheme.apply(s.brand?.themeOverrides ?? null);
       },
     });

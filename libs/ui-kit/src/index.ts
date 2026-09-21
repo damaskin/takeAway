@@ -4,5 +4,6 @@ export * from './lib/telegram-login-button/telegram-auth.config';
 export * from './lib/social-login/social-auth.config';
 export * from './lib/social-login/google-login-button.component';
 export * from './lib/social-login/apple-login-button.component';
+export * from './lib/leaflet-map/leaflet-map.component';
 export * from './lib/observability/sentry.providers';
 export * from './lib/version-badge/version-badge.component';

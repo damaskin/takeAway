@@ -78,17 +78,18 @@ describe('PosterProvider', () => {
           };
         }
         if (path === '/api/menu.getProducts') {
+          // Poster reports prices in minor units (kopecks): "150" == 1.50.
           return {
             response: [
               {
                 product_id: 100,
                 product_name: 'Espresso',
                 menu_category_id: 10,
-                price: '1.50',
+                price: '150',
                 photo_origin: 'http://x/1.jpg',
               },
-              { product_id: 101, product_name: 'Latte', menu_category_id: 10, price: { '1': '3.00', '2': '3.50' } },
-              { product_id: 102, product_name: 'Hidden', menu_category_id: 10, price: '2.00', hidden: 1 },
+              { product_id: 101, product_name: 'Latte', menu_category_id: 10, price: { '1': '300', '2': '350' } },
+              { product_id: 102, product_name: 'Hidden', menu_category_id: 10, price: '200', hidden: 1 },
               { product_id: 103, product_name: 'Free', menu_category_id: 10, price: '0' },
             ],
           };
@@ -127,7 +128,7 @@ describe('PosterProvider', () => {
         categoryExternalId: '10',
         name: 'Latte',
         description: undefined,
-        // max across spots → 3.50 → 350 cents
+        // max across spots → "350" kopecks → 3.50
         basePriceCents: 350,
         imageUrls: undefined,
       },

@@ -1,5 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BrandModerationStatus } from '@prisma/client';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BrandModerationStatus, Role } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
@@ -14,6 +14,8 @@ function assertInScope(scope: BrandScope, brandId: string): void {
     throw new ForbiddenException('Resource belongs to a brand outside your scope');
   }
 }
+import type { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
+import { PasswordService } from '../../auth/services/password.service';
 import type { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import type {
   CreateModifierDto,
@@ -29,7 +31,10 @@ import type { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './d
 
 @Injectable()
 export class AdminCatalogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly passwords: PasswordService,
+  ) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
   listBrands(status?: BrandModerationStatus) {
@@ -40,6 +45,15 @@ export class AdminCatalogService {
         owner: { select: { id: true, email: true, name: true, phone: true } },
         _count: { select: { stores: true, products: true } },
       },
+    });
+  }
+
+  /** Minimal brand list filtered to the caller's scope. `null` = no filter. */
+  listBrandsForScope(scope: BrandScope) {
+    return this.prisma.brand.findMany({
+      where: scope === null ? undefined : { id: { in: scope } },
+      orderBy: { name: 'asc' },
+      select: { id: true, slug: true, name: true, currency: true, locale: true, logoUrl: true },
     });
   }
 
@@ -76,6 +90,47 @@ export class AdminCatalogService {
     });
   }
 
+  async getBrandOwner(brandId: string) {
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { owner: { select: { id: true, email: true, name: true } } },
+    });
+    if (!brand) throw new NotFoundException('Brand not found');
+    return brand.owner ?? null;
+  }
+
+  async setBrandOwner(brandId: string, dto: SetBrandOwnerDto) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } });
+    if (!brand) throw new NotFoundException('Brand not found');
+
+    const email = dto.email.toLowerCase();
+    let user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, role: true },
+    });
+
+    if (!user) {
+      if (!dto.tempPassword)
+        throw new BadRequestException('tempPassword is required when creating a new owner account');
+      const passwordHash = await this.passwords.hash(dto.tempPassword);
+      user = await this.prisma.user.create({
+        data: { email, passwordHash, passwordMustChange: true, name: dto.name ?? null, role: Role.BRAND_ADMIN },
+        select: { id: true, role: true },
+      });
+    } else if (user.role === Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Cannot assign SUPER_ADMIN as brand owner');
+    } else if (user.role !== Role.BRAND_ADMIN) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { role: Role.BRAND_ADMIN } });
+    }
+
+    const updated = await this.prisma.brand.update({
+      where: { id: brandId },
+      data: { ownerId: user.id },
+      select: { owner: { select: { id: true, email: true, name: true } } },
+    });
+    return updated.owner;
+  }
+
   // ── Stores ────────────────────────────────────────────────────────────────
   listStores(scope: BrandScope, brandId?: string) {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
@@ -96,10 +151,14 @@ export class AdminCatalogService {
 
   createStore(dto: CreateStoreDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
-    const { workingHours, ...rest } = dto;
+    const { workingHours, fulfillmentTypes, ...rest } = dto;
     return this.prisma.store.create({
       data: {
         ...rest,
+        // Default to pure pickup when the caller doesn't specify — covers
+        // the simple "add store" UI flow. `pickupPointType` has a Prisma
+        // default (COUNTER) so no override needed here.
+        fulfillmentTypes: fulfillmentTypes?.length ? fulfillmentTypes : ['TAKEAWAY'],
         workingHours: workingHours?.length ? { create: workingHours } : undefined,
       },
       include: { workingHours: true },

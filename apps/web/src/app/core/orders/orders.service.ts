@@ -31,6 +31,9 @@ export interface OrderView {
   currency: string;
   storeId: string;
   storeName: string;
+  storeLatitude: number;
+  storeLongitude: number;
+  storeAddress: string | null;
   customerName: string | null;
   items: Array<{
     id: string;

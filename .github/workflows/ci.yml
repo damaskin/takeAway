@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    # `main` is what production deploys from, so it has to be checked here —
+    # while it was not, every commit that shipped to customers had gone
+    # through no lint, no tests and no build.
     branches: [main]
   pull_request:
     branches: [main]

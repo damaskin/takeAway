@@ -34,6 +34,10 @@ const SIGN_IN_TIMEOUT_MS = 8_000;
  */
 @Injectable({ providedIn: 'root' })
 export class TmaAuthService {
+  /** Paths the interceptor must not re-authenticate on — that would recurse. */
+  static readonly SIGN_IN_PATH = '/auth/telegram';
+  static readonly REFRESH_PATH = '/auth/refresh';
+
   private readonly http = inject(HttpClient);
   private readonly tg = inject(TelegramBridgeService);
   private readonly store = inject(TmaAuthStore);
@@ -48,8 +52,20 @@ export class TmaAuthService {
   }
 
   /**
+   * Launch-time sign-in. Deliberately does NOT reuse a stored session:
+   * access tokens live 15 minutes, so anything hydrated from localStorage is
+   * almost certainly dead by the next launch. Trusting it left the app
+   * sending an expired token — public catalogue reads still worked, so the
+   * menu rendered while `POST /cart/items` came back 401.
+   */
+  startSession(): Observable<boolean> {
+    return this.signInWithInitData();
+  }
+
+  /**
    * Guarantee a session if one is obtainable. Cheap and idempotent — safe to
-   * call from the bootstrap, a guard, or a retry path.
+   * call from a guard or a retry path, where a token minted moments ago is
+   * still good and a second round-trip would only cost latency.
    *
    * Resolves `false` rather than throwing when we are outside Telegram or
    * the API is unreachable: the catalogue is public, so browsing still
@@ -72,7 +88,7 @@ export class TmaAuthService {
       return this.signInWithInitData().pipe(map((ok) => (ok ? this.store.accessToken() : null)));
     }
 
-    return this.http.post<AuthTokens>(`${this.api.baseUrl}/auth/refresh`, { refreshToken }).pipe(
+    return this.http.post<AuthTokens>(`${this.api.baseUrl}${TmaAuthService.REFRESH_PATH}`, { refreshToken }).pipe(
       map((tokens) => (this.store.setTokens(tokens) ? tokens.accessToken : null)),
       catchError(() => {
         // The refresh token is gone or revoked. In a browser this would be a
@@ -90,7 +106,7 @@ export class TmaAuthService {
     const initData = this.tg.initData;
     if (!initData) return of(false);
 
-    this.pending = this.http.post<AuthSession>(`${this.api.baseUrl}/auth/telegram`, { initData }).pipe(
+    this.pending = this.http.post<AuthSession>(`${this.api.baseUrl}${TmaAuthService.SIGN_IN_PATH}`, { initData }).pipe(
       retry({
         count: SIGN_IN_RETRIES,
         delay: (err, attempt) => {
@@ -127,7 +143,7 @@ export class TmaAuthService {
 export function initialiseTmaSession(): Observable<unknown> {
   const tg = inject(TelegramBridgeService);
   const auth = inject(TmaAuthService);
-  return auth.ensureSession().pipe(
+  return auth.startSession().pipe(
     switchMap((ok) => {
       tg.ready();
       tg.expand();

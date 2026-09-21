@@ -66,3 +66,6 @@ deploy/ssh/*
 deploy/.env.production
 
 .angular
+
+# Sandbox key material for the Agroprombank mock (never real bank keys)
+.secrets/

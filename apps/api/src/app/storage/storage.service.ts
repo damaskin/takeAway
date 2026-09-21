@@ -17,7 +17,7 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
  *   S3_SECRET_KEY
  *   S3_BUCKET       — target bucket, must exist and be public-read.
  *   S3_PUBLIC_URL_BASE — the URL prefix the public uses to read the object
- *                        (e.g. https://cdn.takeaway.million-sales.ru or
+ *                        (e.g. https://cdn.takeaway.md or
  *                         https://<bucket>.s3.<region>.amazonaws.com).
  *                        If omitted, falls back to `${S3_ENDPOINT}/${S3_BUCKET}`.
  */

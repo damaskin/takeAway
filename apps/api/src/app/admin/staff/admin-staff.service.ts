@@ -35,7 +35,7 @@ export class AdminStaffService {
     const rows = await this.prisma.userStore.findMany({
       where: {
         storeId,
-        user: { role: { in: [Role.STORE_MANAGER, Role.STAFF] } },
+        user: { role: { in: [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] } },
       },
       include: { user: { select: { id: true, email: true, name: true, role: true, blockedAt: true } } },
       orderBy: { createdAt: 'desc' },
@@ -79,7 +79,11 @@ export class AdminStaffService {
         select: { id: true },
       });
       userId = created.id;
-    } else if (existing.role === Role.STORE_MANAGER || existing.role === Role.STAFF) {
+    } else if (
+      existing.role === Role.STORE_MANAGER ||
+      existing.role === Role.STAFF ||
+      existing.role === Role.MENU_EDITOR
+    ) {
       userId = existing.id;
       if (existing.role !== input.role) {
         await this.prisma.user.update({ where: { id: userId }, data: { role: input.role } });
@@ -101,6 +105,23 @@ export class AdminStaffService {
 
     const entry = (await this.list(storeId, user)).find((r) => r.userId === userId);
     if (!entry) throw new NotFoundException('Staff was added but could not be loaded back');
+    return entry;
+  }
+
+  async changeRole(storeId: string, userId: string, role: Role, user: AuthenticatedUser) {
+    await this.assertStore(storeId, user);
+    const pivot = await this.prisma.userStore.findUnique({
+      where: { userId_storeId: { userId, storeId } },
+      include: { user: { select: { role: true } } },
+    });
+    if (!pivot) throw new NotFoundException('Staff is not rostered for this store');
+    const staffRoles: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
+    if (!staffRoles.includes(pivot.user.role)) {
+      throw new ForbiddenException('Cannot change role of a non-staff user here');
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { role } });
+    const entry = (await this.list(storeId, user)).find((r) => r.userId === userId);
+    if (!entry) throw new NotFoundException('Staff was updated but could not be reloaded');
     return entry;
   }
 
@@ -152,7 +173,7 @@ export class AdminStaffService {
   async remove(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
     await this.assertStore(storeId, user);
     const deleted = await this.prisma.userStore.deleteMany({
-      where: { storeId, userId, user: { role: { in: [Role.STORE_MANAGER, Role.STAFF] } } },
+      where: { storeId, userId, user: { role: { in: [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] } } },
     });
     if (deleted.count === 0) {
       throw new NotFoundException('Staff is not rostered for this store');

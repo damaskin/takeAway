@@ -28,6 +28,8 @@ export interface StoreAdminDto {
   addressLine?: string;
   city: string;
   country: string;
+  latitude: number;
+  longitude: number;
   status: 'OPEN' | 'CLOSED' | 'OVERLOADED';
   currency: string;
   phone?: string | null;
@@ -42,6 +44,8 @@ export interface UpdateStoreInput {
   addressLine?: string;
   city?: string;
   country?: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string | null;
   email?: string | null;
   status?: 'OPEN' | 'CLOSED' | 'OVERLOADED';
@@ -176,6 +180,15 @@ export class AdminCatalogApi {
 
   listBrands(): Observable<BrandDto[]> {
     return this.http.get<BrandDto[]>(`${this.api.baseUrl}/admin/brands`);
+  }
+
+  /**
+   * Brands the current user can act on. SUPER_ADMIN gets every brand;
+   * BRAND_ADMIN gets owned brands; staff/managers/riders get brands that
+   * own a store they're assigned to. Powers the active-brand selector.
+   */
+  listMyBrands(): Observable<BrandDto[]> {
+    return this.http.get<BrandDto[]>(`${this.api.baseUrl}/admin/brands/mine`);
   }
 
   listStores(brandId?: string): Observable<StoreAdminDto[]> {

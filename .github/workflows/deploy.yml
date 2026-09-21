@@ -1,54 +1,131 @@
 name: Deploy to production
 
+# Production is built from `main`. It was built from
+# `infra/migrate-takeaway-md` while the two lines were apart; they were
+# reunified in August and `main` took over in September, so the long-lived
+# infra branch is history now and nothing should be pushed to it.
+#
+# Changing where production deploys from is a one-line edit below: the deploy
+# step does `git checkout -f -B` on the server, so the checkout at
+# /opt/takeaway/repo follows on its own.
+
 on:
   push:
     branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
-      - '.github/**'
-      - '!.github/workflows/deploy.yml'
   workflow_dispatch:
 
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+env:
+  DEPLOY_BRANCH: main
+  API_HEALTH_URL: https://api.takeaway.md/api/health
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Configure SSH
+      # Fail here, by name, rather than three steps later with a cryptic ssh
+      # error. A deploy that cannot reach the server should say which secret
+      # is missing.
+      - name: Preflight — required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          missing=0
+          for v in DEPLOY_HOST DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository secret $v is not set."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+
+          # The host key must already be pinned. Do NOT "fix" a failure here
+          # with ssh-keyscan against the IP: keyscan trusts whoever answers,
+          # and this deploy previously pointed at an address that had been
+          # decommissioned and reassigned. Take the key from the Hetzner
+          # console or from `cat /etc/ssh/ssh_host_ed25519_key.pub` over a
+          # session you already trust, then put it in DEPLOY_KNOWN_HOSTS.
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for $DEPLOY_HOST. \
+          Add the server's public host key — from the provider console or the \
+          server itself, never from ssh-keyscan against the IP."
+            exit 1
+          fi
 
       - name: Run deploy.sh on production
         env:
-          HOST: 62.238.4.92
-          USER: deploy
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts "$USER@$HOST" \
-            "set -e; cd /opt/takeaway/repo && git fetch origin && git reset --hard origin/main && bash deploy/scripts/deploy.sh"
+          # No `git clean` on the remote: .env.production and the host-local
+          # docker-compose.shared-edge.override.yml are untracked on purpose,
+          # and cleaning them takes production down.
+          #
+          # `checkout -f -B` also repairs a checkout that has drifted onto
+          # another branch or a detached HEAD, which a plain reset would not.
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=20 \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "set -euo pipefail
+               cd /opt/takeaway/repo
+               git fetch --prune origin '$DEPLOY_BRANCH'
+               git checkout -f -B '$DEPLOY_BRANCH' 'origin/$DEPLOY_BRANCH'
+               bash deploy/scripts/deploy.sh"
 
-      # /api/health only proves the process is up — it stayed green with
-      # Postgres face-down. /api/health/ready talks to Postgres and Redis
-      # and answers 503 when either is unreachable, so a release that
-      # cannot serve a single order fails the gate instead of shipping.
-      - name: Readiness check
+      # Smoke tests run ON THE SERVER, via `curl --resolve`, bypassing DNS and
+      # Cloudflare. Asking from a GitHub runner would also be testing the CDN:
+      # a bot challenge served to the runner would fail a perfectly good
+      # deploy. The script asserts the API is serving *this* commit (a
+      # container that failed to restart keeps answering 200 from the previous
+      # build), that Postgres and Redis are reachable, and that no SPA is
+      # 502ing behind a stale edge upstream. It creates no production data.
+      - name: Smoke test (on the server)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
         run: |
-          for i in 1 2 3 4 5; do
-            if curl -sSf https://api.takeaway.million-sales.ru/api/health/ready > /tmp/ready.json; then
-              echo "API ready:"; cat /tmp/ready.json
-              exit 0
-            fi
-            echo "attempt $i not ready yet, retrying in 10s"
-            cat /tmp/ready.json 2>/dev/null || true
-            sleep 10
-          done
-          echo "API never became ready after 5 attempts"
-          cat /tmp/ready.json 2>/dev/null || true
-          exit 1
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "bash /opt/takeaway/repo/deploy/scripts/smoke-test.sh"
+
+      # Informational only. The stack is already proven healthy from inside the
+      # host; this just says whether the public path through Cloudflare agrees.
+      # A failure here is a CDN or DNS problem, not a bad build, so it must not
+      # fail the deploy.
+      - name: Public reachability (informational)
+        continue-on-error: true
+        run: |
+          code=$(curl -sS -o /tmp/pub.json -w '%{http_code}' --max-time 15 "$API_HEALTH_URL" || echo 000)
+          echo "public /api/health -> $code"
+          [ -s /tmp/pub.json ] && cat /tmp/pub.json || true
+          if [ "$code" != "200" ]; then
+            echo "::warning::Public health check returned $code while the server-side \
+          smoke test passed. The application is fine; look at Cloudflare or DNS."
+          fi

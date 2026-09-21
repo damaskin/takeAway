@@ -67,7 +67,7 @@ export class AuthService {
     email?: string;
     dateOfBirth?: string;
     locale?: 'EN' | 'RU';
-    currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
+    currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR' | 'MDL' | 'RUP';
   }): Observable<AuthUser> {
     return this.http.patch<AuthUser>(`${this.api.baseUrl}/auth/me`, patch).pipe(
       tap((user) => {

@@ -20,7 +20,8 @@
             "input": "apps/tma/public"
           }
         ],
-        "styles": ["apps/tma/src/styles.css"]
+        "styles": ["node_modules/leaflet/dist/leaflet.css", "apps/tma/src/styles.css"],
+        "allowedCommonJsDependencies": ["leaflet"]
       },
       "configurations": {
         "production": {

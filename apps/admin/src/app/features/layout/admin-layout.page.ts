@@ -1,4 +1,5 @@
-import { Component, HostListener, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -6,6 +7,7 @@ import { filter } from 'rxjs/operators';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 
 /**
@@ -21,7 +23,7 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, AdminSidebarComponent, LanguageSwitcherComponent, TranslatePipe],
+  imports: [RouterOutlet, FormsModule, AdminSidebarComponent, LanguageSwitcherComponent, TranslatePipe],
   template: `
     <div class="admin-shell flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
       <!-- Sidebar (drawer on mobile) -->
@@ -76,6 +78,33 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
               >
             </div>
           </div>
+
+          @if (showBrandSelector()) {
+            <label class="admin-brand-picker flex items-center" style="gap: 6px">
+              <span
+                class="admin-brand-picker-label"
+                style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                >{{ 'admin.layout.brand' | translate }}</span
+              >
+              <select
+                [ngModel]="activeBrand.activeId()"
+                (ngModelChange)="selectBrand($event)"
+                style="height: 34px; padding: 0 28px 0 10px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary); min-width: 160px"
+              >
+                @for (b of activeBrand.brands(); track b.id) {
+                  <option [value]="b.id">{{ b.name }}</option>
+                }
+              </select>
+            </label>
+          } @else if (singleBrandName(); as name) {
+            <span
+              class="admin-brand-single truncate"
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary); max-width: 200px"
+              [title]="name"
+              >{{ name }}</span
+            >
+          }
+
           <app-language-switcher />
           <button
             type="button"
@@ -132,6 +161,12 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
           padding: 0;
         }
       }
+      @media (max-width: 720px) {
+        .admin-brand-picker-label,
+        .admin-brand-single {
+          display: none;
+        }
+      }
       @media (max-width: 480px) {
         .admin-signout {
           display: none;
@@ -140,18 +175,34 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
     `,
   ],
 })
-export class AdminLayoutPage {
+export class AdminLayoutPage implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly store = inject(AuthStore);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
+  readonly activeBrand = inject(ActiveBrandService);
 
   readonly sidebarOpen = signal(false);
+
+  readonly showBrandSelector = computed(() => this.activeBrand.brands().length > 1);
+  readonly singleBrandName = computed(() => {
+    const brands = this.activeBrand.brands();
+    const only = brands.length === 1 ? brands[0] : null;
+    return only?.name ?? null;
+  });
 
   constructor() {
     // Auto-close the drawer on route change so tapping a sidebar link doesn't
     // leave the overlay covering the new page.
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => this.sidebarOpen.set(false));
+  }
+
+  ngOnInit(): void {
+    this.activeBrand.refresh();
+  }
+
+  selectBrand(id: string): void {
+    this.activeBrand.select(id);
   }
 
   @HostListener('window:keydown.escape')
@@ -199,7 +250,10 @@ export class AdminLayoutPage {
 
   logout(): void {
     this.auth.logout().subscribe({
-      complete: () => void this.router.navigate(['/login']),
+      complete: () => {
+        this.activeBrand.reset();
+        void this.router.navigate(['/login']);
+      },
     });
   }
 }

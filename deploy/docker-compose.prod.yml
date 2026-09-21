@@ -43,7 +43,7 @@ services:
 
   minio:
     # Self-hosted S3-compatible object storage for brand logos and other
-    # uploads. Exposed publicly only via nginx at cdn.takeaway.million-sales.ru;
+    # uploads. Exposed publicly only via nginx at cdn.takeaway.md;
     # the API reaches it internally on http://minio:9000.
     image: minio/minio:latest
     restart: unless-stopped
@@ -105,6 +105,14 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-takeaway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-takeaway}?schema=public
       REDIS_URL: redis://redis:6379
+    volumes:
+      # Bank-issued key material — the Agroprombank merchant key and the
+      # certificates it is checked against. Read-only, and on the host rather
+      # than in the image: a private key baked into a layer is a private key
+      # in every registry and every cached build that ever pulled it.
+      # /run is tmpfs inside the container, so the source directory is what
+      # survives a reboot.
+      - /opt/takeaway/secrets:/run/secrets:ro
     healthcheck:
       # /api/health only proves the process is alive — it answered "ok" with
       # Postgres face-down. /api/health/ready talks to Postgres and Redis and

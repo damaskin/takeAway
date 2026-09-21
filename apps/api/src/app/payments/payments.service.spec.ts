@@ -5,6 +5,7 @@ import { OrdersService } from '../orders/orders.service';
 import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsService } from './payments.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
@@ -110,6 +111,10 @@ describe('PaymentsService.handleWebhook', () => {
     const module = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        // The post-payment fan-out is provider-agnostic and lives in
+        // OrderSettlementService; wire the real one so this test still covers
+        // the whole path from webhook to KDS broadcast.
+        OrderSettlementService,
         { provide: PrismaService, useValue: prisma },
         {
           provide: StripeConfig,
@@ -214,6 +219,8 @@ describe('PaymentsService.refundOrder', () => {
         PaymentsService,
         { provide: PrismaService, useValue: prisma },
         { provide: StripeConfig, useValue: { webhookSecret: 'wh' } as Partial<StripeConfig> },
+        // Refunds never settle an order, so a stub is enough here.
+        { provide: OrderSettlementService, useValue: { settlePaidOrder: jest.fn() } },
         { provide: RealtimeGateway, useValue: { emitOrderStatusChanged: jest.fn() } },
         { provide: OrdersService, useValue: {} },
         { provide: NotificationsService, useValue: {} },

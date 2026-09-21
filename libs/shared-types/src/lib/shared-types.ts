@@ -4,7 +4,9 @@
  * Populated in later milestones (M1+).
  */
 
-export type Currency = 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
+// RUP — Transnistrian rouble. No ISO 4217 code exists for it; the ПРБ
+// directory used by Agroprombank numbers it `000`.
+export type Currency = 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR' | 'MDL' | 'RUP';
 
 export type Locale = 'en' | 'ru';
 

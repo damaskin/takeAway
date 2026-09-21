@@ -13,12 +13,13 @@ if [ -z "$EMAIL" ]; then
 fi
 
 DOMAINS=(
-  takeaway.million-sales.ru
-  api.takeaway.million-sales.ru
-  admin.takeaway.million-sales.ru
-  kds.takeaway.million-sales.ru
-  tma.takeaway.million-sales.ru
-  cdn.takeaway.million-sales.ru
+  takeaway.md
+  www.takeaway.md
+  api.takeaway.md
+  admin.takeaway.md
+  kds.takeaway.md
+  tma.takeaway.md
+  cdn.takeaway.md
 )
 
 # certbot runs in a one-shot container that shares the ACME webroot with nginx.
@@ -31,7 +32,7 @@ docker compose -f docker-compose.prod.yml run --rm certbot certonly \
   --webroot -w /var/www/certbot \
   --agree-tos --non-interactive \
   --email "$EMAIL" \
-  --cert-name takeaway.million-sales.ru \
+  --cert-name takeaway.md \
   $(printf -- '-d %s ' "${DOMAINS[@]}")
 
-echo "certificate issued. files under /opt/takeaway/letsencrypt/live/takeaway.million-sales.ru/"
+echo "certificate issued. files under /opt/takeaway/letsencrypt/live/takeaway.md/"

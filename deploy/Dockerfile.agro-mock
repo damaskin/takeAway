@@ -1,0 +1,21 @@
+# Sandbox Agroprombank gateway for the staging stack.
+#
+# Runs the same `createSandboxBank` the integration test uses, so the mock a
+# tester clicks against and the mock CI runs cannot drift apart. The sources
+# are pure TypeScript with no runtime dependencies, so `tsx` is all it needs.
+#
+# NEVER build this into a stack that takes real orders.
+FROM node:22-alpine
+
+WORKDIR /repo
+RUN npm install -g tsx@4.21.0
+
+# Paths are preserved because server.ts imports the sandbox through a relative
+# path into the api app.
+COPY apps/api/src/app/payments/agroprombank ./apps/api/src/app/payments/agroprombank
+COPY tools/agroprombank-mock ./tools/agroprombank-mock
+
+ENV AGRO_MOCK_PORT=8899
+EXPOSE 8899
+
+CMD ["tsx", "tools/agroprombank-mock/server.ts"]

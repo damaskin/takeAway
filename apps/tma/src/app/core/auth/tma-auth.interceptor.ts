@@ -20,10 +20,10 @@ export const tmaAuthInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(TmaAuthService);
 
   return next(withToken(req, store.accessToken())).pipe(
-    catchError((err: HttpErrorResponse) => {
-      if (err.status !== 401) return throwError(() => err);
+    catchError((err: unknown) => {
+      if (!(err instanceof HttpErrorResponse) || err.status !== 401) return throwError(() => err);
       // Never recurse through the endpoints that mint tokens.
-      if (req.url.includes('/auth/telegram') || req.url.includes('/auth/refresh')) {
+      if (req.url.includes(TmaAuthService.SIGN_IN_PATH) || req.url.includes(TmaAuthService.REFRESH_PATH)) {
         return throwError(() => err);
       }
 

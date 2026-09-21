@@ -398,7 +398,7 @@ export class MenuPage implements OnInit {
   });
 
   ngOnInit(): void {
-    this.api.listBrands().subscribe({
+    this.api.listMyBrands().subscribe({
       next: (brands) => {
         const first = brands[0];
         if (!first) return;

@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, OnInit, Output, inject, signal } from '@angular/core';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
@@ -19,7 +20,7 @@ type Tab = 'details' | 'hours';
 @Component({
   selector: 'app-store-editor',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, TranslatePipe, LeafletMapComponent],
   template: `
     <div
       style="background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px"
@@ -145,6 +146,40 @@ type Tab = 'details' | 'hours';
               />
             </label>
           </div>
+
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+            <label class="flex flex-col" style="gap: 4px">
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+                'admin.stores.fields.latitude' | translate
+              }}</span>
+              <input
+                formControlName="latitude"
+                type="number"
+                step="0.000001"
+                style="height: 36px; padding: 0 10px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-mono); font-size: 13px; outline: none"
+              />
+            </label>
+            <label class="flex flex-col" style="gap: 4px">
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+                'admin.stores.fields.longitude' | translate
+              }}</span>
+              <input
+                formControlName="longitude"
+                type="number"
+                step="0.000001"
+                style="height: 36px; padding: 0 10px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-mono); font-size: 13px; outline: none"
+              />
+            </label>
+          </div>
+
+          <div class="flex flex-col" style="gap: 6px">
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+              'admin.stores.editor.location' | translate
+            }}</span>
+            <div style="height: 240px; border-radius: 10px; overflow: hidden; border: 1px solid var(--color-border)">
+              <lib-leaflet-map [pickable]="true" [markers]="pickerMarkers()" (markerMoved)="onPickerMoved($event)" />
+            </div>
+          </div>
         </form>
       } @else if (tab() === 'hours') {
         <form [formGroup]="hoursForm" class="flex flex-col" style="gap: 8px">
@@ -242,11 +277,16 @@ export class StoreEditorComponent implements OnInit {
     addressLine: new FormControl('', { nonNullable: true }),
     city: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     country: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(2)] }),
+    latitude: new FormControl<number | null>(null, { validators: [Validators.required] }),
+    longitude: new FormControl<number | null>(null, { validators: [Validators.required] }),
     phone: new FormControl('', { nonNullable: true }),
     email: new FormControl('', { nonNullable: true }),
     status: new FormControl<'OPEN' | 'CLOSED' | 'OVERLOADED'>('OPEN', { nonNullable: true }),
     minOrderCents: new FormControl(0, { nonNullable: true }),
   });
+
+  /** Marker for the details-tab map picker — mirrors the lat/lng controls. */
+  readonly pickerMarkers = signal<MapMarker[]>([]);
 
   readonly hoursForm = new FormGroup({
     days: new FormArray<
@@ -279,6 +319,17 @@ export class StoreEditorComponent implements OnInit {
         this.error.set(this.extractMessage(err));
       },
     });
+
+    // Keep the picker marker in sync when lat/lng are typed manually.
+    this.detailsForm.valueChanges.subscribe((v) => {
+      if (typeof v.latitude === 'number' && typeof v.longitude === 'number') {
+        this.pickerMarkers.set([{ id: this.storeId, lat: v.latitude, lng: v.longitude, kind: 'store' }]);
+      }
+    });
+  }
+
+  onPickerMoved(p: LatLng): void {
+    this.detailsForm.patchValue({ latitude: p.lat, longitude: p.lng });
   }
 
   save(): void {
@@ -297,6 +348,8 @@ export class StoreEditorComponent implements OnInit {
         status: v.status,
         minOrderCents: Number(v.minOrderCents) || 0,
       };
+      if (typeof v.latitude === 'number') payload.latitude = v.latitude;
+      if (typeof v.longitude === 'number') payload.longitude = v.longitude;
       this.api.updateStore(this.storeId, payload).subscribe({
         next: (updated) => {
           this.saving.set(false);
@@ -343,6 +396,8 @@ export class StoreEditorComponent implements OnInit {
       addressLine: s.addressLine ?? '',
       city: s.city,
       country: s.country,
+      latitude: s.latitude,
+      longitude: s.longitude,
       phone: s.phone ?? '',
       email: s.email ?? '',
       status: s.status,

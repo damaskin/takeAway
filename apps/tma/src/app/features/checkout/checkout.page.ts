@@ -7,9 +7,12 @@ import { computeTax } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
+import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
+import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
@@ -297,6 +300,62 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
+      <!-- Payment method (Agroprombank card) -->
+      @if (cardPaymentsEnabled()) {
+        <div class="flex flex-col" style="gap: 10px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.paymentMethod' | translate }}</span
+          >
+          @if (cards().length === 0) {
+            <button
+              type="button"
+              (click)="goToCards()"
+              class="flex items-center"
+              style="background: var(--color-foam); border: 1px dashed var(--color-border-light); border-radius: var(--radius-input); padding: 0 14px; height: 48px; gap: 8px"
+            >
+              <span style="font-size: 16px">💳</span>
+              <span
+                class="flex-1 text-left"
+                style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                >{{ 'tma.checkout.addCard' | translate }}</span
+              >
+              <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+            </button>
+          } @else {
+            <div
+              class="flex flex-col"
+              style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; overflow: hidden"
+            >
+              @for (card of cards(); track card.id; let last = $last) {
+                <button
+                  type="button"
+                  (click)="selectCard(card)"
+                  class="flex items-center"
+                  [style.borderBottom]="last ? 'none' : '1px solid var(--color-border-light)'"
+                  style="height: 52px; padding: 0 14px; gap: 12px"
+                >
+                  <span style="font-size: 16px">{{ selectedCardId() === card.id ? '🔘' : '⚪️' }}</span>
+                  <span
+                    class="flex-1 text-left"
+                    style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                    >{{ card.label || card.maskedPan || card.instituteName }}</span
+                  >
+                </button>
+              }
+            </div>
+            <button
+              type="button"
+              (click)="goToCards()"
+              class="text-left"
+              style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel)"
+            >
+              {{ 'tma.checkout.manageCards' | translate }}
+            </button>
+          }
+        </div>
+      }
+
       <!-- Promo code -->
       <div
         class="flex items-center"
@@ -331,12 +390,16 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
 export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly cartService = inject(CartService);
   private readonly catalog = inject(CatalogService);
+  private readonly activeStore = inject(ActiveStoreService);
   private readonly orders = inject(OrdersApi);
   private readonly tg = inject(TelegramBridgeService);
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
   private readonly deliveryFeeApi = inject(DeliveryFeeApi);
+  private readonly flags = inject(FeatureFlagsStore);
+  private readonly cardsApi = inject(PaymentCardsApi);
+  private readonly cardsStore = inject(PaymentCardsStore);
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
@@ -367,19 +430,34 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly taxRateBps = signal(0);
   readonly taxIncludedInPrice = signal(true);
 
+  /** Card payments are only offered where ops enabled the bank integration. */
+  readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  readonly cards = signal<BoundCard[]>([]);
+  readonly selectedCardId = signal<string | null>(null);
+  readonly paying = signal(false);
+  /**
+   * Set once the order exists. A failed charge must not create a second order
+   * when the customer taps pay again — we retry the payment against this one.
+   */
+  private placedOrderId: string | null = null;
+
   private detachBack: (() => void) | null = null;
 
   ngOnInit(): void {
+    // Check out the store the customer actually shopped in. Using the first
+    // catalog entry loaded an unrelated (empty) cart once a second brand went
+    // live, which hid the pay button and made ordering look broken.
+    const activeId = this.activeStore.current();
     this.catalog.listStores().subscribe({
       next: (list) => {
-        const first = list[0];
-        if (!first) return;
-        this.storeName.set(first.name);
-        this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
-        this.activeStoreId = first.id;
-        this.taxRateBps.set(first.taxRateBps);
-        this.taxIncludedInPrice.set(first.taxIncludedInPrice);
-        this.cartService.load(first.id).subscribe({
+        const store = (activeId ? list.find((s) => s.id === activeId) : null) ?? list[0];
+        if (!store) return;
+        this.storeName.set(store.name);
+        this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
+        this.activeStoreId = store.id;
+        this.taxRateBps.set(store.taxRateBps);
+        this.taxIncludedInPrice.set(store.taxIncludedInPrice);
+        this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
             this.refreshMainButton();
@@ -388,6 +466,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.refreshFeeQuote();
       },
     });
+
+    this.flags.load();
+    this.loadCards();
 
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();
@@ -398,6 +479,30 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.detachBack?.();
     this.tg.hideMainButton();
+  }
+
+  selectCard(card: BoundCard): void {
+    this.selectedCardId.set(card.id);
+    this.tg.haptic('light');
+    this.refreshMainButton();
+  }
+
+  goToCards(): void {
+    void this.router.navigate(['/cards']);
+  }
+
+  private loadCards(): void {
+    if (!this.cardPaymentsEnabled()) return;
+    this.cardsStore.load().subscribe({
+      next: (cards) => {
+        this.cards.set(cards);
+        this.selectedCardId.set((cards.find((c) => c.isDefault) ?? cards[0])?.id ?? null);
+        this.refreshMainButton();
+      },
+      // A card-list outage must not block ordering — checkout falls back to
+      // placing the order unpaid, exactly as it behaved before.
+      error: () => undefined,
+    });
   }
 
   setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
@@ -566,8 +671,15 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   private placeOrder(): void {
     const c = this.cart();
-    if (!c) return;
+    if (!c || this.paying()) return;
     this.tg.haptic('medium');
+
+    // Retrying after a declined charge: the order already exists, so charge it
+    // again rather than placing a duplicate.
+    if (this.placedOrderId) {
+      this.payFor(this.placedOrderId);
+      return;
+    }
     const isDelivery = this.fulfillmentType() === 'DELIVERY';
     const pickupAt = this.pickupMode() === 'SCHEDULED' ? this.scheduledAt() : undefined;
     const input = {
@@ -586,13 +698,45 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         : {}),
     };
     this.orders.create(input).subscribe({
-      next: (order) => void this.router.navigate(['/orders', order.id]),
+      next: (order) => {
+        this.placedOrderId = order.id;
+        this.payFor(order.id);
+      },
+      error: (err) => this.showError(err, 'tma.checkout.placeOrderFailed'),
+    });
+  }
+
+  /**
+   * Charges the selected card and opens the order screen. With no card bound
+   * (or card payments switched off) the order is simply placed unpaid, which
+   * is how checkout behaved before the bank integration.
+   */
+  private payFor(orderId: string): void {
+    const cardId = this.selectedCardId();
+    if (!this.cardPaymentsEnabled() || !cardId) {
+      void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+
+    this.paying.set(true);
+    this.error.set(null);
+    this.cardsApi.pay({ orderId, cardId }).subscribe({
+      next: () => {
+        this.paying.set(false);
+        this.tg.haptic('medium');
+        void this.router.navigate(['/orders', orderId]);
+      },
       error: (err) => {
-        const maybe = err as { error?: { message?: string }; message?: string };
-        this.error.set(
-          maybe.error?.message ?? maybe.message ?? this.translate.instant('tma.checkout.placeOrderFailed'),
-        );
+        this.paying.set(false);
+        this.showError(err, 'tma.checkout.payFailed');
       },
     });
+  }
+
+  private showError(err: unknown, fallbackKey: string): void {
+    const maybe = err as { error?: { message?: string | string[] }; message?: string };
+    const raw = maybe.error?.message ?? maybe.message;
+    const message = Array.isArray(raw) ? raw.join(', ') : raw;
+    this.error.set(message || this.translate.instant(fallbackKey));
   }
 }

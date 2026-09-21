@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/decorators/public.decorator';
-import { FeatureFlagsService } from './feature-flags.service';
+import { FeatureFlagsService, type FeatureFlagsSnapshot } from './feature-flags.service';
 
 @ApiTags('config')
 @Controller('config')
@@ -17,7 +17,7 @@ export class ConfigController {
   @Get('features')
   @Public()
   @ApiOkResponse({ description: 'Active feature flags for this deployment' })
-  features(): { deliveryEnabled: boolean } {
+  features(): FeatureFlagsSnapshot {
     return this.flags.snapshot();
   }
 }

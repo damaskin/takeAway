@@ -1,17 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
-const ALLOWED_ROLES = [Role.STORE_MANAGER, Role.STAFF] as const;
-type StaffRole = (typeof ALLOWED_ROLES)[number];
+const ALLOWED_ROLES = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] as const;
+export type StaffRole = (typeof ALLOWED_ROLES)[number];
 
 export class AddStaffDto {
   @ApiProperty({ example: 'manager@brand.com' })
   @IsEmail()
   email!: string;
 
+  // Restricted to the staff subset — a request can't escalate someone to
+  // BRAND_ADMIN / SUPER_ADMIN through this endpoint.
   @ApiProperty({ enum: ALLOWED_ROLES })
-  @IsEnum(Role)
+  @IsIn(ALLOWED_ROLES)
   role!: StaffRole;
 
   @ApiPropertyOptional({ example: 'Jane Smith' })
@@ -25,4 +27,10 @@ export class AddStaffDto {
   @MinLength(8)
   @MaxLength(128)
   tempPassword!: string;
+}
+
+export class ChangeStaffRoleDto {
+  @ApiProperty({ enum: ALLOWED_ROLES })
+  @IsIn(ALLOWED_ROLES)
+  role!: StaffRole;
 }
