@@ -137,6 +137,21 @@ entry for the host, take the key from the provider console or from
 and this deploy already spent months pointed at an address that had been
 decommissioned and reassigned to someone else.
 
+`DEPLOY_KNOWN_HOSTS` proves the _server_ is who we think it is;
+`DEPLOY_SSH_KEY` proves we are. They fail differently and the messages are
+easy to confuse:
+
+| ssh says                                 | Meaning                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| `Host key verification failed`           | The pin does not match what answered. Wrong host, or a genuinely changed key.  |
+| `Permission denied (publickey,password)` | We reached the right box; that user's `authorized_keys` does not hold our key. |
+
+The second one is what a server migration leaves behind: the key pair in the
+secrets is the old host's. Generate a fresh one, append the **public** half to
+`/home/deploy/.ssh/authorized_keys` over a session you already have, and put
+the **private** half in `DEPLOY_SSH_KEY`. The private key never travels
+through chat, a ticket or email — only from your machine into the secret.
+
 The manual path, from your machine:
 
 ```bash
