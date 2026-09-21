@@ -56,6 +56,10 @@ You generate your own key pair; the bank issues the matching certificate.
    boot with nobody there to type a passphrase. Both files belong on the server
    only, readable by the API user and nobody else (`chmod 600`).
 
+   OpenSSL 3 refuses the `.pfx` Windows writes — `digital envelope routines::
+unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
+   commands in that case; the resulting PEMs are identical.
+
 8. Ask the bank for its own signing certificate as well —
    `AGROPROMBANK_BANK_CERTIFICATE_FILE`. Without it the service refuses to
    start unless `AGROPROMBANK_VERIFY_RESPONSES=false`, and with verification
