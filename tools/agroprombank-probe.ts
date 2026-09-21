@@ -16,6 +16,7 @@
  *   AGROPROMBANK_MERCHANT_ID=... AGROPROMBANK_PRIVATE_KEY_FILE=... pnpm agro:probe
  */
 
+import { createPrivateKey, X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { DEFAULT_ENDPOINT, DEFAULT_NAMESPACE } from '../apps/api/src/app/payments/agroprombank/constants';
@@ -37,10 +38,85 @@ const namespace = process.env['AGROPROMBANK_NAMESPACE'] ?? DEFAULT_NAMESPACE;
 const merchantId = process.env['AGROPROMBANK_MERCHANT_ID'] ?? '';
 const keyPath = process.env['AGROPROMBANK_PRIVATE_KEY_FILE'] ?? '';
 const bankCertPath = process.env['AGROPROMBANK_BANK_CERTIFICATE_FILE'] ?? '';
+const certPath = process.env['AGROPROMBANK_CERTIFICATE_FILE'] ?? '';
+const terminalId = process.env['AGROPROMBANK_TERMINAL_ID'] ?? '';
+// Stops before the network call. Useful the moment the bank issues the
+// certificate: the key material can be checked without touching the gateway.
+const offline = process.env['AGROPROMBANK_PROBE_OFFLINE'] === '1';
 const timeoutMs = Number(process.env['AGROPROMBANK_TIMEOUT_MS'] ?? 30_000);
 
 function line(label: string, value: string): void {
   console.log(`  ${label.padEnd(22)} ${value}`);
+}
+
+/**
+ * The bank stamps the contract identifiers into a private extension of the
+ * merchant certificate. Reading it back is the one way to tell, before any
+ * money moves, that the certificate on this host belongs to the merchant this
+ * host thinks it is — a staging certificate in production otherwise surfaces
+ * as an opaque rejection from the gateway.
+ *
+ * There is no ASN.1 parser here and a whole dependency would be silly for one
+ * UTF8String: the value is ASCII inside the DER, so we read it out directly —
+ * bounded by the string's own declared length, because the DER bytes that
+ * follow it are printable often enough to be swallowed by a greedy match.
+ */
+function identifiersInCertificate(cert: X509Certificate): { merchantId?: string; terminalId?: string } {
+  const der = cert.raw.toString('latin1');
+  const at = der.indexOf('TerminalId=');
+  // UTF8String (tag 0x0c) with a short-form length, which 40-odd bytes always
+  // take. Anything else and we would be guessing at where the value ends.
+  if (at < 2 || der.charCodeAt(at - 2) !== 0x0c) return {};
+
+  const value = der.slice(at, at + der.charCodeAt(at - 1));
+  const match = /^TerminalId=([^,]+),MerchantId=(.+)$/.exec(value);
+  return match ? { terminalId: match[1], merchantId: match[2] } : {};
+}
+
+/**
+ * Everything that can be checked without the bank: the certificate matches the
+ * key, it is inside its validity window, and it names this merchant.
+ *
+ * Returns the problems found, empty when the material is sound.
+ */
+function inspectCredentials(): string[] {
+  const problems: string[] = [];
+  const privateKey = createPrivateKey(readFileSync(keyPath, 'utf8'));
+  line(
+    'key type',
+    `${privateKey.asymmetricKeyType ?? 'unknown'} ${privateKey.asymmetricKeyDetails?.modulusLength ?? ''}`.trim(),
+  );
+
+  if (!certPath) {
+    line('certificate', '(not configured - pairing not checked)');
+    return problems;
+  }
+
+  const cert = new X509Certificate(readFileSync(certPath, 'utf8'));
+  line('certificate', `${cert.subject.replace(/\n/g, ', ')}`);
+  line('issuer', cert.issuer.replace(/\n/g, ', '));
+  line('valid', `${cert.validFrom} .. ${cert.validTo}`);
+
+  if (!cert.checkPrivateKey(privateKey)) {
+    problems.push('the certificate does not match the private key - they are from different requests');
+  }
+
+  const now = Date.now();
+  if (Date.parse(cert.validFrom) > now) problems.push(`the certificate is not valid until ${cert.validFrom}`);
+  if (Date.parse(cert.validTo) < now) problems.push(`the certificate expired on ${cert.validTo}`);
+
+  const ids = identifiersInCertificate(cert);
+  if (ids.merchantId || ids.terminalId) {
+    line('certificate ids', `merchant ${ids.merchantId ?? '?'}, terminal ${ids.terminalId ?? '?'}`);
+    if (ids.merchantId && ids.merchantId !== merchantId) {
+      problems.push(`the certificate is issued to merchant ${ids.merchantId}, not ${merchantId}`);
+    }
+    if (terminalId && ids.terminalId && ids.terminalId !== terminalId) {
+      problems.push(`the certificate is issued to terminal ${ids.terminalId}, not ${terminalId}`);
+    }
+  }
+
+  return problems;
 }
 
 function buildEnvelope(): string {
@@ -72,6 +148,20 @@ async function probe(): Promise<number> {
   line('merchantId', merchantId);
   line('signing key', keyPath);
   line('bank certificate', bankCertPath || '(not configured - response not verified)');
+
+  const problems = inspectCredentials();
+  if (problems.length > 0) {
+    console.log('');
+    console.log('  [x] credentials - the key material on this host is not usable as is');
+    for (const problem of problems) line('', problem);
+    return 4;
+  }
+
+  if (offline) {
+    console.log('');
+    console.log('  [ok] key material checks out. Re-run without AGROPROMBANK_PROBE_OFFLINE to call the bank.');
+    return 0;
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

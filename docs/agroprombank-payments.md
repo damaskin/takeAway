@@ -287,6 +287,18 @@ left behind.
 
 - [ ] Merchant certificate generated with the E-Commerce terminal purpose and
       installed as `AGROPROMBANK_PRIVATE_KEY_FILE`.
+- [ ] Key material checked on the host that will use it:
+
+      ```bash
+      AGROPROMBANK_PROBE_OFFLINE=1 pnpm agro:probe
+      ```
+
+      It reports whether the certificate and the key are one pair, whether the
+      certificate is inside its validity window, and whether the identifiers
+      the bank stamped into it match `AGROPROMBANK_MERCHANT_ID` and
+      `AGROPROMBANK_TERMINAL_ID`. Nothing leaves the host. Drop the variable to
+      then make the one harmless call to the gateway.
+
 - [ ] Bank certificate installed; `AGROPROMBANK_VERIFY_RESPONSES=true`.
 - [ ] `AGROPROMBANK_INVOICE_PREFIX` distinct from every other environment.
 - [ ] Brand currency set to `RUP`.
