@@ -89,10 +89,64 @@ You generate your own key pair; the bank issues the matching certificate.
 unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
    commands in that case; the resulting PEMs are identical.
 
-8. Ask the bank for its own signing certificate as well —
+8. Try taking the bank's certificate from the bank. Every response is signed,
+   and an XMLDSig signature may carry the signer's certificate inline, in which
+   case one harmless call settles it:
+
+   ```bash
+   docker run --rm \
+     -v /opt/takeaway/secrets:/secrets:ro \
+     -v /opt/takeaway/repo/tools:/tools:ro -v /tmp/agro:/out \
+     -e AGROPROMBANK_MERCHANT_ID=M000... \
+     -e AGROPROMBANK_PRIVATE_KEY_FILE=/secrets/agroprombank-private-key.pem \
+     -e AGROPROMBANK_OUT=/out/agroprombank-bank-certificate.pem \
+     node:22-alpine node /tools/agroprombank-fetch-bank-cert.mjs
+   ```
+
+   `tools/agroprombank-fetch-bank-cert.mjs` checks a token that cannot exist:
+   it moves no money and creates nothing, and the rejection is as good as an
+   acceptance, because what it is after is the signature. It is a single
+   dependency-free file because it has to run on the production host, where the
+   key is and where there is no `node_modules`. It prints the whole response,
+   so a "no certificate inline" answer is at least a look at what the gateway
+   really sends.
+
+   Run against production on 21.09.2026 it answered: the certificate is there,
+   in `<KeyInfo>`, and no correspondence was needed. `ЗАО "АГРОПРОМБАНК"`,
+   issued by APB External CA, valid to 01.04.2027. It is in the repository as
+   `testing/bank-response.fixture.ts` too, so the verifier is tested against a
+   signature the bank really made rather than only against our own signer.
+
+9. If the response carries no certificate, ask the bank for its signing
+   certificate —
    `AGROPROMBANK_BANK_CERTIFICATE_FILE`. Without it the service refuses to
    start unless `AGROPROMBANK_VERIFY_RESPONSES=false`, and with verification
    off nothing but TLS separates a real "payment succeeded" from a forged one.
+
+10. Check that the bank accepts _our_ signature. It is a separate question from
+    the one above — the first production call came back `result=-1`, «Ошибка
+    проверки подписи», while the response it rejected us with verified
+    perfectly on our side. The documentation does not pin down the shape of
+    `<Signature>` the gateway wants, so rather than guess one change at a time:
+
+    ```bash
+    docker run --rm \
+      -v /opt/takeaway/secrets:/secrets:ro \
+      -v /opt/takeaway/repo/tools:/tools:ro \
+      -e AGROPROMBANK_MERCHANT_ID=M000... \
+      -e AGROPROMBANK_PRIVATE_KEY_FILE=/secrets/agroprombank-private-key.pem \
+      -e AGROPROMBANK_CERTIFICATE_FILE=/secrets/agroprombank-certificate.pem \
+      node:22-alpine node /tools/agroprombank-signature-probe.mjs
+    ```
+
+    `tools/agroprombank-signature-probe.mjs` sends the same impossible
+    CheckToken five times, varying `<KeyInfo>` (absent / certificate /
+    certificate + `<RSAKeyValue>`) and the transform chain (enveloped alone /
+    enveloped + exclusive c14n), and reports what the bank says to each. A
+    variant that gets an answer about the token instead of about the signature
+    is the one to configure. If every variant is refused, the disagreement is
+    not about the XML and the bank has to check that our certificate is bound
+    to the merchant on their side.
 
 The private key must live only on the server. The documentation is explicit
 that storing key material client-side (mobile app, browser) compromises the

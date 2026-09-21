@@ -1,11 +1,13 @@
 import { createHash, createSign, generateKeyPairSync } from 'node:crypto';
 
+import { BANK_RESPONSE_FIXTURE } from './testing/bank-response.fixture';
 import { buildElement, canonicalize, parseXml } from './xml';
 import {
   C14N_ALGORITHM,
   DIGEST_ALGORITHM,
   DSIG_NS,
   ENVELOPED_TRANSFORM,
+  EXCLUSIVE_C14N_TRANSFORM,
   SIGNATURE_ALGORITHM,
   signXml,
   verifyXml,
@@ -132,6 +134,18 @@ describe('verifyXml', () => {
     });
   });
 
+  it('rejects a transform we do not apply', () => {
+    const signed = signXml(request, { privateKeyPem: merchant.privateKey }).replace(
+      `<Transform Algorithm="${ENVELOPED_TRANSFORM}"></Transform>`,
+      `<Transform Algorithm="${ENVELOPED_TRANSFORM}"></Transform>` +
+        '<Transform Algorithm="http://www.w3.org/TR/1999/REC-xslt-19991116"></Transform>',
+    );
+    expect(verifyXml(signed, merchant.publicKey)).toEqual({
+      valid: false,
+      reason: 'Unsupported transform: http://www.w3.org/TR/1999/REC-xslt-19991116',
+    });
+  });
+
   it('reports malformed XML instead of throwing', () => {
     const verdict = verifyXml('<root><a></root>', merchant.publicKey);
     expect(verdict.valid).toBe(false);
@@ -159,6 +173,39 @@ describe('verifyXml', () => {
     });
   });
 });
+
+/**
+ * The counterparty test. Everything else here checks our signer against our
+ * own verifier, which cannot catch a canonicalization both sides get wrong in
+ * the same way; this checks it against a signature the bank really produced.
+ */
+describe('a real response from the production gateway', () => {
+  const certificatePem = pemFromFixture(BANK_RESPONSE_FIXTURE);
+
+  it('verifies against the certificate it carries', () => {
+    expect(verifyXml(BANK_RESPONSE_FIXTURE, certificatePem)).toEqual({ valid: true });
+  });
+
+  it('is signed with the transform chain the documentation does not mention', () => {
+    expect(BANK_RESPONSE_FIXTURE).toContain(`<Transform Algorithm="${ENVELOPED_TRANSFORM}" />`);
+    expect(BANK_RESPONSE_FIXTURE).toContain(`<Transform Algorithm="${EXCLUSIVE_C14N_TRANSFORM}" />`);
+  });
+
+  it('still catches tampering', () => {
+    const tampered = BANK_RESPONSE_FIXTURE.replace('<result>-1</result>', '<result>1</result>');
+    expect(verifyXml(tampered, certificatePem)).toEqual({
+      valid: false,
+      reason: 'Reference digest does not match the document body',
+    });
+  });
+});
+
+/** Rebuilds a PEM from the `<X509Certificate>` a signature carries. */
+function pemFromFixture(document: string): string {
+  const base64 = /<X509Certificate>([\s\S]*?)<\/X509Certificate>/.exec(document)?.[1]?.replace(/\s+/g, '');
+  if (!base64) throw new Error('fixture carries no <X509Certificate>');
+  return `-----BEGIN CERTIFICATE-----\n${base64.replace(/(.{64})/g, '$1\n').trimEnd()}\n-----END CERTIFICATE-----\n`;
+}
 
 /**
  * Minimal independent implementation of the bank side: digest the document as
