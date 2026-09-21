@@ -89,7 +89,30 @@ You generate your own key pair; the bank issues the matching certificate.
 unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
    commands in that case; the resulting PEMs are identical.
 
-8. Ask the bank for its own signing certificate as well —
+8. Try taking the bank's certificate from the bank. Every response is signed,
+   and an XMLDSig signature may carry the signer's certificate inline, in which
+   case one harmless call settles it:
+
+   ```bash
+   docker run --rm \
+     -v /opt/takeaway/secrets:/secrets:ro \
+     -v /opt/takeaway/repo/tools:/tools:ro -v /tmp/agro:/out \
+     -e AGROPROMBANK_MERCHANT_ID=M000... \
+     -e AGROPROMBANK_PRIVATE_KEY_FILE=/secrets/agroprombank-private-key.pem \
+     -e AGROPROMBANK_OUT=/out/agroprombank-bank-certificate.pem \
+     node:22-alpine node /tools/agroprombank-fetch-bank-cert.mjs
+   ```
+
+   `tools/agroprombank-fetch-bank-cert.mjs` checks a token that cannot exist:
+   it moves no money and creates nothing, and the rejection is as good as an
+   acceptance, because what it is after is the signature. It is a single
+   dependency-free file because it has to run on the production host, where the
+   key is and where there is no `node_modules`. It prints the whole response,
+   so a "no certificate inline" answer is at least a look at what the gateway
+   really sends.
+
+9. If the response carries no certificate, ask the bank for its signing
+   certificate —
    `AGROPROMBANK_BANK_CERTIFICATE_FILE`. Without it the service refuses to
    start unless `AGROPROMBANK_VERIFY_RESPONSES=false`, and with verification
    off nothing but TLS separates a real "payment succeeded" from a forged one.
