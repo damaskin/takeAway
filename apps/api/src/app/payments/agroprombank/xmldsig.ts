@@ -251,12 +251,22 @@ function cloneElement(el: XmlElement): XmlElement {
   };
 }
 
-/** Reduces a PEM block to the bare base64 body expected inside `<X509Certificate>`. */
+/**
+ * Reduces a PEM certificate to the bare base64 body `<X509Certificate>` wants.
+ *
+ * Takes what is between the markers rather than removing the markers from the
+ * file: `openssl pkcs12 -clcerts -nokeys` writes `Bag Attributes`,
+ * `localKeyID:`, `subject=` and `issuer=` lines above them, and stripping only
+ * the markers folds that text into the base64. The bank's parser then refuses
+ * the whole request with a complaint about base64 that says nothing about
+ * where the junk came from — which is how this was found.
+ */
 function stripPem(pem: string): string {
-  return pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
+  const body = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(pem)?.[1];
+  if (body === undefined) {
+    throw new XmlSignatureError('Certificate is not a PEM block: no -----BEGIN CERTIFICATE----- found');
+  }
+  return body.replace(/\s+/g, '');
 }
 
 function messageOf(err: unknown): string {

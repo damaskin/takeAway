@@ -47,8 +47,8 @@ You generate your own key pair; the bank issues the matching certificate.
    ```bash
    # private key — AGROPROMBANK_PRIVATE_KEY_FILE
    openssl pkcs12 -in merchant.pfx -nocerts -nodes -out agroprombank-private-key.pem
-   # our own certificate — AGROPROMBANK_CERTIFICATE_FILE, only needed when
-   # AGROPROMBANK_INCLUDE_KEYINFO is on
+   # our own certificate — AGROPROMBANK_CERTIFICATE_FILE, required, because the
+   # gateway will not verify a request that carries no <KeyInfo>
    openssl pkcs12 -in merchant.pfx -clcerts -nokeys -out agroprombank-certificate.pem
    ```
 
@@ -148,6 +148,15 @@ unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
     not about the XML and the bank has to check that our certificate is bound
     to the merchant on their side.
 
+    Run on 21.09.2026 it answered both halves of the question at once. Without
+    `<KeyInfo>` the gateway says «Ошибка проверки подписи» — so it does not
+    identify us by merchant id, whatever the samples show, and
+    `AGROPROMBANK_INCLUDE_KEYINFO` now defaults to on. With `<KeyInfo>` the
+    message changed to a complaint about base64, which was ours: the
+    certificate body was being folded together with the `Bag Attributes` and
+    `subject=` lines `openssl pkcs12 -clcerts` writes above the PEM block. Both
+    are fixed; the second is covered by a test.
+
 The private key must live only on the server. The documentation is explicit
 that storing key material client-side (mobile app, browser) compromises the
 merchant key — our design keeps every bank call server-side for this reason.
@@ -162,8 +171,12 @@ AGROPROMBANK_ENABLED=true
 AGROPROMBANK_MERCHANT_ID=M00012345
 AGROPROMBANK_TERMINAL_ID=E1016682
 AGROPROMBANK_PRIVATE_KEY_FILE=/run/secrets/agroprombank-private-key.pem
+AGROPROMBANK_CERTIFICATE_FILE=/run/secrets/agroprombank-certificate.pem
 AGROPROMBANK_BANK_CERTIFICATE_FILE=/run/secrets/agroprombank-bank-certificate.pem
 ```
+
+Our own certificate is in that list because `AGROPROMBANK_INCLUDE_KEYINFO`
+defaults to on: the gateway refuses a request that does not carry it.
 
 `AGROPROMBANK_VERIFY_RESPONSES` defaults to `true` and the service refuses to
 start a call without the bank certificate. Setting it to `false` is only for the

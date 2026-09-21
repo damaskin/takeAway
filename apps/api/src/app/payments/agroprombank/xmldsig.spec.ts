@@ -63,6 +63,42 @@ describe('signXml', () => {
     expect(verifyXml(signed, merchant.publicKey)).toEqual({ valid: true });
   });
 
+  /**
+   * `openssl pkcs12 -clcerts -nokeys`, which is how the merchant certificate
+   * is produced from the bank's `.pfx`, writes four lines of metadata above
+   * the PEM block. Folding those into the base64 is what made the production
+   * gateway refuse our requests with a complaint about base64 — a message
+   * that points nowhere near the cause.
+   */
+  it('ignores the metadata openssl writes above the certificate', () => {
+    const certificate = [
+      'Bag Attributes',
+      '    localKeyID: E7 1D FF 32 BD 5C F0 D6',
+      'subject=CN = E1043280',
+      'issuer=CN = APB Internal CA',
+      '-----BEGIN CERTIFICATE-----',
+      'QUJD',
+      '-----END CERTIFICATE-----',
+      '',
+    ].join('\n');
+    const signed = signXml(request, {
+      privateKeyPem: merchant.privateKey,
+      certificatePem: certificate,
+      includeKeyInfo: true,
+    });
+    expect(signed).toContain('<X509Certificate>QUJD</X509Certificate>');
+  });
+
+  it('refuses a certificate that is not a PEM block', () => {
+    expect(() =>
+      signXml(request, {
+        privateKeyPem: merchant.privateKey,
+        certificatePem: 'not a certificate',
+        includeKeyInfo: true,
+      }),
+    ).toThrow(/not a PEM block/);
+  });
+
   it('re-signing replaces the previous signature rather than nesting one', () => {
     const once = signXml(request, { privateKeyPem: merchant.privateKey });
     const twice = signXml(once, { privateKeyPem: merchant.privateKey });
