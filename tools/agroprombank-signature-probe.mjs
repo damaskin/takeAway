@@ -82,7 +82,9 @@ function stripPem(pem) {
 
 /** `<RSAKeyValue>` from a certificate — the bank sends one alongside X509Data. */
 function rsaKeyValue(certificatePem) {
-  const clean = `-----BEGIN CERTIFICATE-----\n${stripPem(certificatePem).replace(/(.{64})/g, '$1\n').trimEnd()}\n-----END CERTIFICATE-----\n`;
+  const clean = `-----BEGIN CERTIFICATE-----\n${stripPem(certificatePem)
+    .replace(/(.{64})/g, '$1\n')
+    .trimEnd()}\n-----END CERTIFICATE-----\n`;
   const jwk = new X509Certificate(clean).publicKey.export({ format: 'jwk' });
   const toBase64 = (b64url) => Buffer.from(b64url, 'base64url').toString('base64');
   return `<KeyValue><RSAKeyValue><Modulus>${toBase64(jwk.n)}</Modulus><Exponent>${toBase64(jwk.e)}</Exponent></RSAKeyValue></KeyValue>`;
@@ -204,19 +206,23 @@ async function main() {
   console.log('');
 
   let accepted = null;
+  let acceptedBody = '';
   for (const variant of VARIANTS) {
     let line;
     try {
       const { status, body } = await callGateway(signRequest(token, privateKeyPem, certificatePem, variant));
       const verdict = readVerdict(body);
-      // `errorcode=-1` is what the gateway returns for anything it refused
-      // before looking at the request — a signature it could not check, a
-      // field it could not parse. A refusal of the token itself carries its
-      // own code, so a code other than -1 means the signature got through.
-      if (accepted === null && verdict.errorcode !== null && verdict.errorcode !== '-1') {
+      // Two ways the gateway refuses before it ever looks at the request: it
+      // says so about the signature, or it marks the refusal `errorcode=-1`.
+      // Anything else — including a bare `result` with no error at all — means
+      // the signature was accepted and the answer is about the token.
+      const refusedEarly = (verdict.error ?? '').toLowerCase().includes('подпис') || verdict.errorcode === '-1';
+      if (!refusedEarly && accepted === null) {
         accepted = variant;
+        acceptedBody = body;
       }
-      line = `HTTP ${status}  result=${verdict.result ?? '?'} errorcode=${verdict.errorcode ?? '?'} ${verdict.error ?? ''}`;
+      const errorcode = verdict.errorcode === null ? 'none' : verdict.errorcode;
+      line = `HTTP ${status}  result=${verdict.result ?? '?'} errorcode=${errorcode} ${verdict.error ?? ''}`;
     } catch (err) {
       line = `failed: ${err instanceof Error ? err.message : err}`;
     }
@@ -227,6 +233,12 @@ async function main() {
   if (accepted) {
     console.log(`The bank got past the signature on variant ${accepted.name.trim()}.`);
     console.log('What it says about the token itself is expected — the token does not exist.');
+    console.log('');
+    console.log('----- its response in full -----');
+    console.log(
+      acceptedBody.length > 8000 ? `${acceptedBody.slice(0, 8000)}\n... (${acceptedBody.length} bytes)` : acceptedBody,
+    );
+    console.log('----- end -----');
   } else {
     console.log('Every variant came back errorcode=-1, so none of them got past the gateway.');
     console.log('Read the messages above rather than only this line: «Ошибка проверки подписи»');
