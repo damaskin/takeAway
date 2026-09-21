@@ -37,7 +37,7 @@
 | **POS integrations**            | ✅     | iiko Cloud + Poster, pluggable через `IPosProvider`. Poster: import + stop-list (M2), outgoing orders (M3), webhooks (M4). iiko: import + stop-list (cron) + outgoing orders (M5). AES-256-GCM для credentials. См. `docs/integrations.md`. |
 | **Multi-brand SaaS**            | ✅     | Brand registration + moderation (banners, rejection notes), `BrandScopeService` для scope-проверок, brand-themed UI overrides, BRAND_ADMIN роль с ограничением catalog-эндпоинтов                                                           |
 | **Delivery (расширена с v1.5)** | 🟡     | TMA geolocation для доставки, scheduled delivery, riders + dispatch admin UI, per-store fee overrides, Telegram push rider при назначении. Не курьерская сеть — модель «бренд организует своего курьера».                                   |
-| **Storage / CDN**               | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.million-sales.ru`, brand logo uploader                                                                                                                                                |
+| **Storage / CDN**               | ✅     | MinIO (S3-compatible) bundled в инфре + `cdn.takeaway.md`, brand logo uploader                                                                                                                                                              |
 | **Notifications prefs**         | ✅     | Per-user prefs: order updates / promotions, force password rotation для invited staff                                                                                                                                                       |
 
 ### 0.3. Реальный стек (расхождения с разделом 2)
@@ -51,7 +51,42 @@
 
 ### 0.4. База данных
 
-16 миграций, последняя `20260420_password_must_change`. Ключевые домены реализованы: User/Auth, Brand+Store+scope, Catalog, Cart, Order+Events, Payment, Loyalty/Promo/GiftCard/Referral, Device+Notification, POS credentials, Delivery (rider/dispatch), Campaign.
+22 миграции, последняя `20260822020000_points_redemption`. Ключевые домены реализованы: User/Auth, Brand+Store+scope, Catalog, Cart, Order+Events, Payment, Loyalty/Promo/GiftCard/Referral, Device+Notification, POS credentials, Delivery (rider/dispatch), Campaign.
+
+### 0.5. Как проект реально задеплоен
+
+Раздел существует потому, что `deploy/README.md` долго описывал отдельный
+VPS под takeAway, а фактическая инсталляция другая, и расхождение стоило
+времени при каждом инциденте.
+
+**Хост.** Не выделенный сервер, а общая машина (алиас `shmidt01`), где рядом
+живёт чужой проект. Диск ~15 GiB на всех — поэтому `deploy.sh` в конце
+подрезает build-cache: полный диск уже ронял прод. IP и пользователь
+деплоя — в секретах GitHub Actions (`DEPLOY_HOST`, `DEPLOY_USER`), не в
+репозитории.
+
+**Маршрут запроса.** Cloudflare → `edge-nginx` чужого проекта, который
+владеет 80/443 и раздаёт трафик по SNI (`ssl_preread`, TCP-проксирование
+без терминации TLS) → `takeaway-nginx-1:443`, где TLS уже наш → статика SPA
+и `/api` на `takeaway-api-1:3000`. Из этого следует два неочевидных факта:
+
+- Сертификаты выпускает и хранит наш nginx, а не edge; edge только
+  доставляет байты.
+- После пересоздания контейнера `takeaway-nginx-1` нужен
+  `docker exec edge-nginx nginx -s reload` — иначе edge держит старый
+  upstream и отдаёт 502. `deploy/scripts/deploy.sh` делает это сам, когда
+  на хосте лежит `docker-compose.shared-edge.override.yml`.
+
+**Что нельзя делать.** Контейнеры takeAway не подключать к сети
+`rayn-prod_default`: там резолвится чужой `postgres`, и Prisma падает с
+P1000 на чужих учётных данных. По этой же причине
+`deploy/scripts/integrate-rayn-nginx.sh` — легаси и не запускается на
+текущем хосте. `init-env-production.sh` не гонять на живом проде: он
+перезаписывает пароль Postgres, после чего контейнер не поднимется к
+существующему volume.
+
+**Ветка.** Прод собирается с `infra/migrate-takeaway-md`, не с `main`.
+Чекаут — `/opt/takeaway/repo`.
 
 ## 1. Архитектура верхнего уровня
 
@@ -150,7 +185,7 @@ takeaway/
 - **OpenAPI**: `@nestjs/swagger` 11 — источник для `libs/api-client`
 - **Scheduling**: `@nestjs/schedule` для периодических джобов (POS pull, истечение gift-cards и т.п.)
 - **Payments**: **Stripe SDK 22** (Payment Intents + webhook)
-- **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.million-sales.ru`. Cloudflare R2 — потенциальная замена.
+- **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.md`. Cloudflare R2 — потенциальная замена.
 - **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset). Mailgun/Postmark — резерв.
 - **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**. FCM/APNS — будущий M6 (mobile).
 - **Telegram**: бот через прямые вызовы Telegram Bot API (push на rider, brand staff, customer)
@@ -172,9 +207,9 @@ takeaway/
 
 - **Runtime**: Docker контейнеры (Dockerfile.api для NestJS, Dockerfile.spa для Angular bundles)
 - **Dev**: `docker compose -f infra/docker-compose.yml up` — Postgres 16 (host port 55432), Redis 7, MinIO. Mailhog не подключён (тестовая почта пишется на реальный SMTP).
-- **Staging / Prod**: docker-compose на VPS (`deploy/docker-compose.prod.yml`, nginx, scripts, ssh). Kubernetes — будущий M7.
+- **Prod**: docker-compose на общем хосте, за чужим edge-nginx. Подробности топологии — 0.5. Kubernetes — будущий M7.
 - **CI/CD**: GitHub Actions, preflight без `DATABASE_URL`/`REDIS_URL` (выводятся из compose), deploy guardrail
-- **CDN**: `cdn.takeaway.million-sales.ru` (через MinIO)
+- **CDN**: `cdn.takeaway.md` (через MinIO)
 - **Secrets**: env-файлы в SSH-deploy. Doppler/Vault — потенциально M7.
 - **Backup**: pg_dump в S3-compatible — план
 
@@ -192,7 +227,8 @@ takeaway/
 | Twilio (SMS OTP)  | SMS OTP                    | ❌ не подключено (customer auth идёт через Telegram)         |
 | Firebase FCM      | Mobile push                | ❌ нужно для M6 (Flutter)                                    |
 | Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока) |
-| Sentry / Mixpanel | Errors + product analytics | ❌ запланировано на M7                                       |
+| Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия              |
+| Mixpanel          | Product analytics          | ❌ запланировано на M7                                       |
 
 ## 3. Функциональные требования
 

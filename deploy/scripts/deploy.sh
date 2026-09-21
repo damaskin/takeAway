@@ -72,6 +72,9 @@ ln -sf .env.production "$DEPLOY_DIR/.env"
 bash "$DEPLOY_DIR/scripts/bootstrap-certs.sh"
 
 echo "==> [1/4] building + starting api + dependencies"
+# `compose` carries the shared-edge override; the build args stamp the
+# version triple that /api/health, /version.json and the Sentry release all
+# read back.
 compose build \
   --build-arg "BUILD_VERSION=$BUILD_VERSION" \
   --build-arg "BUILD_COMMIT=$BUILD_COMMIT" \
@@ -99,16 +102,23 @@ bash "$DEPLOY_DIR/scripts/migrate.sh"
 
 echo "==> [4/4] bringing up api + nginx, reloading config"
 compose up -d api nginx minio
+# Reload our own nginx first, so it picks up vhost / snippet changes.
+compose exec -T nginx nginx -s reload 2>/dev/null || true
+
 if [ "$SHARED_EDGE" = "1" ]; then
-  # edge-nginx does SNI passthrough to takeaway-nginx-1 — takeaway containers
-  # must NOT join rayn-prod_default (causes Prisma P1000: wrong postgres).
-  if [ -f /opt/rayn-repo/infra/deploy/docker-compose.prod.yml ]; then
-    (cd /opt/rayn-repo/infra/deploy && docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx nginx -s reload) 2>/dev/null || true
+  # The edge fronts us with SNI passthrough and caches the upstream address,
+  # so a recreated takeaway-nginx-1 leaves every domain serving 502 until it
+  # reloads. Load-bearing, not best-effort — and the container's name is
+  # discovered rather than guessed (see edge-nginx.sh for why).
+  if ! bash "$DEPLOY_DIR/scripts/edge-nginx.sh" reload; then
+    # Deliberately not fatal: the deploy itself succeeded and failing here
+    # would strand a good build. But it must be shouted, because the symptom
+    # is a total outage that looks nothing like a missed reload.
+    echo "!!  WARNING: could not reload the edge nginx." >&2
+    echo "!!  If the site 502s, find it and reload by hand:" >&2
+    echo "!!    bash deploy/scripts/edge-nginx.sh find" >&2
+    echo "!!    docker exec <name> nginx -s reload" >&2
   fi
-else
-  # If nginx was already running, force a reload so it picks up SPA changes
-  # and any nginx/*.conf edits (new vhosts, new snippets, etc.).
-  compose exec -T nginx nginx -s reload 2>/dev/null || true
 fi
 
 echo "==> [5/5] pruning Docker build cache + dangling images"
