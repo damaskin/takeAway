@@ -56,6 +56,11 @@ You generate your own key pair; the bank issues the matching certificate.
    boot with nobody there to type a passphrase. Both files belong on the server
    only, readable by the API user and nobody else (`chmod 600`).
 
+   On the production host they go in `/opt/takeaway/secrets`, which the api
+   container mounts read-only as `/run/secrets` — that is where the paths in
+   `.env.production` point. Writing them straight into `/run/secrets` on the
+   host instead would work until the next reboot, `/run` being tmpfs.
+
    OpenSSL 3 refuses the `.pfx` Windows writes — `digital envelope routines::
 unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
    commands in that case; the resulting PEMs are identical.

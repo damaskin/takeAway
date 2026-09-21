@@ -61,6 +61,9 @@ echo "==> build version: $BUILD_VERSION ($BUILD_COMMIT) at $BUILD_TIME"
 
 echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
 mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
+# Bank key material lives here and is mounted read-only into the api
+# container. Created empty; the PEMs are placed by hand, once.
+mkdir -p /opt/takeaway/secrets && chmod 700 /opt/takeaway/secrets
 # Ensure docker compose auto-picks the production env for variable substitution.
 # The `.env` filename is compose's default; we keep the canonical file named
 # .env.production and symlink .env -> .env.production so ad-hoc compose
