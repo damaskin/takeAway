@@ -1,14 +1,17 @@
 name: Deploy to production
 
-# Production is built from the branch below, not from `main`. The two lines
-# diverged in May and were reunified in August; the server checkout at
-# /opt/takeaway/repo tracks this branch, so the deploy has to follow it.
-# Changing where production deploys from is a one-line edit here plus a
-# `git checkout` on the box.
+# Production is built from `main`. It was built from
+# `infra/migrate-takeaway-md` while the two lines were apart; they were
+# reunified in August and `main` took over in September, so the long-lived
+# infra branch is history now and nothing should be pushed to it.
+#
+# Changing where production deploys from is a one-line edit below: the deploy
+# step does `git checkout -f -B` on the server, so the checkout at
+# /opt/takeaway/repo follows on its own.
 
 on:
   push:
-    branches: [infra/migrate-takeaway-md]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -19,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DEPLOY_BRANCH: infra/migrate-takeaway-md
+  DEPLOY_BRANCH: main
   API_HEALTH_URL: https://api.takeaway.md/api/health
 
 jobs:

@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    # infra/migrate-takeaway-md is what production deploys from. It was not
-    # listed here, so every commit that shipped to customers had gone through
-    # no lint, no tests and no build.
-    branches: [main, infra/migrate-takeaway-md]
+    # `main` is what production deploys from, so it has to be checked here —
+    # while it was not, every commit that shipped to customers had gone
+    # through no lint, no tests and no build.
+    branches: [main]
   pull_request:
-    branches: [main, infra/migrate-takeaway-md]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

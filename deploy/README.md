@@ -65,8 +65,13 @@ mismatch with `ssh-keyscan` — that trusts whoever happens to answer.
 
 ### Branch
 
-Production builds from **`infra/migrate-takeaway-md`**, not `main`. The
-checkout lives at `/opt/takeaway/repo`.
+Production builds from **`main`**. The checkout lives at `/opt/takeaway/repo`
+and the deploy repoints it itself, so switching branches is a one-line edit in
+`.github/workflows/deploy.yml` and nothing on the box.
+
+`infra/migrate-takeaway-md` was the production line from May to September 2026,
+while it and `main` had diverged. They were reunified in August and `main` took
+over in September; the branch is kept only as history and deploys nothing.
 
 ## Layout
 
@@ -112,7 +117,7 @@ cdn.takeaway.md
 
 ## Deploying
 
-**Normally: push to `infra/migrate-takeaway-md`.** The `Deploy to production`
+**Normally: push to `main`.** The `Deploy to production`
 workflow runs `deploy.sh` over SSH, then runs `deploy/scripts/smoke-test.sh`
 **on the server** — via `curl --resolve`, so it bypasses DNS and Cloudflare and
 tests only the stack we own. The gate asserts the API is serving the commit
@@ -158,7 +163,7 @@ The manual path, from your machine:
 ssh deploy@<host>
 cd /opt/takeaway/repo
 git fetch origin
-git reset --hard origin/infra/migrate-takeaway-md
+git reset --hard origin/main
 bash deploy/scripts/deploy.sh
 ```
 
