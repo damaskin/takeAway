@@ -69,13 +69,21 @@ function algorithm(name, uri) {
   return `<${name} Algorithm="${escapeAttr(uri)}"></${name}>`;
 }
 
+/**
+ * Only what sits between the markers: `openssl pkcs12 -clcerts -nokeys` writes
+ * `Bag Attributes`, `subject=` and `issuer=` lines above them, and stripping
+ * just the markers folds that text into the base64.
+ */
 function stripPem(pem) {
-  return pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  const body = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(pem)?.[1];
+  if (body === undefined) throw new Error('AGROPROMBANK_CERTIFICATE_FILE is not a PEM certificate');
+  return body.replace(/\s+/g, '');
 }
 
 /** `<RSAKeyValue>` from a certificate — the bank sends one alongside X509Data. */
 function rsaKeyValue(certificatePem) {
-  const jwk = new X509Certificate(certificatePem).publicKey.export({ format: 'jwk' });
+  const clean = `-----BEGIN CERTIFICATE-----\n${stripPem(certificatePem).replace(/(.{64})/g, '$1\n').trimEnd()}\n-----END CERTIFICATE-----\n`;
+  const jwk = new X509Certificate(clean).publicKey.export({ format: 'jwk' });
   const toBase64 = (b64url) => Buffer.from(b64url, 'base64url').toString('base64');
   return `<KeyValue><RSAKeyValue><Modulus>${toBase64(jwk.n)}</Modulus><Exponent>${toBase64(jwk.e)}</Exponent></RSAKeyValue></KeyValue>`;
 }
@@ -201,8 +209,13 @@ async function main() {
     try {
       const { status, body } = await callGateway(signRequest(token, privateKeyPem, certificatePem, variant));
       const verdict = readVerdict(body);
-      const signatureRejected = (verdict.error ?? '').toLowerCase().includes('подпис');
-      if (!signatureRejected && accepted === null) accepted = variant;
+      // `errorcode=-1` is what the gateway returns for anything it refused
+      // before looking at the request — a signature it could not check, a
+      // field it could not parse. A refusal of the token itself carries its
+      // own code, so a code other than -1 means the signature got through.
+      if (accepted === null && verdict.errorcode !== null && verdict.errorcode !== '-1') {
+        accepted = variant;
+      }
       line = `HTTP ${status}  result=${verdict.result ?? '?'} errorcode=${verdict.errorcode ?? '?'} ${verdict.error ?? ''}`;
     } catch (err) {
       line = `failed: ${err instanceof Error ? err.message : err}`;
@@ -212,12 +225,15 @@ async function main() {
 
   console.log('');
   if (accepted) {
-    console.log(`The bank accepted the signature of variant ${accepted.name.trim()}.`);
-    console.log('Anything it says about the token itself is expected — the token does not exist.');
+    console.log(`The bank got past the signature on variant ${accepted.name.trim()}.`);
+    console.log('What it says about the token itself is expected — the token does not exist.');
   } else {
-    console.log('Every variant was rejected on the signature.');
-    console.log('That points at the bank side — most likely our certificate is not yet bound');
-    console.log('to the merchant on the gateway. Ask them to check it for M…/E… .');
+    console.log('Every variant came back errorcode=-1, so none of them got past the gateway.');
+    console.log('Read the messages above rather than only this line: «Ошибка проверки подписи»');
+    console.log('means the signature itself was refused, while anything about parsing points at');
+    console.log('the contents we sent. If every variant is refused on the signature, the');
+    console.log('disagreement is not about the XML and the bank has to check that our');
+    console.log('certificate is bound to the merchant on their side.');
   }
   return 0;
 }

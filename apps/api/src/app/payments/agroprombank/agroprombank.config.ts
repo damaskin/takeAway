@@ -57,7 +57,19 @@ export class AgroprombankConfig {
     return this.pem('AGROPROMBANK_BANK_CERTIFICATE');
   }
 
+  /**
+   * Whether requests carry `<KeyInfo>` with our certificate.
+   *
+   * On by default, against the documented samples, which carry none — the bank
+   * is supposed to know our certificate from the merchant id. The production
+   * gateway does not: probed on 21.09.2026 it answered a request without
+   * `<KeyInfo>` «Ошибка проверки подписи» and got as far as reading the
+   * certificate out of the same request with it. Overridable because that is a
+   * property of their gateway rather than of the protocol.
+   */
   get includeKeyInfo(): boolean {
+    const raw = this.config.get<string>('AGROPROMBANK_INCLUDE_KEYINFO');
+    if (raw === undefined || raw.trim() === '') return true;
     return this.bool('AGROPROMBANK_INCLUDE_KEYINFO');
   }
 
@@ -111,6 +123,9 @@ export class AgroprombankConfig {
     if (!this.merchantId) missing.push('AGROPROMBANK_MERCHANT_ID');
     if (!this.terminalId) missing.push('AGROPROMBANK_TERMINAL_ID');
     if (!this.privateKeyPem) missing.push('AGROPROMBANK_PRIVATE_KEY (or _FILE)');
+    if (this.includeKeyInfo && !this.certificatePem) {
+      missing.push('AGROPROMBANK_CERTIFICATE (or _FILE), or AGROPROMBANK_INCLUDE_KEYINFO=false');
+    }
     if (this.verifyResponses && !this.bankCertificatePem) {
       missing.push('AGROPROMBANK_BANK_CERTIFICATE (or _FILE), or AGROPROMBANK_VERIFY_RESPONSES=false');
     }
