@@ -1,6 +1,6 @@
 import { createHash, createSign, createVerify } from 'node:crypto';
 
-import { type XmlElement, type XmlNode, canonicalize, child, parseXml, serializeDocument, text } from './xml';
+import { type XmlElement, type XmlNode, canonicalize, child, children, parseXml, serializeDocument, text } from './xml';
 
 /**
  * Enveloped XMLDSig signing / verification for the Agroprombank merchant API.
@@ -11,6 +11,9 @@ import { type XmlElement, type XmlNode, canonicalize, child, parseXml, serialize
  *  - digest:           SHA-256 (`xmlenc#sha256`)
  *  - one `<Reference URI="">` with the enveloped-signature transform
  *
+ * The bank's own responses add exclusive c14n as a second transform, so
+ * verification accepts that chain too — see {@link checkTransformChain}.
+ *
  * `<Signature>` is the last child of the document root on both directions.
  */
 
@@ -19,6 +22,7 @@ export const C14N_ALGORITHM = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
 export const SIGNATURE_ALGORITHM = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
 export const DIGEST_ALGORITHM = 'http://www.w3.org/2001/04/xmlenc#sha256';
 export const ENVELOPED_TRANSFORM = 'http://www.w3.org/2000/09/xmldsig#enveloped-signature';
+export const EXCLUSIVE_C14N_TRANSFORM = 'http://www.w3.org/2001/10/xml-exc-c14n#';
 
 /** Namespace context seen by `<SignedInfo>` — inherited from `<Signature>`. */
 const SIGNATURE_NS_CONTEXT: ReadonlyMap<string, string> = new Map([['', DSIG_NS]]);
@@ -130,10 +134,9 @@ export function verifyXml(document: string | XmlElement, certificatePem: string)
   }
 
   const transforms = child(reference, 'Transforms');
-  const transform = transforms ? child(transforms, 'Transform') : null;
-  if (algorithmOf(transform) !== ENVELOPED_TRANSFORM) {
-    return { valid: false, reason: 'Reference is missing the enveloped-signature transform' };
-  }
+  const chain = transforms ? children(transforms, 'Transform').map((el) => algorithmOf(el)) : [];
+  const chainProblem = checkTransformChain(chain, root);
+  if (chainProblem) return { valid: false, reason: chainProblem };
 
   const expectedDigest = text(reference, 'DigestValue')?.trim();
   if (!expectedDigest) return { valid: false, reason: '<Reference> carries no <DigestValue>' };
@@ -158,6 +161,41 @@ export function verifyXml(document: string | XmlElement, certificatePem: string)
   }
 
   return signatureOk ? { valid: true } : { valid: false, reason: 'SignatureValue does not match <SignedInfo>' };
+}
+
+/**
+ * Decides whether a `<Reference>` transform chain is one we can reproduce.
+ *
+ * The documented request profile is the enveloped-signature transform alone,
+ * but the bank's responses append exclusive c14n, so both are accepted. Any
+ * other chain is refused rather than ignored: a transform that is skipped
+ * instead of applied is a transform an attacker gets to choose.
+ *
+ * Exclusive c14n is honoured by canonicalizing inclusively, which produces the
+ * same bytes exactly when the signed apex declares no namespaces — true of
+ * every document this API exchanges, and checked here rather than assumed.
+ */
+function checkTransformChain(chain: (string | null)[], root: XmlElement): string | null {
+  if (chain[0] !== ENVELOPED_TRANSFORM) {
+    return 'Reference is missing the enveloped-signature transform';
+  }
+  if (chain.length === 1) return null;
+  if (chain.length > 2) {
+    return `Unsupported transform chain: ${chain.map((algorithm) => algorithm ?? 'missing').join(', ')}`;
+  }
+
+  const second = chain[1];
+  if (second !== EXCLUSIVE_C14N_TRANSFORM && second !== C14N_ALGORITHM) {
+    return `Unsupported transform: ${second ?? 'missing'}`;
+  }
+  if (second === EXCLUSIVE_C14N_TRANSFORM && root.attrs.some(isNamespaceDeclaration)) {
+    return 'Exclusive canonicalization of a root that declares namespaces is not supported';
+  }
+  return null;
+}
+
+function isNamespaceDeclaration(attr: { name: string }): boolean {
+  return attr.name === 'xmlns' || attr.name.startsWith('xmlns:');
 }
 
 function buildSignedInfo(digestValue: string): XmlElement {
