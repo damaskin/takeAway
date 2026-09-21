@@ -63,7 +63,13 @@ echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
 mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
 # Bank key material lives here and is mounted read-only into the api
 # container. Created empty; the PEMs are placed by hand, once.
-mkdir -p /opt/takeaway/secrets && chmod 700 /opt/takeaway/secrets
+#
+# 0751, not 0700: the api container runs as uid 10001, which is not the deploy
+# user, so it needs to traverse this directory to open the key. It cannot list
+# the contents, and each file carries its own mode — the private key is 0400
+# owned by 10001, the certificates are world-readable because certificates are
+# public. See docs/agroprombank-payments.md.
+mkdir -p /opt/takeaway/secrets && chmod 751 /opt/takeaway/secrets
 # Ensure docker compose auto-picks the production env for variable substitution.
 # The `.env` filename is compose's default; we keep the canonical file named
 # .env.production and symlink .env -> .env.production so ad-hoc compose

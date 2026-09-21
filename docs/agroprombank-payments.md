@@ -61,6 +61,30 @@ You generate your own key pair; the bank issues the matching certificate.
    `.env.production` point. Writing them straight into `/run/secrets` on the
    host instead would work until the next reboot, `/run` being tmpfs.
 
+   Do the conversion on the server, so the key exists in exactly one place:
+
+   ```bash
+   # from your machine, with the .pfx exported from the Windows store
+   scp merchant.pfx deploy@<host>:/tmp/merchant.pfx
+
+   # on the server
+   cd /opt/takeaway/secrets
+   openssl pkcs12 -in /tmp/merchant.pfx -nocerts -nodes -out agroprombank-private-key.pem
+   openssl pkcs12 -in /tmp/merchant.pfx -clcerts -nokeys -out agroprombank-certificate.pem
+   shred -u /tmp/merchant.pfx
+
+   # the api container runs as uid 10001, not as deploy
+   sudo chown 10001:10001 agroprombank-private-key.pem
+   sudo chmod 400 agroprombank-private-key.pem
+   chmod 644 agroprombank-certificate.pem agroprombank-bank-certificate.pem
+   ```
+
+   The ownership step is the one that is easy to miss and hard to read back
+   from the symptom: a key the container cannot open reports as the gateway
+   being unconfigured, exactly as a missing key does. `/opt/takeaway/secrets`
+   is 0751 for the same reason — the container has to traverse it — and the
+   certificates are world-readable because certificates are public.
+
    OpenSSL 3 refuses the `.pfx` Windows writes — `digital envelope routines::
 unsupported` — because Windows still wraps it in RC2. Add `-legacy` to both
    commands in that case; the resulting PEMs are identical.

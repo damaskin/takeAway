@@ -32,8 +32,12 @@ RUN pnpm exec nx build api --configuration=production
 # ---------- runtime ----------
 FROM node:22-alpine AS runtime
 
+# The uid is pinned because host files are mounted in: the bank key material
+# under /run/secrets is owned on the host by this number, and a uid that moved
+# with the base image would leave the key unreadable and the payment gateway
+# silently unconfigured.
 RUN apk add --no-cache openssl curl tini && \
-    addgroup -S app && adduser -S app -G app
+    addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 
 WORKDIR /app
 
