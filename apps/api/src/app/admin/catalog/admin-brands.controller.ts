@@ -7,6 +7,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminCatalogService } from './admin-catalog.service';
+import { BrandModerationService } from './brand-moderation.service';
 import { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
 import { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
@@ -18,6 +19,7 @@ export class AdminBrandsController {
   constructor(
     private readonly admin: AdminCatalogService,
     private readonly scope: BrandScopeService,
+    private readonly moderation: BrandModerationService,
   ) {}
 
   /**
@@ -30,6 +32,13 @@ export class AdminBrandsController {
   async listMine(@CurrentUser() user: AuthenticatedUser) {
     const scope = await this.scope.resolveBrandIds(user);
     return this.admin.listBrandsForScope(scope);
+  }
+
+  /** How many brands wait for review — the badge on «Бренды». */
+  @Get('pending-count')
+  @Roles(Role.SUPER_ADMIN)
+  pendingCount() {
+    return this.moderation.pendingCount();
   }
 
   @Get()
@@ -60,7 +69,7 @@ export class AdminBrandsController {
   @Patch(':id/moderation')
   @Roles(Role.SUPER_ADMIN)
   setModeration(@Param('id') id: string, @Body() dto: SetBrandModerationDto) {
-    return this.admin.setBrandModeration(id, dto);
+    return this.moderation.setModeration(id, dto);
   }
 
   @Get(':id/owner')
