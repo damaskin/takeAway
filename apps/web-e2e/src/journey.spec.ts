@@ -16,8 +16,11 @@ import { useEnglish } from './support/locale';
  * in CI without Postgres, and so a test can assert on what checkout
  * actually sent rather than only on what it drew.
  *
- * Payment is deliberately absent: the provider is being replaced, and
- * there is nothing to drive yet.
+ * Card payment is out of scope here: the fake API leaves
+ * `/config/features` empty, so `agroprombankEnabled` stays off and checkout
+ * offers only paying at the counter — which is exactly the path this suite
+ * walks. Driving a real charge needs the bank's sandbox, which the mock
+ * gateway under tools/agroprombank-mock covers instead.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -27,9 +30,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 /**
- * The submit button, matched on its full label. The payment-method pills
- * are also called "Pay" and "G Pay", so a loose /pay/i matcher hits three
- * elements.
+ * The submit button, matched on its full label rather than a loose /pay/i,
+ * which also catches the payment-method options above it.
  */
 function placeOrder(page: Page) {
   return page.getByRole('button', { name: /·\s*ready by/i });
