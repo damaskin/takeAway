@@ -276,7 +276,7 @@ takeaway/
 - Список с картой (Mapbox)
 - Адрес, координаты, часы работы (per weekday)
 - Тип: takeaway / dine-in / drive-thru
-- Текущий статус: открыта/закрыта/перегружена
+- Текущий статус: открыта/закрыта/перегружена (переключается вручную) и вычисляемый `openNow` — статус плюс часы работы в часовом поясе точки; вне часов клиенты предлагают только заказ ко времени
 - **Live-ETA**: для каждой точки рассчитывается «готово через X мин для ASAP-заказа» — видно в store locator ещё до открытия меню
 - **Busy meter** (0–100%) — индикатор загрузки кухни, визуализируется цветом (зелёный / жёлтый / красный)
 - **Pickup point type** для UI: counter / locker / shelf — определяет инструкции на экране готовности
@@ -606,8 +606,8 @@ POST   /me/referrals/apply           { code }
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter
-GET    /stores/:idOrSlug
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow
+GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug          // включает brandId — по нему клиент выбирает точку, где товар можно приготовить
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд

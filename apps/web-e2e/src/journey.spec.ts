@@ -132,6 +132,30 @@ test.describe('customer journey', () => {
     expect(sent['pickupAt']).toBeUndefined();
   });
 
+  test('after hours checkout offers only a scheduled pickup', async ({ page }) => {
+    // Switched on, but past closing time: the API reports openNow = false.
+    const api = await installFakeApi(page, { storeOpenNow: false });
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+
+    await expect(page.getByText(/closed right now/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /^\s*asap\s*$/i })).toBeDisabled();
+
+    // Checkout opens on the slots with the first free window already picked.
+    const slotButtons = page.locator('button', { hasText: /^\s*\d{1,2}:\d{2}(\s*[AP]M)?\s*$/i });
+    await expect(slotButtons.nth(1)).toBeEnabled();
+
+    await placeOrder(page).click();
+    await page.waitForURL(/\/orders\/order-1/);
+
+    const sent = api.orders[0]?.['_request'] as Record<string, unknown>;
+    expect(sent['pickupMode']).toBe('SCHEDULED');
+    expect(typeof sent['pickupAt']).toBe('string');
+  });
+
   test('a customer with points can spend them, and the total falls', async ({ page }) => {
     const api = await installFakeApi(page, { pointsBalance: 500 });
     await signIn(page);
