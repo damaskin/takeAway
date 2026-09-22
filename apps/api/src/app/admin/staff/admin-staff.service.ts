@@ -37,7 +37,19 @@ export class AdminStaffService {
         storeId,
         user: { role: { in: [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR] } },
       },
-      include: { user: { select: { id: true, email: true, name: true, role: true, blockedAt: true } } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            blockedAt: true,
+            kdsPinHash: true,
+            kdsPinStoreId: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((r) => ({
@@ -47,6 +59,9 @@ export class AdminStaffService {
       role: r.user.role,
       blocked: r.user.blockedAt !== null,
       addedAt: r.createdAt.toISOString(),
+      // A PIN belongs to one store; one set at another store doesn't open
+      // this store's kitchen tablet. The hash itself never leaves the API.
+      hasKdsPin: r.user.kdsPinHash !== null && r.user.kdsPinStoreId === storeId,
     }));
   }
 
@@ -154,9 +169,18 @@ export class AdminStaffService {
         data: { kdsPinHash: hash, kdsPinStoreId: storeId },
       });
     } catch (err) {
-      // Map the partial-unique-index collision to a friendly 409.
-      if (err instanceof Error && err.message.includes('User_kdsPin_uniq')) {
-        throw new ConflictException('Another staff at this store already uses this PIN');
+      // Map the partial-unique-index collision to a friendly 409. Prisma
+      // reports it as P2002 without always naming the index.
+      const isDuplicate =
+        (err as { code?: string }).code === 'P2002' ||
+        (err instanceof Error && err.message.includes('User_kdsPin_uniq'));
+      if (isDuplicate) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          code: 'KDS_PIN_TAKEN',
+          message: 'Another staff at this store already uses this PIN',
+        });
       }
       throw err;
     }
@@ -186,6 +210,15 @@ export class AdminStaffService {
     const scope = await this.scope.resolveBrandIds(user);
     if (scope !== null && !scope.includes(store.brandId)) {
       throw new ForbiddenException('Store belongs to a brand outside your scope');
+    }
+    // The brand scope alone let the manager of one café hire staff and set
+    // kitchen PINs at every other café of the brand.
+    if (user.role === Role.STORE_MANAGER) {
+      const assigned = await this.prisma.userStore.findUnique({
+        where: { userId_storeId: { userId: user.id, storeId } },
+        select: { storeId: true },
+      });
+      if (!assigned) throw new ForbiddenException('Store is outside your scope');
     }
   }
 }
