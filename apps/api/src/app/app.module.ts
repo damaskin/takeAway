@@ -14,6 +14,7 @@ import { CartModule } from './cart/cart.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SecretCipherModule } from './common/crypto/secret-cipher.module';
+import { httpLoggerParams } from './common/observability/http-logger';
 import { FeaturesModule } from './config/config.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
@@ -38,16 +39,7 @@ import { UsersModule } from './users/users.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, cache: true }),
-    LoggerModule.forRoot({
-      pinoHttp: {
-        transport:
-          process.env['NODE_ENV'] !== 'production'
-            ? { target: 'pino-pretty', options: { singleLine: true, colorize: true } }
-            : undefined,
-        level: process.env['LOG_LEVEL'] ?? 'info',
-        autoLogging: true,
-      },
-    }),
+    LoggerModule.forRoot(httpLoggerParams()),
     PrismaModule,
     RedisModule,
     StorageModule,
