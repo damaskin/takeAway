@@ -1,4 +1,4 @@
-import { AgroprombankTransportError, unwrapSoapResult } from './agroprombank.client';
+import { AgroprombankTransportError, describeFields, unwrapSoapResult } from './agroprombank.client';
 
 const NS = 'http://services.agroprombank.com';
 
@@ -59,3 +59,18 @@ describe('unwrapSoapResult', () => {
 function escapeXml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+describe('describeFields', () => {
+  it('keeps a card token out of the log while still identifying it', () => {
+    const line = describeFields({ invoiceid: '17900852156430001', token: 'a'.repeat(60) + 'f4e2', amount: 1 });
+
+    expect(line).toContain('invoiceid=17900852156430001');
+    expect(line).toContain('amount=1');
+    expect(line).not.toContain('a'.repeat(60));
+    expect(line).toContain('token=\u2026f4e2 (64 chars)');
+  });
+
+  it('leaves out the fields that were never sent', () => {
+    expect(describeFields({ amount: 1, recipienttoken: null, recipient: undefined })).toBe('amount=1');
+  });
+});

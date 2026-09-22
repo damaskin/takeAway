@@ -443,3 +443,49 @@ left behind.
       holds on, walk the whole path: place the order, see it held, accept it on
       the KDS, see it captured, then place a second one and cancel it to confirm
       the hold is released.
+
+## 11. When the gateway refuses a call
+
+Every refusal is now logged by `AgroprombankClient` with the fields that were
+sent, the card token reduced to its last four characters:
+
+```
+WARN [AgroprombankClient] [ProcessCardAutoPayment] refused with code -1:
+  Input string was not in a correct format. — sent invoiceid=TA17900852156430001
+  token=…f4e2 (64 chars) amount=1 tipamount=0 currencycode=840 istest=0
+  description=Оплата заказа №4242 terminalid=E1043280 preauth=1
+```
+
+That is worth reading first, because the gateway's own message often says only
+that something went wrong and never which field:
+
+| What the bank says                          | What it means                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------ |
+| `Ошибка проверки подписи`                   | the `<Signature>` shape — `tools/agroprombank-signature-probe.mjs` |
+| `Input string was not in a correct format.` | a .NET number parse failed on one of the fields above              |
+
+The second one names no field, so `tools/agroprombank-field-probe.mjs` sends the
+same payment once per suspect — the invoice prefix, the currency code, the
+amount in kopecks against a decimal, the terminal id, the optional fields — and
+prints what the gateway answers to each. Every call uses a token that cannot
+exist, so nothing is charged and no operation is created whichever variant the
+gateway understands: a variant it can parse comes back complaining about the
+token, and that is the answer.
+
+```bash
+mkdir -p /tmp/agro && cd /opt/takeaway/repo && git fetch origin <branch> && git show origin/<branch>:tools/agroprombank-field-probe.mjs > /tmp/agro/field-probe.mjs
+```
+
+```bash
+docker run --rm -v /opt/takeaway/secrets:/secrets:ro -v /tmp/agro:/out -e AGROPROMBANK_MERCHANT_ID=M000... -e AGROPROMBANK_TERMINAL_ID=E104... -e AGROPROMBANK_INVOICE_PREFIX=TA -e AGROPROMBANK_PRIVATE_KEY_FILE=/secrets/agroprombank-private-key.pem -e AGROPROMBANK_CERTIFICATE_FILE=/secrets/agroprombank-certificate.pem node:22-alpine node /out/field-probe.mjs
+```
+
+Pass `AGROPROMBANK_INVOICE_PREFIX` exactly as `.env.production` has it, so the
+first line of the run is the request the API really sends.
+
+One thing the probe cannot see is the brand's currency. `currencycode` is
+derived from it, and a brand left on the `USD` default asks a terminal that
+settles Transnistrian roubles to take dollars; the amount travels in minor
+units either way, so the failure mode if the bank ignores the code is a charge
+in the wrong currency rather than an error. Set the brand to `RUP` in the admin
+panel before the first live charge.

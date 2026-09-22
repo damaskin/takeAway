@@ -82,6 +82,11 @@ export class AgroprombankClient {
     if (result !== AGRO_RESULT_OK) {
       const code = num(root, 'errorcode') ?? result ?? 0;
       const description = text(root, 'error')?.trim() || describeResult(result);
+      // The gateway refuses without saying which field it choked on — its
+      // «Input string was not in a correct format.» is the bare .NET parse
+      // error. Logging what we sent is the only way to tell one field from
+      // another afterwards, so this goes out on every refusal.
+      this.logger.warn(`[${fn}] refused with code ${code}: ${description} — sent ${describeFields(fields)}`);
       throw new AgroprombankError(fn, code, description);
     }
     return root;
@@ -204,6 +209,22 @@ export function unwrapSoapResult(fn: AgroFunction, envelopeXml: string): string 
     throw new AgroprombankTransportError(fn, `SOAP response has no <${fn}Result>`);
   }
   return result;
+}
+
+/**
+ * The request fields as one line for the log. Anything that authorises a charge
+ * on its own is reduced to a fingerprint: a token in the log is as good as a
+ * card, and the log is not the place for one.
+ */
+export function describeFields(fields: Record<string, XmlFieldValue>): string {
+  const parts: string[] = [];
+  for (const [name, value] of Object.entries(fields)) {
+    if (value === null || value === undefined) continue;
+    const secret = name.toLowerCase().includes('token');
+    const raw = String(value);
+    parts.push(`${name}=${secret ? `…${raw.slice(-4)} (${raw.length} chars)` : raw}`);
+  }
+  return parts.join(' ');
 }
 
 function describeResult(result: number | null): string {
