@@ -1,0 +1,5 @@
+// Google Sign-In on iOS: the reversed form of the iOS OAuth client id, e.g.
+// com.googleusercontent.apps.1234567890-abcdef. Pass the client id itself to
+// the build with --dart-define=GOOGLE_IOS_CLIENT_ID=...; until then this
+// placeholder scheme is registered and simply never matches.
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.takeaway-not-configured

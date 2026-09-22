@@ -1,0 +1,19 @@
+name: takeaway_api
+description: 'Typed Dart client for the takeAway REST API — models and a Retrofit interface shared by the Flutter apps.'
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  dio: ^5.11.1
+  json_annotation: ^4.12.0
+  retrofit: ^4.10.0
+
+dev_dependencies:
+  build_runner: ^2.15.1
+  json_serializable: ^6.14.1
+  lints: ^6.0.0
+  retrofit_generator: ^10.2.9
+  test: ^1.26.0

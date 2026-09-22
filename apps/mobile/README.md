@@ -1,113 +1,199 @@
-# takeAway Mobile (M6)
+# takeAway mobile
 
-Flutter 3 client для iOS и Android. Покрывает customer-flow: auth → каталог → корзина → чекаут → оплата (Apple/Google Pay) → live-статус заказа → push.
+The customer app for iOS and Android: find a store, order ahead, pay, follow
+the order live and pick it up. Flutter 3.38 / Dart 3.10, talking to the same
+NestJS API as the web app and the Telegram Mini App.
 
-## Status
+## What is in it
 
-**Не начато.** Скелет содержит план PR'ов и `pubspec.yaml` с целевым набором зависимостей. До первого `flutter create` ничего не собирается.
+- **Onboarding** — three screens, skippable, shown once.
+- **Stores** — map (OpenStreetMap) and list, nearest first when location is
+  allowed, "open now" filter, route to the store in Apple / Google Maps.
+- **Menu** — categories with a scroll-spy bar, search, quick add for items
+  without options, product screen with sizes, milks and extras, allergens and
+  nutrition. Prices are always in the store's currency.
+- **Cart and checkout** — ASAP or a 15-minute pickup slot (full slots are
+  shown struck through), delivery where the store offers it, promo code, gift
+  card, loyalty points, pay with a bound Agroprombank card or at the counter.
+  Outside working hours only a scheduled pickup can be chosen.
+- **Live order** — Socket.IO with polling as a fallback, ETA ring, steps,
+  pickup code and QR, "I'm here", cancel, order again, receipt by email.
+- **Profile** — loyalty tier and history, referrals, gift cards, payment
+  cards, notification preferences, personal details, language (RU / EN).
+- **Offline** — stores and menus are cached on the device, so the app opens on
+  the last menu instead of an empty screen when the network is gone.
+- Light and dark theme from the design tokens in `libs/ui-kit`.
 
-## Local setup (one-time)
+## Layout
+
+```
+lib/
+  app/        router (go_router, one branch per tab), shell, MaterialApp
+  core/       auth session + refresh, Dio + interceptors, realtime, push,
+              location, storage, formatting (money, tax, time), theme
+  features/   auth, catalog, menu, product, cart, checkout, orders, stores,
+              onboarding, profile — screens next to their Riverpod providers
+  shared/     widgets and helpers used across features
+  l10n/       app_en.arb / app_ru.arb and the generated localizations
+```
+
+The API models and the Retrofit client live in a separate pure Dart package,
+[`libs/api-client-dart`](../../libs/api-client-dart). Code generation
+(`build_runner`) cannot run inside the Flutter app because some plugins ship
+native build hooks, so it runs there and the generated files are committed.
+
+## Configuration
+
+Everything environment-specific is a `--dart-define`, collected in JSON files
+under `config/`:
+
+| File                       | Committed | Use                                                           |
+| -------------------------- | --------- | ------------------------------------------------------------- |
+| `config/local.json`        | yes       | Android emulator against the API on this machine              |
+| `config/prod.example.json` | yes       | Template for release builds                                   |
+| `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
+
+| Define                                                                                                                      | Default                       | Meaning                                                             |
+| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api` | REST base including `/api`                                          |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`      | Socket.IO origin (namespace `/ws`)                                  |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`         | Site hosting `tg-auth.html`; must be the bot's domain in @BotFather |
+| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button      | The **web** OAuth client id, the audience the API checks            |
+| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                         | iOS OAuth client id                                                 |
+| `APPLE_SIGN_IN`                                                                                                             | `false`                       | Offer Sign in with Apple on iOS                                     |
+| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off              | Firebase Cloud Messaging                                            |
+| `DEV_SIGN_IN`                                                                                                               | `false`                       | Debug builds only: a "Developer sign-in" button, see below          |
+
+A missing integration hides its UI instead of failing: no Google id, no
+Google button; no Firebase ids, no push prompt.
+
+## Running locally
 
 ```bash
-# 1. Install Flutter 3.22+ (mise / fvm / asdf — на ваш вкус)
-flutter --version
-
-# 2. Initialise the Flutter project on top of this scaffold
+# API, Postgres and Redis as described in the root README; the API listens on :3000
 cd apps/mobile
-flutter create . \
-  --org com.takeaway \
-  --project-name takeaway_mobile \
-  --platforms ios,android \
-  --no-overwrite
-
-# 3. Install deps from pubspec.yaml
 flutter pub get
+flutter run --dart-define-from-file=config/local.json
+```
 
-# 4. iOS — install pods
+`10.0.2.2` is the host machine as seen from the Android emulator; on the iOS
+simulator use `http://localhost:3000/api`. Plain HTTP is allowed only for the
+local network (Android debug builds, `NSAllowsLocalNetworking` on iOS).
+
+**Developer sign-in.** With `DEV_SIGN_IN=true` a debug build offers a
+"Developer sign-in" that posts an unsigned Telegram payload. The API accepts
+it only when `NODE_ENV` is not `production` **and** `TELEGRAM_BOT_TOKEN` is
+empty, so it cannot work against a real deployment.
+
+Against production (`https://api.takeaway.md`) the app runs without any
+config: `flutter run`.
+
+## Sign-in setup
+
+**Telegram** (all customers today). The app opens `oauth.telegram.org` for the
+bot, Telegram returns to `https://takeaway.md/tg-auth.html` (served from
+`apps/web/public`), and that page hands the result to the app through the
+`takeaway://telegram-auth` deep link. Needed once:
+
+1. `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` on the API — the app reads
+   the bot id from `GET /auth/telegram/config`.
+2. In @BotFather: `/setdomain` → `takeaway.md` (the same domain the web login
+   widget already uses).
+3. The web app deployed with `tg-auth.html`.
+
+**Google.** Create OAuth clients in the Google Cloud project the web client
+lives in: an Android client (package `md.takeaway.app`, SHA-1 of the release
+and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
+
+- `GOOGLE_SERVER_CLIENT_ID` = the existing **web** client id;
+- `GOOGLE_IOS_CLIENT_ID` = the iOS client id, and its reversed form
+  (`com.googleusercontent.apps.…`) in `ios/Flutter/Google.xcconfig`;
+- API: `GOOGLE_OAUTH_CLIENT_IDS` must include the web client id (it already
+  does if web sign-in works).
+
+**Apple** (iOS only). Enable Sign in with Apple for `md.takeaway.app` in the
+developer portal, add `md.takeaway.app` to the API's `APPLE_OAUTH_CLIENT_IDS`
+and build with `APPLE_SIGN_IN=true`. App Review (guideline 4.8) expects it
+next to third-party logins such as Telegram and Google.
+
+## Push notifications
+
+1. Create a Firebase project, add an Android app (`md.takeaway.app`) and an iOS
+   app (`md.takeaway.app`), upload an APNs auth key to Firebase.
+2. App: the five `FIREBASE_*` defines from the Firebase app settings — no
+   `google-services.json` / `GoogleService-Info.plist` is needed.
+3. API: a service account with the "Firebase Cloud Messaging API Admin" role →
+   `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`.
+
+Tokens are registered through `POST /devices` after sign-in and removed on
+sign-out; tokens Firebase reports as dead are pruned by the API.
+
+## Building releases
+
+**Android.** Create an upload keystore and `android/key.properties` (never
+committed):
+
+```properties
+storeFile=/absolute/path/upload-keystore.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+```bash
+flutter build appbundle --release --dart-define-from-file=config/prod.json
+```
+
+Without `key.properties` the release build is signed with the debug key —
+fine for testers, rejected by Google Play.
+
+**iOS** (needs a Mac with Xcode):
+
+```bash
 cd ios && pod install && cd ..
-
-# 5. Sanity boot
-flutter run
+open ios/Runner.xcworkspace   # set the team, check Push Notifications and Sign in with Apple capabilities
+flutter build ipa --release --dart-define-from-file=config/prod.json
 ```
 
-`flutter create` будет уважать существующие файлы — создаст недостающее (ios/, android/, web/, test/) и оставит наш `lib/` и `pubspec.yaml`.
+`Runner.entitlements` has `aps-environment = development`; Xcode switches it to
+production when archiving for the App Store.
 
-## Phase-1 PR breakdown (M6 PR1 → M6 PR8)
+## Tests
 
-### M6 PR1 — bootstrap
-
-- `flutter create` over the scaffold, ios/ + android/ committed.
-- `pubspec.yaml` locked, `flutter analyze` clean, `flutter test` green on a smoke test.
-- CI (GitHub Actions): one job `flutter analyze && flutter test`.
-
-### M6 PR2 — Dart API client
-
-- Generate `libs/api-client-dart` from the existing OpenAPI document
-  (`@nestjs/swagger` already publishes it). Use `openapi-generator-cli` with
-  `dart-dio` template; commit the generated client and add a regen script.
-- Wire `Dio` interceptors for JWT bearer + refresh + 401 retry.
-
-### M6 PR3 — Auth
-
-- Telegram login flow (deep-link to `t.me/<bot>?start=auth_<nonce>`; bot
-  redirects back via universal link with `tgAuthResult` → POST
-  `/auth/telegram/widget`).
-- Email + password fallback (manager / staff use the same screen).
-- Secure-storage of refresh token (flutter_secure_storage).
-
-### M6 PR4 — Catalog + Cart
-
-- Stores list with map (mapbox_gl), store detail.
-- Menu by category, product detail with variations + modifiers.
-- Cart screen, live ETA recompute on add/remove (calls `POST /cart/items`).
-
-### M6 PR5 — Checkout + Stripe
-
-- ASAP / scheduled pickup time picker.
-- `flutter_stripe` PaymentSheet against `POST /payments/intent`.
-- Apple Pay / Google Pay via Stripe.
-
-### M6 PR6 — Order status
-
-- Live status screen with Socket.io client (or SSE fallback).
-- Order code + QR display (qr_flutter).
-- "I'm here" geofencing button → `POST /orders/:id/location`.
-
-### M6 PR7 — Push
-
-- `firebase_messaging` for FCM (Android) / APNS (iOS via Firebase).
-- Register `Device` row through `POST /devices` on every cold start.
-- Notify on order events; deep-link from notification → order status.
-
-### M6 PR8 — Polish + store submission
-
-- Profile, orders history, loyalty.
-- App icon + splash (flutter_launcher_icons).
-- App Store / Google Play submission checklist (TestFlight first).
-
-## Architecture
-
-`lib/` follows the same feature-folder layout as the Angular apps:
-
-```
-apps/mobile/lib/
-├── main.dart
-├── app.dart                  ← MaterialApp + routing
-├── core/                     ← cross-cutting: api client, auth, theme, i18n, push
-└── features/
-    ├── auth/
-    ├── catalog/
-    ├── cart/
-    ├── checkout/
-    ├── order_status/
-    ├── orders_history/
-    └── profile/
+```bash
+flutter analyze
+flutter test                                    # unit + widget tests against an in-memory API
+(cd ../../libs/api-client-dart && dart test)    # models against recorded API responses
 ```
 
-State: `flutter_riverpod` providers per feature. No global redux-like store.
+Widget tests boot the real app (router, theme, localisation) against
+`test/helpers/fake_api.dart`, a stateful fake: adding to the cart changes the
+checkout total, placing an order empties the cart, a declined card can be
+retried without a second order.
 
-## Out of scope for M6
+**On a device**, against a real API with the dev seed — signs in, orders a
+latte, then moves the order through the kitchen with the KDS endpoints and
+checks that the app follows live:
 
-- Brand admin mobile views (admin app remains web-only — desktop ergonomics).
-- KDS app on mobile — KDS stays an Angular tablet app.
-- Rider app — eventual M7+ if delivery volumes justify it.
+```bash
+flutter test integration_test/ordering_e2e_test.dart -d <device> \
+  --dart-define=API_BASE_URL=http://10.0.2.2:3000/api --dart-define=DEV_SIGN_IN=true \
+  --dart-define=E2E_STAFF_EMAIL=<store staff or admin> --dart-define=E2E_STAFF_PASSWORD=<password>
+```
+
+`E2E_STORE`, `E2E_PRODUCT` and `E2E_SIZE` pick what is ordered (defaults match
+the dev seed). After hours the test takes the first free pickup slot instead
+of ASAP.
+
+## Maintenance
+
+- **API models** — edit `libs/api-client-dart/lib/src/models/*.dart`, then
+  `dart run build_runner build --delete-conflicting-outputs && dart format lib`
+  in that package. CI fails if the generated code is stale.
+- **Strings** — edit both ARB files in `lib/l10n`; `flutter pub get` regenerates.
+- **Icons and splash** — `python tool/generate_icons.py` (Pillow) redraws the
+  launcher icons, adaptive and monochrome layers, notification icon and splash
+  from code.
+- **Map tiles** — OpenStreetMap's public tile servers are fine for a pilot but
+  not for a large audience; switch `osmTiles` in `lib/shared/widgets/store_map.dart`
+  to a commercial provider before a wide launch.
