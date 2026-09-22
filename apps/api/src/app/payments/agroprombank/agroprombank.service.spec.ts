@@ -7,6 +7,7 @@ import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
 import { AgroprombankService } from './agroprombank.service';
+import { PaymentHoldsService } from './payment-holds.service';
 import { parseXml } from './xml';
 
 const CHECK_TOKEN_OK = parseXml(
@@ -23,6 +24,8 @@ describe('AgroprombankService', () => {
   let service: AgroprombankService;
   let client: { invoke: jest.Mock; invokeRaw: jest.Mock };
   let settlement: { settlePaidOrder: jest.Mock };
+  let holds: { findHold: jest.Mock };
+  let config: { holdUntilAccepted: boolean } & Partial<AgroprombankConfig>;
   let prisma: PrismaMock;
 
   interface PrismaMock {
@@ -114,24 +117,26 @@ describe('AgroprombankService', () => {
 
     client = { invoke: jest.fn(), invokeRaw: jest.fn() };
     settlement = { settlePaidOrder: jest.fn().mockResolvedValue(order) };
+    holds = { findHold: jest.fn().mockResolvedValue(null) };
+    config = {
+      enabled: true,
+      isConfigured: true,
+      missingSettings: () => [],
+      terminalId: 'E1016682',
+      isTest: false,
+      invoicePrefix: '',
+      bindingTtlMinutes: 10,
+      bindingMaxAttempts: 3,
+      // The tests that care about the hold policy set it themselves; the rest
+      // read as "charge the card now", which is the simpler story.
+      holdUntilAccepted: false,
+    };
 
     const module = await Test.createTestingModule({
       providers: [
         AgroprombankService,
         { provide: PrismaService, useValue: prisma },
-        {
-          provide: AgroprombankConfig,
-          useValue: {
-            enabled: true,
-            isConfigured: true,
-            missingSettings: () => [],
-            terminalId: 'E1016682',
-            isTest: false,
-            invoicePrefix: '',
-            bindingTtlMinutes: 10,
-            bindingMaxAttempts: 3,
-          } as Partial<AgroprombankConfig>,
-        },
+        { provide: AgroprombankConfig, useValue: config },
         { provide: AgroprombankClient, useValue: client },
         {
           provide: SecretCipher,
@@ -141,6 +146,7 @@ describe('AgroprombankService', () => {
           },
         },
         { provide: OrderSettlementService, useValue: settlement },
+        { provide: PaymentHoldsService, useValue: holds },
       ],
     }).compile();
 
@@ -241,6 +247,37 @@ describe('AgroprombankService', () => {
       );
       expect(result.status).toBe('REQUIRES_ACTION');
       expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The customer never asks for a hold — the merchant's acquiring policy
+     * does, so that nobody is out of pocket for an order the store has not
+     * taken on yet.
+     */
+    it('holds the funds by default when the merchant holds until accepted', async () => {
+      config.holdUntilAccepted = true;
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        2,
+        'ProcessCardAutoPayment',
+        expect.objectContaining({ preauth: 1 }),
+      );
+      expect(result.status).toBe('REQUIRES_ACTION');
+      expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
+    });
+
+    it('records what it asked the bank for, so a timed-out hold is not reconciled as paid', async () => {
+      config.holdUntilAccepted = true;
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(prisma.payment.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ rawJson: { requestedPreauth: true } }) }),
+      );
     });
 
     it('retires a card the bank reports as inactive instead of charging it', async () => {
@@ -465,6 +502,30 @@ describe('AgroprombankService', () => {
       prisma.payment.findUnique.mockResolvedValue({ ...pendingPayment, status: 'REQUIRES_ACTION' });
 
       await expect(service.completePreauthorization('pay-1', 3631)).rejects.toThrow('between 1 and 3630');
+      expect(client.invoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('capturePreauthorizedForOrder', () => {
+    it('captures exactly what was held and settles the order', async () => {
+      const held = { ...pendingPayment, status: 'REQUIRES_ACTION' as const };
+      holds.findHold.mockResolvedValue(held);
+      prisma.payment.findUnique.mockResolvedValue(held);
+
+      const result = await service.capturePreauthorizedForOrder(order.id);
+
+      expect(client.invoke).toHaveBeenCalledWith(
+        'CompletePreAuthorizaion',
+        expect.objectContaining({ invoiceid: held.invoiceId, amount: held.amountCents }),
+      );
+      expect(settlement.settlePaidOrder).toHaveBeenCalledWith(order.id, expect.anything());
+      expect(result?.status).toBe('SUCCEEDED');
+    });
+
+    it('does nothing for an order with no hold on it', async () => {
+      holds.findHold.mockResolvedValue(null);
+
+      await expect(service.capturePreauthorizedForOrder(order.id)).resolves.toBeNull();
       expect(client.invoke).not.toHaveBeenCalled();
     });
   });

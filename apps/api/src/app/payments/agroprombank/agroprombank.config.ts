@@ -88,6 +88,22 @@ export class AgroprombankConfig {
     return this.int('AGROPROMBANK_TIMEOUT_MS', 30_000);
   }
 
+  /**
+   * Hold the money at checkout and capture it only when the store accepts the
+   * order, instead of debiting the card straight away.
+   *
+   * On by default: a customer whose order the store never takes should not be
+   * out of pocket in the meantime, and the bank's own scheme supports it —
+   * `ProcessCardAutoPayment` with `preauth=1` followed by
+   * `CompletePreAuthorizaion`. Switch off for a merchant whose acquiring
+   * contract does not allow preauthorization.
+   */
+  get holdUntilAccepted(): boolean {
+    const raw = this.config.get<string>('AGROPROMBANK_HOLD_UNTIL_ACCEPTED');
+    if (raw === undefined || raw.trim() === '') return true;
+    return this.bool('AGROPROMBANK_HOLD_UNTIL_ACCEPTED');
+  }
+
   /** `istest` flag echoed into payment requests. The bank ignores it for now. */
   get isTest(): boolean {
     return this.bool('AGROPROMBANK_IS_TEST');

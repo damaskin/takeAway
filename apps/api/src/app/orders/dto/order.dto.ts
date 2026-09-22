@@ -18,6 +18,32 @@ export class OrderItemDto {
   totalCents!: number;
 }
 
+/**
+ * What the customer needs to know about the money, in their own terms.
+ *
+ * `HELD` is the state that matters for the hold-until-accepted flow: the card
+ * was authorized at checkout but nothing has been taken yet, and it will be
+ * taken when the store accepts the order.
+ */
+export type OrderPaymentState = 'NONE' | 'PENDING' | 'HELD' | 'PAID' | 'FAILED' | 'REFUNDED';
+
+export class OrderPaymentDto {
+  @ApiProperty({
+    enum: ['NONE', 'PENDING', 'HELD', 'PAID', 'FAILED', 'REFUNDED'],
+    description: 'NONE when the order carries no card payment at all (paid at the counter).',
+  })
+  state!: OrderPaymentState;
+
+  @ApiProperty({ description: 'Authorized or captured amount, in minor units. 0 when there is no payment.' })
+  amountCents!: number;
+
+  @ApiProperty({ nullable: true, type: String, description: 'Card the payment went to, masked.' })
+  cardMask!: string | null;
+
+  @ApiProperty({ nullable: true, type: String, description: 'When the money was captured.' })
+  paidAt!: string | null;
+}
+
 export class OrderDto {
   @ApiProperty()
   id!: string;
@@ -143,6 +169,9 @@ export class OrderDto {
 
   @ApiProperty({ nullable: true, type: String })
   deliveredAt!: string | null;
+
+  @ApiProperty({ type: OrderPaymentDto })
+  payment!: OrderPaymentDto;
 }
 
 export class OrderSummaryDto {

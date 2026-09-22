@@ -9,6 +9,7 @@ import { KitchenModule } from '../kitchen/kitchen.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { MailModule } from '../mail/mail.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PaymentHoldsModule } from '../payments/agroprombank/payment-holds.module';
 import { PromoModule } from '../promo/promo.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ReferralsModule } from '../referrals/referrals.module';
@@ -29,6 +30,9 @@ import { OrdersService } from './orders.service';
     ReferralsModule,
     KitchenModule,
     CartModule,
+    // Only the bank connection, not PaymentsModule — that one imports this
+    // module, and pulling it back in here would close the DI cycle.
+    PaymentHoldsModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [OrdersController],

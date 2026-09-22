@@ -66,13 +66,9 @@ export class ChargeCardDto {
   @Min(0)
   tipCents?: number;
 
-  @ApiPropertyOptional({
-    description: 'Hold the funds instead of capturing them; capture later with /complete',
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  preauth?: boolean;
+  // Whether the charge is a hold or an outright debit is the merchant's
+  // policy (AGROPROMBANK_HOLD_UNTIL_ACCEPTED), not the caller's choice — a
+  // customer must not be able to ask for money to be frozen instead of taken.
 }
 
 export class RefundOperationDto {

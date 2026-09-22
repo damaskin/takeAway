@@ -5,7 +5,12 @@ import { buildDirectionsUrl } from '@takeaway/utils';
 import { interval, type Subscription } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { OrdersApi, type OrderStatusString, type OrderView } from '../../core/orders/orders.service';
+import {
+  OrdersApi,
+  type OrderPaymentState,
+  type OrderStatusString,
+  type OrderView,
+} from '../../core/orders/orders.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -41,6 +46,24 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         >
           {{ statusLabel(o.status) | translate }}
         </h1>
+
+        <!-- Where the money stands: the first thing a customer looks for
+             after paying, before any of the order's own progress. -->
+        <div
+          class="flex items-center"
+          [style.background]="paymentBackground()"
+          style="border-radius: 14px; padding: 10px 14px; gap: 8px"
+        >
+          <span style="font-size: 18px">{{ paymentIcon() }}</span>
+          <span style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)">
+            {{ paymentTitle() | translate }}
+          </span>
+          @if (paymentDetail()) {
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
+              {{ paymentDetail() }}
+            </span>
+          }
+        </div>
 
         <!-- Timer + code -->
         <div class="flex items-center" style="gap: 12px">
@@ -192,6 +215,52 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private detachSocket: (() => void) | null = null;
   private detachBack: (() => void) | null = null;
 
+  readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
+
+  readonly paymentTitle = computed(() => {
+    switch (this.paymentState()) {
+      case 'PAID':
+        return 'web.orderStatus.payment.paid';
+      case 'HELD':
+        return 'web.orderStatus.payment.held';
+      case 'PENDING':
+        return 'web.orderStatus.payment.pending';
+      case 'FAILED':
+        return 'web.orderStatus.payment.failed';
+      case 'REFUNDED':
+        return 'web.orderStatus.payment.refunded';
+      default:
+        return 'web.orderStatus.payment.atCounter';
+    }
+  });
+
+  readonly paymentDetail = computed(() => {
+    const payment = this.order()?.payment;
+    if (!payment || payment.state === 'NONE') return '';
+    const currency = this.order()?.currency ?? 'USD';
+    const amount = new Intl.NumberFormat('en', { style: 'currency', currency }).format(payment.amountCents / 100);
+    return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
+  });
+
+  readonly paymentIcon = computed(() => {
+    switch (this.paymentState()) {
+      case 'PAID':
+        return '✅';
+      case 'HELD':
+        return '🔒';
+      case 'FAILED':
+        return '⚠️';
+      case 'REFUNDED':
+        return '↩️';
+      default:
+        return '💳';
+    }
+  });
+
+  readonly paymentBackground = computed(() =>
+    this.paymentState() === 'PAID' ? 'var(--color-mint-light, var(--color-foam))' : 'var(--color-foam)',
+  );
+
   readonly countdown = computed(() => {
     const o = this.order();
     if (!o) return '0:00';
@@ -210,6 +279,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.detachSocket = this.realtime.subscribeToOrder(id, (event) => {
       this.order.update((current) => (current ? { ...current, status: event.status } : current));
       if (event.status === 'READY') this.tg.haptic('heavy');
+      // Accepting the order is also when a hold becomes a real debit, and that
+      // only shows on the order itself — so re-read it rather than the status.
+      this.orders.get(id).subscribe({ next: (o) => this.order.set(o), error: () => undefined });
     });
 
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));

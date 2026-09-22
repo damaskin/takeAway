@@ -6,20 +6,26 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
-import { OrdersApi, type OrderStatusString, type OrderView } from '../../core/orders/orders.service';
+import {
+  OrdersApi,
+  type OrderPaymentState,
+  type OrderStatusString,
+  type OrderView,
+} from '../../core/orders/orders.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 
 interface StatusStep {
   key: OrderStatusString;
+  /** Translation key — resolved in the template. */
   label: string;
   icon: string;
 }
 
 const STEPS: StatusStep[] = [
-  { key: 'PAID', label: 'Paid', icon: '✓' },
-  { key: 'IN_PROGRESS', label: 'Preparing', icon: '⏱' },
-  { key: 'READY', label: 'Ready', icon: '🛎' },
-  { key: 'PICKED_UP', label: 'Picked up', icon: '🏁' },
+  { key: 'PAID', label: 'web.orderStatus.step.paid', icon: '✓' },
+  { key: 'IN_PROGRESS', label: 'web.orderStatus.step.preparing', icon: '⏱' },
+  { key: 'READY', label: 'web.orderStatus.step.ready', icon: '🛎' },
+  { key: 'PICKED_UP', label: 'web.orderStatus.step.pickedUp', icon: '🏁' },
 ];
 
 const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP'];
@@ -40,6 +46,27 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             {{ heroSubtitle() | translate }}
           </p>
         </header>
+
+        <!-- Where the money stands. The first thing a customer wants after
+             tapping pay is confirmation that it worked; the order's own
+             progress comes after that. -->
+        <article
+          class="w-full flex items-center"
+          [style.background]="paymentBackground()"
+          style="border-radius: 16px; padding: 14px 18px; gap: 12px"
+        >
+          <span style="font-size: 22px">{{ paymentIcon() }}</span>
+          <div class="flex flex-col" style="gap: 2px; min-width: 0">
+            <span
+              style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)"
+            >
+              {{ paymentTitle() | translate }}
+            </span>
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
+              {{ paymentDetail() }}
+            </span>
+          </div>
+        </article>
 
         <!-- Timer Ring (300×300 circle, caramel-light fill) -->
         <div
@@ -111,7 +138,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               [style.color]="step.color"
             >
               <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 600">
-                {{ step.icon }} {{ step.label }}
+                {{ step.icon }} {{ step.label | translate }}
               </span>
             </li>
           }
@@ -273,6 +300,63 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     }
   });
 
+  /**
+   * The customer-facing payment state, defaulting to "nothing to pay here" for
+   * an order placed before the API started reporting it.
+   */
+  readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
+
+  readonly paymentTitle = computed(() => {
+    switch (this.paymentState()) {
+      case 'PAID':
+        return 'web.orderStatus.payment.paid';
+      case 'HELD':
+        return 'web.orderStatus.payment.held';
+      case 'PENDING':
+        return 'web.orderStatus.payment.pending';
+      case 'FAILED':
+        return 'web.orderStatus.payment.failed';
+      case 'REFUNDED':
+        return 'web.orderStatus.payment.refunded';
+      default:
+        return 'web.orderStatus.payment.atCounter';
+    }
+  });
+
+  /** The concrete numbers under the title: amount and, when known, the card. */
+  readonly paymentDetail = computed(() => {
+    const payment = this.order()?.payment;
+    if (!payment || payment.state === 'NONE') return '';
+    const amount = this.price(payment.amountCents);
+    return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
+  });
+
+  readonly paymentIcon = computed(() => {
+    switch (this.paymentState()) {
+      case 'PAID':
+        return '✅';
+      case 'HELD':
+        return '🔒';
+      case 'FAILED':
+        return '⚠️';
+      case 'REFUNDED':
+        return '↩️';
+      default:
+        return '💳';
+    }
+  });
+
+  readonly paymentBackground = computed(() => {
+    switch (this.paymentState()) {
+      case 'PAID':
+        return 'var(--color-mint-light, var(--color-cream))';
+      case 'FAILED':
+        return 'var(--color-berry-light, var(--color-cream))';
+      default:
+        return 'var(--color-cream)';
+    }
+  });
+
   readonly countdown = computed(() => {
     const o = this.order();
     if (!o) return '0:00';
@@ -320,6 +404,10 @@ export class OrderStatusPage implements OnInit, OnDestroy {
 
     this.detachSocket = this.realtime.subscribeToOrder(id, (event) => {
       this.order.update((current) => (current ? { ...current, status: event.status } : current));
+      // The store accepting the order is also when a hold turns into a real
+      // debit, and that only lives on the order itself — so re-read it rather
+      // than patching the status alone.
+      this.orders.get(id).subscribe({ next: (o) => this.order.set(o), error: () => undefined });
     });
 
     this.tickSub = interval(1000).subscribe(() => this.now.set(Date.now()));
@@ -374,6 +462,13 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     } else {
       send(0, 0);
     }
+  }
+
+  price(cents: number): string {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: this.order()?.currency ?? this.authStore.user()?.currency ?? 'USD',
+    }).format(cents / 100);
   }
 
   isTerminal(status: OrderStatusString): boolean {

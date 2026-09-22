@@ -183,6 +183,11 @@ start a call without the bank certificate. Setting it to `false` is only for the
 integration window before the bank hands its certificate over — with it off,
 nothing but TLS distinguishes a real "payment succeeded" from a forged one.
 
+`AGROPROMBANK_HOLD_UNTIL_ACCEPTED` defaults to `true`: the card is authorized at
+checkout and only debited when the store accepts the order — see «Hold at
+checkout, capture on accept». Turn it off for a merchant whose acquiring
+contract has no preauthorization.
+
 `AGROPROMBANK_INVOICE_PREFIX` must differ per environment. The `invoiceid` we
 send has to stay unique for the entire life of the merchant contract, and a
 staging deployment sharing production's numbering would collide with it.
@@ -245,7 +250,7 @@ endpoints are rate-limited on top of that.
 
 ```
 POST /api/payments/agroprombank/pay
-     { orderId, cardId, tipCents?, preauth? }
+     { orderId, cardId, tipCents? }
   → { paymentId, status, operationId, invoiceId, authCode, rrn, … }
 ```
 
@@ -255,8 +260,34 @@ a declined payment. A successful charge settles the order through the shared
 `OrderSettlementService`, so the KDS board, customer/staff push, loyalty credit,
 POS push and receipt mail behave exactly as they do for Stripe.
 
-With `preauth: true` the funds are held rather than captured; capture later with
-`POST /api/admin/payments/agroprombank/:paymentId/complete` for up to 110% of
+### Hold at checkout, capture on accept
+
+`AGROPROMBANK_HOLD_UNTIL_ACCEPTED` (on by default) decides whether the charge
+above debits the card or only authorizes it. With it on:
+
+1. Checkout sends `ProcessCardAutoPayment` with `preauth=1`. The `Payment` row
+   sits in `REQUIRES_ACTION`, the order stays `CREATED`, and the customer's
+   order screen says the money is on hold.
+2. A staff member accepting the order on the KDS triggers
+   `CompletePreAuthorizaion` for exactly the held amount — never the order's
+   current total, because the customer only agreed to what they saw. The
+   capture settles the order to `PAID`, and the accept then moves it to
+   `ACCEPTED`. A bank refusal fails the accept, so the kitchen never starts on
+   an unpaid ticket.
+3. Cancelling the order releases the hold with `ReverseOperation`. That runs
+   after the cancellation commits and never throws: the cancel itself is
+   already done, an uncleared hold expires bank-side anyway, and the
+   reconciliation cron picks the row up on the next pass.
+
+The policy is not a client choice — `/pay` takes no `preauth` flag, so a
+customer cannot ask for money to be frozen instead of taken. What was asked of
+the bank is written onto the `Payment` row (`rawJson.requestedPreauth`) before
+the call, so reconciliation after a timeout does not mistake a hold for a
+capture: `CheckOperation` reports that an operation exists, not that it was
+captured.
+
+Ops can still capture by hand with
+`POST /api/admin/payments/agroprombank/:paymentId/complete`, for up to 110% of
 the held amount.
 
 ### Refunds and reversals
@@ -404,5 +435,11 @@ left behind.
 - [ ] Brand currency set to `RUP`.
 - [ ] Migrations applied (`pnpm prisma:deploy`).
 - [ ] `AGROPROMBANK_ENABLED=true`.
+- [ ] Decide the money-taking moment: `AGROPROMBANK_HOLD_UNTIL_ACCEPTED=true`
+      (default) holds at checkout and captures on accept — confirm the acquiring
+      contract allows preauthorization.
 - [ ] One live low-value charge, then refunded from the admin route, with the
-      bank's record checked via `GET /api/admin/payments/agroprombank/:id`.
+      bank's record checked via `GET /api/admin/payments/agroprombank/:id`. With
+      holds on, walk the whole path: place the order, see it held, accept it on
+      the KDS, see it captured, then place a second one and cancel it to confirm
+      the hold is released.

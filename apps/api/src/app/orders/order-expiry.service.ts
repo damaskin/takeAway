@@ -6,6 +6,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -41,6 +42,7 @@ export class OrderExpiryService {
     private readonly loyalty: LoyaltyService,
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
+    private readonly holds: PaymentHoldsService,
   ) {}
 
   get ttlMinutes(): number {
@@ -120,6 +122,11 @@ export class OrderExpiryService {
     });
 
     if (!expired) return false;
+
+    // An order the store never took on must not keep the customer's money
+    // frozen. The bank call cannot join the transaction above, so it runs here
+    // and reports rather than throws — see PaymentHoldsService.
+    await this.holds.releaseForOrder(orderId, 'order-expired');
 
     this.realtime.emitOrderStatusChanged(
       {

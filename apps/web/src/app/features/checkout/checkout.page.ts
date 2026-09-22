@@ -8,12 +8,13 @@ import { computeTax } from '@takeaway/utils';
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
+import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
-type PaymentMethod = 'APPLE_PAY' | 'GOOGLE_PAY' | 'CARD';
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
 interface Step {
@@ -534,40 +535,57 @@ interface Step {
               />
             </form>
 
-            <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-md)">
+            <!-- How the order gets paid for. Card payments only appear once the
+                 acquirer is switched on; until then the honest answer is that
+                 the customer pays at the counter. -->
+            <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-sm)">
+              <span
+                style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
+                >{{ 'web.checkout.paymentTitle' | translate }}</span
+              >
+
+              @if (cardPaymentsEnabled()) {
+                @for (card of cards(); track card.id) {
+                  <button
+                    type="button"
+                    (click)="selectCard(card.id)"
+                    class="flex items-center"
+                    [style.background]="selectedCardId() === card.id ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                    [style.color]="selectedCardId() === card.id ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                    [style.border]="selectedCardId() === card.id ? 'none' : '1px solid var(--color-border)'"
+                    style="height: 50px; padding: 0 16px; gap: 10px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  >
+                    <span>💳</span>
+                    <span class="flex-1 text-left">{{ card.maskedPan || card.label }}</span>
+                  </button>
+                }
+              }
+
               <button
                 type="button"
-                (click)="selectPayment('APPLE_PAY')"
-                class="flex items-center justify-center"
-                [style.background]="payment() === 'APPLE_PAY' ? 'var(--color-espresso)' : 'var(--color-cream)'"
-                [style.color]="payment() === 'APPLE_PAY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                [style.border]="payment() === 'APPLE_PAY' ? 'none' : '1px solid var(--color-border)'"
-                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                (click)="selectCard(null)"
+                class="flex items-center"
+                [style.background]="selectedCardId() === null ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                [style.color]="selectedCardId() === null ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                [style.border]="selectedCardId() === null ? 'none' : '1px solid var(--color-border)'"
+                style="height: 50px; padding: 0 16px; gap: 10px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
               >
-                Pay
+                <span>🏪</span>
+                <span class="flex-1 text-left">{{ 'web.checkout.payAtCounter' | translate }}</span>
               </button>
-              <button
-                type="button"
-                (click)="selectPayment('GOOGLE_PAY')"
-                class="flex items-center justify-center"
-                [style.background]="payment() === 'GOOGLE_PAY' ? 'var(--color-espresso)' : 'var(--color-cream)'"
-                [style.color]="payment() === 'GOOGLE_PAY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                [style.border]="payment() === 'GOOGLE_PAY' ? 'none' : '1px solid var(--color-border)'"
-                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >
-                G Pay
-              </button>
-              <button
-                type="button"
-                (click)="selectPayment('CARD')"
-                class="flex items-center justify-center"
-                [style.background]="payment() === 'CARD' ? 'var(--color-espresso)' : 'var(--color-cream)'"
-                [style.color]="payment() === 'CARD' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                [style.border]="payment() === 'CARD' ? 'none' : '1px solid var(--color-border)'"
-                style="height: 50px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 400"
-              >
-                Card
-              </button>
+
+              @if (cardPaymentsEnabled()) {
+                <a
+                  routerLink="/profile/payment"
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
+                  >{{ 'web.checkout.addCard' | translate }}</a
+                >
+                @if (selectedCardId()) {
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
+                    {{ 'web.checkout.holdHint' | translate }}
+                  </span>
+                }
+              }
             </section>
 
             <button
@@ -606,11 +624,19 @@ export class CheckoutPage implements OnInit {
   private readonly router = inject(Router);
 
   private readonly deliveryFeeApi = inject(DeliveryFeeApi);
+  private readonly flags = inject(FeatureFlagsStore);
+  private readonly cardsApi = inject(PaymentCardsApi);
+  private readonly cardsStore = inject(PaymentCardsStore);
 
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
-  readonly payment = signal<PaymentMethod>('APPLE_PAY');
+  readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  readonly cards = signal<BoundCard[]>([]);
+  /** `null` means "pay at the counter" — always an option, cards or not. */
+  readonly selectedCardId = signal<string | null>(null);
+  /** Set once the order exists, so a declined card retries the charge rather than placing a second order. */
+  private placedOrderId: string | null = null;
   /** ISO start of the chosen slot; empty until the customer picks one. */
   readonly scheduledAt = signal<string>('');
   readonly slots = signal<PickupSlot[]>([]);
@@ -711,6 +737,9 @@ export class CheckoutPage implements OnInit {
   });
 
   ngOnInit(): void {
+    this.flags.load();
+    this.loadCards();
+
     // Balance up front: the points section only renders when there is
     // enough to redeem, and an empty section is worse than none.
     this.loyalty.me().subscribe({
@@ -979,8 +1008,8 @@ export class CheckoutPage implements OnInit {
     this.fulfillmentType.set(type);
   }
 
-  selectPayment(method: PaymentMethod): void {
-    this.payment.set(method);
+  selectCard(cardId: string | null): void {
+    this.selectedCardId.set(cardId);
   }
 
   selectSlot(slot: PickupSlot): void {
@@ -1019,11 +1048,34 @@ export class CheckoutPage implements OnInit {
     });
   }
 
+  /**
+   * Cards are only offered once the acquirer is switched on, and the list is
+   * whatever the customer bound in their profile. A silent failure here just
+   * means checkout falls back to paying at the counter.
+   */
+  private loadCards(): void {
+    if (!this.cardPaymentsEnabled()) return;
+    this.cardsStore.load().subscribe({
+      next: (cards) => {
+        this.cards.set(cards);
+        this.selectedCardId.set((cards.find((c) => c.isDefault) ?? cards[0])?.id ?? null);
+      },
+      error: () => this.cards.set([]),
+    });
+  }
+
   placeOrder(): void {
     const c = this.cart();
     if (!c) return;
     this.submitting.set(true);
     this.error.set(null);
+
+    // Retrying after a declined charge: the order already exists, so charge it
+    // again rather than placing a duplicate.
+    if (this.placedOrderId) {
+      this.payFor(this.placedOrderId);
+      return;
+    }
 
     const v = this.contactForm.getRawValue();
     const isDelivery = this.fulfillmentType() === 'DELIVERY';
@@ -1059,8 +1111,36 @@ export class CheckoutPage implements OnInit {
 
     this.orders.create(input).subscribe({
       next: (order) => {
+        this.placedOrderId = order.id;
+        this.payFor(order.id);
+      },
+      error: (err) => {
         this.submitting.set(false);
-        void this.router.navigate(['/orders', order.id]);
+        this.error.set(extractMessage(err));
+      },
+    });
+  }
+
+  /**
+   * Charges the chosen card and then opens the order screen. Paying at the
+   * counter skips straight there — the order is placed either way, and the
+   * order screen is what tells the customer where their money stands.
+   *
+   * A decline keeps the customer on checkout with the reason, because that is
+   * the only screen where they can pick a different card.
+   */
+  private payFor(orderId: string): void {
+    const cardId = this.selectedCardId();
+    if (!this.cardPaymentsEnabled() || !cardId) {
+      this.submitting.set(false);
+      void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+
+    this.cardsApi.pay({ orderId, cardId }).subscribe({
+      next: () => {
+        this.submitting.set(false);
+        void this.router.navigate(['/orders', orderId]);
       },
       error: (err) => {
         this.submitting.set(false);
