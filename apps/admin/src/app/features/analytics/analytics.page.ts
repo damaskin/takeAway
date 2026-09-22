@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import {
@@ -8,6 +8,8 @@ import {
   type RevenueSeries,
   type TopProduct,
 } from '../../core/analytics/analytics.service';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { formatMoney } from '../../core/format/money';
 
 interface ChartBar {
   label: string;
@@ -235,8 +237,9 @@ interface ChartBar {
     </section>
   `,
 })
-export class AdminAnalyticsPage implements OnInit {
+export class AdminAnalyticsPage {
   private readonly api = inject(AnalyticsApi);
+  private readonly activeBrand = inject(ActiveBrandService);
 
   readonly activeRange = signal(14);
   // Labels are translated in the template via `admin.analytics.rangeShort.<days>`.
@@ -254,13 +257,16 @@ export class AdminAnalyticsPage implements OnInit {
     const best = r.bestDay;
     return r.points.map((p) => ({
       label: this.shortDay(p.date),
-      sub: best && p.date === best.date ? `$${Math.round(p.revenueCents / 100)}` : '',
+      sub: best && p.date === best.date ? this.price(p.revenueCents, true) : '',
       height: Math.round((p.revenueCents / max) * 100),
     }));
   });
 
-  ngOnInit(): void {
-    this.fetch();
+  constructor() {
+    // Follows the brand picked in the header.
+    effect(() => {
+      if (this.activeBrand.activeId()) this.fetch();
+    });
   }
 
   setRange(days: number): void {
@@ -274,8 +280,8 @@ export class AdminAnalyticsPage implements OnInit {
     return Math.round((row.revenueCents / max) * 100);
   }
 
-  price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+  price(cents: number, wholeUnits = false): string {
+    return formatMoney(cents, this.activeBrand.active()?.currency, wholeUnits);
   }
 
   formatDate(iso: string): string {
@@ -288,8 +294,10 @@ export class AdminAnalyticsPage implements OnInit {
   }
 
   private fetch(): void {
-    this.api.revenue(this.activeRange()).subscribe({ next: (r) => this.revenue.set(r) });
-    this.api.topProducts(6).subscribe({ next: (p) => this.topProducts.set(p) });
-    this.api.cohort(30).subscribe({ next: (c) => this.cohort.set(c) });
+    const brandId = this.activeBrand.activeId();
+    if (!brandId) return;
+    this.api.revenue(this.activeRange(), brandId).subscribe({ next: (r) => this.revenue.set(r) });
+    this.api.topProducts(6, brandId).subscribe({ next: (p) => this.topProducts.set(p) });
+    this.api.cohort(30, brandId).subscribe({ next: (c) => this.cohort.set(c) });
   }
 }

@@ -42,7 +42,8 @@ export class DashboardSummaryDto {
   @ApiProperty() revenueTodayCents!: number;
   @ApiProperty() ordersToday!: number;
   @ApiProperty() avgPickupSeconds!: number;
-  @ApiProperty() nps!: number;
+  /** Null until customer ratings are collected. */
+  @ApiProperty({ nullable: true, type: Number }) nps!: number | null;
   /** Same-period deltas vs yesterday, as percent strings like "+12.3%". */
   @ApiProperty() deltas!: Record<string, string>;
 }

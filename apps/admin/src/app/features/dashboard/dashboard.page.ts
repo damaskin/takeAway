@@ -1,8 +1,10 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { formatMoney } from '../../core/format/money';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
 
 interface KpiCard {
@@ -196,8 +198,9 @@ interface DashboardOrder {
     `,
   ],
 })
-export class DashboardPage implements OnInit {
+export class DashboardPage {
   private readonly store = inject(AuthStore);
+  private readonly activeBrand = inject(ActiveBrandService);
   private readonly analytics = inject(AnalyticsApi);
   private readonly orders = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
@@ -232,8 +235,8 @@ export class DashboardPage implements OnInit {
       },
       {
         label: 'admin.dashboard.kpi.nps',
-        value: String(s?.nps ?? '—'),
-        delta: s?.deltas['nps'] ?? '0',
+        value: s?.nps == null ? '—' : String(s.nps),
+        delta: s?.deltas['nps'] ?? '',
         positive: true,
         accent: 'var(--color-cat-signature)',
       },
@@ -264,12 +267,18 @@ export class DashboardPage implements OnInit {
     }));
   });
 
-  ngOnInit(): void {
-    this.analytics.summary().subscribe({ next: (s) => this.summary.set(s) });
-    this.orders.list({ take: 10 }).subscribe({
-      next: (list) => this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
+  constructor() {
+    // The numbers belong to the brand picked in the header — a brand owner's
+    // own, or whichever one a platform admin is looking at — and follow it.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      if (!brandId) return;
+      this.analytics.summary(brandId).subscribe({ next: (s) => this.summary.set(s) });
+      this.orders.list({ take: 10, brandId }).subscribe({
+        next: (list) => this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
+      });
+      this.analytics.storePerformance(14, brandId).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
     });
-    this.analytics.storePerformance(14).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
   }
 
   name(): string {
@@ -277,9 +286,7 @@ export class DashboardPage implements OnInit {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(
-      cents / 100,
-    );
+    return formatMoney(cents, this.activeBrand.active()?.currency, true);
   }
 
   formatSeconds(sec: number): string {

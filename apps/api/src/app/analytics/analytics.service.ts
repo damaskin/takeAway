@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import type { AnalyticsScope } from './analytics-scope';
 import {
   CohortStatsDto,
   DashboardSummaryDto,
@@ -46,14 +47,14 @@ const SQL_DATE_DAY = (d: Date): string => d.toISOString().slice(0, 10);
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async revenueSeries(days = 14, brandId?: string): Promise<RevenueSeriesDto> {
+  async revenueSeries(scope: AnalyticsScope, days = 14): Promise<RevenueSeriesDto> {
     const end = new Date();
     const start = new Date(end.getTime() - days * 24 * 60 * 60_000);
     const prevStart = new Date(start.getTime() - days * 24 * 60 * 60_000);
 
     const [current, previous] = await Promise.all([
-      this.aggregateRevenue(start, end, brandId),
-      this.aggregateRevenue(prevStart, start, brandId),
+      this.aggregateRevenue(start, end, scope),
+      this.aggregateRevenue(prevStart, start, scope),
     ]);
 
     // Only report a "best day" if there's actual revenue to compare against.
@@ -81,12 +82,11 @@ export class AnalyticsService {
     };
   }
 
-  async topProducts(brandId?: string, take = 10): Promise<TopProductDto[]> {
+  async topProducts(scope: AnalyticsScope, take = 10): Promise<TopProductDto[]> {
     // OrderItem.productSnapshot is a jsonb with a `name` field; we aggregate
     // by snapshot name so renamed products still roll up under their original
     // label for the period we're analyzing.
-    const where: Prisma.OrderWhereInput = { status: { not: OrderStatus.CANCELLED } };
-    if (brandId) where.store = { brandId };
+    const where: Prisma.OrderWhereInput = { ...orderScope(scope), status: { not: OrderStatus.CANCELLED } };
 
     const items = await this.prisma.orderItem.findMany({
       where: { order: where },
@@ -111,13 +111,13 @@ export class AnalyticsService {
       .map((b) => ({ name: b.name, unitsSold: b.units, revenueCents: b.revenue }));
   }
 
-  async cohort(brandId?: string, days = 30): Promise<CohortStatsDto> {
+  async cohort(scope: AnalyticsScope, days = 30): Promise<CohortStatsDto> {
     const since = new Date(Date.now() - days * 24 * 60 * 60_000);
     const where: Prisma.OrderWhereInput = {
+      ...orderScope(scope),
       createdAt: { gte: since },
       status: { not: OrderStatus.CANCELLED },
     };
-    if (brandId) where.store = { brandId };
 
     const orders = await this.prisma.order.findMany({
       where,
@@ -142,7 +142,14 @@ export class AnalyticsService {
     const repeatCount = userIds.filter((id) => (byUser.get(id) ?? 0) > 1).length;
     const repeatRate = userIds.length ? (repeatCount / userIds.length) * 100 : 0;
 
-    const newCustomers = await this.prisma.user.count({ where: { createdAt: { gte: since } } });
+    // New to *this* business: their first order here falls in the window.
+    // Counting new platform sign-ups told every brand the same number.
+    const firstOrders = await this.prisma.order.groupBy({
+      by: ['userId'],
+      where: { ...orderScope(scope), userId: { in: userIds }, status: { not: OrderStatus.CANCELLED } },
+      _min: { createdAt: true },
+    });
+    const newCustomers = firstOrders.filter((row) => row._min.createdAt && row._min.createdAt >= since).length;
 
     return {
       repeatRatePercent: Math.round(repeatRate),
@@ -152,9 +159,9 @@ export class AnalyticsService {
     };
   }
 
-  async storePerformance(brandId?: string, days = 14): Promise<StorePerformanceDto[]> {
+  async storePerformance(scope: AnalyticsScope, days = 14): Promise<StorePerformanceDto[]> {
     const since = SQL_DATE_DAY(new Date(Date.now() - days * 24 * 60 * 60_000));
-    const rows = await this.fetchOrdersDaily({ brandId, sinceDay: since });
+    const rows = await this.fetchOrdersDaily({ scope, sinceDay: since });
 
     const byStore = new Map<string, { orders: number; revenue: number }>();
     for (const r of rows) {
@@ -183,14 +190,14 @@ export class AnalyticsService {
       .sort((a, b) => b.revenueCents - a.revenueCents);
   }
 
-  async dashboardSummary(brandId?: string): Promise<DashboardSummaryDto> {
+  async dashboardSummary(scope: AnalyticsScope): Promise<DashboardSummaryDto> {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const yesterday = new Date(today.getTime() - 24 * 60 * 60_000);
 
     // Single MV scan that covers both today and yesterday. We slice the rows
     // in JS — cheaper than two roundtrips.
-    const rows = await this.fetchOrdersDaily({ brandId, sinceDay: SQL_DATE_DAY(yesterday) });
+    const rows = await this.fetchOrdersDaily({ scope, sinceDay: SQL_DATE_DAY(yesterday) });
     const todayKey = SQL_DATE_DAY(today);
     const yesterdayKey = SQL_DATE_DAY(yesterday);
 
@@ -220,12 +227,13 @@ export class AnalyticsService {
       revenueTodayCents: todayRev,
       ordersToday: todayOrders,
       avgPickupSeconds: pickupSecCount > 0 ? Math.round(pickupSecSum / pickupSecCount) : 0,
-      nps: 82, // placeholder until we collect ratings (M5.3)
+      // No ratings are collected yet. A made-up score on a business's own
+      // dashboard is worse than an honest blank.
+      nps: null,
       deltas: {
         revenue: this.fmtDelta(revDelta),
         orders: this.fmtDelta(ordersDelta),
         pickup: '0s',
-        nps: '+0',
       },
     };
   }
@@ -241,7 +249,7 @@ export class AnalyticsService {
   private async aggregateRevenue(
     start: Date,
     end: Date,
-    brandId?: string,
+    scope: AnalyticsScope,
   ): Promise<{
     totalRevenueCents: number;
     totalOrders: number;
@@ -255,7 +263,7 @@ export class AnalyticsService {
     endDayExclusive.setUTCHours(0, 0, 0, 0);
     endDayExclusive.setUTCDate(endDayExclusive.getUTCDate() + 1);
     const rows = await this.fetchOrdersDaily({
-      brandId,
+      scope,
       sinceDay: SQL_DATE_DAY(startDay),
       untilDay: SQL_DATE_DAY(endDayExclusive),
     });
@@ -286,55 +294,28 @@ export class AnalyticsService {
   }
 
   /**
-   * Reads from the `mv_orders_daily` materialized view. Filtered server-side
-   * by brand (when given) and by day range. Returns an empty array when the
-   * MV has no matching rows.
+   * Reads from the `mv_orders_daily` materialized view, narrowed to the
+   * scope's brands and stores and to the day range. Returns an empty array
+   * when nothing matches — including an empty scope.
    */
   private async fetchOrdersDaily(opts: {
-    brandId?: string;
+    scope: AnalyticsScope;
     sinceDay?: string;
     untilDay?: string;
   }): Promise<OrdersDailyRow[]> {
-    const { brandId, sinceDay, untilDay } = opts;
-    if (brandId && sinceDay && untilDay) {
-      return this.prisma.$queryRaw<OrdersDailyRow[]>`
-        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
-               "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
-        FROM "mv_orders_daily"
-        WHERE "brandId" = ${brandId}
-          AND "day" >= ${sinceDay}::date
-          AND "day" <  ${untilDay}::date
-      `;
-    }
-    if (brandId && sinceDay) {
-      return this.prisma.$queryRaw<OrdersDailyRow[]>`
-        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
-               "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
-        FROM "mv_orders_daily"
-        WHERE "brandId" = ${brandId}
-          AND "day" >= ${sinceDay}::date
-      `;
-    }
-    if (sinceDay && untilDay) {
-      return this.prisma.$queryRaw<OrdersDailyRow[]>`
-        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
-               "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
-        FROM "mv_orders_daily"
-        WHERE "day" >= ${sinceDay}::date AND "day" <  ${untilDay}::date
-      `;
-    }
-    if (sinceDay) {
-      return this.prisma.$queryRaw<OrdersDailyRow[]>`
-        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
-               "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
-        FROM "mv_orders_daily"
-        WHERE "day" >= ${sinceDay}::date
-      `;
-    }
+    const { scope, sinceDay, untilDay } = opts;
+    const conditions: Prisma.Sql[] = [];
+    if (scope.brandIds) conditions.push(Prisma.sql`"brandId" = ANY(${[...scope.brandIds]}::text[])`);
+    if (scope.storeIds) conditions.push(Prisma.sql`"storeId" = ANY(${[...scope.storeIds]}::text[])`);
+    if (sinceDay) conditions.push(Prisma.sql`"day" >= ${sinceDay}::date`);
+    if (untilDay) conditions.push(Prisma.sql`"day" < ${untilDay}::date`);
+    const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
+
     return this.prisma.$queryRaw<OrdersDailyRow[]>`
       SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
              "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
       FROM "mv_orders_daily"
+      ${where}
     `;
   }
 
@@ -343,4 +324,12 @@ export class AnalyticsService {
     const sign = rounded >= 0 ? '+' : '';
     return `${sign}${rounded}%`;
   }
+}
+
+/** The scope as a filter on live `Order` rows. */
+function orderScope(scope: AnalyticsScope): Prisma.OrderWhereInput {
+  const where: Prisma.OrderWhereInput = {};
+  if (scope.storeIds) where.storeId = { in: [...scope.storeIds] };
+  if (scope.brandIds) where.store = { brandId: { in: [...scope.brandIds] } };
+  return where;
 }

@@ -44,7 +44,8 @@ export interface DashboardSummary {
   revenueTodayCents: number;
   ordersToday: number;
   avgPickupSeconds: number;
-  nps: number;
+  /** Null until customer ratings are collected. */
+  nps: number | null;
   deltas: Record<string, string>;
 }
 
@@ -53,23 +54,43 @@ export class AnalyticsApi {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
 
-  summary(): Observable<DashboardSummary> {
-    return this.http.get<DashboardSummary>(`${this.api.baseUrl}/admin/analytics/summary`);
+  // `brandId` picks one of the caller's brands; the API never widens past them.
+
+  summary(brandId?: string | null): Observable<DashboardSummary> {
+    return this.http.get<DashboardSummary>(`${this.api.baseUrl}/admin/analytics/summary`, {
+      params: params({ brandId }),
+    });
   }
 
-  revenue(days = 14): Observable<RevenueSeries> {
-    return this.http.get<RevenueSeries>(`${this.api.baseUrl}/admin/analytics/revenue?days=${days}`);
+  revenue(days = 14, brandId?: string | null): Observable<RevenueSeries> {
+    return this.http.get<RevenueSeries>(`${this.api.baseUrl}/admin/analytics/revenue`, {
+      params: params({ days, brandId }),
+    });
   }
 
-  topProducts(take = 5): Observable<TopProduct[]> {
-    return this.http.get<TopProduct[]>(`${this.api.baseUrl}/admin/analytics/top-products?take=${take}`);
+  topProducts(take = 5, brandId?: string | null): Observable<TopProduct[]> {
+    return this.http.get<TopProduct[]>(`${this.api.baseUrl}/admin/analytics/top-products`, {
+      params: params({ take, brandId }),
+    });
   }
 
-  cohort(days = 30): Observable<CohortStats> {
-    return this.http.get<CohortStats>(`${this.api.baseUrl}/admin/analytics/cohort?days=${days}`);
+  cohort(days = 30, brandId?: string | null): Observable<CohortStats> {
+    return this.http.get<CohortStats>(`${this.api.baseUrl}/admin/analytics/cohort`, {
+      params: params({ days, brandId }),
+    });
   }
 
-  storePerformance(days = 14): Observable<StorePerformance[]> {
-    return this.http.get<StorePerformance[]>(`${this.api.baseUrl}/admin/analytics/stores?days=${days}`);
+  storePerformance(days = 14, brandId?: string | null): Observable<StorePerformance[]> {
+    return this.http.get<StorePerformance[]>(`${this.api.baseUrl}/admin/analytics/stores`, {
+      params: params({ days, brandId }),
+    });
   }
+}
+
+function params(values: Record<string, string | number | null | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== null && value !== undefined && value !== '') out[key] = String(value);
+  }
+  return out;
 }
