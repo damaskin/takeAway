@@ -1,16 +1,26 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Modifier, Product, Variation } from '@prisma/client';
+import type { Modifier, Prisma, Product, Variation, VariationType } from '@prisma/client';
+import type { OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
+import { sortVariationsForDisplay } from '@takeaway/utils';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
 import type { CartDto, CartItemDto } from './dto/cart.dto';
 
-interface PricedItem {
+/** A product with everything that goes into its price. */
+export type PricedProduct = Product & { variations: Variation[]; modifiers: Modifier[] };
+
+/** One line priced against the menu as it stands. */
+export interface PricedLine {
   unitPriceCents: number;
   unitPrepSeconds: number;
   variationIds: string[];
   modifiers: Record<string, number>;
+  /** The variations the line is made with — chosen or defaulted — size first. */
+  variations: OrderItemVariation[];
+  /** Extras with a positive count, in menu order. */
+  modifierLines: OrderItemModifier[];
 }
 
 @Injectable()
@@ -37,14 +47,16 @@ export class CartService {
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
     const product = await this.loadProduct(dto.productId);
-    if (!product) throw new NotFoundException('Product not found');
+    // A hidden product is off the menu — the catalog answers 404 for it, and
+    // so does the cart, or checkout would only turn it away later.
+    if (!product || !product.visible) throw new NotFoundException('Product not found');
     if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId))) {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
     await this.assertNotOnStopList(dto.storeId, [product.id]);
 
-    const priced = this.priceItem(product, dto.variationIds ?? [], dto.modifiers ?? {});
+    const priced = this.priceOrReject(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
     const cart = await this.prisma.cart.upsert({
       where: { userId_storeId: { userId, storeId: dto.storeId } },
@@ -78,8 +90,8 @@ export class CartService {
     await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
     const variationIds = dto.variationIds ?? item.variationIds;
-    const modifiers = dto.modifiers ?? (item.modifiersJson as Record<string, number>);
-    const priced = this.priceItem(item.product, variationIds, modifiers);
+    const modifiers = dto.modifiers ?? storedModifiers(item.modifiersJson);
+    const priced = this.priceOrReject(item.product, variationIds, modifiers);
 
     await this.prisma.cartItem.update({
       where: { id: itemId },
@@ -119,37 +131,98 @@ export class CartService {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
-  private priceItem(
-    product: Product & { variations: Variation[]; modifiers: Modifier[] },
-    rawVariationIds: string[],
-    rawModifiers: Record<string, number>,
-  ): PricedItem {
-    const knownVariationIds = new Set(product.variations.map((v) => v.id));
-    const variationIds = rawVariationIds.filter((id) => knownVariationIds.has(id));
+  /** Prices what the customer asked for, or answers 400 saying why it cannot be made. */
+  private priceOrReject(
+    product: PricedProduct,
+    variationIds: readonly string[],
+    modifiers: Record<string, unknown>,
+  ): PricedLine {
+    const { line, problems } = this.priceItem(product, variationIds, modifiers);
+    if (problems.length > 0) throw new BadRequestException(problems.join('; '));
+    return line;
+  }
 
-    const modifiers: Record<string, number> = {};
-    for (const m of product.modifiers) {
-      const count = Number(rawModifiers[m.id] ?? 0);
-      const clamped = Math.max(m.minCount, Math.min(m.maxCount, Math.floor(count)));
-      if (clamped > 0) modifiers[m.id] = clamped;
+  /**
+   * The single definition of what a line costs — add-to-cart and checkout
+   * both come through here.
+   *
+   * Option rules: at most one variation of each type; a type the customer
+   * left open gets its default (the one marked default, else the first on
+   * the menu), because that is what ends up in the cup and the price and the
+   * kitchen ticket should both say so; extra counts are clamped to the
+   * modifier's limits. An id the product does not have is reported, not
+   * dropped — dropping it would sell a latte without the syrup the customer
+   * saw on screen. The caller decides what a problem means.
+   */
+  private priceItem(
+    product: PricedProduct,
+    rawVariationIds: readonly string[],
+    rawModifiers: Record<string, unknown>,
+  ): { line: PricedLine; problems: string[] } {
+    const problems: string[] = [];
+
+    const variationsById = new Map(product.variations.map((v) => [v.id, v]));
+    const chosen = new Map<VariationType, Variation>();
+    for (const id of new Set(rawVariationIds)) {
+      const variation = variationsById.get(id);
+      if (!variation) {
+        problems.push(`Option not available for ${product.name}: ${id}`);
+      } else if (chosen.has(variation.type)) {
+        problems.push(`Choose one ${variation.type.toLowerCase()} for ${product.name}`);
+      } else {
+        chosen.set(variation.type, variation);
+      }
+    }
+    const variationMenu = byMenuOrder(product.variations);
+    for (const variation of variationMenu) {
+      if (chosen.has(variation.type)) continue;
+      chosen.set(variation.type, variationMenu.find((v) => v.type === variation.type && v.isDefault) ?? variation);
+    }
+
+    const knownModifiers = new Set(product.modifiers.map((m) => m.id));
+    for (const [id, count] of Object.entries(rawModifiers)) {
+      if (!knownModifiers.has(id) && toCount(count) > 0) {
+        problems.push(`Option not available for ${product.name}: ${id}`);
+      }
     }
 
     let unitPriceCents = product.basePriceCents;
     let unitPrepSeconds = product.prepTimeSeconds;
-
-    for (const v of product.variations) {
-      if (variationIds.includes(v.id)) {
-        unitPriceCents += v.priceDeltaCents;
-        unitPrepSeconds += v.prepTimeDeltaSeconds;
-      }
+    for (const v of chosen.values()) {
+      unitPriceCents += v.priceDeltaCents;
+      unitPrepSeconds += v.prepTimeDeltaSeconds;
     }
-    for (const m of product.modifiers) {
-      const count = modifiers[m.id] ?? 0;
+
+    const modifiers: Record<string, number> = {};
+    const modifierLines: OrderItemModifier[] = [];
+    for (const m of byMenuOrder(product.modifiers)) {
+      const count = Math.max(m.minCount, Math.min(m.maxCount, toCount(rawModifiers[m.id])));
+      if (count <= 0) continue;
+      modifiers[m.id] = count;
+      modifierLines.push({ id: m.id, name: m.name, count, priceCents: m.priceDeltaCents });
       unitPriceCents += m.priceDeltaCents * count;
       unitPrepSeconds += m.prepTimeDeltaSeconds * count;
     }
 
-    return { unitPriceCents, unitPrepSeconds, variationIds, modifiers };
+    const variations = sortVariationsForDisplay([...chosen.values()]);
+    return {
+      line: {
+        // A discount-style delta can outweigh the base price; a line never
+        // pays the customer, and a drink never takes negative time.
+        unitPriceCents: Math.max(0, unitPriceCents),
+        unitPrepSeconds: Math.max(0, unitPrepSeconds),
+        variationIds: variations.map((v) => v.id),
+        modifiers,
+        variations: variations.map((v) => ({
+          id: v.id,
+          type: v.type,
+          name: v.name,
+          priceDeltaCents: v.priceDeltaCents,
+        })),
+        modifierLines,
+      },
+      problems,
+    };
   }
 
   private async recalculate(cartId: string): Promise<CartDto> {
@@ -284,4 +357,20 @@ export class CartService {
       updatedAt: new Date().toISOString(),
     };
   }
+}
+
+/** Menu order: the admin's sort order, then id so equal sort orders stay put. */
+function byMenuOrder<T extends { id: string; sortOrder: number }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
+}
+
+/** A requested extra count as a whole number; anything unreadable counts as none. */
+function toCount(raw: unknown): number {
+  const n = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+  return Number.isFinite(n) ? Math.floor(n) : 0;
+}
+
+/** The `{ modifierId: count }` a cart row keeps, read without trusting the JSON. */
+function storedModifiers(json: Prisma.JsonValue): Record<string, unknown> {
+  return typeof json === 'object' && json !== null && !Array.isArray(json) ? json : {};
 }
