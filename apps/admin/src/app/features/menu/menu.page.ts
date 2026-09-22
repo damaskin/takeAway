@@ -1,10 +1,10 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CategoryAdminDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
-import { ProductOptionsPanelComponent } from './product-options-panel.component';
+import { extractMessage } from '../../core/http/extract-message';
 
 /**
  * Admin Menu Management — pencil oKo7M.
@@ -17,7 +17,7 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, ProductOptionsPanelComponent],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <!-- Top bar -->
     <div
@@ -47,14 +47,14 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
           {{ 'admin.menu.importCsv' | translate }}
         </button>
         @if (selectedCategoryId()) {
-          <button
-            type="button"
-            (click)="openProductForm()"
+          <a
+            routerLink="/menu/products/new"
+            [queryParams]="{ categoryId: selectedCategoryId() }"
             class="flex items-center"
-            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
           >
             {{ 'admin.menu.newProduct' | translate }}
-          </button>
+          </a>
         }
       </div>
     </div>
@@ -99,15 +99,14 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
           >
             {{ 'admin.menu.categories' | translate }}
           </h2>
-          <button
-            type="button"
-            (click)="openCategoryForm()"
-            [disabled]="!brand()"
-            class="disabled:opacity-50"
-            style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
-          >
-            {{ 'admin.menu.add' | translate }}
-          </button>
+          @if (brand()) {
+            <a
+              routerLink="/menu/categories/new"
+              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel); text-decoration: none"
+            >
+              {{ 'admin.menu.add' | translate }}
+            </a>
+          }
         </div>
 
         @if (categories().length === 0) {
@@ -137,14 +136,14 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
                 >
               }
             </button>
-            <button
-              type="button"
-              (click)="openCategoryEdit(cat)"
+            <a
+              [routerLink]="['/menu/categories', cat.id]"
               [title]="'common.change' | translate"
-              style="width: 28px; height: 28px; color: var(--color-text-tertiary); margin-right: 2px"
+              class="flex items-center justify-center"
+              style="width: 28px; height: 28px; color: var(--color-text-tertiary); margin-right: 2px; text-decoration: none"
             >
               ✎
-            </button>
+            </a>
             <button
               type="button"
               (click)="deleteCategory(cat)"
@@ -154,48 +153,6 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
               ×
             </button>
           </div>
-        }
-
-        @if (categoryFormOpen()) {
-          <form
-            [formGroup]="categoryForm"
-            (ngSubmit)="submitCategory()"
-            class="flex flex-col"
-            style="gap: 8px; margin-top: 12px"
-          >
-            <input
-              formControlName="name"
-              [placeholder]="'admin.menu.product.name' | translate"
-              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 13px"
-            />
-            <input
-              formControlName="slug"
-              [placeholder]="'admin.menu.product.slug' | translate"
-              [readonly]="!!editingCategoryId()"
-              style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
-            />
-            <label class="flex items-center" style="gap: 8px; font-family: var(--font-sans); font-size: 13px">
-              <input type="checkbox" formControlName="visible" />
-              <span>{{ 'admin.menu.fields.visible' | translate }}</span>
-            </label>
-            <div class="flex" style="gap: 8px">
-              <button
-                type="submit"
-                [disabled]="categoryForm.invalid"
-                class="flex-1 disabled:opacity-50"
-                style="height: 36px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-              >
-                {{ (editingCategoryId() ? 'common.save' : 'admin.menu.create') | translate }}
-              </button>
-              <button
-                type="button"
-                (click)="closeCategoryForm()"
-                style="padding: 0 12px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-              >
-                {{ 'common.cancel' | translate }}
-              </button>
-            </div>
-          </form>
         }
       </aside>
 
@@ -219,7 +176,7 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
             {{ 'admin.menu.select' | translate }}
           </p>
-        } @else if (products().length === 0 && !productFormOpen()) {
+        } @else if (products().length === 0) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
             {{ 'admin.menu.emptyCategory' | translate }}
           </p>
@@ -269,25 +226,18 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
                       <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
                     </td>
                     <td style="padding: 12px; text-align: right">
-                      <button
-                        type="button"
-                        (click)="toggleOptions(p.id)"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px"
+                      <a
+                        [routerLink]="['/menu/products', p.id, 'options']"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px; text-decoration: none"
                       >
-                        {{
-                          (expandedProductId() === p.id
-                            ? 'admin.menu.product.hideOptions'
-                            : 'admin.menu.product.options'
-                          ) | translate
-                        }}
-                      </button>
-                      <button
-                        type="button"
-                        (click)="openProductEdit(p)"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px"
+                        {{ 'admin.menu.product.options' | translate }}
+                      </a>
+                      <a
+                        [routerLink]="['/menu/products', p.id]"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px; text-decoration: none"
                       >
                         {{ 'common.change' | translate }}
-                      </button>
+                      </a>
                       <button
                         type="button"
                         (click)="deleteProduct(p)"
@@ -297,76 +247,10 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
                       </button>
                     </td>
                   </tr>
-                  @if (expandedProductId() === p.id) {
-                    <tr>
-                      <td colspan="5" style="padding: 0 12px 16px 12px">
-                        <app-product-options-panel [productId]="p.id" />
-                      </td>
-                    </tr>
-                  }
                 }
               </tbody>
             </table>
           </div>
-        }
-
-        @if (productFormOpen()) {
-          <form
-            [formGroup]="productForm"
-            (ngSubmit)="submitProduct()"
-            class="grid"
-            style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; padding: 16px; background: var(--color-cream); border-radius: 16px"
-          >
-            <input
-              formControlName="name"
-              [placeholder]="'admin.menu.product.name' | translate"
-              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
-            />
-            <input
-              formControlName="slug"
-              [placeholder]="'admin.menu.product.slug' | translate"
-              [readonly]="!!editingProductId()"
-              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-mono); font-size: 13px"
-            />
-            <input
-              formControlName="basePriceCents"
-              type="number"
-              min="0"
-              [placeholder]="'admin.menu.product.price' | translate"
-              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
-            />
-            <input
-              formControlName="prepTimeSeconds"
-              type="number"
-              min="0"
-              [placeholder]="'admin.menu.product.prep' | translate"
-              style="height: 40px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
-            />
-            <textarea
-              formControlName="description"
-              [placeholder]="'admin.menu.product.description' | translate"
-              rows="2"
-              class="col-span-2"
-              style="grid-column: span 2; padding: 10px 14px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; resize: vertical"
-            ></textarea>
-            <div class="flex" style="grid-column: span 2; gap: 8px">
-              <button
-                type="submit"
-                [disabled]="productForm.invalid"
-                class="disabled:opacity-50"
-                style="height: 40px; padding: 0 20px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >
-                {{ (editingProductId() ? 'common.save' : 'admin.menu.product.createCta') | translate }}
-              </button>
-              <button
-                type="button"
-                (click)="closeProductForm()"
-                style="padding: 0 16px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)"
-              >
-                {{ 'common.cancel' | translate }}
-              </button>
-            </div>
-          </form>
         }
       </section>
     </section>
@@ -402,34 +286,11 @@ export class MenuPage {
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly selectedCategoryId = signal<string | null>(null);
   readonly products = signal<ProductAdminDto[]>([]);
-  readonly categoryFormOpen = signal(false);
-  readonly editingCategoryId = signal<string | null>(null);
-  readonly productFormOpen = signal(false);
-  readonly editingProductId = signal<string | null>(null);
-  readonly expandedProductId = signal<string | null>(null);
+  /** `?category=` — which category to open, set when returning from a form. */
+  readonly category = input<string | undefined>();
   readonly error = signal<string | null>(null);
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
-
-  readonly categoryForm = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    slug: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/^[a-z0-9-]+$/)],
-    }),
-    visible: new FormControl(true, { nonNullable: true }),
-  });
-
-  readonly productForm = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    slug: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/^[a-z0-9-]+$/)],
-    }),
-    basePriceCents: new FormControl(0, { nonNullable: true, validators: [Validators.required, Validators.min(0)] }),
-    prepTimeSeconds: new FormControl(180, { nonNullable: true, validators: [Validators.min(0)] }),
-    description: new FormControl('', { nonNullable: true }),
-  });
 
   /**
    * Why the page can't edit anything: `error` = the brand list failed to
@@ -461,77 +322,7 @@ export class MenuPage {
 
   selectCategory(id: string): void {
     this.selectedCategoryId.set(id);
-    this.productFormOpen.set(false);
     this.loadProducts(id);
-  }
-
-  openCategoryForm(): void {
-    this.editingCategoryId.set(null);
-    this.categoryForm.reset({ name: '', slug: '', visible: true });
-    this.categoryFormOpen.set(true);
-  }
-
-  openCategoryEdit(cat: CategoryAdminDto): void {
-    this.editingCategoryId.set(cat.id);
-    this.categoryForm.reset({ name: cat.name, slug: cat.slug, visible: cat.visible });
-    this.categoryFormOpen.set(true);
-  }
-
-  closeCategoryForm(): void {
-    this.categoryFormOpen.set(false);
-    this.editingCategoryId.set(null);
-  }
-
-  openProductForm(): void {
-    this.editingProductId.set(null);
-    this.productForm.reset({ name: '', slug: '', basePriceCents: 0, prepTimeSeconds: 180, description: '' });
-    this.productFormOpen.set(true);
-  }
-
-  openProductEdit(p: ProductAdminDto): void {
-    this.editingProductId.set(p.id);
-    this.productForm.reset({
-      name: p.name,
-      slug: p.slug,
-      basePriceCents: p.basePriceCents,
-      prepTimeSeconds: p.prepTimeSeconds,
-      description: p.description ?? '',
-    });
-    this.productFormOpen.set(true);
-  }
-
-  closeProductForm(): void {
-    this.productFormOpen.set(false);
-    this.editingProductId.set(null);
-  }
-
-  toggleOptions(productId: string): void {
-    this.expandedProductId.update((cur) => (cur === productId ? null : productId));
-  }
-
-  submitCategory(): void {
-    if (this.categoryForm.invalid) return;
-    const brand = this.brand();
-    if (!brand) return this.reportNoBrand();
-    const { name, slug, visible } = this.categoryForm.getRawValue();
-    const editingId = this.editingCategoryId();
-    if (editingId) {
-      this.api.updateCategory(editingId, { name, visible }).subscribe({
-        next: () => {
-          this.closeCategoryForm();
-          this.loadCategories(brand.id);
-        },
-        error: (err) => this.error.set(this.extractMessage(err)),
-      });
-      return;
-    }
-    this.api.createCategory({ brandId: brand.id, name, slug, sortOrder: this.categories().length }).subscribe({
-      next: () => {
-        this.closeCategoryForm();
-        this.loadCategories(brand.id);
-      },
-      error: (err) => this.error.set(this.extractMessage(err)),
-    });
   }
 
   deleteCategory(cat: CategoryAdminDto): void {
@@ -548,50 +339,6 @@ export class MenuPage {
       },
       error: (err) => this.error.set(this.extractMessage(err)),
     });
-  }
-
-  submitProduct(): void {
-    if (this.productForm.invalid) return;
-    const brand = this.brand();
-    const categoryId = this.selectedCategoryId();
-    if (!brand) return this.reportNoBrand();
-    if (!categoryId) return;
-    const v = this.productForm.getRawValue();
-    const editingId = this.editingProductId();
-    if (editingId) {
-      this.api
-        .updateProduct(editingId, {
-          name: v.name,
-          basePriceCents: Number(v.basePriceCents),
-          prepTimeSeconds: Number(v.prepTimeSeconds),
-          description: v.description || null,
-        })
-        .subscribe({
-          next: () => {
-            this.closeProductForm();
-            this.loadProducts(categoryId);
-          },
-          error: (err) => this.error.set(this.extractMessage(err)),
-        });
-      return;
-    }
-    this.api
-      .createProduct({
-        brandId: brand.id,
-        categoryId,
-        name: v.name,
-        slug: v.slug,
-        basePriceCents: Number(v.basePriceCents),
-        prepTimeSeconds: Number(v.prepTimeSeconds),
-        description: v.description || undefined,
-      })
-      .subscribe({
-        next: () => {
-          this.closeProductForm();
-          this.loadProducts(categoryId);
-        },
-        error: (err) => this.error.set(this.extractMessage(err)),
-      });
   }
 
   toggleVisibility(product: ProductAdminDto, event: Event): void {
@@ -624,22 +371,15 @@ export class MenuPage {
     }).format(cents / 100);
   }
 
-  /** Why the button did nothing — see {@link brandBlocker}. */
-  private reportNoBrand(): void {
-    this.error.set(
-      this.activeBrand.loadError()
-        ? `${this.translate.instant('admin.brandContext.loadFailed')} ${this.activeBrand.loadError()}`
-        : this.translate.instant('admin.brandContext.noBrandsHint'),
-    );
-  }
-
   private loadCategories(brandId: string): void {
     this.api.listCategories(brandId).subscribe({
       next: (list) => {
         this.categories.set(list);
-        if (!this.selectedCategoryId() && list[0]) {
-          this.selectCategory(list[0].id);
-        }
+        if (this.selectedCategoryId()) return;
+        // Coming back from a product form, `?category=` says which category
+        // the user was in — otherwise open the first one.
+        const wanted = list.find((c) => c.id === this.category()) ?? list[0];
+        if (wanted) this.selectCategory(wanted.id);
       },
       error: (err) => this.error.set(this.extractMessage(err)),
     });
@@ -655,9 +395,6 @@ export class MenuPage {
   }
 
   private extractMessage(err: unknown): string {
-    const maybe = err as { error?: { message?: unknown }; message?: unknown };
-    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-    if (typeof maybe.message === 'string') return maybe.message;
-    return this.translate.instant('common.requestFailed');
+    return extractMessage(err) ?? this.translate.instant('common.requestFailed');
   }
 }

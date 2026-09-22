@@ -492,6 +492,7 @@ export const TRANSLATIONS_RU = {
       email: 'Email',
       name: 'Имя',
       roleLabel: 'Роль',
+      storeLabel: 'Точка',
       role: { STORE_MANAGER: 'Менеджер', STAFF: 'Кухня', MENU_EDITOR: 'Редактор меню' },
       tempPassword: 'Временный пароль',
       tempPasswordHint: 'Передайте лично — сотрудник должен сменить пароль через /forgot-password при первом входе.',
@@ -739,11 +740,20 @@ export const TRANSLATIONS_RU = {
       visibility: 'Показ',
       create: 'Создать',
       deleteCategory: 'Удалить категорию',
+      category: {
+        createTitle: 'Новая категория',
+        editTitle: 'Редактирование категории',
+        notFound: 'Категория не найдена',
+      },
       deleteCategoryConfirm: 'Удалить категорию «{{name}}»? Все позиции в ней нужно сначала перенести или удалить.',
       fields: {
+        name: 'Название',
         visible: 'Показывать клиентам',
       },
       product: {
+        createTitle: 'Новый товар',
+        category: 'Категория',
+        editTitle: 'Редактирование товара',
         name: 'Название',
         slug: 'slug',
         price: 'Цена (центы)',
@@ -756,6 +766,7 @@ export const TRANSLATIONS_RU = {
         hideOptions: 'Скрыть опции',
       },
       options: {
+        title: 'Размеры и добавки',
         variations: 'Варианты (размер, молоко, температура)',
         modifiers: 'Добавки (сиропы, топпинги)',
         namePlaceholder: 'Название (напр. Большой)',
@@ -776,6 +787,10 @@ export const TRANSLATIONS_RU = {
       empty: 'Пока нет точек.',
       slugLabel: 'slug',
       loadFailed: 'Не удалось загрузить точки',
+      createTitle: 'Новая точка',
+      editTitle: 'Редактирование точки',
+      hoursTitle: 'Часы работы',
+      slugLocked: 'Slug менять нельзя — на него ссылаются ссылки клиентов.',
       fields: {
         name: 'Название',
         slug: 'Slug',
@@ -825,10 +840,11 @@ export const TRANSLATIONS_RU = {
       title: 'Маркетинговые рассылки',
       subtitle:
         'Соберите push, Telegram или email-рассылку для клиентов вашего бренда. Черновик сохраняется, по «Отправить» сообщение уходит сразу.',
+      createTitle: 'Новая рассылка',
       saveDraft: 'Сохранить черновик',
       send: 'Отправить',
       sending: 'Отправляем…',
-      empty: 'Рассылок пока нет — соберите первую выше.',
+      empty: 'Рассылок пока нет — соберите первую.',
       fields: {
         title: 'Заголовок',
         body: 'Текст',
@@ -870,6 +886,7 @@ export const TRANSLATIONS_RU = {
       message: 'Сообщение (необязательно)',
       issueCta: 'Выпустить карту',
       issuedHint: 'Выпущена — код: {{code}}',
+      issuedTitle: 'Карта выпущена. Передайте код клиенту:',
       cancel: 'Отменить',
       empty: 'Подарочных карт ещё нет.',
       col: {
@@ -888,6 +905,7 @@ export const TRANSLATIONS_RU = {
     },
     promo: {
       title: 'Промо и лояльность',
+      createTitle: 'Новая акция',
       editTiers: 'Настройка уровней',
       newPromo: '+ Новый промо',
       closeForm: 'Закрыть форму',

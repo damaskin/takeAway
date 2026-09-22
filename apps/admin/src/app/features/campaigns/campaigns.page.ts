@@ -1,27 +1,11 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { API_CONFIG } from '../../core/api/api.config';
-
-interface CampaignRow {
-  id: string;
-  brandId: string;
-  title: string;
-  body: string;
-  channel: 'PUSH' | 'TELEGRAM' | 'EMAIL';
-  audience: 'ALL' | 'HAS_ORDERED' | 'INACTIVE_30D';
-  status: 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'SENT' | 'FAILED';
-  targetCount: number;
-  sentCount: number;
-  failedCount: number;
-  sentAt: string | null;
-  createdAt: string;
-}
-
-const CHANNELS: Array<CampaignRow['channel']> = ['PUSH', 'TELEGRAM', 'EMAIL'];
-const AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D'];
+import { extractMessage } from '../../core/http/extract-message';
+import type { CampaignRow } from './campaign.types';
 
 /**
  * Brand-admin marketing campaigns. Compose a title + body, pick a
@@ -32,91 +16,30 @@ const AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTI
 @Component({
   selector: 'app-admin-campaigns',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <section style="padding: 24px; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
-      <header style="display: flex; flex-direction: column; gap: 4px">
-        <h1 style="font-family: var(--font-display); font-size: 24px; color: var(--color-espresso); margin: 0">
-          {{ 'admin.campaigns.title' | translate }}
-        </h1>
-        <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
-          {{ 'admin.campaigns.subtitle' | translate }}
-        </p>
-      </header>
-
-      <!-- Compose -->
-      <form
-        [formGroup]="form"
-        (ngSubmit)="create()"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))"
-      >
-        <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.campaigns.fields.title' | translate
-          }}</span>
-          <input
-            type="text"
-            formControlName="title"
-            maxlength="120"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          />
-        </label>
-        <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.campaigns.fields.body' | translate
-          }}</span>
-          <textarea
-            formControlName="body"
-            rows="3"
-            maxlength="2000"
-            style="padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; resize: vertical"
-          ></textarea>
-        </label>
-        <label style="display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.campaigns.fields.channel' | translate
-          }}</span>
-          <select
-            formControlName="channel"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          >
-            @for (c of channels; track c) {
-              <option [value]="c">{{ 'admin.campaigns.channels.' + c | translate }}</option>
-            }
-          </select>
-        </label>
-        <label style="display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.campaigns.fields.audience' | translate
-          }}</span>
-          <select
-            formControlName="audience"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          >
-            @for (a of audiences; track a) {
-              <option [value]="a">{{ 'admin.campaigns.audiences.' + a | translate }}</option>
-            }
-          </select>
-        </label>
-        <button
-          type="submit"
-          [disabled]="form.invalid || creating()"
-          style="grid-column: span 2; justify-self: end; height: 36px; padding: 0 18px; background: var(--color-caramel); color: white; border-radius: 8px; font-family: var(--font-sans); font-weight: 600"
-        >
-          {{ (creating() ? 'common.loading' : 'admin.campaigns.saveDraft') | translate }}
-        </button>
-        @if (error()) {
-          <p
-            style="grid-column: span 2; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0"
-          >
-            {{ error() }}
+      <header class="flex items-start justify-between flex-wrap" style="gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <h1 style="font-family: var(--font-display); font-size: 24px; color: var(--color-espresso); margin: 0">
+            {{ 'admin.campaigns.title' | translate }}
+          </h1>
+          <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
+            {{ 'admin.campaigns.subtitle' | translate }}
           </p>
-        }
-      </form>
+        </div>
+        <a
+          routerLink="/campaigns/new"
+          class="flex items-center"
+          style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
+        >
+          {{ 'admin.campaigns.createTitle' | translate }}
+        </a>
+      </header>
 
       <!-- List -->
       <div
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; overflow: hidden"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; overflow: hidden; overflow-x: auto"
       >
         <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 13px">
           <thead style="background: var(--color-cream)">
@@ -183,6 +106,12 @@ const AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTI
           </tbody>
         </table>
       </div>
+
+      @if (error(); as message) {
+        <p role="alert" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0">
+          {{ message }}
+        </p>
+      }
     </section>
   `,
 })
@@ -191,45 +120,12 @@ export class AdminCampaignsPage {
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
 
-  readonly channels = CHANNELS;
-  readonly audiences = AUDIENCES;
   readonly rows = signal<CampaignRow[]>([]);
-  readonly creating = signal(false);
   readonly sending = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
-  readonly form = new FormGroup({
-    title: new FormControl<string>('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.minLength(2)],
-    }),
-    body: new FormControl<string>('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.minLength(2)],
-    }),
-    channel: new FormControl<CampaignRow['channel']>('PUSH', { nonNullable: true }),
-    audience: new FormControl<CampaignRow['audience']>('HAS_ORDERED', { nonNullable: true }),
-  });
-
   constructor() {
     this.refresh();
-  }
-
-  create(): void {
-    const v = this.form.getRawValue();
-    this.creating.set(true);
-    this.error.set(null);
-    this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns`, v).subscribe({
-      next: (row) => {
-        this.creating.set(false);
-        this.rows.update((rs) => [row, ...rs]);
-        this.form.reset({ title: '', body: '', channel: 'PUSH', audience: 'HAS_ORDERED' });
-      },
-      error: (err) => {
-        this.creating.set(false);
-        this.error.set(extractMessage(err) ?? this.translate.instant('common.genericError'));
-      },
-    });
   }
 
   send(c: CampaignRow): void {
@@ -272,11 +168,4 @@ export class AdminCampaignsPage {
       error: (err) => this.error.set(extractMessage(err)),
     });
   }
-}
-
-function extractMessage(err: unknown): string | null {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return null;
 }

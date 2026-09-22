@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-import { installFakeApi, signIn } from './support/fake-api';
+import { CATEGORY, PRODUCT, STORE, installFakeApi, signIn } from './support/fake-api';
 
 /**
- * Every add/edit form in the admin, at the widths people actually run it.
+ * Every add/edit screen in the admin, at the widths people actually run it.
  *
  * An admin editing a store reported that half of the form was missing: the
  * right-hand column — country, e-mail, longitude — was cut off by the edge
@@ -12,16 +12,17 @@ import { installFakeApi, signIn } from './support/fake-api';
  * flex item shrinks below the width of what is inside it, so any two
  * controls side by side in a narrow container pushed the row wider than the
  * container rather than stacking. The same shape appeared wherever a form
- * sat in a card.
+ * sat in a card — which, at the time, was everywhere.
  *
- * So this suite does not assert on one layout. It opens every add/edit form
- * the admin has and asserts the same two things about all of them: no
- * control is clipped by something above it, and no container holds content
- * wider than itself. That is the user-visible property, and it is the one
- * that regressed.
+ * Those forms now live on routes of their own, so the suite walks the
+ * routes. It asserts the same two things about each of them: no control is
+ * clipped by something above it, and no container holds content wider than
+ * itself. That is the user-visible property, and it is the one that
+ * regressed.
  */
 
-const PAGES = [
+/** Pages that list something. */
+const LIST_ROUTES = [
   'dashboard',
   'menu',
   'stores',
@@ -38,20 +39,38 @@ const PAGES = [
   'integrations',
 ] as const;
 
+/** Pages that are a form. */
+const FORM_ROUTES = [
+  'stores/new',
+  `stores/${STORE.id}`,
+  `stores/${STORE.id}/hours`,
+  'menu/categories/new',
+  `menu/categories/${CATEGORY.id}`,
+  'menu/products/new',
+  `menu/products/${PRODUCT.id}`,
+  `menu/products/${PRODUCT.id}/options`,
+  'promo/new',
+  'gift-cards/new',
+  'campaigns/new',
+  'brands/new',
+  'staff/add',
+  'staff/owner',
+  'riders/add',
+] as const;
+
 /**
  * 1440 is a laptop; 1100 is the same laptop with the window not maximised,
  * and it is where the menu page used to scroll its whole column sideways.
  */
 const WIDTHS = [1440, 1100] as const;
 
-/** Labels of the buttons that reveal a form. Matched against the RU bundle. */
-const OPENS_A_FORM = /Добавить|Создать|Новый|Новая|Новое|Редактировать|Изменить|Пригласить|Выпустить/;
-
 /** Controls hidden behind an ancestor that clips or scrolls its overflow. */
 async function clippedControls(page: import('@playwright/test').Page): Promise<string[]> {
   return page.evaluate(() => {
+    const selector =
+      'form input, form select, form textarea, form button, app-form-page > section > div:last-of-type > *';
     const bad: string[] = [];
-    for (const el of Array.from(document.querySelectorAll('form input, form select, form textarea, form button'))) {
+    for (const el of Array.from(document.querySelectorAll(selector))) {
       const box = el.getBoundingClientRect();
       if (box.width === 0 && box.height === 0) continue;
       const name =
@@ -117,41 +136,16 @@ async function settled(page: import('@playwright/test').Page): Promise<void> {
     .toBe(true);
 }
 
-/**
- * Clicks everything that opens a form, re-reading the page after each click:
- * revealing one form re-renders the tree and detaches every handle taken
- * before it.
- */
-async function openEveryForm(page: import('@playwright/test').Page): Promise<void> {
-  const clicked = new Set<string>();
-  for (let pass = 0; pass < 8; pass++) {
-    const buttons = await page.getByRole('button').all();
-    let didClick = false;
-    for (const button of buttons) {
-      const label = ((await button.textContent().catch(() => '')) ?? '').trim();
-      if (!label || clicked.has(label) || !OPENS_A_FORM.test(label)) continue;
-      clicked.add(label);
-      await button.click({ timeout: 2000 }).catch(() => undefined);
-      didClick = true;
-      await settled(page);
-      break;
-    }
-    if (!didClick) return;
-  }
-}
-
 for (const width of WIDTHS) {
-  test.describe(`admin forms at ${width}px`, () => {
+  test.describe(`admin at ${width}px`, () => {
     test.use({ viewport: { width, height: 1000 } });
 
-    for (const route of PAGES) {
+    for (const route of [...LIST_ROUTES, ...FORM_ROUTES]) {
       test(`${route} keeps every field inside its card`, async ({ page, context }) => {
         await signIn(context);
         await installFakeApi(context);
 
         await page.goto(`/${route}`);
-        await settled(page);
-        await openEveryForm(page);
         await settled(page);
 
         expect(await clippedControls(page)).toEqual([]);
@@ -160,3 +154,29 @@ for (const width of WIDTHS) {
     }
   });
 }
+
+test.describe('forms are reachable from the lists that own them', () => {
+  test.use({ viewport: { width: 1100, height: 1000 } });
+
+  const LINKS: Array<[list: string, form: string]> = [
+    ['stores', '/stores/new'],
+    ['menu', '/menu/categories/new'],
+    ['menu', '/menu/products/new'],
+    ['promo', '/promo/new'],
+    ['gift-cards', '/gift-cards/new'],
+    ['campaigns', '/campaigns/new'],
+    ['brands', '/brands/new'],
+  ];
+
+  for (const [list, form] of LINKS) {
+    test(`${list} links to ${form}`, async ({ page, context }) => {
+      await signIn(context);
+      await installFakeApi(context);
+
+      await page.goto(`/${list}`);
+      await settled(page);
+
+      await expect(page.locator(`a[href^="${form}"]`).first()).toBeVisible();
+    });
+  }
+});

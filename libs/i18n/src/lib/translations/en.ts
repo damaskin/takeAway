@@ -490,6 +490,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       email: 'Email',
       name: 'Name',
       roleLabel: 'Role',
+      storeLabel: 'Store',
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       tempPassword: 'Temporary password',
       tempPasswordHint:
@@ -738,11 +739,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       visibility: 'Visible',
       create: 'Create',
       deleteCategory: 'Delete category',
+      category: {
+        createTitle: 'New category',
+        editTitle: 'Edit category',
+        notFound: 'Category not found',
+      },
       deleteCategoryConfirm: 'Delete category "{{name}}"? Its products must be moved or deleted first.',
       fields: {
+        name: 'Name',
         visible: 'Visible to customers',
       },
       product: {
+        createTitle: 'New product',
+        category: 'Category',
+        editTitle: 'Edit product',
         name: 'Product name',
         slug: 'slug',
         price: 'Price (cents)',
@@ -755,6 +765,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         hideOptions: 'Hide options',
       },
       options: {
+        title: 'Sizes and add-ons',
         variations: 'Variations (size, milk, temperature)',
         modifiers: 'Modifiers (extras, syrups)',
         namePlaceholder: 'Name (e.g. Large)',
@@ -775,6 +786,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       empty: 'No stores yet.',
       slugLabel: 'slug',
       loadFailed: 'Failed to load stores',
+      createTitle: 'New store',
+      editTitle: 'Edit store',
+      hoursTitle: 'Opening hours',
+      slugLocked: 'The slug is fixed — customer links point at it.',
       fields: {
         name: 'Name',
         slug: 'Slug',
@@ -824,10 +839,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       title: 'Marketing campaigns',
       subtitle:
         'Compose a push, Telegram or email broadcast for the customers of your brand. Drafts are saved; clicking Send fans the message out immediately.',
+      createTitle: 'New campaign',
       saveDraft: 'Save draft',
       send: 'Send now',
       sending: 'Sending…',
-      empty: 'No campaigns yet — compose one above.',
+      empty: 'No campaigns yet — compose your first one.',
       fields: {
         title: 'Title',
         body: 'Body',
@@ -869,6 +885,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
       issuedHint: 'Issued — code: {{code}}',
+      issuedTitle: 'Issued. Hand this code to the customer:',
       cancel: 'Cancel',
       empty: 'No gift cards issued yet.',
       col: {
@@ -887,6 +904,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     promo: {
       title: 'Promo & Loyalty',
+      createTitle: 'New promo',
       editTiers: 'Edit tiers',
       newPromo: '+ New promo',
       closeForm: 'Close form',

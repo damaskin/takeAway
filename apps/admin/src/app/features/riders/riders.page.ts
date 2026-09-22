@@ -1,5 +1,5 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, OnInit, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
@@ -17,7 +17,7 @@ import { AdminRidersApi, type RiderRosterEntryDto } from '../../core/riders/admi
 @Component({
   selector: 'app-admin-riders',
   standalone: true,
-  imports: [FormsModule, TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <div
       class="flex items-center flex-wrap"
@@ -39,6 +39,17 @@ import { AdminRidersApi, type RiderRosterEntryDto } from '../../core/riders/admi
           <option [value]="s.id">{{ s.name }} · {{ s.city }}</option>
         }
       </select>
+
+      @if (selectedStoreId(); as storeId) {
+        <a
+          [routerLink]="['/riders', 'add']"
+          [queryParams]="{ storeId }"
+          class="flex items-center"
+          style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
+        >
+          {{ 'admin.riders.addCta' | translate }}
+        </a>
+      }
     </div>
 
     <section
@@ -49,50 +60,6 @@ import { AdminRidersApi, type RiderRosterEntryDto } from '../../core/riders/admi
           {{ 'admin.riders.selectStoreHint' | translate }}
         </p>
       } @else {
-        <!-- Add form -->
-        <form
-          (ngSubmit)="add()"
-          class="flex flex-col"
-          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: 16px; gap: 12px"
-        >
-          <span
-            style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px"
-            >{{ 'admin.riders.addTitle' | translate }}</span
-          >
-          <div class="flex flex-wrap" style="gap: 10px">
-            <input
-              type="tel"
-              [(ngModel)]="phoneInput"
-              name="phone"
-              required
-              autocomplete="off"
-              [placeholder]="'admin.riders.phonePlaceholder' | translate"
-              style="flex: 1 1 220px; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; background: white; font-family: var(--font-sans); font-size: 14px"
-            />
-            <input
-              type="text"
-              [(ngModel)]="nameInput"
-              name="name"
-              autocomplete="off"
-              [placeholder]="'admin.riders.namePlaceholder' | translate"
-              style="flex: 1 1 160px; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; background: white; font-family: var(--font-sans); font-size: 14px"
-            />
-            <button
-              type="submit"
-              [disabled]="adding() || !phoneInput().trim()"
-              class="disabled:opacity-50"
-              style="height: 40px; padding: 0 18px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-            >
-              {{ (adding() ? 'common.loading' : 'admin.riders.addCta') | translate }}
-            </button>
-          </div>
-          @if (addError()) {
-            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry)">{{
-              addError()
-            }}</span>
-          }
-        </form>
-
         <!-- Roster -->
         <div
           class="flex flex-col"
@@ -173,20 +140,18 @@ export class AdminRidersPage implements OnInit {
   readonly loading = signal(false);
   readonly listError = signal<string | null>(null);
 
-  readonly adding = signal(false);
-  readonly addError = signal<string | null>(null);
   readonly removingId = signal<string | null>(null);
 
-  readonly phoneInput = signal('');
-  readonly nameInput = signal('');
+  /** Set when coming back from the add form, so the same store stays open. */
+  readonly store = input<string | undefined>();
 
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
       next: (list) => {
         this.stores.set(list);
-        const first = list[0];
-        if (first && !this.selectedStoreId()) {
-          this.selectStore(first.id);
+        const wanted = list.find((s) => s.id === this.store()) ?? list[0];
+        if (wanted && !this.selectedStoreId()) {
+          this.selectStore(wanted.id);
         }
       },
       error: () => this.listError.set(this.translate.instant('admin.riders.loadFailed')),
@@ -197,28 +162,6 @@ export class AdminRidersPage implements OnInit {
     if (!id || id === this.selectedStoreId()) return;
     this.selectedStoreId.set(id);
     this.reload();
-  }
-
-  add(): void {
-    const storeId = this.selectedStoreId();
-    const phone = this.phoneInput().trim();
-    if (!storeId || !phone) return;
-    const name = this.nameInput().trim();
-    this.adding.set(true);
-    this.addError.set(null);
-    this.api.add(storeId, { phone, name: name || undefined }).subscribe({
-      next: () => {
-        this.adding.set(false);
-        this.phoneInput.set('');
-        this.nameInput.set('');
-        this.reload();
-      },
-      error: (err) => {
-        this.adding.set(false);
-        const msg = this.extractError(err);
-        this.addError.set(msg ?? this.translate.instant('admin.riders.addFailed'));
-      },
-    });
   }
 
   remove(rider: RiderRosterEntryDto): void {

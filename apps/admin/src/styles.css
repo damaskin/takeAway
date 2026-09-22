@@ -58,3 +58,49 @@ textarea {
 .form-row-full {
   grid-column: 1 / -1;
 }
+
+/*
+ * A single field: its caption above its control. Repeating these as inline
+ * styles on every input is how the admin ended up with the same layout bug
+ * in a dozen places — one declaration is easier to fix than forty.
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.field-input {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  background: var(--color-cream);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.field-input:focus {
+  border-color: var(--color-caramel);
+}
+
+/* Slugs, coordinates, phone numbers — values read as data, not prose. */
+.field-input-mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+textarea.field-input {
+  height: auto;
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
