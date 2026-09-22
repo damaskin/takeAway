@@ -16,7 +16,8 @@ export interface KdsOrder {
   customerName: string | null;
   notes: string | null;
   items: Array<{
-    productSnapshot: { name?: string };
+    /** Raw `OrderItem.productSnapshot`; read it with `readOrderItemSnapshot`. */
+    productSnapshot: unknown;
     quantity: number;
   }>;
 }

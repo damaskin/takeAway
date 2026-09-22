@@ -2,6 +2,8 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { interval, type Subscription } from 'rxjs';
 
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import type { OrderItemSnapshot } from '@takeaway/shared-types';
+import { readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -10,6 +12,9 @@ import { KdsRealtimeService, type KdsOrderChanged } from '../../core/realtime/re
 import { StoresApi, type StoreSummary } from '../../core/stores/stores.service';
 
 type Column = 'NEW' | 'PREPARING' | 'READY';
+
+/** One line of a kitchen ticket: how many, and exactly what goes in the cup. */
+type TicketLine = OrderItemSnapshot & { quantity: number };
 
 const COLUMN_STATUSES: Record<Column, KdsOrderStatus[]> = {
   NEW: ['CREATED', 'PAID', 'ACCEPTED'],
@@ -170,17 +175,48 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                     </span>
                   </div>
 
-                  <!-- Items -->
-                  <ul class="flex flex-col" style="gap: 4px; margin: 0; padding: 0; list-style: none">
-                    @for (item of order.items; track $index) {
-                      <li
-                        class="flex items-start justify-between"
-                        style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.85); gap: 12px"
-                      >
-                        <span>
-                          <span style="color: var(--color-caramel); font-weight: 700">{{ item.quantity }}×</span>
-                          {{ item.productSnapshot.name }}
-                        </span>
+                  <!-- Items: what to make. Size and milk first, then the
+                       extras with their counts, then the customer's note. -->
+                  <ul class="flex flex-col" style="gap: 12px; margin: 0; padding: 0; list-style: none">
+                    @for (line of ticketFor(order); track $index) {
+                      <li class="flex flex-col" style="gap: 6px">
+                        <div class="flex items-baseline" style="gap: 8px">
+                          <span
+                            style="min-width: 32px; font-family: var(--font-mono); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
+                            >{{ line.quantity }}×</span
+                          >
+                          <span
+                            style="font-family: var(--font-sans); font-size: 17px; font-weight: 700; color: #F8F3EB; line-height: 1.2"
+                            >{{ line.name }}</span
+                          >
+                        </div>
+                        @if (line.variations.length > 0) {
+                          <div class="flex flex-wrap" style="gap: 6px; padding-left: 40px">
+                            @for (v of line.variations; track v.id) {
+                              <span
+                                style="padding: 3px 10px; border-radius: 9999px; background: #2A2523; border: 1px solid #3a3430; font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: #F8F3EB"
+                                >{{ v.name }}</span
+                              >
+                            }
+                          </div>
+                        }
+                        @for (m of line.modifierLines; track m.id) {
+                          <span
+                            style="padding-left: 40px; font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: rgba(248,243,235,0.9)"
+                          >
+                            + {{ m.name }}
+                            @if (m.count > 1) {
+                              <span style="color: var(--color-caramel); font-weight: 800">×{{ m.count }}</span>
+                            }
+                          </span>
+                        }
+                        @if (line.notes) {
+                          <div
+                            style="margin-left: 40px; padding: 6px 10px; border-radius: 8px; border-left: 3px solid var(--color-amber); background: rgba(233, 168, 75, 0.14); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-amber)"
+                          >
+                            ✎ {{ line.notes }}
+                          </div>
+                        }
                       </li>
                     }
                   </ul>
@@ -260,6 +296,21 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
 
   readonly openCount = computed(() => this.orders().length);
+
+  /**
+   * Each order's lines, read once per board update rather than on every
+   * one-second tick. Orders placed before options were snapshotted come
+   * through as name and notes only.
+   */
+  private readonly tickets = computed(
+    () =>
+      new Map(
+        this.orders().map((o) => [
+          o.id,
+          o.items.map<TicketLine>((i) => ({ ...readOrderItemSnapshot(i.productSnapshot), quantity: i.quantity })),
+        ]),
+      ),
+  );
   readonly nowLabel = computed(() =>
     new Date(this.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   );
@@ -322,6 +373,10 @@ export class KdsBoardPage implements OnInit, OnDestroy {
 
   ordersFor(col: Column): KdsOrder[] {
     return this.orders().filter((o) => COLUMN_STATUSES[col].includes(o.status));
+  }
+
+  ticketFor(order: KdsOrder): TicketLine[] {
+    return this.tickets().get(order.id) ?? [];
   }
 
   columnMeta(col: Column) {
