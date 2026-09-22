@@ -27,6 +27,11 @@ abstract class TakeAwayApi {
 
   // ── Auth ───────────────────────────────────────────────────────────────
 
+  /// Telegram Login (OpenID Connect): the ID token Telegram signed for our bot.
+  @POST('/auth/telegram/oidc')
+  Future<AuthSessionResponse> signInWithTelegramIdToken(@Body() TelegramIdTokenRequest body);
+
+  /// Legacy widget payload. Only the developer sign-in of local builds uses it.
   @POST('/auth/telegram/widget')
   Future<AuthSessionResponse> signInWithTelegram(@Body() Map<String, dynamic> payload);
 

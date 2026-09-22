@@ -60,8 +60,15 @@ Map<String, dynamic> _$NotificationPrefsToJson(NotificationPrefs instance) => <S
   'notifyPromotions': instance.notifyPromotions,
 };
 
-TelegramAuthConfig _$TelegramAuthConfigFromJson(Map<String, dynamic> json) =>
-    TelegramAuthConfig(botId: json['botId'] as String?, botUsername: json['botUsername'] as String?);
+TelegramAuthConfig _$TelegramAuthConfigFromJson(Map<String, dynamic> json) => TelegramAuthConfig(
+  botId: json['botId'] as String?,
+  botUsername: json['botUsername'] as String?,
+  clientId: json['clientId'] as String?,
+);
+
+Map<String, dynamic> _$TelegramIdTokenRequestToJson(TelegramIdTokenRequest instance) => <String, dynamic>{
+  'idToken': instance.idToken,
+};
 
 Map<String, dynamic> _$OAuthLoginRequestToJson(OAuthLoginRequest instance) => <String, dynamic>{
   'idToken': instance.idToken,

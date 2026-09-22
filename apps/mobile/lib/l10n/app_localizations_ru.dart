@@ -177,6 +177,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signInFailed => 'Не удалось войти. Попробуйте ещё раз.';
 
   @override
+  String get telegramSignInFailed => 'Telegram не подтвердил вход. Попробуйте ещё раз.';
+
+  @override
   String get storesTitle => 'Точки';
 
   @override

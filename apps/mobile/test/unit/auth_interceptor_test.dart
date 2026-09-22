@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,33 +7,7 @@ import 'package:takeaway_mobile/core/auth/session.dart';
 import 'package:takeaway_mobile/core/auth/session_manager.dart';
 import 'package:takeaway_mobile/core/network/auth_interceptor.dart';
 
-/// Answers requests from a handler, recording what was sent.
-class FakeAdapter implements HttpClientAdapter {
-  FakeAdapter(this.handler);
-
-  final FutureOr<(int, Object?)> Function(RequestOptions options) handler;
-  final seen = <RequestOptions>[];
-
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async {
-    seen.add(options);
-    final (status, body) = await handler(options);
-    return ResponseBody.fromString(
-      jsonEncode(body),
-      status,
-      headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      },
-    );
-  }
-
-  @override
-  void close({bool force = false}) {}
-}
+import '../helpers/fake_http.dart';
 
 const user = AuthUser(id: 'u1', locale: 'EN', currency: 'USD', role: 'CUSTOMER', name: 'Ivan');
 

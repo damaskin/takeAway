@@ -50,6 +50,7 @@
   "signInAgreement": "Продолжая, вы принимаете Условия использования и Политику конфиденциальности.",
   "signInUnavailable": "В этой сборке не настроен ни один способ входа.",
   "signInFailed": "Не удалось войти. Попробуйте ещё раз.",
+  "telegramSignInFailed": "Telegram не подтвердил вход. Попробуйте ещё раз.",
   "storesTitle": "Точки",
   "storesSearchHint": "Название или адрес",
   "storesFilterAll": "Все",

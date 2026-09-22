@@ -15,12 +15,18 @@ abstract final class Env {
   /// lives at `/socket.io` on the API host, namespace `/ws`.
   static const _realtimeUrl = String.fromEnvironment('REALTIME_URL');
 
-  /// Site that hosts the Telegram sign-in bridge page. It must be the domain
-  /// registered for the bot with @BotFather `/setdomain`.
+  /// The public website, for links the app shares.
   static const webOrigin = String.fromEnvironment('WEB_ORIGIN', defaultValue: 'https://takeaway.md');
 
-  /// Custom URL scheme the Telegram bridge page redirects back to.
-  static const callbackScheme = 'takeaway';
+  /// Where Telegram Login sends the customer back. Must be registered for
+  /// the app in @BotFather (Login Widget → the app's redirect URI). The
+  /// default custom scheme needs nothing else; an App Link / Universal Link
+  /// (`https://app<id>-login.tg.dev/tglogin`) also needs the host added to
+  /// the Android intent filter and iOS Associated Domains.
+  static const telegramRedirectUri = String.fromEnvironment(
+    'TELEGRAM_REDIRECT_URI',
+    defaultValue: 'takeaway://tglogin',
+  );
 
   /// Google Sign-In. The server client id is the *web* OAuth client — ID
   /// tokens minted for it are what `/auth/google` already accepts.

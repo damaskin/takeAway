@@ -53,16 +53,17 @@ under `config/`:
 | `config/prod.example.json` | yes       | Template for release builds                                   |
 | `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
 
-| Define                                                                                                                      | Default                       | Meaning                                                             |
-| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------- |
-| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api` | REST base including `/api`                                          |
-| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`      | Socket.IO origin (namespace `/ws`)                                  |
-| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`         | Site hosting `tg-auth.html`; must be the bot's domain in @BotFather |
-| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button      | The **web** OAuth client id, the audience the API checks            |
-| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                         | iOS OAuth client id                                                 |
-| `APPLE_SIGN_IN`                                                                                                             | `false`                       | Offer Sign in with Apple on iOS                                     |
-| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off              | Firebase Cloud Messaging                                            |
-| `DEV_SIGN_IN`                                                                                                               | `false`                       | Debug builds only: a "Developer sign-in" button, see below          |
+| Define                                                                                                                      | Default                       | Meaning                                                    |
+| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------- |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api` | REST base including `/api`                                 |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`      | Socket.IO origin (namespace `/ws`)                         |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`         | Public site, for links the app shares                      |
+| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`          | Telegram Login redirect; must match @BotFather             |
+| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button      | The **web** OAuth client id, the audience the API checks   |
+| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                         | iOS OAuth client id                                        |
+| `APPLE_SIGN_IN`                                                                                                             | `false`                       | Offer Sign in with Apple on iOS                            |
+| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off              | Firebase Cloud Messaging                                   |
+| `DEV_SIGN_IN`                                                                                                               | `false`                       | Debug builds only: a "Developer sign-in" button, see below |
 
 A missing integration hides its UI instead of failing: no Google id, no
 Google button; no Firebase ids, no push prompt.
@@ -90,16 +91,29 @@ config: `flutter run`.
 
 ## Sign-in setup
 
-**Telegram** (all customers today). The app opens `oauth.telegram.org` for the
-bot, Telegram returns to `https://takeaway.md/tg-auth.html` (served from
-`apps/web/public`), and that page hands the result to the app through the
-`takeaway://telegram-auth` deep link. Needed once:
+**Telegram** (all customers today) uses Telegram Login — Telegram's OpenID
+Connect flow (core.telegram.org/bots/telegram-login), implemented in
+`lib/features/auth/telegram_login.dart` the way Telegram's own iOS/Android SDKs
+do it: with Telegram installed the customer confirms inside the Telegram app
+(one tap); otherwise Telegram's page opens in the system browser sheet. The app
+exchanges the code with PKCE (no secret in the app) and posts the ID token to
+`POST /auth/telegram/oidc`, which verifies it against Telegram's keys. Needed
+once:
 
-1. `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` on the API — the app reads
-   the bot id from `GET /auth/telegram/config`.
-2. In @BotFather: `/setdomain` → `takeaway.md` (the same domain the web login
-   widget already uses).
-3. The web app deployed with `tg-auth.html`.
+1. `TELEGRAM_BOT_TOKEN` on the API — the app reads the client id (the bot's
+   numeric id) from `GET /auth/telegram/config`.
+2. In the @BotFather mini app → the bot → **Login Widget**: register the apps —
+   Android: package `md.takeaway.app` + the SHA-256 of the signing key(s)
+   (`./gradlew signingReport`); iOS: bundle `md.takeaway.app` + the Apple
+   team id — and the redirect URI `takeaway://tglogin`.
+3. Optional: to use BotFather's App Link / Universal Link
+   (`https://app<id>-login.tg.dev/tglogin`) instead of the custom scheme, pass it
+   as `TELEGRAM_REDIRECT_URI`, add the host to the second intent filter of
+   `MainActivity` (with `android:autoVerify="true"`) and
+   `applinks:app<id>-login.tg.dev` to the iOS Associated Domains.
+
+The customer's account is keyed on the Telegram user id, so it is the same
+profile the Mini App and the website sign in to.
 
 **Google.** Create OAuth clients in the Google Cloud project the web client
 lives in: an Android client (package `md.takeaway.app`, SHA-1 of the release
@@ -108,8 +122,8 @@ and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
 - `GOOGLE_SERVER_CLIENT_ID` = the existing **web** client id;
 - `GOOGLE_IOS_CLIENT_ID` = the iOS client id, and its reversed form
   (`com.googleusercontent.apps.…`) in `ios/Flutter/Google.xcconfig`;
-- API: `GOOGLE_OAUTH_CLIENT_IDS` must include the web client id (it already
-  does if web sign-in works).
+- API: `GOOGLE_OAUTH_CLIENT_IDS` must list the web **and** the iOS client ids —
+  depending on the platform the token's audience is one or the other.
 
 **Apple** (iOS only). Enable Sign in with Apple for `md.takeaway.app` in the
 developer portal, add `md.takeaway.app` to the API's `APPLE_OAUTH_CLIENT_IDS`

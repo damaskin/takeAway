@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
+import 'package:takeaway_mobile/core/format/time.dart';
 import 'package:takeaway_mobile/features/auth/sign_in_sheet.dart';
+import 'package:takeaway_mobile/features/checkout/checkout_sections.dart';
 import 'package:takeaway_mobile/features/menu/product_card.dart';
 import 'package:takeaway_mobile/shared/widgets/chips.dart';
 
@@ -162,10 +164,10 @@ void main() {
     await settle(tester);
 
     final slots = await api.pickupSlots('st_1');
-    // The first free window is the first chip; tap it by its time label.
-    final firstLabel = TimeOfDay.fromDateTime(slots.first.startsAt.toLocal());
-    final label = '${firstLabel.hour.toString().padLeft(2, '0')}:${firstLabel.minute.toString().padLeft(2, '0')}';
-    await tester.tap(find.text(label).first);
+    // The first free window is the first chip; tap it by its time label,
+    // formatted the way the app formats it ("0:30" in Russian, not "00:30").
+    final label = formatClock(tester.element(find.byType(SlotPicker)), slots.first.startsAt);
+    await tester.tap(find.textContaining(label).first);
     await settle(tester);
 
     await tester.tap(find.textContaining('Заказать ·'));

@@ -392,6 +392,12 @@ abstract class AppLocalizations {
   /// **'Could not sign in. Please try again.'**
   String get signInFailed;
 
+  /// No description provided for @telegramSignInFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Telegram didn\'t confirm the sign-in. Please try again.'**
+  String get telegramSignInFailed;
+
   /// No description provided for @storesTitle.
   ///
   /// In en, this message translates to:

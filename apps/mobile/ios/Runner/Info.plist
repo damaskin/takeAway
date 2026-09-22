@@ -29,6 +29,19 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
+		<!-- Telegram Login returns here from the Telegram app with a code.
+		     Must match TELEGRAM_REDIRECT_URI and the redirect URI registered
+		     in @BotFather. -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>md.takeaway.app.telegram-login</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>takeaway</string>
+			</array>
+		</dict>
 		<!-- Google Sign-In returns through the reversed iOS client id. Set
 		     GOOGLE_REVERSED_CLIENT_ID in ios/Flutter/Google.xcconfig. -->
 		<dict>
@@ -46,7 +59,11 @@
 	<array>
 		<string>https</string>
 		<string>tel</string>
+		<string>tg</string>
 	</array>
+	<!-- Links are read by app_links, not pushed onto the router. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- Plain http only to localhost / the local network, for development

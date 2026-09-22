@@ -85,6 +85,7 @@
   "signInAgreement": "By continuing you agree to the Terms of Service and Privacy Policy.",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
+  "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
   "storesTitle": "Stores",
   "storesSearchHint": "Search by name or address",
   "storesFilterAll": "All",

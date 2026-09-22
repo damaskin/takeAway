@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:takeaway_api/takeaway_api.dart';
@@ -15,6 +12,7 @@ import '../../core/auth/session_manager.dart';
 import '../../core/config/env.dart';
 import '../../core/providers.dart';
 import '../../core/push/push_service.dart';
+import 'telegram_login.dart';
 
 /// Thrown when the customer backs out of a provider's own sign-in UI. Not
 /// an error worth showing.
@@ -22,7 +20,7 @@ class SignInCancelled implements Exception {
   const SignInCancelled();
 }
 
-/// Public Telegram bot details; null when the API has no bot configured.
+/// Public Telegram Login details; null when the API has no bot configured.
 final telegramConfigProvider = FutureProvider<TelegramAuthConfig?>((ref) async {
   try {
     final config = await ref.watch(apiProvider).telegramConfig();
@@ -68,33 +66,20 @@ class AuthService {
   TakeAwayApi get _api => _ref.read(apiProvider);
   SessionManager get _sessions => _ref.read(sessionManagerProvider);
 
-  /// Telegram through its OAuth page: the browser session ends on our
-  /// bridge page (`/tg-auth.html` on the web domain registered for the bot),
-  /// which hands the signed payload back to the app via the `takeaway://`
-  /// scheme. The API checks the payload's HMAC against the bot token.
+  /// Telegram Login (OpenID Connect): confirmed inside the Telegram app when
+  /// it is installed, on Telegram's page otherwise. The API verifies the
+  /// resulting ID token against Telegram's keys and our client id.
   Future<void> signInWithTelegram() async {
     final config = await _ref.read(telegramConfigProvider.future);
     if (config == null) throw StateError('Telegram sign-in is not configured');
 
-    final origin = Uri.parse(Env.webOrigin);
-    final url = Uri.https('oauth.telegram.org', '/auth', {
-      'bot_id': config.botId!,
-      'origin': origin.origin,
-      'request_access': 'write',
-      'return_to': origin.replace(path: '/tg-auth.html').toString(),
-    });
-
-    final String callback;
+    final String idToken;
     try {
-      callback = await FlutterWebAuth2.authenticate(url: url.toString(), callbackUrlScheme: Env.callbackScheme);
-    } on PlatformException catch (error) {
-      if (error.code == 'CANCELED' || error.code == 'CANCELLED') throw const SignInCancelled();
-      rethrow;
+      idToken = await _ref.read(telegramLoginFactoryProvider)(config.clientId!).login();
+    } on TelegramLoginCancelled {
+      throw const SignInCancelled();
     }
-
-    final payload = decodeTelegramAuthResult(Uri.parse(callback).queryParameters['result']);
-    if (payload == null) throw const SignInCancelled();
-    await _complete(await _api.signInWithTelegram(payload));
+    await _complete(await _api.signInWithTelegramIdToken(TelegramIdTokenRequest(idToken)));
   }
 
   Future<void> signInWithGoogle() async {
@@ -185,29 +170,14 @@ class AuthService {
   }
 }
 
-/// Decodes Telegram's `tgAuthResult` (base64 JSON) into the widget payload
-/// the API expects. Only the fields the API whitelists are kept — it
-/// rejects unknown properties.
-@visibleForTesting
-Map<String, dynamic>? decodeTelegramAuthResult(String? encoded) {
-  if (encoded == null || encoded.isEmpty || encoded == 'false') return null;
-  try {
-    var normalized = encoded.replaceAll('-', '+').replaceAll('_', '/');
-    while (normalized.length % 4 != 0) {
-      normalized += '=';
-    }
-    final decoded = jsonDecode(utf8.decode(base64.decode(normalized)));
-    if (decoded is! Map<String, dynamic>) return null;
-    const allowed = {'id', 'first_name', 'last_name', 'username', 'photo_url', 'auth_date', 'hash'};
-    final payload = <String, dynamic>{
-      for (final entry in decoded.entries)
-        if (allowed.contains(entry.key) && entry.value != null) entry.key: entry.value,
-    };
-    if (payload['id'] is! int || payload['hash'] is! String || payload['auth_date'] is! int) return null;
-    return payload;
-  } on Object {
-    return null;
-  }
-}
+/// Builds the Telegram Login flow for a client id; overridden in tests.
+final telegramLoginFactoryProvider = Provider<TelegramLogin Function(String clientId)>(
+  (ref) =>
+      (clientId) => TelegramLogin(
+        clientId: clientId,
+        redirectUri: Uri.parse(Env.telegramRedirectUri),
+        platform: DeviceTelegramLoginPlatform(),
+      ),
+);
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService(ref));

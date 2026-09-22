@@ -103,14 +103,27 @@ class NotificationPrefs {
 /// Public bits of the Telegram bot the API signs sessions for.
 @JsonSerializable(createToJson: false)
 class TelegramAuthConfig {
-  const TelegramAuthConfig({this.botId, this.botUsername});
+  const TelegramAuthConfig({this.botId, this.botUsername, this.clientId});
 
   factory TelegramAuthConfig.fromJson(Map<String, dynamic> json) => _$TelegramAuthConfigFromJson(json);
 
   final String? botId;
   final String? botUsername;
 
-  bool get available => botId != null && botId!.isNotEmpty;
+  /// Telegram Login (OpenID Connect) client id — the bot's numeric id. Null
+  /// when the server has no bot for Telegram Login.
+  final String? clientId;
+
+  bool get available => clientId != null && clientId!.isNotEmpty;
+}
+
+@JsonSerializable(createFactory: false)
+class TelegramIdTokenRequest {
+  const TelegramIdTokenRequest(this.idToken);
+
+  final String idToken;
+
+  Map<String, dynamic> toJson() => _$TelegramIdTokenRequestToJson(this);
 }
 
 @JsonSerializable(createFactory: false)

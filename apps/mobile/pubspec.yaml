@@ -51,6 +51,8 @@ dependencies:
   url_launcher: ^6.3.2
   share_plus: ^13.3.0
   package_info_plus: ^10.2.1
+  app_links: ^7.0.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

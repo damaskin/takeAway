@@ -170,6 +170,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInFailed => 'Could not sign in. Please try again.';
 
   @override
+  String get telegramSignInFailed => 'Telegram didn\'t confirm the sign-in. Please try again.';
+
+  @override
   String get storesTitle => 'Stores';
 
   @override

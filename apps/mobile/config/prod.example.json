@@ -1,6 +1,7 @@
 {
   "API_BASE_URL": "https://api.takeaway.md/api",
   "WEB_ORIGIN": "https://takeaway.md",
+  "TELEGRAM_REDIRECT_URI": "takeaway://tglogin",
   "GOOGLE_SERVER_CLIENT_ID": "",
   "GOOGLE_IOS_CLIENT_ID": "",
   "APPLE_SIGN_IN": "false",

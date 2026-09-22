@@ -17,7 +17,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -32,19 +32,19 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
-
-        <!-- Receives takeaway://telegram-auth?result=... from the Telegram
-             sign-in bridge page (apps/web/public/tg-auth.html). -->
-        <activity
-            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
-            android:exported="true">
-            <intent-filter android:label="flutter_web_auth_2">
+            <!-- Telegram Login hands the customer back here with a code
+                 (lib/features/auth/telegram_login.dart), from the Telegram app
+                 or from the Custom Tab — singleTask closes the tab on the way.
+                 Must match TELEGRAM_REDIRECT_URI and the redirect URI
+                 registered in @BotFather. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="takeaway" />
+                <data android:scheme="takeaway" android:host="tglogin" />
             </intent-filter>
+            <!-- Links are read by app_links, not pushed onto the router. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
         </activity>
 
         <!-- Status-bar icon and tint for FCM notifications. -->
@@ -77,6 +77,11 @@
         </intent>
         <intent>
             <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <!-- Telegram, for one-tap Telegram Login. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tg" />
         </intent>
     </queries>
 </manifest>
