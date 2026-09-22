@@ -15,6 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { TelegramService } from './services/telegram.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.dto';
@@ -27,6 +28,7 @@ import { NotificationPrefsDto, UpdateNotificationPrefsDto } from './dto/notifica
 import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
+import { TelegramConfigDto } from './dto/telegram-config.dto';
 import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
@@ -57,6 +59,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly users: UsersService,
     private readonly prisma: PrismaService,
+    private readonly telegram: TelegramService,
   ) {}
 
   @Public()
@@ -151,8 +154,20 @@ export class AuthController {
   }
 
   /**
+   * What a native app needs to start Telegram sign-in: it opens Telegram's
+   * OAuth page for this bot and comes back with the same payload the web
+   * widget produces, which then goes to `telegram/widget`.
+   */
+  @Public()
+  @Get('telegram/config')
+  @ApiOkResponse({ type: TelegramConfigDto })
+  telegramConfig(): TelegramConfigDto {
+    return this.telegram.publicConfig();
+  }
+
+  /**
    * Telegram Login Widget entry-point (different wire shape from Mini App
-   * init-data). Used by apps/web.
+   * init-data). Used by apps/web and, through the OAuth page, the mobile app.
    */
   @Public()
   @Post('telegram/widget')
