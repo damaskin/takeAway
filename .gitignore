@@ -57,8 +57,9 @@ pnpm-debug.log*
 # Docker volumes
 infra/.data/
 
-# Claude local state
-.claude/
+# Claude local state (but the shared agent skills are checked in)
+.claude/*
+!.claude/skills/
 
 # Deploy secrets — private SSH keys, production env files
 deploy/ssh/*
