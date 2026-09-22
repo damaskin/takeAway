@@ -202,7 +202,7 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
       <!-- Product table -->
       <section
         class="flex flex-col"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0; overflow-x: auto"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0"
       >
         <header class="flex items-center justify-between">
           <h2
@@ -226,84 +226,88 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
         }
 
         @if (products().length > 0) {
-          <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
-            <thead>
-              <tr>
-                <th
-                  style="text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                >
-                  {{ 'admin.menu.headers.name' | translate }}
-                </th>
-                <th
-                  style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                >
-                  {{ 'admin.menu.headers.price' | translate }}
-                </th>
-                <th
-                  style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                >
-                  {{ 'admin.menu.headers.prep' | translate }}
-                </th>
-                <th
-                  style="text-align: center; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                >
-                  {{ 'admin.menu.headers.visible' | translate }}
-                </th>
-                <th style="border-bottom: 1px solid var(--color-border-light)"></th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (p of products(); track p.id) {
-                <tr style="border-bottom: 1px solid var(--color-border-light)">
-                  <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
-                    {{ p.name }}
-                  </td>
-                  <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right">
-                    {{ formatPrice(p.basePriceCents) }}
-                  </td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
-                    {{ (p.prepTimeSeconds / 60).toFixed(0) }} {{ 'common.units.min' | translate }}
-                  </td>
-                  <td style="padding: 12px; text-align: center">
-                    <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
-                  </td>
-                  <td style="padding: 12px; text-align: right; white-space: nowrap">
-                    <button
-                      type="button"
-                      (click)="toggleOptions(p.id)"
-                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px"
-                    >
-                      {{
-                        (expandedProductId() === p.id ? 'admin.menu.product.hideOptions' : 'admin.menu.product.options')
-                          | translate
-                      }}
-                    </button>
-                    <button
-                      type="button"
-                      (click)="openProductEdit(p)"
-                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px"
-                    >
-                      {{ 'common.change' | translate }}
-                    </button>
-                    <button
-                      type="button"
-                      (click)="deleteProduct(p)"
-                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); font-weight: 500"
-                    >
-                      {{ 'admin.menu.product.deleteCta' | translate }}
-                    </button>
-                  </td>
+          <div style="overflow-x: auto; margin: 0 -4px; padding: 0 4px">
+            <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
+              <thead>
+                <tr>
+                  <th
+                    style="text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                  >
+                    {{ 'admin.menu.headers.name' | translate }}
+                  </th>
+                  <th
+                    style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                  >
+                    {{ 'admin.menu.headers.price' | translate }}
+                  </th>
+                  <th
+                    style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                  >
+                    {{ 'admin.menu.headers.prep' | translate }}
+                  </th>
+                  <th
+                    style="text-align: center; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
+                  >
+                    {{ 'admin.menu.headers.visible' | translate }}
+                  </th>
+                  <th style="border-bottom: 1px solid var(--color-border-light)"></th>
                 </tr>
-                @if (expandedProductId() === p.id) {
-                  <tr>
-                    <td colspan="5" style="padding: 0 12px 16px 12px">
-                      <app-product-options-panel [productId]="p.id" />
+              </thead>
+              <tbody>
+                @for (p of products(); track p.id) {
+                  <tr style="border-bottom: 1px solid var(--color-border-light)">
+                    <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
+                      {{ p.name }}
+                    </td>
+                    <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right">
+                      {{ formatPrice(p.basePriceCents) }}
+                    </td>
+                    <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
+                      {{ (p.prepTimeSeconds / 60).toFixed(0) }} {{ 'common.units.min' | translate }}
+                    </td>
+                    <td style="padding: 12px; text-align: center">
+                      <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
+                    </td>
+                    <td style="padding: 12px; text-align: right">
+                      <button
+                        type="button"
+                        (click)="toggleOptions(p.id)"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px"
+                      >
+                        {{
+                          (expandedProductId() === p.id
+                            ? 'admin.menu.product.hideOptions'
+                            : 'admin.menu.product.options'
+                          ) | translate
+                        }}
+                      </button>
+                      <button
+                        type="button"
+                        (click)="openProductEdit(p)"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px"
+                      >
+                        {{ 'common.change' | translate }}
+                      </button>
+                      <button
+                        type="button"
+                        (click)="deleteProduct(p)"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); font-weight: 500"
+                      >
+                        {{ 'admin.menu.product.deleteCta' | translate }}
+                      </button>
                     </td>
                   </tr>
+                  @if (expandedProductId() === p.id) {
+                    <tr>
+                      <td colspan="5" style="padding: 0 12px 16px 12px">
+                        <app-product-options-panel [productId]="p.id" />
+                      </td>
+                    </tr>
+                  }
                 }
-              }
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         }
 
         @if (productFormOpen()) {
@@ -375,7 +379,7 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
   `,
   styles: [
     `
-      @media (max-width: 900px) {
+      @media (max-width: 1200px) {
         .menu-shell {
           grid-template-columns: 1fr !important;
         }

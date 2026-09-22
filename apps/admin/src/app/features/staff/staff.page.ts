@@ -86,7 +86,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
               class="flex flex-col"
               style="gap: 12px; padding-top: 4px"
             >
-              <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+              <div class="form-row">
                 <label class="flex flex-col" style="gap: 4px">
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                     'admin.staff.email' | translate
@@ -274,7 +274,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
               {{ 'admin.staff.addTitle' | translate }}
             </h2>
 
-            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="form-row">
               <label class="flex flex-col" style="gap: 4px">
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                   'admin.staff.email' | translate
@@ -300,7 +300,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
               </label>
             </div>
 
-            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+            <div class="form-row">
               <label class="flex flex-col" style="gap: 4px">
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                   'admin.staff.roleLabel' | translate

@@ -23,7 +23,7 @@ const VARIATION_TYPES = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'] as const;
   imports: [ReactiveFormsModule, TranslatePipe],
   template: `
     <div
-      style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; background: var(--color-cream); border-radius: 14px; margin-top: 8px"
+      style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; padding: 16px; background: var(--color-cream); border-radius: 14px; margin-top: 8px"
     >
       <!-- Variations -->
       <section style="display: flex; flex-direction: column; gap: 10px">
@@ -75,7 +75,7 @@ const VARIATION_TYPES = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'] as const;
         <form
           [formGroup]="variationForm"
           (ngSubmit)="addVariation()"
-          style="display: grid; grid-template-columns: 100px 1fr 80px auto; gap: 6px; align-items: end"
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; align-items: end"
         >
           <select
             formControlName="type"
@@ -139,7 +139,7 @@ const VARIATION_TYPES = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'] as const;
         <form
           [formGroup]="modifierForm"
           (ngSubmit)="addModifier()"
-          style="display: grid; grid-template-columns: 1fr 80px 60px auto; gap: 6px; align-items: end"
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; align-items: end"
         >
           <input
             formControlName="name"

@@ -16,3 +16,45 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/*
+ * Form controls.
+ *
+ * An `<input>` carries an intrinsic width from its `size` attribute — about
+ * 180px — and neither a grid track sized `1fr` nor a flex item shrinks below
+ * the minimum width of what is inside it. So two inputs side by side inside a
+ * narrow card pushed the row wider than the card and the right-hand column
+ * was clipped by its edge, which is what an admin editing a store actually
+ * saw. Opting every control out of that minimum is what lets a form row
+ * shrink to the space it has.
+ */
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/*
+ * A row of fields in an add/edit form: side by side while each one still has
+ * room for a value, stacked once it does not. `minmax(0, …)` rather than a
+ * bare `1fr` for the same reason as above — `1fr` alone is `minmax(auto, 1fr)`
+ * and `auto` here means "as wide as the control wants to be".
+ */
+.form-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+/* Rows of short values (a price, a count) tolerate narrower columns. */
+.form-row-tight {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+/* A field that should keep the whole row to itself — an address, a map. */
+.form-row-full {
+  grid-column: 1 / -1;
+}

@@ -81,3 +81,69 @@ describe('CartService pricing', () => {
     expect(priced.unitPriceCents).toBe(150);
   });
 });
+
+/**
+ * The guards in front of `addItem`.
+ *
+ * A customer reported a 500 from `POST /cart/items` while adding a product
+ * whose brand did not own the store the page had picked. The status was a
+ * lie — the global exception filter was turning every rejection into a 500
+ * — but the rejection itself was real, and these cases pin down what the
+ * client is actually told so a wrong store reads as a wrong store.
+ */
+describe('CartService.addItem guards', () => {
+  const product = {
+    id: 'p-1',
+    brandId: 'brand-a',
+    basePriceCents: 500,
+    prepTimeSeconds: 60,
+    variations: [],
+    modifiers: [],
+  };
+
+  const build = async (prisma: Record<string, unknown>) => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CartService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: KitchenLoadService, useValue: {} },
+      ],
+    }).compile();
+    return moduleRef.get(CartService);
+  };
+
+  const add = { storeId: 'store-1', productId: 'p-1', quantity: 1 };
+
+  it('answers 404 when the product is gone', async () => {
+    const service = await build({ product: { findUnique: jest.fn().mockResolvedValue(null) } });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
+      status: 404,
+      message: 'Product not found',
+    });
+  });
+
+  it('answers 404 when the store is gone', async () => {
+    const service = await build({
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
+      store: { findUnique: jest.fn().mockResolvedValue(null) },
+    });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
+      status: 404,
+      message: 'Store not found',
+    });
+  });
+
+  it('answers 400, not 500, when the store belongs to another brand', async () => {
+    const service = await build({
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
+      store: { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-b' }) },
+    });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
+      status: 400,
+      message: 'Product does not belong to this store brand',
+    });
+  });
+});

@@ -97,10 +97,18 @@ jobs:
       - name: Run the journey suite
         run: pnpm nx e2e web-e2e
 
+      # Layout, not behaviour: every add/edit form in the admin, at two
+      # window widths. A field clipped by the edge of its card is invisible
+      # to a unit test and obvious to whoever has to fill the form in.
+      - name: Run the admin forms suite
+        run: pnpm nx e2e admin-e2e
+
       - name: Upload the report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: dist/.playwright/apps/web-e2e
+          path: |
+            dist/.playwright/apps/web-e2e
+            dist/.playwright/apps/admin-e2e
           retention-days: 7

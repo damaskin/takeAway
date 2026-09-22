@@ -48,7 +48,7 @@ const AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTI
       <form
         [formGroup]="form"
         (ngSubmit)="create()"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr)"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))"
       >
         <label style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px">
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
