@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { computeTax } from '@takeaway/utils';
-import type { Cart, CartItem, Order, Prisma, Product } from '@prisma/client';
+import type { Cart, CartItem, Order, PaymentStatus, Prisma, Product } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
@@ -21,13 +21,14 @@ import { MailService } from '../mail/mail.service';
 import { ReceiptPdfService } from '../mail/receipt-pdf.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
-import type { OrderDto, OrderItemDto, OrderSummaryDto } from './dto/order.dto';
+import type { OrderDto, OrderItemDto, OrderPaymentDto, OrderPaymentState, OrderSummaryDto } from './dto/order.dto';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
@@ -72,6 +73,7 @@ export class OrdersService {
     private readonly referrals: ReferralsService,
     private readonly kitchen: KitchenLoadService,
     private readonly cart: CartService,
+    private readonly holds: PaymentHoldsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -335,6 +337,10 @@ export class OrdersService {
       include: {
         items: true,
         store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          include: { cardToken: { select: { maskedPan: true } } },
+        },
       },
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
@@ -672,9 +678,18 @@ export class OrdersService {
         include: {
           items: true,
           store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+          payments: {
+            orderBy: { createdAt: 'desc' },
+            include: { cardToken: { select: { maskedPan: true } } },
+          },
         },
       });
     });
+
+    // Money the customer authorized for an order that will never happen. The
+    // bank call cannot join the transaction above, so it runs after the commit
+    // and reports rather than throws — see PaymentHoldsService.
+    await this.holds.releaseForOrder(orderId, 'order-cancelled');
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -854,6 +869,12 @@ export class OrdersService {
         longitude?: number | null;
         addressLine?: string | null;
       } | null;
+      payments?: Array<{
+        status: PaymentStatus;
+        amountCents: number;
+        updatedAt: Date;
+        cardToken?: { maskedPan: string | null } | null;
+      }>;
     },
   ): OrderDto {
     return {
@@ -904,8 +925,52 @@ export class OrdersService {
       riderId: order.riderId,
       outForDeliveryAt: order.outForDeliveryAt?.toISOString() ?? null,
       deliveredAt: order.deliveredAt?.toISOString() ?? null,
+      payment: toPaymentView(order.payments ?? []),
     };
   }
+}
+
+/**
+ * Collapses an order's payment rows into the one line a customer reads.
+ *
+ * Newest row wins: a retry after a decline leaves a FAILED row behind it, and
+ * what the customer cares about is where their money is now. `REQUIRES_ACTION`
+ * is how a preauthorized charge is parked, which is `HELD` in customer terms —
+ * authorized, not taken.
+ */
+function toPaymentView(
+  payments: Array<{
+    status: PaymentStatus;
+    amountCents: number;
+    updatedAt: Date;
+    cardToken?: { maskedPan: string | null } | null;
+  }>,
+): OrderPaymentDto {
+  const latest = payments[0];
+  if (!latest) return { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null };
+
+  const state: OrderPaymentState = (() => {
+    switch (latest.status) {
+      case 'SUCCEEDED':
+        return 'PAID';
+      case 'REQUIRES_ACTION':
+        return 'HELD';
+      case 'FAILED':
+        return 'FAILED';
+      case 'REFUNDED':
+      case 'PARTIALLY_REFUNDED':
+        return 'REFUNDED';
+      default:
+        return 'PENDING';
+    }
+  })();
+
+  return {
+    state,
+    amountCents: latest.amountCents,
+    cardMask: latest.cardToken?.maskedPan ?? null,
+    paidAt: state === 'PAID' ? latest.updatedAt.toISOString() : null,
+  };
 }
 
 /** Great-circle distance in meters between two WGS-84 coords. */

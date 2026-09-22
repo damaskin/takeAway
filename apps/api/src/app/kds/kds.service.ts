@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { Order, OrderStatus, Prisma } from '@prisma/client';
 
 import { NotificationsService } from '../notifications/notifications.service';
+import { AgroprombankService } from '../payments/agroprombank/agroprombank.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -20,6 +21,7 @@ export class KdsService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
+    private readonly payments: AgroprombankService,
   ) {}
 
   async listOpen(storeId: string) {
@@ -45,11 +47,40 @@ export class KdsService {
     }));
   }
 
-  accept(storeId: string, orderId: string, staffUserId: string) {
+  /**
+   * Taking the order on is also the moment the money moves.
+   *
+   * Under `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` the card was only authorized at
+   * checkout, so the capture happens here — before the status flip, because a
+   * declined capture must leave the order where it was rather than putting an
+   * unpaid ticket on the board. The capture settles the order to PAID on its
+   * way through, and this then moves it on to ACCEPTED.
+   */
+  async accept(storeId: string, orderId: string, staffUserId: string) {
+    await this.captureHold(storeId, orderId);
     return this.transition(storeId, orderId, staffUserId, 'accept', {
       status: 'ACCEPTED',
       acceptedAt: new Date(),
     });
+  }
+
+  /**
+   * Captures whatever is held against the order. A bank refusal surfaces to the
+   * staff member as a failed accept — they can take cash instead, or the
+   * customer can pay with another card — so the failure is deliberately not
+   * swallowed.
+   */
+  private async captureHold(storeId: string, orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
+    if (!(ALLOWED_TRANSITIONS['accept'] ?? []).includes(order.status)) return;
+
+    try {
+      await this.payments.capturePreauthorizedForOrder(orderId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(`The card could not be charged: ${message}`);
+    }
   }
 
   start(storeId: string, orderId: string, staffUserId: string) {

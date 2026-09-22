@@ -14,6 +14,16 @@ export type OrderStatusString =
   | 'CANCELLED'
   | 'EXPIRED';
 
+/** Where the customer's money stands — see the API's OrderPaymentDto. */
+export type OrderPaymentState = 'NONE' | 'PENDING' | 'HELD' | 'PAID' | 'FAILED' | 'REFUNDED';
+
+export interface OrderPaymentView {
+  state: OrderPaymentState;
+  amountCents: number;
+  cardMask: string | null;
+  paidAt: string | null;
+}
+
 export interface OrderView {
   id: string;
   orderCode: string;
@@ -34,6 +44,7 @@ export interface OrderView {
     quantity: number;
     totalCents: number;
   }>;
+  payment?: OrderPaymentView;
 }
 
 export interface OrderSummary {

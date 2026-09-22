@@ -8,7 +8,7 @@
 
 Язык общения с пользователем: русский. Язык кода и документации: английский.
 
-Стек: TypeScript монорепо (pnpm + Nx), NestJS + Prisma + PostgreSQL + Redis на бэке, Angular 21+ со standalone и signals на фронте (web / TMA / admin / KDS), Flutter в v2 для iOS/Android. Платежи — Stripe в текущем коде; идёт замена на банковский эквайринг, документацию присылает заказчик. До неё платёжный фронтенд не трогаем.
+Стек: TypeScript монорепо (pnpm + Nx), NestJS + Prisma + PostgreSQL + Redis на бэке, Angular 21+ со standalone и signals на фронте (web / TMA / admin / KDS), Flutter в v2 для iOS/Android. Платежи — эквайринг Агропромбанка («Клевер»): бэкенд и фронтенд написаны в TMA и в вебе, включаются флагом `AGROPROMBANK_ENABLED`. Stripe остался в API запасным путём. Подробности — `docs/agroprombank-payments.md`.
 
 ## Автономность
 

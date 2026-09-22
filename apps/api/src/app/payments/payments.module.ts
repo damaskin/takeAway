@@ -7,11 +7,10 @@ import { PosModule } from '../pos/pos.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { AdminPaymentsController } from './admin-payments.controller';
 import { AgroprombankAdminController } from './agroprombank/agroprombank-admin.controller';
-import { AgroprombankClient } from './agroprombank/agroprombank.client';
-import { AgroprombankConfig } from './agroprombank/agroprombank.config';
 import { AgroprombankController } from './agroprombank/agroprombank.controller';
 import { AgroprombankCronService } from './agroprombank/agroprombank-cron.service';
 import { AgroprombankService } from './agroprombank/agroprombank.service';
+import { PaymentHoldsModule } from './agroprombank/payment-holds.module';
 import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -31,15 +30,13 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
  * `forRoot()` would stand up a second explorer and fire every cron twice.
  */
 @Module({
-  imports: [AuthModule, RealtimeModule, OrdersModule, NotificationsModule, PosModule],
+  imports: [AuthModule, RealtimeModule, OrdersModule, NotificationsModule, PosModule, PaymentHoldsModule],
   controllers: [PaymentsController, AdminPaymentsController, AgroprombankController, AgroprombankAdminController],
   providers: [
     OrderSettlementService,
     PaymentsService,
     StripeConfig,
     stripeClientProvider,
-    AgroprombankConfig,
-    AgroprombankClient,
     AgroprombankService,
     AgroprombankCronService,
   ],

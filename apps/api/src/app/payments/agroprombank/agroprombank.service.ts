@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
+import { PaymentHoldsService } from './payment-holds.service';
 import { type XmlElement, children, num, text, toPlainObject } from './xml';
 
 /**
@@ -55,7 +56,10 @@ export interface ChargeOptions {
   orderId: string;
   cardId: string;
   tipCents?: number;
-  /** Hold the funds instead of capturing them; complete later. */
+  /**
+   * Hold the funds instead of capturing them; complete later. Defaults to the
+   * merchant policy in `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` when omitted.
+   */
   preauth?: boolean;
   /** Route the tip to an employee token (patent) rather than the company. */
   recipientToken?: string;
@@ -101,6 +105,7 @@ export class AgroprombankService {
     private readonly client: AgroprombankClient,
     private readonly cipher: SecretCipher,
     private readonly settlement: OrderSettlementService,
+    private readonly holds: PaymentHoldsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -320,9 +325,15 @@ export class AgroprombankService {
    * Idempotent per order: an order already paid returns the existing payment
    * instead of charging twice, and a payment left PENDING by an earlier
    * transport failure is resolved against the bank before anything new is sent.
+   *
+   * Whether the money is taken now or only held is a merchant policy
+   * (`AGROPROMBANK_HOLD_UNTIL_ACCEPTED`), not something the caller decides —
+   * `options.preauth` is honoured only for internal callers that pass it
+   * explicitly, and the customer-facing controller never does.
    */
   async charge(userId: string, options: ChargeOptions): Promise<ChargeResult> {
     this.assertEnabled();
+    const preauth = options.preauth ?? this.config.holdUntilAccepted;
 
     const order = await this.prisma.order.findUnique({ where: { id: options.orderId } });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
@@ -381,6 +392,7 @@ export class AgroprombankService {
       tipCents,
       currency: order.currency,
       cardTokenId: card.id,
+      preauth,
     });
 
     let response: XmlElement;
@@ -396,7 +408,7 @@ export class AgroprombankService {
         recipienttoken: options.recipientToken ?? null,
         recipient: options.recipientToken ? (options.recipientName ?? null) : null,
         terminalid: this.config.terminalId,
-        preauth: options.preauth ? 1 : 0,
+        preauth: preauth ? 1 : 0,
       });
     } catch (err) {
       if (err instanceof AgroprombankError) {
@@ -410,7 +422,7 @@ export class AgroprombankService {
       throw new BadGatewayException('The bank did not answer in time — the payment is being verified');
     }
 
-    const applied = await this.applyPaymentResponse(payment, response, { preauth: options.preauth ?? false });
+    const applied = await this.applyPaymentResponse(payment, response, { preauth });
     await this.prisma.cardToken.update({ where: { id: card.id }, data: { lastUsedAt: new Date() } });
     return this.toChargeResult(applied);
   }
@@ -453,6 +465,22 @@ export class AgroprombankService {
       },
     });
     return this.toChargeResult(updated);
+  }
+
+  /**
+   * Captures whatever is held against an order, called the moment the store
+   * takes the order on. Returns `null` when there is nothing held — an order
+   * paid outright, or one that will be paid at the counter — so the caller can
+   * treat "no hold" and "captured" alike.
+   *
+   * The held amount is captured as held, never the order's current total: the
+   * customer agreed to the figure they saw at checkout, and anything the store
+   * changed afterwards is a conversation, not a silent larger debit.
+   */
+  async capturePreauthorizedForOrder(orderId: string): Promise<ChargeResult | null> {
+    const hold = await this.holds.findHold(orderId);
+    if (!hold) return null;
+    return this.completePreauthorization(hold.id, hold.amountCents);
   }
 
   /**
@@ -594,7 +622,9 @@ export class AgroprombankService {
       throw err;
     }
 
-    return this.applyPaymentResponse(payment, response, { preauth: false });
+    // `CheckOperation` reports that the operation exists, not whether it was
+    // captured — so trust what we asked for rather than settling a hold.
+    return this.applyPaymentResponse(payment, response, { preauth: requestedPreauth(payment) });
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -693,7 +723,19 @@ export class AgroprombankService {
    */
   private async createPendingPayment(
     orderId: string,
-    data: { amountCents: number; tipCents: number; currency: Currency; cardTokenId: string },
+    data: {
+      amountCents: number;
+      tipCents: number;
+      currency: Currency;
+      cardTokenId: string;
+      /**
+       * What we are about to ask the bank for. Written before the call so that
+       * reconciliation, which runs after a transport failure and cannot tell a
+       * hold from a capture out of `CheckOperation`, does not settle an order
+       * against money that is only frozen.
+       */
+      preauth: boolean;
+    },
   ): Promise<Payment & { invoiceId: string }> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const invoiceId = `${this.config.invoicePrefix}${Date.now()}${randomInt(1000, 9999)}`;
@@ -708,6 +750,7 @@ export class AgroprombankService {
             tipCents: data.tipCents,
             currency: data.currency,
             cardTokenId: data.cardTokenId,
+            rawJson: { requestedPreauth: data.preauth } satisfies Prisma.InputJsonValue,
           },
         });
         return payment as Payment & { invoiceId: string };
@@ -885,4 +928,14 @@ function isUniqueViolation(err: unknown): boolean {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Whether this payment was sent to the bank as a hold. Recorded on the row
+ * before the call, so it survives a transport failure that leaves us with no
+ * answer at all.
+ */
+function requestedPreauth(payment: Payment): boolean {
+  const raw = payment.rawJson as { requestedPreauth?: unknown } | null;
+  return raw?.requestedPreauth === true;
 }

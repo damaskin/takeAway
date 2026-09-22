@@ -18,6 +18,16 @@ export type OrderStatusString =
 
 export type FulfillmentTypeString = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
 
+/** Where the customer's money stands — see the API's OrderPaymentDto. */
+export type OrderPaymentState = 'NONE' | 'PENDING' | 'HELD' | 'PAID' | 'FAILED' | 'REFUNDED';
+
+export interface OrderPaymentView {
+  state: OrderPaymentState;
+  amountCents: number;
+  cardMask: string | null;
+  paidAt: string | null;
+}
+
 export interface OrderView {
   id: string;
   orderCode: string;
@@ -55,6 +65,7 @@ export interface OrderView {
   riderId?: string | null;
   outForDeliveryAt?: string | null;
   deliveredAt?: string | null;
+  payment?: OrderPaymentView;
 }
 
 export interface CreateOrderInput {

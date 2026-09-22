@@ -6,6 +6,7 @@ import type { NotificationsService } from '../notifications/notifications.servic
 import type { PrismaService } from '../prisma/prisma.service';
 import type { PromoService } from '../promo/promo.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { OrderExpiryService } from './order-expiry.service';
 
 function orderRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -29,6 +30,7 @@ interface Harness {
   loyalty: { releaseForOrder: jest.Mock };
   realtime: { emitOrderStatusChanged: jest.Mock; emitKdsOrderChanged: jest.Mock };
   notifications: { notifyOrderStatus: jest.Mock };
+  holds: { releaseForOrder: jest.Mock; findHold: jest.Mock };
 }
 
 function harness(opts: { env?: Record<string, string>; current?: Record<string, unknown> | null } = {}): Harness {
@@ -53,6 +55,7 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
   const loyalty = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitOrderStatusChanged: jest.fn(), emitKdsOrderChanged: jest.fn() };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
+  const holds = { releaseForOrder: jest.fn().mockResolvedValue(null), findHold: jest.fn().mockResolvedValue(null) };
 
   const env = opts.env ?? {};
   const config = { get: (key: string) => env[key] } as unknown as ConfigService;
@@ -65,9 +68,10 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
     loyalty as unknown as LoyaltyService,
     notifications as unknown as NotificationsService,
     realtime as unknown as RealtimeGateway,
+    holds as unknown as PaymentHoldsService,
   );
 
-  return { service, tx, prisma, promo, giftCards, loyalty, realtime, notifications };
+  return { service, tx, prisma, promo, giftCards, loyalty, realtime, notifications, holds };
 }
 
 describe('OrderExpiryService', () => {
@@ -126,6 +130,27 @@ describe('OrderExpiryService', () => {
       expect(h.loyalty.releaseForOrder).not.toHaveBeenCalled();
       expect(h.tx.order.update).not.toHaveBeenCalled();
       expect(h.realtime.emitOrderStatusChanged).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Under the hold-until-accepted policy an abandoned order is sitting on
+     * real money. Expiring it without releasing that would leave the customer
+     * frozen out of their own funds until the bank's own hold window ran out.
+     */
+    it('releases the money held against an order nobody took on', async () => {
+      const h = harness();
+
+      await h.service.expire('order-1');
+
+      expect(h.holds.releaseForOrder).toHaveBeenCalledWith('order-1', 'order-expired');
+    });
+
+    it('does not touch the bank for an order that was paid after all', async () => {
+      const h = harness({ current: orderRow({ status: 'PAID' }) });
+
+      await h.service.expire('order-1');
+
+      expect(h.holds.releaseForOrder).not.toHaveBeenCalled();
     });
 
     it('does nothing for an order that no longer exists', async () => {
