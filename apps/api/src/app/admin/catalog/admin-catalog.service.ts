@@ -36,7 +36,13 @@ import type {
   UpdateVariationDto,
 } from './dto/admin-product.dto';
 import type { AddStopListEntryDto } from './dto/admin-stop-list.dto';
-import type { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './dto/admin-store.dto';
+import {
+  MAX_STORE_GALLERY_IMAGES,
+  type CreateStoreDto,
+  type ReplaceWorkingHoursDto,
+  type StoreImageKind,
+  type UpdateStoreDto,
+} from './dto/admin-store.dto';
 
 type StoreWithHours = Store & { workingHours: StoreWorkingHour[] };
 
@@ -315,6 +321,40 @@ export class AdminCatalogService {
       // An order placed between the check and the delete.
       if (isPrismaError(err, 'P2003')) throw hasOrders();
       throw err;
+    }
+  }
+
+  /** Stores the uploaded photo's URL as the cover or appends it to the gallery. */
+  async attachStoreImage(id: string, kind: StoreImageKind, url: string, scope: BrandScope = null) {
+    const store = await this.getStore(id, scope);
+    const select = { heroImageUrl: true, galleryUrls: true } as const;
+    if (kind === 'hero') {
+      return this.prisma.store.update({ where: { id }, data: { heroImageUrl: url }, select });
+    }
+    this.assertGalleryRoom(store.galleryUrls);
+    return this.prisma.store.update({ where: { id }, data: { galleryUrls: { push: url } }, select });
+  }
+
+  async removeStoreImage(id: string, kind: StoreImageKind, url: string | undefined, scope: BrandScope = null) {
+    const store = await this.getStore(id, scope);
+    const select = { heroImageUrl: true, galleryUrls: true } as const;
+    if (kind === 'hero') {
+      return this.prisma.store.update({ where: { id }, data: { heroImageUrl: null }, select });
+    }
+    if (!url || !store.galleryUrls.includes(url)) throw new NotFoundException('The photo is not in the gallery');
+    return this.prisma.store.update({
+      where: { id },
+      data: { galleryUrls: store.galleryUrls.filter((u) => u !== url) },
+      select,
+    });
+  }
+
+  /** Refuses an upload before its bytes go to storage when the gallery is full. */
+  assertGalleryRoom(galleryUrls: readonly string[]): void {
+    if (galleryUrls.length >= MAX_STORE_GALLERY_IMAGES) {
+      throw conflict('STORE_GALLERY_FULL', `A store gallery holds at most ${MAX_STORE_GALLERY_IMAGES} photos`, {
+        max: MAX_STORE_GALLERY_IMAGES,
+      });
     }
   }
 

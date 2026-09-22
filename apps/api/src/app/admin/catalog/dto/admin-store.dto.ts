@@ -9,6 +9,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsLatitude,
   IsLongitude,
@@ -19,6 +20,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -279,4 +281,24 @@ export class ReplaceWorkingHoursDto {
   @ValidateNested({ each: true })
   @Type(() => WorkingHourInputDto)
   hours!: WorkingHourInputDto[];
+}
+
+export const STORE_IMAGE_KINDS = ['hero', 'gallery'] as const;
+export type StoreImageKind = (typeof STORE_IMAGE_KINDS)[number];
+
+export class StoreImageQueryDto {
+  @ApiProperty({
+    enum: STORE_IMAGE_KINDS,
+    description: 'hero = the cover photo, gallery = one more photo in the gallery',
+  })
+  @IsIn(STORE_IMAGE_KINDS)
+  kind!: StoreImageKind;
+}
+
+export class RemoveStoreImageQueryDto extends StoreImageQueryDto {
+  @ApiPropertyOptional({ description: 'The gallery photo to remove; required for kind=gallery.' })
+  @ValidateIf((q: RemoveStoreImageQueryDto) => q.kind === 'gallery')
+  @IsString()
+  @Length(1, 2048)
+  url?: string;
 }

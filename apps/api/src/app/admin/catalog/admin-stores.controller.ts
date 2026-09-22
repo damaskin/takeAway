@@ -7,9 +7,17 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import { UserStoreScopeService } from '../../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { ImageUpload, UploadedImage, type UploadedImageFile } from '../../common/upload/uploaded-image.decorator';
+import { StorageService } from '../../storage/storage.service';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AddStopListEntryDto } from './dto/admin-stop-list.dto';
-import { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './dto/admin-store.dto';
+import {
+  CreateStoreDto,
+  RemoveStoreImageQueryDto,
+  ReplaceWorkingHoursDto,
+  StoreImageQueryDto,
+  UpdateStoreDto,
+} from './dto/admin-store.dto';
 
 @ApiTags('admin: stores')
 @ApiBearerAuth()
@@ -19,6 +27,7 @@ export class AdminStoresController {
     private readonly admin: AdminCatalogService,
     private readonly scope: BrandScopeService,
     private readonly stores: UserStoreScopeService,
+    private readonly storage: StorageService,
   ) {}
 
   // Brand scope keeps everyone inside their brand; the store scope keeps a
@@ -80,6 +89,41 @@ export class AdminStoresController {
     await this.stores.assertAllowed(user.id, user.role, id);
     const scope = await this.scope.resolveBrandIds(user);
     return this.admin.replaceWorkingHours(id, dto, scope);
+  }
+
+  /**
+   * One photo per request, as the `file` field of a multipart body:
+   * `kind=hero` replaces the cover, `kind=gallery` adds to the gallery.
+   */
+  @Post(':id/images')
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER)
+  @ImageUpload()
+  async uploadImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: StoreImageQueryDto,
+    @UploadedImage() file: UploadedImageFile,
+  ): Promise<{ heroImageUrl: string | null; galleryUrls: string[] }> {
+    await this.stores.assertAllowed(user.id, user.role, id);
+    const scope = await this.scope.resolveBrandIds(user);
+    const store = await this.admin.getStore(id, scope);
+    // Checked before the upload too, so a full gallery doesn't leave an
+    // orphaned object in the bucket.
+    if (query.kind === 'gallery') this.admin.assertGalleryRoom(store.galleryUrls);
+    const { url } = await this.storage.uploadImage(`stores/${store.slug}`, file.filename, file.mimetype, file.buffer);
+    return this.admin.attachStoreImage(id, query.kind, url, scope);
+  }
+
+  @Delete(':id/images')
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER)
+  async removeImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: RemoveStoreImageQueryDto,
+  ): Promise<{ heroImageUrl: string | null; galleryUrls: string[] }> {
+    await this.stores.assertAllowed(user.id, user.role, id);
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.admin.removeStoreImage(id, query.kind, query.url, scope);
   }
 
   @Get(':id/stop-list')

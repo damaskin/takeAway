@@ -247,3 +247,23 @@ describe('AdminCatalogService — deleting a store', () => {
     expect(body).toMatchObject({ code: 'STORE_HAS_ORDERS' });
   });
 });
+
+describe('AdminCatalogService — store photos', () => {
+  it('refuses a ninth gallery photo', async () => {
+    const { svc, prisma } = build({
+      store: { galleryUrls: Array.from({ length: 8 }, (_, i) => `https://cdn/${i}.jpg`) },
+    });
+    const body = await conflictBody(svc.attachStoreImage('store-1', 'gallery', 'https://cdn/9.jpg', ['brand-1']));
+    expect(body).toMatchObject({ code: 'STORE_GALLERY_FULL', max: 8 });
+    expect(prisma.store.update).not.toHaveBeenCalled();
+  });
+
+  it('sets the cover and removes a gallery photo by its URL', async () => {
+    const { svc, prisma } = build({ store: { galleryUrls: ['https://cdn/a.jpg', 'https://cdn/b.jpg'] } });
+    await svc.attachStoreImage('store-1', 'hero', 'https://cdn/hero.jpg', ['brand-1']);
+    expect(written(prisma.store.update)).toEqual({ heroImageUrl: 'https://cdn/hero.jpg' });
+
+    await svc.removeStoreImage('store-1', 'gallery', 'https://cdn/a.jpg', ['brand-1']);
+    expect(written(prisma.store.update, 1)).toEqual({ galleryUrls: ['https://cdn/b.jpg'] });
+  });
+});
