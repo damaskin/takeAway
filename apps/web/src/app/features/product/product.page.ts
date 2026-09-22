@@ -479,7 +479,10 @@ export class ProductPage implements OnInit {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    // The serving store's currency; the customer's profile currency is not what they pay in.
+    const currency = this.resolvedStore()?.currency;
+    if (!currency) return (cents / 100).toFixed(2);
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
   }
 
   priceDelta(cents: number): string {

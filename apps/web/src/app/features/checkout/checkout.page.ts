@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { PickupSlot } from '@takeaway/shared-types';
+import type { PickupSlot, StoreListItem } from '@takeaway/shared-types';
 import { computeTax } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -121,6 +121,8 @@ interface Step {
                 <button
                   type="button"
                   (click)="selectMode('ASAP')"
+                  [disabled]="!storeOpen()"
+                  [style.opacity]="storeOpen() ? 1 : 0.45"
                   class="flex items-center justify-center w-full"
                   [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
                   [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
@@ -141,6 +143,11 @@ interface Step {
                   {{ 'web.checkout.pickupScheduled' | translate }}
                 </button>
               </div>
+              @if (!storeOpen()) {
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                  'web.checkout.closedNow' | translate
+                }}</span>
+              }
 
               <!-- Delivery address form -->
               @if (fulfillmentType() === 'DELIVERY') {
@@ -234,7 +241,7 @@ interface Step {
                     }}</span>
                   } @else if (slots().length === 0) {
                     <span style="font-size: 13px; color: var(--color-berry)">{{
-                      'web.checkout.noSlots' | translate
+                      (storeOpen() ? 'web.checkout.noSlots' : 'web.checkout.noSlotsClosed') | translate
                     }}</span>
                   } @else {
                     <div class="flex flex-wrap" style="gap: 8px">
@@ -576,7 +583,7 @@ interface Step {
 
               @if (cardPaymentsEnabled()) {
                 <a
-                  routerLink="/profile/payment"
+                  routerLink="/profile/payment-methods"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
                   >{{ 'web.checkout.addCard' | translate }}</a
                 >
@@ -630,6 +637,14 @@ export class CheckoutPage implements OnInit {
 
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
+  /** Prices are the store's, whatever currency the customer's profile has. */
+  readonly currency = signal<string | null>(null);
+  /**
+   * Whether the store takes an ASAP order right now — its switch and its
+   * working hours, as the API computes them. After hours only a scheduled
+   * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
+   */
+  readonly storeOpen = signal(true);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
   readonly cards = signal<BoundCard[]>([]);
@@ -750,32 +765,31 @@ export class CheckoutPage implements OnInit {
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
       this.catalog.getStore(storeSlug).subscribe({
-        next: (store) => {
-          this.brandId.set(store.brandId);
-          this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
-          this.activeStoreId.set(store.id);
-          this.taxRateBps.set(store.taxRateBps);
-          this.taxIncludedInPrice.set(store.taxIncludedInPrice);
-          this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
-          this.refreshFeeQuote();
-        },
+        next: (store) => this.applyStore(store),
       });
     } else {
       this.catalog.listStores().subscribe({
         next: (stores) => {
           const first = stores[0];
-          if (first) {
-            this.brandId.set(first.brandId);
-            this.deliveryAvailable.set((first.fulfillmentTypes ?? []).includes('DELIVERY'));
-            this.activeStoreId.set(first.id);
-            this.taxRateBps.set(first.taxRateBps);
-            this.taxIncludedInPrice.set(first.taxIncludedInPrice);
-            this.cartService.load(first.id).subscribe((c) => this.cart.set(c));
-            this.refreshFeeQuote();
-          }
+          if (first) this.applyStore(first);
         },
       });
     }
+  }
+
+  /** Everything checkout takes from the store the order goes to. */
+  private applyStore(store: StoreListItem): void {
+    this.brandId.set(store.brandId);
+    this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
+    this.activeStoreId.set(store.id);
+    this.taxRateBps.set(store.taxRateBps);
+    this.taxIncludedInPrice.set(store.taxIncludedInPrice);
+    this.currency.set(store.currency);
+    // `!== false`: an API that predates the field keeps ASAP available.
+    this.storeOpen.set(store.openNow !== false);
+    if (!this.storeOpen()) this.selectMode('SCHEDULED');
+    this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
+    this.refreshFeeQuote();
   }
 
   requestLocation(): void {
@@ -1000,6 +1014,7 @@ export class CheckoutPage implements OnInit {
   }
 
   selectMode(mode: PickupMode): void {
+    if (mode === 'ASAP' && !this.storeOpen()) return;
     this.mode.set(mode);
     if (mode === 'SCHEDULED') this.loadSlots();
   }
@@ -1150,10 +1165,9 @@ export class CheckoutPage implements OnInit {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.authStore.user()?.currency ?? 'USD',
-    }).format(cents / 100);
+    const currency = this.currency();
+    if (!currency) return (cents / 100).toFixed(2);
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
   }
 
   private formatTime(date: Date): string {

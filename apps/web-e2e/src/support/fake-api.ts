@@ -30,6 +30,7 @@ export const STORE = {
   pickupPointType: 'SHELF',
   busyMeter: 20,
   currentEtaSeconds: 420,
+  openNow: true,
   // 5% VAT already inside the price, as in the UAE.
   taxRateBps: 500,
   taxIncludedInPrice: true,
@@ -115,7 +116,15 @@ export interface FakeApi {
  * app actually sent — asserting on the created order is how a journey test
  * proves the checkout passed the right slot and totals through.
  */
-export async function installFakeApi(page: Page, opts: { pointsBalance?: number } = {}): Promise<FakeApi> {
+export async function installFakeApi(
+  page: Page,
+  opts: {
+    pointsBalance?: number;
+    /** False = switched on but outside working hours, as the API reports it. */
+    storeOpenNow?: boolean;
+  } = {},
+): Promise<FakeApi> {
+  const store = { ...STORE, openNow: opts.storeOpenNow ?? STORE.openNow };
   const items: CartItem[] = [];
   const orders: Array<Record<string, unknown>> = [];
   let nextId = 1;
@@ -165,7 +174,7 @@ export async function installFakeApi(page: Page, opts: { pointsBalance?: number 
     }
 
     // ── Catalogue ───────────────────────────────────────────────────────
-    if (path === '/stores') return json(route, [STORE]);
+    if (path === '/stores') return json(route, [store]);
     if (path.match(/^\/stores\/[^/]+\/pickup-slots$/)) return json(route, slots());
     if (path.match(/^\/stores\/[^/]+\/menu$/)) {
       return json(route, {
@@ -186,7 +195,7 @@ export async function installFakeApi(page: Page, opts: { pointsBalance?: number 
         ],
       });
     }
-    if (path.match(/^\/stores\/[^/]+$/)) return json(route, STORE);
+    if (path.match(/^\/stores\/[^/]+$/)) return json(route, store);
     if (path.match(/^\/products\/[^/]+$/)) return json(route, PRODUCT);
 
     // ── Loyalty ─────────────────────────────────────────────────────────
