@@ -36,6 +36,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // Image uploads (logos, product and store photos) are multipart; Fastify
+  // needs its own parser — Express's FileInterceptor never sees the file.
+  // Per-route limits live in the UploadedImage decorator.
+  await app.register(import('@fastify/multipart'), { limits: { files: 1, fields: 10 } });
+
   await app.register(import('@fastify/helmet'), {
     contentSecurityPolicy: false,
     // Swagger UI iframes the API docs page; COEP blocks its own subresources.

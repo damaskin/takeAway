@@ -1,12 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import { extname } from 'node:path';
 
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
-const IMAGE_MIME_PREFIX = 'image/';
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+import { MAX_IMAGE_BYTES } from '../common/upload/uploaded-image.decorator';
+
+/** Raster formats only: SVG can carry script and is served from our origin. */
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
 
 /**
  * Thin wrapper over S3-compatible object storage (AWS S3, MinIO, Backblaze,
@@ -57,7 +65,8 @@ export class StorageService {
 
   /**
    * Upload raw bytes with a generated key prefixed by `folder`. Returns the
-   * public URL. Rejects non-image content-types and files over 5 MB.
+   * public URL. A wrong type is a 415 and an oversized file a 413 — the
+   * client's mistake, not "storage unavailable" as it used to say.
    */
   async uploadImage(
     folder: string,
@@ -68,13 +77,14 @@ export class StorageService {
     if (!this.client || !this.bucket) {
       throw new ServiceUnavailableException('Object storage is not configured on this deployment');
     }
-    if (!contentType.startsWith(IMAGE_MIME_PREFIX)) {
-      throw new ServiceUnavailableException(`Unsupported content-type: ${contentType}`);
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+      throw new UnsupportedMediaTypeException('Only JPEG, PNG, WebP or AVIF images are accepted');
     }
-    if (body.length > MAX_UPLOAD_BYTES) {
-      throw new ServiceUnavailableException(`File too large: ${body.length} bytes`);
+    if (body.length > MAX_IMAGE_BYTES) {
+      throw new PayloadTooLargeException('The image is larger than 5 MB');
     }
-    const ext = extname(originalName).toLowerCase() || mimeToExt(contentType);
+    // The extension follows the detected type, never the client's file name.
+    const ext = mimeToExt(contentType) || extname(originalName).toLowerCase();
     const key = `${folder.replace(/^\/+|\/+$/g, '')}/${Date.now()}-${randomBytes(6).toString('hex')}${ext}`;
     await this.client.send(
       new PutObjectCommand({
@@ -98,10 +108,6 @@ function mimeToExt(mime: string): string {
       return '.jpg';
     case 'image/webp':
       return '.webp';
-    case 'image/gif':
-      return '.gif';
-    case 'image/svg+xml':
-      return '.svg';
     case 'image/avif':
       return '.avif';
     default:

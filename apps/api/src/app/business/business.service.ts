@@ -7,6 +7,7 @@ import type { AuthSessionDto } from '../auth/dto/auth-response.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BusinessRegisterDto } from './dto/business-register.dto';
 import type { BusinessRegisterResponseDto } from './dto/business-register-response.dto';
+import { slugify as slugifyText } from '../common/text/slug';
 
 const MAX_SLUG_COLLISIONS = 50;
 
@@ -150,11 +151,6 @@ export class BusinessService {
 }
 
 function slugify(input: string): string {
-  return input
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '') // strip accents
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
+  // Transliterates Cyrillic: «Кофейня Ромашка» → kofeynya-romashka, not a random token.
+  return slugifyText(input, 40);
 }
