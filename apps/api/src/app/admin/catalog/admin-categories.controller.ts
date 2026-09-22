@@ -7,7 +7,12 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminCatalogService } from './admin-catalog.service';
-import { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
+import {
+  CreateCategoryDto,
+  DeleteCategoryQueryDto,
+  ReorderCategoriesDto,
+  UpdateCategoryDto,
+} from './dto/admin-category.dto';
 
 @ApiTags('admin: categories')
 @ApiBearerAuth()
@@ -52,10 +57,15 @@ export class AdminCategoriesController {
     return this.admin.updateCategory(id, dto, scope);
   }
 
+  /** 409 `CATEGORY_NOT_EMPTY` while products remain, unless `moveProductsTo` names where they go. */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {
+  async delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: DeleteCategoryQueryDto,
+  ): Promise<void> {
     const scope = await this.scope.resolveBrandIds(user);
-    await this.admin.deleteCategory(id, scope);
+    await this.admin.deleteCategory(id, scope, query.moveProductsTo);
   }
 }

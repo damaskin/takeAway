@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
@@ -6,11 +6,16 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { ImageUpload, UploadedImage, type UploadedImageFile } from '../../common/upload/uploaded-image.decorator';
 import { AdminCatalogService } from './admin-catalog.service';
+import { AdminProductImagesService, type ProductImagesDto } from './admin-product-images.service';
 import {
   CreateModifierDto,
   CreateProductDto,
   CreateVariationDto,
+  ProductImageQueryDto,
+  ReorderProductImagesDto,
+  ReorderProductsDto,
   ToggleVisibilityDto,
   UpdateModifierDto,
   UpdateProductDto,
@@ -24,6 +29,7 @@ import {
 export class AdminProductsController {
   constructor(
     private readonly admin: AdminCatalogService,
+    private readonly images: AdminProductImagesService,
     private readonly scope: BrandScopeService,
   ) {}
 
@@ -52,6 +58,13 @@ export class AdminProductsController {
     return this.admin.createProduct(dto, scope);
   }
 
+  @Patch('reorder')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async reorder(@CurrentUser() user: AuthenticatedUser, @Body() dto: ReorderProductsDto): Promise<void> {
+    const scope = await this.scope.resolveBrandIds(user);
+    await this.admin.reorderProducts(dto, scope);
+  }
+
   @Patch(':id')
   async update(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateProductDto) {
     const scope = await this.scope.resolveBrandIds(user);
@@ -73,6 +86,39 @@ export class AdminProductsController {
   async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {
     const scope = await this.scope.resolveBrandIds(user);
     await this.admin.deleteProduct(id, scope);
+  }
+
+  /** One photo per request in a `file` field; appended to the end of the product's photos. */
+  @Post(':id/images')
+  @ImageUpload()
+  @HttpCode(HttpStatus.CREATED)
+  async uploadImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedImage() file: UploadedImageFile,
+  ): Promise<ProductImagesDto> {
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.images.add(id, file, scope);
+  }
+
+  @Delete(':id/images')
+  async removeImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: ProductImageQueryDto,
+  ): Promise<ProductImagesDto> {
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.images.remove(id, query.url, scope);
+  }
+
+  @Put(':id/images/order')
+  async reorderImages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ReorderProductImagesDto,
+  ): Promise<ProductImagesDto> {
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.images.reorder(id, dto.urls, scope);
   }
 
   @Post(':id/variations')

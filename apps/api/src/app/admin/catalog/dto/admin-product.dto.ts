@@ -1,18 +1,36 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { DietTag, VariationType } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUrl,
   Length,
+  Matches,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
+
+import { SLUG_MESSAGE, SLUG_PATTERN } from './admin-category.dto';
+
+/** Photos per product: enough for a gallery, few enough to keep a menu card light. */
+export const MAX_PRODUCT_IMAGES = 6;
+
+/**
+ * Upper bounds keep a typo (an extra zero or three) from reaching an `Int`
+ * column that overflows at 2^31 — a 500 instead of a clear 400.
+ */
+const MAX_PRICE_CENTS = 100_000_000;
+const MAX_PREP_SECONDS = 24 * 60 * 60;
 
 export class CreateProductDto {
   @ApiProperty()
@@ -23,10 +41,15 @@ export class CreateProductDto {
   @IsString()
   categoryId!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Generated from the name (transliterated) when omitted; unique within the brand',
+    pattern: SLUG_PATTERN.source,
+  })
+  @IsOptional()
   @IsString()
-  @Length(2, 80)
-  slug!: string;
+  @Length(2, 60)
+  @Matches(SLUG_PATTERN, { message: SLUG_MESSAGE })
+  slug?: string;
 
   @ApiProperty()
   @IsString()
@@ -38,15 +61,17 @@ export class CreateProductDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiProperty({ minimum: 0, maximum: MAX_PRICE_CENTS })
   @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_CENTS)
   basePriceCents!: number;
 
-  @ApiPropertyOptional({ minimum: 0 })
+  @ApiPropertyOptional({ minimum: 0, maximum: MAX_PREP_SECONDS })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_PREP_SECONDS)
   prepTimeSeconds?: number;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 4 })
@@ -83,7 +108,9 @@ export class CreateProductDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @IsString({ each: true })
+  @Length(1, 40, { each: true })
   allergens?: string[];
 
   @ApiPropertyOptional({ enum: DietTag, isArray: true })
@@ -92,9 +119,10 @@ export class CreateProductDto {
   @IsEnum(DietTag, { each: true })
   dietTags?: DietTag[];
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ type: [String], maxItems: MAX_PRODUCT_IMAGES })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_PRODUCT_IMAGES)
   @IsUrl({}, { each: true })
   imageUrls?: string[];
 
@@ -103,7 +131,7 @@ export class CreateProductDto {
   @IsBoolean()
   visible?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Appended after the last product of the category when omitted' })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -119,6 +147,38 @@ export class ToggleVisibilityDto {
   visible!: boolean;
 }
 
+export class ReorderProductsDto {
+  @ApiProperty({ type: [String], description: 'Product ids of one category in the desired order' })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsString({ each: true })
+  orderedIds!: string[];
+}
+
+export class ProductImageQueryDto {
+  @ApiProperty({ description: "One of the product's image URLs" })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2048)
+  url!: string;
+}
+
+export class ReorderProductImagesDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      'Image URLs already on the product, in the new order. The first one is the photo customers see in the menu; ' +
+      'images left out keep their order after the listed ones.',
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_PRODUCT_IMAGES)
+  @ArrayUnique()
+  @IsString({ each: true })
+  urls!: string[];
+}
+
 export class CreateVariationDto {
   @ApiProperty({ enum: VariationType })
   @IsEnum(VariationType)
@@ -132,20 +192,24 @@ export class CreateVariationDto {
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @IsInt()
+  @Min(-MAX_PRICE_CENTS)
+  @Max(MAX_PRICE_CENTS)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @IsInt()
+  @Min(-MAX_PREP_SECONDS)
+  @Max(MAX_PREP_SECONDS)
   prepTimeDeltaSeconds?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Appended after the last variation of the same type when omitted' })
   @IsOptional()
   @IsInt()
   @Min(0)
   sortOrder?: number;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({ default: false, description: 'At most one default per type; setting one clears the rest' })
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
@@ -154,10 +218,15 @@ export class CreateVariationDto {
 export class UpdateVariationDto extends PartialType(CreateVariationDto) {}
 
 export class CreateModifierDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Generated from the name (transliterated) when omitted; unique within the product',
+    pattern: SLUG_PATTERN.source,
+  })
+  @IsOptional()
   @IsString()
   @Length(2, 60)
-  slug!: string;
+  @Matches(SLUG_PATTERN, { message: SLUG_MESSAGE })
+  slug?: string;
 
   @ApiProperty()
   @IsString()
@@ -167,26 +236,32 @@ export class CreateModifierDto {
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @IsInt()
+  @Min(-MAX_PRICE_CENTS)
+  @Max(MAX_PRICE_CENTS)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @IsInt()
+  @Min(-MAX_PREP_SECONDS)
+  @Max(MAX_PREP_SECONDS)
   prepTimeDeltaSeconds?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(99)
   minCount?: number;
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(99)
   maxCount?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Appended after the last modifier when omitted' })
   @IsOptional()
   @IsInt()
   @Min(0)

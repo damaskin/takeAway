@@ -1,14 +1,16 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BrandModerationStatus, Role } from '@prisma/client';
+import { BrandModerationStatus, Prisma, Role, type VariationType } from '@prisma/client';
 
+import { uniqueSlug } from '../../common/text/slug';
 import { PrismaService } from '../../prisma/prisma.service';
+import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
 import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
 /** `null` = no brand restriction (super-admin). */
-type BrandScope = string[] | null;
+export type BrandScope = string[] | null;
 
-function assertInScope(scope: BrandScope, brandId: string): void {
+export function assertInScope(scope: BrandScope, brandId: string): void {
   if (scope === null) return;
   if (!scope.includes(brandId)) {
     throw new ForbiddenException('Resource belongs to a brand outside your scope');
@@ -21,6 +23,7 @@ import type {
   CreateModifierDto,
   CreateProductDto,
   CreateVariationDto,
+  ReorderProductsDto,
   ToggleVisibilityDto,
   UpdateModifierDto,
   UpdateProductDto,
@@ -246,7 +249,10 @@ export class AdminCatalogService {
     const where = brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : undefined;
     return this.prisma.category.findMany({
       where,
-      orderBy: [{ brandId: 'asc' }, { sortOrder: 'asc' }],
+      orderBy: [{ brandId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      // The editor shows how full each category is, and knows before a delete
+      // that the products need somewhere to go.
+      include: { _count: { select: { products: true } } },
     });
   }
 
@@ -257,28 +263,90 @@ export class AdminCatalogService {
     return category;
   }
 
-  createCategory(dto: CreateCategoryDto, scope: BrandScope = null) {
+  /**
+   * Nobody should have to invent a URL slug to add "Десерты": it is built
+   * from the name when omitted, and a new category goes after the last one
+   * instead of sharing position 0 with every other.
+   */
+  async createCategory(dto: CreateCategoryDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
-    return this.prisma.category.create({ data: dto });
+    const slug =
+      dto.slug ??
+      (await uniqueSlug(
+        dto.name,
+        async (candidate) =>
+          (await this.prisma.category.count({ where: { brandId: dto.brandId, slug: candidate } })) > 0,
+        'category',
+      ));
+    const sortOrder = dto.sortOrder ?? (await nextCategorySortOrder(this.prisma, dto.brandId));
+    return this.prisma.category
+      .create({ data: { ...dto, slug, sortOrder } })
+      .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
   async updateCategory(id: string, dto: UpdateCategoryDto, scope: BrandScope = null) {
     await this.getCategory(id, scope);
-    return this.prisma.category.update({ where: { id }, data: dto });
+    return this.prisma.category
+      .update({ where: { id }, data: dto })
+      .catch((err: unknown) => rethrowSlugTaken(err, dto.slug));
   }
 
-  async deleteCategory(id: string, scope: BrandScope = null) {
-    await this.getCategory(id, scope);
-    await this.prisma.category.delete({ where: { id } });
+  /**
+   * Products hold their category by a restricting foreign key, so deleting a
+   * category that still had some was a 500. It is a 409 the editor explains
+   * now, and `moveProductsTo` rehomes the products (at the end of the target)
+   * and deletes the category in one transaction.
+   */
+  async deleteCategory(id: string, scope: BrandScope = null, moveProductsTo?: string) {
+    const category = await this.getCategory(id, scope);
+    const productCount = await this.prisma.product.count({ where: { categoryId: id } });
+    const moving = productCount > 0 && !!moveProductsTo;
+    if (productCount > 0 && !moveProductsTo) throw categoryNotEmpty(productCount);
+
+    if (moving) {
+      const target =
+        moveProductsTo === id
+          ? null
+          : await this.prisma.category.findUnique({ where: { id: moveProductsTo }, select: { brandId: true } });
+      if (!target || target.brandId !== category.brandId) {
+        throw menuBadRequest('CATEGORY_MOVE_TARGET', 'Products can only move to another category of the same brand');
+      }
+    }
+
+    await this.prisma
+      .$transaction(async (tx) => {
+        if (moving && moveProductsTo) {
+          const products = await tx.product.findMany({
+            where: { categoryId: id },
+            orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+            select: { id: true },
+          });
+          let sortOrder = await nextProductSortOrder(tx, moveProductsTo);
+          for (const p of products) {
+            await tx.product.update({
+              where: { id: p.id },
+              data: { categoryId: moveProductsTo, sortOrder: sortOrder++ },
+            });
+          }
+        }
+        await tx.category.delete({ where: { id } });
+      })
+      .catch((err: unknown) => {
+        // A product added between the count and the delete.
+        if (prismaCode(err) === 'P2003') throw categoryNotEmpty();
+        throw err;
+      });
   }
 
   async reorderCategories(dto: ReorderCategoriesDto, scope: BrandScope = null) {
-    if (scope !== null) {
-      const cats = await this.prisma.category.findMany({
-        where: { id: { in: dto.orderedIds } },
-        select: { brandId: true },
-      });
-      for (const c of cats) assertInScope(scope, c.brandId);
+    const cats = await this.prisma.category.findMany({
+      where: { id: { in: dto.orderedIds } },
+      select: { brandId: true },
+    });
+    if (cats.length !== dto.orderedIds.length) throw new NotFoundException('Category not found');
+    for (const c of cats) assertInScope(scope, c.brandId);
+    if (new Set(cats.map((c) => c.brandId)).size > 1) {
+      throw new BadRequestException('Only categories of one brand can be ordered together');
     }
     await this.prisma.$transaction(
       dto.orderedIds.map((id, index) => this.prisma.category.update({ where: { id }, data: { sortOrder: index } })),
@@ -293,14 +361,17 @@ export class AdminCatalogService {
         ...(brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : {}),
         ...(categoryId ? { categoryId } : {}),
       },
-      orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }],
+      orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
   async getProduct(id: string, scope: BrandScope = null) {
     const product = await this.prisma.product.findUnique({
       where: { id },
-      include: { variations: true, modifiers: true },
+      include: {
+        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
+        modifiers: { orderBy: { sortOrder: 'asc' } },
+      },
     });
     if (!product) throw new NotFoundException('Product not found');
     assertInScope(scope, product.brandId);
@@ -310,13 +381,32 @@ export class AdminCatalogService {
   async createProduct(dto: CreateProductDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
     await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
-    return this.prisma.product.create({ data: dto });
+    const slug =
+      dto.slug ??
+      (await uniqueSlug(
+        dto.name,
+        async (candidate) =>
+          (await this.prisma.product.count({ where: { brandId: dto.brandId, slug: candidate } })) > 0,
+        'product',
+      ));
+    const sortOrder = dto.sortOrder ?? (await nextProductSortOrder(this.prisma, dto.categoryId));
+    return this.prisma.product
+      .create({ data: { ...dto, slug, sortOrder } })
+      .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, scope: BrandScope = null) {
     const product = await this.getProduct(id, scope);
-    if (dto.categoryId) await this.assertCategoryOfBrand(dto.categoryId, product.brandId);
-    return this.prisma.product.update({ where: { id }, data: dto });
+    const data: Prisma.ProductUncheckedUpdateInput = { ...dto };
+    if (dto.categoryId) {
+      await this.assertCategoryOfBrand(dto.categoryId, product.brandId);
+      // Moved to another category: it goes to the end there instead of
+      // keeping a position number that meant something in the old one.
+      if (dto.categoryId !== product.categoryId && dto.sortOrder === undefined) {
+        data.sortOrder = await nextProductSortOrder(this.prisma, dto.categoryId);
+      }
+    }
+    return this.prisma.product.update({ where: { id }, data }).catch((err: unknown) => rethrowSlugTaken(err, dto.slug));
   }
 
   /**
@@ -331,9 +421,26 @@ export class AdminCatalogService {
     }
   }
 
+  /**
+   * Carts point at live products; placed orders keep a snapshot. A product
+   * still in somebody's cart therefore hit the cart's foreign key and the
+   * delete was a 500. Those cart lines go in the same transaction now.
+   */
   async deleteProduct(id: string, scope: BrandScope = null) {
     await this.getProduct(id, scope);
-    await this.prisma.product.delete({ where: { id } });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const lines = await tx.cartItem.findMany({ where: { productId: id }, select: { id: true, cartId: true } });
+          await dropCartLines(tx, lines);
+          await tx.product.delete({ where: { id } });
+        });
+        return;
+      } catch (err) {
+        // A customer put it in a cart while the delete ran: take that line too.
+        if (prismaCode(err) !== 'P2003' || attempt >= 3) throw err;
+      }
+    }
   }
 
   async toggleProductVisibility(id: string, dto: ToggleVisibilityDto, scope: BrandScope = null) {
@@ -341,71 +448,208 @@ export class AdminCatalogService {
     return this.prisma.product.update({ where: { id }, data: { visible: dto.visible } });
   }
 
+  async reorderProducts(dto: ReorderProductsDto, scope: BrandScope = null) {
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: dto.orderedIds } },
+      select: { brandId: true, categoryId: true },
+    });
+    if (products.length !== dto.orderedIds.length) throw new NotFoundException('Product not found');
+    for (const p of products) assertInScope(scope, p.brandId);
+    if (new Set(products.map((p) => p.categoryId)).size > 1) {
+      throw menuBadRequest('MIXED_CATEGORIES', 'Only products of one category can be ordered together');
+    }
+    await this.prisma.$transaction(
+      dto.orderedIds.map((id, index) => this.prisma.product.update({ where: { id }, data: { sortOrder: index } })),
+    );
+  }
+
   // ── Variations ────────────────────────────────────────────────────────────
   async createVariation(productId: string, dto: CreateVariationDto, scope: BrandScope = null) {
     await this.getProduct(productId, scope);
-    return this.prisma.variation.create({ data: { productId, ...dto } });
+    return this.prisma.$transaction(async (tx) => {
+      // One default per type, so the size a customer finds pre-selected is
+      // never a coin toss between two "default" sizes.
+      if (dto.isDefault) {
+        await tx.variation.updateMany({
+          where: { productId, type: dto.type, isDefault: true },
+          data: { isDefault: false },
+        });
+      }
+      const sortOrder = dto.sortOrder ?? (await nextVariationSortOrder(tx, productId, dto.type));
+      return tx.variation.create({ data: { productId, ...dto, sortOrder } });
+    });
   }
 
   async updateVariation(id: string, dto: UpdateVariationDto, scope: BrandScope = null) {
-    if (scope !== null) {
-      const existing = await this.prisma.variation.findUnique({
-        where: { id },
-        select: { product: { select: { brandId: true } } },
+    const existing = await this.findVariation(id, scope);
+    return this.prisma
+      .$transaction(async (tx) => {
+        if (dto.isDefault) {
+          await tx.variation.updateMany({
+            where: { productId: existing.productId, type: dto.type ?? existing.type, isDefault: true, id: { not: id } },
+            data: { isDefault: false },
+          });
+        }
+        return tx.variation.update({ where: { id }, data: dto });
+      })
+      .catch((err: unknown) => {
+        if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
+        throw err;
       });
-      if (!existing) throw new NotFoundException('Variation not found');
-      assertInScope(scope, existing.product.brandId);
-    }
-    return this.prisma.variation.update({ where: { id }, data: dto }).catch(() => {
-      throw new NotFoundException('Variation not found');
-    });
   }
 
+  /** Cart lines priced with this variation go with it; see {@link deleteProduct}. */
   async deleteVariation(id: string, scope: BrandScope = null) {
-    if (scope !== null) {
-      const existing = await this.prisma.variation.findUnique({
-        where: { id },
-        select: { product: { select: { brandId: true } } },
+    const existing = await this.findVariation(id, scope);
+    await this.prisma
+      .$transaction(async (tx) => {
+        const lines = await tx.cartItem.findMany({
+          where: { productId: existing.productId, variationIds: { has: id } },
+          select: { id: true, cartId: true },
+        });
+        await dropCartLines(tx, lines);
+        await tx.variation.delete({ where: { id } });
+      })
+      .catch((err: unknown) => {
+        if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
+        throw err;
       });
-      if (!existing) throw new NotFoundException('Variation not found');
-      assertInScope(scope, existing.product.brandId);
-    }
-    await this.prisma.variation.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException('Variation not found');
+  }
+
+  private async findVariation(id: string, scope: BrandScope) {
+    const variation = await this.prisma.variation.findUnique({
+      where: { id },
+      select: { productId: true, type: true, product: { select: { brandId: true } } },
     });
+    if (!variation) throw new NotFoundException('Variation not found');
+    assertInScope(scope, variation.product.brandId);
+    return variation;
   }
 
   // ── Modifiers ─────────────────────────────────────────────────────────────
+  /**
+   * The slug is built from the name when omitted. The admin used to derive
+   * it in the browser keeping only [a-z0-9], so «Ванильный сироп» produced
+   * an empty slug and the modifier could not be created at all.
+   */
   async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
     await this.getProduct(productId, scope);
-    return this.prisma.modifier.create({ data: { productId, ...dto } });
+    assertCountRange(dto.minCount ?? 0, dto.maxCount ?? 1);
+    const slug =
+      dto.slug ??
+      (await uniqueSlug(
+        dto.name,
+        async (candidate) => (await this.prisma.modifier.count({ where: { productId, slug: candidate } })) > 0,
+        'option',
+      ));
+    const sortOrder = dto.sortOrder ?? (await nextModifierSortOrder(this.prisma, productId));
+    return this.prisma.modifier
+      .create({ data: { productId, ...dto, slug, sortOrder } })
+      .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
   async updateModifier(id: string, dto: UpdateModifierDto, scope: BrandScope = null) {
-    if (scope !== null) {
-      const existing = await this.prisma.modifier.findUnique({
-        where: { id },
-        select: { product: { select: { brandId: true } } },
-      });
-      if (!existing) throw new NotFoundException('Modifier not found');
-      assertInScope(scope, existing.product.brandId);
-    }
-    return this.prisma.modifier.update({ where: { id }, data: dto }).catch(() => {
-      throw new NotFoundException('Modifier not found');
+    const existing = await this.findModifier(id, scope);
+    assertCountRange(dto.minCount ?? existing.minCount, dto.maxCount ?? existing.maxCount);
+    return this.prisma.modifier.update({ where: { id }, data: dto }).catch((err: unknown) => {
+      if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
+      return rethrowSlugTaken(err, dto.slug);
     });
   }
 
+  /** Cart lines priced with this modifier go with it; see {@link deleteProduct}. */
   async deleteModifier(id: string, scope: BrandScope = null) {
-    if (scope !== null) {
-      const existing = await this.prisma.modifier.findUnique({
-        where: { id },
-        select: { product: { select: { brandId: true } } },
+    const existing = await this.findModifier(id, scope);
+    await this.prisma
+      .$transaction(async (tx) => {
+        const lines = await tx.cartItem.findMany({
+          where: { productId: existing.productId },
+          select: { id: true, cartId: true, modifiersJson: true },
+        });
+        await dropCartLines(
+          tx,
+          lines.filter((line) => modifierCount(line.modifiersJson, id) > 0),
+        );
+        await tx.modifier.delete({ where: { id } });
+      })
+      .catch((err: unknown) => {
+        if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
+        throw err;
       });
-      if (!existing) throw new NotFoundException('Modifier not found');
-      assertInScope(scope, existing.product.brandId);
-    }
-    await this.prisma.modifier.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException('Modifier not found');
+  }
+
+  private async findModifier(id: string, scope: BrandScope) {
+    const modifier = await this.prisma.modifier.findUnique({
+      where: { id },
+      select: { productId: true, minCount: true, maxCount: true, product: { select: { brandId: true } } },
+    });
+    if (!modifier) throw new NotFoundException('Modifier not found');
+    assertInScope(scope, modifier.product.brandId);
+    return modifier;
+  }
+}
+
+function categoryNotEmpty(productCount?: number) {
+  return menuConflict(
+    'CATEGORY_NOT_EMPTY',
+    'Move or delete the products of this category first',
+    productCount === undefined ? {} : { productCount },
+  );
+}
+
+function assertCountRange(minCount: number, maxCount: number): void {
+  if (minCount > maxCount) {
+    throw menuBadRequest('MODIFIER_RANGE', 'minCount cannot be greater than maxCount');
+  }
+}
+
+/** How many of this modifier a cart line carries (`modifiersJson` is `{ [modifierId]: count }`). */
+function modifierCount(json: Prisma.JsonValue, modifierId: string): number {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return 0;
+  return Number(json[modifierId] ?? 0);
+}
+
+/**
+ * Removes cart lines and re-totals the carts they leave, so a basket never
+ * shows a subtotal for something that is no longer in it. Carts are
+ * ephemeral; placed orders keep their own snapshot and are not touched.
+ */
+async function dropCartLines(
+  tx: Prisma.TransactionClient,
+  lines: ReadonlyArray<{ id: string; cartId: string }>,
+): Promise<void> {
+  if (lines.length === 0) return;
+  await tx.cartItem.deleteMany({ where: { id: { in: lines.map((l) => l.id) } } });
+  for (const cartId of new Set(lines.map((l) => l.cartId))) {
+    const rest = await tx.cartItem.findMany({ where: { cartId }, select: { unitPriceCents: true, quantity: true } });
+    const subtotalCents = rest.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+    await tx.cart.update({
+      where: { id: cartId },
+      data: rest.length === 0 ? { subtotalCents, etaSeconds: 0 } : { subtotalCents },
     });
   }
+}
+
+async function nextCategorySortOrder(db: Prisma.TransactionClient, brandId: string): Promise<number> {
+  const { _max } = await db.category.aggregate({ where: { brandId }, _max: { sortOrder: true } });
+  return (_max.sortOrder ?? -1) + 1;
+}
+
+async function nextProductSortOrder(db: Prisma.TransactionClient, categoryId: string): Promise<number> {
+  const { _max } = await db.product.aggregate({ where: { categoryId }, _max: { sortOrder: true } });
+  return (_max.sortOrder ?? -1) + 1;
+}
+
+async function nextVariationSortOrder(
+  db: Prisma.TransactionClient,
+  productId: string,
+  type: VariationType,
+): Promise<number> {
+  const { _max } = await db.variation.aggregate({ where: { productId, type }, _max: { sortOrder: true } });
+  return (_max.sortOrder ?? -1) + 1;
+}
+
+async function nextModifierSortOrder(db: Prisma.TransactionClient, productId: string): Promise<number> {
+  const { _max } = await db.modifier.aggregate({ where: { productId }, _max: { sortOrder: true } });
+  return (_max.sortOrder ?? -1) + 1;
 }

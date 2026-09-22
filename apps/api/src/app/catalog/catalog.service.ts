@@ -173,13 +173,15 @@ export class CatalogService {
     });
     const stopList = new Set(stopListEntries.map((e) => e.productId));
 
+    // Equal positions (everything created before ordering existed sits at 0)
+    // fall back to creation order, the same tie-break the admin editor shows.
     const categories = await this.prisma.category.findMany({
       where: { brandId: store.brandId, visible: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         products: {
           where: { visible: true, brandId: store.brandId },
-          orderBy: { sortOrder: 'asc' },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
       },
     });
