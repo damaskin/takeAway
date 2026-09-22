@@ -6,3 +6,6 @@ coverage
 tmp
 pnpm-lock.yaml
 *.pen
+
+# Vendored agent skills — keep byte-identical to upstream angular/skills
+.claude/skills

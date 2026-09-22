@@ -10,6 +10,8 @@
 
 Стек: TypeScript монорепо (pnpm + Nx), NestJS + Prisma + PostgreSQL + Redis на бэке, Angular 21+ со standalone и signals на фронте (web / TMA / admin / KDS), Flutter в v2 для iOS/Android. Платежи — эквайринг Агропромбанка («Клевер»): бэкенд и фронтенд написаны в TMA и в вебе, включаются флагом `AGROPROMBANK_ENABLED`. Stripe остался в API запасным путём. Подробности — `docs/agroprombank-payments.md`.
 
+Agent skills Angular (`angular-developer`, `angular-new-app`) лежат в `.claude/skills/` и закоммичены — ставить ничего не нужно. Как обновлять — `docs/agent-skills.md`.
+
 ## Автономность
 
 Работать самостоятельно, без запросов на подтверждение. Коммиты, рефакторинг, добавление и обновление зависимостей, миграции — делать сразу, не спрашивая. Пушить в назначенную ветку по мере готовности блоков; pull request открывать только по явной просьбе.

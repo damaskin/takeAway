@@ -31,6 +31,7 @@
     "agro:mock": "tsx tools/agroprombank-mock/server.ts",
     "agro:dev-keys": "tsx tools/agroprombank-mock/dev-keys.ts",
     "agro:probe": "tsx tools/agroprombank-probe.ts",
+    "skills:update": "npx -y skills@latest update --project -y",
     "prepare": "husky"
   },
   "prisma": {
