@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -26,6 +26,8 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
       <button
         type="button"
         (click)="toggleCreateForm()"
+        [disabled]="!hasBrand()"
+        class="disabled:opacity-50"
         style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
       >
         {{ (creatingOpen() ? 'common.close' : 'admin.stores.add') | translate }}
@@ -33,6 +35,31 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
     </div>
 
     <section style="padding: 24px; display: flex; flex-direction: column; gap: 16px">
+      @if (brandBlocker(); as blocker) {
+        <div
+          style="padding: 16px 18px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-left: 4px solid var(--color-amber); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+        >
+          <p style="margin: 0 0 6px; font-weight: 600">{{ 'admin.brandContext.blockedTitle' | translate }}</p>
+          @if (blocker === 'error') {
+            <p style="margin: 0 0 10px; color: var(--color-text-secondary)">
+              {{ 'admin.brandContext.loadFailed' | translate }} {{ activeBrand.loadError() }}
+            </p>
+            <button
+              type="button"
+              (click)="activeBrand.refresh()"
+              [disabled]="activeBrand.loading()"
+              style="height: 32px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 8px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+            >
+              {{ 'common.retry' | translate }}
+            </button>
+          } @else {
+            <p style="margin: 0; color: var(--color-text-secondary)">
+              {{ 'admin.brandContext.noBrandsHint' | translate }}
+            </p>
+          }
+        </div>
+      }
+
       @if (creatingOpen()) {
         <form
           [formGroup]="createForm"
@@ -269,7 +296,19 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
 export class StoresPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
-  private readonly activeBrand = inject(ActiveBrandService);
+  readonly activeBrand = inject(ActiveBrandService);
+
+  /**
+   * Why the page can't create anything: `error` = the brand list failed to
+   * load, `empty` = it loaded and the account has no brand yet. `null` =
+   * either we're still loading or there's a brand and we're good.
+   */
+  readonly brandBlocker = computed<'error' | 'empty' | null>(() => {
+    if (this.activeBrand.loadError()) return 'error';
+    if (this.activeBrand.isEmpty()) return 'empty';
+    return null;
+  });
+  readonly hasBrand = computed(() => this.activeBrand.active() !== null);
 
   readonly currencies = CURRENCIES;
   readonly stores = signal<StoreAdminDto[]>([]);
@@ -349,7 +388,11 @@ export class StoresPage implements OnInit {
   submitCreate(): void {
     const brand = this.activeBrand.active();
     if (!brand) {
-      this.createError.set(this.translate.instant('admin.stores.noBrand'));
+      this.createError.set(
+        this.activeBrand.loadError()
+          ? `${this.translate.instant('admin.brandContext.loadFailed')} ${this.activeBrand.loadError()}`
+          : this.translate.instant('admin.brandContext.noBrandsHint'),
+      );
       return;
     }
     const v = this.createForm.getRawValue();

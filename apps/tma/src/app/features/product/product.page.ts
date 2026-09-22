@@ -227,24 +227,11 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) return;
-    // The store the customer opened this product from. Falling back to the
-    // first store in the catalog would add the item to an unrelated store's
-    // cart once more than one brand is live, so only use it as a last resort.
-    const active = this.activeStore.current();
-    if (active) {
-      this.storeId = active;
-    } else {
-      this.catalog.listStores().subscribe({
-        next: (list) => {
-          const first = list[0];
-          if (first) this.storeId = first.id;
-        },
-      });
-    }
     this.catalog.getProduct(slug).subscribe({
       next: (p) => {
         this.product.set(p);
         this.initializeDefaults(p);
+        this.resolveStore(p.brandId);
         this.refreshMainButton();
       },
     });
@@ -335,6 +322,25 @@ export class TmaProductPage implements OnInit, OnDestroy {
     }
     const label = this.translate.instant('tma.product.cta.add', { total: this.price(this.totalCents()) });
     this.tg.setMainButton(label, () => this.onMainButton());
+  }
+
+  /**
+   * A cart rejects a product whose brand differs from the store's, so the
+   * store the customer was last browsing only works when it belongs to the
+   * same brand — a product opened from a shared link usually does not. Fall
+   * back to a store of the product's own brand rather than to whichever
+   * store the catalog happens to list first.
+   */
+  private resolveStore(brandId: string): void {
+    this.catalog.listStores().subscribe({
+      next: (list) => {
+        const active = list.find((s) => s.id === this.activeStore.current());
+        const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
+        this.storeId = fit?.id ?? null;
+        if (!fit) this.error.set(this.translate.instant('tma.product.noStore'));
+        this.refreshMainButton();
+      },
+    });
   }
 
   private onMainButton(): void {

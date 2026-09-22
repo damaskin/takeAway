@@ -39,6 +39,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     user: 'User',
     points: 'pts',
     requestFailed: 'Request failed',
+    retry: 'Retry',
     genericError: 'Something went wrong, please try again',
     units: {
       min: 'min',
@@ -160,6 +161,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         adding: 'Adding…',
         goToCheckout: 'Go to checkout · {{count}} in cart',
         signInPrompt: 'Sign in to place an order.',
+        noStore: 'No store from this brand is taking orders right now.',
       },
     },
     checkout: {
@@ -546,9 +548,24 @@ export const TRANSLATIONS_EN: TranslationTree = {
       rejectedTitle: 'Your brand was rejected',
       rejectedGeneric: 'Contact support if you think this is a mistake — the reviewer did not leave a note.',
     },
+    brandContext: {
+      blockedTitle: 'No active brand',
+      loadFailed: 'Could not load the brand list:',
+      noBrandsHint:
+        'Stores, menu and promos live inside a brand, and this account has none yet. A super-admin can create one on the Brands page; a brand owner gets theirs assigned by a super-admin.',
+    },
     brands: {
       title: 'Brand moderation',
       subtitle: 'Review self-serve business applications and control public visibility.',
+      create: {
+        cta: '+ New brand',
+        hint: 'A brand created by a super-admin is approved right away and becomes usable as the working context for stores and menu.',
+        name: 'Name',
+        slug: 'Slug',
+        currency: 'Currency',
+        locale: 'Locale',
+        submit: 'Create brand',
+      },
       tabs: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' },
       status: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' },
       empty: 'No brands in this bucket.',
@@ -723,7 +740,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       create: 'Create store',
       delete: 'Delete',
       deleteConfirm: 'Delete store "{{name}}"? Existing orders will be retained.',
-      noBrand: 'No brand owned by this user.',
       edit: 'Edit',
       hours: 'Hours & stop-list',
       empty: 'No stores yet.',
@@ -912,7 +928,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         pointsMultiplier: '{{value}}× pts',
       },
       errors: {
-        noBrand: 'Refresh first to load a brand context',
         createFailed: 'Could not create promo',
       },
     },
@@ -1012,6 +1027,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       offlinePrompt: 'No connection to the server — adding to the cart is unavailable.',
       addFailed: 'Could not add this item to the cart. Please try again.',
+      noStore: 'No store from this brand is taking orders right now.',
       cta: {
         add: 'Add · {{total}}',
       },

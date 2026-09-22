@@ -236,6 +236,7 @@ export class CatalogService {
     return {
       id: product.id,
       categoryId: product.categoryId,
+      brandId: product.brandId,
       slug: product.slug,
       name: product.name,
       description: product.description,

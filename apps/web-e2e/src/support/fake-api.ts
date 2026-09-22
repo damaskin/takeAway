@@ -54,6 +54,9 @@ export const STORE = {
 export const PRODUCT = {
   id: 'product-1',
   categoryId: 'cat-1',
+  // The product page matches this against the stores it lists to find one
+  // that can actually make the item — `STORE.brandId` has to agree.
+  brandId: 'brand-1',
   slug: 'flat-white',
   name: 'Flat White',
   description: 'Double ristretto, steamed milk.',

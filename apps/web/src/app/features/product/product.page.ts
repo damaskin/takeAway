@@ -1,7 +1,7 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
+import type { Modifier, ProductDetail, StoreListItem, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -252,7 +252,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <button
               type="button"
               (click)="addToCart()"
-              [disabled]="adding() || !authStore.isAuthenticated() || !storeId()"
+              [disabled]="adding() || !authStore.isAuthenticated() || !resolvedStore()"
               class="flex items-center justify-center disabled:opacity-60"
               style="flex: 1; height: 56px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); gap: 12px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
             >
@@ -264,7 +264,14 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               }}</span>
             </button>
           </div>
-          @if (!authStore.isAuthenticated()) {
+          @if (noStoreForBrand()) {
+            <p
+              class="text-center"
+              style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)"
+            >
+              {{ 'web.product.cta.noStore' | translate }}
+            </p>
+          } @else if (!authStore.isAuthenticated()) {
             <p
               class="text-center"
               style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
@@ -277,7 +284,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
           } @else if (cartItemCount() > 0) {
             <a
               routerLink="/checkout"
-              [queryParams]="{ store: storeSlug() }"
+              [queryParams]="{ store: resolvedStore()?.slug }"
               class="flex items-center justify-center"
               style="margin-top: 4px; height: 48px; background: var(--color-espresso); color: var(--color-foam); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
               >{{ 'web.product.cta.goToCheckout' | translate: { count: cartItemCount() } }}</a
@@ -318,8 +325,7 @@ export class ProductPage implements OnInit {
 
   readonly adding = signal(false);
   readonly addError = signal<string | null>(null);
-  readonly storeId = signal<string | null>(null);
-  readonly storeSlug = signal<string | null>(null);
+  readonly stores = signal<StoreListItem[]>([]);
   readonly cartItemCount = this.cart.itemCount;
 
   readonly product = signal<ProductDetail | null>(null);
@@ -353,6 +359,36 @@ export class ProductPage implements OnInit {
     return unit * this.quantity();
   });
 
+  /**
+   * The store this item will be added to. A cart rejects a product whose
+   * brand differs from the store's, and a product opened by its own URL
+   * carries no store, so taking the first entry of the catalog — which is
+   * ordered by distance and ETA across every brand — added the item to
+   * whichever brand happened to sort first, and started failing the moment
+   * a second brand went live.
+   */
+  readonly resolvedStore = computed<StoreListItem | null>(() => {
+    const product = this.product();
+    const stores = this.stores();
+    if (!product || stores.length === 0) return null;
+    return stores.find((s) => s.brandId === product.brandId) ?? null;
+  });
+
+  /** True once we know the product's brand has no store taking orders. */
+  readonly noStoreForBrand = computed(
+    () => this.product() !== null && this.stores().length > 0 && this.resolvedStore() === null,
+  );
+
+  constructor() {
+    // Load the cart of whichever store ends up serving this product, so the
+    // "go to checkout" line reflects that store and not another brand's.
+    effect(() => {
+      const store = this.resolvedStore();
+      if (!store || !this.authStore.isAuthenticated()) return;
+      this.cart.load(store.id).subscribe();
+    });
+  }
+
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) {
@@ -368,22 +404,16 @@ export class ProductPage implements OnInit {
     });
 
     this.catalog.listStores().subscribe({
-      next: (list) => {
-        const first = list[0];
-        if (!first) return;
-        this.storeId.set(first.id);
-        this.storeSlug.set(first.slug);
-        if (this.authStore.isAuthenticated()) {
-          this.cart.load(first.id).subscribe();
-        }
-      },
+      next: (list) => this.stores.set(list),
+      error: () => this.stores.set([]),
     });
   }
 
   addToCart(): void {
     const p = this.product();
-    const storeId = this.storeId();
-    if (!p || !storeId) return;
+    const store = this.resolvedStore();
+    if (!p || !store) return;
+    const storeId = store.id;
     this.adding.set(true);
     this.addError.set(null);
     this.cart

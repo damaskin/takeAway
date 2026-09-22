@@ -14,6 +14,13 @@ const STORAGE_KEY = 'takeaway.admin.activeBrandId';
  * The active id is persisted in localStorage so refresh keeps the same
  * context. If the persisted id falls outside the user's current scope
  * (e.g. SUPER_ADMIN revoked a brand) it's reset to the first available.
+ *
+ * "No active brand" has two very different causes and the pages that
+ * depend on it have to tell them apart: the account genuinely owns no
+ * brand yet ({@link loadError} is null), or the brand list failed to load
+ * and we have no idea ({@link loadError} holds the reason). Reporting the
+ * second as the first is what made an expired session or a 500 read as
+ * "this user has no brand".
  */
 @Injectable({ providedIn: 'root' })
 export class ActiveBrandService {
@@ -23,15 +30,20 @@ export class ActiveBrandService {
   private readonly _activeId = signal<string | null>(this.readStored());
   private readonly _loading = signal(false);
   private readonly _loaded = signal(false);
+  private readonly _loadError = signal<string | null>(null);
 
   readonly brands = this._brands.asReadonly();
   readonly loading = this._loading.asReadonly();
   readonly loaded = this._loaded.asReadonly();
+  readonly loadError = this._loadError.asReadonly();
   readonly activeId = this._activeId.asReadonly();
   readonly active = computed<BrandDto | null>(() => {
     const id = this._activeId();
     return this._brands().find((b) => b.id === id) ?? null;
   });
+
+  /** True once the list has loaded successfully and came back empty. */
+  readonly isEmpty = computed(() => this._loaded() && !this._loadError() && this._brands().length === 0);
 
   constructor() {
     effect(() => {
@@ -50,6 +62,7 @@ export class ActiveBrandService {
   refresh(): void {
     if (this._loading()) return;
     this._loading.set(true);
+    this._loadError.set(null);
     this.api.listMyBrands().subscribe({
       next: (list) => {
         this._brands.set(list);
@@ -61,9 +74,10 @@ export class ActiveBrandService {
         this._loading.set(false);
         this._loaded.set(true);
       },
-      error: () => {
+      error: (err) => {
         this._brands.set([]);
         this._activeId.set(null);
+        this._loadError.set(extractMessage(err));
         this._loading.set(false);
         this._loaded.set(true);
       },
@@ -75,14 +89,33 @@ export class ActiveBrandService {
     this._activeId.set(brandId);
   }
 
+  /** Adds a freshly created brand and switches to it without a round-trip. */
+  adopt(brand: BrandDto): void {
+    this._brands.update((list) =>
+      [...list.filter((b) => b.id !== brand.id), brand].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    this._activeId.set(brand.id);
+    this._loadError.set(null);
+    this._loaded.set(true);
+  }
+
   reset(): void {
     this._brands.set([]);
     this._activeId.set(null);
     this._loaded.set(false);
+    this._loadError.set(null);
   }
 
   private readStored(): string | null {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(STORAGE_KEY);
   }
+}
+
+function extractMessage(err: unknown): string {
+  const maybe = err as { error?: { message?: unknown }; status?: number; message?: unknown };
+  if (typeof maybe.error?.message === 'string') return maybe.error.message;
+  if (maybe.status === 0) return 'Network error';
+  if (typeof maybe.message === 'string') return maybe.message;
+  return 'Failed to load brands';
 }

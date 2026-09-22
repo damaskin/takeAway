@@ -383,7 +383,11 @@ export class AdminPromoPage implements OnInit {
   submit(): void {
     const brandId = this.activeBrand.activeId();
     if (!brandId) {
-      this.formError.set(this.translate.instant('admin.promo.errors.noBrand'));
+      this.formError.set(
+        this.activeBrand.loadError()
+          ? `${this.translate.instant('admin.brandContext.loadFailed')} ${this.activeBrand.loadError()}`
+          : this.translate.instant('admin.brandContext.noBrandsHint'),
+      );
       return;
     }
     if (this.form.invalid) return;

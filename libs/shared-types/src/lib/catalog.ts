@@ -116,6 +116,8 @@ export interface ProductSummary {
 }
 
 export interface ProductDetail extends ProductSummary {
+  /** Brand that owns this product — only a store of this brand can make it. */
+  brandId: string;
   variations: Variation[];
   modifiers: Modifier[];
 }

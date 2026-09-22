@@ -607,7 +607,7 @@ POST   /me/referrals/apply           { code }
 GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter
 GET    /stores/:idOrSlug
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
-GET    /products/:idOrSlug
+GET    /products/:idOrSlug          // включает brandId — по нему клиент выбирает точку, где товар можно приготовить
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
@@ -662,16 +662,22 @@ PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVE
 
 ```
 POST   /business/register            { brand, contact, ... } → { brand: { moderationStatus: PENDING } }
-GET    /my-brand                     (BRAND_ADMIN)
-PATCH  /my-brand                     (PATCH-только для approved брендов)
-POST   /my-brand/logo                (multipart → S3/MinIO)
+GET    /my-brand[?brandId=]          (BRAND_ADMIN → свой бренд; SUPER_ADMIN → бренд из brandId)
+PATCH  /my-brand[?brandId=]          (PATCH-только для approved брендов)
+POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO)
 ```
+
+`brandId` учитывается только для SUPER_ADMIN, у которого своего бренда нет: это бренд,
+выбранный переключателем в админке. Без параметра он получает единственный бренд установки.
+Для BRAND_ADMIN бренд всегда резолвится по `Brand.ownerId`, параметр игнорируется.
 
 ### 6.9. Admin (JWT + RBAC: SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER)
 
 ```
 # Каталог (scope to brand для BRAND_ADMIN)
 GET/POST/PATCH                       /admin/brands[, /:id, /:id/moderation]
+#   POST /admin/brands (SUPER_ADMIN) создаёт бренд сразу APPROVED — модератор здесь
+#   сам автор; это единственный способ завести первый бренд на свежей установке.
 GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder
 GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]

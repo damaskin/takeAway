@@ -107,6 +107,15 @@ export class ProductDto {
 }
 
 export class ProductDetailDto extends ProductDto {
+  /**
+   * The brand this product belongs to. A cart item is rejected when the
+   * store it is added to belongs to a different brand, and a product opened
+   * by its own URL carries no store, so the client needs this to pick one
+   * that can actually make it.
+   */
+  @ApiProperty()
+  brandId!: string;
+
   @ApiProperty({ type: [VariationDto] })
   variations!: VariationDto[];
 
