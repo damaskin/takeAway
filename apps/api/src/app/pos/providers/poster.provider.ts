@@ -359,9 +359,25 @@ function posterPriceCents(p: PosterProductRow): number | null {
   return Math.max(...collect);
 }
 
-function posterImageUrls(p: PosterProductRow): string[] | undefined {
-  const url = p.photo_origin || p.photo;
-  return url ? [url] : undefined;
+/** Where Poster serves the product photos its API names by path. */
+const POSTER_ASSET_ORIGIN = 'https://joinposter.com';
+
+/**
+ * Poster returns product photos as paths relative to its own site
+ * (`/upload/pos_cdb_…/menu/product_….jpeg`). Stored verbatim they resolved
+ * against whichever origin rendered them: takeaway.md answered with the SPA,
+ * and every imported photo showed as broken in the web, the Mini App and the
+ * mobile app. Plain-http links to Poster are upgraded too — the mobile app
+ * does not load cleartext images in release builds, and a browser on https
+ * would flag them as mixed content.
+ */
+export function posterImageUrls(p: Pick<PosterProductRow, 'photo' | 'photo_origin'>): string[] | undefined {
+  const raw = (p.photo_origin || p.photo)?.trim();
+  if (!raw) return undefined;
+  if (raw.startsWith('//')) return [`https:${raw}`];
+  if (raw.startsWith('/')) return [`${POSTER_ASSET_ORIGIN}${raw}`];
+  if (/^http:\/\/([a-z0-9-]+\.)*joinposter\.com\//i.test(raw)) return [raw.replace(/^http:/i, 'https:')];
+  return [raw];
 }
 
 function numberOrUndefined(v: number | string | undefined): number | undefined {
