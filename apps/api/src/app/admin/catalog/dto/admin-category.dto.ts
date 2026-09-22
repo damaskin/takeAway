@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import {
   ArrayNotEmpty,
   IsArray,
@@ -63,7 +63,8 @@ export class CreateCategoryDto {
   visible?: boolean;
 }
 
-export class UpdateCategoryDto extends PartialType(CreateCategoryDto) {}
+/** A category stays in its brand: `brandId` is not updatable. */
+export class UpdateCategoryDto extends PartialType(OmitType(CreateCategoryDto, ['brandId'] as const)) {}
 
 export class ReorderCategoriesDto {
   @ApiProperty({ type: [String], description: 'Category ids in the desired order' })

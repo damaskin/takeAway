@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
@@ -197,7 +197,8 @@ export class CreateStoreDto {
   workingHours?: WorkingHourInputDto[];
 }
 
-export class UpdateStoreDto extends PartialType(CreateStoreDto) {}
+/** A store stays in its brand: `brandId` is not updatable. */
+export class UpdateStoreDto extends PartialType(OmitType(CreateStoreDto, ['brandId'] as const)) {}
 
 export class ReplaceWorkingHoursDto {
   @ApiProperty({ type: [WorkingHourInputDto] })

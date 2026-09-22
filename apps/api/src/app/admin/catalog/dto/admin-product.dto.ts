@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { DietTag, VariationType } from '@prisma/client';
 import {
   IsArray,
@@ -110,7 +110,8 @@ export class CreateProductDto {
   sortOrder?: number;
 }
 
-export class UpdateProductDto extends PartialType(CreateProductDto) {}
+/** A product stays in its brand: `brandId` is not updatable. */
+export class UpdateProductDto extends PartialType(OmitType(CreateProductDto, ['brandId'] as const)) {}
 
 export class ToggleVisibilityDto {
   @ApiProperty()

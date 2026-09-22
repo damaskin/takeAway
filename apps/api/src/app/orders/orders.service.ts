@@ -84,6 +84,7 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw new BadRequestException('Cart is empty');
+    await this.cart.assertStoreTakesOrders(cart.storeId);
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -402,7 +403,8 @@ export class OrdersService {
     }
     // Brand-level scope: BRAND_ADMIN is restricted to their owned brands.
     // If the caller also passed an explicit ?brandId= we intersect the two sets.
-    if (params.brandIds && params.brandIds.length > 0) {
+    if (params.brandIds) {
+      if (params.brandIds.length === 0) return [];
       if (params.brandId) {
         if (!params.brandIds.includes(params.brandId)) return [];
         where.store = { brandId: params.brandId };

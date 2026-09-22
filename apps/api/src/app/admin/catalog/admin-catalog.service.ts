@@ -307,14 +307,28 @@ export class AdminCatalogService {
     return product;
   }
 
-  createProduct(dto: CreateProductDto, scope: BrandScope = null) {
+  async createProduct(dto: CreateProductDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
+    await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
     return this.prisma.product.create({ data: dto });
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, scope: BrandScope = null) {
-    await this.getProduct(id, scope);
+    const product = await this.getProduct(id, scope);
+    if (dto.categoryId) await this.assertCategoryOfBrand(dto.categoryId, product.brandId);
     return this.prisma.product.update({ where: { id }, data: dto });
+  }
+
+  /**
+   * Category ids are public (they come with every menu), and the public menu
+   * lists a category's products. Without this check a brand could file its
+   * own product under a competitor's category and appear in their menu.
+   */
+  private async assertCategoryOfBrand(categoryId: string, brandId: string): Promise<void> {
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId }, select: { brandId: true } });
+    if (!category || category.brandId !== brandId) {
+      throw new BadRequestException('The category belongs to another brand');
+    }
   }
 
   async deleteProduct(id: string, scope: BrandScope = null) {

@@ -101,10 +101,12 @@ export class DeliveryController {
   @Post('orders/:id/assign')
   @Roles(Role.STORE_MANAGER, Role.BRAND_ADMIN, Role.SUPER_ADMIN)
   @ApiOkResponse()
-  async assign(@Param('id') orderId: string, @Body() dto: AssignRiderDto) {
-    // Scope is enforced inside delivery.service via UserStore pivot lookup;
-    // we don't re-check here because the manager may legitimately be
-    // assigning across their full scope.
+  async assign(@CurrentUser() user: AuthenticatedUser, @Param('id') orderId: string, @Body() dto: AssignRiderDto) {
+    // The service only checks the rider against the order's store; whether
+    // the caller may dispatch for that store is checked here.
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { storeId: true } });
+    if (!order) throw new NotFoundException('Order not found');
+    await this.assertInScope(user, order.storeId);
     return this.delivery.assignRider(orderId, dto.riderId);
   }
 

@@ -138,12 +138,45 @@ describe('CartService.addItem guards', () => {
   it('answers 400, not 500, when the store belongs to another brand', async () => {
     const service = await build({
       product: { findUnique: jest.fn().mockResolvedValue(product) },
-      store: { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-b' }) },
+      store: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ brandId: 'brand-b', status: 'OPEN', brand: { moderationStatus: 'APPROVED' } }),
+      },
     });
 
     await expect(service.addItem('user-1', add)).rejects.toMatchObject({
       status: 400,
       message: 'Product does not belong to this store brand',
     });
+  });
+
+  it('refuses a store that has been switched off, even from a direct link', async () => {
+    const service = await build({
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
+      store: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ brandId: 'brand-a', status: 'CLOSED', brand: { moderationStatus: 'APPROVED' } }),
+      },
+    });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
+      status: 400,
+      message: 'This store is not taking orders right now',
+    });
+  });
+
+  it('treats a store of a brand still in moderation as not there', async () => {
+    const service = await build({
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
+      store: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ brandId: 'brand-a', status: 'OPEN', brand: { moderationStatus: 'PENDING' } }),
+      },
+    });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({ status: 404, message: 'Store not found' });
   });
 });

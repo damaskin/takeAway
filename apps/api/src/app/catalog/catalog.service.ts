@@ -178,7 +178,7 @@ export class CatalogService {
       orderBy: { sortOrder: 'asc' },
       include: {
         products: {
-          where: { visible: true },
+          where: { visible: true, brandId: store.brandId },
           orderBy: { sortOrder: 'asc' },
         },
       },

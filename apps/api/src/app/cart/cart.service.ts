@@ -38,7 +38,7 @@ export class CartService {
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
     const product = await this.loadProduct(dto.productId);
     if (!product) throw new NotFoundException('Product not found');
-    if (product.brandId !== (await this.getStoreBrandId(dto.storeId))) {
+    if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId))) {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
@@ -217,12 +217,19 @@ export class CartService {
     });
   }
 
-  private async getStoreBrandId(storeId: string): Promise<string> {
+  /**
+   * The store exists, is not switched off, and its brand passed moderation.
+   * The catalog only hides the rest; a direct link, a QR code or an old cart
+   * could still order from a closed store or an unapproved brand. Returns
+   * the store's brand id.
+   */
+  async assertStoreTakesOrders(storeId: string): Promise<string> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: { brandId: true },
+      select: { brandId: true, status: true, brand: { select: { moderationStatus: true } } },
     });
-    if (!store) throw new NotFoundException('Store not found');
+    if (!store || store.brand.moderationStatus !== 'APPROVED') throw new NotFoundException('Store not found');
+    if (store.status === 'CLOSED') throw new BadRequestException('This store is not taking orders right now');
     return store.brandId;
   }
 
