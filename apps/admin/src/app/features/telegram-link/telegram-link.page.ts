@@ -1,6 +1,11 @@
 import { Component, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { TELEGRAM_AUTH_CONFIG, TelegramLoginButtonComponent, type TelegramLoginWidgetUser } from '@takeaway/ui-kit';
+import {
+  TELEGRAM_AUTH_CONFIG,
+  TelegramLoginButtonComponent,
+  TelegramOidcButtonComponent,
+  type TelegramLoginWidgetUser,
+} from '@takeaway/ui-kit';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -14,7 +19,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 @Component({
   selector: 'app-telegram-link',
   standalone: true,
-  imports: [TranslatePipe, TelegramLoginButtonComponent],
+  imports: [TranslatePipe, TelegramLoginButtonComponent, TelegramOidcButtonComponent],
   template: `
     <section style="padding: 32px; max-width: 640px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -42,7 +47,18 @@ import { AuthStore } from '../../core/auth/auth.store';
           </p>
         }
 
-        @if (botUsername) {
+        @if (clientId) {
+          <div style="max-width: 320px">
+            <lib-telegram-oidc-button
+              [clientId]="clientId"
+              [requestWrite]="false"
+              [lang]="lang()"
+              [label]="'admin.telegramLink.button' | translate"
+              [unavailableLabel]="'admin.telegramLink.failed' | translate"
+              (idToken)="onTelegramIdToken($event)"
+            />
+          </div>
+        } @else if (botUsername) {
           <div class="flex justify-start">
             <lib-telegram-login-button [botUsername]="botUsername" (auth)="onTelegramAuth($event)" />
           </div>
@@ -73,15 +89,28 @@ export class TelegramLinkPage {
   private readonly translate = inject(TranslateService);
 
   readonly botUsername = this.cfg.botUsername;
+  readonly clientId = this.cfg.clientId;
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
   readonly linkedId = (): string | null => this.store.user()?.telegramUserId ?? null;
 
+  lang(): string {
+    return this.translate.currentLang || this.translate.getDefaultLang() || 'ru';
+  }
+
+  onTelegramIdToken(idToken: string): void {
+    this.link(this.auth.linkTelegramIdToken(idToken));
+  }
+
   onTelegramAuth(payload: TelegramLoginWidgetUser): void {
+    this.link(this.auth.linkTelegram(payload));
+  }
+
+  private link(request: ReturnType<AuthService['linkTelegramIdToken']>): void {
     this.loading.set(true);
     this.error.set(null);
-    this.auth.linkTelegram(payload).subscribe({
+    request.subscribe({
       next: () => {
         this.loading.set(false);
         // linkTelegram's response is the updated AuthUser (now including

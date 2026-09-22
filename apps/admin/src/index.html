@@ -7,9 +7,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <script>
-      // Telegram Login Widget bot username. Used by the /admin/telegram-link
-      // staff-link flow (not authentication — staff sign in with email +
-      // password). Public value; token stays server-side.
+      // Telegram for the /telegram-link staff flow (not authentication —
+      // staff sign in with email + password). Public values; the token stays
+      // server-side. The client id (the bot's numeric id) switches to
+      // Telegram Login once this origin is in the bot's Allowed URLs in
+      // @BotFather; while it is empty the legacy widget uses the username.
+      window.__TELEGRAM_CLIENT_ID = '';
       window.__TELEGRAM_BOT_USERNAME = 'takaway_tgbot';
 
       // Sentry for this SPA. The browser DSN is public by design; leave it

@@ -18,7 +18,7 @@
 | **M3** Лояльность              | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)                                                                                                                                           |
 | **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff, операционные алерты в Telegram                                                                                     |
 | **M5** Admin расширенный       | 🟡     | Аналитика, marketing campaigns broadcast, multi-store fee overrides, staff roster + invites, password rotation. Materialized view `mv_orders_daily` (refresh каждые 5 мин) питает summary/revenue/stores; top-products и cohort пока на raw queries |
-| **M6** Mobile (Flutter)        | 🟡     | Scaffolding в `apps/mobile/` (pubspec.yaml с целевыми deps, lib skeleton, README с PR-разбивкой M6 PR1–PR8). До `flutter create` ничего не собирается.                                                                                              |
+| **M6** Mobile (Flutter)        | 🟡     | Приложение iOS/Android в `apps/mobile` (Flutter 3.38): весь путь клиента, live-статус, карты, лояльность, оплата Агропромбанком, RU/EN. FCM-пуши на сервере. Не выпущено: ключи Firebase/Google/Apple, аккаунты сторов, сборка iOS на Mac           |
 | **M7** Scale & polish          | 🟡     | Sentry на API и всех четырёх SPA, readiness-проба с Postgres + Redis (деплой-гейт смотрит на неё), операционные алерты. Нагрузочное тестирование и A/B — не начаты                                                                                  |
 
 ### 0.1a. Что осталось до пилота
@@ -48,6 +48,7 @@
 - **NestJS 11** + Prisma **6.19**, BullMQ **5.74**, Stripe SDK **22**, Socket.io **4.8**, nodemailer **8**
 - **Email:** SMTP через nodemailer (Mailgun/Postmark из ТЗ — не подключены)
 - **Storage:** MinIO + Cloudflare-style CDN (Cloudflare R2 из ТЗ — не подключен)
+- **Mobile:** Flutter **3.38** / Dart **3.10**, Riverpod **2.6** (не 3 — конфликтует с пинами `flutter_test`), go_router, Dio + Retrofit; карты — `flutter_map` + OSM, а не Google/Mapbox; платежи — Агропромбанк через API, а не `flutter_stripe`; кеш каталога — JSON-файлы, а не Isar/Hive (см. 2.3)
 
 ### 0.4. База данных
 
@@ -188,21 +189,23 @@ takeaway/
 - **Payments**: **Stripe SDK 22** (Payment Intents + webhook)
 - **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.md`. Cloudflare R2 — потенциальная замена.
 - **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset). Mailgun/Postmark — резерв.
-- **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**. FCM/APNS — будущий M6 (mobile).
+- **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**; **FCM HTTP v1** для iOS/Android (APNs — через Firebase), сервис-аккаунт в `FIREBASE_*`, без SDK — JWT подписывается сам.
 - **Telegram**: бот через прямые вызовы Telegram Bot API (push на rider, brand staff, customer)
 - **Logs**: Pino 10 structured logs
 - **Monitoring**: Sentry/Prometheus/Grafana — плановое M7
 
-### 2.3. Mobile (v2)
+### 2.3. Mobile — фактически
 
-- **Flutter 3.x** (Dart)
-- **State**: Riverpod 2
-- **Networking**: Dio + Retrofit (сгенерированный клиент из OpenAPI)
-- **Storage**: Isar / Hive
-- **Push**: `firebase_messaging`
-- **Auth**: `google_sign_in`, `sign_in_with_apple`
-- **Maps**: `google_maps_flutter` или `mapbox_gl`
-- **Payments**: `flutter_stripe`
+- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Bundle / application id — `md.takeaway.app`
+- **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
+- **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
+- **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
+- **Realtime**: `socket_io_client` к `/ws` на API-хосте; без сокета — опрос раз в 5 с
+- **Storage**: `shared_preferences` для настроек, JSON-файлы в кеше для меню и точек (офлайн-открытие)
+- **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`
+- **Maps**: `flutter_map` + OpenStreetMap, маршрут — deep link в Apple/Google Maps
+- **Payments**: привязанные карты Агропромбанка через API (как web/TMA); Stripe в регионе не работает
+- **Тесты**: unit + widget (`flutter test`, stateful fake API), интеграционный прогон на устройстве против живого API с KDS-переходами (`integration_test/`)
 
 ### 2.4. Инфраструктура — фактически
 
@@ -226,7 +229,7 @@ takeaway/
 | iiko Cloud        | POS меню/stop-list/orders  | ✅ menu + stop-list (cron) + outgoing orders                 |
 | Poster            | POS + outgoing orders      | ✅ menu/stop-list/orders/webhooks                            |
 | Twilio (SMS OTP)  | SMS OTP                    | ❌ не подключено (customer auth идёт через Telegram)         |
-| Firebase FCM      | Mobile push                | ❌ нужно для M6 (Flutter)                                    |
+| Firebase FCM      | Mobile push                | 🟡 провайдер готов (HTTP v1), ждёт ключей `FIREBASE_*`       |
 | Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока) |
 | Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия              |
 | Mixpanel          | Product analytics          | ❌ запланировано на M7                                       |
@@ -238,6 +241,8 @@ takeaway/
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
 - **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login Widget**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
+- **Customer в мобильном приложении**: Telegram, Google и Apple (только iOS). Telegram — Telegram Login (OpenID Connect): подтверждение в приложении Telegram или на странице `oauth.telegram.org`, обмен кода на ID-токен по PKCE прямо на устройстве (публичный клиент, без секрета), затем `POST /auth/telegram/oidc`. Client id (= id бота) приложение берёт из `GET /auth/telegram/config`, а не из сборки.
+- **Telegram Login на вебе и в админке**: новая библиотека `oauth.telegram.org/js/telegram-login.js` (попап → ID-токен) включается, когда в `index.html` задан `__TELEGRAM_CLIENT_ID`; до этого работает прежний Login Widget с HMAC по токену бота. ID-токены Telegram проверяются тем же `OAuthIdentityService`, что Google и Apple: JWKS `oauth.telegram.org/.well-known/jwks.json`, алгоритмы RS256/ES256, `iss = https://oauth.telegram.org`, `aud = client id`. Аккаунт ищется по `telegramUserId` (claim `id`, scope `profile`).
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
@@ -582,8 +587,11 @@ POST   /auth/password/change         { oldPassword, newPassword }    (auth)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 POST   /auth/telegram                { initData } → tokens           (TMA)
-POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens
-POST   /auth/telegram/link           { initData }                    (auth, привязка TG к существующему юзеру)
+POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens   (legacy Login Widget, HMAC)
+POST   /auth/telegram/oidc           { idToken } → tokens            (Telegram Login, OpenID Connect)
+GET    /auth/telegram/config         → { botId, botUsername, clientId }  (public)
+POST   /auth/telegram/link           { ...widgetPayload }            (auth, привязка TG к существующему юзеру)
+POST   /auth/telegram/link/oidc      { idToken }                     (auth, то же через Telegram Login)
 POST   /auth/refresh                 { refreshToken }
 POST   /auth/logout
 GET    /auth/me
@@ -649,11 +657,11 @@ POST   /gift-cards/validate          { code, cartId } → { balanceCents, applic
 GET    /loyalty                      → { balance, tier, lifetimePoints, recentEntries[] }
 ```
 
-### 6.6. Devices (web push)
+### 6.6. Devices (web push + мобильные)
 
 ```
 GET    /devices/vapid-public-key
-POST   /devices                      { type, pushToken, locale }
+POST   /devices                      { type, pushToken, locale }     (type: WEB | TMA | IOS | ANDROID; для IOS/ANDROID — FCM-токен)
 DELETE /devices                      { pushToken }
 ```
 
@@ -763,7 +771,7 @@ WS     /ws                          (события: order.statusChanged, order.
                                               pos.syncJob.progress, notification)
 ```
 
-OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter (M6) тот же контракт через `openapi-generator`.
+OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter — `libs/api-client-dart` (Retrofit + json_serializable), модели проверяются тестами на ответах живого API.
 
 ## 7. Этапы разработки (дорожная карта)
 
@@ -816,18 +824,19 @@ OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, о
 - Staff roster: invite managers + kitchen staff ✅ (вне исходного ТЗ)
 - Brand moderation (banners + rejection note) ✅ (вне исходного ТЗ)
 
-### M6 — Mobile apps (Flutter) 🟡 (kickoff)
+### M6 — Mobile apps (Flutter) 🟡
 
-PR-разбивка зафиксирована в `apps/mobile/README.md`:
+Код готов и проверен на эмуляторе сквозным прогоном против живого API (`apps/mobile/README.md`):
 
-- **PR1** bootstrap: `flutter create`, CI `flutter analyze && flutter test`
-- **PR2** Dart API client: генерация из OpenAPI через `openapi-generator-cli` (template `dart-dio`), Dio interceptors auth/refresh
-- **PR3** Auth: Telegram deep-link + email+password fallback, secure storage refresh token
-- **PR4** Каталог + cart с live-ETA
-- **PR5** Чекаут + Stripe PaymentSheet (Apple Pay / Google Pay)
-- **PR6** Order status: Socket.io live, QR + I'm here
-- **PR7** Push: Firebase FCM/APNS + `/devices` registration, deep-links
-- **PR8** Profile/orders history + store submission
+- Каркас, тема по дизайн-токенам (светлая/тёмная), RU/EN, иконки и сплэш ✅
+- Вход Telegram / Google / Apple, secure storage, ротация refresh ✅
+- Точки (карта + список, «рядом», «открыто сейчас»), меню с поиском, быстрое добавление, конструктор товара ✅
+- Корзина, чекаут ASAP/ко времени, промо, подарочные карты, баллы, доставка, оплата картой Агропромбанка или на месте ✅
+- Live-статус: сокет + опрос, кольцо ETA, код и QR, «Я на месте», геофенсинг, отмена, повтор, чек на почту ✅
+- Push: FCM на сервере + `firebase_messaging` в приложении ✅ (ждёт ключей)
+- Профиль: лояльность, рефералы, подарочные карты, способы оплаты, уведомления ✅
+- CI: workflow `Mobile` (analyze, тесты, release-APK) ✅
+- Выпуск: ключи Firebase/Google/Apple, аккаунты App Store / Google Play, сборка iOS на Mac, подпись release ❌
 
 ### M7 — Scale & polish ❌
 

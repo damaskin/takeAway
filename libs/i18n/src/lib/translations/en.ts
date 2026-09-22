@@ -254,8 +254,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       telegramPrompt: 'Sign in with your Telegram account',
       telegramUnavailable: 'Telegram sign-in is not configured for this deployment.',
       continueWithApple: 'Continue with Apple',
+      continueWithTelegram: 'Log in with Telegram',
       googleUnavailable: 'Google sign-in is unavailable right now.',
       appleUnavailable: 'Apple sign-in is unavailable right now.',
+      telegramFailed: 'Telegram sign-in is unavailable right now.',
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
@@ -559,6 +561,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       linkedNote:
         'You will now receive order events in Telegram. Tap the button again to relink under a different account.',
       unavailable: 'Telegram is not configured on this deployment — ask your admin to set the bot username.',
+      button: 'Link Telegram',
+      failed: 'Telegram did not confirm the link. Try again.',
     },
     settings: {
       title: 'Brand settings',
