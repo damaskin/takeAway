@@ -11,8 +11,9 @@ export class ConfigController {
 
   /**
    * Runtime feature snapshot. Public — it only carries ops-level
-   * booleans (nothing user-specific), and every client fetches it on
-   * start to know which modules to render.
+   * booleans and the platform's public support contact (nothing
+   * user-specific), and every client fetches it on start to know which
+   * modules to render.
    */
   @Get('features')
   @Public()

@@ -177,7 +177,7 @@ function taxLine(taxCents: number, included: boolean, fmt: (cents: number) => st
   return included ? `<p>В том числе налог / incl. tax: ${amount}</p>` : `<p>Налог / tax: ${amount}</p>`;
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
       case '&':
