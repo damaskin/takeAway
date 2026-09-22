@@ -1,8 +1,9 @@
 import { Test } from '@nestjs/testing';
-import type { Modifier, Variation } from '@prisma/client';
+import type { CartItem, Modifier, Variation } from '@prisma/client';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CartChangedException } from './cart-changed.exception';
 import { CartService, type PricedProduct } from './cart.service';
 import type { AddCartItemDto } from './dto/add-cart-item.dto';
 
@@ -274,6 +275,141 @@ describe('CartService option rules on add-to-cart', () => {
     prisma.product.findUnique.mockResolvedValue(latte({ visible: false }));
 
     await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
+  });
+});
+
+/**
+ * Checkout prices the cart again against the menu as it is now. A line the
+ * menu no longer supports must not be charged or reach the kitchen as it was
+ * stored; the customer gets a 409 and a cart that shows the truth.
+ */
+describe('CartService.repriceForCheckout', () => {
+  let prisma: {
+    $transaction: jest.Mock;
+    cartItem: { deleteMany: jest.Mock; update: jest.Mock };
+    cart: { findUnique: jest.Mock; update: jest.Mock };
+  };
+  let service: CartService;
+
+  beforeEach(async () => {
+    prisma = {
+      $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+      cartItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      cart: {
+        findUnique: jest.fn().mockResolvedValue(emptyCart()),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    service = await buildService(prisma);
+  });
+
+  /** A cart row for two L oat lattes with two vanillas each, priced as when it went in. */
+  function row(overrides: Partial<CartItem & { product: PricedProduct }> = {}): CartItem & { product: PricedProduct } {
+    return {
+      id: 'ci-1',
+      cartId: 'cart-1',
+      productId: 'p-latte',
+      quantity: 2,
+      variationIds: ['v-l', 'v-oat'],
+      modifiersJson: { 'm-vanilla': 2 },
+      // 450 + 140 + 60 + 2 × 50
+      unitPriceCents: 750,
+      unitPrepSeconds: 180,
+      notes: 'поменьше пены',
+      createdAt: new Date('2026-09-23T08:00:00Z'),
+      updatedAt: new Date('2026-09-23T08:00:00Z'),
+      product: latte(),
+      ...overrides,
+    };
+  }
+
+  const reprice = (...items: Array<CartItem & { product: PricedProduct }>) =>
+    service.repriceForCheckout({ id: 'cart-1', items });
+
+  async function conflictOf(pending: Promise<unknown>): Promise<CartChangedException> {
+    const err = await pending.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    if (!(err instanceof CartChangedException)) throw new Error(`expected a CartChangedException, got ${err}`);
+    return err;
+  }
+
+  it('hands back lines named and priced for the order when nothing changed', async () => {
+    const [line] = await reprice(row());
+
+    expect(line).toMatchObject({
+      productName: 'Латте',
+      quantity: 2,
+      unitPriceCents: 750,
+      notes: 'поменьше пены',
+      variations: [
+        { id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140 },
+        { id: 'v-oat', type: 'MILK', name: 'Овсяное', priceDeltaCents: 60 },
+      ],
+      modifierLines: [{ id: 'm-vanilla', name: 'Ваниль', count: 2, priceCents: 50 }],
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a line whose price changed, and leaves the new price in the cart', async () => {
+    const err = await conflictOf(reprice(row({ product: latte({ basePriceCents: 500 }) })));
+
+    expect(err.getStatus()).toBe(409);
+    expect(err.getResponse()).toMatchObject({
+      code: 'CART_CHANGED',
+      items: [{ cartItemId: 'ci-1', reason: 'PRICE_CHANGED', previousUnitPriceCents: 750, unitPriceCents: 800 }],
+    });
+    expect(prisma.cartItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: expect.objectContaining({ unitPriceCents: 800 }),
+    });
+    // Subtotal and ETA are recomputed, so the next GET /cart shows the truth.
+    expect(prisma.cart.update).toHaveBeenCalled();
+  });
+
+  it('takes out a line whose milk was deleted rather than making it with another', async () => {
+    const withoutOat = latte();
+    withoutOat.variations = withoutOat.variations.filter((v) => v.id !== 'v-oat');
+
+    const err = await conflictOf(reprice(row({ product: withoutOat })));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'OPTION_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
+    expect(prisma.cartItem.update).not.toHaveBeenCalled();
+  });
+
+  it('takes out a line whose product was hidden', async () => {
+    const err = await conflictOf(reprice(row({ product: latte({ visible: false }) })));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
+  });
+
+  it('reports an extra cut down to the menu limit even when the price stays the same', async () => {
+    const freeVanilla = latte();
+    freeVanilla.modifiers = [modifier({ id: 'm-vanilla', name: 'Ваниль', maxCount: 1 })];
+
+    // 450 + 140 + 60 + 2 × 0
+    const err = await conflictOf(reprice(row({ product: freeVanilla, unitPriceCents: 650 })));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'OPTIONS_CHANGED', unitPriceCents: 650 })]);
+    expect(prisma.cartItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: expect.objectContaining({ modifiersJson: { 'm-vanilla': 1 } }),
+    });
+  });
+
+  it('fills an option left open with its default without calling it a change', async () => {
+    // Stored before defaults were applied: no milk. Cow's milk is the free
+    // default, so the price stands and only the ticket gains a line.
+    const [line] = await reprice(row({ variationIds: ['v-l'], unitPriceCents: 690 }));
+
+    expect(line?.variations.map((v) => v.name)).toEqual(['L', 'Коровье']);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

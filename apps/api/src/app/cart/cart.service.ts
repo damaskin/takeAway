@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Modifier, Prisma, Product, Variation, VariationType } from '@prisma/client';
-import type { OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
+import type { CartItem, Modifier, Prisma, Product, Variation, VariationType } from '@prisma/client';
+import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
 import { sortVariationsForDisplay } from '@takeaway/utils';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CartChangedException } from './cart-changed.exception';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
 import type { CartDto, CartItemDto } from './dto/cart.dto';
 
@@ -21,6 +22,15 @@ export interface PricedLine {
   variations: OrderItemVariation[];
   /** Extras with a positive count, in menu order. */
   modifierLines: OrderItemModifier[];
+}
+
+/** A cart line that passed the checkout price check, ready to become an order line. */
+export interface CheckoutLine extends PricedLine {
+  productId: string;
+  productSlug: string;
+  productName: string;
+  quantity: number;
+  notes: string | null;
 }
 
 @Injectable()
@@ -127,6 +137,92 @@ export class CartService {
 
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     return this.recalculate(cart.id);
+  }
+
+  /**
+   * Prices every line again, against the menu as it is now.
+   *
+   * A cart keeps the price a line had when it went in, and the menu moves on
+   * without it: a corrected price, a hidden product or a deleted milk must
+   * not reach the charge or the kitchen as they were. Lines that still match
+   * come back ready to be snapshotted into an order. If anything the
+   * customer would notice has changed, the cart is brought up to date — lines
+   * that can no longer be made are removed, re-priced ones rewritten — and
+   * the checkout is refused, so the customer sees the new total before
+   * paying it.
+   *
+   * @throws CartChangedException (409) when any line changed.
+   */
+  async repriceForCheckout(cart: {
+    id: string;
+    items: ReadonlyArray<CartItem & { product: PricedProduct }>;
+  }): Promise<CheckoutLine[]> {
+    const lines: CheckoutLine[] = [];
+    const changes: CartChangedItem[] = [];
+    const removed: string[] = [];
+    const rewritten: Array<{ id: string; line: PricedLine }> = [];
+
+    for (const item of cart.items) {
+      const change = (reason: CartChangeReason, unitPriceCents: number | null): CartChangedItem => ({
+        cartItemId: item.id,
+        productId: item.productId,
+        productName: item.product.name,
+        reason,
+        previousUnitPriceCents: item.unitPriceCents,
+        unitPriceCents,
+      });
+
+      if (!item.product.visible) {
+        changes.push(change('PRODUCT_UNAVAILABLE', null));
+        removed.push(item.id);
+        continue;
+      }
+
+      const stored = storedModifiers(item.modifiersJson);
+      const { line, problems } = this.priceItem(item.product, item.variationIds, stored);
+      if (problems.length > 0) {
+        // Making it without the option that went away would be a different
+        // drink, so the line goes rather than quietly changing.
+        changes.push(change('OPTION_UNAVAILABLE', null));
+        removed.push(item.id);
+        continue;
+      }
+
+      const priceChanged = line.unitPriceCents !== item.unitPriceCents;
+      if (priceChanged || !sameCounts(stored, line.modifiers)) {
+        changes.push(change(priceChanged ? 'PRICE_CHANGED' : 'OPTIONS_CHANGED', line.unitPriceCents));
+        rewritten.push({ id: item.id, line });
+        continue;
+      }
+
+      lines.push({
+        ...line,
+        productId: item.product.id,
+        productSlug: item.product.slug,
+        productName: item.product.name,
+        quantity: item.quantity,
+        notes: item.notes,
+      });
+    }
+
+    if (changes.length === 0) return lines;
+
+    await this.prisma.$transaction([
+      ...(removed.length > 0 ? [this.prisma.cartItem.deleteMany({ where: { id: { in: removed } } })] : []),
+      ...rewritten.map(({ id, line }) =>
+        this.prisma.cartItem.update({
+          where: { id },
+          data: {
+            variationIds: line.variationIds,
+            modifiersJson: line.modifiers,
+            unitPriceCents: line.unitPriceCents,
+            unitPrepSeconds: line.unitPrepSeconds,
+          },
+        }),
+      ),
+    ]);
+    await this.recalculate(cart.id);
+    throw new CartChangedException(changes);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
@@ -373,4 +469,10 @@ function toCount(raw: unknown): number {
 /** The `{ modifierId: count }` a cart row keeps, read without trusting the JSON. */
 function storedModifiers(json: Prisma.JsonValue): Record<string, unknown> {
   return typeof json === 'object' && json !== null && !Array.isArray(json) ? json : {};
+}
+
+/** Whether two extra selections take the same extras in the same numbers. */
+function sameCounts(stored: Record<string, unknown>, current: Record<string, number>): boolean {
+  const taken = Object.entries(stored).filter(([, count]) => toCount(count) > 0);
+  return taken.length === Object.keys(current).length && taken.every(([id, count]) => current[id] === toCount(count));
 }
