@@ -252,8 +252,10 @@ export const TRANSLATIONS_RU = {
       telegramPrompt: 'Войдите через ваш аккаунт Telegram',
       telegramUnavailable: 'Вход через Telegram не настроен для этого окружения.',
       continueWithApple: 'Продолжить с Apple',
+      continueWithTelegram: 'Войти через Telegram',
       googleUnavailable: 'Вход через Google сейчас недоступен.',
       appleUnavailable: 'Вход через Apple сейчас недоступен.',
+      telegramFailed: 'Вход через Telegram сейчас недоступен.',
       noProviders: 'Для этого окружения не настроен ни один способ входа.',
       or: 'или',
       signingIn: 'Входим…',
@@ -559,6 +561,8 @@ export const TRANSLATIONS_RU = {
       linkedNote:
         'Теперь вы получаете события заказов в Telegram. Нажмите кнопку ещё раз, чтобы привязать другой аккаунт.',
       unavailable: 'Telegram не настроен на этом окружении — попросите администратора указать username бота.',
+      button: 'Привязать Telegram',
+      failed: 'Telegram не подтвердил привязку. Попробуйте ещё раз.',
     },
     settings: {
       title: 'Настройки бренда',

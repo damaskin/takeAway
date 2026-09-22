@@ -12,6 +12,7 @@ import {
   resolveSocialAuthConfig,
   resolveSpaSentryConfig,
   resolveTelegramBotUsername,
+  resolveTelegramClientId,
   type TelegramAuthConfig,
 } from '@takeaway/ui-kit';
 
@@ -20,6 +21,7 @@ import { registerServiceWorker } from './core/pwa/service-worker';
 
 const telegramConfig: TelegramAuthConfig = {
   botUsername: resolveTelegramBotUsername(),
+  clientId: resolveTelegramClientId(),
 };
 
 export const appConfig: ApplicationConfig = {
