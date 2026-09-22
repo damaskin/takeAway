@@ -69,8 +69,25 @@ export class AdminCatalogService {
     return brand;
   }
 
+  /**
+   * Creates a brand from the super-admin panel. Unlike self-serve sign-up,
+   * there is nobody left to moderate it — the operator creating it *is* the
+   * moderator — so it lands APPROVED and is immediately usable as the active
+   * brand for stores and menu. Returned with `owner`/`_count` so the brands
+   * page can splice it straight into its list.
+   */
   createBrand(dto: CreateBrandDto) {
-    return this.prisma.brand.create({ data: dto });
+    return this.prisma.brand.create({
+      data: {
+        ...dto,
+        moderationStatus: BrandModerationStatus.APPROVED,
+        moderatedAt: new Date(),
+      },
+      include: {
+        owner: { select: { id: true, email: true, name: true, phone: true } },
+        _count: { select: { stores: true, products: true } },
+      },
+    });
   }
 
   async updateBrand(id: string, dto: UpdateBrandDto) {

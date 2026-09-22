@@ -1,13 +1,15 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { MyBrand, SettingsService } from '../../core/settings/settings.service';
 
 /**
  * Brand settings — the BRAND_ADMIN manages their own brand identity
- * (name, logo, theme overrides). SUPER_ADMIN uses the dedicated
- * /admin/brands moderation UI instead.
+ * (name, logo, theme overrides). SUPER_ADMIN gets here too and edits
+ * whichever brand the top-bar selector is on; moderation itself stays
+ * on the dedicated /admin/brands screen.
  *
  * `themeOverrides` is exposed as a small fixed list of well-known CSS
  * variables + a free-form JSON fallback (advanced) so non-technical
@@ -208,6 +210,7 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
 export class AdminSettingsPage {
   private readonly settings = inject(SettingsService);
   private readonly translate = inject(TranslateService);
+  private readonly activeBrand = inject(ActiveBrandService);
 
   readonly themeFields = THEME_FIELDS;
   readonly brand = signal<MyBrand | null>(null);
@@ -236,6 +239,21 @@ export class AdminSettingsPage {
       themeOverrides: new FormGroup(themeCtrls),
     });
 
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
+
+    // A SUPER_ADMIN's brand is whichever one the top-bar selector is on, so
+    // wait for the brand context and reload when it changes. BRAND_ADMIN
+    // resolves server-side either way.
+    effect(() => {
+      if (!this.activeBrand.loaded()) return;
+      this.activeBrand.activeId();
+      this.load();
+    });
+  }
+
+  private load(): void {
+    this.loading.set(true);
+    this.error.set(null);
     this.settings.getMyBrand().subscribe({
       next: (brand) => {
         this.brand.set(brand);
@@ -250,6 +268,7 @@ export class AdminSettingsPage {
             if (ctrl) ctrl.setValue(v);
           }
         }
+        this.form.markAsPristine();
         this.loading.set(false);
       },
       error: (err) => {

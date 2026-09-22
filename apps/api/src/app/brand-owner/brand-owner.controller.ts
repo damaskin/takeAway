@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Patch,
   Post,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -21,13 +22,17 @@ import { StorageService } from '../storage/storage.service';
 import { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
 
 /**
- * BRAND_ADMIN-scoped endpoints that resolve the brand via
- * `Brand.ownerId = currentUser.id`. SUPER_ADMIN continues to use the
- * unscoped /admin/brands/* routes and can act on any brand.
+ * Brand-settings endpoints for the admin panel's /settings screen.
+ *
+ * BRAND_ADMIN resolves to the brand they own (`Brand.ownerId`). SUPER_ADMIN
+ * owns no brand of their own but the settings screen is part of their nav
+ * too, so they pass the brand they're acting on as `?brandId=`; without it
+ * we fall back to the single brand on the platform, which is what a
+ * one-brand install always means.
  */
 @ApiTags('brand-owner')
 @ApiBearerAuth()
-@Roles(Role.BRAND_ADMIN)
+@Roles(Role.BRAND_ADMIN, Role.SUPER_ADMIN)
 @Controller('my-brand')
 export class BrandOwnerController {
   constructor(
@@ -36,19 +41,21 @@ export class BrandOwnerController {
   ) {}
 
   @Get()
-  async get(@CurrentUser() user: AuthenticatedUser) {
-    const brand = await this.prisma.brand.findFirst({
-      where: { ownerId: user.id },
+  async get(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId?: string) {
+    const { id } = await this.resolveBrand(user, brandId);
+    return this.prisma.brand.findUniqueOrThrow({
+      where: { id },
       include: { _count: { select: { stores: true, products: true } } },
     });
-    if (!brand) throw new NotFoundException('No brand for the current user');
-    return brand;
   }
 
   @Patch()
-  async update(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateBrandDto) {
-    const brand = await this.prisma.brand.findFirst({ where: { ownerId: user.id }, select: { id: true } });
-    if (!brand) throw new NotFoundException('No brand for the current user');
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateBrandDto,
+    @Query('brandId') brandId?: string,
+  ) {
+    const brand = await this.resolveBrand(user, brandId);
 
     // The owner cannot change their moderation status (that's what
     // SUPER_ADMIN is for) — and we lock the slug once assigned so the
@@ -82,10 +89,10 @@ export class BrandOwnerController {
   async uploadLogo(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedFile() file: { originalname: string; mimetype: string; buffer: Buffer; size: number } | undefined,
+    @Query('brandId') brandId?: string,
   ): Promise<{ logoUrl: string }> {
     if (!file) throw new BadRequestException('`file` field is required');
-    const brand = await this.prisma.brand.findFirst({ where: { ownerId: user.id }, select: { id: true, slug: true } });
-    if (!brand) throw new NotFoundException('No brand for the current user');
+    const brand = await this.resolveBrand(user, brandId);
 
     const { url } = await this.storage.uploadImage(
       `brands/${brand.slug}`,
@@ -95,6 +102,28 @@ export class BrandOwnerController {
     );
     await this.prisma.brand.update({ where: { id: brand.id }, data: { logoUrl: url } });
     return { logoUrl: url };
+  }
+
+  /**
+   * The brand the caller is acting on, or a 404 explaining that there is
+   * none — which is the honest answer for a fresh install with no brands
+   * and for a BRAND_ADMIN whose brand was reassigned.
+   */
+  private async resolveBrand(
+    user: AuthenticatedUser,
+    brandId: string | undefined,
+  ): Promise<{ id: string; slug: string }> {
+    const select = { id: true, slug: true } as const;
+    if (user.role === Role.SUPER_ADMIN) {
+      const brand = brandId
+        ? await this.prisma.brand.findUnique({ where: { id: brandId }, select })
+        : await this.prisma.brand.findFirst({ orderBy: { name: 'asc' }, select });
+      if (!brand) throw new NotFoundException(brandId ? 'Brand not found' : 'No brands exist yet');
+      return brand;
+    }
+    const owned = await this.prisma.brand.findFirst({ where: { ownerId: user.id }, select });
+    if (!owned) throw new NotFoundException('No brand for the current user');
+    return owned;
   }
 }
 

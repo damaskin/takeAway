@@ -1,13 +1,9 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
-import {
-  AdminCatalogApi,
-  type BrandDto,
-  type CategoryAdminDto,
-  type ProductAdminDto,
-} from '../../core/catalog/admin-catalog.service';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { AdminCatalogApi, type CategoryAdminDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
 import { ProductOptionsPanelComponent } from './product-options-panel.component';
 
 /**
@@ -63,6 +59,31 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
       </div>
     </div>
 
+    @if (brandBlocker(); as blocker) {
+      <div
+        style="margin: clamp(16px, 3vw, 24px); padding: 16px 18px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-left: 4px solid var(--color-amber); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+      >
+        <p style="margin: 0 0 6px; font-weight: 600">{{ 'admin.brandContext.blockedTitle' | translate }}</p>
+        @if (blocker === 'error') {
+          <p style="margin: 0 0 10px; color: var(--color-text-secondary)">
+            {{ 'admin.brandContext.loadFailed' | translate }} {{ activeBrand.loadError() }}
+          </p>
+          <button
+            type="button"
+            (click)="activeBrand.refresh()"
+            [disabled]="activeBrand.loading()"
+            style="height: 32px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 8px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+          >
+            {{ 'common.retry' | translate }}
+          </button>
+        } @else {
+          <p style="margin: 0; color: var(--color-text-secondary)">
+            {{ 'admin.brandContext.noBrandsHint' | translate }}
+          </p>
+        }
+      </div>
+    }
+
     <section
       class="menu-shell"
       style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start"
@@ -81,6 +102,8 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
           <button
             type="button"
             (click)="openCategoryForm()"
+            [disabled]="!brand()"
+            class="disabled:opacity-50"
             style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
           >
             {{ 'admin.menu.add' | translate }}
@@ -360,11 +383,18 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
     `,
   ],
 })
-export class MenuPage implements OnInit {
+export class MenuPage {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
+  readonly activeBrand = inject(ActiveBrandService);
 
-  readonly brand = signal<BrandDto | null>(null);
+  /**
+   * The menu is edited in the context of the brand picked in the top bar,
+   * like every other admin page. It used to fetch its own brand list and
+   * silently take the first entry, which meant a SUPER_ADMIN switching
+   * brands kept editing the alphabetically-first one.
+   */
+  readonly brand = this.activeBrand.active;
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly selectedCategoryId = signal<string | null>(null);
   readonly products = signal<ProductAdminDto[]>([]);
@@ -397,15 +427,31 @@ export class MenuPage implements OnInit {
     description: new FormControl('', { nonNullable: true }),
   });
 
-  ngOnInit(): void {
-    this.api.listMyBrands().subscribe({
-      next: (brands) => {
-        const first = brands[0];
-        if (!first) return;
-        this.brand.set(first);
-        this.loadCategories(first.id);
-      },
-      error: (err) => this.error.set(this.extractMessage(err)),
+  /**
+   * Why the page can't edit anything: `error` = the brand list failed to
+   * load, `empty` = it loaded and the account has no brand yet.
+   */
+  readonly brandBlocker = computed<'error' | 'empty' | null>(() => {
+    if (this.activeBrand.loadError()) return 'error';
+    if (this.activeBrand.isEmpty()) return 'empty';
+    return null;
+  });
+
+  constructor() {
+    // Brand list is normally loaded once by AdminLayoutPage; trigger here as
+    // a safety net for direct navigation / hot-reload.
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
+
+    // Reload the menu whenever the active brand changes, and drop the
+    // previous brand's categories/products so nothing stale is editable.
+    effect(() => {
+      const brand = this.activeBrand.active();
+      this.categories.set([]);
+      this.products.set([]);
+      this.selectedCategoryId.set(null);
+      this.error.set(null);
+      if (!brand) return;
+      this.loadCategories(brand.id);
     });
   }
 
@@ -462,7 +508,7 @@ export class MenuPage implements OnInit {
   submitCategory(): void {
     if (this.categoryForm.invalid) return;
     const brand = this.brand();
-    if (!brand) return;
+    if (!brand) return this.reportNoBrand();
     const { name, slug, visible } = this.categoryForm.getRawValue();
     const editingId = this.editingCategoryId();
     if (editingId) {
@@ -504,7 +550,8 @@ export class MenuPage implements OnInit {
     if (this.productForm.invalid) return;
     const brand = this.brand();
     const categoryId = this.selectedCategoryId();
-    if (!brand || !categoryId) return;
+    if (!brand) return this.reportNoBrand();
+    if (!categoryId) return;
     const v = this.productForm.getRawValue();
     const editingId = this.editingProductId();
     if (editingId) {
@@ -571,6 +618,15 @@ export class MenuPage implements OnInit {
       style: 'currency',
       currency: this.brand()?.currency ?? 'USD',
     }).format(cents / 100);
+  }
+
+  /** Why the button did nothing — see {@link brandBlocker}. */
+  private reportNoBrand(): void {
+    this.error.set(
+      this.activeBrand.loadError()
+        ? `${this.translate.instant('admin.brandContext.loadFailed')} ${this.activeBrand.loadError()}`
+        : this.translate.instant('admin.brandContext.noBrandsHint'),
+    );
   }
 
   private loadCategories(brandId: string): void {
