@@ -58,6 +58,16 @@ export class AuthService {
     );
   }
 
+  /** Same as {@link linkTelegram}, from a Telegram Login (OpenID Connect) ID token. */
+  linkTelegramIdToken(idToken: string): Observable<AuthUser> {
+    return this.http.post<AuthUser>(`${this.api.baseUrl}/auth/telegram/link/oidc`, { idToken }).pipe(
+      tap((user) => {
+        const session = this.store.session();
+        if (session) this.store.set({ ...session, user });
+      }),
+    );
+  }
+
   refresh(refreshToken: string): Observable<AuthTokens> {
     return this.http.post<AuthTokens>(`${this.api.baseUrl}/auth/refresh`, { refreshToken });
   }

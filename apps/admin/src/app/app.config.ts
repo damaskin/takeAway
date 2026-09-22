@@ -7,6 +7,7 @@ import {
   provideSentry,
   resolveSpaSentryConfig,
   resolveTelegramBotUsername,
+  resolveTelegramClientId,
   type TelegramAuthConfig,
 } from '@takeaway/ui-kit';
 
@@ -16,6 +17,7 @@ import { authInterceptor } from './core/auth/auth.interceptor';
 
 const telegramConfig: TelegramAuthConfig = {
   botUsername: resolveTelegramBotUsername(),
+  clientId: resolveTelegramClientId(),
 };
 
 export const appConfig: ApplicationConfig = {
