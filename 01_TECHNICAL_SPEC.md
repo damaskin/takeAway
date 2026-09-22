@@ -607,7 +607,7 @@ POST   /me/referrals/apply           { code }
 GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter
 GET    /stores/:idOrSlug
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
-GET    /products/:idOrSlug
+GET    /products/:idOrSlug          // включает brandId — по нему клиент выбирает точку, где товар можно приготовить
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 

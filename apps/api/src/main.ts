@@ -20,7 +20,12 @@ async function bootstrap(): Promise<void> {
   const globalPrefix = process.env['API_GLOBAL_PREFIX'] ?? 'api';
   app.setGlobalPrefix(globalPrefix);
 
-  app.useGlobalFilters(new SentryExceptionFilter());
+  // The adapter has to be handed in explicitly. BaseExceptionFilter only gets
+  // one through DI, and a filter built with `new` here never goes through the
+  // container — so it would reach for `applicationRef.isHeadersSent` on
+  // `undefined` and turn *every* error response, a plain 404 included, into a
+  // 500 reading "Cannot read properties of undefined (reading 'isHeadersSent')".
+  app.useGlobalFilters(new SentryExceptionFilter(app.getHttpAdapter()));
 
   app.useGlobalPipes(
     new ValidationPipe({

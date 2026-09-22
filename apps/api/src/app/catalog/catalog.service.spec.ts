@@ -134,4 +134,35 @@ describe('CatalogService', () => {
     const menu = await service.getMenu('dubai-marina');
     expect(menu.categories[0]?.products[0]?.onStopList).toBe(true);
   });
+
+  // A product opened by its own URL carries no store. The cart rejects an
+  // item whose brand differs from the store's, so the client has to be able
+  // to pick a store that can actually make it.
+  it('tells the client which brand a product belongs to', async () => {
+    prisma.product.findFirst.mockResolvedValue({
+      id: 'p-test',
+      categoryId: 'c-coffee',
+      brandId: 'brand-7',
+      slug: 'test',
+      name: 'Test',
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 60,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: [],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+      variations: [],
+      modifiers: [],
+    });
+
+    const product = await service.getProduct('test');
+
+    expect(product.brandId).toBe('brand-7');
+  });
 });

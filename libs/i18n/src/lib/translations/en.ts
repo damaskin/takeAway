@@ -161,6 +161,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         adding: 'Adding…',
         goToCheckout: 'Go to checkout · {{count}} in cart',
         signInPrompt: 'Sign in to place an order.',
+        noStore: 'No store from this brand is taking orders right now.',
       },
     },
     checkout: {
@@ -1026,6 +1027,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       offlinePrompt: 'No connection to the server — adding to the cart is unavailable.',
       addFailed: 'Could not add this item to the cart. Please try again.',
+      noStore: 'No store from this brand is taking orders right now.',
       cta: {
         add: 'Add · {{total}}',
       },
