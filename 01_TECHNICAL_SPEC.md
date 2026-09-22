@@ -199,7 +199,7 @@ takeaway/
 - **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Bundle / application id — `md.takeaway.app`
 - **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
 - **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
-- **Auth**: Telegram (OAuth-окно + страница-мост `takeaway.md/tg-auth.html` → deep link `takeaway://`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
+- **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
 - **Realtime**: `socket_io_client` к `/ws` на API-хосте; без сокета — опрос раз в 5 с
 - **Storage**: `shared_preferences` для настроек, JSON-файлы в кеше для меню и точек (офлайн-открытие)
 - **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`
@@ -241,7 +241,8 @@ takeaway/
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
 - **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login Widget**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
-- **Customer в мобильном приложении**: Telegram, Google и Apple (только iOS). Telegram — через OAuth-окно `oauth.telegram.org` с возвратом на `takeaway.md/tg-auth.html`, которая перекидывает результат в приложение по схеме `takeaway://`; дальше тот же `POST /auth/telegram/widget`. Id бота приложение берёт из `GET /auth/telegram/config`, а не из сборки.
+- **Customer в мобильном приложении**: Telegram, Google и Apple (только iOS). Telegram — Telegram Login (OpenID Connect): подтверждение в приложении Telegram или на странице `oauth.telegram.org`, обмен кода на ID-токен по PKCE прямо на устройстве (публичный клиент, без секрета), затем `POST /auth/telegram/oidc`. Client id (= id бота) приложение берёт из `GET /auth/telegram/config`, а не из сборки.
+- **Telegram Login на вебе и в админке**: новая библиотека `oauth.telegram.org/js/telegram-login.js` (попап → ID-токен) включается, когда в `index.html` задан `__TELEGRAM_CLIENT_ID`; до этого работает прежний Login Widget с HMAC по токену бота. ID-токены Telegram проверяются тем же `OAuthIdentityService`, что Google и Apple: JWKS `oauth.telegram.org/.well-known/jwks.json`, алгоритмы RS256/ES256, `iss = https://oauth.telegram.org`, `aud = client id`. Аккаунт ищется по `telegramUserId` (claim `id`, scope `profile`).
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
@@ -586,9 +587,11 @@ POST   /auth/password/change         { oldPassword, newPassword }    (auth)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 POST   /auth/telegram                { initData } → tokens           (TMA)
-POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens
-GET    /auth/telegram/config         → { botId, botUsername }        (public; для входа из мобильного приложения)
-POST   /auth/telegram/link           { initData }                    (auth, привязка TG к существующему юзеру)
+POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens   (legacy Login Widget, HMAC)
+POST   /auth/telegram/oidc           { idToken } → tokens            (Telegram Login, OpenID Connect)
+GET    /auth/telegram/config         → { botId, botUsername, clientId }  (public)
+POST   /auth/telegram/link           { ...widgetPayload }            (auth, привязка TG к существующему юзеру)
+POST   /auth/telegram/link/oidc      { idToken }                     (auth, то же через Telegram Login)
 POST   /auth/refresh                 { refreshToken }
 POST   /auth/logout
 GET    /auth/me
