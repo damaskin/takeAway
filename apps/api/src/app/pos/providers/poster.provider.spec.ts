@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import { PosIntegrationStatus, PosProvider } from '@prisma/client';
 
 import type { PosIntegrationCtx, SyncProgressCtx } from './pos-provider.interface';
-import { PosterProvider } from './poster.provider';
+import { PosterProvider, posterImageUrls } from './poster.provider';
 
 /**
  * Subclass that lets us inject a fake axios instance instead of going to
@@ -134,6 +134,34 @@ describe('PosterProvider', () => {
       },
     ]);
     expect(menu.modifiers).toEqual([]);
+  });
+
+  describe('posterImageUrls', () => {
+    it('anchors the site-relative paths Poster returns to joinposter.com', () => {
+      expect(
+        posterImageUrls({ photo_origin: '/upload/pos_cdb_282207/menu/product_1668324795_7_original.jpeg' }),
+      ).toEqual(['https://joinposter.com/upload/pos_cdb_282207/menu/product_1668324795_7_original.jpeg']);
+    });
+
+    it('prefers the original over the thumbnail', () => {
+      expect(posterImageUrls({ photo: '/upload/a/thumb.jpg', photo_origin: '/upload/a/original.jpg' })).toEqual([
+        'https://joinposter.com/upload/a/original.jpg',
+      ]);
+    });
+
+    it('upgrades plain-http and protocol-relative Poster links to https', () => {
+      expect(posterImageUrls({ photo: 'http://joinposter.com/upload/a.jpg' })).toEqual([
+        'https://joinposter.com/upload/a.jpg',
+      ]);
+      expect(posterImageUrls({ photo: '//joinposter.com/upload/a.jpg' })).toEqual([
+        'https://joinposter.com/upload/a.jpg',
+      ]);
+    });
+
+    it('leaves other absolute URLs alone and skips products without a photo', () => {
+      expect(posterImageUrls({ photo: 'https://cdn.example.com/a.jpg' })).toEqual(['https://cdn.example.com/a.jpg']);
+      expect(posterImageUrls({ photo: '', photo_origin: undefined })).toBeUndefined();
+    });
   });
 
   it('importStopList collects hidden + per-spot invisible entries', async () => {
