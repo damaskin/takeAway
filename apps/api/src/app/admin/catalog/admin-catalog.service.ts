@@ -1,7 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BrandModerationStatus, Role } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { BrandModerationStatus, Role, StoreStatus, type Store, type StoreWorkingHour } from '@prisma/client';
 
+import { slugify, uniqueSlug } from '../../common/text/slug';
+import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zone';
 import { PrismaService } from '../../prisma/prisma.service';
+import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
@@ -28,6 +37,35 @@ import type {
 } from './dto/admin-product.dto';
 import type { AddStopListEntryDto } from './dto/admin-stop-list.dto';
 import type { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './dto/admin-store.dto';
+
+type StoreWithHours = Store & { workingHours: StoreWorkingHour[] };
+
+/** A store as the admin sees it: the row, its hours and what it still lacks. */
+export type StoreView = StoreWithHours & { readiness: StoreReadiness };
+
+/**
+ * A 409 the admin can act on: `code` is stable for the UI to translate,
+ * `message` is for everyone else reading the response.
+ */
+function conflict(code: string, message: string, extra: Record<string, unknown> = {}): ConflictException {
+  return new ConflictException({ statusCode: 409, error: 'Conflict', code, message, ...extra });
+}
+
+function isPrismaError(err: unknown, code: string): err is { code: string; meta?: { target?: unknown } } {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === code;
+}
+
+/** A slug someone else already has is the owner's to change, not a server fault. */
+function storeWriteError(err: unknown): unknown {
+  if (isPrismaError(err, 'P2002')) {
+    const target = err.meta?.target;
+    const fields = Array.isArray(target) ? target.map(String) : typeof target === 'string' ? [target] : [];
+    if (fields.some((f) => f.includes('slug'))) {
+      return conflict('STORE_SLUG_TAKEN', 'Another store already uses this slug — pick a different one');
+    }
+  }
+  return err;
+}
 
 @Injectable()
 export class AdminCatalogService {
@@ -149,14 +187,15 @@ export class AdminCatalogService {
   }
 
   // ── Stores ────────────────────────────────────────────────────────────────
-  listStores(scope: BrandScope, brandId?: string) {
+  async listStores(scope: BrandScope, brandId?: string): Promise<StoreView[]> {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
     const where = brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : undefined;
-    return this.prisma.store.findMany({
+    const stores = await this.prisma.store.findMany({
       where,
       orderBy: { name: 'asc' },
       include: { workingHours: true },
     });
+    return this.withReadiness(stores);
   }
 
   async getStore(id: string, scope: BrandScope = null) {
@@ -166,35 +205,184 @@ export class AdminCatalogService {
     return store;
   }
 
-  createStore(dto: CreateStoreDto, scope: BrandScope = null) {
+  /** The store editor's view: readiness, and whether orders already pin its currency. */
+  async getStoreDetail(id: string, scope: BrandScope = null): Promise<StoreView & { hasOrders: boolean }> {
+    const store = await this.getStore(id, scope);
+    return this.detail(store);
+  }
+
+  /**
+   * A new store starts CLOSED — it has no hours, maybe no menu, and the
+   * form it came from knows nothing about tax or kitchen capacity. The
+   * owner opens it from the admin once the readiness checks pass.
+   */
+  async createStore(dto: CreateStoreDto, scope: BrandScope = null): Promise<StoreView & { hasOrders: boolean }> {
     assertInScope(scope, dto.brandId);
-    const { workingHours, fulfillmentTypes, ...rest } = dto;
-    return this.prisma.store.create({
-      data: {
-        ...rest,
-        // Default to pure pickup when the caller doesn't specify — covers
-        // the simple "add store" UI flow. `pickupPointType` has a Prisma
-        // default (COUNTER) so no override needed here.
-        fulfillmentTypes: fulfillmentTypes?.length ? fulfillmentTypes : ['TAKEAWAY'],
-        workingHours: workingHours?.length ? { create: workingHours } : undefined,
-      },
-      include: { workingHours: true },
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: dto.brandId },
+      select: { id: true, slug: true, currency: true },
     });
+    if (!brand) throw new NotFoundException('Brand not found');
+
+    const { workingHours, fulfillmentTypes, slug, currency, timezone, ...rest } = dto;
+    let store: StoreWithHours;
+    try {
+      store = await this.prisma.store.create({
+        data: {
+          ...rest,
+          slug: slug ?? (await this.generateStoreSlug(brand.slug, dto.name)),
+          currency: currency ?? brand.currency,
+          timezone: timezone ? canonicalTimeZone(timezone) : ((await this.brandTimeZone(brand.id)) ?? 'UTC'),
+          status: StoreStatus.CLOSED,
+          // Default to pure pickup when the caller doesn't specify — covers
+          // the simple "add store" UI flow. `pickupPointType` has a Prisma
+          // default (COUNTER) so no override needed here.
+          fulfillmentTypes: fulfillmentTypes?.length ? fulfillmentTypes : ['TAKEAWAY'],
+          workingHours: workingHours?.length ? { create: workingHours } : undefined,
+        },
+        include: { workingHours: true },
+      });
+    } catch (err) {
+      throw storeWriteError(err);
+    }
+    return this.detail(store);
   }
 
-  async updateStore(id: string, dto: UpdateStoreDto, scope: BrandScope = null) {
-    await this.getStore(id, scope);
-    const { workingHours: _ignored, ...rest } = dto;
-    return this.prisma.store.update({
-      where: { id },
-      data: rest,
-      include: { workingHours: true },
-    });
+  async updateStore(
+    id: string,
+    dto: UpdateStoreDto,
+    scope: BrandScope = null,
+  ): Promise<StoreView & { hasOrders: boolean }> {
+    const store = await this.getStore(id, scope);
+    const { workingHours: _ignored, timezone, currency, status, ...rest } = dto;
+
+    // Every placed order carries the store's currency; switching it under
+    // them would mix two currencies in one store's reports and refunds.
+    if (currency != null && currency !== store.currency && (await this.storeHasOrders(id))) {
+      throw conflict(
+        'STORE_CURRENCY_LOCKED',
+        'The currency cannot change once the store has orders — create a new store for the new currency',
+      );
+    }
+
+    // Only switching a closed store on is gated: an open store keeps
+    // accepting edits even if it predates the readiness checks.
+    if (store.status === StoreStatus.CLOSED && status != null && status !== StoreStatus.CLOSED) {
+      const readinessOf = await this.readinessResolver([store.brandId]);
+      const missing = missingChecks(
+        readinessOf({
+          ...store,
+          latitude: rest.latitude ?? store.latitude,
+          longitude: rest.longitude ?? store.longitude,
+          timezone: timezone ?? store.timezone,
+        }),
+      );
+      if (missing.length > 0) {
+        throw conflict('STORE_NOT_READY', `The store cannot open yet: ${missing.join(', ')}`, { missing });
+      }
+    }
+
+    let updated: StoreWithHours;
+    try {
+      updated = await this.prisma.store.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(timezone != null ? { timezone: canonicalTimeZone(timezone) } : {}),
+          ...(currency != null ? { currency } : {}),
+          ...(status != null ? { status } : {}),
+        },
+        include: { workingHours: true },
+      });
+    } catch (err) {
+      throw storeWriteError(err);
+    }
+    return this.detail(updated);
   }
 
+  /**
+   * Orders keep a foreign key to their store, so a store that has taken
+   * one cannot be deleted without deleting sales history. Closing it keeps
+   * the history and stops new orders, which is what the owner wants.
+   */
   async deleteStore(id: string, scope: BrandScope = null) {
     await this.getStore(id, scope);
-    await this.prisma.store.delete({ where: { id } });
+    const hasOrders = () => conflict('STORE_HAS_ORDERS', 'The store has orders — close it instead of deleting it');
+    if (await this.storeHasOrders(id)) throw hasOrders();
+    try {
+      await this.prisma.store.delete({ where: { id } });
+    } catch (err) {
+      // An order placed between the check and the delete.
+      if (isPrismaError(err, 'P2003')) throw hasOrders();
+      throw err;
+    }
+  }
+
+  private async detail(store: StoreWithHours): Promise<StoreView & { hasOrders: boolean }> {
+    const readinessOf = await this.readinessResolver([store.brandId]);
+    return { ...store, readiness: readinessOf(store), hasOrders: await this.storeHasOrders(store.id) };
+  }
+
+  private async withReadiness(stores: StoreWithHours[]): Promise<StoreView[]> {
+    if (stores.length === 0) return [];
+    const readinessOf = await this.readinessResolver(stores.map((s) => s.brandId));
+    return stores.map((store) => ({ ...store, readiness: readinessOf(store) }));
+  }
+
+  /**
+   * Loads what readiness needs to know about the brands — two queries,
+   * whatever the number of stores — and returns the per-store check.
+   */
+  private async readinessResolver(brandIds: string[]): Promise<(store: StoreWithHours) => StoreReadiness> {
+    const ids = [...new Set(brandIds)];
+    const [products, brands] = await Promise.all([
+      // Only what the storefront menu would actually show.
+      this.prisma.product.groupBy({
+        by: ['brandId'],
+        where: { brandId: { in: ids }, visible: true, category: { visible: true } },
+        _count: { _all: true },
+      }),
+      this.prisma.brand.findMany({ where: { id: { in: ids } }, select: { id: true, moderationStatus: true } }),
+    ]);
+    const productCount = new Map(products.map((p) => [p.brandId, p._count._all]));
+    const brandStatus = new Map(brands.map((b) => [b.id, b.moderationStatus]));
+    return (store) =>
+      storeReadiness({
+        latitude: store.latitude,
+        longitude: store.longitude,
+        timezone: store.timezone,
+        workingHours: store.workingHours,
+        visibleProducts: productCount.get(store.brandId) ?? 0,
+        brandStatus: brandStatus.get(store.brandId) ?? null,
+      });
+  }
+
+  private async storeHasOrders(storeId: string): Promise<boolean> {
+    const order = await this.prisma.order.findFirst({ where: { storeId }, select: { id: true } });
+    return order !== null;
+  }
+
+  /**
+   * Slugs are unique across every brand, so the brand's own slug leads:
+   * `/stores/noname-coffee-tsentr` rather than whichever brand typed
+   * «Центр» first getting `tsentr` and the next one `tsentr-2`.
+   */
+  private generateStoreSlug(brandSlug: string, name: string): Promise<string> {
+    const own = slugify(name);
+    const namesBrand = own === brandSlug || own.startsWith(`${brandSlug}-`);
+    const base = namesBrand ? name : `${brandSlug} ${name}`;
+    return uniqueSlug(
+      base,
+      async (candidate) =>
+        (await this.prisma.store.findUnique({ where: { slug: candidate }, select: { id: true } })) !== null,
+      brandSlug || 'store',
+    );
+  }
+
+  /** The zone the brand's other stores keep — the best guess for one nobody set. */
+  private async brandTimeZone(brandId: string): Promise<string | null> {
+    const stores = await this.prisma.store.findMany({ where: { brandId }, select: { timezone: true } });
+    return prevailingTimeZone(stores.map((s) => s.timezone));
   }
 
   async replaceWorkingHours(storeId: string, dto: ReplaceWorkingHoursDto, scope: BrandScope = null) {

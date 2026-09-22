@@ -42,7 +42,7 @@ export class AdminStoresController {
   async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     await this.stores.assertAllowed(user.id, user.role, id);
     const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.getStore(id, scope);
+    return this.admin.getStoreDetail(id, scope);
   }
 
   @Post()
