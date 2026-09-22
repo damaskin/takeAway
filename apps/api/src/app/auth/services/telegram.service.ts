@@ -3,6 +3,8 @@ import { createHash, createHmac } from 'node:crypto';
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { telegramLoginClientId } from './telegram-login-client';
+
 export interface TelegramUser {
   id: number;
   first_name?: string;
@@ -45,16 +47,17 @@ export class TelegramService {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * The bot id is the part of the token before the colon. It is not a
-   * secret — Telegram shows it to anyone who talks to the bot — and it is
-   * what Telegram's OAuth page wants, so native apps get it from here
-   * rather than from a build setting that can drift from the server's bot.
+   * Public identifiers a client needs to start Telegram sign-in. The bot id
+   * is the part of the token before the colon — not a secret, Telegram shows
+   * it to anyone who talks to the bot — and Telegram Login uses it as the
+   * OpenID Connect client id. Native apps read these from here rather than
+   * from a build setting that can drift from the server's bot.
    */
-  publicConfig(): { botId: string | null; botUsername: string | null } {
+  publicConfig(): { botId: string | null; botUsername: string | null; clientId: string | null } {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN')?.trim() ?? '';
     const match = /^(\d+):/.exec(token);
     const username = this.config.get<string>('TELEGRAM_BOT_USERNAME')?.trim().replace(/^@/, '') || null;
-    return { botId: match?.[1] ?? null, botUsername: username };
+    return { botId: match?.[1] ?? null, botUsername: username, clientId: telegramLoginClientId(this.config) };
   }
 
   verifyInitData(initData: string): VerifiedInitData {

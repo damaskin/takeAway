@@ -29,6 +29,7 @@ import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { TelegramConfigDto } from './dto/telegram-config.dto';
+import { TelegramIdTokenDto } from './dto/telegram-id-token.dto';
 import { TelegramWidgetAuthDto } from './dto/telegram-widget.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
@@ -154,9 +155,9 @@ export class AuthController {
   }
 
   /**
-   * What a native app needs to start Telegram sign-in: it opens Telegram's
-   * OAuth page for this bot and comes back with the same payload the web
-   * widget produces, which then goes to `telegram/widget`.
+   * What a client needs to start Telegram sign-in: the Telegram Login client
+   * id (the bot's numeric id) for the OpenID Connect flow, and the bot
+   * username for the legacy widget.
    */
   @Public()
   @Get('telegram/config')
@@ -166,8 +167,25 @@ export class AuthController {
   }
 
   /**
-   * Telegram Login Widget entry-point (different wire shape from Mini App
-   * init-data). Used by apps/web and, through the OAuth page, the mobile app.
+   * Customer sign-in with Telegram Login (OpenID Connect). The web library's
+   * popup and the mobile apps both finish with an ID token signed by
+   * `oauth.telegram.org`; it is checked against Telegram's JWKS, issuer and
+   * our client id before a single claim is trusted.
+   */
+  @Public()
+  @Post('telegram/oidc')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.telegram, ttl: 60_000 } })
+  @ApiOkResponse({ type: AuthSessionDto })
+  signInWithTelegramIdToken(@Body() dto: TelegramIdTokenDto): Promise<AuthSessionDto> {
+    return this.auth.loginWithTelegramIdToken(dto.idToken);
+  }
+
+  /**
+   * Legacy Telegram Login Widget entry-point (different wire shape from Mini
+   * App init-data), verified by HMAC against the bot token. Kept while a
+   * deployment has not registered its site for Telegram Login yet, and for
+   * the developer sign-in of local builds.
    */
   @Public()
   @Post('telegram/widget')
@@ -191,6 +209,16 @@ export class AuthController {
   @ApiOkResponse({ type: AuthUserDto })
   linkTelegram(@CurrentUser() user: AuthenticatedUser, @Body() dto: TelegramWidgetAuthDto): Promise<AuthUserDto> {
     return this.auth.linkTelegram(user.id, dto);
+  }
+
+  /** Link Telegram to the signed-in staff account from a Telegram Login ID token. */
+  @Post('telegram/link/oidc')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.telegram, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: AuthUserDto })
+  linkTelegramIdToken(@CurrentUser() user: AuthenticatedUser, @Body() dto: TelegramIdTokenDto): Promise<AuthUserDto> {
+    return this.auth.linkTelegramIdToken(user.id, dto.idToken);
   }
 
   @Public()

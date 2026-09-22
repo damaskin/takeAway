@@ -7,7 +7,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
 import { KdsPinService } from './services/kds-pin.service';
-import { OAuthIdentityService, type OAuthIdentity, type OAuthProviderKey } from './services/oauth-identity.service';
+import {
+  OAuthIdentityService,
+  type OAuthIdentity,
+  type OAuthProviderKey,
+  type TelegramIdentity,
+} from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
@@ -170,8 +175,17 @@ export class AuthService {
    * row.
    */
   async linkTelegram(userId: string, payload: TelegramLoginWidgetPayload): Promise<AuthUserDto> {
-    const tgUser = this.telegram.verifyLoginWidget(payload);
-    const telegramUserId = BigInt(tgUser.id);
+    return this.linkTelegramUserId(userId, this.telegram.verifyLoginWidget(payload).id);
+  }
+
+  /** Same as {@link linkTelegram}, from a Telegram Login (OpenID Connect) ID token. */
+  async linkTelegramIdToken(userId: string, idToken: string): Promise<AuthUserDto> {
+    const identity = await this.oauth.verifyTelegram(idToken);
+    return this.linkTelegramUserId(userId, identity.id);
+  }
+
+  private async linkTelegramUserId(userId: string, id: number): Promise<AuthUserDto> {
+    const telegramUserId = BigInt(id);
 
     const existing = await this.prisma.user.findUnique({ where: { telegramUserId } });
     if (existing && existing.id !== userId) {
@@ -196,6 +210,25 @@ export class AuthService {
   }
 
   /**
+   * Telegram Login (OpenID Connect): the web library's popup and the mobile
+   * apps both end with an ID token Telegram signed for our bot. It lands on
+   * the same `telegramUserId` as the Mini App and the legacy widget, so a
+   * customer keeps one profile whichever way they come in.
+   */
+  async loginWithTelegramIdToken(idToken: string): Promise<AuthSessionDto> {
+    const identity: TelegramIdentity = await this.oauth.verifyTelegram(idToken);
+    return this.finalizeTelegramSignIn(
+      {
+        id: identity.id,
+        first_name: identity.firstName ?? undefined,
+        last_name: identity.lastName ?? undefined,
+        username: identity.username ?? undefined,
+      },
+      'WEB',
+    );
+  }
+
+  /**
    * Shared tail of both Telegram sign-in paths (Mini App init-data + Login
    * Widget). Keys the user on `telegramUserId`.
    */
@@ -214,6 +247,9 @@ export class AuthService {
         locale,
       },
     });
+    // Blocking has to hold on every door: Google and Apple already refused a
+    // blocked account, Telegram used to hand it a fresh session.
+    if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: deviceType, locale: user.locale },

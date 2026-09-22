@@ -1,4 +1,4 @@
-import { createSign, generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { createSign, generateKeyPairSync, sign as signRaw, type KeyObject } from 'node:crypto';
 
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
@@ -172,5 +172,98 @@ describe('OAuthIdentityService', () => {
   it('reports the provider unavailable when the JWKS cannot be fetched', async () => {
     mockedAxios.get.mockRejectedValue(new Error('ECONNRESET'));
     await expect(makeService().verify('APPLE', sign(applePayload()))).rejects.toThrow('temporarily unavailable');
+  });
+});
+
+describe('OAuthIdentityService — Telegram Login', () => {
+  const TELEGRAM_JWKS = 'https://oauth.telegram.org/.well-known/jwks.json';
+  const BOT_ID = '7412345678';
+  const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const ed = generateKeyPairSync('ed25519');
+
+  /** Telegram's key set has all four of its algorithms; we may only use two. */
+  function telegramJwks(): Record<string, unknown>[] {
+    return [
+      { ...publicKey.export({ format: 'jwk' }), kid: 'oidc-1', alg: 'RS256' },
+      { ...ec.publicKey.export({ format: 'jwk' }), kid: 'oidc-es256-1', alg: 'ES256', use: 'sig' },
+      { ...ed.publicKey.export({ format: 'jwk' }), kid: 'oidc-eddsa-1', alg: 'EdDSA', use: 'sig' },
+    ];
+  }
+
+  function telegramPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      iss: 'https://oauth.telegram.org',
+      aud: BOT_ID,
+      sub: '1234123412341234123',
+      iat: nowSeconds(),
+      exp: nowSeconds() + 3600,
+      id: 987654321,
+      name: 'Иван Дамаскин',
+      given_name: 'Иван',
+      family_name: 'Дамаскин',
+      preferred_username: 'ivan',
+      picture: 'https://cdn4.telesco.pe/file/x.jpg',
+      ...overrides,
+    };
+  }
+
+  function signEs256(payload: Record<string, unknown>, kid = 'oidc-es256-1'): string {
+    const signingInput = `${b64url({ alg: 'ES256', kid, typ: 'JWT' })}.${b64url(payload)}`;
+    const signature = signRaw('sha256', Buffer.from(signingInput), { key: ec.privateKey, dsaEncoding: 'ieee-p1363' });
+    return `${signingInput}.${signature.toString('base64url')}`;
+  }
+
+  const telegramEnv = { TELEGRAM_BOT_TOKEN: `${BOT_ID}:AAH-secret` };
+
+  beforeEach(() => {
+    mockedAxios.get.mockReset();
+    mockedAxios.get.mockResolvedValue({ data: { keys: telegramJwks() } } as never);
+  });
+
+  it('verifies an RS256 token for our bot and keys the customer on the Telegram user id', async () => {
+    const identity = await makeService(telegramEnv).verifyTelegram(sign(telegramPayload(), { kid: 'oidc-1' }));
+
+    expect(identity).toEqual({ id: 987654321, firstName: 'Иван', lastName: 'Дамаскин', username: 'ivan' });
+    expect(mockedAxios.get).toHaveBeenCalledWith(TELEGRAM_JWKS, expect.anything());
+  });
+
+  it('verifies ES256, the other algorithm a bot can pick in @BotFather', async () => {
+    const identity = await makeService(telegramEnv).verifyTelegram(signEs256(telegramPayload()));
+    expect(identity.id).toBe(987654321);
+  });
+
+  it('will not check an ES256 header against an RSA key', async () => {
+    const token = signEs256(telegramPayload(), 'oidc-1');
+    await expect(makeService(telegramEnv).verifyTelegram(token)).rejects.toThrow('signature is invalid');
+  });
+
+  it('refuses the Web3 algorithms, which come without a user id', async () => {
+    const unsigned = `${b64url({ alg: 'EdDSA', kid: 'oidc-eddsa-1' })}.${b64url(telegramPayload())}.sig`;
+    await expect(makeService(telegramEnv).verifyTelegram(unsigned)).rejects.toThrow(
+      'Unsupported identity-token algorithm',
+    );
+  });
+
+  it('refuses a token without the profile scope instead of creating a stranger account', async () => {
+    const token = sign(telegramPayload({ id: undefined, name: undefined }), { kid: 'oidc-1' });
+    await expect(makeService(telegramEnv).verifyTelegram(token)).rejects.toThrow('no user id');
+  });
+
+  it('rejects a token Telegram signed for another bot', async () => {
+    const token = sign(telegramPayload({ aud: '999' }), { kid: 'oidc-1' });
+    await expect(makeService(telegramEnv).verifyTelegram(token)).rejects.toThrow('not issued for this application');
+  });
+
+  it('uses TELEGRAM_LOGIN_CLIENT_ID when sign-in goes through a different bot', async () => {
+    const svc = makeService({ ...telegramEnv, TELEGRAM_LOGIN_CLIENT_ID: '8521897198' });
+    const token = sign(telegramPayload({ aud: '8521897198' }), { kid: 'oidc-1' });
+    await expect(svc.verifyTelegram(token)).resolves.toMatchObject({ id: 987654321 });
+  });
+
+  it('is off until the deployment has a bot', async () => {
+    await expect(makeService({}).verifyTelegram(sign(telegramPayload(), { kid: 'oidc-1' }))).rejects.toThrow(
+      'not configured',
+    );
+    expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 });
