@@ -191,6 +191,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
   private storeId: string | null = null;
+  /** The serving store's currency; the customer's profile currency is not what they pay in. */
+  readonly currency = signal<string | null>(null);
   private detachBack: (() => void) | null = null;
 
   readonly variationGroups = computed(() => {
@@ -286,7 +288,9 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    const currency = this.currency();
+    if (!currency) return (cents / 100).toFixed(2);
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
   }
 
   minutes(seconds: number): number {
@@ -337,6 +341,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
         const active = list.find((s) => s.id === this.activeStore.current());
         const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
         this.storeId = fit?.id ?? null;
+        this.currency.set(fit?.currency ?? null);
         if (!fit) this.error.set(this.translate.instant('tma.product.noStore'));
         this.refreshMainButton();
       },
