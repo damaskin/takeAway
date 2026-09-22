@@ -64,8 +64,8 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
         <form
           [formGroup]="createForm"
           (ngSubmit)="submitCreate()"
-          class="grid"
-          style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 18px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px"
+          class="form-row"
+          style="padding: 18px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px"
         >
           <label style="display: flex; flex-direction: column; gap: 4px">
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
@@ -178,7 +178,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
               style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
             />
           </label>
-          <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px">
+          <div class="form-row-full" style="display: flex; flex-direction: column; gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
               'admin.stores.fields.pickOnMap' | translate
             }}</span>
@@ -186,7 +186,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
               <lib-leaflet-map [pickable]="true" [markers]="pickerMarkers()" (markerMoved)="onPickerMoved($event)" />
             </div>
           </div>
-          <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px">
+          <div class="form-row-full" style="display: flex; justify-content: flex-end; gap: 8px">
             <button
               type="button"
               (click)="toggleCreateForm()"
@@ -204,7 +204,8 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
           </div>
           @if (createError()) {
             <p
-              style="grid-column: 1 / -1; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0"
+              class="form-row-full"
+              style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0"
             >
               {{ createError() }}
             </p>
@@ -222,6 +223,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
         @for (s of stores(); track s.id) {
           <article
             class="flex flex-col"
+            [style.grid-column]="editingId() === s.id ? '1 / -1' : null"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 12px"
           >
             <header class="flex items-start justify-between" style="gap: 12px">

@@ -50,7 +50,7 @@ type Tab = 'details' | 'hours';
         <p style="color: var(--color-text-secondary)">{{ 'common.loading' | translate }}</p>
       } @else if (tab() === 'details') {
         <form [formGroup]="detailsForm" class="flex flex-col" style="gap: 12px">
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+          <div class="form-row">
             <label class="flex flex-col" style="gap: 4px">
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                 'admin.stores.editor.name' | translate
@@ -87,7 +87,7 @@ type Tab = 'details' | 'hours';
             />
           </label>
 
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+          <div class="form-row">
             <label class="flex flex-col" style="gap: 4px">
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                 'admin.stores.editor.city' | translate
@@ -111,7 +111,7 @@ type Tab = 'details' | 'hours';
             </label>
           </div>
 
-          <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 12px">
+          <div class="form-row">
             <label class="flex flex-col" style="gap: 4px">
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                 'admin.stores.editor.phone' | translate
@@ -147,7 +147,7 @@ type Tab = 'details' | 'hours';
             </label>
           </div>
 
-          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 12px">
+          <div class="form-row">
             <label class="flex flex-col" style="gap: 4px">
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
                 'admin.stores.fields.latitude' | translate

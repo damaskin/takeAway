@@ -46,7 +46,7 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
       <form
         [formGroup]="form"
         (ngSubmit)="issue()"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr)"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr))"
       >
         <label style="display: flex; flex-direction: column; gap: 4px">
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
