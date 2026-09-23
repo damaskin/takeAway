@@ -180,30 +180,34 @@ fine for testers, rejected by Google Play.
 **iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
 (`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
 Store Connect API key and a keychain of its own, because an Apple ID asks for
-2FA and the login keychain is locked over SSH. Team: Ivan Damaschin
-(`FGN8R2D6QW`), Bundle ID `md.takeaway.app`.
+2FA and the login keychain is locked over SSH. Team: Vladislav Socolov
+(`4VC4JRTQG9`), Bundle ID `md.takeaway.app` — the same team, API key and build
+keychain as RunBase and Zhmyak on that Mac.
 
-Once per team and Mac:
+Set up once (done on the Mac mini on 2026-09-23):
 
-1. App Store Connect → Users and Access → Integrations → App Store Connect API
-   → Team Keys: a key with the **Admin** role (creating the distribution
-   certificate needs it). Put `AuthKey_<id>.p8` in
-   `~/.appstoreconnect/private_keys/` on the Mac.
-2. App Store Connect → Apps → + → New App: iOS, name takeAway, bundle ID
-   `md.takeaway.app` (register it first with `fastlane ios register_bundle_id`
-   if the list does not offer it), SKU `md.takeaway.app`, primary language
-   Russian. Apple refuses to create the record through the API.
-3. `~/.appstoreconnect/takeaway.env` on the Mac, mode 600:
+1. `~/.appstoreconnect/takeaway.env`, mode 600. It reuses the team's key and
+   keychain from the zhmyak setup:
 
    ```bash
-   ASC_KEY_ID=...                 # 10 characters
-   ASC_ISSUER_ID=...              # UUID above the keys list
-   ASC_KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_<id>.p8
-   KEYCHAIN_PASSWORD=...          # any; the build keychain is created with it
+   . "$HOME/.appstoreconnect/zhmyak-app.env"   # ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, KEYCHAIN_PASSWORD
+   BUILD_KEYCHAIN=zhmyak-app-build.keychain
+   APPLE_TEAM_ID=4VC4JRTQG9
    FLUTTER=$HOME/sdk/flutter-3.38.8/bin/flutter
    ```
 
-4. `apps/mobile/config/prod.json` on the Mac, a copy of `prod.example.json`.
+   For another team: an App Store Connect API key with the **Admin** role
+   (Users and Access → Integrations → Team Keys; the distribution certificate
+   needs it), `AuthKey_<id>.p8` in `~/.appstoreconnect/private_keys/`, and the
+   four variables set directly; the keychain is created on the first run.
+
+2. `fastlane ios register_bundle_id` registers `md.takeaway.app` with push and
+   Sign in with Apple. Only then does App Store Connect → Apps → + → New App
+   offer it: iOS, SKU `md.takeaway.app`, primary language Russian. Apple
+   refuses to create the record through the API.
+3. `apps/mobile/config/prod.json`, a copy of `prod.example.json`.
+4. Flutter 3.38.8 in `~/sdk/flutter-3.38.8`: the Homebrew one on the Mac is
+   older than the project's Dart constraint.
 
 Each release (the archive takes a while — keep it off the SSH session):
 

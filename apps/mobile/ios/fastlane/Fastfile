@@ -13,7 +13,7 @@ require 'tmpdir'
 #   ASC_KEY_PATH       path to AuthKey_<id>.p8, outside the repo
 #   KEYCHAIN_PASSWORD  password of the build keychain (created on first run)
 #   BUILD_KEYCHAIN     keychain name, default takeaway-build.keychain
-#   APPLE_TEAM_ID      default FGN8R2D6QW (Ivan Damaschin)
+#   APPLE_TEAM_ID      default 4VC4JRTQG9 (Vladislav Socolov)
 #   FLUTTER            flutter binary, 3.38.8 or newer; default `flutter`
 #   DART_DEFINES_FILE  default ../config/prod.json (copy of prod.example.json)
 #   BUILD_NUMBER       optional; default is the latest TestFlight build + 1
@@ -25,7 +25,7 @@ default_platform(:ios)
 
 APP_ID = "md.takeaway.app"
 APP_NAME = "takeAway"
-TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "FGN8R2D6QW")
+TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "4VC4JRTQG9")
 KEYCHAIN_NAME = ENV.fetch("BUILD_KEYCHAIN", "takeaway-build.keychain")
 PROFILE_NAME = "#{APP_ID} AppStore"
 IPA_NAME = "takeAway.ipa"
@@ -259,7 +259,7 @@ platform :ios do
     UI.user_error!("No app record for #{APP_ID}") if app.nil?
     group_name = "takeAway team"
     if app.get_beta_groups.any? { |g| g.name == group_name }
-      UI.message("Group “#{group_name}” exists")
+      UI.message("Group '#{group_name}' exists")
     else
       # spaceship's create_beta_group always sends public-link fields, which
       # Apple now rejects for an internal group — hence the raw request.
@@ -270,7 +270,7 @@ platform :ios do
           relationships: { app: { data: { id: app.id, type: "apps" } } }
         }
       })
-      UI.success("Group “#{group_name}” created")
+      UI.success("Group '#{group_name}' created")
     end
   end
 end
