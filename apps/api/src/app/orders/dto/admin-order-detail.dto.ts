@@ -51,6 +51,8 @@ export class AdminOrderDetailDto {
 
   @ApiProperty() storeId!: string;
   @ApiProperty() storeName!: string;
+  /** IANA zone of the store — times on the order are shown on the store's clock. */
+  @ApiPropertyOptional({ type: String, nullable: true }) storeTimezone!: string | null;
 
   @ApiPropertyOptional({ type: String, nullable: true }) customerName!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) customerPhone!: string | null;

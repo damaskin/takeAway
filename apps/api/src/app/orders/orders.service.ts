@@ -346,7 +346,7 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         items: true,
-        store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+        store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
         payments: {
           orderBy: { createdAt: 'desc' },
           include: { cardToken: { select: { maskedPan: true } } },
@@ -372,7 +372,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(100, Math.max(1, take)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -429,7 +429,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(200, Math.max(1, params.take ?? 50)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -446,7 +446,7 @@ export class OrdersService {
         items: true,
         payments: { orderBy: { createdAt: 'asc' } },
         events: { orderBy: { createdAt: 'asc' } },
-        store: { select: { name: true } },
+        store: { select: { name: true, timezone: true } },
         user: { select: { email: true } },
       },
     });
@@ -472,6 +472,7 @@ export class OrdersService {
       createdAt: order.createdAt.toISOString(),
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       customerEmail: order.user?.email ?? null,
@@ -528,7 +529,7 @@ export class OrdersService {
     totalCents: number;
     currency: string;
     storeId: string;
-    store: { name: string };
+    store: { name: string; timezone: string };
     items: Array<{ quantity: number }>;
     createdAt: Date;
   }): OrderSummaryDto {
@@ -542,6 +543,7 @@ export class OrdersService {
       currency: o.currency as OrderSummaryDto['currency'],
       storeId: o.storeId,
       storeName: o.store.name,
+      storeTimezone: o.store.timezone,
       itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
       createdAt: o.createdAt.toISOString(),
     };
@@ -695,7 +697,7 @@ export class OrdersService {
         },
         include: {
           items: true,
-          store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+          store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
           payments: {
             orderBy: { createdAt: 'desc' },
             include: { cardToken: { select: { maskedPan: true } } },
@@ -899,6 +901,7 @@ export class OrdersService {
         latitude?: number | null;
         longitude?: number | null;
         addressLine?: string | null;
+        timezone?: string | null;
       } | null;
       payments?: Array<{
         status: PaymentStatus;
@@ -923,6 +926,7 @@ export class OrdersService {
       currency: order.currency,
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       storeLatitude: order.store?.latitude ?? 0,
       storeLongitude: order.store?.longitude ?? 0,
       storeAddress: order.store?.addressLine ?? null,

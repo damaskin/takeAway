@@ -87,6 +87,8 @@ export interface OrderSummary {
   currency: Currency;
   storeId: string;
   storeName: string;
+  /** IANA zone of the store; pickup times are shown on the store's clock. */
+  storeTimezone: string;
   itemCount: number;
   createdAt: string;
 }
