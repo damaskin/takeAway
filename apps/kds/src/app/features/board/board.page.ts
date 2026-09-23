@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { interval, type Subscription } from 'rxjs';
 
-import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { LanguageSwitcherComponent, LocaleFormatService } from '@takeaway/i18n';
 import type { OrderItemSnapshot } from '@takeaway/shared-types';
 import { readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -285,6 +285,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   private readonly storesApi = inject(StoresApi);
   private readonly realtime = inject(KdsRealtimeService);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
   readonly authStore = inject(AuthStore);
 
   readonly columns: Array<{ key: Column }> = [{ key: 'NEW' }, { key: 'PREPARING' }, { key: 'READY' }];
@@ -311,9 +312,10 @@ export class KdsBoardPage implements OnInit, OnDestroy {
         ]),
       ),
   );
-  readonly nowLabel = computed(() =>
-    new Date(this.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  private readonly storeTimezone = computed(
+    () => this.stores().find((s) => s.id === this.selectedStoreId())?.timezone ?? null,
   );
+  readonly nowLabel = computed(() => this.fmt.time(this.now(), this.storeTimezone()));
 
   private tickSub: Subscription | null = null;
   /** Safety-net slow poll (30 s). Primary refresh path is the WS subscription. */
@@ -397,7 +399,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   }
 
   pickupTime(order: KdsOrder): string {
-    return new Date(order.pickupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(order.pickupAt, this.storeTimezone());
   }
 
   dueColor(order: KdsOrder): string {

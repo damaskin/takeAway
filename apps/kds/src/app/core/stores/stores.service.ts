@@ -9,6 +9,8 @@ export interface StoreSummary {
   slug: string;
   name: string;
   city: string;
+  /** IANA zone: the board's clock and pickup times follow the store, not the tablet. */
+  timezone?: string;
 }
 
 /** The store this tablet was set up for on the PIN screen. */
