@@ -70,8 +70,8 @@ const MAX_COUNT = 99;
                     <input type="checkbox" formControlName="isDefault" />
                     <span>{{ 'admin.menu.options.default' | translate }}</span>
                   </label>
-                  @if (variationEditSubmitted() && variationEdit.invalid) {
-                    <span class="error">{{ 'admin.menu.errors.option' | translate }}</span>
+                  @if (variationEditSubmitted() && optionError(variationEdit); as key) {
+                    <span class="error">{{ key | translate }}</span>
                   }
                   <div class="flex items-center flex-wrap" style="gap: 8px 12px">
                     <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
@@ -148,8 +148,8 @@ const MAX_COUNT = 99;
               {{ 'admin.menu.options.addVariation' | translate }}
             </button>
           </div>
-          @if (variationAddSubmitted() && variationAdd.invalid) {
-            <span class="error">{{ 'admin.menu.errors.option' | translate }}</span>
+          @if (variationAddSubmitted() && optionError(variationAdd); as key) {
+            <span class="error">{{ key | translate }}</span>
           }
         </form>
       </section>
@@ -258,8 +258,8 @@ const MAX_COUNT = 99;
               {{ 'admin.menu.options.addModifier' | translate }}
             </button>
           </div>
-          @if (modifierAddSubmitted() && modifierAdd.invalid) {
-            <span class="error">{{ 'admin.menu.errors.option' | translate }}</span>
+          @if (modifierAddSubmitted() && optionError(modifierAdd); as key) {
+            <span class="error">{{ key | translate }}</span>
           }
         </form>
       </section>
@@ -315,26 +315,26 @@ export class ProductOptionsPanelComponent {
   readonly variationAdd = new FormGroup({
     type: new FormControl<VariationType>('SIZE', { nonNullable: true }),
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(60)] }),
-    price: new FormControl('', { nonNullable: true, validators: [moneyValidator(true)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     isDefault: new FormControl(false, { nonNullable: true }),
   });
 
   readonly variationEdit = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(60)] }),
-    price: new FormControl('', { nonNullable: true, validators: [moneyValidator(true)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     sortOrder: new FormControl('', { nonNullable: true, validators: [countValidator(0, 10_000)] }),
     isDefault: new FormControl(false, { nonNullable: true }),
   });
 
   readonly modifierAdd = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
-    price: new FormControl('', { nonNullable: true, validators: [moneyValidator(true)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     maxCount: new FormControl('1', { nonNullable: true, validators: [countValidator(1, MAX_COUNT)] }),
   });
 
   readonly modifierEdit = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
-    price: new FormControl('', { nonNullable: true, validators: [moneyValidator(true)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     minCount: new FormControl('', { nonNullable: true, validators: [countValidator(0, MAX_COUNT)] }),
     maxCount: new FormControl('', { nonNullable: true, validators: [countValidator(1, MAX_COUNT)] }),
     sortOrder: new FormControl('', { nonNullable: true, validators: [countValidator(0, 10_000)] }),
@@ -366,7 +366,7 @@ export class ProductOptionsPanelComponent {
   addVariation(): void {
     this.variationAddSubmitted.set(true);
     const v = this.variationAdd.getRawValue();
-    const priceDeltaCents = v.price.trim() ? parseMoney(v.price, true) : 0;
+    const priceDeltaCents = v.price.trim() ? parseMoney(v.price) : 0;
     if (this.variationAdd.invalid || priceDeltaCents === null) return;
     this.mutate(
       this.api.createVariation(this.productId(), {
@@ -397,7 +397,7 @@ export class ProductOptionsPanelComponent {
   saveVariation(v: VariationAdminDto): void {
     this.variationEditSubmitted.set(true);
     const f = this.variationEdit.getRawValue();
-    const priceDeltaCents = f.price.trim() ? parseMoney(f.price, true) : 0;
+    const priceDeltaCents = f.price.trim() ? parseMoney(f.price) : 0;
     const sortOrder = f.sortOrder.trim() ? parseCount(f.sortOrder) : v.sortOrder;
     if (this.variationEdit.invalid || priceDeltaCents === null || sortOrder === null) return;
     this.mutate(
@@ -414,7 +414,7 @@ export class ProductOptionsPanelComponent {
   addModifier(): void {
     this.modifierAddSubmitted.set(true);
     const m = this.modifierAdd.getRawValue();
-    const priceDeltaCents = m.price.trim() ? parseMoney(m.price, true) : 0;
+    const priceDeltaCents = m.price.trim() ? parseMoney(m.price) : 0;
     const maxCount = parseCount(m.maxCount, 1, MAX_COUNT);
     if (this.modifierAdd.invalid || priceDeltaCents === null || maxCount === null) return;
     this.mutate(this.api.createModifier(this.productId(), { name: m.name.trim(), priceDeltaCents, maxCount }), () => {
@@ -435,9 +435,23 @@ export class ProductOptionsPanelComponent {
     });
   }
 
+  /**
+   * The translation key for the first field of an option form that needs
+   * fixing. A surcharge cannot be negative — the API refuses it — so the
+   * form says so before sending.
+   */
+  optionError(form: FormGroup): string | null {
+    const invalid = (name: string) => form.get(name)?.invalid ?? false;
+    if (invalid('name')) return 'admin.menu.errors.name';
+    if (invalid('price')) return 'admin.menu.errors.surcharge';
+    if (invalid('minCount') || invalid('maxCount') || invalid('sortOrder')) return 'admin.menu.errors.count';
+    return null;
+  }
+
   /** The translation key of what is wrong with the modifier being edited, if anything. */
   modifierEditError(): string | null {
-    if (this.modifierEdit.invalid) return 'admin.menu.errors.option';
+    const invalid = this.optionError(this.modifierEdit);
+    if (invalid) return invalid;
     const f = this.modifierEdit.getRawValue();
     const min = parseCount(f.minCount);
     const max = parseCount(f.maxCount);
@@ -448,7 +462,7 @@ export class ProductOptionsPanelComponent {
     this.modifierEditSubmitted.set(true);
     if (this.modifierEditError()) return;
     const f = this.modifierEdit.getRawValue();
-    const priceDeltaCents = f.price.trim() ? parseMoney(f.price, true) : 0;
+    const priceDeltaCents = f.price.trim() ? parseMoney(f.price) : 0;
     const minCount = parseCount(f.minCount, 0, MAX_COUNT) ?? m.minCount;
     const maxCount = parseCount(f.maxCount, 1, MAX_COUNT) ?? m.maxCount;
     const sortOrder = parseCount(f.sortOrder) ?? m.sortOrder;

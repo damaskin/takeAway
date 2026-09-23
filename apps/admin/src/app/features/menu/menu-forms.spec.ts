@@ -113,6 +113,21 @@ describe('ProductOptionsPanelComponent', () => {
     expect(createModifier).toHaveBeenCalledWith('p1', { name: 'Ванильный сироп', priceDeltaCents: 500, maxCount: 3 });
   });
 
+  it('refuses a negative surcharge before sending it, and says why', () => {
+    const createVariation = jest.fn();
+    const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
+    const fixture = setup(ProductOptionsPanelComponent, { createVariation, getProduct });
+    fixture.componentRef.setInput('productId', 'p1');
+    fixture.detectChanges();
+
+    fixture.componentInstance.variationAdd.patchValue({ name: 'Маленький', price: '-5' });
+    fixture.componentInstance.addVariation();
+    fixture.detectChanges();
+
+    expect(createVariation).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Доплата — число не меньше нуля');
+  });
+
   it('shows variation groups by their Russian names, not enum values', () => {
     const getProduct = jest.fn().mockReturnValue(
       of({
