@@ -309,6 +309,41 @@ platform :ios do
     UI.success("#{user.first_name} #{user.last_name} <#{user.username}> added to '#{group.name}'")
   end
 
+  desc "Invite a person to the App Store Connect team, to test this app (INVITE_EMAIL, INVITE_FIRST, INVITE_LAST)"
+  lane :invite_user do
+    # Internal testers have to be users of the team. The invitation gives the
+    # Developer role, no certificates, and this app only; once it is accepted,
+    # add_tester puts the person into the internal group.
+    email = ENV["INVITE_EMAIL"].to_s.strip
+    UI.user_error!("Set INVITE_EMAIL") if email.empty?
+    first = ENV["INVITE_FIRST"].to_s.strip
+    last = ENV["INVITE_LAST"].to_s.strip
+    UI.user_error!("Set INVITE_FIRST and INVITE_LAST — App Store Connect needs a name") if first.empty? || last.empty?
+    asc_key
+    if Spaceship::ConnectAPI::User.all.any? { |u| u.username.casecmp?(email) }
+      UI.message("#{email} is already a user of the team — run add_tester")
+      next
+    end
+    pending = Spaceship::ConnectAPI.test_flight_request_client.get("v1/userInvitations", { filter: { email: email } })
+    if Array(pending.body["data"]).any?
+      UI.message("#{email} already has a pending invitation")
+      next
+    end
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    Spaceship::ConnectAPI.test_flight_request_client.post("v1/userInvitations", {
+      data: {
+        type: "userInvitations",
+        attributes: {
+          email: email, firstName: first, lastName: last,
+          roles: ["DEVELOPER"], allAppsVisible: false, provisioningAllowed: false
+        },
+        relationships: { visibleApps: { data: [{ type: "apps", id: app.id }] } }
+      }
+    })
+    UI.success("Invited #{first} #{last} <#{email}> as Developer, #{app.name} only")
+  end
+
   desc "Internal testing group that sees every build"
   lane :beta_group do
     # Testers are added in the website (they need App Store Connect users);
