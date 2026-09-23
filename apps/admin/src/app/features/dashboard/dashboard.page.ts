@@ -6,6 +6,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { formatMoney } from '../../core/format/money';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
+import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 
 interface KpiCard {
   label: string;
@@ -33,7 +34,7 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [TranslatePipe, OnboardingChecklistComponent],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -64,6 +65,9 @@ interface DashboardOrder {
           </button>
         </div>
       </header>
+
+      <!-- Launch checklist: a new brand owner's next steps; hides itself once done -->
+      <app-onboarding-checklist />
 
       <!-- KPI grid -->
       <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">

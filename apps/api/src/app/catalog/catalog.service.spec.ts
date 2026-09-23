@@ -217,4 +217,28 @@ describe('CatalogService', () => {
 
     expect(product.brandId).toBe('brand-7');
   });
+
+  // Two brands can both have a `latte`: the store being browsed decides.
+  it("looks a product slug up inside the browsed store's brand", async () => {
+    prisma.store.findFirst.mockResolvedValue({ brandId: 'brand-2' });
+    prisma.product.findFirst.mockResolvedValue(null);
+
+    await expect(service.getProduct('latte', 'noname-balka')).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.store.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { OR: [{ id: 'noname-balka' }, { slug: 'noname-balka' }] } }),
+    );
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ OR: [{ id: 'latte' }, { slug: 'latte' }], brandId: 'brand-2' }),
+      }),
+    );
+  });
+
+  it('refuses a product lookup in a store that does not exist', async () => {
+    prisma.store.findFirst.mockResolvedValue(null);
+
+    await expect(service.getProduct('latte', 'nowhere')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.product.findFirst).not.toHaveBeenCalled();
+  });
 });

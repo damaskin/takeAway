@@ -2,8 +2,8 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { PickupSlot } from '@takeaway/shared-types';
-import { computeTax } from '@takeaway/utils';
+import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
+import { computeTax, isCartChangedError } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -727,7 +727,41 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.placedOrderId = order.id;
         this.payFor(order.id);
       },
-      error: (err) => this.showError(err, 'tma.checkout.placeOrderFailed'),
+      error: (err) => {
+        const body = (err as { error?: unknown }).error;
+        if (isCartChangedError(body)) {
+          this.onCartChanged(c.storeId, body);
+          return;
+        }
+        this.showError(err, 'tma.checkout.placeOrderFailed');
+      },
+    });
+  }
+
+  /**
+   * The server priced the cart again against today's menu and refused the
+   * order: a price moved, or something in the basket is gone. It has already
+   * brought the cart up to date, so reload it — the main button shows the new
+   * total, or hides when nothing is left to order.
+   */
+  private onCartChanged(storeId: string, conflict: CartChangedError): void {
+    const removed = [...new Set(conflict.items.filter((i) => i.unitPriceCents === null).map((i) => i.productName))];
+    this.error.set(
+      [
+        this.translate.instant('tma.checkout.cartChanged'),
+        removed.length > 0
+          ? this.translate.instant('tma.checkout.cartChangedRemoved', { names: removed.join(', ') })
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+    this.cartService.load(storeId).subscribe({
+      next: (cart) => {
+        this.cart.set(cart);
+        this.refreshMainButton();
+      },
+      error: () => undefined,
     });
   }
 

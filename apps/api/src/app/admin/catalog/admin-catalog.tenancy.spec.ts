@@ -25,6 +25,7 @@ describe('AdminCatalogService — brand boundaries', () => {
         create: jest.fn((args: unknown) => Promise.resolve(args)),
         update: jest.fn((args: unknown) => Promise.resolve(args)),
         findUnique: jest.fn().mockResolvedValue({ id: 'p1', brandId: 'own', variations: [], modifiers: [] }),
+        aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
       },
     };
     const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);

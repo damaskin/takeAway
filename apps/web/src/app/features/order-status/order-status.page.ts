@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl } from '@takeaway/utils';
+import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
 
@@ -233,6 +233,62 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
           </button>
         }
 
+        <!-- What was ordered, as the kitchen will make it -->
+        @if (lines().length > 0) {
+          <article
+            class="w-full"
+            style="
+              background: var(--color-foam);
+              border: 1px solid var(--color-border-light);
+              border-radius: 16px;
+              padding: var(--spacing-lg);
+              display: flex; flex-direction: column; gap: 12px;
+            "
+          >
+            <span
+              style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+            >
+              {{ 'web.orderStatus.yourOrder' | translate }}
+            </span>
+            @for (line of lines(); track line.id) {
+              <div class="flex flex-col" style="gap: 2px">
+                <div class="flex items-start justify-between" style="gap: 12px">
+                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
+                    {{ line.quantity }} × {{ line.name }}
+                  </span>
+                  <span
+                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso); white-space: nowrap"
+                  >
+                    {{ price(line.totalCents) }}
+                  </span>
+                </div>
+                @if (line.options) {
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    line.options
+                  }}</span>
+                }
+                @if (line.notes) {
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); font-style: italic"
+                    >“{{ line.notes }}”</span
+                  >
+                }
+              </div>
+            }
+            <div style="height: 1px; background: var(--color-border-light)"></div>
+            <div class="flex items-center justify-between">
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                >{{ 'common.total' | translate }}</span
+              >
+              <span
+                style="font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--color-caramel)"
+                >{{ price(o.totalCents) }}</span
+              >
+            </div>
+          </article>
+        }
+
         <a routerLink="/menu" class="text-sm mt-2 underline" style="color: var(--color-text-secondary)">
           Back to menu
         </a>
@@ -372,6 +428,21 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     const diff = new Date(o.pickupAt).getTime() - this.now();
     return Math.max(0, Math.ceil(diff / 60_000));
   });
+
+  /** The order's lines with their size, milk and extras spelled out. */
+  readonly lines = computed(() =>
+    (this.order()?.items ?? []).map((item) => {
+      const snap = readOrderItemSnapshot(item.productSnapshot);
+      return {
+        id: item.id,
+        name: snap.name,
+        quantity: item.quantity,
+        totalCents: item.totalCents,
+        options: describeOrderItemOptions(snap),
+        notes: snap.notes,
+      };
+    }),
+  );
 
   readonly canCancel = computed(() => {
     const s = this.order()?.status;

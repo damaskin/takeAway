@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import type { OrderItemSnapshot } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -40,7 +41,8 @@ export interface OrderView {
   storeAddress: string | null;
   items: Array<{
     id: string;
-    productSnapshot: { name?: string };
+    /** Read it with `readOrderItemSnapshot`, which also copes with an older API. */
+    productSnapshot: OrderItemSnapshot;
     quantity: number;
     totalCents: number;
   }>;

@@ -105,14 +105,15 @@ import { CatalogService } from '../../core/catalog/catalog.service';
               @for (p of cat.products; track p.id) {
                 <a
                   [routerLink]="['/products', p.slug]"
+                  [queryParams]="{ store: store()?.slug }"
                   class="flex flex-col transition-all"
                   [class.opacity-50]="p.onStopList"
                   style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); overflow: hidden"
                   [style.cursor]="p.onStopList ? 'not-allowed' : 'pointer'"
                 >
                   <div
-                    [style.background]="productImageBg(p)"
-                    style="height: 180px; background-size: cover; background-position: center"
+                    [style.background-image]="productImageBg(p)"
+                    style="height: 180px; background-size: cover; background-position: center; background-repeat: no-repeat"
                   ></div>
                   <div class="flex flex-col" style="padding: 14px; gap: 6px">
                     <span

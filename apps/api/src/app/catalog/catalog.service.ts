@@ -184,13 +184,15 @@ export class CatalogService {
     });
     const stopList = new Set(stopListEntries.map((e) => e.productId));
 
+    // Equal positions (everything created before ordering existed sits at 0)
+    // fall back to creation order, the same tie-break the admin editor shows.
     const categories = await this.prisma.category.findMany({
       where: { brandId: store.brandId, visible: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         products: {
           where: { visible: true, brandId: store.brandId },
-          orderBy: { sortOrder: 'asc' },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
       },
     });
@@ -230,13 +232,31 @@ export class CatalogService {
     };
   }
 
-  async getProduct(idOrSlug: string): Promise<ProductDetailDto> {
+  /**
+   * A product slug is unique within its brand only, and slugs are now made
+   * from names, so two cafés selling «Латте» both have `latte`. The client
+   * passes the store the customer is browsing and the lookup stays inside
+   * that store's brand; without one, the oldest match wins so an old link
+   * at least resolves the same way every time.
+   */
+  async getProduct(idOrSlug: string, storeIdOrSlug?: string): Promise<ProductDetailDto> {
+    let brandId: string | undefined;
+    if (storeIdOrSlug) {
+      const store = await this.prisma.store.findFirst({
+        where: { OR: [{ id: storeIdOrSlug }, { slug: storeIdOrSlug }] },
+        select: { brandId: true },
+      });
+      if (!store) throw new NotFoundException('Store not found');
+      brandId = store.brandId;
+    }
     const product = await this.prisma.product.findFirst({
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         visible: true,
         brand: { moderationStatus: 'APPROVED' },
+        ...(brandId ? { brandId } : {}),
       },
+      orderBy: { createdAt: 'asc' },
       include: {
         variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
         modifiers: { orderBy: { sortOrder: 'asc' } },

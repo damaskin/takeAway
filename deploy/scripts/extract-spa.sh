@@ -69,6 +69,10 @@ for app in "${APPS[@]}"; do
     inject_global __GOOGLE_CLIENT_ID "${GOOGLE_OAUTH_WEB_CLIENT_ID:-}"
     inject_global __APPLE_CLIENT_ID "${APPLE_OAUTH_SERVICES_ID:-}"
     inject_global __APPLE_REDIRECT_URI "${APPLE_OAUTH_REDIRECT_URI:-}"
+    # The storefront links business owners to the admin's sign-up.
+    if [ "$app" = web ]; then
+      inject_global __ADMIN_APP_URL "${ADMIN_APP_URL:-}"
+    fi
   fi
 
   # Stamp the SPA bundle with the build version triple so every browser

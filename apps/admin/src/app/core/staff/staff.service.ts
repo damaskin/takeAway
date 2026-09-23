@@ -13,6 +13,8 @@ export interface StaffRoster {
   role: StaffRole;
   blocked: boolean;
   addedAt: string;
+  /** Has a kitchen-tablet PIN for this store. */
+  hasKdsPin?: boolean;
 }
 
 export interface AddStaffRequest {
@@ -53,6 +55,15 @@ export class StaffService {
 
   remove(storeId: string, userId: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}`);
+  }
+
+  /** Sets or rotates the 4–6 digit PIN a staff member unlocks this store's kitchen tablet with. */
+  setKdsPin(storeId: string, userId: string, pin: string): Observable<void> {
+    return this.http.put<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/kds-pin`, { pin });
+  }
+
+  clearKdsPin(storeId: string, userId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/kds-pin`);
   }
 
   getOwner(brandId: string): Observable<BrandOwner | null> {

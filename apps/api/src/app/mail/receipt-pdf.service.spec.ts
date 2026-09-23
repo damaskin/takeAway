@@ -40,4 +40,20 @@ describe('ReceiptPdfService', () => {
     });
     expect(buf).toBeNull();
   });
+
+  it("renders a line's options, separators included", async () => {
+    const buf = await service.render({
+      ...baseReceipt,
+      items: [{ name: 'Latte', options: 'L · Oat · +Vanilla ×2', quantity: 1, totalCents: 300 }],
+    });
+    expect(buf).not.toBeNull();
+  });
+
+  it('returns null when an options line is non-ASCII', async () => {
+    const buf = await service.render({
+      ...baseReceipt,
+      items: [{ name: 'Latte', options: 'L · Овсяное', quantity: 1, totalCents: 300 }],
+    });
+    expect(buf).toBeNull();
+  });
 });

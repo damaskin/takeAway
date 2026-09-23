@@ -8,12 +8,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { computeTax } from '@takeaway/utils';
-import type { Cart, CartItem, Order, PaymentStatus, Prisma, Product } from '@prisma/client';
+import type { OrderItemSnapshot } from '@takeaway/shared-types';
+import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
-import { CartService } from '../cart/cart.service';
+import { CartService, type CheckoutLine } from '../cart/cart.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -79,7 +80,10 @@ export class OrdersService {
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { id: dto.cartId },
-      include: { items: { include: { product: true } }, store: true },
+      include: {
+        items: { include: { product: { include: { variations: true, modifiers: true } } } },
+        store: true,
+      },
     });
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
@@ -114,16 +118,21 @@ export class OrdersService {
       cart.items.map((i) => i.productId),
     );
 
-    const pickupAt = await this.resolvePickupAt(cart, dto);
+    // The cart remembers what each line cost when it went in; the charge
+    // and the kitchen ticket have to follow the menu as it is now. Throws a
+    // 409 (and fixes the cart up) if the two have drifted apart.
+    const lines = await this.cart.repriceForCheckout(cart);
+
+    const pickupAt = await this.resolvePickupAt(cart.storeId, lines, dto);
     // Working hours are edited in admin and were enforced nowhere: a 3am
     // handover used to land straight on the kitchen board.
     await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
     // Capacity applies to ASAP too. Without it a rush simply pushes every
     // quoted ETA out, which is the failure this whole model exists to stop.
     await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);
-    const { prepSeconds, workSeconds } = this.kitchen.timings(cart.items);
+    const { prepSeconds, workSeconds } = this.kitchen.timings(lines);
 
-    const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
+    const subtotalCents = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
       throw new BadRequestException('Cart total below store minimum');
     }
@@ -242,11 +251,11 @@ export class OrdersService {
             deliveryFeeCents,
             deliveryDistanceM,
             items: {
-              create: cart.items.map((i) => ({
-                productSnapshot: this.snapshotItem(i) as Prisma.InputJsonValue,
-                quantity: i.quantity,
-                unitPriceCents: i.unitPriceCents,
-                totalCents: i.unitPriceCents * i.quantity,
+              create: lines.map((l) => ({
+                productSnapshot: this.snapshotItem(l),
+                quantity: l.quantity,
+                unitPriceCents: l.unitPriceCents,
+                totalCents: l.unitPriceCents * l.quantity,
               })),
             },
             events: {
@@ -479,10 +488,13 @@ export class OrdersService {
       refundedCents,
       refundableCents: Math.max(0, paidCents - refundedCents),
       items: order.items.map((i) => {
-        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
+        const snap = readOrderItemSnapshot(i.productSnapshot);
         return {
           id: i.id,
-          name: typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item',
+          name: snap.name || 'Item',
+          variations: snap.variations,
+          modifierLines: snap.modifierLines,
+          notes: snap.notes,
           quantity: i.quantity,
           unitPriceCents: i.unitPriceCents,
           totalCents: i.totalCents,
@@ -618,9 +630,13 @@ export class OrdersService {
       taxIncluded: order.store?.taxIncludedInPrice ?? true,
       totalCents: order.totalCents,
       items: order.items.map((i) => {
-        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
-        const name = typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item';
-        return { name, quantity: i.quantity, totalCents: i.totalCents };
+        const snap = readOrderItemSnapshot(i.productSnapshot);
+        return {
+          name: snap.name || 'Item',
+          options: describeOrderItemOptions(snap),
+          quantity: i.quantity,
+          totalCents: i.totalCents,
+        };
       }),
     };
 
@@ -809,10 +825,14 @@ export class OrdersService {
    * cached on the cart — that number was right when the customer last
    * touched their basket, and four orders may have landed since.
    */
-  private async resolvePickupAt(cart: Cart & { items: CartItem[] }, dto: CreateOrderDto): Promise<Date> {
+  private async resolvePickupAt(
+    storeId: string,
+    lines: readonly { quantity: number; unitPrepSeconds: number }[],
+    dto: CreateOrderDto,
+  ): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
-      const { prepSeconds } = this.kitchen.timings(cart.items);
-      const quote = await this.kitchen.quote(cart.storeId, prepSeconds);
+      const { prepSeconds } = this.kitchen.timings(lines);
+      const quote = await this.kitchen.quote(storeId, prepSeconds);
       return new Date(Date.now() + quote.etaSeconds * 1000);
     }
     if (!dto.pickupAt) {
@@ -828,15 +848,24 @@ export class OrdersService {
     return dto.pickupAt;
   }
 
-  private snapshotItem(item: CartItem & { product: Product }): Record<string, unknown> {
+  /**
+   * The line as it was bought. Names and prices are copied, not referenced:
+   * the barista has to see "L, oat, +vanilla" even after the admin renames
+   * the milk or deletes the syrup, and the receipt must keep saying what was
+   * charged. `variationIds` and `modifiers` stay for the POS push and for
+   * clients that read them.
+   */
+  private snapshotItem(line: CheckoutLine): OrderItemSnapshot {
     return {
-      id: item.product.id,
-      slug: item.product.slug,
-      name: item.product.name,
-      variationIds: item.variationIds,
-      modifiers: item.modifiersJson,
-      notes: item.notes,
-      unitPrepSeconds: item.unitPrepSeconds,
+      id: line.productId,
+      slug: line.productSlug,
+      name: line.productName,
+      variationIds: line.variationIds,
+      modifiers: line.modifiers,
+      notes: line.notes,
+      unitPrepSeconds: line.unitPrepSeconds,
+      variations: line.variations,
+      modifierLines: line.modifierLines,
     };
   }
 
@@ -905,7 +934,7 @@ export class OrdersService {
       giftCardCents: order.giftCardCents,
       items: order.items.map<OrderItemDto>((i) => ({
         id: i.id,
-        productSnapshot: (i.productSnapshot as Record<string, unknown>) ?? {},
+        productSnapshot: readOrderItemSnapshot(i.productSnapshot),
         quantity: i.quantity,
         unitPriceCents: i.unitPriceCents,
         totalCents: i.totalCents,
