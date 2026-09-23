@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, booleanAttribute, computed, effect, inject, input, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -287,6 +287,8 @@ export class AdminPromoPage implements OnInit {
   readonly loading = signal(false);
   readonly promos = signal<Promo[]>([]);
   readonly formOpen = signal(false);
+  /** `/promo?create=1` — the dashboard's «+ Новый промо» lands on an open form. */
+  readonly create = input(false, { transform: booleanAttribute });
   readonly submitting = signal(false);
   readonly formError = signal<string | null>(null);
 
@@ -362,6 +364,7 @@ export class AdminPromoPage implements OnInit {
 
   ngOnInit(): void {
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
+    if (this.create()) this.formOpen.set(true);
   }
 
   refresh(): void {

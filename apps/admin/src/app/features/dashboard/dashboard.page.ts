@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -11,10 +12,15 @@ import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 interface KpiCard {
   label: string;
   value: string;
+  /** «▲ 12,5 % к прошлым 7 дням»; empty hides the line. */
   delta: string;
-  positive: boolean;
+  tone: 'good' | 'bad' | 'neutral';
   accent: string;
 }
+
+/** The periods the dashboard can show, in days. */
+const PERIODS = [7, 14, 30] as const;
+type Period = (typeof PERIODS)[number];
 
 interface DashboardOrder {
   code: string;
@@ -34,7 +40,7 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [TranslatePipe, OnboardingChecklistComponent],
+  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -49,20 +55,25 @@ interface DashboardOrder {
           </p>
         </div>
         <div class="flex items-center" style="gap: 8px">
-          <button
-            type="button"
-            class="flex items-center"
-            style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+          <select
+            [attr.aria-label]="'admin.dashboard.period' | translate"
+            (change)="setDays($any($event.target).value)"
+            style="height: 36px; padding: 0 10px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); cursor: pointer"
           >
-            {{ 'admin.dashboard.range' | translate }} ▾
-          </button>
-          <button
-            type="button"
+            @for (d of periods; track d) {
+              <option [value]="d" [selected]="d === days()">
+                {{ 'admin.dashboard.range' | translate: { days: d } }}
+              </option>
+            }
+          </select>
+          <a
+            routerLink="/promo"
+            [queryParams]="{ create: 1 }"
             class="flex items-center"
-            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
           >
             {{ 'admin.dashboard.newPromo' | translate }}
-          </button>
+          </a>
         </div>
       </header>
 
@@ -86,10 +97,10 @@ interface DashboardOrder {
             >
             <span
               class="flex items-center"
-              [style.color]="kpi.positive ? '#3E8868' : 'var(--color-berry)'"
-              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; gap: 4px"
+              [style.color]="toneColor(kpi.tone)"
+              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; gap: 4px; min-height: 16px"
             >
-              {{ kpi.positive ? '▲' : '▼' }} {{ kpi.delta }}
+              {{ kpi.delta }}
             </span>
             <div style="height: 4px; border-radius: 9999px; margin-top: 2px" [style.background]="kpi.accent"></div>
           </article>
@@ -110,7 +121,7 @@ interface DashboardOrder {
               {{ 'admin.dashboard.liveOrders' | translate }}
             </h2>
             <a
-              href="#/orders"
+              routerLink="/orders"
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-caramel)"
               >{{ 'admin.dashboard.viewAll' | translate }}</a
             >
@@ -210,39 +221,45 @@ export class DashboardPage {
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
 
+  readonly periods = PERIODS;
+  /** The period every figure on the page covers; the store list follows it too. */
+  readonly days = signal<Period>(7);
+
   readonly summary = signal<DashboardSummary | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
   readonly storePerfRaw = signal<StorePerformance[]>([]);
 
   readonly kpis = computed<KpiCard[]>(() => {
     const s = this.summary();
+    const days = s?.days ?? this.days();
+    const revenue = this.change(s?.revenueDeltaPercent, days, (v) => this.fmt.percent(v));
+    const orders = this.change(s?.ordersDeltaPercent, days, (v) => this.fmt.percent(v));
+    // A shorter wait is the good direction.
+    const pickup = this.change(s?.pickupDeltaSeconds, days, (v) => this.duration(v), true);
     return [
       {
-        label: 'admin.dashboard.kpi.revenueToday',
-        value: this.price(s?.revenueTodayCents ?? 0),
-        delta: s?.deltas['revenue'] ?? '—',
-        positive: (s?.deltas['revenue'] ?? '+0%').startsWith('+'),
+        label: 'admin.dashboard.kpi.revenue',
+        value: this.price(s?.revenueCents ?? 0),
+        ...revenue,
         accent: 'var(--color-caramel)',
       },
       {
-        label: 'admin.dashboard.kpi.ordersToday',
-        value: String(s?.ordersToday ?? 0),
-        delta: s?.deltas['orders'] ?? '—',
-        positive: (s?.deltas['orders'] ?? '+0%').startsWith('+'),
+        label: 'admin.dashboard.kpi.orders',
+        value: String(s?.orders ?? 0),
+        ...orders,
         accent: 'var(--color-mint)',
       },
       {
         label: 'admin.dashboard.kpi.pickupTime',
-        value: this.formatSeconds(s?.avgPickupSeconds ?? 0),
-        delta: s?.deltas['pickup'] ?? '0s',
-        positive: (s?.deltas['pickup'] ?? '+0').startsWith('-') || s?.avgPickupSeconds === 0,
+        value: s?.avgPickupSeconds ? this.duration(s.avgPickupSeconds) : '—',
+        ...pickup,
         accent: 'var(--color-amber)',
       },
       {
         label: 'admin.dashboard.kpi.nps',
         value: s?.nps == null ? '—' : String(s.nps),
-        delta: s?.deltas['nps'] ?? '',
-        positive: true,
+        delta: '',
+        tone: 'neutral',
         accent: 'var(--color-cat-signature)',
       },
     ];
@@ -278,12 +295,23 @@ export class DashboardPage {
     effect(() => {
       const brandId = this.activeBrand.activeId();
       if (!brandId) return;
-      this.analytics.summary(brandId).subscribe({ next: (s) => this.summary.set(s) });
       this.orders.list({ take: 10, brandId }).subscribe({
         next: (list) => this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
       });
-      this.analytics.storePerformance(14, brandId).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
     });
+    // The KPI cards and the store list cover the period picked in the header.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      const days = this.days();
+      if (!brandId) return;
+      this.analytics.summary(brandId, days).subscribe({ next: (s) => this.summary.set(s) });
+      this.analytics.storePerformance(days, brandId).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
+    });
+  }
+
+  setDays(value: string): void {
+    const days = Number(value);
+    if (PERIODS.includes(days as Period)) this.days.set(days as Period);
   }
 
   name(): string {
@@ -294,13 +322,39 @@ export class DashboardPage {
     return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: true });
   }
 
-  formatSeconds(sec: number): string {
-    if (!sec) return '—';
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    const mShort = this.translate.instant('common.units.mShort');
-    const sShort = this.translate.instant('common.units.sShort');
-    return `${m}${mShort} ${s}${sShort}`;
+  /** «4 мин 30 с», «45 с». */
+  duration(seconds: number): string {
+    const total = Math.round(Math.abs(seconds));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    const min = this.translate.instant('common.units.min');
+    const sec = this.translate.instant('common.units.sShort');
+    if (m === 0) return `${s} ${sec}`;
+    return s === 0 ? `${m} ${min}` : `${m} ${min} ${s} ${sec}`;
+  }
+
+  toneColor(tone: KpiCard['tone']): string {
+    if (tone === 'good') return '#3E8868';
+    if (tone === 'bad') return 'var(--color-berry)';
+    return 'var(--color-text-tertiary)';
+  }
+
+  /**
+   * «▲ 12,5 % к прошлым 7 дням». `lowerIsBetter` flips the colour for figures
+   * where a drop is the good news, like the pickup wait.
+   */
+  private change(
+    value: number | null | undefined,
+    days: number,
+    format: (abs: number) => string,
+    lowerIsBetter = false,
+  ): Pick<KpiCard, 'delta' | 'tone'> {
+    if (!this.summary()) return { delta: '', tone: 'neutral' };
+    if (value == null) return { delta: this.translate.instant('admin.dashboard.noComparison'), tone: 'neutral' };
+    const arrow = value > 0 ? '▲ ' : value < 0 ? '▼ ' : '';
+    const delta = `${arrow}${format(Math.abs(value))} ${this.translate.instant('admin.dashboard.vsPrevious', { days })}`;
+    if (value === 0) return { delta, tone: 'neutral' };
+    return { delta, tone: value > 0 !== lowerIsBetter ? 'good' : 'bad' };
   }
 
   /** Returns a translation key; translated in the template with | translate. */

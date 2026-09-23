@@ -802,10 +802,13 @@ export const TRANSLATIONS_RU = {
     dashboard: {
       title: 'С возвращением{{name}}',
       subtitle: 'Что происходит в сети сегодня.',
-      range: 'За 7 дней',
+      range: 'За {{days}} дней',
+      period: 'Период',
+      vsPrevious: 'к прошлым {{days}} дням',
+      noComparison: 'Пока не с чем сравнить',
       kpi: {
-        revenueToday: 'Выручка сегодня',
-        ordersToday: 'Заказы сегодня',
+        revenue: 'Выручка',
+        orders: 'Заказы',
         pickupTime: 'Среднее время выдачи',
         nps: 'NPS',
       },

@@ -803,10 +803,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
     dashboard: {
       title: 'Welcome back{{name}}',
       subtitle: "Here's what's happening across your takeAway network today.",
-      range: 'Last 7 days',
+      range: 'Last {{days}} days',
+      period: 'Period',
+      vsPrevious: 'vs the previous {{days}} days',
+      noComparison: 'Nothing to compare with yet',
       kpi: {
-        revenueToday: 'Revenue today',
-        ordersToday: 'Orders today',
+        revenue: 'Revenue',
+        orders: 'Orders',
         pickupTime: 'Avg pickup time',
         nps: 'NPS',
       },
