@@ -516,8 +516,15 @@ export class AgroprombankService {
     return this.toChargeResult(updated);
   }
 
-  /** Full or partial refund of a settled payment. Irreversible. */
-  async refund(paymentId: string, refundCents: number): Promise<ChargeResult> {
+  /**
+   * Full or partial refund of a settled payment. Irreversible. `audit` lands
+   * on the REFUND_ISSUED event — who gave the money back and why.
+   */
+  async refund(
+    paymentId: string,
+    refundCents: number,
+    audit: { actorId?: string; reason?: string | null; note?: string | null; source?: string } = {},
+  ): Promise<ChargeResult> {
     this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
     if (payment.status !== 'SUCCEEDED' && payment.status !== 'PARTIALLY_REFUNDED') {
@@ -546,11 +553,15 @@ export class AgroprombankService {
       data: {
         orderId: payment.orderId,
         type: 'REFUND_ISSUED',
+        ...(audit.actorId ? { actorId: audit.actorId } : {}),
         payload: {
           provider: 'AGROPROMBANK',
           invoiceId: payment.invoiceId,
           amount: refundCents,
           kind: 'refund',
+          reason: audit.reason ?? null,
+          note: audit.note ?? null,
+          source: audit.source ?? null,
         } satisfies Prisma.InputJsonValue,
       },
     });

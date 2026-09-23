@@ -7,10 +7,12 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { OrderStatus, Payment, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { AgroprombankError } from './agroprombank/agroprombank.client';
+import { AgroprombankService } from './agroprombank/agroprombank.service';
 import { OrderSettlementService } from './order-settlement.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
@@ -71,6 +73,8 @@ export class PaymentsService {
     // pipeline only covers the money-in direction.
     private readonly realtime: RealtimeGateway,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
+    // Cards charged through Agroprombank are refunded at that bank.
+    private readonly agroprombank: AgroprombankService,
   ) {}
 
   async createPaymentIntent(userId: string, orderId: string): Promise<{ clientSecret: string }> {
@@ -129,13 +133,21 @@ export class PaymentsService {
    * fulfilled and refunded for goodwill.
    */
   async refundOrder(orderId: string, opts: RefundOptions): Promise<RefundResult> {
-    if (!this.stripe) throw new ServiceUnavailableException('Stripe is not configured on this deployment');
-
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { payments: { orderBy: { createdAt: 'desc' } } },
     });
     if (!order) throw new NotFoundException('Order not found');
+
+    // A card charged through Agroprombank goes back through that bank. The
+    // admin's refund used to be Stripe-only, and with Stripe off in
+    // production every card order refused the refund button.
+    const bankPayment = order.payments.find(
+      (p) => p.provider === 'AGROPROMBANK' && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
+    );
+    if (bankPayment) return this.refundAtAgroprombank(order, bankPayment, opts);
+
+    if (!this.stripe) throw new ServiceUnavailableException('Stripe is not configured on this deployment');
 
     // Use the most recent successful (or partially-refunded) payment with a
     // Stripe payment_intent reference. Skip everything still PENDING /
@@ -215,6 +227,53 @@ export class PaymentsService {
       refundedCents: newRefunded,
       remainingCents: payment.amountCents - newRefunded,
       paymentStatus: newStatus,
+    };
+  }
+
+  /** {@link refundOrder} for a card charged through Agroprombank. */
+  private async refundAtAgroprombank(
+    order: { id: string; status: OrderStatus; userId: string },
+    payment: Payment,
+    opts: RefundOptions,
+  ): Promise<RefundResult> {
+    const remaining = payment.amountCents - payment.refundedCents;
+    if (remaining <= 0) {
+      throw new BadRequestException(`Order ${order.id} is already fully refunded`);
+    }
+    const amount = opts.amountCents ?? remaining;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Refund amount must be a positive integer (cents)');
+    }
+    if (amount > remaining) {
+      throw new BadRequestException(`Refund amount ${amount} exceeds remaining balance ${remaining}`);
+    }
+
+    let result: Awaited<ReturnType<AgroprombankService['refund']>>;
+    try {
+      result = await this.agroprombank.refund(payment.id, amount, {
+        actorId: opts.actorId,
+        reason: opts.reason ?? null,
+        note: opts.note ?? null,
+        source: 'admin',
+      });
+    } catch (err) {
+      if (err instanceof AgroprombankError) {
+        this.logger.warn(`Agroprombank refund failed for order=${order.id}: ${err.message}`);
+        throw new BadRequestException(`The bank refused the refund: ${err.description}`);
+      }
+      throw err;
+    }
+
+    const refundedCents = payment.refundedCents + amount;
+    this.realtime.emitOrderStatusChanged(
+      { orderId: order.id, status: order.status, etaSeconds: 0, occurredAt: new Date().toISOString() },
+      order.userId,
+    );
+    return {
+      refundId: result.operationId ?? result.invoiceId,
+      refundedCents,
+      remainingCents: payment.amountCents - refundedCents,
+      paymentStatus: refundedCents >= payment.amountCents ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
     };
   }
 
