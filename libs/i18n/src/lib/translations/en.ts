@@ -1451,6 +1451,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
     card: {
       customer: 'Customer',
       due: 'due {{time}}',
+      pickupMode: {
+        ASAP: 'Now',
+        SCHEDULED: 'Scheduled',
+      },
       empty: 'Nothing here right now.',
       actions: {
         accept: 'Accept',

@@ -160,7 +160,7 @@ const COLUMN_META: Record<Column, { label: string; accent: string; accentText: s
                       >
                       <span
                         style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(248,243,235,0.6)"
-                        >{{ order.pickupMode }}</span
+                        >{{ 'kds.card.pickupMode.' + order.pickupMode | translate }}</span
                       >
                     </div>
                   </div>

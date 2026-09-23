@@ -1454,6 +1454,10 @@ export const TRANSLATIONS_RU = {
     card: {
       customer: 'Клиент',
       due: 'к {{time}}',
+      pickupMode: {
+        ASAP: 'Сейчас',
+        SCHEDULED: 'Ко времени',
+      },
       empty: 'Сейчас пусто.',
       actions: {
         accept: 'Принять',
