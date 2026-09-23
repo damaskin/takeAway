@@ -225,6 +225,12 @@ export class OrdersService {
       taxIncludedInPrice: cart.store.taxIncludedInPrice,
     });
 
+    // Checkout may send no name — the field is optional and the Mini App
+    // never asks for one. The customer is signed in, though, and has a name
+    // on the profile; without it the kitchen board says «Клиент» and the
+    // admin «Без имени».
+    const customerName = dto.customerName?.trim() || (await this.profileName(userId));
+
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
         const created = await tx.order.create({
@@ -244,7 +250,7 @@ export class OrdersService {
             currency: cart.store.currency,
             orderCode,
             qrToken: randomBytes(16).toString('hex'),
-            customerName: dto.customerName,
+            customerName,
             customerPhone: dto.customerPhone,
             notes: dto.notes,
             couponCode: dto.couponCode,
@@ -837,6 +843,12 @@ export class OrdersService {
    * cached on the cart — that number was right when the customer last
    * touched their basket, and four orders may have landed since.
    */
+  /** The name on the customer's profile, trimmed; null when there is none. */
+  private async profileName(userId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    return user?.name?.trim() || null;
+  }
+
   private async resolvePickupAt(
     storeId: string,
     lines: readonly { quantity: number; unitPrepSeconds: number }[],
