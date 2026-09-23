@@ -1115,6 +1115,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryGeolocateUnsupported: 'Geolocation unavailable — using flat fee.',
       deliveryOutsideRadius: 'Outside this store’s delivery area.',
       deliveryDistance: '≈ {{km}} away',
+      cartChanged: 'Prices or the menu have changed — please check your cart.',
+      cartChangedRemoved: 'Removed from your cart: {{names}}.',
     },
     cards: {
       title: 'Cards',

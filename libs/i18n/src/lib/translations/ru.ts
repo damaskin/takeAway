@@ -1116,6 +1116,8 @@ export const TRANSLATIONS_RU = {
       deliveryGeolocateUnsupported: 'Геолокация недоступна — базовый тариф.',
       deliveryOutsideRadius: 'Вне зоны доставки этой точки.',
       deliveryDistance: '≈ {{km}} до точки',
+      cartChanged: 'Цены или состав меню изменились — проверьте корзину.',
+      cartChangedRemoved: 'Убрали из корзины: {{names}}.',
     },
     cards: {
       title: 'Карты',
