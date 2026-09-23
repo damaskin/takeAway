@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AdminOrdersApi, type AdminOrderSummary, type OrderStatusString } from '../../core/orders/orders.service';
 import { OrderDetailPanelComponent } from './order-detail-panel.component';
@@ -145,7 +146,7 @@ type StatusFilter = OrderStatus | 'ALL';
                       (o.pickupMode === 'ASAP' ? 'admin.orders.pickup.asap' : 'admin.orders.pickup.scheduled')
                         | translate
                     }}
-                    · {{ formatTime(o.pickupAt) }}
+                    · {{ formatTime(o.pickupAt, o.storeTimezone) }}
                   </td>
                   <td
                     style="padding: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
@@ -217,6 +218,7 @@ type StatusFilter = OrderStatus | 'ALL';
 export class AdminOrdersPage implements OnInit {
   private readonly api = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly activeStatus = signal<StatusFilter>('ALL');
   readonly search = signal('');
@@ -302,11 +304,12 @@ export class AdminOrdersPage implements OnInit {
   }
 
   price(cents: number, currency: string): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, currency);
   }
 
-  formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  /** On the store's clock: that is the time the barista and the customer agreed on. */
+  formatTime(iso: string, timeZone?: string | null): string {
+    return this.fmt.time(iso, timeZone);
   }
 
   timeAgo(iso: string): string {
@@ -323,7 +326,8 @@ export class AdminOrdersPage implements OnInit {
     return (
       o.orderCode.toLowerCase().includes(q) ||
       o.storeName.toLowerCase().includes(q) ||
-      o.status.toLowerCase().includes(q)
+      o.status.toLowerCase().includes(q) ||
+      this.translate.instant(this.statusLabel(o.status)).toLowerCase().includes(q)
     );
   }
 }

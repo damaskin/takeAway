@@ -32,6 +32,23 @@ interface OrdersDailyRow {
 
 const SQL_DATE_DAY = (d: Date): string => d.toISOString().slice(0, 10);
 
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * UTC midnight opening a period of `days` calendar days that ends today, the
+ * way the dashboard counts them: "7 days" is today and the six before it.
+ */
+function periodStart(days: number, now = new Date()): Date {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  return new Date(start.getTime() - (days - 1) * DAY_MS);
+}
+
+/** Percent change, one decimal; null when there was nothing before to compare with. */
+function percentChange(before: number, after: number): number | null {
+  return before > 0 ? Math.round(((after - before) / before) * 1000) / 10 : null;
+}
+
 /**
  * M5 — analytics.
  *
@@ -160,7 +177,8 @@ export class AnalyticsService {
   }
 
   async storePerformance(scope: AnalyticsScope, days = 14): Promise<StorePerformanceDto[]> {
-    const since = SQL_DATE_DAY(new Date(Date.now() - days * 24 * 60 * 60_000));
+    // The same calendar days as the dashboard's summary for the same `days`.
+    const since = SQL_DATE_DAY(periodStart(days));
     const rows = await this.fetchOrdersDaily({ scope, sinceDay: since });
 
     const byStore = new Map<string, { orders: number; revenue: number }>();
@@ -190,51 +208,48 @@ export class AnalyticsService {
       .sort((a, b) => b.revenueCents - a.revenueCents);
   }
 
-  async dashboardSummary(scope: AnalyticsScope): Promise<DashboardSummaryDto> {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const yesterday = new Date(today.getTime() - 24 * 60 * 60_000);
+  /**
+   * The dashboard's KPI cards: the last `days` calendar days, today
+   * included, each against the `days` before them.
+   */
+  async dashboardSummary(scope: AnalyticsScope, days = 7): Promise<DashboardSummaryDto> {
+    const start = periodStart(days);
+    const previousStart = new Date(start.getTime() - days * DAY_MS);
 
-    // Single MV scan that covers both today and yesterday. We slice the rows
-    // in JS — cheaper than two roundtrips.
-    const rows = await this.fetchOrdersDaily({ scope, sinceDay: SQL_DATE_DAY(yesterday) });
-    const todayKey = SQL_DATE_DAY(today);
-    const yesterdayKey = SQL_DATE_DAY(yesterday);
+    // Single MV scan that covers both periods. We slice the rows in JS —
+    // cheaper than two roundtrips.
+    const rows = await this.fetchOrdersDaily({ scope, sinceDay: SQL_DATE_DAY(previousStart) });
+    const startKey = SQL_DATE_DAY(start);
+    const previousKey = SQL_DATE_DAY(previousStart);
 
-    let todayRev = 0,
-      todayOrders = 0,
-      ydayRev = 0,
-      ydayOrders = 0,
-      pickupSecSum = 0,
-      pickupSecCount = 0;
+    const current = { revenue: 0, orders: 0, pickupSecSum: 0, pickupSecCount: 0 };
+    const previous = { ...current };
     for (const r of rows) {
       const dayKey = SQL_DATE_DAY(r.day);
-      if (dayKey === todayKey) {
-        todayRev += Number(r.revenueCents);
-        todayOrders += Number(r.orderCount);
-        pickupSecSum += Number(r.pickupSecSum);
-        pickupSecCount += Number(r.pickupSecCount);
-      } else if (dayKey === yesterdayKey) {
-        ydayRev += Number(r.revenueCents);
-        ydayOrders += Number(r.orderCount);
-      }
+      if (dayKey < previousKey) continue;
+      const bucket = dayKey >= startKey ? current : previous;
+      bucket.revenue += Number(r.revenueCents);
+      bucket.orders += Number(r.orderCount);
+      bucket.pickupSecSum += Number(r.pickupSecSum);
+      bucket.pickupSecCount += Number(r.pickupSecCount);
     }
 
-    const revDelta = ydayRev > 0 ? ((todayRev - ydayRev) / ydayRev) * 100 : 0;
-    const ordersDelta = ydayOrders > 0 ? ((todayOrders - ydayOrders) / ydayOrders) * 100 : 0;
+    const avgPickup = (b: typeof current) =>
+      b.pickupSecCount > 0 ? Math.round(b.pickupSecSum / b.pickupSecCount) : null;
+    const pickupNow = avgPickup(current);
+    const pickupBefore = avgPickup(previous);
 
     return {
-      revenueTodayCents: todayRev,
-      ordersToday: todayOrders,
-      avgPickupSeconds: pickupSecCount > 0 ? Math.round(pickupSecSum / pickupSecCount) : 0,
+      days,
+      revenueCents: current.revenue,
+      orders: current.orders,
+      avgPickupSeconds: pickupNow ?? 0,
       // No ratings are collected yet. A made-up score on a business's own
       // dashboard is worse than an honest blank.
       nps: null,
-      deltas: {
-        revenue: this.fmtDelta(revDelta),
-        orders: this.fmtDelta(ordersDelta),
-        pickup: '0s',
-      },
+      revenueDeltaPercent: percentChange(previous.revenue, current.revenue),
+      ordersDeltaPercent: percentChange(previous.orders, current.orders),
+      pickupDeltaSeconds: pickupNow !== null && pickupBefore !== null ? pickupNow - pickupBefore : null,
     };
   }
 
@@ -317,12 +332,6 @@ export class AnalyticsService {
       FROM "mv_orders_daily"
       ${where}
     `;
-  }
-
-  private fmtDelta(value: number): string {
-    const rounded = Math.round(value * 10) / 10;
-    const sign = rounded >= 0 ? '+' : '';
-    return `${sign}${rounded}%`;
   }
 }
 

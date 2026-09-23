@@ -74,6 +74,9 @@ export class StoreListItemDto {
   @ApiProperty({ enum: Currency })
   currency!: Currency;
 
+  @ApiProperty({ description: 'IANA zone of the store. Pickup and opening times are shown on its clock.' })
+  timezone!: string;
+
   @ApiProperty({ nullable: true, type: String })
   heroImageUrl!: string | null;
 
@@ -104,9 +107,6 @@ export class BrandThemeDto {
 }
 
 export class StoreDetailDto extends StoreListItemDto {
-  @ApiProperty()
-  timezone!: string;
-
   @ApiProperty({ nullable: true, type: String })
   phone!: string | null;
 

@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -191,6 +191,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 })
 export class WebLayoutPage {
   private readonly store = inject(AuthStore);
+  private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
@@ -203,7 +204,7 @@ export class WebLayoutPage {
   userName(): string {
     const u = this.store.user();
     const name = u?.name?.split(/\s+/)[0];
-    return name || 'Account';
+    return name || this.translate.instant('web.profile.account');
   }
 
   toggleMobileNav(): void {

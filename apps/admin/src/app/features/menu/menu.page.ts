@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { map, type Observable } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -11,7 +12,6 @@ import {
   type StopListEntryDto,
   type StoreAdminDto,
 } from '../../core/catalog/admin-catalog.service';
-import { formatMoney } from '../../core/format/money';
 import { describeMenuError } from './menu-errors';
 import { MenuCategoriesComponent } from './menu-categories.component';
 import { swapped } from './menu-order';
@@ -342,6 +342,7 @@ export class MenuPage {
   private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthStore);
   readonly activeBrand = inject(ActiveBrandService);
+  private readonly fmt = inject(LocaleFormatService);
 
   /**
    * The menu is edited in the context of the brand picked in the top bar,
@@ -604,7 +605,7 @@ export class MenuPage {
   }
 
   price(cents: number): string {
-    return formatMoney(cents, this.currency());
+    return this.fmt.money(cents, this.currency());
   }
 
   minutes(seconds: number): string {

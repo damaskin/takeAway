@@ -182,6 +182,7 @@ function harness() {
       }),
     },
     stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
+    user: { findUnique: jest.fn().mockResolvedValue({ name: 'Иван Петров' }) },
     order: { findUnique: jest.fn(), count: jest.fn().mockResolvedValue(1) },
     // The order is written in an interactive transaction; the cart fix-up in
     // a batch one.
@@ -242,6 +243,39 @@ describe('OrdersService.create', () => {
     });
     expect(order.subtotalCents).toBe(1500);
     expect(order.items[0]?.productSnapshot).toEqual(LATTE_SNAPSHOT);
+  });
+
+  it('keeps the name the customer gave at checkout', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', { ...placeOrder, customerName: '  Аня ' });
+
+    expect(tx.order.create.mock.calls[0]?.[0].data['customerName']).toBe('Аня');
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  // A signed-in customer whose checkout sent no name showed up as «Без имени»
+  // in the admin and «Клиент» on the kitchen board.
+  it('names the order after the customer’s profile when checkout sent no name', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    const order = await service.create('user-1', { ...placeOrder, customerName: '   ' });
+
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 'user-1' }, select: { name: true } });
+    expect(tx.order.create.mock.calls[0]?.[0].data['customerName']).toBe('Иван Петров');
+    expect(order.customerName).toBe('Иван Петров');
+  });
+
+  it('leaves the name empty when neither checkout nor the profile has one', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.user.findUnique.mockResolvedValue({ name: null });
+
+    await service.create('user-1', placeOrder);
+
+    expect(tx.order.create.mock.calls[0]?.[0].data['customerName']).toBeNull();
   });
 
   it('charges the menu price of today, not the one the cart remembered', async () => {

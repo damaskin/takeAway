@@ -2,8 +2,14 @@ import { Component, EventEmitter, Input, Output, inject, signal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
+import { LocaleFormatService } from '@takeaway/i18n';
 
-import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../../core/orders/orders.service';
+import {
+  AdminOrdersApi,
+  type AdminOrderDetail,
+  type AdminOrderEvent,
+  type AdminOrderItem,
+} from '../../core/orders/orders.service';
 
 /**
  * Order detail drawer, and the only way to issue a refund.
@@ -51,7 +57,7 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
               >#{{ o.orderCode }}</span
             >
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
-              {{ o.storeName }} · {{ o.status }}
+              {{ o.storeName }} · {{ 'admin.orders.status.' + o.status | translate }}
             </span>
           </div>
           <button
@@ -294,10 +300,10 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
               <span
                 style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); min-width: 108px"
               >
-                {{ time(event.createdAt) }}
+                {{ time(event.createdAt, o.storeTimezone) }}
               </span>
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)">
-                {{ event.type }}{{ eventDetail(event.payload) }}
+                {{ eventLine(event, o.currency) }}
               </span>
             </div>
           }
@@ -313,6 +319,7 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
 export class OrderDetailPanelComponent {
   private readonly api = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   @Input({ required: true }) set orderId(id: string) {
     this.load(id);
@@ -401,28 +408,53 @@ export class OrderDetailPanelComponent {
   }
 
   money(cents: number, currency: string): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, currency);
   }
 
-  time(iso: string): string {
-    return new Date(iso).toLocaleString([], {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  /** «23 сент., 05:33» on the store's clock — the year is noise in a timeline. */
+  time(iso: string, timeZone?: string | null): string {
+    return `${this.fmt.dayMonth(iso, timeZone)}, ${this.fmt.time(iso, timeZone)}`;
   }
 
-  /** Surfaces the bits of an event payload a human would want to read. */
-  eventDetail(payload: unknown): string {
-    if (!payload || typeof payload !== 'object') return '';
-    const p = payload as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof p['from'] === 'string' && typeof p['to'] === 'string') parts.push(`${p['from']} → ${p['to']}`);
-    else if (typeof p['to'] === 'string') parts.push(String(p['to']));
-    if (typeof p['reason'] === 'string') parts.push(String(p['reason']));
-    if (typeof p['amountCents'] === 'number') parts.push(`${(p['amountCents'] as number) / 100}`);
-    return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
+  /**
+   * «Статус · Принят → Готовится»: what happened, in words, then the bits
+   * of the payload a human would want to read.
+   */
+  eventLine(event: AdminOrderEvent, currency: string): string {
+    const p = event.payload && typeof event.payload === 'object' ? (event.payload as Record<string, unknown>) : {};
+    const parts = [this.eventLabel(event.type, p)];
+    if (typeof p['from'] === 'string' && typeof p['to'] === 'string') {
+      parts.push(`${this.statusLabel(p['from'])} → ${this.statusLabel(p['to'])}`);
+    } else if (typeof p['to'] === 'string') {
+      parts.push(this.statusLabel(p['to']));
+    }
+    if (typeof p['reason'] === 'string') parts.push(p['reason']);
+    if (typeof p['amountCents'] === 'number') parts.push(this.money(p['amountCents'], currency));
+    if (typeof p['distanceM'] === 'number') parts.push(this.fmt.distance(p['distanceM']));
+    return parts.join(' · ');
+  }
+
+  private eventLabel(type: string, payload: Record<string, unknown>): string {
+    // Notes are a catch-all: say what kind of note it is.
+    if (type === 'NOTE' && payload['kind'] === 'rider_assigned') {
+      return this.translate.instant('admin.orderDetail.events.riderAssigned');
+    }
+    if (type === 'NOTE' && typeof payload['pointsMultiplier'] === 'number') {
+      return this.translate.instant('admin.orderDetail.events.pointsMultiplier', {
+        value: payload['pointsMultiplier'],
+      });
+    }
+    return this.translated(`admin.orderDetail.events.${type}`, type);
+  }
+
+  private statusLabel(status: string): string {
+    return this.translated(`admin.orders.status.${status}`, status);
+  }
+
+  /** The translation, or the raw value when a newer API sends one this build has no words for. */
+  private translated(key: string, raw: string): string {
+    const text = this.translate.instant(key);
+    return text === key ? raw : text;
   }
 }
 

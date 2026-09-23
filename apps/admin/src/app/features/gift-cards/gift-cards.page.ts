@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
 
@@ -180,6 +181,7 @@ export class AdminGiftCardsPage {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly currencies = CURRENCIES;
   readonly rows = signal<GiftCardRow[]>([]);
@@ -244,15 +246,11 @@ export class AdminGiftCardsPage {
   }
 
   formatDate(iso: string): string {
-    return iso.slice(0, 10);
+    return this.fmt.date(iso);
   }
 
   price(cents: number, currency: string): string {
-    try {
-      return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-    } catch {
-      return `${(cents / 100).toFixed(2)} ${currency}`;
-    }
+    return this.fmt.money(cents, currency);
   }
 
   statusBg(status: GiftCardRow['status']): string {

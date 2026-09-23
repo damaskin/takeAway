@@ -65,14 +65,14 @@ interface HowStep {
                 >{{ store.name }}</span
               >
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                >{{ store.city }} · ready in {{ etaMin(store) }} min</span
+                >{{ store.city }} · {{ 'web.home.stores.readyIn' | translate: { min: etaMin(store) } }}</span
               >
             </div>
             <span
               class="flex items-center justify-center"
               [style.background]="etaBg(store)"
               style="color: white; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-              >{{ etaMin(store) }}m</span
+              >{{ etaMin(store) }} {{ 'common.units.min' | translate }}</span
             >
           </a>
         }
@@ -263,7 +263,7 @@ interface HowStep {
             >takeAway</span
           >
           <p style="font-family: var(--font-sans); font-size: 14px; line-height: 1.6; color: rgba(248,243,235,0.6)">
-            Coffee and food to-go.<br />Skip the queue, not the quality.
+            {{ 'web.home.footer.tagline' | translate }}<br />{{ 'web.home.footer.taglineMore' | translate }}
           </p>
         </div>
 

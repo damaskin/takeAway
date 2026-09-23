@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import {
@@ -18,7 +18,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 @Component({
   selector: 'app-admin-staff',
   standalone: true,
-  imports: [DatePipe, ReactiveFormsModule, TranslatePipe],
+  imports: [LocalDatePipe, ReactiveFormsModule, TranslatePipe],
   template: `
     <section style="padding: 32px; max-width: 980px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -60,7 +60,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
                 <p
                   style="font-family: var(--font-mono); font-size: 12px; color: var(--color-text-tertiary); margin: 2px 0 0"
                 >
-                  {{ owner()!.email }} · Brand Admin
+                  {{ owner()!.email }} · {{ 'admin.layout.role.BRAND_ADMIN' | translate }}
                 </p>
               </div>
               <button
@@ -204,7 +204,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
                           style="font-family: var(--font-mono); font-size: 12px; color: var(--color-text-tertiary); margin: 2px 0 0"
                         >
                           {{ m.email }} · {{ 'admin.staff.role.' + m.role | translate }} ·
-                          {{ m.addedAt | date: 'MMM d, y' }}
+                          {{ m.addedAt | localDate: 'date' }}
                         </p>
                       </div>
                       <button

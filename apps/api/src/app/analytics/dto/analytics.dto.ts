@@ -38,12 +38,21 @@ export class StorePerformanceDto {
   @ApiProperty() sharePercent!: number;
 }
 
+/**
+ * The dashboard's figures over the last `days` calendar days (UTC, today
+ * included), each compared with the `days` before them. Deltas are numbers,
+ * not preformatted strings, so the admin can write them in its own language.
+ */
 export class DashboardSummaryDto {
-  @ApiProperty() revenueTodayCents!: number;
-  @ApiProperty() ordersToday!: number;
+  @ApiProperty() days!: number;
+  @ApiProperty() revenueCents!: number;
+  @ApiProperty() orders!: number;
   @ApiProperty() avgPickupSeconds!: number;
   /** Null until customer ratings are collected. */
   @ApiProperty({ nullable: true, type: Number }) nps!: number | null;
-  /** Same-period deltas vs yesterday, as percent strings like "+12.3%". */
-  @ApiProperty() deltas!: Record<string, string>;
+  /** Percent change; null when the period before had nothing to compare with. */
+  @ApiProperty({ nullable: true, type: Number }) revenueDeltaPercent!: number | null;
+  @ApiProperty({ nullable: true, type: Number }) ordersDeltaPercent!: number | null;
+  /** Change of the average pickup time, in seconds; null unless both periods have one. */
+  @ApiProperty({ nullable: true, type: Number }) pickupDeltaSeconds!: number | null;
 }

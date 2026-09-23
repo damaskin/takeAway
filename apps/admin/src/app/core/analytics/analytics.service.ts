@@ -40,13 +40,19 @@ export interface StorePerformance {
   sharePercent: number;
 }
 
+/** The last `days` calendar days, each figure against the `days` before them. */
 export interface DashboardSummary {
-  revenueTodayCents: number;
-  ordersToday: number;
+  days: number;
+  revenueCents: number;
+  orders: number;
   avgPickupSeconds: number;
   /** Null until customer ratings are collected. */
   nps: number | null;
-  deltas: Record<string, string>;
+  /** Percent change; null when the period before had nothing to compare with. */
+  revenueDeltaPercent: number | null;
+  ordersDeltaPercent: number | null;
+  /** Change of the average pickup time, in seconds. */
+  pickupDeltaSeconds: number | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -56,9 +62,9 @@ export class AnalyticsApi {
 
   // `brandId` picks one of the caller's brands; the API never widens past them.
 
-  summary(brandId?: string | null): Observable<DashboardSummary> {
+  summary(brandId?: string | null, days = 7): Observable<DashboardSummary> {
     return this.http.get<DashboardSummary>(`${this.api.baseUrl}/admin/analytics/summary`, {
-      params: params({ brandId }),
+      params: params({ brandId, days }),
     });
   }
 

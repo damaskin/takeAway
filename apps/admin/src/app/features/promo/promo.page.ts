@@ -1,7 +1,8 @@
-import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, booleanAttribute, computed, effect, inject, input, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminPromoApi } from '../../core/promo/promo.service';
@@ -278,6 +279,7 @@ export class AdminPromoPage implements OnInit {
   private readonly api = inject(AdminPromoApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly filter = signal<FilterKey>('All');
   readonly filters: FilterKey[] = ['All', 'Running', 'Scheduled', 'Paused', 'Draft', 'Expired'];
@@ -285,6 +287,8 @@ export class AdminPromoPage implements OnInit {
   readonly loading = signal(false);
   readonly promos = signal<Promo[]>([]);
   readonly formOpen = signal(false);
+  /** `/promo?create=1` — the dashboard's «+ Новый промо» lands on an open form. */
+  readonly create = input(false, { transform: booleanAttribute });
   readonly submitting = signal(false);
   readonly formError = signal<string | null>(null);
 
@@ -360,6 +364,7 @@ export class AdminPromoPage implements OnInit {
 
   ngOnInit(): void {
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
+    if (this.create()) this.formOpen.set(true);
   }
 
   refresh(): void {
@@ -454,7 +459,9 @@ export class AdminPromoPage implements OnInit {
       case 'PERCENT':
         return this.translate.instant('admin.promo.value.percent', { value: p.value });
       case 'FIXED':
-        return this.translate.instant('admin.promo.value.fixed', { value: (p.value / 100).toFixed(2) });
+        return this.translate.instant('admin.promo.value.fixed', {
+          value: this.fmt.money(p.value, this.activeBrand.active()?.currency),
+        });
       case 'BOGO':
         return this.translate.instant('admin.promo.value.bogo');
       case 'POINTS_MULTIPLIER':
@@ -465,9 +472,7 @@ export class AdminPromoPage implements OnInit {
   }
 
   formatWindow(p: Promo): string {
-    const fmt = (iso: string) =>
-      new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' });
-    return `${fmt(p.startsAt)} — ${fmt(p.endsAt)}`;
+    return `${this.fmt.date(p.startsAt)} — ${this.fmt.date(p.endsAt)}`;
   }
 
   statusBg(status: PromoStatus): string {

@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -120,6 +121,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly brandTheme = inject(BrandThemeService);
   private readonly activeStore = inject(ActiveStoreService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -183,9 +185,6 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.store()?.currency ?? 'USD',
-    }).format(cents / 100);
+    return this.fmt.money(cents, this.store()?.currency);
   }
 }

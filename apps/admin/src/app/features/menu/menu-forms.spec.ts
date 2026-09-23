@@ -155,7 +155,7 @@ describe('ProductOptionsPanelComponent', () => {
     expect(text).toContain('Молоко');
     expect(text).toContain('Овсяное');
     expect(text).not.toContain('MILK');
-    // The surcharge is in the brand's currency, not "±¢".
-    expect(text).toContain('+MDL');
+    // The surcharge is in the brand's currency, not "±¢", written the Russian way.
+    expect(text).toContain('+5\u00a0MDL');
   });
 });

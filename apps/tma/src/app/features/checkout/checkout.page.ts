@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
 import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -403,6 +404,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
   private readonly deliveryFeeApi = inject(DeliveryFeeApi);
   private readonly flags = inject(FeatureFlagsStore);
   private readonly cardsApi = inject(PaymentCardsApi);
@@ -418,6 +420,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly storeName = signal<string>('');
   /** Prices are the store's, whatever currency the customer's profile has. */
   readonly currency = signal<string | null>(null);
+  /** Pickup times are the store's clock, wherever the customer is. */
+  readonly storeTimezone = signal<string | null>(null);
   /**
    * Whether the store takes an ASAP order right now — its switch and its
    * working hours, as the API computes them. After hours only a scheduled
@@ -473,6 +477,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.taxRateBps.set(store.taxRateBps);
         this.taxIncludedInPrice.set(store.taxIncludedInPrice);
         this.currency.set(store.currency);
+        this.storeTimezone.set(store.timezone ?? null);
         // `!== false`: an API that predates the field keeps ASAP available.
         this.storeOpen.set(store.openNow !== false);
         if (!this.storeOpen()) {
@@ -563,8 +568,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   formatKm(metres: number): string {
-    if (metres < 1000) return `${metres} m`;
-    return `${(metres / 1000).toFixed(1)} km`;
+    return this.fmt.distance(metres);
   }
 
   private refreshFeeQuote(): void {
@@ -627,7 +631,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   slotLabel(slot: PickupSlot): string {
-    return new Date(slot.startsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(slot.startsAt, this.storeTimezone());
   }
 
   /**
@@ -658,9 +662,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    const currency = this.currency();
-    if (!currency) return (cents / 100).toFixed(2);
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.currency());
   }
 
   refreshMainButton(): void {
@@ -792,10 +794,24 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * A coded API error — the store is closed then, the slot filled up — in
+   * the customer's words; any other message the API sent as it is, since the
+   * real reason beats a vaguer apology.
+   */
   private showError(err: unknown, fallbackKey: string): void {
-    const maybe = err as { error?: { message?: string | string[] }; message?: string };
-    const raw = maybe.error?.message ?? maybe.message;
+    const body = (err as { error?: unknown } | null)?.error;
+    const coded = checkoutErrorText(body, this.translate, this.fmt);
+    if (coded) {
+      this.error.set(coded);
+      return;
+    }
+    if ((err as { status?: unknown } | null)?.status === 0) {
+      this.error.set(this.translate.instant('common.networkError'));
+      return;
+    }
+    const raw = (body as { message?: unknown } | null)?.message;
     const message = Array.isArray(raw) ? raw.join(', ') : raw;
-    this.error.set(message || this.translate.instant(fallbackKey));
+    this.error.set(typeof message === 'string' && message ? message : this.translate.instant(fallbackKey));
   }
 }

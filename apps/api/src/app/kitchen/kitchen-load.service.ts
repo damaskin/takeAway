@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 
+import { checkoutError } from '../common/http/checkout-error';
 import { PrismaService } from '../prisma/prisma.service';
 import { isOpenAt, type WorkingHour } from './opening-hours';
 
@@ -174,7 +175,7 @@ export class KitchenLoadService {
   async assertOpenAt(storeId: string, at: Date): Promise<void> {
     const store = await this.capacityFor(storeId);
     if (!isOpenAt(store.workingHours, at, store.timezone)) {
-      throw new BadRequestException('The store is closed at that time');
+      throw checkoutError('STORE_CLOSED_AT_TIME', 'The store is closed at that time');
     }
   }
 
@@ -195,7 +196,7 @@ export class KitchenLoadService {
     });
 
     if (taken >= store.slotCapacity) {
-      throw new BadRequestException('That pickup time has just filled up — please choose another slot');
+      throw checkoutError('PICKUP_SLOT_FULL', 'That pickup time has just filled up — please choose another slot');
     }
   }
 
