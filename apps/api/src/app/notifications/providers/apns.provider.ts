@@ -3,18 +3,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
 
 /**
- * Apple Push Notifications provider — STUB for v1.
+ * Apple Push Notifications provider — STUB, deliberately inert.
  *
- * To go live:
- *   1. Pick a library (`@parse/node-apn` or similar) and wire a real
- *      certificate / JWT loader in the constructor.
- *   2. Switch `send()` from a log to a real call that targets the iOS
- *      device push tokens from `recipient.pushTokens` where
- *      `deviceType === 'IOS'`.
- *
- * Not wired today because we don't yet have an iOS build; this stub keeps
- * the NotificationsService call site clean so swapping to a real provider
- * is a one-line change in the module factory.
+ * The Flutter app registers Firebase tokens on iOS as well, and
+ * {@link FcmPushProvider} delivers to them through the APNs key uploaded to
+ * the Firebase project. A direct APNs sender only becomes useful if a
+ * client ever registers raw APNs device tokens; until then this logs.
  */
 @Injectable()
 export class ApnsPushProvider implements PushProvider {

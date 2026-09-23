@@ -54,6 +54,7 @@ export const CATEGORY = {
   description: null,
   sortOrder: 0,
   visible: true,
+  _count: { products: 1 },
 };
 
 export const PRODUCT = {
@@ -67,6 +68,14 @@ export const PRODUCT = {
   prepTimeSeconds: 120,
   visible: true,
   sortOrder: 0,
+  imageUrls: [],
+  caffeineLevel: null,
+  calories: null,
+  proteinsGrams: null,
+  fatsGrams: null,
+  carbsGrams: null,
+  allergens: [],
+  dietTags: [],
 };
 
 const STAFF = {
@@ -141,11 +150,14 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
 
     if (path === '/admin/analytics/summary') {
       return json(route, {
-        ordersToday: 4,
-        revenueTodayCents: 12_500,
-        averageCheckCents: 3125,
-        activeCustomers: 3,
-        currency: 'MDL',
+        days: 7,
+        revenueCents: 12_500,
+        orders: 4,
+        avgPickupSeconds: 0,
+        nps: null,
+        revenueDeltaPercent: null,
+        ordersDeltaPercent: null,
+        pickupDeltaSeconds: null,
       });
     }
     if (path.startsWith('/admin/orders')) return json(route, { items: [], total: 0 });

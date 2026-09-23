@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -21,6 +21,7 @@ export interface AdminBrand {
 
 export interface SetBrandModerationRequest {
   status: BrandModerationStatus;
+  /** Required by the API when rejecting: it is the reason the owner is emailed. */
   note?: string;
 }
 
@@ -36,9 +37,28 @@ export class BrandsService {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
 
+  private readonly _pendingCount = signal<number | null>(null);
+  /** Brands waiting for review — the badge on «Бренды». Null until known. */
+  readonly pendingCount = this._pendingCount.asReadonly();
+
   list(status?: BrandModerationStatus): Observable<AdminBrand[]> {
     const url = status ? `${this.api.baseUrl}/admin/brands?status=${status}` : `${this.api.baseUrl}/admin/brands`;
     return this.http.get<AdminBrand[]>(url);
+  }
+
+  /** SUPER_ADMIN only. A failure keeps the last known count. */
+  loadPendingCount(): void {
+    this.http.get<{ count: number }>(`${this.api.baseUrl}/admin/brands/pending-count`).subscribe({
+      next: (res) => {
+        if (typeof res?.count === 'number') this._pendingCount.set(res.count);
+      },
+      error: () => undefined,
+    });
+  }
+
+  /** For the brands page, which holds the whole list and knows the number already. */
+  setPendingCount(count: number): void {
+    this._pendingCount.set(count);
   }
 
   setModeration(id: string, body: SetBrandModerationRequest): Observable<AdminBrand> {

@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/decorators/public.decorator';
 import { CatalogService } from './catalog.service';
@@ -45,7 +45,12 @@ export class CatalogController {
 
   @Get('products/:idOrSlug')
   @ApiOkResponse({ type: ProductDetailDto })
-  getProduct(@Param('idOrSlug') idOrSlug: string): Promise<ProductDetailDto> {
-    return this.catalog.getProduct(idOrSlug);
+  @ApiQuery({
+    name: 'store',
+    required: false,
+    description: 'Id or slug of the store being browsed; product slugs are unique per brand only',
+  })
+  getProduct(@Param('idOrSlug') idOrSlug: string, @Query('store') store?: string): Promise<ProductDetailDto> {
+    return this.catalog.getProduct(idOrSlug, store || undefined);
   }
 }

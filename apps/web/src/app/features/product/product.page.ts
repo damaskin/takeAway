@@ -2,7 +2,9 @@ import { Component, OnInit, computed, effect, inject, signal } from '@angular/co
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, StoreListItem, Variation, VariationType } from '@takeaway/shared-types';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { catchError, throwError } from 'rxjs';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -43,8 +45,8 @@ const VARIATION_LABELS: Record<VariationType, string> = {
         <!-- Image column -->
         <div class="flex flex-col" style="width: 560px; gap: 16px; flex-shrink: 0">
           <div
-            [style.background]="heroImageBg(p)"
-            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; overflow: hidden"
+            [style.background-image]="heroImageBg(p)"
+            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; background-repeat: no-repeat; overflow: hidden"
           ></div>
         </div>
 
@@ -322,6 +324,8 @@ export class ProductPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly cart = inject(CartService);
   readonly authStore = inject(AuthStore);
+  private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly adding = signal(false);
   readonly addError = signal<string | null>(null);
@@ -371,8 +375,14 @@ export class ProductPage implements OnInit {
     const product = this.product();
     const stores = this.stores();
     if (!product || stores.length === 0) return null;
+    // The store the customer came from, when it can make this product.
+    const browsed = stores.find((s) => s.slug === this.browsedStore || s.id === this.browsedStore);
+    if (browsed?.brandId === product.brandId) return browsed;
     return stores.find((s) => s.brandId === product.brandId) ?? null;
   });
+
+  /** `?store=` from the menu link: which café's product this is. */
+  private browsedStore: string | null = null;
 
   /** True once we know the product's brand has no store taking orders. */
   readonly noStoreForBrand = computed(
@@ -392,16 +402,28 @@ export class ProductPage implements OnInit {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) {
-      this.error.set('Missing product');
+      this.error.set(this.translate.instant('web.product.notFound'));
       return;
     }
-    this.catalog.getProduct(slug).subscribe({
-      next: (p) => {
-        this.product.set(p);
-        this.initializeDefaults(p);
-      },
-      error: () => this.error.set('Product not found'),
-    });
+    this.browsedStore = this.route.snapshot.queryParamMap.get('store');
+    const browsed = this.browsedStore;
+    this.catalog
+      .getProduct(slug, browsed)
+      .pipe(
+        // A store renamed since the link was made: look the product up without it.
+        catchError((err: unknown) =>
+          browsed && (err as { status?: number }).status === 404
+            ? this.catalog.getProduct(slug)
+            : throwError(() => err),
+        ),
+      )
+      .subscribe({
+        next: (p) => {
+          this.product.set(p);
+          this.initializeDefaults(p);
+        },
+        error: () => this.error.set(this.translate.instant('web.product.notFound')),
+      });
 
     this.catalog.listStores().subscribe({
       next: (list) => this.stores.set(list),
@@ -428,8 +450,11 @@ export class ProductPage implements OnInit {
         next: () => this.adding.set(false),
         error: (err) => {
           this.adding.set(false);
-          const maybe = err as { error?: { message?: string }; message?: string };
-          this.addError.set(maybe.error?.message ?? maybe.message ?? 'Failed to add to cart');
+          const body = (err as { error?: { message?: unknown } }).error;
+          this.addError.set(
+            checkoutErrorText(body, this.translate, this.fmt) ??
+              (typeof body?.message === 'string' ? body.message : this.translate.instant('web.product.addFailed')),
+          );
         },
       });
   }
@@ -479,7 +504,8 @@ export class ProductPage implements OnInit {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    // The serving store's currency; the customer's profile currency is not what they pay in.
+    return this.fmt.money(cents, this.resolvedStore()?.currency);
   }
 
   priceDelta(cents: number): string {

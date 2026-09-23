@@ -1,12 +1,86 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Currency, FulfillmentType, OrderStatus, PickupMode } from '@prisma/client';
+import { Currency, FulfillmentType, OrderStatus, PickupMode, VariationType } from '@prisma/client';
+import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation } from '@takeaway/shared-types';
+
+export class OrderItemVariationDto implements OrderItemVariation {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ enum: VariationType })
+  type!: VariationType;
+
+  @ApiProperty({ example: 'L' })
+  name!: string;
+
+  @ApiProperty({ description: 'What this variation added to the unit price, in cents.' })
+  priceDeltaCents!: number;
+}
+
+export class OrderItemModifierDto implements OrderItemModifier {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ example: 'Vanilla syrup' })
+  name!: string;
+
+  @ApiProperty({ minimum: 1 })
+  count!: number;
+
+  @ApiProperty({ description: 'Price of one, in cents; the line pays count × priceCents.' })
+  priceCents!: number;
+}
+
+/**
+ * The line exactly as it was bought, frozen at order creation. Every field
+ * is always present in responses.
+ *
+ * `variations` and `modifierLines` are what the kitchen, the receipt and the
+ * order screens show. They are empty on orders placed before options were
+ * snapshotted, which carry only the ids; `variationIds` and `modifiers` are
+ * kept as they always were.
+ */
+export class OrderItemSnapshotDto implements OrderItemSnapshot {
+  @ApiProperty({ description: 'Product id.' })
+  id!: string;
+
+  @ApiProperty()
+  slug!: string;
+
+  @ApiProperty({ description: 'Product name at order time.' })
+  name!: string;
+
+  @ApiProperty({ type: [String] })
+  variationIds!: string[];
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { type: 'number' },
+    description: 'Map { modifierId: count } — the form the POS push reads.',
+  })
+  modifiers!: Record<string, number>;
+
+  @ApiProperty({ nullable: true, type: String, description: "The customer's note for this line." })
+  notes!: string | null;
+
+  @ApiProperty()
+  unitPrepSeconds!: number;
+
+  @ApiProperty({
+    type: [OrderItemVariationDto],
+    description: 'Chosen (or defaulted) variations, size first, then milk, temperature, cup.',
+  })
+  variations!: OrderItemVariationDto[];
+
+  @ApiProperty({ type: [OrderItemModifierDto], description: 'Extras with a positive count, in menu order.' })
+  modifierLines!: OrderItemModifierDto[];
+}
 
 export class OrderItemDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty({ type: Object })
-  productSnapshot!: Record<string, unknown>;
+  @ApiProperty({ type: OrderItemSnapshotDto })
+  productSnapshot!: OrderItemSnapshotDto;
 
   @ApiProperty()
   quantity!: number;
@@ -86,6 +160,13 @@ export class OrderDto {
 
   @ApiProperty()
   storeName!: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "IANA zone of the store — pickup times are shown on the store's clock.",
+  })
+  storeTimezone!: string | null;
 
   @ApiProperty({ description: 'Store location — used to render the pickup map.' })
   storeLatitude!: number;
@@ -201,6 +282,9 @@ export class OrderSummaryDto {
 
   @ApiProperty()
   storeName!: string;
+
+  @ApiProperty({ description: "IANA zone of the store — pickup times are shown on the store's clock." })
+  storeTimezone!: string;
 
   @ApiProperty()
   itemCount!: number;

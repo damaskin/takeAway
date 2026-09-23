@@ -4,6 +4,8 @@ import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException 
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
+import { telegramLoginClientId } from './telegram-login-client';
+
 export type OAuthProviderKey = 'GOOGLE' | 'APPLE';
 
 /**
@@ -23,30 +25,68 @@ export interface OAuthIdentity {
   locale: string | null;
 }
 
+/**
+ * A Telegram Login (OpenID Connect) identity. Keyed on the Telegram user id
+ * — the same number the Mini App and the legacy Login Widget report — so a
+ * customer lands in one profile whichever way they came in.
+ */
+export interface TelegramIdentity {
+  id: number;
+  firstName: string | null;
+  lastName: string | null;
+  username: string | null;
+}
+
+type JwsAlgorithm = 'RS256' | 'ES256';
+
 interface ProviderDescriptor {
-  key: OAuthProviderKey;
   label: string;
   issuers: readonly string[];
   jwksUri: string;
-  /** Comma-separated list of accepted `aud` values. */
-  audienceEnv: string;
+  /** Signature algorithms accepted from this provider. Never read from the token alone. */
+  algorithms: readonly JwsAlgorithm[];
+  /** Accepted `aud` values for this deployment; empty means the provider is off. */
+  audiences: (config: ConfigService) => string[];
+}
+
+function audiencesFromEnv(name: string): (config: ConfigService) => string[] {
+  return (config) =>
+    (config.get<string>(name) ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
 }
 
 const PROVIDERS: Record<OAuthProviderKey, ProviderDescriptor> = {
   GOOGLE: {
-    key: 'GOOGLE',
     label: 'Google',
     // Google has historically issued both forms; accept either.
     issuers: ['https://accounts.google.com', 'accounts.google.com'],
     jwksUri: 'https://www.googleapis.com/oauth2/v3/certs',
-    audienceEnv: 'GOOGLE_OAUTH_CLIENT_IDS',
+    algorithms: ['RS256'],
+    audiences: audiencesFromEnv('GOOGLE_OAUTH_CLIENT_IDS'),
   },
   APPLE: {
-    key: 'APPLE',
     label: 'Apple',
     issuers: ['https://appleid.apple.com'],
     jwksUri: 'https://appleid.apple.com/auth/keys',
-    audienceEnv: 'APPLE_OAUTH_CLIENT_IDS',
+    algorithms: ['RS256'],
+    audiences: audiencesFromEnv('APPLE_OAUTH_CLIENT_IDS'),
+  },
+};
+
+const TELEGRAM: ProviderDescriptor = {
+  label: 'Telegram',
+  issuers: ['https://oauth.telegram.org'],
+  jwksUri: 'https://oauth.telegram.org/.well-known/jwks.json',
+  // RS256 unless the bot picked ES256 in @BotFather's advanced settings.
+  // EdDSA and ES256K are left out on purpose: with them Telegram issues only
+  // the `openid` scope, and without `profile` the token carries no Telegram
+  // user id to sign anyone in with.
+  algorithms: ['RS256', 'ES256'],
+  audiences: (config) => {
+    const clientId = telegramLoginClientId(config);
+    return clientId ? [clientId] : [];
   },
 };
 
@@ -66,20 +106,26 @@ interface JwtHeader {
   kid?: string;
 }
 
+interface SigningKey {
+  key: KeyObject;
+  /** The JWK's own `alg`, when it declares one. */
+  alg: string | null;
+}
+
 /**
- * Verifies Google and Apple ID tokens against the provider's published
- * JWKS.
+ * Verifies Google, Apple and Telegram ID tokens against the provider's
+ * published JWKS.
  *
- * We do the RS256 check by hand with `node:crypto` rather than pulling in
- * a JWT library: Node 22 imports a JWK straight into a `KeyObject`, the
+ * We do the signature check by hand with `node:crypto` rather than pulling
+ * in a JWT library: Node 22 imports a JWK straight into a `KeyObject`, the
  * claim rules below are provider-specific anyway, and staying off
  * `jsonwebtoken` keeps this off `@nestjs/jwt`'s transitive dependency
  * (pnpm's strict layout would not resolve an undeclared import).
  *
  * Two things this must not get wrong:
- *   1. The algorithm is pinned to RS256. Trusting the token's own `alg`
- *      header is the classic confusion attack — `none` or an HMAC alg
- *      keyed on the public key would both verify.
+ *   1. The algorithm is pinned per provider, and the key has to match it.
+ *      Trusting the token's own `alg` header is the classic confusion attack
+ *      — `none` or an HMAC alg keyed on the public key would both verify.
  *   2. `aud` is checked against our own client ids. A valid Google token
  *      minted for someone else's app is still a valid Google token.
  */
@@ -88,26 +134,39 @@ export class OAuthIdentityService {
   private readonly logger = new Logger(OAuthIdentityService.name);
 
   /** jwksUri → (kid → public key). */
-  private readonly keyCache = new Map<string, Map<string, KeyObject>>();
+  private readonly keyCache = new Map<string, Map<string, SigningKey>>();
   private readonly fetchedAt = new Map<string, number>();
-  private readonly inFlight = new Map<string, Promise<Map<string, KeyObject>>>();
+  private readonly inFlight = new Map<string, Promise<Map<string, SigningKey>>>();
 
   constructor(private readonly config: ConfigService) {}
 
   /** True when this deployment has client ids configured for the provider. */
   isConfigured(provider: OAuthProviderKey): boolean {
-    return this.audiencesFor(PROVIDERS[provider]).length > 0;
+    return PROVIDERS[provider].audiences(this.config).length > 0;
   }
 
   async verify(provider: OAuthProviderKey, idToken: string): Promise<OAuthIdentity> {
-    const descriptor = PROVIDERS[provider];
-    const audiences = this.audiencesFor(descriptor);
+    const payload = await this.verifyToken(PROVIDERS[provider], idToken);
+    return provider === 'GOOGLE' ? toGoogleIdentity(payload) : toAppleIdentity(payload);
+  }
+
+  /**
+   * Telegram Login: the web library's popup and the mobile apps both end
+   * with an ID token signed by `oauth.telegram.org` for our bot.
+   */
+  async verifyTelegram(idToken: string): Promise<TelegramIdentity> {
+    return toTelegramIdentity(await this.verifyToken(TELEGRAM, idToken));
+  }
+
+  private async verifyToken(descriptor: ProviderDescriptor, idToken: string): Promise<Record<string, unknown>> {
+    const audiences = descriptor.audiences(this.config);
     if (audiences.length === 0) {
       throw new UnauthorizedException(`${descriptor.label} sign-in is not configured on this server`);
     }
 
     const { header, payload, signingInput, signature } = decodeJwt(idToken);
-    if (header.alg !== 'RS256') {
+    const alg = descriptor.algorithms.find((a) => a === header.alg);
+    if (!alg) {
       throw new UnauthorizedException('Unsupported identity-token algorithm');
     }
     if (!header.kid) {
@@ -115,13 +174,12 @@ export class OAuthIdentityService {
     }
 
     const key = await this.resolveKey(descriptor, header.kid);
-    const signatureOk = createVerify('RSA-SHA256').update(signingInput).end().verify(key, signature);
-    if (!signatureOk) {
+    if (!verifySignature(alg, key, signingInput, signature)) {
       throw new UnauthorizedException('Identity token signature is invalid');
     }
 
     this.assertClaims(descriptor, payload, audiences);
-    return provider === 'GOOGLE' ? toGoogleIdentity(payload) : toAppleIdentity(payload);
+    return payload;
   }
 
   private assertClaims(
@@ -134,9 +192,13 @@ export class OAuthIdentityService {
       throw new UnauthorizedException('Identity token was issued by an unexpected party');
     }
 
+    // Telegram writes the bot id as a string, but a number would mean the
+    // same client; compare as strings so neither form slips past or fails.
     const rawAud = payload['aud'];
     const tokenAudiences = Array.isArray(rawAud) ? rawAud : [rawAud];
-    const audienceOk = tokenAudiences.some((a) => typeof a === 'string' && audiences.includes(a));
+    const audienceOk = tokenAudiences.some(
+      (a) => (typeof a === 'string' || typeof a === 'number') && audiences.includes(String(a)),
+    );
     if (!audienceOk) {
       throw new UnauthorizedException('Identity token was not issued for this application');
     }
@@ -156,15 +218,7 @@ export class OAuthIdentityService {
     }
   }
 
-  private audiencesFor(descriptor: ProviderDescriptor): string[] {
-    const raw = this.config.get<string>(descriptor.audienceEnv) ?? '';
-    return raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-  }
-
-  private async resolveKey(descriptor: ProviderDescriptor, kid: string): Promise<KeyObject> {
+  private async resolveKey(descriptor: ProviderDescriptor, kid: string): Promise<SigningKey> {
     const uri = descriptor.jwksUri;
     const cached = this.keyCache.get(uri);
     const age = Date.now() - (this.fetchedAt.get(uri) ?? 0);
@@ -179,7 +233,7 @@ export class OAuthIdentityService {
       throw new UnauthorizedException('Identity token was signed with an unknown key');
     }
 
-    let fresh: Map<string, KeyObject>;
+    let fresh: Map<string, SigningKey>;
     try {
       fresh = await this.fetchJwks(uri);
     } catch (err) {
@@ -198,24 +252,28 @@ export class OAuthIdentityService {
     return key;
   }
 
-  private fetchJwks(uri: string): Promise<Map<string, KeyObject>> {
+  private fetchJwks(uri: string): Promise<Map<string, SigningKey>> {
     const existing = this.inFlight.get(uri);
     if (existing) return existing;
 
     const request = axios
       .get<{ keys?: CryptoJsonWebKey[] }>(uri, { timeout: JWKS_TIMEOUT_MS })
       .then(({ data }) => {
-        const keys = new Map<string, KeyObject>();
+        const keys = new Map<string, SigningKey>();
         for (const jwk of data.keys ?? []) {
           const kid = typeof jwk['kid'] === 'string' ? jwk['kid'] : null;
-          if (!kid || jwk.kty !== 'RSA') continue;
+          // RSA for RS256, P-256 for ES256. Telegram also publishes Ed25519
+          // and secp256k1 keys for its Web3 modes; nothing here verifies with them.
+          const usable = jwk.kty === 'RSA' || (jwk.kty === 'EC' && jwk.crv === 'P-256');
+          if (!kid || !usable) continue;
           try {
-            keys.set(kid, createPublicKey({ key: jwk, format: 'jwk' }));
+            const alg = typeof jwk['alg'] === 'string' ? jwk['alg'] : null;
+            keys.set(kid, { key: createPublicKey({ key: jwk, format: 'jwk' }), alg });
           } catch {
             this.logger.warn(`Skipping unusable JWK "${kid}" from ${uri}`);
           }
         }
-        if (keys.size === 0) throw new Error('JWKS contained no usable RSA keys');
+        if (keys.size === 0) throw new Error('JWKS contained no usable signing keys');
         this.keyCache.set(uri, keys);
         this.fetchedAt.set(uri, Date.now());
         return keys;
@@ -227,6 +285,23 @@ export class OAuthIdentityService {
     this.inFlight.set(uri, request);
     return request;
   }
+}
+
+/**
+ * The key decides what it may verify: an RSA key never checks an ES256
+ * signature, and a JWK that names its own algorithm must agree with the one
+ * the provider is pinned to.
+ */
+function verifySignature(alg: JwsAlgorithm, signingKey: SigningKey, input: string, signature: Buffer): boolean {
+  if (signingKey.alg !== null && signingKey.alg !== alg) return false;
+  const { key } = signingKey;
+  if (alg === 'RS256') {
+    if (key.asymmetricKeyType !== 'rsa') return false;
+    return createVerify('RSA-SHA256').update(input).end().verify(key, signature);
+  }
+  if (key.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') return false;
+  // JWS carries ECDSA signatures as raw r‖s, not DER.
+  return createVerify('SHA256').update(input).end().verify({ key, dsaEncoding: 'ieee-p1363' }, signature);
 }
 
 function decodeJwt(token: string): {
@@ -288,6 +363,27 @@ function toAppleIdentity(payload: Record<string, unknown>): OAuthIdentity {
     // client-side authorization payload, and the caller passes it through.
     name: null,
     locale: null,
+  };
+}
+
+/**
+ * `sub` is an opaque per-bot identifier; the Telegram user id arrives as
+ * `id` with the `profile` scope. Without it we could not find the customer
+ * the Mini App already knows, so a token lacking it is refused rather than
+ * minting a second, disconnected account.
+ */
+function toTelegramIdentity(payload: Record<string, unknown>): TelegramIdentity {
+  const raw = payload['id'];
+  const id = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : raw;
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+    throw new UnauthorizedException('Telegram sign-in did not share the profile, so there is no user id');
+  }
+  const given = str(payload['given_name']);
+  return {
+    id,
+    firstName: given ?? str(payload['name']),
+    lastName: given ? str(payload['family_name']) : null,
+    username: str(payload['preferred_username']),
   };
 }
 

@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 
 import {
   AdminBrand,
@@ -9,13 +9,21 @@ import {
   BrandsService,
   SetBrandModerationRequest,
 } from '../../core/brands/brands.service';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
 type Tab = BrandModerationStatus;
+
+/** A decision that needs a second look before it is sent. */
+interface PendingDecision {
+  brand: AdminBrand;
+  /** REJECTED asks for the reason; PENDING takes a brand off the storefront or out of "rejected". */
+  status: 'REJECTED' | 'PENDING';
+}
 
 @Component({
   selector: 'app-admin-brands',
   standalone: true,
-  imports: [DatePipe, RouterLink, TranslatePipe],
+  imports: [LocalDatePipe, RouterLink, TranslatePipe, ConfirmDialogComponent],
   template: `
     <section style="padding: 32px; max-width: 1100px">
       <header class="flex items-center justify-between" style="gap: 16px; margin-bottom: 24px">
@@ -88,9 +96,9 @@ type Tab = BrandModerationStatus;
                 <div
                   style="text-align: right; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                 >
-                  <div>{{ 'admin.brands.submitted' | translate }}: {{ b.submittedAt | date: 'MMM d, y, HH:mm' }}</div>
+                  <div>{{ 'admin.brands.submitted' | translate }}: {{ b.submittedAt | localDate: 'dateTime' }}</div>
                   @if (b.moderatedAt) {
-                    <div>{{ 'admin.brands.moderated' | translate }}: {{ b.moderatedAt | date: 'MMM d, y, HH:mm' }}</div>
+                    <div>{{ 'admin.brands.moderated' | translate }}: {{ b.moderatedAt | localDate: 'dateTime' }}</div>
                   }
                 </div>
               </div>
@@ -131,7 +139,7 @@ type Tab = BrandModerationStatus;
                 <div class="flex" style="gap: 8px; margin-top: 16px">
                   <button
                     type="button"
-                    (click)="setStatus(b, 'APPROVED')"
+                    (click)="approve(b)"
                     [disabled]="actingOnId() === b.id"
                     class="disabled:opacity-50"
                     style="padding: 8px 16px; background: var(--color-mint); color: white; border: 0; border-radius: var(--radius-button); font-family: var(--font-sans); font-weight: 600; cursor: pointer"
@@ -140,7 +148,7 @@ type Tab = BrandModerationStatus;
                   </button>
                   <button
                     type="button"
-                    (click)="setStatus(b, 'REJECTED')"
+                    (click)="ask(b, 'REJECTED')"
                     [disabled]="actingOnId() === b.id"
                     class="disabled:opacity-50"
                     style="padding: 8px 16px; background: var(--color-berry); color: white; border: 0; border-radius: var(--radius-button); font-family: var(--font-sans); font-weight: 600; cursor: pointer"
@@ -152,7 +160,7 @@ type Tab = BrandModerationStatus;
                 <div class="flex" style="gap: 8px; margin-top: 16px">
                   <button
                     type="button"
-                    (click)="setStatus(b, 'PENDING')"
+                    (click)="ask(b, 'PENDING')"
                     [disabled]="actingOnId() === b.id"
                     class="disabled:opacity-50"
                     style="padding: 8px 16px; background: var(--color-latte); color: var(--color-espresso); border: 0; border-radius: var(--radius-button); font-family: var(--font-sans); font-weight: 600; cursor: pointer"
@@ -168,6 +176,35 @@ type Tab = BrandModerationStatus;
 
       @if (error()) {
         <p style="margin-top: 16px; color: var(--color-berry)">{{ error() }}</p>
+      }
+
+      @if (decision(); as d) {
+        @if (d.status === 'REJECTED') {
+          <app-confirm-dialog
+            tone="danger"
+            [title]="'admin.brands.dialog.rejectTitle' | translate: { name: d.brand.name }"
+            [body]="'admin.brands.dialog.rejectBody' | translate"
+            [reasonLabel]="'admin.brands.dialog.reason' | translate"
+            [reasonPlaceholder]="'admin.brands.dialog.reasonPlaceholder' | translate"
+            [reasonRequiredText]="'admin.brands.dialog.reasonRequired' | translate"
+            [confirmLabel]="'admin.brands.reject' | translate"
+            [cancelLabel]="'common.cancel' | translate"
+            [busy]="actingOnId() === d.brand.id"
+            (confirmed)="decide(d, $event)"
+            (cancelled)="decision.set(null)"
+          />
+        } @else {
+          <app-confirm-dialog
+            [title]="'admin.brands.dialog.revertTitle' | translate: { name: d.brand.name }"
+            [body]="'admin.brands.dialog.revertBody' | translate"
+            [warning]="d.brand.moderationStatus === 'APPROVED' ? ('admin.brands.dialog.liveWarning' | translate) : ''"
+            [confirmLabel]="'admin.brands.revert' | translate"
+            [cancelLabel]="'common.cancel' | translate"
+            [busy]="actingOnId() === d.brand.id"
+            (confirmed)="decide(d, $event)"
+            (cancelled)="decision.set(null)"
+          />
+        }
       }
     </section>
   `,
@@ -207,6 +244,8 @@ export class AdminBrandsPage {
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly actingOnId = signal<string | null>(null);
+  /** The rejection or revert waiting in the dialog. */
+  readonly decision = signal<PendingDecision | null>(null);
 
   readonly counts = computed(() => {
     const c: Record<Tab, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0 };
@@ -224,21 +263,35 @@ export class AdminBrandsPage {
     this.tab.set(t);
   }
 
-  setStatus(brand: AdminBrand, status: BrandModerationStatus): void {
-    const body: SetBrandModerationRequest = { status };
-    if (status === 'REJECTED') {
-      const note = window.prompt('Reason for rejection (optional):') ?? undefined;
-      if (note) body.note = note;
-    }
+  approve(brand: AdminBrand): void {
+    this.apply(brand, { status: 'APPROVED' });
+  }
+
+  /** Rejecting needs a reason; reverting a decision needs a second look. */
+  ask(brand: AdminBrand, status: PendingDecision['status']): void {
+    this.error.set(null);
+    this.decision.set({ brand, status });
+  }
+
+  decide(decision: PendingDecision, reason: string): void {
+    const body: SetBrandModerationRequest = { status: decision.status };
+    if (decision.status === 'REJECTED') body.note = reason;
+    this.apply(decision.brand, body, () => this.decision.set(null));
+  }
+
+  private apply(brand: AdminBrand, body: SetBrandModerationRequest, onDone?: () => void): void {
     this.actingOnId.set(brand.id);
     this.error.set(null);
     this.brands.setModeration(brand.id, body).subscribe({
       next: (updated) => {
         this.all.update((list) => list.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
+        this.brands.setPendingCount(this.counts().PENDING);
         this.actingOnId.set(null);
+        onDone?.();
       },
       error: (err) => {
         this.actingOnId.set(null);
+        onDone?.();
         this.error.set(this.extractMessage(err));
       },
     });
@@ -249,6 +302,7 @@ export class AdminBrandsPage {
     this.brands.list().subscribe({
       next: (list) => {
         this.all.set(list);
+        this.brands.setPendingCount(this.counts().PENDING);
         this.loading.set(false);
       },
       error: (err) => {

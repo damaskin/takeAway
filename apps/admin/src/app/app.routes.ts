@@ -166,19 +166,13 @@ export const appRoutes: Route[] = [
         path: 'stores/new',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'stores' satisfies NavKey },
-        loadComponent: () => import('./features/stores/store-form.page').then((m) => m.StoreFormPage),
-      },
-      {
-        path: 'stores/:storeId/hours',
-        canActivate: [adminPermissionGuard],
-        data: { navKey: 'stores' satisfies NavKey },
-        loadComponent: () => import('./features/stores/store-hours.page').then((m) => m.StoreHoursPage),
+        loadComponent: () => import('./features/stores/store-create.page').then((m) => m.StoreCreatePage),
       },
       {
         path: 'stores/:storeId',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'stores' satisfies NavKey },
-        loadComponent: () => import('./features/stores/store-form.page').then((m) => m.StoreFormPage),
+        loadComponent: () => import('./features/stores/store-edit.page').then((m) => m.StoreEditPage),
       },
       {
         path: 'orders',

@@ -4,11 +4,39 @@ import { BrandModerationStatus, Currency, Locale, Prisma, Role } from '@prisma/c
 import { PasswordService } from '../auth/services/password.service';
 import { TokensService } from '../auth/services/tokens.service';
 import type { AuthSessionDto } from '../auth/dto/auth-response.dto';
+import { codedConflict } from '../common/http/coded-conflict';
+import { uniqueSlug } from '../common/text/slug';
+import { OnboardingNotifier } from '../onboarding/onboarding-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BusinessRegisterDto } from './dto/business-register.dto';
 import type { BusinessRegisterResponseDto } from './dto/business-register-response.dto';
 
-const MAX_SLUG_COLLISIONS = 50;
+/** Why a sign-up was refused, as the `code` of the 409 — the admin translates these. */
+export const SignupConflict = {
+  /** A staff account already uses this email: sign in or reset the password instead. */
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  /** A customer signs in with this email (Google / Apple) and has no password to sign in with here. */
+  EMAIL_CUSTOMER_ACCOUNT: 'EMAIL_CUSTOMER_ACCOUNT',
+  PHONE_TAKEN: 'PHONE_TAKEN',
+} as const;
+
+/**
+ * Two sign-ups with the same brand name at the same moment can both find a
+ * slug free; the loser of the insert just takes the next one.
+ */
+const SLUG_ATTEMPTS = 3;
+
+const BRAND_SLUG_MAX_LENGTH = 40;
+
+interface RegisterInput {
+  email: string;
+  passwordHash: string;
+  ownerName: string;
+  phone: string | undefined;
+  locale: Locale;
+  currency: Currency;
+  brandName: string;
+}
 
 @Injectable()
 export class BusinessService {
@@ -18,56 +46,32 @@ export class BusinessService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokensService,
+    private readonly notifier: OnboardingNotifier,
   ) {}
 
   async register(dto: BusinessRegisterDto): Promise<BusinessRegisterResponseDto> {
     const email = dto.email.toLowerCase();
+    await this.assertAvailable(email, dto.phone);
 
-    const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      // Account reuse is deliberately out of scope here — the sign-up form is
-      // one-per-brand. Owners reopening a rejected brand go through support.
-      throw new ConflictException('An account with this email already exists');
-    }
-
-    const slug = await this.allocateBrandSlug(dto.brandName);
     const passwordHash = await this.passwords.hash(dto.password);
-
-    let result: Awaited<ReturnType<typeof this.runRegisterTx>>;
-    try {
-      result = await this.runRegisterTx({
-        email,
-        passwordHash,
-        ownerName: dto.ownerName,
-        phone: dto.phone,
-        locale: dto.locale ?? Locale.EN,
-        currency: dto.currency ?? Currency.USD,
-        slug,
-        brandName: dto.brandName,
-      });
-    } catch (err) {
-      // Race window between the email-uniqueness check above and the User
-      // create — two simultaneous registrations of the same email both pass
-      // findUnique, then one of them trips Prisma's unique constraint. Map
-      // it back to the same friendly Conflict the up-front check produces.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        this.logger.warn(`Race-condition duplicate during register for ${email}: ${err.message}`);
-        throw new ConflictException('An account with this email already exists');
-      }
-      // Anything else gets logged with full stack so the admin terminal
-      // shows what actually went wrong instead of a bare 500.
-      this.logger.error(
-        `register failed for email=${email}: ${err instanceof Error ? err.message : String(err)}`,
-        err instanceof Error ? err.stack : undefined,
-      );
-      throw err;
-    }
-    const { brand, user } = result;
+    const { brand, user } = await this.createBrandAndOwner({
+      email,
+      passwordHash,
+      ownerName: dto.ownerName,
+      phone: dto.phone,
+      locale: dto.locale,
+      currency: dto.currency,
+      brandName: dto.brandName,
+    });
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
     });
     const tokens = await this.tokens.issue(user.id, device.id);
+
+    // Not awaited: a slow mail relay must not keep the owner from their
+    // first look at the admin panel. The notifier never rejects.
+    void this.notifier.brandSubmitted(brand.id);
 
     const session: AuthSessionDto = {
       ...tokens,
@@ -94,17 +98,65 @@ export class BusinessService {
     };
   }
 
-  private runRegisterTx(input: {
-    email: string;
-    passwordHash: string;
-    ownerName: string;
-    phone: string | undefined;
-    locale: Locale;
-    currency: Currency;
-    slug: string;
-    brandName: string;
-  }) {
+  /**
+   * Refuses up front, with the reason, what the insert would refuse anyway.
+   * Existing accounts are never upgraded into brand owners here: a customer
+   * account has no password to sign in to the admin with, and turning it
+   * into a staff account behind its owner's back is worse than asking for a
+   * different address.
+   */
+  private async assertAvailable(email: string, phone: string | undefined): Promise<void> {
+    const byEmail = await this.prisma.user.findUnique({ where: { email }, select: { role: true } });
+    if (byEmail?.role === Role.CUSTOMER) {
+      throw codedConflict(
+        SignupConflict.EMAIL_CUSTOMER_ACCOUNT,
+        'This email belongs to a customer account. Use a different email for the business.',
+        'email',
+      );
+    }
+    if (byEmail) throw emailTaken();
+
+    if (phone) {
+      const byPhone = await this.prisma.user.findUnique({ where: { phone }, select: { id: true } });
+      if (byPhone) throw phoneTaken();
+    }
+  }
+
+  private async createBrandAndOwner(input: RegisterInput) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.runRegisterTx(input);
+      } catch (err) {
+        // The checks above and the insert are not atomic: a concurrent
+        // sign-up can still claim the email, phone or slug in between.
+        // Answer with the field that actually clashed.
+        const field = uniqueViolationField(err);
+        if (field === 'slug' && attempt < SLUG_ATTEMPTS) continue;
+        if (field === 'email') throw emailTaken();
+        if (field === 'phone') throw phoneTaken();
+        if (field === 'slug') throw new ConflictException('Could not reserve an address for this brand — try again');
+
+        this.logger.error(
+          `register failed for email=${input.email}: ${err instanceof Error ? err.message : String(err)}`,
+          err instanceof Error ? err.stack : undefined,
+        );
+        throw err;
+      }
+    }
+  }
+
+  private runRegisterTx(input: RegisterInput) {
     return this.prisma.$transaction(async (tx) => {
+      // Picked right before the insert, inside the transaction, so the
+      // window for a clash is one statement wide; createBrandAndOwner
+      // retries the rare loser. Cyrillic names transliterate:
+      // «Кофейня Ромашка» → kofeynya-romashka.
+      const slug = await uniqueSlug(
+        input.brandName,
+        async (candidate) => (await tx.brand.findUnique({ where: { slug: candidate }, select: { id: true } })) !== null,
+        'brand',
+        BRAND_SLUG_MAX_LENGTH,
+      );
       const user = await tx.user.create({
         data: {
           email: input.email,
@@ -118,7 +170,7 @@ export class BusinessService {
       });
       const brand = await tx.brand.create({
         data: {
-          slug: input.slug,
+          slug,
           name: input.brandName,
           ownerId: user.id,
           currency: input.currency,
@@ -129,32 +181,28 @@ export class BusinessService {
       return { brand, user };
     });
   }
-
-  /**
-   * kebab-case the brand name, fall back to `brand-<cuid-suffix>` if the
-   * input has no alphanumerics, and append `-2`, `-3`… on collision. Retries
-   * up to {@link MAX_SLUG_COLLISIONS} before bailing — at that point something
-   * is wrong (abuse or truly pathological input) and a ConflictException
-   * tells the caller to pick a different name.
-   */
-  private async allocateBrandSlug(name: string): Promise<string> {
-    const base = slugify(name) || `brand-${Math.random().toString(36).slice(2, 8)}`;
-    let candidate = base;
-    for (let i = 2; i < MAX_SLUG_COLLISIONS + 2; i++) {
-      const hit = await this.prisma.brand.findUnique({ where: { slug: candidate }, select: { id: true } });
-      if (!hit) return candidate;
-      candidate = `${base}-${i}`;
-    }
-    throw new ConflictException('Could not allocate a unique brand slug — try a different brand name');
-  }
 }
 
-function slugify(input: string): string {
-  return input
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '') // strip accents
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
+function emailTaken(): ConflictException {
+  return codedConflict(
+    SignupConflict.EMAIL_TAKEN,
+    'An account with this email already exists. Sign in or reset the password.',
+    'email',
+  );
+}
+
+function phoneTaken(): ConflictException {
+  return codedConflict(SignupConflict.PHONE_TAKEN, 'This phone number is already used by another account.', 'phone');
+}
+
+/**
+ * The column a unique-constraint violation (P2002) tripped on. Prisma puts
+ * the fields in `meta.target` — an array of column names, or the constraint
+ * name ("User_phone_key") depending on the query path — so both are read.
+ */
+function uniqueViolationField(err: unknown): 'email' | 'phone' | 'slug' | null {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return null;
+  const target = err.meta?.['target'];
+  const text = Array.isArray(target) ? target.join(',') : String(target ?? '');
+  return (['email', 'phone', 'slug'] as const).find((field) => text.includes(field)) ?? null;
 }

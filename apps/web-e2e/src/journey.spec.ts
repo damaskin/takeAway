@@ -132,6 +132,30 @@ test.describe('customer journey', () => {
     expect(sent['pickupAt']).toBeUndefined();
   });
 
+  test('after hours checkout offers only a scheduled pickup', async ({ page }) => {
+    // Switched on, but past closing time: the API reports openNow = false.
+    const api = await installFakeApi(page, { storeOpenNow: false });
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+
+    await expect(page.getByText(/closed right now/i)).toBeVisible();
+    await expect(page.getByRole('button', { name: /^\s*asap\s*$/i })).toBeDisabled();
+
+    // Checkout opens on the slots with the first free window already picked.
+    const slotButtons = page.locator('button', { hasText: /^\s*\d{1,2}:\d{2}(\s*[AP]M)?\s*$/i });
+    await expect(slotButtons.nth(1)).toBeEnabled();
+
+    await placeOrder(page).click();
+    await page.waitForURL(/\/orders\/order-1/);
+
+    const sent = api.orders[0]?.['_request'] as Record<string, unknown>;
+    expect(sent['pickupMode']).toBe('SCHEDULED');
+    expect(typeof sent['pickupAt']).toBe('string');
+  });
+
   test('a customer with points can spend them, and the total falls', async ({ page }) => {
     const api = await installFakeApi(page, { pointsBalance: 500 });
     await signIn(page);
@@ -141,7 +165,8 @@ test.describe('customer journey', () => {
     await page.goto('/checkout?store=dubai-marina');
 
     // 18.00 subtotal, so the total starts there (tax is inside the price).
-    await expect(page.getByText('AED 18.00').first()).toBeVisible();
+    // The amount and its code are separated by a no-break space.
+    await expect(page.getByText(/18\s*AED/).first()).toBeVisible();
 
     await expect(page.getByText(/500 points available/i)).toBeVisible();
     await page.getByRole('spinbutton').first().fill('500');
@@ -151,7 +176,7 @@ test.describe('customer journey', () => {
 
     await expect(page.getByText(/500 points applied/i)).toBeVisible();
     // 500 points at a cent each is 5.00 off.
-    await expect(page.getByText('AED 13.00').first()).toBeVisible();
+    await expect(page.getByText(/13\s*AED/).first()).toBeVisible();
 
     await placeOrder(page).click();
     await page.waitForURL(/\/orders\/order-1/);

@@ -35,7 +35,7 @@ import { TranslatePipe } from '@ngx-translate/core';
         <h1
           style="font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
-          {{ title() | translate }}
+          {{ title() | translate: titleParams() }}
         </h1>
         @if (subtitle(); as sub) {
           <p
@@ -93,6 +93,8 @@ export class FormPageComponent {
   readonly backTo = input.required<unknown[]>();
   readonly backLabel = input<string>('common.back');
   readonly title = input.required<string>();
+  /** Interpolation for the title's key, e.g. the name of the record. */
+  readonly titleParams = input<Record<string, unknown>>({});
   /** Already-translated free text, e.g. the name of the record being edited. */
   readonly subtitle = input<string | null>(null);
   readonly saveLabel = input<string>('common.save');

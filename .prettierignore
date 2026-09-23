@@ -9,3 +9,10 @@ pnpm-lock.yaml
 
 # Vendored agent skills — keep byte-identical to upstream angular/skills
 .claude/skills
+
+# Flutter tooling output and Xcode-managed asset catalogs (Xcode rewrites
+# Contents.json in its own style whenever an asset is touched).
+apps/mobile/build
+apps/mobile/.dart_tool
+apps/mobile/ios/Runner/Assets.xcassets
+libs/api-client-dart/.dart_tool

@@ -16,9 +16,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="takeAway" />
     <script>
-      // Telegram Login Widget bot username. Leave empty to hide the widget.
-      // The widget only works for a domain registered against this bot via
-      // BotFather's /setdomain (e.g. `http://localhost:4200` in dev).
+      // Telegram Login (OpenID Connect) client id — the bot's numeric id.
+      // Set it once this site's origin is in the bot's Allowed URLs
+      // (@BotFather mini app → the bot → Login Widget); the page then uses
+      // Telegram's current login library. Empty keeps the legacy widget below.
+      window.__TELEGRAM_CLIENT_ID = '';
+
+      // Legacy Telegram Login Widget bot username, used while the client id
+      // above is empty. Leave both empty to hide Telegram. The widget only
+      // works for a domain registered via BotFather's /setdomain.
       window.__TELEGRAM_BOT_USERNAME = 'takaway_tgbot';
 
       // Social sign-in. All three are public identifiers — the secrets stay
@@ -38,6 +44,11 @@
       // issue points at an exact deploy.
       window.__SENTRY_DSN = '';
       window.__SENTRY_ENVIRONMENT = 'development';
+
+      // Admin panel base URL, for the "list your business" page. Deploys
+      // fill it from ADMIN_APP_URL; empty means localhost:4202 in dev and
+      // the admin. subdomain of this host otherwise.
+      window.__ADMIN_APP_URL = '';
     </script>
   </head>
   <body>

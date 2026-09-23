@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -77,10 +78,21 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                 [class.opacity-50]="p.onStopList"
                 style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; overflow: hidden"
               >
+                <!-- The warm gradient shows until the photo loads, and stays when there is none. -->
                 <div
-                  [style.background]="'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)'"
-                  style="aspect-ratio: 1 / 1; background-size: cover"
-                ></div>
+                  style="aspect-ratio: 1 / 1; overflow: hidden; background: linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)"
+                >
+                  @if (p.imageUrls[0]; as photo) {
+                    <img
+                      [src]="photo"
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      (error)="hideBrokenImage($event)"
+                      style="display: block; width: 100%; height: 100%; object-fit: cover"
+                    />
+                  }
+                </div>
                 <div class="flex flex-col" style="padding: 12px; gap: 4px">
                   <span
                     class="line-clamp-2"
@@ -109,6 +121,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly brandTheme = inject(BrandThemeService);
   private readonly activeStore = inject(ActiveStoreService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -166,10 +179,12 @@ export class TmaMenuPage implements OnInit, OnDestroy {
     return this.emojiByIndex[idx % this.emojiByIndex.length] ?? '☕';
   }
 
+  /** A photo that fails to load leaves the gradient behind it rather than a broken-image icon. */
+  hideBrokenImage(event: Event): void {
+    (event.target as HTMLImageElement).style.display = 'none';
+  }
+
   price(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.store()?.currency ?? 'USD',
-    }).format(cents / 100);
+    return this.fmt.money(cents, this.store()?.currency);
   }
 }

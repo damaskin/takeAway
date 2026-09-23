@@ -2,6 +2,7 @@
  * Order / Cart / Payment transport types shared across apps.
  */
 
+import type { VariationType } from './catalog';
 import type { Currency } from './shared-types';
 
 export type FulfillmentTypeEnum = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
@@ -86,18 +87,60 @@ export interface OrderSummary {
   currency: Currency;
   storeId: string;
   storeName: string;
+  /** IANA zone of the store; pickup times are shown on the store's clock. */
+  storeTimezone: string;
   itemCount: number;
   createdAt: string;
 }
 
+// The snapshot shapes below are type aliases rather than interfaces so they
+// stay assignable to a JSON column: an interface has no implicit index
+// signature, and Prisma's JSON input type is one.
+
+/** A variation the line was made with, as the menu described it at order time. */
+export type OrderItemVariation = {
+  id: string;
+  type: VariationType;
+  name: string;
+  priceDeltaCents: number;
+};
+
+/** An extra on the line. Only extras the customer actually took (count > 0). */
+export type OrderItemModifier = {
+  id: string;
+  name: string;
+  count: number;
+  /** Price of one; the line pays `count × priceCents`. */
+  priceCents: number;
+};
+
+/**
+ * `OrderItem.productSnapshot` — the line exactly as it was bought, so a later
+ * menu edit cannot rewrite what the kitchen makes or what the receipt says.
+ *
+ * `variations` and `modifierLines` are empty on orders placed before options
+ * were snapshotted; those still carry the ids (`variationIds`, `modifiers`)
+ * and the line's notes.
+ */
+export type OrderItemSnapshot = {
+  /** Product id. */
+  id: string;
+  slug: string;
+  name: string;
+  variationIds: string[];
+  /** `{ modifierId: count }` — the form the POS push reads. */
+  modifiers: Record<string, number>;
+  /** What the customer wrote for this line, e.g. "less foam". */
+  notes: string | null;
+  unitPrepSeconds: number;
+  /** Size first, then milk, temperature and cup — the order a barista reads them in. */
+  variations: OrderItemVariation[];
+  modifierLines: OrderItemModifier[];
+};
+
 export interface OrderItem {
   id: string;
-  productSnapshot: {
-    id: string;
-    name: string;
-    variationNames?: string[];
-    modifierNames?: Array<{ name: string; count: number }>;
-  };
+  productSnapshot: OrderItemSnapshot;
   quantity: number;
   unitPriceCents: number;
   totalCents: number;
@@ -135,6 +178,91 @@ export interface CreateOrderInput {
 export interface CreateOrderResponse {
   order: Order;
   clientSecret?: string;
+}
+
+/**
+ * Why a cart line did not pass the price check at checkout.
+ *
+ * - `PRODUCT_UNAVAILABLE` — the product was hidden or removed; the line is gone.
+ * - `OPTION_UNAVAILABLE` — a size, milk or extra the customer chose no longer
+ *   exists; the line is gone, because making it without that option would
+ *   be a different drink.
+ * - `PRICE_CHANGED` — the line is still on the menu at a new price; the cart
+ *   now holds that price.
+ * - `OPTIONS_CHANGED` — same price, but an extra's count had to change to fit
+ *   the menu's new limits; the cart now holds the adjusted line.
+ */
+export type CartChangeReason = 'PRODUCT_UNAVAILABLE' | 'OPTION_UNAVAILABLE' | 'PRICE_CHANGED' | 'OPTIONS_CHANGED';
+
+export interface CartChangedItem {
+  cartItemId: string;
+  productId: string;
+  productName: string;
+  reason: CartChangeReason;
+  /** The unit price the cart showed before the check. */
+  previousUnitPriceCents: number;
+  /** The unit price now; `null` when the line was taken out of the cart. */
+  unitPriceCents: number | null;
+}
+
+/**
+ * Body of the 409 that `POST /orders` answers when the cart no longer matches
+ * the menu. No order was created; the cart has already been brought up to
+ * date, so re-reading it shows what the customer would pay now.
+ */
+export interface CartChangedError {
+  statusCode: 409;
+  error: 'Conflict';
+  code: 'CART_CHANGED';
+  message: string;
+  items: CartChangedItem[];
+}
+
+/** Why a promo code does not apply. Sent by promo validation and by `POST /orders`. */
+export type PromoErrorCode =
+  | 'PROMO_UNKNOWN'
+  | 'PROMO_INACTIVE'
+  | 'PROMO_NOT_STARTED'
+  | 'PROMO_EXPIRED'
+  | 'PROMO_MIN_ORDER'
+  | 'PROMO_LIMIT_REACHED'
+  | 'PROMO_ALREADY_USED';
+
+/**
+ * Stable codes on the errors a customer can meet while placing an order. The
+ * API sends one beside its English `message`; web and the Mini App show
+ * their own words for it instead of the message.
+ */
+export type CheckoutErrorCode =
+  | 'CART_EMPTY'
+  | 'STORE_NOT_TAKING_ORDERS'
+  | 'STORE_CLOSED_AT_TIME'
+  | 'PICKUP_SLOT_FULL'
+  | 'PICKUP_TIME_OUT_OF_RANGE'
+  | 'ITEMS_UNAVAILABLE'
+  | 'BELOW_MIN_ORDER'
+  | 'DELIVERY_UNAVAILABLE'
+  | 'DELIVERY_ADDRESS_REQUIRED'
+  | 'DELIVERY_OUT_OF_RANGE'
+  | PromoErrorCode;
+
+/**
+ * Body of a 400 from the order path. The optional fields fill the gaps in the
+ * translated text: which items ran out, the minimum order, the booking window.
+ */
+export interface CheckoutErrorBody {
+  statusCode: 400;
+  error: 'Bad Request';
+  code: CheckoutErrorCode;
+  message: string;
+  /** ITEMS_UNAVAILABLE: the names of the items that ran out. */
+  items?: string[];
+  /** BELOW_MIN_ORDER, PROMO_MIN_ORDER: the minimum, in `currency`. */
+  minOrderCents?: number;
+  currency?: string;
+  /** PICKUP_TIME_OUT_OF_RANGE: how far ahead a pickup may be booked. */
+  minMinutes?: number;
+  maxHours?: number;
 }
 
 export interface OrderStatusEvent {

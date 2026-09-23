@@ -23,7 +23,7 @@ function orderRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 interface Harness {
   service: OrderExpiryService;
-  tx: { order: { findUnique: jest.Mock; update: jest.Mock } };
+  tx: { order: { updateMany: jest.Mock; update: jest.Mock } };
   prisma: { order: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
@@ -38,7 +38,8 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
 
   const tx = {
     order: {
-      findUnique: jest.fn().mockResolvedValue(current),
+      // The claim only matches an order that is still CREATED.
+      updateMany: jest.fn().mockResolvedValue({ count: current?.['status'] === 'CREATED' ? 1 : 0 }),
       update: jest.fn().mockResolvedValue(orderRow({ status: 'EXPIRED' })),
     },
     promoRedemption: { deleteMany: jest.fn() },
@@ -109,9 +110,11 @@ describe('OrderExpiryService', () => {
       const h = harness();
       await h.service.expire('order-1');
 
+      const claim = h.tx.order.updateMany.mock.calls[0]?.[0];
+      expect(claim.where).toEqual({ id: 'order-1', status: 'CREATED' });
+      expect(claim.data.status).toBe('EXPIRED');
+      expect(claim.data.expiredAt).toBeInstanceOf(Date);
       const data = h.tx.order.update.mock.calls[0]?.[0]?.data;
-      expect(data.status).toBe('EXPIRED');
-      expect(data.expiredAt).toBeInstanceOf(Date);
       expect(data.events.create.payload).toMatchObject({
         from: 'CREATED',
         to: 'EXPIRED',
@@ -137,6 +140,19 @@ describe('OrderExpiryService', () => {
      * real money. Expiring it without releasing that would leave the customer
      * frozen out of their own funds until the bank's own hold window ran out.
      */
+    // Two sweepers at once: only the claim that wins may hand anything back.
+    it('hands nothing back when another sweeper already expired the order', async () => {
+      const h = harness();
+      h.tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(h.service.expire('order-1')).resolves.toBe(false);
+
+      expect(h.promo.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.giftCards.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.loyalty.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.tx.order.update).not.toHaveBeenCalled();
+    });
+
     it('releases the money held against an order nobody took on', async () => {
       const h = harness();
 
@@ -192,18 +208,52 @@ describe('OrderExpiryService', () => {
 
       const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
       expect(where.status).toBe('CREATED');
+      const [cardBranch] = where.OR;
+      expect(cardBranch.payments).toEqual({ some: {} });
       // The cutoff is twenty minutes behind whenever the sweep ran, which
       // is somewhere in [before, after]. Bracketing both ends keeps this
       // honest without depending on how long the call took.
-      const cutoff = (where.createdAt.lt as Date).getTime();
+      const cutoff = (cardBranch.createdAt.lt as Date).getTime();
       expect(cutoff).toBeGreaterThanOrEqual(before - 20 * 60_000);
       expect(cutoff).toBeLessThanOrEqual(after - 20 * 60_000);
     });
 
+    // A pre-order for the morning, paid at the counter, used to die fifteen
+    // minutes after it was placed.
+    it('leaves a pay-on-pickup order alone until well past its pickup time', async () => {
+      const h = harness();
+      const before = Date.now();
+
+      await h.service.sweep();
+
+      const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
+      const payOnPickup = where.OR[1];
+      expect(payOnPickup.payments).toEqual({ none: {} });
+      expect(payOnPickup.createdAt).toBeUndefined();
+      expect((payOnPickup.pickupAt.lt as Date).getTime()).toBeLessThanOrEqual(before - 60 * 60_000 + 5_000);
+    });
+
+    it('says why each order went: an unfinished payment or a kitchen that never took it', async () => {
+      const h = harness();
+      h.prisma.order.findMany.mockResolvedValue([
+        { id: 'card', _count: { payments: 1 } },
+        { id: 'counter', _count: { payments: 0 } },
+      ]);
+      const expire = jest.spyOn(h.service, 'expire').mockResolvedValue(true);
+
+      await expect(h.service.sweep()).resolves.toBe(2);
+
+      expect(expire).toHaveBeenCalledWith('card', 'payment_timeout');
+      expect(expire).toHaveBeenCalledWith('counter', 'not_accepted');
+    });
+
     it('keeps going when one order refuses to expire', async () => {
       const h = harness();
-      h.prisma.order.findMany.mockResolvedValue([{ id: 'bad' }, { id: 'good' }]);
-      h.tx.order.findUnique.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue(orderRow({ id: 'good' }));
+      h.prisma.order.findMany.mockResolvedValue([
+        { id: 'bad', _count: { payments: 1 } },
+        { id: 'good', _count: { payments: 1 } },
+      ]);
+      h.tx.order.updateMany.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue({ count: 1 });
 
       await expect(h.service.sweep()).resolves.toBe(1);
     });

@@ -1,7 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl } from '@takeaway/utils';
+import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import { interval, type Subscription } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -11,6 +11,7 @@ import {
   type OrderStatusString,
   type OrderView,
 } from '../../core/orders/orders.service';
+import { LocaleFormatService } from '@takeaway/i18n';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -131,14 +132,28 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
             class="flex flex-col"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 10px"
           >
-            @for (item of o.items; track item.id) {
-              <div class="flex items-center justify-between">
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
-                  >{{ item.quantity }} × {{ item.productSnapshot.name }}</span
-                >
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-                  price(item.totalCents)
-                }}</span>
+            @for (line of lines(); track line.id) {
+              <div class="flex flex-col" style="gap: 2px">
+                <div class="flex items-start justify-between" style="gap: 12px">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
+                    >{{ line.quantity }} × {{ line.name }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); white-space: nowrap"
+                    >{{ price(line.totalCents) }}</span
+                  >
+                </div>
+                @if (line.options) {
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+                    line.options
+                  }}</span>
+                }
+                @if (line.notes) {
+                  <span
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-style: italic"
+                    >“{{ line.notes }}”</span
+                  >
+                }
               </div>
             }
             <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
@@ -186,9 +201,25 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly orders = inject(OrdersApi);
   private readonly realtime = inject(RealtimeService);
   private readonly tg = inject(TelegramBridgeService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
+
+  /** The order's lines with their size, milk and extras spelled out. */
+  readonly lines = computed(() =>
+    (this.order()?.items ?? []).map((item) => {
+      const snap = readOrderItemSnapshot(item.productSnapshot);
+      return {
+        id: item.id,
+        name: snap.name,
+        quantity: item.quantity,
+        totalCents: item.totalCents,
+        options: describeOrderItemOptions(snap),
+        notes: snap.notes,
+      };
+    }),
+  );
   readonly imHereClicked = signal(false);
   readonly userPos = signal<LatLng | null>(null);
 
@@ -237,8 +268,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly paymentDetail = computed(() => {
     const payment = this.order()?.payment;
     if (!payment || payment.state === 'NONE') return '';
-    const currency = this.order()?.currency ?? 'USD';
-    const amount = new Intl.NumberFormat('en', { style: 'currency', currency }).format(payment.amountCents / 100);
+    const amount = this.fmt.money(payment.amountCents, this.order()?.currency);
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
   });
 
@@ -358,7 +388,6 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    const currency = this.order()?.currency ?? 'USD';
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.order()?.currency);
   }
 }

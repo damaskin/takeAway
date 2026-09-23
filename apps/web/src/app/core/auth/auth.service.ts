@@ -32,6 +32,16 @@ export class AuthService {
   }
 
   /**
+   * Sign in with Telegram Login (OpenID Connect). `idToken` comes from
+   * Telegram's popup; the server verifies it against Telegram's keys.
+   */
+  signInWithTelegramIdToken(idToken: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/telegram/oidc`, { idToken })
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
+  /**
    * Sign in with Google. `idToken` is the `credential` handed back by
    * Google Identity Services; the server re-verifies it against Google's
    * JWKS before trusting a claim.

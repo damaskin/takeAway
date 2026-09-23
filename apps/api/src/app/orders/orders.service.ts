@@ -8,12 +8,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { computeTax } from '@takeaway/utils';
-import type { Cart, CartItem, Order, PaymentStatus, Prisma, Product } from '@prisma/client';
+import type { OrderItemSnapshot } from '@takeaway/shared-types';
+import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
+import { checkoutError } from '../common/http/checkout-error';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
-import { CartService } from '../cart/cart.service';
+import { CartService, type CheckoutLine } from '../cart/cart.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -79,11 +81,15 @@ export class OrdersService {
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { id: dto.cartId },
-      include: { items: { include: { product: true } }, store: true },
+      include: {
+        items: { include: { product: { include: { variations: true, modifiers: true } } } },
+        store: true,
+      },
     });
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
-    if (cart.items.length === 0) throw new BadRequestException('Cart is empty');
+    if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
+    await this.cart.assertStoreTakesOrders(cart.storeId);
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -95,14 +101,17 @@ export class OrdersService {
       // catalog layer already strips DELIVERY from public responses, so a
       // client should never see the UI — this guard catches direct API calls.
       if (!this.flags.deliveryEnabled) {
-        throw new BadRequestException('Delivery is not available at this time');
+        throw checkoutError('DELIVERY_UNAVAILABLE', 'Delivery is not available at this time');
       }
       if (!dto.deliveryAddressLine || !dto.deliveryCity) {
-        throw new BadRequestException('deliveryAddressLine and deliveryCity are required for DELIVERY orders');
+        throw checkoutError(
+          'DELIVERY_ADDRESS_REQUIRED',
+          'deliveryAddressLine and deliveryCity are required for DELIVERY orders',
+        );
       }
       // Reject DELIVERY for a store that hasn't opted in.
       if (!cart.store.fulfillmentTypes.includes('DELIVERY')) {
-        throw new BadRequestException('This store does not support delivery');
+        throw checkoutError('DELIVERY_UNAVAILABLE', 'This store does not support delivery');
       }
     }
 
@@ -113,18 +122,26 @@ export class OrdersService {
       cart.items.map((i) => i.productId),
     );
 
-    const pickupAt = await this.resolvePickupAt(cart, dto);
+    // The cart remembers what each line cost when it went in; the charge
+    // and the kitchen ticket have to follow the menu as it is now. Throws a
+    // 409 (and fixes the cart up) if the two have drifted apart.
+    const lines = await this.cart.repriceForCheckout(cart);
+
+    const pickupAt = await this.resolvePickupAt(cart.storeId, lines, dto);
     // Working hours are edited in admin and were enforced nowhere: a 3am
     // handover used to land straight on the kitchen board.
     await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
     // Capacity applies to ASAP too. Without it a rush simply pushes every
     // quoted ETA out, which is the failure this whole model exists to stop.
     await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);
-    const { prepSeconds, workSeconds } = this.kitchen.timings(cart.items);
+    const { prepSeconds, workSeconds } = this.kitchen.timings(lines);
 
-    const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
+    const subtotalCents = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
-      throw new BadRequestException('Cart total below store minimum');
+      throw checkoutError('BELOW_MIN_ORDER', 'Cart total below store minimum', {
+        minOrderCents: cart.store.minOrderCents,
+        currency: cart.store.currency,
+      });
     }
 
     // Delivery fee — distance-based when the client sends customer coords,
@@ -145,7 +162,7 @@ export class OrdersService {
         },
       });
       if (!quote.deliverable) {
-        throw new BadRequestException('Delivery address is outside the serviceable radius');
+        throw checkoutError('DELIVERY_OUT_OF_RANGE', 'Delivery address is outside the serviceable radius');
       }
       deliveryFeeCents = quote.feeCents;
       deliveryDistanceM = quote.distanceM;
@@ -158,7 +175,10 @@ export class OrdersService {
       ? await this.promo.validate(userId, dto.couponCode, cart.store.brandId, subtotalCents)
       : null;
     if (promoResult && !promoResult.valid) {
-      throw new BadRequestException(promoResult.reason ?? 'Promo code invalid');
+      throw checkoutError(promoResult.reasonCode ?? 'PROMO_UNKNOWN', promoResult.reason ?? 'Promo code invalid', {
+        minOrderCents: promoResult.minOrderCents,
+        currency: promoResult.currency,
+      });
     }
 
     const promoDiscountCents = promoResult?.discountCents ?? 0;
@@ -205,6 +225,12 @@ export class OrdersService {
       taxIncludedInPrice: cart.store.taxIncludedInPrice,
     });
 
+    // Checkout may send no name — the field is optional and the Mini App
+    // never asks for one. The customer is signed in, though, and has a name
+    // on the profile; without it the kitchen board says «Клиент» and the
+    // admin «Без имени».
+    const customerName = dto.customerName?.trim() || (await this.profileName(userId));
+
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
         const created = await tx.order.create({
@@ -224,7 +250,7 @@ export class OrdersService {
             currency: cart.store.currency,
             orderCode,
             qrToken: randomBytes(16).toString('hex'),
-            customerName: dto.customerName,
+            customerName,
             customerPhone: dto.customerPhone,
             notes: dto.notes,
             couponCode: dto.couponCode,
@@ -241,11 +267,11 @@ export class OrdersService {
             deliveryFeeCents,
             deliveryDistanceM,
             items: {
-              create: cart.items.map((i) => ({
-                productSnapshot: this.snapshotItem(i) as Prisma.InputJsonValue,
-                quantity: i.quantity,
-                unitPriceCents: i.unitPriceCents,
-                totalCents: i.unitPriceCents * i.quantity,
+              create: lines.map((l) => ({
+                productSnapshot: this.snapshotItem(l),
+                quantity: l.quantity,
+                unitPriceCents: l.unitPriceCents,
+                totalCents: l.unitPriceCents * l.quantity,
               })),
             },
             events: {
@@ -336,7 +362,7 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         items: true,
-        store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+        store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
         payments: {
           orderBy: { createdAt: 'desc' },
           include: { cardToken: { select: { maskedPan: true } } },
@@ -362,7 +388,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(100, Math.max(1, take)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -402,7 +428,8 @@ export class OrdersService {
     }
     // Brand-level scope: BRAND_ADMIN is restricted to their owned brands.
     // If the caller also passed an explicit ?brandId= we intersect the two sets.
-    if (params.brandIds && params.brandIds.length > 0) {
+    if (params.brandIds) {
+      if (params.brandIds.length === 0) return [];
       if (params.brandId) {
         if (!params.brandIds.includes(params.brandId)) return [];
         where.store = { brandId: params.brandId };
@@ -418,7 +445,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(200, Math.max(1, params.take ?? 50)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -435,7 +462,7 @@ export class OrdersService {
         items: true,
         payments: { orderBy: { createdAt: 'asc' } },
         events: { orderBy: { createdAt: 'asc' } },
-        store: { select: { name: true } },
+        store: { select: { name: true, timezone: true } },
         user: { select: { email: true } },
       },
     });
@@ -461,6 +488,7 @@ export class OrdersService {
       createdAt: order.createdAt.toISOString(),
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       customerEmail: order.user?.email ?? null,
@@ -477,10 +505,13 @@ export class OrdersService {
       refundedCents,
       refundableCents: Math.max(0, paidCents - refundedCents),
       items: order.items.map((i) => {
-        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
+        const snap = readOrderItemSnapshot(i.productSnapshot);
         return {
           id: i.id,
-          name: typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item',
+          name: snap.name || 'Item',
+          variations: snap.variations,
+          modifierLines: snap.modifierLines,
+          notes: snap.notes,
           quantity: i.quantity,
           unitPriceCents: i.unitPriceCents,
           totalCents: i.totalCents,
@@ -514,7 +545,7 @@ export class OrdersService {
     totalCents: number;
     currency: string;
     storeId: string;
-    store: { name: string };
+    store: { name: string; timezone: string };
     items: Array<{ quantity: number }>;
     createdAt: Date;
   }): OrderSummaryDto {
@@ -528,6 +559,7 @@ export class OrdersService {
       currency: o.currency as OrderSummaryDto['currency'],
       storeId: o.storeId,
       storeName: o.store.name,
+      storeTimezone: o.store.timezone,
       itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
       createdAt: o.createdAt.toISOString(),
     };
@@ -616,9 +648,13 @@ export class OrdersService {
       taxIncluded: order.store?.taxIncludedInPrice ?? true,
       totalCents: order.totalCents,
       items: order.items.map((i) => {
-        const snap = (i.productSnapshot as Record<string, unknown> | null) ?? {};
-        const name = typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Item';
-        return { name, quantity: i.quantity, totalCents: i.totalCents };
+        const snap = readOrderItemSnapshot(i.productSnapshot);
+        return {
+          name: snap.name || 'Item',
+          options: describeOrderItemOptions(snap),
+          quantity: i.quantity,
+          totalCents: i.totalCents,
+        };
       }),
     };
 
@@ -677,7 +713,7 @@ export class OrdersService {
         },
         include: {
           items: true,
-          store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+          store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
           payments: {
             orderBy: { createdAt: 'desc' },
             include: { cardToken: { select: { maskedPan: true } } },
@@ -807,10 +843,20 @@ export class OrdersService {
    * cached on the cart — that number was right when the customer last
    * touched their basket, and four orders may have landed since.
    */
-  private async resolvePickupAt(cart: Cart & { items: CartItem[] }, dto: CreateOrderDto): Promise<Date> {
+  /** The name on the customer's profile, trimmed; null when there is none. */
+  private async profileName(userId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    return user?.name?.trim() || null;
+  }
+
+  private async resolvePickupAt(
+    storeId: string,
+    lines: readonly { quantity: number; unitPrepSeconds: number }[],
+    dto: CreateOrderDto,
+  ): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
-      const { prepSeconds } = this.kitchen.timings(cart.items);
-      const quote = await this.kitchen.quote(cart.storeId, prepSeconds);
+      const { prepSeconds } = this.kitchen.timings(lines);
+      const quote = await this.kitchen.quote(storeId, prepSeconds);
       return new Date(Date.now() + quote.etaSeconds * 1000);
     }
     if (!dto.pickupAt) {
@@ -819,22 +865,33 @@ export class OrdersService {
     const minAt = new Date(Date.now() + MIN_SCHEDULED_LEAD_MINUTES * 60_000);
     const maxAt = new Date(Date.now() + MAX_SCHEDULED_LEAD_HOURS * 60 * 60_000);
     if (dto.pickupAt < minAt || dto.pickupAt > maxAt) {
-      throw new BadRequestException(
+      throw checkoutError(
+        'PICKUP_TIME_OUT_OF_RANGE',
         `Scheduled pickup must be between ${MIN_SCHEDULED_LEAD_MINUTES} min and ${MAX_SCHEDULED_LEAD_HOURS} h from now`,
+        { minMinutes: MIN_SCHEDULED_LEAD_MINUTES, maxHours: MAX_SCHEDULED_LEAD_HOURS },
       );
     }
     return dto.pickupAt;
   }
 
-  private snapshotItem(item: CartItem & { product: Product }): Record<string, unknown> {
+  /**
+   * The line as it was bought. Names and prices are copied, not referenced:
+   * the barista has to see "L, oat, +vanilla" even after the admin renames
+   * the milk or deletes the syrup, and the receipt must keep saying what was
+   * charged. `variationIds` and `modifiers` stay for the POS push and for
+   * clients that read them.
+   */
+  private snapshotItem(line: CheckoutLine): OrderItemSnapshot {
     return {
-      id: item.product.id,
-      slug: item.product.slug,
-      name: item.product.name,
-      variationIds: item.variationIds,
-      modifiers: item.modifiersJson,
-      notes: item.notes,
-      unitPrepSeconds: item.unitPrepSeconds,
+      id: line.productId,
+      slug: line.productSlug,
+      name: line.productName,
+      variationIds: line.variationIds,
+      modifiers: line.modifiers,
+      notes: line.notes,
+      unitPrepSeconds: line.unitPrepSeconds,
+      variations: line.variations,
+      modifierLines: line.modifierLines,
     };
   }
 
@@ -868,6 +925,7 @@ export class OrdersService {
         latitude?: number | null;
         longitude?: number | null;
         addressLine?: string | null;
+        timezone?: string | null;
       } | null;
       payments?: Array<{
         status: PaymentStatus;
@@ -892,6 +950,7 @@ export class OrdersService {
       currency: order.currency,
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       storeLatitude: order.store?.latitude ?? 0,
       storeLongitude: order.store?.longitude ?? 0,
       storeAddress: order.store?.addressLine ?? null,
@@ -903,7 +962,7 @@ export class OrdersService {
       giftCardCents: order.giftCardCents,
       items: order.items.map<OrderItemDto>((i) => ({
         id: i.id,
-        productSnapshot: (i.productSnapshot as Record<string, unknown>) ?? {},
+        productSnapshot: readOrderItemSnapshot(i.productSnapshot),
         quantity: i.quantity,
         unitPriceCents: i.unitPriceCents,
         totalCents: i.totalCents,

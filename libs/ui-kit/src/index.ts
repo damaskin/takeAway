@@ -1,5 +1,6 @@
 export * from './lib/ui-kit/ui-kit';
 export * from './lib/telegram-login-button/telegram-login-button.component';
+export * from './lib/telegram-login-button/telegram-oidc-button.component';
 export * from './lib/telegram-login-button/telegram-auth.config';
 export * from './lib/social-login/social-auth.config';
 export * from './lib/social-login/google-login-button.component';

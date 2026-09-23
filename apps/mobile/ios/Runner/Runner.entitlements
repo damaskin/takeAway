@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push through APNs (Firebase Cloud Messaging on iOS). Xcode switches
+	     this to "production" for App Store builds. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Sign in with Apple, offered when built with APPLE_SIGN_IN=true. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

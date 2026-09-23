@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus } from '@prisma/client';
 
+import { OpsChatService } from '../notifications/ops-chat.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { ReadinessService } from './readiness.service';
@@ -42,17 +42,13 @@ export class OpsAlertsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
-    private readonly config: ConfigService,
     private readonly readiness: ReadinessService,
+    private readonly opsChat: OpsChatService,
   ) {}
-
-  private get chatId(): string | null {
-    return this.config.get<string>('OPS_ALERT_TELEGRAM_CHAT_ID') || null;
-  }
 
   @Cron(CronExpression.EVERY_5_MINUTES, { name: 'ops-alerts' })
   async sweep(): Promise<void> {
-    if (!this.chatId) return; // alerting not configured for this deployment
+    if (!this.opsChat.enabled) return; // alerting not configured for this deployment
 
     await Promise.allSettled([this.checkDependencies(), this.checkUnacceptedOrders(), this.checkAnalyticsFreshness()]);
   }
@@ -141,7 +137,7 @@ export class OpsAlertsService {
     if (alreadySent) return;
 
     this.logger.warn(text);
-    const delivered = await this.sendToTelegram(text);
+    const delivered = await this.opsChat.send(text);
     if (delivered) {
       await this.redis.set(redisKey, '1', ALERT_COOLDOWN_SECONDS).catch(() => undefined);
     }
@@ -150,27 +146,5 @@ export class OpsAlertsService {
   /** Condition resolved — drop the mute so a recurrence alerts again. */
   private async clear(key: AlertKey): Promise<void> {
     await this.redis.del(`ops:alert:${key}`).catch(() => undefined);
-  }
-
-  private async sendToTelegram(text: string): Promise<boolean> {
-    const botToken = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-    const chatId = this.chatId;
-    if (!botToken || !chatId) return false;
-
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-      });
-      if (!res.ok) {
-        this.logger.error(`Ops alert not delivered (${res.status}): ${await res.text()}`);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      this.logger.error(`Ops alert threw: ${(err as Error).message}`);
-      return false;
-    }
   }
 }

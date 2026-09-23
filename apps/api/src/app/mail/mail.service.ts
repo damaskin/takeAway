@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { formatMoney } from '@takeaway/utils';
 import * as nodemailer from 'nodemailer';
 
 /**
@@ -101,17 +102,25 @@ export class MailService implements OnModuleInit {
       /** True when the tax is already inside the prices above. */
       taxIncluded: boolean;
       totalCents: number;
-      items: Array<{ name: string; quantity: number; totalCents: number }>;
+      /** `options` is the line's size, milk and extras on one line, e.g. "L · Oat · +Vanilla". */
+      items: Array<{ name: string; options?: string; quantity: number; totalCents: number }>;
     },
     attachments?: MailAttachment[],
   ): Promise<void> {
     const subject = `Чек по заказу #${receipt.orderCode} / takeAway receipt #${receipt.orderCode}`;
-    const fmt = (cents: number) => formatMoney(cents, receipt.currency);
-    const itemsText = receipt.items.map((i) => `  ${i.quantity} × ${i.name} — ${fmt(i.totalCents)}`).join('\n');
+    // The receipt is Russian with a short English footer: each part writes
+    // money its own way («38 MDL», «4,50 MDL» / "4.50 MDL").
+    const fmt = (cents: number) => formatMoney(cents, receipt.currency, 'ru');
+    const fmtEn = (cents: number) => formatMoney(cents, receipt.currency, 'en');
+    const itemsText = receipt.items
+      .map((i) => `  ${i.quantity} × ${i.name} — ${fmt(i.totalCents)}` + (i.options ? `\n      ${i.options}` : ''))
+      .join('\n');
     const itemsHtml = receipt.items
       .map(
         (i) =>
-          `<tr><td>${escapeHtml(i.name)}</td><td style="text-align:right">×${i.quantity}</td><td style="text-align:right">${escapeHtml(fmt(i.totalCents))}</td></tr>`,
+          `<tr><td>${escapeHtml(i.name)}` +
+          (i.options ? `<br /><span style="color:#777;font-size:12px">${escapeHtml(i.options)}</span>` : '') +
+          `</td><td style="text-align:right;vertical-align:top">×${i.quantity}</td><td style="text-align:right;vertical-align:top">${escapeHtml(fmt(i.totalCents))}</td></tr>`,
       )
       .join('');
 
@@ -122,7 +131,7 @@ export class MailService implements OnModuleInit {
       `--\n\n` +
       `Thanks for your order #${receipt.orderCode} at ${receipt.storeName}.\n\n` +
       `${itemsText}\n\n` +
-      `Total: ${fmt(receipt.totalCents)}`;
+      `Total: ${fmtEn(receipt.totalCents)}`;
 
     const html = `
       <p>Спасибо за заказ <strong>#${escapeHtml(receipt.orderCode)}</strong> в ${escapeHtml(receipt.storeName)}.</p>
@@ -133,7 +142,7 @@ export class MailService implements OnModuleInit {
       <p><strong>Итого:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
       <hr />
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
-      <p><strong>Total:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
+      <p><strong>Total:</strong> ${escapeHtml(fmtEn(receipt.totalCents))}</p>
     `;
     await this.send(email, subject, text, html, attachments);
   }
@@ -177,7 +186,7 @@ function taxLine(taxCents: number, included: boolean, fmt: (cents: number) => st
   return included ? `<p>В том числе налог / incl. tax: ${amount}</p>` : `<p>Налог / tax: ${amount}</p>`;
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
       case '&':
@@ -192,12 +201,4 @@ function escapeHtml(s: string): string {
         return '&#39;';
     }
   });
-}
-
-function formatMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
-  }
 }

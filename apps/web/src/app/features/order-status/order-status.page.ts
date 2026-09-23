@@ -1,9 +1,10 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl } from '@takeaway/utils';
-import { TranslatePipe } from '@ngx-translate/core';
+import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import {
@@ -40,7 +41,11 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
         <!-- Greeting -->
         <header class="text-center" style="margin-top: var(--spacing-sm)">
           <h1 class="text-4xl" style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 600">
-            Hi{{ firstName() ? ', ' + firstName() : '' }}!
+            {{
+              firstName()
+                ? ('web.orderStatus.greeting' | translate: { name: firstName() })
+                : ('web.orderStatus.greetingNoName' | translate)
+            }}
           </h1>
           <p class="mt-2" style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)">
             {{ heroSubtitle() | translate }}
@@ -76,13 +81,17 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
           style="width: 300px; height: 300px; margin-top: var(--spacing-base)"
         >
           @if (o.status === 'READY') {
-            <span style="font-family: var(--font-display); font-size: 48px; font-weight: 700">Ready</span>
+            <span style="font-family: var(--font-display); font-size: 48px; font-weight: 700">{{
+              'web.orderStatus.ready' | translate
+            }}</span>
           } @else if (o.status === 'CANCELLED') {
             <span style="font-family: var(--font-display); font-size: 36px; font-weight: 600">{{
               'web.orderStatus.status.CANCELLED' | translate
             }}</span>
           } @else if (o.status === 'PICKED_UP') {
-            <span style="font-family: var(--font-display); font-size: 40px; font-weight: 700">Thanks!</span>
+            <span style="font-family: var(--font-display); font-size: 40px; font-weight: 700">{{
+              'web.orderStatus.thanks' | translate
+            }}</span>
           } @else {
             <span style="font-family: var(--font-sans); font-size: 96px; font-weight: 700; letter-spacing: -0.03em">
               {{ countdown() }}
@@ -105,9 +114,9 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               style="font-family: var(--font-mono); font-size: 56px; font-weight: 700; color: var(--color-espresso); letter-spacing: 0.04em"
               >{{ o.orderCode }}</span
             >
-            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-              >Your code</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+              'web.orderStatus.yourCode' | translate
+            }}</span>
           </div>
 
           <div
@@ -168,7 +177,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             }
             @if (minutesToPickup() > 0 && !isTerminal(o.status)) {
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
-                🚶 Pickup in ~{{ minutesToPickup() }} min
+                🚶 {{ 'web.orderStatus.pickupIn' | translate: { min: minutesToPickup() } }}
               </span>
             }
           </div>
@@ -233,8 +242,64 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
           </button>
         }
 
+        <!-- What was ordered, as the kitchen will make it -->
+        @if (lines().length > 0) {
+          <article
+            class="w-full"
+            style="
+              background: var(--color-foam);
+              border: 1px solid var(--color-border-light);
+              border-radius: 16px;
+              padding: var(--spacing-lg);
+              display: flex; flex-direction: column; gap: 12px;
+            "
+          >
+            <span
+              style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+            >
+              {{ 'web.orderStatus.yourOrder' | translate }}
+            </span>
+            @for (line of lines(); track line.id) {
+              <div class="flex flex-col" style="gap: 2px">
+                <div class="flex items-start justify-between" style="gap: 12px">
+                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
+                    {{ line.quantity }} × {{ line.name }}
+                  </span>
+                  <span
+                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso); white-space: nowrap"
+                  >
+                    {{ price(line.totalCents) }}
+                  </span>
+                </div>
+                @if (line.options) {
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                    line.options
+                  }}</span>
+                }
+                @if (line.notes) {
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); font-style: italic"
+                    >“{{ line.notes }}”</span
+                  >
+                }
+              </div>
+            }
+            <div style="height: 1px; background: var(--color-border-light)"></div>
+            <div class="flex items-center justify-between">
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                >{{ 'common.total' | translate }}</span
+              >
+              <span
+                style="font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--color-caramel)"
+                >{{ price(o.totalCents) }}</span
+              >
+            </div>
+          </article>
+        }
+
         <a routerLink="/menu" class="text-sm mt-2 underline" style="color: var(--color-text-secondary)">
-          Back to menu
+          {{ 'web.orderStatus.backToMenu' | translate }}
         </a>
       </section>
     }
@@ -249,6 +314,8 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly orders = inject(OrdersApi);
   private readonly realtime = inject(RealtimeService);
   private readonly authStore = inject(AuthStore);
+  private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly order = signal<OrderView | null>(null);
   readonly error = signal<string | null>(null);
@@ -373,6 +440,21 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     return Math.max(0, Math.ceil(diff / 60_000));
   });
 
+  /** The order's lines with their size, milk and extras spelled out. */
+  readonly lines = computed(() =>
+    (this.order()?.items ?? []).map((item) => {
+      const snap = readOrderItemSnapshot(item.productSnapshot);
+      return {
+        id: item.id,
+        name: snap.name,
+        quantity: item.quantity,
+        totalCents: item.totalCents,
+        options: describeOrderItemOptions(snap),
+        notes: snap.notes,
+      };
+    }),
+  );
+
   readonly canCancel = computed(() => {
     const s = this.order()?.status;
     return s === 'CREATED' || s === 'PAID' || s === 'ACCEPTED';
@@ -393,13 +475,13 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
-      this.error.set('Missing order id');
+      this.error.set(this.translate.instant('web.orderStatus.notFound'));
       return;
     }
 
     this.orders.get(id).subscribe({
       next: (o) => this.order.set(o),
-      error: () => this.error.set('Order not found'),
+      error: () => this.error.set(this.translate.instant('web.orderStatus.notFound')),
     });
 
     this.detachSocket = this.realtime.subscribeToOrder(id, (event) => {
@@ -465,10 +547,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.order()?.currency ?? this.authStore.user()?.currency ?? 'USD',
-    }).format(cents / 100);
+    return this.fmt.money(cents, this.order()?.currency ?? this.authStore.user()?.currency);
   }
 
   isTerminal(status: OrderStatusString): boolean {

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { formatMoney } from '@takeaway/utils';
 
 const PDFDocument = require('pdfkit') as typeof import('pdfkit');
 
@@ -13,7 +14,8 @@ export interface ReceiptForPdf {
   /** True when the tax is already inside the prices above. */
   taxIncluded: boolean;
   totalCents: number;
-  items: Array<{ name: string; quantity: number; totalCents: number }>;
+  /** `options` is the line's size, milk and extras on one line, e.g. "L · Oat · +Vanilla". */
+  items: Array<{ name: string; options?: string; quantity: number; totalCents: number }>;
   /** ISO-8601 of when the order was paid; printed as the receipt date. */
   issuedAt?: string;
 }
@@ -88,7 +90,8 @@ export class ReceiptPdfService {
   }
 
   private draw(doc: PDFKit.PDFDocument, receipt: ReceiptForPdf): void {
-    const fmt = (cents: number) => formatMoney(cents, receipt.currency);
+    // The PDF is English (Helvetica has no Cyrillic), so money is written the English way.
+    const fmt = (cents: number) => formatMoney(cents, receipt.currency, 'en');
 
     doc.font('Helvetica-Bold').fontSize(20).text('takeAway', { align: 'left' });
     doc.moveDown(0.2);
@@ -115,8 +118,14 @@ export class ReceiptPdfService {
     for (const it of receipt.items) {
       const y = doc.y;
       doc.text(it.name, colName, y, { width: 300 });
+      const belowName = doc.y;
       doc.text(`x${it.quantity}`, colQty, y);
       doc.text(fmt(it.totalCents), colTotal, y);
+      if (it.options) {
+        // Under the name, not under the row: a long name wraps, the options follow it.
+        doc.fontSize(8).fillColor('#666').text(it.options, colName, belowName, { width: 300 });
+        doc.fontSize(10).fillColor('#000');
+      }
       doc.moveDown(0.3);
     }
     doc.moveDown(0.8);
@@ -144,16 +153,10 @@ export class ReceiptPdfService {
   }
 
   private isAsciiSafe(receipt: ReceiptForPdf): boolean {
-    const probe = [receipt.storeName, ...receipt.items.map((i) => i.name)].join('\n');
-    // 0x09 (tab), 0x0A (newline), 0x0D (CR) plus printable ASCII range.
-    return /^[\t\n\r\x20-\x7E]*$/.test(probe);
-  }
-}
-
-function formatMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
+    const probe = [receipt.storeName, ...receipt.items.flatMap((i) => [i.name, i.options ?? ''])].join('\n');
+    // 0x09 (tab), 0x0A (newline), 0x0D (CR) plus printable ASCII range, and
+    // the "·" and "×" the options line is written with — both are in
+    // Helvetica's WinAnsi set.
+    return /^[\t\n\r\x20-\x7E·×]*$/.test(probe);
   }
 }

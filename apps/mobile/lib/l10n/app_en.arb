@@ -1,0 +1,630 @@
+{
+  "@@locale": "en",
+  "appName": "takeAway",
+  "tagline": "Pre-order. Skip the queue. Pick it up.",
+  "retry": "Try again",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "apply": "Apply",
+  "remove": "Remove",
+  "close": "Close",
+  "done": "Done",
+  "continueLabel": "Continue",
+  "undo": "Undo",
+  "loading": "Loading…",
+  "genericError": "Something went wrong. Please try again.",
+  "networkError": "No connection. Check your internet and try again.",
+  "sessionExpired": "Your session has expired. Please sign in again.",
+  "subtotal": "Subtotal",
+  "total": "Total",
+  "tax": "Tax",
+  "taxIncluded": "Incl. tax",
+  "deliveryFee": "Delivery",
+  "soldOut": "Sold out",
+  "priceFrom": "from {price}",
+  "@priceFrom": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "minutes": "{count} min",
+  "@minutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "readyInMinutes": "Ready in ~{count} min",
+  "@readyInMinutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "readyBy": "Ready by {time}",
+  "@readyBy": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "itemsCount": "{count, plural, =1{1 item} other{{count} items}}",
+  "@itemsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "navMenu": "Menu",
+  "navStores": "Stores",
+  "navOrders": "Orders",
+  "navProfile": "Profile",
+  "onboardingTitle1": "Order ahead",
+  "onboardingBody1": "Choose your coffee or lunch in a couple of taps, wherever you are.",
+  "onboardingTitle2": "Timed to your arrival",
+  "onboardingBody2": "Pick ASAP or a time slot. The kitchen starts so it is fresh when you walk in.",
+  "onboardingTitle3": "Skip the queue",
+  "onboardingBody3": "Show your 4-digit code at the counter and grab your order. No waiting.",
+  "onboardingNext": "Next",
+  "onboardingStart": "Get started",
+  "onboardingSkip": "Skip",
+  "signInTitle": "Sign in to order",
+  "signInSubtitle": "Your orders, points and cards stay with you on every device.",
+  "continueWithTelegram": "Continue with Telegram",
+  "continueWithGoogle": "Continue with Google",
+  "continueWithApple": "Continue with Apple",
+  "devSignIn": "Developer sign-in",
+  "signingIn": "Signing in…",
+  "signInAgreement": "By continuing you agree to the Terms of Service and Privacy Policy.",
+  "signInUnavailable": "No sign-in method is configured for this build.",
+  "signInFailed": "Could not sign in. Please try again.",
+  "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
+  "storesTitle": "Stores",
+  "storesSearchHint": "Search by name or address",
+  "storesFilterAll": "All",
+  "storesFilterOpen": "Open now",
+  "storesNearMe": "Near me",
+  "storesEmpty": "No stores match your search.",
+  "storesLoadFailed": "Could not load stores.",
+  "storeStatusOpen": "Open",
+  "storeStatusBusy": "Busy",
+  "storeStatusClosed": "Closed",
+  "orderHere": "Order here",
+  "distanceAway": "{distance} away",
+  "@distanceAway": {
+    "placeholders": {
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "etaChip": "~{count} min",
+  "@etaChip": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chooseStoreTitle": "Where are you picking up?",
+  "chooseStoreSubtitle": "Choose a store and we will show its menu and how soon your order can be ready.",
+  "storeClosedBanner": "Closed right now — you can still schedule for later.",
+  "storeBusyBanner": "The kitchen is busy — orders take a little longer.",
+  "openingHours": "Opening hours",
+  "closedAllDay": "Closed",
+  "buildRoute": "Build route",
+  "callStore": "Call",
+  "menuSearchHint": "Search the menu",
+  "menuEmpty": "The menu is empty for now.",
+  "menuNoResults": "Nothing found for “{query}”",
+  "@menuNoResults": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "menuLoadFailed": "Could not load the menu.",
+  "changeStore": "Change",
+  "addedToCart": "{name} added",
+  "@addedToCart": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "viewCart": "View",
+  "offlineMenu": "Offline — showing the last saved menu",
+  "variationSize": "Size",
+  "variationTemperature": "Temperature",
+  "variationMilk": "Milk",
+  "variationCup": "Cup",
+  "variationOther": "Options",
+  "productAddons": "Add-ons",
+  "productAddonLimit": "up to {max}",
+  "@productAddonLimit": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "productNote": "Note for the barista",
+  "productNoteHint": "Extra hot, less foam…",
+  "productAdd": "Add · {price}",
+  "@productAdd": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "productCalories": "{kcal} kcal",
+  "@productCalories": {
+    "placeholders": {
+      "kcal": {
+        "type": "int"
+      }
+    }
+  },
+  "productCaffeine": "Caffeine",
+  "productAllergens": "Allergens",
+  "productNutrition": "Protein {p} g · Fat {f} g · Carbs {c} g",
+  "@productNutrition": {
+    "placeholders": {
+      "p": {
+        "type": "String"
+      },
+      "f": {
+        "type": "String"
+      },
+      "c": {
+        "type": "String"
+      }
+    }
+  },
+  "productNoStore": "Choose a store to order this.",
+  "productLoadFailed": "Could not load this item.",
+  "dietVegan": "Vegan",
+  "dietVegetarian": "Vegetarian",
+  "dietGlutenFree": "Gluten-free",
+  "dietLactoseFree": "Lactose-free",
+  "dietDecaf": "Decaf",
+  "dietSugarFree": "Sugar-free",
+  "cartTitle": "Your order",
+  "cartEmptyTitle": "Your cart is empty",
+  "cartEmptyBody": "Add something tasty from the menu.",
+  "browseMenu": "Browse the menu",
+  "cartCheckout": "Checkout · {price}",
+  "@cartCheckout": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "cartClear": "Clear cart",
+  "cartClearConfirm": "Remove everything from your cart?",
+  "cartItemRemoved": "{name} removed",
+  "@cartItemRemoved": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cartLoadFailed": "Could not load your cart.",
+  "checkoutTitle": "Checkout",
+  "checkoutWhen": "When",
+  "pickupAsap": "As soon as possible",
+  "pickupLater": "Later",
+  "pickupLaterHint": "Choose a time",
+  "noSlots": "No free windows in the next few hours. Try ASAP.",
+  "slotsHint": "Only windows this store can still keep up with.",
+  "fulfillmentPickup": "Pickup",
+  "fulfillmentDelivery": "Delivery",
+  "deliveryAddress": "Address",
+  "deliveryAddressHint": "Street, house, apartment",
+  "deliveryCity": "City",
+  "deliveryNotes": "Notes for the rider",
+  "deliveryNotesHint": "Entrance, floor, door code",
+  "deliveryUseLocation": "Use my location",
+  "deliveryOutside": "This address is outside the delivery area.",
+  "deliveryDistance": "≈ {distance} from the store",
+  "@deliveryDistance": {
+    "placeholders": {
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveryAddressRequired": "Enter the delivery address and city.",
+  "contactTitle": "Contact",
+  "contactName": "Name on the order",
+  "contactPhone": "Phone",
+  "orderNotes": "Note for the barista",
+  "discountsTitle": "Discounts",
+  "promoCode": "Promo code",
+  "promoApplied": "Saving {amount}",
+  "@promoApplied": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "promoPoints": "{multiplier}× points on this order",
+  "@promoPoints": {
+    "placeholders": {
+      "multiplier": {
+        "type": "String"
+      }
+    }
+  },
+  "promoInvalid": "This code is not valid.",
+  "giftCard": "Gift card",
+  "giftCardApplied": "{amount} covered by the gift card",
+  "@giftCardApplied": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "payWithPoints": "Pay with points",
+  "pointsAvailable": "{points} points available",
+  "@pointsAvailable": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      }
+    }
+  },
+  "pointsApplied": "{points} points · {amount} off",
+  "@pointsApplied": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      },
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "pointsTooFew": "At least {min} points, and no more than the order is worth.",
+  "@pointsTooFew": {
+    "placeholders": {
+      "min": {
+        "type": "int"
+      }
+    }
+  },
+  "pointsDiscount": "Points",
+  "promoDiscount": "Promo {code}",
+  "@promoDiscount": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentTitle": "Payment",
+  "payAtCounter": "Pay at the counter",
+  "payAtCounterHint": "Cash or card when you pick up",
+  "addCard": "Add a card",
+  "holdHint": "We hold the amount now and charge it when the store accepts your order.",
+  "summaryTitle": "Summary",
+  "placeOrderPay": "Pay {total}",
+  "@placeOrderPay": {
+    "placeholders": {
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "placeOrder": "Place order · {total}",
+  "@placeOrder": {
+    "placeholders": {
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "minOrderNotice": "Minimum order is {amount}.",
+  "@minOrderNotice": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "retryPayment": "Retry payment",
+  "orderTitle": "Order #{code}",
+  "@orderTitle": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCreated": "Order received",
+  "statusPaid": "Payment confirmed",
+  "statusAccepted": "Accepted by the kitchen",
+  "statusInProgress": "Preparing your order",
+  "statusReady": "Ready for pickup",
+  "statusReadyDelivery": "Ready — waiting for the rider",
+  "statusPickedUp": "Enjoy!",
+  "statusOutForDelivery": "On the way",
+  "statusDelivered": "Delivered",
+  "statusCancelled": "Cancelled",
+  "statusExpired": "Cancelled — payment did not arrive in time",
+  "statusUnknown": "Updating…",
+  "stepReceived": "Received",
+  "stepPreparing": "Preparing",
+  "stepReady": "Ready",
+  "stepPickedUp": "Picked up",
+  "stepOnTheWay": "On the way",
+  "stepDelivered": "Delivered",
+  "paymentStatePaid": "Payment went through",
+  "paymentStateHeld": "Amount on hold",
+  "paymentStateHeldHint": "It is charged when the store accepts your order.",
+  "paymentStatePending": "Checking your payment",
+  "paymentStateFailed": "Payment did not go through",
+  "paymentStateRefunded": "Money returned",
+  "paymentStateAtCounter": "Paying at the counter",
+  "pickupCode": "Pickup code",
+  "showQr": "Show QR",
+  "qrHint": "Show this at the counter",
+  "iAmHere": "I'm here",
+  "iAmHereSent": "The barista knows you are here",
+  "cancelOrder": "Cancel order",
+  "cancelOrderTitle": "Cancel this order?",
+  "cancelOrderBody": "If your card was charged or held, the money goes back.",
+  "keepOrder": "Keep it",
+  "reorder": "Order again",
+  "reorderDone": "Added to your cart",
+  "reorderPartial": "Some items are no longer available",
+  "orderItems": "Items",
+  "pickupAt": "Pickup at {time}",
+  "@pickupAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "deliveryAt": "Delivery by {time}",
+  "@deliveryAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "untilReady": "until ready",
+  "readyShort": "Ready",
+  "liveUpdates": "Live",
+  "reconnecting": "Reconnecting…",
+  "orderLoadFailed": "Could not load the order.",
+  "emailReceipt": "Email me the receipt",
+  "receiptSent": "Receipt sent to your email",
+  "yourOrderAt": "Your order at {store}",
+  "@yourOrderAt": {
+    "placeholders": {
+      "store": {
+        "type": "String"
+      }
+    }
+  },
+  "hiName": "Hi, {name}!",
+  "@hiName": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "ordersTitle": "My orders",
+  "ordersActive": "Active",
+  "ordersHistory": "History",
+  "ordersEmptyActive": "No active orders",
+  "ordersEmptyHistory": "No past orders yet",
+  "ordersEmptyBody": "Place your first order and it will show up here.",
+  "ordersSignIn": "Sign in to see your orders",
+  "activeOrderBanner": "Order #{code} · {status}",
+  "@activeOrderBanner": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "profileTitle": "Profile",
+  "profileGuestTitle": "Sign in for the full experience",
+  "profileGuestBody": "Save cards, collect points and follow your orders live.",
+  "signIn": "Sign in",
+  "profilePersonal": "Personal info",
+  "profilePayment": "Payment methods",
+  "profileGiftCards": "Gift cards",
+  "profileLoyalty": "Loyalty",
+  "profileReferrals": "Invite a friend",
+  "profileNotifications": "Notifications",
+  "profileLanguage": "Language",
+  "profileAbout": "About the app",
+  "signOut": "Sign out",
+  "signOutConfirm": "Sign out of takeAway?",
+  "appVersion": "Version {version}",
+  "@appVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "tierSilver": "Silver",
+  "tierGold": "Gold",
+  "tierPlatinum": "Platinum",
+  "tierSignature": "Signature",
+  "pointsCount": "{count, plural, =1{1 point} other{{count} points}}",
+  "@pointsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toNextTier": "{points} points to {tier}",
+  "@toNextTier": {
+    "placeholders": {
+      "points": {
+        "type": "int"
+      },
+      "tier": {
+        "type": "String"
+      }
+    }
+  },
+  "topTier": "Top tier — thank you for being a regular!",
+  "personalName": "Name",
+  "personalEmail": "Email",
+  "personalPhone": "Phone",
+  "personalBirthday": "Date of birth",
+  "personalSaved": "Saved",
+  "nameRequired": "Enter your name",
+  "emailInvalid": "Enter a valid email",
+  "phoneInvalid": "Use the international format, e.g. +37377712345",
+  "notificationsTitle": "Notifications",
+  "notificationsSubtitle": "Choose what we may tell you about. You can change it any time.",
+  "notifOrderUpdates": "Order updates",
+  "notifOrderUpdatesHint": "When your order is accepted, ready or on its way.",
+  "notifPromotions": "Promotions",
+  "notifPromotionsHint": "Discounts, new items and loyalty rewards.",
+  "pushBlocked": "Notifications are turned off for takeAway in the system settings.",
+  "openSettings": "Open settings",
+  "loyaltyTitle": "Loyalty",
+  "loyaltyBalance": "Points balance",
+  "loyaltyActivity": "Recent activity",
+  "loyaltyEmpty": "Points will appear here after your first order.",
+  "loyaltyHowTitle": "How it works",
+  "loyaltyHowBody": "Earn points on every paid order and spend them at checkout. The more you order, the higher your tier.",
+  "referralsTitle": "Invite a friend",
+  "referralsBody": "Share your code. Your friend gets bonus points on their first paid order — and so do you.",
+  "referralsYourCode": "Your code",
+  "referralsCopied": "Code copied",
+  "referralsShare": "Share",
+  "referralsShareText": "Order coffee ahead with takeAway and skip the queue. Use my code {code} on your first order and we both get bonus points. {url}",
+  "@referralsShareText": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "referralsSignups": "Friends joined",
+  "referralsRewarded": "First orders",
+  "referralsPoints": "Points earned",
+  "referralsApplyTitle": "Have a friend's code?",
+  "referralsApplyHint": "One time only, before your first paid order.",
+  "referralsApplied": "Bonus locked in with code {code}",
+  "@referralsApplied": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "referralsCodeHint": "Friend's code",
+  "giftCardsTitle": "Gift cards",
+  "giftCardsEmpty": "No gift cards used yet. Enter a code at checkout and it will show up here.",
+  "giftCardUsedOn": "Order #{code} · {brand}",
+  "@giftCardUsedOn": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "brand": {
+        "type": "String"
+      }
+    }
+  },
+  "paymentMethodsTitle": "Payment methods",
+  "paymentMethodsSubtitle": "Add a card once and pay in one tap. We never see or store your full card number.",
+  "paymentMethodsUnavailable": "Card payments are not available yet. You can pay at the counter.",
+  "paymentMethodsEmpty": "No cards yet",
+  "cardDefault": "Default",
+  "cardMakeDefault": "Make default",
+  "cardRemoveTitle": "Remove this card?",
+  "cardInactive": "Blocked by the bank",
+  "cardFallbackTitle": "Card",
+  "cardAddTitle": "Add a card",
+  "cardIssuer": "Issuing bank",
+  "cardLast4": "Last 4 digits of the card",
+  "cardPhone": "Phone number linked to the card",
+  "cardPhoneHint": "e.g. 77712345",
+  "cardLabel": "Card name (optional)",
+  "cardPrivacy": "Your full card number is never sent or stored. The bank will text you a one-time code.",
+  "cardSendCode": "Send the code",
+  "cardCodeTitle": "Enter the code",
+  "cardCodeSent": "We sent a one-time code to {phone}.",
+  "@cardCodeSent": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "cardStartOver": "Enter the details again",
+  "cardAdded": "Card added",
+  "cardRefresh": "Check with the bank",
+  "languageTitle": "Language",
+  "languageSystem": "Same as the device",
+  "languageEnglish": "English",
+  "languageRussian": "Русский",
+  "aboutBody": "takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.",
+  "locationDenied": "Location access is off. Allow it in settings to see stores near you.",
+  "locationServiceOff": "Location services are turned off.",
+  "greetingMorning": "Good morning",
+  "greetingAfternoon": "Good afternoon",
+  "greetingEvening": "Good evening",
+  "greetingWithName": "{greeting}, {name}",
+  "@greetingWithName": {
+    "placeholders": {
+      "greeting": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pickupPoint": "Pickup point",
+  "quickAdd": "Add to cart",
+  "cartBarLabel": "{count, plural, =1{1 item} other{{count} items}} · ready by {time}",
+  "@cartBarLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "liveOrder": "Live order",
+  "categoriesAll": "All",
+  "copy": "Copy"
+}

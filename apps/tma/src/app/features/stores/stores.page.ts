@@ -2,7 +2,8 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
@@ -97,7 +98,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 })
 export class TmaStoresPage implements OnInit {
   private readonly catalog = inject(CatalogService);
-  private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly stores = signal<StoreListItem[]>([]);
 
@@ -114,8 +115,7 @@ export class TmaStoresPage implements OnInit {
   }
 
   distanceLabel(meters: number): string {
-    if (meters < 1000) return `${Math.round(meters)} ${this.translate.instant('common.units.mShort')}`;
-    return `${(meters / 1000).toFixed(1)} ${this.translate.instant('common.units.kmShort')}`;
+    return this.fmt.distance(meters);
   }
 
   /** Returns a translation key — resolved via | translate in the template. */

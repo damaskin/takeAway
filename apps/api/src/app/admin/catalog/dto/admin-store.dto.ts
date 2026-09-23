@@ -1,12 +1,15 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsLatitude,
   IsLongitude,
@@ -14,10 +17,25 @@ import {
   IsString,
   IsUrl,
   Length,
+  Matches,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
+
+import { IsIanaTimeZone } from '../../../common/time/time-zone';
+
+/** Most photos a store's gallery holds. */
+export const MAX_STORE_GALLERY_IMAGES = 8;
+
+/** Lower-case latin, digits and single hyphens — it becomes the /stores/<slug> URL. */
+export const STORE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** One row per weekday: a second row for the same day would hit the unique index. */
+const eachWeekdayOnce = ArrayUnique((h: WorkingHourInputDto | null) => h?.weekday, {
+  message: '$property must list each weekday at most once',
+});
 
 export class WorkingHourInputDto {
   @ApiProperty({ description: '0 = Sunday, 6 = Saturday' })
@@ -32,14 +50,18 @@ export class WorkingHourInputDto {
   @Max(24 * 60)
   opensAt!: number;
 
-  @ApiProperty({ description: 'Minutes since local midnight' })
+  @ApiProperty({
+    description:
+      'Minutes since local midnight; 1440 is midnight at the end of the day. At or before opensAt the window runs past midnight.',
+  })
   @IsInt()
   @Min(0)
   @Max(24 * 60)
   closesAt!: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ default: false })
   @IsOptional()
+  @IsBoolean()
   isClosed?: boolean;
 }
 
@@ -48,10 +70,15 @@ export class CreateStoreDto {
   @IsString()
   brandId!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Public address of the store page, /stores/<slug>. Generated from the brand and store name when omitted.',
+  })
+  @IsOptional()
   @IsString()
   @Length(2, 80)
-  slug!: string;
+  @Matches(STORE_SLUG_PATTERN, { message: 'slug may only contain lower-case latin letters, digits and single hyphens' })
+  slug?: string;
 
   @ApiProperty()
   @IsString()
@@ -81,14 +108,18 @@ export class CreateStoreDto {
   @IsLongitude()
   longitude!: number;
 
-  @ApiProperty({ default: 'UTC' })
+  @ApiPropertyOptional({
+    example: 'Europe/Chisinau',
+    description: "IANA time zone the working hours are in. Defaults to the zone of the brand's other stores.",
+  })
   @IsOptional()
-  @IsString()
+  @IsIanaTimeZone()
   timezone?: string;
 
-  @ApiProperty({ enum: Currency })
+  @ApiPropertyOptional({ enum: Currency, description: "Defaults to the brand's currency." })
+  @IsOptional()
   @IsEnum(Currency)
-  currency!: Currency;
+  currency?: Currency;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -99,11 +130,6 @@ export class CreateStoreDto {
   @IsOptional()
   @IsEmail()
   email?: string;
-
-  @ApiPropertyOptional({ enum: StoreStatus })
-  @IsOptional()
-  @IsEnum(StoreStatus)
-  status?: StoreStatus;
 
   // Optional so the simple "create store" form doesn't have to surface the
   // pickup machinery up front — defaults to [TAKEAWAY] in the service. The
@@ -120,7 +146,7 @@ export class CreateStoreDto {
   @IsEnum(PickupPointType)
   pickupPointType?: PickupPointType;
 
-  @ApiPropertyOptional({ minimum: 0 })
+  @ApiPropertyOptional({ minimum: 0, description: 'Smallest order the store accepts, in cents.' })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -151,7 +177,7 @@ export class CreateStoreDto {
   @ApiPropertyOptional({
     minimum: 1,
     maximum: 100,
-    description: 'Most handovers this store will promise inside one 15-minute slot.',
+    description: 'Most handovers this store will promise inside one 15-minute slot, ASAP orders included.',
   })
   @IsOptional()
   @IsInt()
@@ -183,26 +209,96 @@ export class CreateStoreDto {
   @IsUrl()
   heroImageUrl?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ type: [String], maxItems: MAX_STORE_GALLERY_IMAGES })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_STORE_GALLERY_IMAGES)
   @IsUrl({}, { each: true })
   galleryUrls?: string[];
+
+  // Per-store delivery economics. Null clears the override, so the store
+  // inherits the platform's DELIVERY_FEE_* defaults again.
+  @ApiPropertyOptional({ nullable: true, minimum: 0, description: 'Delivery fee before distance, in cents.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000)
+  deliveryFeeBaseCents?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, description: 'Delivery fee per kilometre, in cents.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000)
+  deliveryFeePerKmCents?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, description: 'Radius delivered at the base fee, in metres.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  deliveryFreeRadiusM?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0, description: 'Farthest the store delivers, in metres.' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  deliveryMaxRadiusM?: number | null;
 
   @ApiPropertyOptional({ type: [WorkingHourInputDto] })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(7)
+  @eachWeekdayOnce
   @ValidateNested({ each: true })
   @Type(() => WorkingHourInputDto)
   workingHours?: WorkingHourInputDto[];
 }
 
-export class UpdateStoreDto extends PartialType(CreateStoreDto) {}
+/**
+ * A store stays in its brand: `brandId` is not updatable. `status` is set
+ * here only — a new store always starts CLOSED.
+ */
+export class UpdateStoreDto extends PartialType(OmitType(CreateStoreDto, ['brandId'] as const)) {
+  @ApiPropertyOptional({
+    enum: StoreStatus,
+    description: 'Opening a CLOSED store is refused with 409 until it passes the readiness checks.',
+  })
+  @IsOptional()
+  @IsEnum(StoreStatus)
+  status?: StoreStatus;
+}
 
 export class ReplaceWorkingHoursDto {
-  @ApiProperty({ type: [WorkingHourInputDto] })
+  @ApiProperty({
+    type: [WorkingHourInputDto],
+    description: 'At most one row per weekday. Open around the clock is seven 0–1440 rows.',
+  })
   @IsArray()
+  @ArrayMaxSize(7)
+  @eachWeekdayOnce
   @ValidateNested({ each: true })
   @Type(() => WorkingHourInputDto)
   hours!: WorkingHourInputDto[];
+}
+
+export const STORE_IMAGE_KINDS = ['hero', 'gallery'] as const;
+export type StoreImageKind = (typeof STORE_IMAGE_KINDS)[number];
+
+export class StoreImageQueryDto {
+  @ApiProperty({
+    enum: STORE_IMAGE_KINDS,
+    description: 'hero = the cover photo, gallery = one more photo in the gallery',
+  })
+  @IsIn(STORE_IMAGE_KINDS)
+  kind!: StoreImageKind;
+}
+
+export class RemoveStoreImageQueryDto extends StoreImageQueryDto {
+  @ApiPropertyOptional({ description: 'The gallery photo to remove; required for kind=gallery.' })
+  @ValidateIf((q: RemoveStoreImageQueryDto) => q.kind === 'gallery')
+  @IsString()
+  @Length(1, 2048)
+  url?: string;
 }

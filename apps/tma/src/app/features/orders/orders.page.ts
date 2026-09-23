@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { OrdersApi, type OrderStatusString, type OrderSummary } from '../../core/orders/orders.service';
@@ -144,7 +145,7 @@ type Tab = 'ACTIVE' | 'HISTORY';
                   >{{
                     (o.pickupMode === 'ASAP' ? 'tma.orders.pickupAsap' : 'tma.orders.pickupScheduled') | translate
                   }}
-                  · {{ formatTime(o.pickupAt) }}</span
+                  · {{ formatTime(o.pickupAt, o.storeTimezone) }}</span
                 >
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 700; color: var(--color-caramel)"
@@ -163,6 +164,7 @@ type Tab = 'ACTIVE' | 'HISTORY';
 export class TmaOrdersPage {
   readonly authStore = inject(TmaAuthStore);
   private readonly ordersApi = inject(OrdersApi);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly tab = signal<Tab>('ACTIVE');
   readonly orders = signal<OrderSummary[]>([]);
@@ -212,15 +214,16 @@ export class TmaOrdersPage {
   }
 
   price(cents: number, currency: string): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, currency);
   }
 
   formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return this.fmt.dayMonth(iso);
   }
 
-  formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  /** On the store's clock — the time the café promised. */
+  formatTime(iso: string, timeZone?: string | null): string {
+    return this.fmt.time(iso, timeZone);
   }
 
   private fetchFor(tab: Tab): void {

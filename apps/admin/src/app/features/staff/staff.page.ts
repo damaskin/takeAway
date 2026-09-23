@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { extractMessage } from '../../core/http/extract-message';
@@ -12,7 +12,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 @Component({
   selector: 'app-admin-staff',
   standalone: true,
-  imports: [DatePipe, RouterLink, TranslatePipe],
+  imports: [LocalDatePipe, RouterLink, TranslatePipe],
   template: `
     <section style="padding: 32px; max-width: 980px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -142,7 +142,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
                           style="font-family: var(--font-mono); font-size: 12px; color: var(--color-text-tertiary); margin: 2px 0 0"
                         >
                           {{ m.email }} · {{ 'admin.staff.role.' + m.role | translate }} ·
-                          {{ m.addedAt | date: 'MMM d, y' }}
+                          {{ m.addedAt | localDate: 'date' }}
                         </p>
                       </div>
                       <button

@@ -1,10 +1,27 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { map, type Observable } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { AdminCatalogApi, type CategoryAdminDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
-import { extractMessage } from '../../core/http/extract-message';
+import {
+  AdminCatalogApi,
+  type CategoryAdminDto,
+  type ProductAdminDto,
+  type StopListEntryDto,
+  type StoreAdminDto,
+} from '../../core/catalog/admin-catalog.service';
+import { describeMenuError } from './menu-errors';
+import { MenuCategoriesComponent } from './menu-categories.component';
+import { swapped } from './menu-order';
+import { formatStoreTime, isStopActive, nextMidnightIn } from './stock';
+
+/** Roles that may take a product off sale in a store (the stop-list API's roles, minus kitchen staff). */
+const STOCK_ROLES = ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER'];
+
+type StockUntil = 'manual' | 'endOfDay';
 
 /**
  * Admin Menu Management — pencil oKo7M.
@@ -12,19 +29,19 @@ import { extractMessage } from '../../core/http/extract-message';
  * mainArea (cream):
  *   top bar (foam, 64px, border-bottom) — title + brand name + actions
  *   content area — 320px category rail (foam, caramel-light active) +
- *     product table (foam card, sticky header, inline visibility toggle)
+ *     product table (foam card, inline visibility / stock toggles, ordering)
  */
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, MenuCategoriesComponent],
   template: `
     <!-- Top bar -->
     <div
       class="flex items-center justify-between flex-wrap"
       style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
     >
-      <div class="flex items-center" style="gap: 16px">
+      <div class="flex items-center" style="gap: 16px; min-width: 0">
         <h1
           style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
@@ -38,25 +55,16 @@ import { extractMessage } from '../../core/http/extract-message';
           >
         }
       </div>
-      <div class="flex items-center" style="gap: 8px">
-        <button
-          type="button"
+      @if (selectedCategoryId(); as categoryId) {
+        <a
+          routerLink="/menu/products/new"
+          [queryParams]="{ category: categoryId }"
           class="flex items-center"
-          style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
         >
-          {{ 'admin.menu.importCsv' | translate }}
-        </button>
-        @if (selectedCategoryId()) {
-          <a
-            routerLink="/menu/products/new"
-            [queryParams]="{ categoryId: selectedCategoryId() }"
-            class="flex items-center"
-            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
-          >
-            {{ 'admin.menu.newProduct' | translate }}
-          </a>
-        }
-      </div>
+          {{ 'admin.menu.newProduct' | translate }}
+        </a>
+      }
     </div>
 
     @if (brandBlocker(); as blocker) {
@@ -84,92 +92,63 @@ import { extractMessage } from '../../core/http/extract-message';
       </div>
     }
 
+    @if (loadError()) {
+      <p
+        role="alert"
+        style="margin: clamp(16px, 3vw, 24px) clamp(16px, 3vw, 24px) 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)"
+      >
+        {{ loadError() }}
+      </p>
+    }
+
     <section
       class="menu-shell"
       style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start"
     >
-      <!-- Categories rail -->
-      <aside
-        class="flex flex-col"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 16px; gap: 4px"
-      >
-        <div class="flex items-center justify-between" style="padding: 0 8px 12px 8px">
-          <h2
-            style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
-          >
-            {{ 'admin.menu.categories' | translate }}
-          </h2>
-          @if (brand()) {
-            <a
-              routerLink="/menu/categories/new"
-              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel); text-decoration: none"
-            >
-              {{ 'admin.menu.add' | translate }}
-            </a>
-          }
-        </div>
+      <app-menu-categories
+        [categories]="categories()"
+        [selectedId]="selectedCategoryId()"
+        [brandId]="brand()?.id ?? null"
+        (selected)="selectCategory($event)"
+        (changed)="reloadCategories()"
+        (deleted)="onCategoryDeleted($event)"
+      />
 
-        @if (categories().length === 0) {
-          <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); padding: 8px">
-            {{ 'admin.menu.noCategories' | translate }}
-          </p>
-        }
-
-        @for (cat of categories(); track cat.id) {
-          <div
-            class="flex items-center"
-            [style.background]="selectedCategoryId() === cat.id ? 'var(--color-caramel-light)' : 'transparent'"
-            style="border-radius: 10px"
-          >
-            <button
-              type="button"
-              (click)="selectCategory(cat.id)"
-              class="flex-1 flex items-center justify-between"
-              [style.color]="selectedCategoryId() === cat.id ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
-              style="height: 40px; padding: 0 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left; background: transparent"
-            >
-              <span>{{ cat.name }}</span>
-              @if (!cat.visible) {
-                <span
-                  style="font-family: var(--font-sans); font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
-                  >{{ 'admin.menu.hidden' | translate }}</span
-                >
-              }
-            </button>
-            <a
-              [routerLink]="['/menu/categories', cat.id]"
-              [title]="'common.change' | translate"
-              class="flex items-center justify-center"
-              style="width: 28px; height: 28px; color: var(--color-text-tertiary); margin-right: 2px; text-decoration: none"
-            >
-              ✎
-            </a>
-            <button
-              type="button"
-              (click)="deleteCategory(cat)"
-              [title]="'admin.menu.deleteCategory' | translate"
-              style="width: 28px; height: 28px; color: var(--color-berry); margin-right: 6px"
-            >
-              ×
-            </button>
-          </div>
-        }
-      </aside>
-
-      <!-- Product table -->
+      <!-- Products -->
       <section
         class="flex flex-col"
         style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0"
       >
-        <header class="flex items-center justify-between">
-          <h2
-            style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-espresso); margin: 0"
-          >
-            {{ selectedCategory()?.name ?? ('admin.menu.productsFallback' | translate) }}
-          </h2>
-          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-            'admin.menu.itemsCount' | translate: { count: products().length }
-          }}</span>
+        <header class="flex items-center justify-between flex-wrap" style="gap: 8px 12px">
+          <div class="flex items-baseline flex-wrap" style="gap: 4px 12px; min-width: 0">
+            <h2
+              style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-espresso); margin: 0; overflow-wrap: anywhere"
+            >
+              {{ selectedCategory()?.name ?? ('admin.menu.productsFallback' | translate) }}
+            </h2>
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
+              'admin.menu.itemsCount' | translate: { count: products().length }
+            }}</span>
+          </div>
+          @if (canManageStock() && stores().length > 0) {
+            <div class="flex items-center flex-wrap" style="gap: 8px 16px">
+              <label class="flex items-center" style="gap: 8px; min-width: 0">
+                <span [style]="smallLabelStyle">{{ 'admin.menu.stock.store' | translate }}</span>
+                <select (change)="selectStockStore($event)" [style]="selectStyle">
+                  @for (s of stores(); track s.id) {
+                    <option [value]="s.id" [selected]="s.id === stockStoreId()">{{ s.name }}</option>
+                  }
+                </select>
+              </label>
+              <label class="flex items-center" style="gap: 8px; min-width: 0">
+                <span [style]="smallLabelStyle">{{ 'admin.menu.stock.until' | translate }}</span>
+                <select [value]="stockUntil()" (change)="selectStockUntil($event)" [style]="selectStyle">
+                  <option value="manual">{{ 'admin.menu.stock.untilManual' | translate }}</option>
+                  <option value="endOfDay">{{ 'admin.menu.stock.untilEndOfDay' | translate }}</option>
+                </select>
+              </label>
+            </div>
+          }
         </header>
 
         @if (!selectedCategoryId()) {
@@ -182,50 +161,112 @@ import { extractMessage } from '../../core/http/extract-message';
           </p>
         }
 
+        @if (tableError()) {
+          <p role="alert" style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
+            {{ tableError() }}
+          </p>
+        }
+
         @if (products().length > 0) {
           <div style="overflow-x: auto; margin: 0 -4px; padding: 0 4px">
             <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
               <thead>
                 <tr>
-                  <th
-                    style="text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                  >
-                    {{ 'admin.menu.headers.name' | translate }}
+                  <th [style]="thStyle" style="width: 52px">
+                    <span class="sr-only">{{ 'admin.menu.headers.photo' | translate }}</span>
                   </th>
-                  <th
-                    style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                  >
-                    {{ 'admin.menu.headers.price' | translate }}
-                  </th>
-                  <th
-                    style="text-align: right; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                  >
-                    {{ 'admin.menu.headers.prep' | translate }}
-                  </th>
-                  <th
-                    style="text-align: center; padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)"
-                  >
-                    {{ 'admin.menu.headers.visible' | translate }}
-                  </th>
-                  <th style="border-bottom: 1px solid var(--color-border-light)"></th>
+                  <th [style]="thStyle" style="text-align: left">{{ 'admin.menu.headers.name' | translate }}</th>
+                  <th [style]="thStyle" style="text-align: right">{{ 'admin.menu.headers.price' | translate }}</th>
+                  <th [style]="thStyle" style="text-align: right">{{ 'admin.menu.headers.prep' | translate }}</th>
+                  <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.visible' | translate }}</th>
+                  @if (stockStore()) {
+                    <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.stock' | translate }}</th>
+                  }
+                  <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.order' | translate }}</th>
+                  <th [style]="thStyle"></th>
                 </tr>
               </thead>
               <tbody>
-                @for (p of products(); track p.id) {
+                @for (p of products(); track p.id; let first = $first, last = $last, i = $index) {
                   <tr style="border-bottom: 1px solid var(--color-border-light)">
+                    <td style="padding: 8px 12px">
+                      <div
+                        style="width: 40px; height: 40px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)"
+                      >
+                        @if (p.imageUrls[0]; as photo) {
+                          <img
+                            [src]="photo"
+                            alt=""
+                            loading="lazy"
+                            style="display: block; width: 100%; height: 100%; object-fit: cover"
+                          />
+                        }
+                      </div>
+                    </td>
                     <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
                       {{ p.name }}
                     </td>
-                    <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right">
-                      {{ formatPrice(p.basePriceCents) }}
+                    <td
+                      style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right; white-space: nowrap"
+                    >
+                      {{ price(p.basePriceCents) }}
                     </td>
-                    <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
-                      {{ (p.prepTimeSeconds / 60).toFixed(0) }} {{ 'common.units.min' | translate }}
+                    <td
+                      style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right; white-space: nowrap"
+                    >
+                      {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}
                     </td>
                     <td style="padding: 12px; text-align: center">
-                      <input type="checkbox" [checked]="p.visible" (change)="toggleVisibility(p, $event)" />
+                      <input
+                        type="checkbox"
+                        [checked]="p.visible"
+                        (change)="toggleVisibility(p, $event)"
+                        [attr.aria-label]="'admin.menu.product.visible' | translate"
+                      />
                     </td>
-                    <td style="padding: 12px; text-align: right">
+                    @if (stockStore(); as store) {
+                      <td style="padding: 12px; text-align: center">
+                        <div class="flex flex-col items-center" style="gap: 2px">
+                          <input
+                            type="checkbox"
+                            [checked]="inStock(p.id)"
+                            [disabled]="stockPending() === p.id"
+                            (change)="setInStock(p, $event)"
+                            [attr.aria-label]="'admin.menu.stock.toggle' | translate: { store: store.name }"
+                          />
+                          @if (soldOutUntil(p.id); as until) {
+                            <span style="font-size: 11px; color: var(--color-berry); white-space: nowrap">{{
+                              until
+                            }}</span>
+                          }
+                        </div>
+                      </td>
+                    }
+                    <td style="padding: 12px; text-align: center; white-space: nowrap">
+                      <button
+                        type="button"
+                        (click)="moveProduct(i, -1)"
+                        [disabled]="first || reordering()"
+                        [title]="'admin.menu.moveUp' | translate"
+                        [attr.aria-label]="'admin.menu.moveUp' | translate"
+                        class="disabled:opacity-30"
+                        [style]="arrowStyle"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        (click)="moveProduct(i, 1)"
+                        [disabled]="last || reordering()"
+                        [title]="'admin.menu.moveDown' | translate"
+                        [attr.aria-label]="'admin.menu.moveDown' | translate"
+                        class="disabled:opacity-30"
+                        [style]="arrowStyle"
+                      >
+                        ↓
+                      </button>
+                    </td>
+                    <td style="padding: 12px; text-align: right; white-space: nowrap">
                       <a
                         [routerLink]="['/menu/products', p.id, 'options']"
                         style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px; text-decoration: none"
@@ -254,12 +295,6 @@ import { extractMessage } from '../../core/http/extract-message';
         }
       </section>
     </section>
-
-    @if (error()) {
-      <p style="padding: 0 24px 24px 24px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
-        {{ error() }}
-      </p>
-    }
   `,
   styles: [
     `
@@ -274,7 +309,9 @@ import { extractMessage } from '../../core/http/extract-message';
 export class MenuPage {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
+  private readonly auth = inject(AuthStore);
   readonly activeBrand = inject(ActiveBrandService);
+  private readonly fmt = inject(LocaleFormatService);
 
   /**
    * The menu is edited in the context of the brand picked in the top bar,
@@ -283,14 +320,35 @@ export class MenuPage {
    * brands kept editing the alphabetically-first one.
    */
   readonly brand = this.activeBrand.active;
+  /** Prices are entered and shown in the brand's currency. */
+  readonly currency = computed(() => this.brand()?.currency ?? null);
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly selectedCategoryId = signal<string | null>(null);
   readonly products = signal<ProductAdminDto[]>([]);
-  /** `?category=` — which category to open, set when returning from a form. */
+  /** `/menu?category=…` — coming back from a form reopens the same category. */
   readonly category = input<string | undefined>();
-  readonly error = signal<string | null>(null);
+  readonly reordering = signal(false);
+  readonly loadError = signal<string | null>(null);
+  readonly tableError = signal<string | null>(null);
+
+  /** Sold-out marks live per store; kitchen staff and menu editors do not set them here. */
+  readonly canManageStock = computed(() => STOCK_ROLES.includes(this.auth.user()?.role ?? ''));
+  readonly stores = signal<StoreAdminDto[]>([]);
+  readonly stockStoreId = signal<string | null>(null);
+  readonly stockStore = computed(() => this.stores().find((s) => s.id === this.stockStoreId()) ?? null);
+  readonly stopList = signal<ReadonlyMap<string, StopListEntryDto>>(new Map());
+  readonly stockUntil = signal<StockUntil>('manual');
+  readonly stockPending = signal<string | null>(null);
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
+
+  // No text-align here: a [style] binding outranks the static style that sets it per column.
+  readonly thStyle =
+    'padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)';
+  readonly arrowStyle = 'width: 26px; height: 28px; font-size: 14px; color: var(--color-text-secondary)';
+  readonly smallLabelStyle = 'font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)';
+  readonly selectStyle =
+    'height: 32px; max-width: 220px; padding: 0 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-sans); font-size: 13px';
 
   /**
    * Why the page can't edit anything: `error` = the brand list failed to
@@ -311,77 +369,182 @@ export class MenuPage {
     // previous brand's categories/products so nothing stale is editable.
     effect(() => {
       const brand = this.activeBrand.active();
-      this.categories.set([]);
-      this.products.set([]);
-      this.selectedCategoryId.set(null);
-      this.error.set(null);
-      if (!brand) return;
-      this.loadCategories(brand.id);
+      untracked(() => {
+        this.categories.set([]);
+        this.products.set([]);
+        this.selectedCategoryId.set(null);
+        this.loadError.set(null);
+        this.tableError.set(null);
+        this.stores.set([]);
+        this.stockStoreId.set(null);
+        if (!brand) return;
+        this.loadCategories(brand.id);
+        this.loadStores(brand.id);
+      });
+    });
+
+    effect(() => {
+      const storeId = this.stockStoreId();
+      untracked(() => this.loadStopList(storeId));
     });
   }
 
   selectCategory(id: string): void {
     this.selectedCategoryId.set(id);
+    this.tableError.set(null);
     this.loadProducts(id);
   }
 
-  deleteCategory(cat: CategoryAdminDto): void {
-    const msg = this.translate.instant('admin.menu.deleteCategoryConfirm', { name: cat.name });
-    if (!confirm(msg)) return;
+  reloadCategories(): void {
     const brand = this.brand();
-    this.api.deleteCategory(cat.id).subscribe({
-      next: () => {
-        if (this.selectedCategoryId() === cat.id) {
-          this.selectedCategoryId.set(null);
-          this.products.set([]);
-        }
-        if (brand) this.loadCategories(brand.id);
-      },
-      error: (err) => this.error.set(this.extractMessage(err)),
-    });
+    if (brand) this.loadCategories(brand.id);
+  }
+
+  onCategoryDeleted(event: { id: string; movedTo: string | null }): void {
+    const selected = this.selectedCategoryId();
+    if (selected === event.id) {
+      if (event.movedTo) {
+        this.selectCategory(event.movedTo);
+      } else {
+        this.selectedCategoryId.set(null);
+        this.products.set([]);
+      }
+    } else if (selected && selected === event.movedTo) {
+      this.loadProducts(selected);
+    }
+    this.reloadCategories();
   }
 
   toggleVisibility(product: ProductAdminDto, event: Event): void {
-    const visible = (event.target as HTMLInputElement).checked;
+    const box = event.target as HTMLInputElement;
+    const visible = box.checked;
+    this.tableError.set(null);
     this.api.toggleProductVisibility(product.id, visible).subscribe({
-      next: () => {
-        const current = this.selectedCategoryId();
-        if (current) this.loadProducts(current);
+      next: () => this.products.update((list) => list.map((p) => (p.id === product.id ? { ...p, visible } : p))),
+      error: (err: unknown) => {
+        box.checked = !visible;
+        this.tableError.set(describeMenuError(err, this.translate));
       },
-      error: (err) => this.error.set(this.extractMessage(err)),
+    });
+  }
+
+  moveProduct(index: number, delta: -1 | 1): void {
+    const before = this.products();
+    const after = swapped(before, index, index + delta);
+    if (!after) return;
+    this.products.set(after);
+    this.reordering.set(true);
+    this.tableError.set(null);
+    this.api.reorderProducts(after.map((p) => p.id)).subscribe({
+      next: () => this.reordering.set(false),
+      error: (err: unknown) => {
+        this.reordering.set(false);
+        this.products.set(before);
+        this.tableError.set(describeMenuError(err, this.translate));
+      },
     });
   }
 
   deleteProduct(product: ProductAdminDto): void {
     const msg = this.translate.instant('admin.menu.product.deleteConfirm', { name: product.name });
     if (!confirm(msg)) return;
+    this.tableError.set(null);
     this.api.deleteProduct(product.id).subscribe({
       next: () => {
-        const current = this.selectedCategoryId();
-        if (current) this.loadProducts(current);
+        this.products.update((list) => list.filter((p) => p.id !== product.id));
+        this.reloadCategories();
       },
-      error: (err) => this.error.set(this.extractMessage(err)),
+      error: (err: unknown) => this.tableError.set(describeMenuError(err, this.translate)),
     });
   }
 
-  formatPrice(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.brand()?.currency ?? 'USD',
-    }).format(cents / 100);
+  selectStockStore(event: Event): void {
+    this.stockStoreId.set((event.target as HTMLSelectElement).value || null);
+  }
+
+  selectStockUntil(event: Event): void {
+    this.stockUntil.set((event.target as HTMLSelectElement).value === 'endOfDay' ? 'endOfDay' : 'manual');
+  }
+
+  inStock(productId: string): boolean {
+    const entry = this.stopList().get(productId);
+    return !entry || !isStopActive(entry);
+  }
+
+  /** "до 00:00" under a product that comes back by itself; nothing for a manual mark. */
+  soldOutUntil(productId: string): string | null {
+    const entry = this.stopList().get(productId);
+    if (!entry?.expiresAt || !isStopActive(entry)) return null;
+    const time = formatStoreTime(entry.expiresAt, this.stockStore()?.timezone, this.translate.getCurrentLang() || 'ru');
+    return this.translate.instant('admin.menu.stock.soldOutUntil', { time });
+  }
+
+  setInStock(product: ProductAdminDto, event: Event): void {
+    const store = this.stockStore();
+    if (!store) return;
+    const box = event.target as HTMLInputElement;
+    const available = box.checked;
+    const request: Observable<StopListEntryDto | null> = available
+      ? this.api.removeStopListEntry(store.id, product.id).pipe(map(() => null))
+      : this.api.addStopListEntry(store.id, {
+          productId: product.id,
+          ...(this.stockUntil() === 'endOfDay' ? { expiresAt: nextMidnightIn(store.timezone).toISOString() } : {}),
+        });
+    this.stockPending.set(product.id);
+    this.tableError.set(null);
+    request.subscribe({
+      next: (entry) => {
+        this.stockPending.set(null);
+        this.stopList.update((current) => {
+          const next = new Map(current);
+          if (entry) next.set(product.id, entry);
+          else next.delete(product.id);
+          return next;
+        });
+      },
+      error: (err: unknown) => {
+        this.stockPending.set(null);
+        // Nothing to lift: someone already put it back on sale.
+        if (available && (err as { status?: number }).status === 404) {
+          this.stopList.update((current) => {
+            const next = new Map(current);
+            next.delete(product.id);
+            return next;
+          });
+          return;
+        }
+        box.checked = !available;
+        this.tableError.set(describeMenuError(err, this.translate));
+      },
+    });
+  }
+
+  price(cents: number): string {
+    return this.fmt.money(cents, this.currency());
+  }
+
+  minutes(seconds: number): string {
+    const value = Math.round((seconds / 60) * 10) / 10;
+    return String(value).replace('.', this.translate.getCurrentLang() === 'en' ? '.' : ',');
   }
 
   private loadCategories(brandId: string): void {
     this.api.listCategories(brandId).subscribe({
       next: (list) => {
+        if (this.brand()?.id !== brandId) return;
         this.categories.set(list);
-        if (this.selectedCategoryId()) return;
-        // Coming back from a product form, `?category=` says which category
-        // the user was in — otherwise open the first one.
-        const wanted = list.find((c) => c.id === this.category()) ?? list[0];
-        if (wanted) this.selectCategory(wanted.id);
+        const selected = this.selectedCategoryId();
+        if (!selected || !list.some((c) => c.id === selected)) {
+          // `?category=` is the one the user was on before a form took over.
+          const wanted = list.find((c) => c.id === this.category()) ?? list[0];
+          if (wanted) this.selectCategory(wanted.id);
+          else {
+            this.selectedCategoryId.set(null);
+            this.products.set([]);
+          }
+        }
       },
-      error: (err) => this.error.set(this.extractMessage(err)),
+      error: (err: unknown) => this.loadError.set(describeMenuError(err, this.translate)),
     });
   }
 
@@ -389,12 +552,46 @@ export class MenuPage {
     const brand = this.brand();
     if (!brand) return;
     this.api.listProducts(brand.id, categoryId).subscribe({
-      next: (list) => this.products.set(list),
-      error: (err) => this.error.set(this.extractMessage(err)),
+      next: (list) => {
+        if (this.selectedCategoryId() !== categoryId) return;
+        this.products.set(list.map(withListDefaults));
+      },
+      error: (err: unknown) => this.loadError.set(describeMenuError(err, this.translate)),
     });
   }
 
-  private extractMessage(err: unknown): string {
-    return extractMessage(err) ?? this.translate.instant('common.requestFailed');
+  private loadStores(brandId: string): void {
+    if (!this.canManageStock()) return;
+    this.api.listStores(brandId).subscribe({
+      next: (list) => {
+        if (this.brand()?.id !== brandId) return;
+        this.stores.set(list);
+        this.stockStoreId.set(list[0]?.id ?? null);
+      },
+      // The menu stays fully editable without the stock column.
+      error: () => this.stores.set([]),
+    });
   }
+
+  private loadStopList(storeId: string | null): void {
+    this.stopList.set(new Map());
+    if (!storeId) return;
+    this.api.listStopList(storeId).subscribe({
+      next: (entries) => {
+        if (this.stockStoreId() !== storeId) return;
+        this.stopList.set(new Map(entries.map((e) => [e.productId, e])));
+      },
+      error: (err: unknown) => this.tableError.set(describeMenuError(err, this.translate)),
+    });
+  }
+}
+
+/** Array fields default to empty so an older API answer cannot break the table. */
+function withListDefaults(p: ProductAdminDto): ProductAdminDto {
+  return {
+    ...p,
+    imageUrls: p.imageUrls ?? [],
+    allergens: p.allergens ?? [],
+    dietTags: p.dietTags ?? [],
+  };
 }

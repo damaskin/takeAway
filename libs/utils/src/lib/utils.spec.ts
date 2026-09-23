@@ -1,12 +1,6 @@
-import { buildDirectionsUrl, formatPrice, secondsToMinutes } from './utils';
+import { buildDirectionsUrl, secondsToMinutes } from './utils';
 
 describe('utils', () => {
-  describe('formatPrice', () => {
-    it('formats cents to USD', () => {
-      expect(formatPrice(950, 'USD', 'en')).toBe('$9.50');
-    });
-  });
-
   describe('secondsToMinutes', () => {
     it('rounds up to the nearest minute', () => {
       expect(secondsToMinutes(65)).toBe(2);

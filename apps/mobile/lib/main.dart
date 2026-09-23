@@ -1,46 +1,48 @@
-// M6 PR1 entry-point. Boots Riverpod + Hive + Firebase before MaterialApp.
-// Each feature wires its own routes through GoRouter in `app.dart` (added in
-// the next PR).
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  runApp(const ProviderScope(child: TakeAwayApp()));
+import 'app/app.dart';
+import 'core/auth/session_manager.dart';
+import 'core/providers.dart';
+import 'core/push/push_service.dart';
+import 'core/storage/json_cache.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final container = await bootstrap();
+  runApp(UncontrolledProviderScope(container: container, child: const TakeAwayApp()));
 }
 
-class TakeAwayApp extends StatelessWidget {
-  const TakeAwayApp({super.key});
+/// Everything the app needs before its first frame: preferences, the
+/// session restored from secure storage, the catalog cache and date
+/// symbols. Shared by `main()` and the on-device integration test.
+Future<ProviderContainer> bootstrap() async {
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'takeAway',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFFCB9A6F), // caramel — matches design tokens
-      ),
-      home: const _BootScreen(),
-    );
-  }
-}
+  final storage = SecureSessionStorage();
+  final (prefs, session, cache, _, _) = await (
+    SharedPreferences.getInstance(),
+    SessionManager.restore(storage),
+    FileJsonCache.open(),
+    initializeDateFormatting('en'),
+    initializeDateFormatting('ru'),
+  ).wait;
 
-class _BootScreen extends StatelessWidget {
-  const _BootScreen();
+  final container = ProviderContainer(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      sessionManagerProvider.overrideWithValue(SessionManager(storage: storage, initial: session)),
+      jsonCacheProvider.overrideWithValue(cache),
+    ],
+  );
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Text('takeAway', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w600)),
-            SizedBox(height: 8),
-            Text('Pre-order. Skip the queue. Pick it up.'),
-          ],
-        ),
-      ),
-    );
-  }
+  // Push needs the container (API client, session) but must not delay the
+  // first frame.
+  unawaited(container.read(pushServiceProvider).init());
+  return container;
 }

@@ -1,0 +1,21 @@
+{
+  "id": "cmqi99qyz0044p007xjbgfkt7",
+  "categoryId": "cmqi99qs2000ip00736yjkwig",
+  "brandId": "cmqi8skme0002p007cza72yzd",
+  "slug": "pos-poster-product-16",
+  "name": "Латте на альтернативном молоке",
+  "description": null,
+  "basePriceCents": 2800,
+  "prepTimeSeconds": 180,
+  "caffeineLevel": null,
+  "calories": null,
+  "proteinsGrams": null,
+  "fatsGrams": null,
+  "carbsGrams": null,
+  "allergens": [],
+  "dietTags": [],
+  "imageUrls": ["/upload/pos_cdb_282207/menu/product_1668843413_16_original.jpeg"],
+  "sortOrder": 0,
+  "variations": [],
+  "modifiers": []
+}

@@ -2,8 +2,9 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { PickupSlot } from '@takeaway/shared-types';
-import { computeTax } from '@takeaway/utils';
+import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
+import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -90,6 +91,8 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           <button
             type="button"
             (click)="setPickup('ASAP')"
+            [disabled]="!storeOpen()"
+            [style.opacity]="storeOpen() ? 1 : 0.45"
             class="flex-1"
             [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
             [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
@@ -112,6 +115,11 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             {{ 'tma.checkout.schedule' | translate }}
           </button>
         </div>
+        @if (!storeOpen()) {
+          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+            'tma.checkout.closedNow' | translate
+          }}</span>
+        }
         @if (pickupMode() === 'SCHEDULED') {
           @if (slotsLoading()) {
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
@@ -119,7 +127,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             }}</span>
           } @else if (slots().length === 0) {
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">{{
-              'tma.checkout.noSlots' | translate
+              (storeOpen() ? 'tma.checkout.noSlots' : 'tma.checkout.noSlotsClosed') | translate
             }}</span>
           } @else {
             <div class="flex flex-wrap" style="gap: 8px">
@@ -396,6 +404,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
   private readonly deliveryFeeApi = inject(DeliveryFeeApi);
   private readonly flags = inject(FeatureFlagsStore);
   private readonly cardsApi = inject(PaymentCardsApi);
@@ -409,6 +418,16 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly slots = signal<PickupSlot[]>([]);
   readonly slotsLoading = signal(false);
   readonly storeName = signal<string>('');
+  /** Prices are the store's, whatever currency the customer's profile has. */
+  readonly currency = signal<string | null>(null);
+  /** Pickup times are the store's clock, wherever the customer is. */
+  readonly storeTimezone = signal<string | null>(null);
+  /**
+   * Whether the store takes an ASAP order right now — its switch and its
+   * working hours, as the API computes them. After hours only a scheduled
+   * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
+   */
+  readonly storeOpen = signal(true);
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
@@ -457,6 +476,14 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.activeStoreId = store.id;
         this.taxRateBps.set(store.taxRateBps);
         this.taxIncludedInPrice.set(store.taxIncludedInPrice);
+        this.currency.set(store.currency);
+        this.storeTimezone.set(store.timezone ?? null);
+        // `!== false`: an API that predates the field keeps ASAP available.
+        this.storeOpen.set(store.openNow !== false);
+        if (!this.storeOpen()) {
+          this.pickupMode.set('SCHEDULED');
+          this.loadSlots();
+        }
         this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -506,6 +533,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
+    if (mode === 'ASAP' && !this.storeOpen()) return;
     this.pickupMode.set(mode);
     this.tg.haptic('light');
     if (mode === 'SCHEDULED') this.loadSlots();
@@ -540,8 +568,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   formatKm(metres: number): string {
-    if (metres < 1000) return `${metres} m`;
-    return `${(metres / 1000).toFixed(1)} km`;
+    return this.fmt.distance(metres);
   }
 
   private refreshFeeQuote(): void {
@@ -604,7 +631,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   slotLabel(slot: PickupSlot): string {
-    return new Date(slot.startsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(slot.startsAt, this.storeTimezone());
   }
 
   /**
@@ -635,7 +662,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    return this.fmt.money(cents, this.currency());
   }
 
   refreshMainButton(): void {
@@ -702,7 +729,41 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.placedOrderId = order.id;
         this.payFor(order.id);
       },
-      error: (err) => this.showError(err, 'tma.checkout.placeOrderFailed'),
+      error: (err) => {
+        const body = (err as { error?: unknown }).error;
+        if (isCartChangedError(body)) {
+          this.onCartChanged(c.storeId, body);
+          return;
+        }
+        this.showError(err, 'tma.checkout.placeOrderFailed');
+      },
+    });
+  }
+
+  /**
+   * The server priced the cart again against today's menu and refused the
+   * order: a price moved, or something in the basket is gone. It has already
+   * brought the cart up to date, so reload it — the main button shows the new
+   * total, or hides when nothing is left to order.
+   */
+  private onCartChanged(storeId: string, conflict: CartChangedError): void {
+    const removed = [...new Set(conflict.items.filter((i) => i.unitPriceCents === null).map((i) => i.productName))];
+    this.error.set(
+      [
+        this.translate.instant('tma.checkout.cartChanged'),
+        removed.length > 0
+          ? this.translate.instant('tma.checkout.cartChangedRemoved', { names: removed.join(', ') })
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+    this.cartService.load(storeId).subscribe({
+      next: (cart) => {
+        this.cart.set(cart);
+        this.refreshMainButton();
+      },
+      error: () => undefined,
     });
   }
 
@@ -733,10 +794,24 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * A coded API error — the store is closed then, the slot filled up — in
+   * the customer's words; any other message the API sent as it is, since the
+   * real reason beats a vaguer apology.
+   */
   private showError(err: unknown, fallbackKey: string): void {
-    const maybe = err as { error?: { message?: string | string[] }; message?: string };
-    const raw = maybe.error?.message ?? maybe.message;
+    const body = (err as { error?: unknown } | null)?.error;
+    const coded = checkoutErrorText(body, this.translate, this.fmt);
+    if (coded) {
+      this.error.set(coded);
+      return;
+    }
+    if ((err as { status?: unknown } | null)?.status === 0) {
+      this.error.set(this.translate.instant('common.networkError'));
+      return;
+    }
+    const raw = (body as { message?: unknown } | null)?.message;
     const message = Array.isArray(raw) ? raw.join(', ') : raw;
-    this.error.set(message || this.translate.instant(fallbackKey));
+    this.error.set(typeof message === 'string' && message ? message : this.translate.instant(fallbackKey));
   }
 }

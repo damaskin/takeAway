@@ -5,11 +5,10 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { BrandsService } from '../../core/brands/brands.service';
+import { BRAND_CURRENCIES } from '../../core/business/business.service';
 import { extractMessage } from '../../core/http/extract-message';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { slugify } from '../../shared/slugify';
-
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
 
 /** Create a brand, on its own route. */
 @Component({
@@ -45,15 +44,15 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
             <span class="field-label">{{ 'admin.brands.create.currency' | translate }}</span>
             <select formControlName="currency" class="field-input">
               @for (c of currencies; track c) {
-                <option [value]="c">{{ c }}</option>
+                <option [value]="c">{{ 'admin.currencies.' + c | translate }}</option>
               }
             </select>
           </label>
           <label class="field">
             <span class="field-label">{{ 'admin.brands.create.locale' | translate }}</span>
             <select formControlName="locale" class="field-input">
-              <option value="EN">EN</option>
-              <option value="RU">RU</option>
+              <option value="RU">{{ 'admin.languages.RU' | translate }}</option>
+              <option value="EN">{{ 'admin.languages.EN' | translate }}</option>
             </select>
           </label>
         </div>
@@ -67,7 +66,7 @@ export class BrandFormPage {
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
 
-  readonly currencies = CURRENCIES;
+  readonly currencies = BRAND_CURRENCIES;
   readonly creating = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -79,8 +78,8 @@ export class BrandFormPage {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(2), Validators.pattern(/^[a-z0-9-]+$/)],
     }),
-    currency: new FormControl('USD', { nonNullable: true }),
-    locale: new FormControl<'EN' | 'RU'>('EN', { nonNullable: true }),
+    currency: new FormControl<string>('MDL', { nonNullable: true }),
+    locale: new FormControl<'EN' | 'RU'>('RU', { nonNullable: true }),
   });
 
   /** Keeps the slug in step with the name until the operator edits it. */

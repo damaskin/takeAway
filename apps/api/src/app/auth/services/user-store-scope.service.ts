@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -7,23 +7,32 @@ export type StoreScope = '*' | readonly string[];
 
 /**
  * Resolves the set of stores a user can act on. Used by controllers that
- * expose per-store data (admin orders feed, KDS board, delivery queue) so
- * a STORE_MANAGER / STAFF / RIDER only sees their assigned stores — while
- * BRAND_ADMIN and SUPER_ADMIN pass through as "all stores".
+ * expose per-store data (admin orders feed, KDS board, delivery queue,
+ * riders, store settings) so each account reaches only its own stores:
  *
- * Returns:
- *  - `'*'` for global roles — caller should apply no store filter.
- *  - `string[]` (possibly empty) for scoped roles — caller should filter.
- *    An empty array means the staff user has no store assignments yet and
- *    should see nothing, not "everything".
+ *  - SUPER_ADMIN → `'*'`, no store filter.
+ *  - BRAND_ADMIN → every store of the brands it owns. It used to be `'*'`
+ *    too; since anyone can register a business, that handed every new
+ *    account the kitchen screens, orders and riders of all other brands.
+ *  - STORE_MANAGER / STAFF / RIDER → the stores they are assigned to.
+ *
+ * An empty array means "nothing" — a brand with no stores yet, or staff with
+ * no assignment — never "everything".
  */
 @Injectable()
 export class UserStoreScopeService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getScope(userId: string, role: Role): Promise<StoreScope> {
-    if (role === Role.BRAND_ADMIN || role === Role.SUPER_ADMIN) return '*';
+    if (role === Role.SUPER_ADMIN) return '*';
     if (role === Role.CUSTOMER) return [];
+    if (role === Role.BRAND_ADMIN) {
+      const stores = await this.prisma.store.findMany({
+        where: { brand: { ownerId: userId } },
+        select: { id: true },
+      });
+      return stores.map((s) => s.id);
+    }
     const rows = await this.prisma.userStore.findMany({
       where: { userId },
       select: { storeId: true },
@@ -45,9 +54,7 @@ export class UserStoreScopeService {
     // Deliberately throw instead of silently narrowing — a mismatched
     // storeId probably means a stale UI cache or a manual URL tweak; we'd
     // rather tell the client than silently return empty.
-    const err = new Error('Store is outside your scope');
-    (err as Error & { status: number }).status = 403;
-    throw err;
+    throw new ForbiddenException('Store is outside your scope');
   }
 
   /** Build a Prisma where-clause fragment for a `storeId` column. */

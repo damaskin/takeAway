@@ -12,7 +12,9 @@ export const authGuard: CanMatchFn = (): boolean | UrlTree => {
   }
 
   const role = store.user()?.role;
-  const adminRoles = ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'STAFF'];
+  // MENU_EDITOR and RIDER were missing: a menu editor could never open the
+  // menu, and a rider bounced between / and /login instead of reaching /rider.
+  const adminRoles = ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'];
   if (!role || !adminRoles.includes(role)) {
     return router.parseUrl('/login?forbidden=1');
   }

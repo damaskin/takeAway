@@ -1,5 +1,4 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -11,6 +10,7 @@ import {
   PosSyncJobKind,
   PosSyncJobView,
 } from '../../core/pos/pos.service';
+import { LocalDatePipe } from '@takeaway/i18n';
 
 interface ProviderRow {
   provider: PosProvider;
@@ -34,7 +34,7 @@ const JOB_REFRESH_INTERVAL_MS = 3000;
 @Component({
   selector: 'app-admin-integrations',
   standalone: true,
-  imports: [DatePipe, ReactiveFormsModule, TranslatePipe],
+  imports: [LocalDatePipe, ReactiveFormsModule, TranslatePipe],
   template: `
     <section style="padding: 32px; max-width: 980px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -75,7 +75,9 @@ const JOB_REFRESH_INTERVAL_MS = 3000;
                 >
                   {{ 'admin.integrations.lastSync' | translate }}:
                   {{
-                    integ.lastSyncAt ? (integ.lastSyncAt | date: 'medium') : ('admin.integrations.never' | translate)
+                    integ.lastSyncAt
+                      ? (integ.lastSyncAt | localDate: 'dateTime')
+                      : ('admin.integrations.never' | translate)
                   }}
                 </p>
                 @if (integ.lastErrorMessage) {
@@ -118,7 +120,7 @@ const JOB_REFRESH_INTERVAL_MS = 3000;
                         >
                           <span
                             style="font-family: var(--font-mono); font-size: 12px; color: var(--color-text-tertiary); min-width: 100px"
-                            >{{ job.createdAt | date: 'shortTime' }}</span
+                            >{{ job.createdAt | localDate: 'time' }}</span
                           >
                           <span style="font-family: var(--font-sans); font-size: 13px; min-width: 90px">{{
                             'admin.integrations.kind.' + job.kind | translate

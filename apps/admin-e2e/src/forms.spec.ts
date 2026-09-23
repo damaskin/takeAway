@@ -43,7 +43,9 @@ const LIST_ROUTES = [
 const FORM_ROUTES = [
   'stores/new',
   `stores/${STORE.id}`,
-  `stores/${STORE.id}/hours`,
+  `stores/${STORE.id}?tab=hours`,
+  `stores/${STORE.id}?tab=photos`,
+  `stores/${STORE.id}?tab=kitchen`,
   'menu/categories/new',
   `menu/categories/${CATEGORY.id}`,
   'menu/products/new',

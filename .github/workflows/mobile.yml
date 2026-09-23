@@ -1,0 +1,85 @@
+name: Mobile
+
+# The Flutter app and its Dart API client live outside the pnpm/Nx graph, so
+# they get their own workflow, triggered only when they (or the API contract
+# they mirror) change.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'libs/api-client-dart/**'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'libs/api-client-dart/**'
+      - '.github/workflows/mobile.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Analyze · Test · Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.38.8
+          channel: stable
+          cache: true
+
+      # The generated models are committed (formatted), so the app builds
+      # without codegen; this fails when someone edits a model and forgets
+      # to regenerate.
+      - name: API client — generated code is current
+        working-directory: libs/api-client-dart
+        run: |
+          dart pub get
+          dart run build_runner build --delete-conflicting-outputs
+          dart format lib
+          git diff --exit-code -- lib
+
+      - name: API client — analyze and test
+        working-directory: libs/api-client-dart
+        run: |
+          dart format --output=none --set-exit-if-changed lib test
+          dart analyze --fatal-infos
+          dart test
+
+      - name: App — analyze and test
+        working-directory: apps/mobile
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test integration_test
+          flutter analyze --fatal-infos
+          flutter test
+
+      # Proves the Android project still assembles. Built against the
+      # production API with the debug signing key (no keystore in CI), so the
+      # artifact is for testers, not for the store.
+      - name: Build release APK
+        working-directory: apps/mobile
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: takeaway-android-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14

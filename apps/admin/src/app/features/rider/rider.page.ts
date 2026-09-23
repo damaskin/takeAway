@@ -1,10 +1,11 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { DeliveryApi, type RiderQueueRow } from '../../core/delivery/delivery.service';
+import { apiErrorMessage } from '../../core/http/api-error';
 
 /**
  * Rider workspace — single-page layout shown to users with role === RIDER.
@@ -193,6 +194,7 @@ export class RiderPage implements OnInit {
   private readonly store = inject(AuthStore);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly translate = inject(TranslateService);
 
   readonly queue = signal<RiderQueueRow[]>([]);
   readonly loading = signal(false);
@@ -215,7 +217,7 @@ export class RiderPage implements OnInit {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(apiErrorMessage(err, this.translate));
       },
     });
   }
@@ -229,7 +231,7 @@ export class RiderPage implements OnInit {
       },
       error: (err) => {
         this.acting.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(apiErrorMessage(err, this.translate));
       },
     });
   }
@@ -272,15 +274,8 @@ export class RiderPage implements OnInit {
       },
       error: (err) => {
         this.acting.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(apiErrorMessage(err, this.translate));
       },
     });
   }
-}
-
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Request failed';
 }

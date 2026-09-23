@@ -65,14 +65,14 @@ interface HowStep {
                 >{{ store.name }}</span
               >
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                >{{ store.city }} · ready in {{ etaMin(store) }} min</span
+                >{{ store.city }} · {{ 'web.home.stores.readyIn' | translate: { min: etaMin(store) } }}</span
               >
             </div>
             <span
               class="flex items-center justify-center"
               [style.background]="etaBg(store)"
               style="color: white; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-              >{{ etaMin(store) }}m</span
+              >{{ etaMin(store) }} {{ 'common.units.min' | translate }}</span
             >
           </a>
         }
@@ -263,7 +263,7 @@ interface HowStep {
             >takeAway</span
           >
           <p style="font-family: var(--font-sans); font-size: 14px; line-height: 1.6; color: rgba(248,243,235,0.6)">
-            Coffee and food to-go.<br />Skip the queue, not the quality.
+            {{ 'web.home.footer.tagline' | translate }}<br />{{ 'web.home.footer.taglineMore' | translate }}
           </p>
         </div>
 
@@ -274,9 +274,17 @@ interface HowStep {
               >{{ col.title | translate }}</span
             >
             @for (link of col.links; track link) {
-              <a href="#" style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)">{{
-                link | translate
-              }}</a>
+              @if (footerRoutes[link]; as route) {
+                <a
+                  [routerLink]="route"
+                  style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)"
+                  >{{ link | translate }}</a
+                >
+              } @else {
+                <a href="#" style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)">{{
+                  link | translate
+                }}</a>
+              }
             }
           </div>
         }
@@ -353,13 +361,16 @@ export class HomePage implements OnInit {
     },
     {
       title: 'nav.about',
-      links: ['web.home.footer.about', 'web.home.footer.careers', 'web.home.footer.press'],
+      links: ['web.home.footer.about', 'web.business.footerLink', 'web.home.footer.careers', 'web.home.footer.press'],
     },
     {
       title: 'web.home.footer.help',
       links: ['web.home.footer.help', 'web.home.footer.contact', 'web.home.footer.privacy', 'web.home.footer.terms'],
     },
   ];
+
+  /** Footer entries that lead somewhere real; the rest are placeholders. */
+  readonly footerRoutes: Readonly<Record<string, string>> = { 'web.business.footerLink': '/business/signup' };
 
   ngOnInit(): void {
     this.catalog.listStores().subscribe({

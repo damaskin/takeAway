@@ -1,0 +1,4 @@
+# Dart tooling. pubspec.lock stays committed: CI regenerates the models and
+# diffs them, so the generator versions must not drift under it.
+.dart_tool/
+build/

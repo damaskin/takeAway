@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
@@ -170,6 +171,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 })
 export class StoresListPage implements OnInit {
   private readonly catalog = inject(CatalogService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly stores = signal<StoreListItem[]>([]);
   readonly filter = signal<Filter>('ALL');
@@ -214,8 +216,7 @@ export class StoresListPage implements OnInit {
   }
 
   distanceLabel(meters: number): string {
-    if (meters < 1000) return `${Math.round(meters)} m`;
-    return `${(meters / 1000).toFixed(1)} km`;
+    return this.fmt.distance(meters);
   }
 
   /** Returns a translation key; the template runs it through the translate pipe. */

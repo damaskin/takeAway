@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConflictResponse, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -8,6 +8,7 @@ import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
+import { CartChangedErrorDto } from './dto/cart-changed.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
@@ -25,6 +26,10 @@ export class OrdersController {
 
   @Post('orders')
   @ApiOkResponse({ type: OrderDto })
+  @ApiConflictResponse({
+    type: CartChangedErrorDto,
+    description: 'The cart no longer matches the menu. No order was created; the cart has been brought up to date.',
+  })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto): Promise<OrderDto> {
     return this.orders.create(user.id, dto);
   }

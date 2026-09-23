@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Currency, PromoStatus, PromoType } from '@prisma/client';
+import type { PromoErrorCode } from '@takeaway/shared-types';
 import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 
 export class PromoDto {
@@ -28,6 +29,11 @@ export class ValidatePromoDto {
 export class ValidPromoResultDto {
   @ApiProperty() valid!: boolean;
   @ApiProperty({ required: false, nullable: true }) reason!: string | null;
+  /** Why the code does not apply, as a stable code clients translate. Null when valid. */
+  @ApiProperty({ required: false, nullable: true, type: String }) reasonCode!: PromoErrorCode | null;
+  /** PROMO_MIN_ORDER: the promo's minimum subtotal, in `currency`. */
+  @ApiProperty({ required: false }) minOrderCents?: number;
+  @ApiProperty({ required: false }) currency?: string;
   @ApiProperty({ type: () => PromoDto, required: false, nullable: true })
   promo!: PromoDto | null;
   @ApiProperty() discountCents!: number;

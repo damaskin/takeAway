@@ -7,6 +7,7 @@ import {
   SOCIAL_AUTH_CONFIG,
   TELEGRAM_AUTH_CONFIG,
   TelegramLoginButtonComponent,
+  TelegramOidcButtonComponent,
   type SocialAuthResult,
   type TelegramLoginWidgetUser,
 } from '@takeaway/ui-kit';
@@ -34,7 +35,13 @@ import { AuthService } from '../../core/auth/auth.service';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [TranslatePipe, TelegramLoginButtonComponent, GoogleLoginButtonComponent, AppleLoginButtonComponent],
+  imports: [
+    TranslatePipe,
+    TelegramLoginButtonComponent,
+    TelegramOidcButtonComponent,
+    GoogleLoginButtonComponent,
+    AppleLoginButtonComponent,
+  ],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
       <!-- Left column: sign-in providers -->
@@ -75,7 +82,7 @@ import { AuthService } from '../../core/auth/auth.service';
             />
           }
 
-          @if (telegramBotUsername) {
+          @if (telegramClientId || telegramBotUsername) {
             @if (googleClientId || appleClientId) {
               <div class="flex items-center" style="gap: 12px; margin: 4px 0">
                 <span style="flex: 1; height: 1px; background: var(--color-border)"></span>
@@ -86,12 +93,22 @@ import { AuthService } from '../../core/auth/auth.service';
                 <span style="flex: 1; height: 1px; background: var(--color-border)"></span>
               </div>
             }
-            <div class="flex justify-center">
-              <lib-telegram-login-button [botUsername]="telegramBotUsername" (auth)="signInWithTelegram($event)" />
-            </div>
+            @if (telegramClientId) {
+              <lib-telegram-oidc-button
+                [clientId]="telegramClientId"
+                [lang]="uiLocale()"
+                [label]="'web.auth.continueWithTelegram' | translate"
+                [unavailableLabel]="'web.auth.telegramFailed' | translate"
+                (idToken)="signInWithTelegramIdToken($event)"
+              />
+            } @else {
+              <div class="flex justify-center">
+                <lib-telegram-login-button [botUsername]="telegramBotUsername" (auth)="signInWithTelegram($event)" />
+              </div>
+            }
           }
 
-          @if (!googleClientId && !appleClientId && !telegramBotUsername) {
+          @if (!googleClientId && !appleClientId && !telegramClientId && !telegramBotUsername) {
             <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-berry)">
               {{ 'web.auth.noProviders' | translate }}
             </p>
@@ -139,6 +156,7 @@ export class LoginPage {
   private readonly socialCfg = inject(SOCIAL_AUTH_CONFIG);
 
   readonly telegramBotUsername = this.telegramCfg.botUsername;
+  readonly telegramClientId = this.telegramCfg.clientId;
   readonly googleClientId = this.socialCfg.googleClientId;
   readonly appleClientId = this.socialCfg.appleClientId;
   readonly appleRedirectUri = this.socialCfg.appleRedirectUri;
@@ -161,6 +179,10 @@ export class LoginPage {
 
   signInWithTelegram(user: TelegramLoginWidgetUser): void {
     this.run(this.auth.verifyTelegramWidget(user));
+  }
+
+  signInWithTelegramIdToken(idToken: string): void {
+    this.run(this.auth.signInWithTelegramIdToken(idToken));
   }
 
   private run(request: Observable<AuthSession>): void {

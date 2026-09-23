@@ -11,6 +11,7 @@ import {
 import type { OrderStatus } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 
+import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface OrderStatusPayload {
@@ -63,6 +64,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly stores: UserStoreScopeService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -119,8 +121,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
-   * KDS clients (store staff) subscribe to their store's kitchen feed. We
-   * only let users with a staff-level role in — everyone else gets {ok:false}.
+   * KDS clients (store staff) subscribe to their store's kitchen feed: a
+   * staff-level role *and* a store within the account's scope. The role
+   * alone used to be enough, so staff of one brand could watch another's
+   * orders — customer names and notes included.
    */
   @SubscribeMessage('kds.subscribe')
   async subscribeToKds(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
@@ -134,6 +138,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user || !['STAFF', 'STORE_MANAGER', 'BRAND_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
       return { ok: false };
     }
+    const scope = await this.stores.getScope(userId, user.role);
+    if (scope !== '*' && !scope.includes(body.storeId)) return { ok: false };
     await client.join(this.kdsRoom(body.storeId));
     return { ok: true };
   }

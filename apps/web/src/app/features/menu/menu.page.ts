@@ -1,7 +1,8 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, ProductSummary, StoreDetail, StoreMenu } from '@takeaway/shared-types';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
@@ -105,14 +106,15 @@ import { CatalogService } from '../../core/catalog/catalog.service';
               @for (p of cat.products; track p.id) {
                 <a
                   [routerLink]="['/products', p.slug]"
+                  [queryParams]="{ store: store()?.slug }"
                   class="flex flex-col transition-all"
                   [class.opacity-50]="p.onStopList"
                   style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); overflow: hidden"
                   [style.cursor]="p.onStopList ? 'not-allowed' : 'pointer'"
                 >
                   <div
-                    [style.background]="productImageBg(p)"
-                    style="height: 180px; background-size: cover; background-position: center"
+                    [style.background-image]="productImageBg(p)"
+                    style="height: 180px; background-size: cover; background-position: center; background-repeat: no-repeat"
                   ></div>
                   <div class="flex flex-col" style="padding: 14px; gap: 6px">
                     <span
@@ -188,6 +190,8 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 export class MenuPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogService);
+  private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -230,12 +234,11 @@ export class MenuPage implements OnInit {
 
   startPrepAt(store: StoreDetail): string {
     const target = new Date(Date.now() + Math.max(0, store.currentEtaSeconds) * 1000);
-    return target.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(target, store.timezone);
   }
 
   price(cents: number): string {
-    const currency = this.store()?.currency ?? 'USD';
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.store()?.currency);
   }
 
   productImageBg(p: ProductSummary): string {
@@ -249,7 +252,7 @@ export class MenuPage implements OnInit {
     this.error.set(null);
     this.catalog.getStore(slug).subscribe({
       next: (s) => this.store.set(s),
-      error: () => this.error.set('Store not found'),
+      error: () => this.error.set(this.translate.instant('web.menu.storeNotFound')),
     });
     this.catalog.getMenu(slug).subscribe({
       next: (m) => {
@@ -257,7 +260,7 @@ export class MenuPage implements OnInit {
         const first = m.categories[0];
         if (first) this.activeCategoryId.set(first.id);
       },
-      error: () => this.error.set('Menu not available'),
+      error: () => this.error.set(this.translate.instant('web.menu.menuUnavailable')),
     });
   }
 }

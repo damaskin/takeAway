@@ -2,6 +2,8 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { catchError, throwError } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -36,10 +38,12 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
   template: `
     <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
-        <!-- Hero image -->
+        <!-- Hero image. background-image, not the background shorthand: the
+             shorthand resets background-size and -position, and a photo
+             came out at its natural size, cropped at the top-left corner. -->
         <div
-          [style.background]="heroBg(p)"
-          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center"
+          [style.background-image]="heroBg(p)"
+          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--color-cream)"
         ></div>
 
         <!-- Title row -->
@@ -184,6 +188,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly translate = inject(TranslateService);
   private readonly activeStore = inject(ActiveStoreService);
+  private readonly fmt = inject(LocaleFormatService);
   readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
@@ -191,6 +196,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
   private storeId: string | null = null;
+  /** The serving store's currency; the customer's profile currency is not what they pay in. */
+  readonly currency = signal<string | null>(null);
   private detachBack: (() => void) | null = null;
 
   readonly variationGroups = computed(() => {
@@ -227,14 +234,25 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) return;
-    this.catalog.getProduct(slug).subscribe({
-      next: (p) => {
-        this.product.set(p);
-        this.initializeDefaults(p);
-        this.resolveStore(p.brandId);
-        this.refreshMainButton();
-      },
-    });
+    // The active store's brand first (two cafés can both have a `latte`); a
+    // product shared from another brand's menu is not there, so look again
+    // without a store.
+    const active = this.activeStore.current();
+    this.catalog
+      .getProduct(slug, active)
+      .pipe(
+        catchError((err: unknown) =>
+          active && (err as { status?: number }).status === 404 ? this.catalog.getProduct(slug) : throwError(() => err),
+        ),
+      )
+      .subscribe({
+        next: (p) => {
+          this.product.set(p);
+          this.initializeDefaults(p);
+          this.resolveStore(p.brandId);
+          this.refreshMainButton();
+        },
+      });
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();
       else void this.router.navigate(['/']);
@@ -286,7 +304,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    return this.fmt.money(cents, this.currency());
   }
 
   minutes(seconds: number): number {
@@ -295,7 +313,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   heroBg(p: ProductDetail): string {
     const url = p.imageUrls?.[0];
-    if (url) return `url('${url}')`;
+    // A quote in a POS-supplied URL would otherwise end the CSS string early.
+    if (url) return `url('${url.replace(/'/g, '%27')}')`;
     return 'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)';
   }
 
@@ -337,6 +356,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
         const active = list.find((s) => s.id === this.activeStore.current());
         const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
         this.storeId = fit?.id ?? null;
+        this.currency.set(fit?.currency ?? null);
         if (!fit) this.error.set(this.translate.instant('tma.product.noStore'));
         this.refreshMainButton();
       },

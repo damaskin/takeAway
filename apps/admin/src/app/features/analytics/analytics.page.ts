@@ -1,5 +1,4 @@
-import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import {
@@ -8,6 +7,8 @@ import {
   type RevenueSeries,
   type TopProduct,
 } from '../../core/analytics/analytics.service';
+import { LocaleFormatService } from '@takeaway/i18n';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 
 interface ChartBar {
   label: string;
@@ -24,7 +25,7 @@ interface ChartBar {
 @Component({
   selector: 'app-admin-analytics',
   standalone: true,
-  imports: [DecimalPipe, TranslatePipe],
+  imports: [TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -73,7 +74,7 @@ interface ChartBar {
                 [style.color]="(revenue()?.revenueDeltaPercent ?? 0) >= 0 ? '#3E8868' : 'var(--color-berry)'"
               >
                 {{ (revenue()?.revenueDeltaPercent ?? 0) >= 0 ? '▲' : '▼' }}
-                {{ revenue()?.revenueDeltaPercent ?? 0 | number: '1.1-1' }}%
+                {{ revenueDelta() }}
               </span>
             </div>
           </div>
@@ -190,7 +191,7 @@ interface ChartBar {
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
-                >{{ cohort()?.repeatRatePercent ?? 0 }}%</span
+                >{{ fmt.percent(cohort()?.repeatRatePercent ?? 0) }}</span
               >
             </div>
             <div
@@ -226,7 +227,7 @@ interface ChartBar {
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
-                >{{ cohort()?.pickupSlaPercent ?? 0 }}%</span
+                >{{ fmt.percent(cohort()?.pickupSlaPercent ?? 0) }}</span
               >
             </div>
           </div>
@@ -235,8 +236,10 @@ interface ChartBar {
     </section>
   `,
 })
-export class AdminAnalyticsPage implements OnInit {
+export class AdminAnalyticsPage {
   private readonly api = inject(AnalyticsApi);
+  private readonly activeBrand = inject(ActiveBrandService);
+  protected readonly fmt = inject(LocaleFormatService);
 
   readonly activeRange = signal(14);
   // Labels are translated in the template via `admin.analytics.rangeShort.<days>`.
@@ -254,13 +257,16 @@ export class AdminAnalyticsPage implements OnInit {
     const best = r.bestDay;
     return r.points.map((p) => ({
       label: this.shortDay(p.date),
-      sub: best && p.date === best.date ? `$${Math.round(p.revenueCents / 100)}` : '',
+      sub: best && p.date === best.date ? this.price(p.revenueCents, true) : '',
       height: Math.round((p.revenueCents / max) * 100),
     }));
   });
 
-  ngOnInit(): void {
-    this.fetch();
+  constructor() {
+    // Follows the brand picked in the header.
+    effect(() => {
+      if (this.activeBrand.activeId()) this.fetch();
+    });
   }
 
   setRange(days: number): void {
@@ -274,22 +280,30 @@ export class AdminAnalyticsPage implements OnInit {
     return Math.round((row.revenueCents / max) * 100);
   }
 
-  price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+  /** Unsigned — the arrow next to it says which way. */
+  revenueDelta(): string {
+    return this.fmt.percent(Math.abs(this.revenue()?.revenueDeltaPercent ?? 0));
   }
 
-  formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  price(cents: number, wholeUnits = false): string {
+    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: wholeUnits });
   }
 
-  shortDay(iso: string): string {
-    const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
+  // Revenue points are keyed by UTC calendar day ("2026-09-23"): read them in
+  // UTC, or a viewer west of Greenwich sees every bar a day early.
+  formatDate(day: string): string {
+    return this.fmt.dayMonth(day, 'UTC');
+  }
+
+  shortDay(day: string): string {
+    return this.fmt.shortDay(day, 'UTC');
   }
 
   private fetch(): void {
-    this.api.revenue(this.activeRange()).subscribe({ next: (r) => this.revenue.set(r) });
-    this.api.topProducts(6).subscribe({ next: (p) => this.topProducts.set(p) });
-    this.api.cohort(30).subscribe({ next: (c) => this.cohort.set(c) });
+    const brandId = this.activeBrand.activeId();
+    if (!brandId) return;
+    this.api.revenue(this.activeRange(), brandId).subscribe({ next: (r) => this.revenue.set(r) });
+    this.api.topProducts(6, brandId).subscribe({ next: (p) => this.topProducts.set(p) });
+    this.api.cohort(30, brandId).subscribe({ next: (c) => this.cohort.set(c) });
   }
 }
