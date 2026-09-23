@@ -147,9 +147,12 @@ platform :ios do
     unlock_build_keychain
     # Reuses a certificate whose private key is already in this keychain;
     # otherwise creates one (Apple allows three per team).
-    cert(api_key: asc_key, development: false, team_id: TEAM_ID, keychain_path: keychain_path, keychain_password: password)
+    cert(api_key: asc_key, development: false, team_id: TEAM_ID, keychain_path: keychain_path, keychain_password: password,
+         output_path: BUILD_DIR)
     # force: a fresh profile picks up the certificate and the capabilities.
-    sigh(api_key: asc_key, app_identifier: APP_ID, team_id: TEAM_ID, platform: "ios", provisioning_name: PROFILE_NAME, force: true)
+    # Both leave their files in the build directory, out of git's way.
+    sigh(api_key: asc_key, app_identifier: APP_ID, team_id: TEAM_ID, platform: "ios", provisioning_name: PROFILE_NAME, force: true,
+         output_path: BUILD_DIR)
   end
 
   desc "Build the signed archive and the IPA (no upload)"
