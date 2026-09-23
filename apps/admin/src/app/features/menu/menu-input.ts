@@ -8,8 +8,8 @@ import type { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/fo
  * other way round.
  */
 
-/** 1 000 000 in currency units — the API's ceiling, and well past any menu price. */
-const MAX_CENTS = 100_000_000;
+/** 10 000 000 in currency units — the API's ceiling (rupiah prices run into millions). */
+const MAX_CENTS = 1_000_000_000;
 const MAX_MINUTES = 24 * 60;
 const DECIMAL = /^([+-])?(\d+)(?:[.,](\d{1,2}))?$/;
 

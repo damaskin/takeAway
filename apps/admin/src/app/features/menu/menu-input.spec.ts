@@ -46,8 +46,8 @@ describe('menu input', () => {
     });
 
     it('refuses a price past the API ceiling', () => {
-      expect(parseMoney('1000000')).toBe(100_000_000);
-      expect(parseMoney('1000000,01')).toBeNull();
+      expect(parseMoney('10000000')).toBe(1_000_000_000);
+      expect(parseMoney('10000000,01')).toBeNull();
     });
   });
 
