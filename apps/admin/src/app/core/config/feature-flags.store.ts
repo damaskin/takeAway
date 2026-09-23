@@ -3,8 +3,16 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 
 import { API_CONFIG } from '../api/api.config';
 
+/** The platform's public support contact; either may be missing. */
+export interface SupportContact {
+  email: string | null;
+  /** A ready `https://t.me/...` link. */
+  telegram: string | null;
+}
+
 export interface FeatureFlags {
   deliveryEnabled: boolean;
+  support?: SupportContact;
 }
 
 /**
@@ -20,6 +28,11 @@ export class FeatureFlagsStore {
   private readonly _flags = signal<FeatureFlags>({ deliveryEnabled: false });
   readonly flags = this._flags.asReadonly();
   readonly deliveryEnabled = computed(() => this._flags().deliveryEnabled);
+  /** Null when the deployment configured no contact at all. */
+  readonly support = computed<SupportContact | null>(() => {
+    const support = this._flags().support;
+    return support?.email || support?.telegram ? support : null;
+  });
 
   load(): void {
     this.http.get<FeatureFlags>(`${this.api.baseUrl}/config/features`).subscribe({

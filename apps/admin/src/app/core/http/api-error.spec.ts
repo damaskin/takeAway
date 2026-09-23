@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import type { TranslateService } from '@ngx-translate/core';
 
-import { apiErrorCode, apiErrorMessage, type ApiErrorWording } from './api-error';
+import { apiErrorCode, apiErrorMessage, invalidFields, type ApiErrorWording } from './api-error';
 
 /** Renders a key and its params, so assertions read what the user would. */
 const translate = {
@@ -61,5 +61,28 @@ describe('apiErrorMessage', () => {
     );
     expect(apiErrorMessage(failure(0, null), translate, wording)).toBe('stores.network');
     expect(apiErrorMessage(new Error('boom'), translate)).toBe('common.genericError');
+  });
+});
+
+describe('invalidFields', () => {
+  it('names the fields a validation error complained about, once each', () => {
+    const err = failure(400, {
+      statusCode: 400,
+      message: [
+        'phone must be in international format, e.g. +37369123456',
+        'currency must be one of the following values: USD, EUR',
+        'currency should not be empty',
+      ],
+    });
+
+    expect(invalidFields(err)).toEqual(['phone', 'currency']);
+    expect(apiErrorCode(err)).toBeNull();
+  });
+
+  it('copes with a failure that has no JSON body at all', () => {
+    const err = failure(0, new ProgressEvent('error'));
+
+    expect(apiErrorCode(err)).toBeNull();
+    expect(invalidFields(err)).toEqual([]);
   });
 });

@@ -9,6 +9,10 @@ import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
+import { BrandStatusBannerComponent } from './brand-status-banner.component';
+
+/** Roles with a name of their own under `admin.layout.role`. */
+const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER']);
 
 /**
  * Admin layout — pencil F52Ar sidebar + 64px foam top bar.
@@ -23,7 +27,14 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 @Component({
   selector: 'app-admin-layout',
   standalone: true,
-  imports: [RouterOutlet, FormsModule, AdminSidebarComponent, LanguageSwitcherComponent, TranslatePipe],
+  imports: [
+    RouterOutlet,
+    FormsModule,
+    AdminSidebarComponent,
+    BrandStatusBannerComponent,
+    LanguageSwitcherComponent,
+    TranslatePipe,
+  ],
   template: `
     <div class="admin-shell flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
       <!-- Sidebar (drawer on mobile) -->
@@ -74,7 +85,7 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
               <span
                 class="truncate"
                 style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px"
-                >{{ userRole() }}</span
+                >{{ roleLabel() | translate }}</span
               >
             </div>
           </div>
@@ -117,6 +128,7 @@ import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
         </header>
 
         <main class="flex-1 overflow-auto" style="background: var(--color-cream)">
+          <app-brand-status-banner />
           <router-outlet />
         </main>
       </div>
@@ -234,8 +246,10 @@ export class AdminLayoutPage implements OnInit {
     return user?.name ?? user?.phone ?? this.translate.instant('common.user');
   }
 
-  userRole(): string {
-    return this.store.user()?.role ?? '';
+  /** Translation key of the role under the user's name — "Владелец бренда", not "BRAND_ADMIN". */
+  roleLabel(): string {
+    const role = this.store.user()?.role;
+    return role && NAMED_ROLES.has(role) ? `admin.layout.role.${role}` : '';
   }
 
   initials(): string {
