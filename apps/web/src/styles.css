@@ -2,6 +2,17 @@
 @source "./**/*.{ts,html}";
 @source "../../../libs/ui-kit/src/**/*.{ts,html}";
 @import '../../../libs/ui-kit/src/lib/design-tokens.css';
+/*
+ * Self-hosted fonts for the token stacks in design-tokens.css. Each file
+ * declares every subset with a unicode-range, so a browser fetches only the
+ * ones a page uses — Latin and Cyrillic here. Fraunces has no Cyrillic: a
+ * Russian heading falls through to the serif fallbacks in --font-display.
+ */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/fraunces/wght.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
 
 html,
 body {
