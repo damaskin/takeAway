@@ -20,7 +20,6 @@ import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zo
 import { PrismaService } from '../../prisma/prisma.service';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
-import type { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
 /** `null` = no brand restriction (super-admin). */
@@ -102,12 +101,26 @@ export class AdminCatalogService {
     });
   }
 
-  /** Minimal brand list filtered to the caller's scope. `null` = no filter. */
+  /**
+   * Minimal brand list filtered to the caller's scope. `null` = no filter.
+   * Carries the moderation state so the admin shell can tell an owner where
+   * their brand stands on every page, not only on /settings.
+   */
   listBrandsForScope(scope: BrandScope) {
     return this.prisma.brand.findMany({
       where: scope === null ? undefined : { id: { in: scope } },
       orderBy: { name: 'asc' },
-      select: { id: true, slug: true, name: true, currency: true, locale: true, logoUrl: true },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        currency: true,
+        locale: true,
+        logoUrl: true,
+        moderationStatus: true,
+        moderationNote: true,
+        submittedAt: true,
+      },
     });
   }
 
@@ -147,18 +160,6 @@ export class AdminCatalogService {
   async updateBrand(id: string, dto: UpdateBrandDto) {
     await this.getBrand(id);
     return this.prisma.brand.update({ where: { id }, data: dto });
-  }
-
-  async setBrandModeration(id: string, dto: SetBrandModerationDto) {
-    await this.getBrand(id);
-    return this.prisma.brand.update({
-      where: { id },
-      data: {
-        moderationStatus: dto.status,
-        moderationNote: dto.note ?? null,
-        moderatedAt: new Date(),
-      },
-    });
   }
 
   async getBrandOwner(brandId: string) {

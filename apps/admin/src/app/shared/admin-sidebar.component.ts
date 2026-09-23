@@ -1,8 +1,11 @@
-import { Component, computed, inject } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, DestroyRef, computed, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import { filter } from 'rxjs/operators';
 
 import { AuthStore } from '../core/auth/auth.store';
+import { BrandsService } from '../core/brands/brands.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 
 import { ADMIN_ROLES, type AdminRole } from '../core/permissions/permissions';
@@ -16,6 +19,8 @@ interface NavItem {
   requires?: 'deliveryEnabled';
   /** Role gate — item is hidden for users whose role is not in this list. */
   roles?: ReadonlyArray<AdminRole>;
+  /** A live counter shown next to the label. */
+  badge?: 'pendingBrands';
 }
 
 /**
@@ -55,7 +60,15 @@ interface NavItem {
           style="height: 42px; padding: 0 12px; border-radius: 10px; gap: 10px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
         >
           <span class="admin-nav-icon" style="font-size: 18px">{{ item.icon }}</span>
-          <span>{{ item.label | translate }}</span>
+          <span class="flex-1">{{ item.label | translate }}</span>
+          @if (item.badge === 'pendingBrands' && pendingBrands(); as count) {
+            <span
+              class="admin-nav-badge"
+              [title]="'admin.brands.pendingBadge' | translate: { count: count }"
+              [attr.aria-label]="'admin.brands.pendingBadge' | translate: { count: count }"
+              >{{ count }}</span
+            >
+          }
         </a>
       }
     </aside>
@@ -76,12 +89,43 @@ interface NavItem {
       .admin-nav-active .admin-nav-icon {
         color: var(--color-caramel);
       }
+      .admin-nav-badge {
+        min-width: 22px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 9999px;
+        background: var(--color-amber);
+        color: white;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 22px;
+        text-align: center;
+      }
     `,
   ],
 })
 export class AdminSidebarComponent {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly authStore = inject(AuthStore);
+  private readonly brands = inject(BrandsService);
+
+  /** Brands waiting for a platform admin's decision; zero hides the badge. */
+  readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
+
+  constructor() {
+    // New applications arrive while the platform admin works, so the count
+    // is re-read on every page change rather than once.
+    const refresh = () => {
+      if (this.authStore.user()?.role === 'SUPER_ADMIN') this.brands.loadPendingCount();
+    };
+    refresh();
+    inject(Router)
+      .events.pipe(
+        filter((e) => e instanceof NavigationEnd),
+        takeUntilDestroyed(inject(DestroyRef)),
+      )
+      .subscribe(refresh);
+  }
 
   readonly navItems: NavItem[] = [
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
@@ -107,7 +151,7 @@ export class AdminSidebarComponent {
     { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ADMIN_ROLES.giftCards },
     { icon: '📣', label: 'admin.nav.campaigns', link: '/campaigns', roles: ADMIN_ROLES.campaigns },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
-    { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ADMIN_ROLES.brands },
+    { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ADMIN_ROLES.brands, badge: 'pendingBrands' },
     { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ADMIN_ROLES.settings },
     { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ADMIN_ROLES.integrations },
     {

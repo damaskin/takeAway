@@ -93,3 +93,18 @@ function describe(message: string, translate: TranslateService, wording: ApiErro
   }
   return message;
 }
+
+/**
+ * The properties a validation error complained about, in order and without
+ * repeats — for pages that mark the fields themselves. class-validator starts
+ * every message with the property name.
+ */
+export function invalidFields(err: unknown): string[] {
+  const message = apiErrorBody(err)?.message;
+  if (!Array.isArray(message)) return [];
+  const fields = message
+    .filter((m): m is string => typeof m === 'string')
+    .map((m) => m.split(/\s/, 1)[0] ?? '')
+    .filter(Boolean);
+  return [...new Set(fields)];
+}

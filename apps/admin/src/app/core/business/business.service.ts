@@ -6,22 +6,27 @@ import { Observable, tap } from 'rxjs';
 import { API_CONFIG } from '../api/api.config';
 import { AuthStore } from '../auth/auth.store';
 
+/** Every currency a brand can trade in, the local ones first. Mirrors the Prisma `Currency` enum. */
+export const BRAND_CURRENCIES = ['MDL', 'RUP', 'USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR'] as const;
+
+export type BrandCurrency = (typeof BRAND_CURRENCIES)[number];
+
+export type BrandLocale = 'EN' | 'RU';
+
 /**
- * Mirror of `apps/web/.../business.service.ts` but with the *admin*
- * AuthStore. Lets the admin app run its own self-serve registration
- * flow so the freshly created BRAND_ADMIN's session lands in the right
- * localStorage origin and we can immediately drop the user on
- * `/integrations` (or wherever) without the cross-host hand-off the
- * web flow needs.
+ * Self-serve business registration. The admin app owns this flow so the
+ * freshly created BRAND_ADMIN's session lands in the admin's own storage
+ * and the owner goes straight to their dashboard.
  */
 export interface BusinessRegisterRequest {
   brandName: string;
   ownerName: string;
   email: string;
   password: string;
+  /** International format; the API drops spaces and dashes itself. */
   phone?: string;
-  currency?: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR' | 'MDL' | 'RUP';
-  locale?: 'EN' | 'RU';
+  currency: BrandCurrency;
+  locale: BrandLocale;
 }
 
 export interface BusinessBrand {
