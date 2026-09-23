@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+import { OrderItemModifierDto, OrderItemVariationDto } from './order.dto';
+
 export class AdminOrderEventDto {
   @ApiProperty() id!: string;
   @ApiProperty() type!: string;
@@ -21,6 +23,10 @@ export class AdminOrderPaymentDto {
 export class AdminOrderItemDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
+  /** Empty on orders placed before options were snapshotted. */
+  @ApiProperty({ type: [OrderItemVariationDto] }) variations!: OrderItemVariationDto[];
+  @ApiProperty({ type: [OrderItemModifierDto] }) modifierLines!: OrderItemModifierDto[];
+  @ApiPropertyOptional({ type: String, nullable: true }) notes!: string | null;
   @ApiProperty() quantity!: number;
   @ApiProperty() unitPriceCents!: number;
   @ApiProperty() totalCents!: number;

@@ -1,8 +1,9 @@
 import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { describeOrderItemOptions } from '@takeaway/utils';
 
-import { AdminOrdersApi, type AdminOrderDetail } from '../../core/orders/orders.service';
+import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../../core/orders/orders.service';
 
 /**
  * Order detail drawer, and the only way to issue a refund.
@@ -102,13 +103,27 @@ import { AdminOrdersApi, type AdminOrderDetail } from '../../core/orders/orders.
             {{ 'admin.orderDetail.items' | translate }}
           </h3>
           @for (item of o.items; track item.id) {
-            <div class="flex items-center justify-between">
-              <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-                >{{ item.quantity }} × {{ item.name }}</span
-              >
-              <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">{{
-                money(item.totalCents, o.currency)
-              }}</span>
+            <div class="flex flex-col" style="gap: 2px">
+              <div class="flex items-start justify-between" style="gap: 12px">
+                <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                  >{{ item.quantity }} × {{ item.name }}</span
+                >
+                <span
+                  style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); white-space: nowrap"
+                  >{{ money(item.totalCents, o.currency) }}</span
+                >
+              </div>
+              @if (options(item); as line) {
+                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+                  line
+                }}</span>
+              }
+              @if (item.notes) {
+                <span
+                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-style: italic"
+                  >“{{ item.notes }}”</span
+                >
+              }
             </div>
           }
 
@@ -378,6 +393,11 @@ export class OrderDetailPanelComponent {
           this.refundError.set(extractMessage(err, this.translate.instant('common.genericError')));
         },
       });
+  }
+
+  /** "L · Oat · +Vanilla ×2" — empty for a line without options. */
+  options(item: AdminOrderItem): string {
+    return describeOrderItemOptions(item);
   }
 
   money(cents: number, currency: string): string {

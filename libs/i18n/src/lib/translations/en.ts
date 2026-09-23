@@ -215,6 +215,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryDistance: '≈ {{km}} from the store',
       deliveryBy: 'Delivery by {{time}}',
       prepStartHint: "We'll start preparing at {{time}} so it's fresh on arrival.",
+      cartChanged: 'Prices or the menu have changed — please check your cart.',
+      cartChangedRemoved: 'Removed from your cart: {{names}}.',
+      cartChangedDiscounts: 'Discounts were worked out for the old total — please apply them again.',
     },
     orderStatus: {
       status: {
@@ -245,6 +248,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       iAmHere: "I'm here",
       cancelOrder: 'Cancel order',
       openMaps: 'Open in Maps',
+      yourOrder: 'Your order',
     },
     auth: {
       welcomeBack: 'Welcome back',
@@ -1111,6 +1115,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       deliveryGeolocateUnsupported: 'Geolocation unavailable — using flat fee.',
       deliveryOutsideRadius: 'Outside this store’s delivery area.',
       deliveryDistance: '≈ {{km}} away',
+      cartChanged: 'Prices or the menu have changed — please check your cart.',
+      cartChangedRemoved: 'Removed from your cart: {{names}}.',
     },
     cards: {
       title: 'Cards',
