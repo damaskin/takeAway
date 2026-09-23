@@ -54,6 +54,7 @@ export const CATEGORY = {
   description: null,
   sortOrder: 0,
   visible: true,
+  _count: { products: 1 },
 };
 
 export const PRODUCT = {
@@ -67,6 +68,14 @@ export const PRODUCT = {
   prepTimeSeconds: 120,
   visible: true,
   sortOrder: 0,
+  imageUrls: [],
+  caffeineLevel: null,
+  calories: null,
+  proteinsGrams: null,
+  fatsGrams: null,
+  carbsGrams: null,
+  allergens: [],
+  dietTags: [],
 };
 
 const STAFF = {

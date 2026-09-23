@@ -1,8 +1,11 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, type HttpEvent } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
+
+export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
+export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
 
 export interface BrandDto {
   id: string;
@@ -69,7 +72,7 @@ export interface CreateStoreInput {
 
 export interface VariationAdminDto {
   id: string;
-  type: 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
+  type: VariationType;
   name: string;
   priceDeltaCents: number;
   prepTimeDeltaSeconds: number;
@@ -105,7 +108,8 @@ export interface CreateVariationInput {
 export type UpdateVariationInput = Partial<CreateVariationInput>;
 
 export interface CreateModifierInput {
-  slug: string;
+  /** Built from the name on the server when omitted. */
+  slug?: string;
   name: string;
   priceDeltaCents?: number;
   prepTimeDeltaSeconds?: number;
@@ -124,6 +128,7 @@ export interface CategoryAdminDto {
   description: string | null;
   sortOrder: number;
   visible: boolean;
+  _count?: { products: number };
 }
 
 export interface ProductAdminDto {
@@ -137,14 +142,25 @@ export interface ProductAdminDto {
   prepTimeSeconds: number;
   visible: boolean;
   sortOrder: number;
+  /** In display order; the first one is the menu picture. */
+  imageUrls: string[];
+  caffeineLevel: number | null;
+  calories: number | null;
+  proteinsGrams: number | null;
+  fatsGrams: number | null;
+  carbsGrams: number | null;
+  allergens: string[];
+  dietTags: DietTag[];
 }
 
 export interface CreateCategoryInput {
   brandId: string;
-  slug: string;
+  /** Built from the name on the server when omitted. */
+  slug?: string;
   name: string;
   description?: string;
   sortOrder?: number;
+  visible?: boolean;
 }
 
 export interface UpdateCategoryInput {
@@ -154,23 +170,54 @@ export interface UpdateCategoryInput {
   visible?: boolean;
 }
 
-export interface CreateProductInput {
-  brandId: string;
-  categoryId: string;
-  slug: string;
+/** What the product editor sends; `null` clears an optional value. */
+export interface ProductFieldsInput {
   name: string;
-  description?: string;
+  description: string | null;
   basePriceCents: number;
   prepTimeSeconds?: number;
+  visible: boolean;
+  caffeineLevel: number | null;
+  calories: number | null;
+  proteinsGrams: number | null;
+  fatsGrams: number | null;
+  carbsGrams: number | null;
+  allergens: string[];
+  dietTags: DietTag[];
 }
 
-export interface UpdateProductInput {
-  name?: string;
-  description?: string | null;
-  basePriceCents?: number;
-  prepTimeSeconds?: number;
+export interface CreateProductInput extends Partial<Omit<ProductFieldsInput, 'name' | 'basePriceCents'>> {
+  brandId: string;
+  categoryId: string;
+  /** Built from the name on the server when omitted. */
+  slug?: string;
+  name: string;
+  basePriceCents: number;
+}
+
+export interface UpdateProductInput extends Partial<ProductFieldsInput> {
   sortOrder?: number;
   categoryId?: string;
+}
+
+export interface ProductImagesDto {
+  imageUrls: string[];
+}
+
+export interface StopListEntryDto {
+  id: string;
+  storeId: string;
+  productId: string;
+  reason: string | null;
+  /** ISO time the product comes back on its own; `null` = until switched back by hand. */
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface AddStopListEntryInput {
+  productId: string;
+  reason?: string;
+  expiresAt?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -257,12 +304,55 @@ export class AdminCatalogApi {
     return this.http.patch<CategoryAdminDto>(`${this.api.baseUrl}/admin/categories/${id}`, input);
   }
 
-  deleteCategory(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${id}`);
+  /**
+   * A category that still has products answers 409 `CATEGORY_NOT_EMPTY`
+   * unless `moveProductsTo` names another category of the brand for them.
+   */
+  deleteCategory(id: string, moveProductsTo?: string): Observable<void> {
+    const params: Record<string, string> = moveProductsTo ? { moveProductsTo } : {};
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${id}`, { params });
   }
 
   reorderCategories(orderedIds: string[]): Observable<void> {
     return this.http.patch<void>(`${this.api.baseUrl}/admin/categories/reorder`, { orderedIds });
+  }
+
+  /** Product ids of one category in their new order. */
+  reorderProducts(orderedIds: string[]): Observable<void> {
+    return this.http.patch<void>(`${this.api.baseUrl}/admin/products/reorder`, { orderedIds });
+  }
+
+  /** Emits upload progress events, then the product's photo list. */
+  uploadProductImage(productId: string, file: File): Observable<HttpEvent<ProductImagesDto>> {
+    const body = new FormData();
+    body.append('file', file);
+    return this.http.post<ProductImagesDto>(`${this.api.baseUrl}/admin/products/${productId}/images`, body, {
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
+  removeProductImage(productId: string, url: string): Observable<ProductImagesDto> {
+    return this.http.delete<ProductImagesDto>(`${this.api.baseUrl}/admin/products/${productId}/images`, {
+      params: { url },
+    });
+  }
+
+  /** The listed photos go first, in that order; the first one is the menu picture. */
+  reorderProductImages(productId: string, urls: string[]): Observable<ProductImagesDto> {
+    return this.http.put<ProductImagesDto>(`${this.api.baseUrl}/admin/products/${productId}/images/order`, { urls });
+  }
+
+  listStopList(storeId: string): Observable<StopListEntryDto[]> {
+    return this.http.get<StopListEntryDto[]>(`${this.api.baseUrl}/admin/stores/${storeId}/stop-list`);
+  }
+
+  addStopListEntry(storeId: string, input: AddStopListEntryInput): Observable<StopListEntryDto> {
+    return this.http.post<StopListEntryDto>(`${this.api.baseUrl}/admin/stores/${storeId}/stop-list`, input);
+  }
+
+  removeStopListEntry(storeId: string, productId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/stop-list/${productId}`);
   }
 
   listProducts(brandId?: string, categoryId?: string): Observable<ProductAdminDto[]> {
