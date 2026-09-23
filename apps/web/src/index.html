@@ -38,6 +38,11 @@
       // issue points at an exact deploy.
       window.__SENTRY_DSN = '';
       window.__SENTRY_ENVIRONMENT = 'development';
+
+      // Admin panel base URL, for the "list your business" page. Deploys
+      // fill it from ADMIN_APP_URL; empty means localhost:4202 in dev and
+      // the admin. subdomain of this host otherwise.
+      window.__ADMIN_APP_URL = '';
     </script>
   </head>
   <body>
