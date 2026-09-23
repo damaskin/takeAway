@@ -177,16 +177,51 @@ flutter build appbundle --release --dart-define-from-file=config/prod.json
 Without `key.properties` the release build is signed with the debug key —
 fine for testers, rejected by Google Play.
 
-**iOS** (needs a Mac with Xcode):
+**iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
+(`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
+Store Connect API key and a keychain of its own, because an Apple ID asks for
+2FA and the login keychain is locked over SSH. Team: Ivan Damaschin
+(`FGN8R2D6QW`), Bundle ID `md.takeaway.app`.
+
+Once per team and Mac:
+
+1. App Store Connect → Users and Access → Integrations → App Store Connect API
+   → Team Keys: a key with the **Admin** role (creating the distribution
+   certificate needs it). Put `AuthKey_<id>.p8` in
+   `~/.appstoreconnect/private_keys/` on the Mac.
+2. App Store Connect → Apps → + → New App: iOS, name takeAway, bundle ID
+   `md.takeaway.app` (register it first with `fastlane ios register_bundle_id`
+   if the list does not offer it), SKU `md.takeaway.app`, primary language
+   Russian. Apple refuses to create the record through the API.
+3. `~/.appstoreconnect/takeaway.env` on the Mac, mode 600:
+
+   ```bash
+   ASC_KEY_ID=...                 # 10 characters
+   ASC_ISSUER_ID=...              # UUID above the keys list
+   ASC_KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_<id>.p8
+   KEYCHAIN_PASSWORD=...          # any; the build keychain is created with it
+   FLUTTER=$HOME/sdk/flutter-3.38.8/bin/flutter
+   ```
+
+4. `apps/mobile/config/prod.json` on the Mac, a copy of `prod.example.json`.
+
+Each release (the archive takes a while — keep it off the SSH session):
 
 ```bash
-cd ios && pod install && cd ..
-open ios/Runner.xcworkspace   # set the team, check Push Notifications and Sign in with Apple capabilities
-flutter build ipa --release --dart-define-from-file=config/prod.json
+cd ~/MyWorks/takeAway && git fetch && git checkout -f -B <branch> origin/<branch>
+nohup bash apps/mobile/scripts/ios-testflight.sh > /tmp/takeaway-ios.log 2>&1 &
+tail -f /tmp/takeaway-ios.log
 ```
 
-`Runner.entitlements` has `aps-environment = development`; Xcode switches it to
-production when archiving for the App Store.
+The lanes run `signing` (Bundle ID with Push and Sign in with Apple,
+certificate, App Store profile), `archive` (the version from `pubspec.yaml`,
+the build number one above the latest in TestFlight, manual signing for the
+Runner target only), `verify_ipa` and `upload`. `fastlane ios builds` shows
+Apple's processing; `fastlane ios beta_group` makes the internal group that
+sees every build.
+
+`Runner.entitlements` has `aps-environment = development`; the App Store
+profile turns it into production when the archive is signed.
 
 ## Tests
 
