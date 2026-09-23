@@ -190,11 +190,10 @@ export class CreateVariationDto {
   @Length(1, 60)
   name!: string;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
   @IsOptional()
   @IsInt()
-  @Min(-MAX_PRICE_CENTS)
-  @Max(MAX_PRICE_CENTS)
+  @Min(0)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
@@ -234,11 +233,10 @@ export class CreateModifierDto {
   @Length(1, 80)
   name!: string;
 
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({ default: 0, minimum: 0 })
   @IsOptional()
   @IsInt()
-  @Min(-MAX_PRICE_CENTS)
-  @Max(MAX_PRICE_CENTS)
+  @Min(0)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
