@@ -1,4 +1,4 @@
-import { formatPercent } from './number';
+import { formatDistance, formatPercent } from './number';
 
 const NBSP = '\u00a0';
 
@@ -18,5 +18,15 @@ describe('formatPercent', () => {
   it('rounds to the requested digits', () => {
     expect(formatPercent(33.333, 'en')).toBe('33.3%');
     expect(formatPercent(33.333, 'en', { maxDigits: 0 })).toBe('33%');
+  });
+});
+
+describe('formatDistance', () => {
+  it('writes metres and kilometres for both languages', () => {
+    expect(formatDistance(850, 'en')).toBe(`850${NBSP}m`);
+    expect(formatDistance(850.4, 'ru')).toBe(`850${NBSP}м`);
+    expect(formatDistance(1234, 'en')).toBe(`1.2${NBSP}km`);
+    expect(formatDistance(1234, 'ru')).toBe(`1,2${NBSP}км`);
+    expect(formatDistance(15200, 'en')).toBe(`15${NBSP}km`);
   });
 });

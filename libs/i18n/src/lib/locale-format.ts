@@ -4,6 +4,7 @@ import {
   formatDate,
   formatDateTime,
   formatDayMonth,
+  formatDistance,
   formatMoney,
   formatPercent,
   formatShortDay,
@@ -62,6 +63,11 @@ export class LocaleFormatService {
   /** «23.09» — chart axes. */
   shortDay(value: DateInput, timeZone?: string | null): string {
     return formatShortDay(value, this.lang(), timeZone);
+  }
+
+  /** «850 м», «1,2 км». */
+  distance(metres: number): string {
+    return formatDistance(metres, this.lang());
   }
 
   /** «12,5 %»; with `signed`, «+12,5 %». */

@@ -1,5 +1,16 @@
 import { isRussian } from './money';
 
+/**
+ * Metres to a short label, as the Flutter app writes it: «850 м», «1,2 км»,
+ * "15 km" — one decimal under ten kilometres, none above.
+ */
+export function formatDistance(metres: number, lang = 'ru'): string {
+  const russian = isRussian(lang);
+  if (metres < 1000) return `${Math.round(metres)}\u00a0${russian ? 'м' : 'm'}`;
+  const km = new Intl.NumberFormat(russian ? 'ru' : 'en', { maximumFractionDigits: metres < 10_000 ? 1 : 0 });
+  return `${km.format(metres / 1000)}\u00a0${russian ? 'км' : 'km'}`;
+}
+
 export interface FormatPercentOptions {
   /** Show "+" on growth — for a change against a previous period. */
   signed?: boolean;
