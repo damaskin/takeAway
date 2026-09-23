@@ -42,6 +42,27 @@ export const TRANSLATIONS_RU = {
     genericError: 'Что-то пошло не так, попробуйте снова',
     networkError: 'Нет связи с сервером',
     forbidden: 'Недостаточно прав',
+    /** By the `code` the API sends on order and promo errors. */
+    checkoutErrors: {
+      CART_EMPTY: 'Корзина пуста',
+      STORE_NOT_TAKING_ORDERS: 'Эта точка сейчас не принимает заказы',
+      STORE_CLOSED_AT_TIME: 'В это время точка закрыта — выберите другое время',
+      PICKUP_SLOT_FULL: 'Это время только что заняли — выберите другое',
+      PICKUP_TIME_OUT_OF_RANGE:
+        'Ко времени можно заказать не раньше чем через {{minMinutes}} мин и не позже чем через {{maxHours}} ч',
+      ITEMS_UNAVAILABLE: 'Сейчас нет в наличии: {{items}}',
+      BELOW_MIN_ORDER: 'Минимальная сумма заказа — {{amount}}',
+      DELIVERY_UNAVAILABLE: 'Доставка сейчас недоступна',
+      DELIVERY_ADDRESS_REQUIRED: 'Укажите адрес доставки',
+      DELIVERY_OUT_OF_RANGE: 'Этот адрес вне зоны доставки',
+      PROMO_UNKNOWN: 'Такого промокода нет',
+      PROMO_INACTIVE: 'Промокод сейчас не действует',
+      PROMO_NOT_STARTED: 'Промокод ещё не начал действовать',
+      PROMO_EXPIRED: 'Срок действия промокода истёк',
+      PROMO_MIN_ORDER: 'Промокод действует при заказе от {{amount}}',
+      PROMO_LIMIT_REACHED: 'Промокод закончился',
+      PROMO_ALREADY_USED: 'Вы уже воспользовались этим промокодом',
+    },
     units: {
       min: 'мин',
       mShort: 'м',
