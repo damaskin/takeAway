@@ -854,6 +854,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         riderAssigned: 'Rider assigned',
         pointsMultiplier: 'Points ×{{value}}',
       },
+      reasons: {
+        payment_timeout: 'payment did not arrive in time',
+        not_accepted: 'the kitchen never took it',
+        requested_by_customer: "at the customer's request",
+        duplicate: 'duplicate order',
+        fraudulent: 'fraud',
+      },
     },
     orders: {
       title: 'Orders',

@@ -23,7 +23,7 @@ function orderRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 interface Harness {
   service: OrderExpiryService;
-  tx: { order: { findUnique: jest.Mock; update: jest.Mock } };
+  tx: { order: { updateMany: jest.Mock; update: jest.Mock } };
   prisma: { order: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
@@ -38,7 +38,8 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
 
   const tx = {
     order: {
-      findUnique: jest.fn().mockResolvedValue(current),
+      // The claim only matches an order that is still CREATED.
+      updateMany: jest.fn().mockResolvedValue({ count: current?.['status'] === 'CREATED' ? 1 : 0 }),
       update: jest.fn().mockResolvedValue(orderRow({ status: 'EXPIRED' })),
     },
     promoRedemption: { deleteMany: jest.fn() },
@@ -109,9 +110,11 @@ describe('OrderExpiryService', () => {
       const h = harness();
       await h.service.expire('order-1');
 
+      const claim = h.tx.order.updateMany.mock.calls[0]?.[0];
+      expect(claim.where).toEqual({ id: 'order-1', status: 'CREATED' });
+      expect(claim.data.status).toBe('EXPIRED');
+      expect(claim.data.expiredAt).toBeInstanceOf(Date);
       const data = h.tx.order.update.mock.calls[0]?.[0]?.data;
-      expect(data.status).toBe('EXPIRED');
-      expect(data.expiredAt).toBeInstanceOf(Date);
       expect(data.events.create.payload).toMatchObject({
         from: 'CREATED',
         to: 'EXPIRED',
@@ -137,6 +140,19 @@ describe('OrderExpiryService', () => {
      * real money. Expiring it without releasing that would leave the customer
      * frozen out of their own funds until the bank's own hold window ran out.
      */
+    // Two sweepers at once: only the claim that wins may hand anything back.
+    it('hands nothing back when another sweeper already expired the order', async () => {
+      const h = harness();
+      h.tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(h.service.expire('order-1')).resolves.toBe(false);
+
+      expect(h.promo.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.giftCards.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.loyalty.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.tx.order.update).not.toHaveBeenCalled();
+    });
+
     it('releases the money held against an order nobody took on', async () => {
       const h = harness();
 
@@ -237,7 +253,7 @@ describe('OrderExpiryService', () => {
         { id: 'bad', _count: { payments: 1 } },
         { id: 'good', _count: { payments: 1 } },
       ]);
-      h.tx.order.findUnique.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue(orderRow({ id: 'good' }));
+      h.tx.order.updateMany.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue({ count: 1 });
 
       await expect(h.service.sweep()).resolves.toBe(1);
     });
