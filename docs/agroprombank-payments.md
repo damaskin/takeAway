@@ -186,7 +186,10 @@ nothing but TLS distinguishes a real "payment succeeded" from a forged one.
 `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` defaults to `true`: the card is authorized at
 checkout and only debited when the store accepts the order — see «Hold at
 checkout, capture on accept». Turn it off for a merchant whose acquiring
-contract has no preauthorization.
+contract has no preauthorization. Production runs with it off: terminal
+`E1043280` answers every preauthorization with `Invalid operation type
+"Preauthorization" for terminal "E1043280"`, so the card is charged at
+checkout, and an order the store turns down is refunded from the admin.
 
 `AGROPROMBANK_INVOICE_PREFIX` must differ per environment. The `invoiceid` we
 send has to stay unique for the entire life of the merchant contract, and a
