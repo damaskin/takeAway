@@ -195,8 +195,14 @@ staging deployment sharing production's numbering would collide with it. It is
 charges, sent with the prefix `TA`, all came back as .NET's "Input string was
 not in a correct format." (`result=-1`). A prefix with anything but digits is
 now reported as a missing setting and stops every call before it leaves.
-Production uses `1`; an id is the prefix, `Date.now()` and four random digits —
-18 digits, inside a 64-bit integer.
+Production uses `1`. The number after the prefix comes from the Postgres
+sequence `agroprombank_invoice_seq` (from 100000), so ids read `1100000`,
+`1100001`… — short, like the bank's own example `123456`. The timestamp +
+random ids used before ran to 18 digits, and every charge that carried one
+failed inside the bank ("Произошла ошибка", no operation on record). A
+database restored from a backup rewinds the sequence: move it past the highest
+invoice id the bank has seen (`SELECT setval('agroprombank_invoice_seq', …)`)
+before taking payments again.
 
 The brand's currency must be one the bank settles: `RUP` (Transnistrian rouble,
 bank code `000`) in practice. `USD`, `EUR` and `MDL` are mapped too; anything

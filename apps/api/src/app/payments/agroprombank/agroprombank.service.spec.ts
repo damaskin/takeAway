@@ -42,6 +42,7 @@ describe('AgroprombankService', () => {
     };
     cardBindingRequest: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
     orderEvent: { create: jest.Mock };
+    $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   }
 
@@ -112,6 +113,8 @@ describe('AgroprombankService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       orderEvent: { create: jest.fn().mockResolvedValue({}) },
+      // SELECT nextval('agroprombank_invoice_seq')
+      $queryRaw: jest.fn().mockResolvedValue([{ value: 100042n }]),
       $transaction: jest.fn((ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
     };
 
@@ -185,6 +188,18 @@ describe('AgroprombankService', () => {
       );
       expect(result.status).toBe('SUCCEEDED');
       expect(result.operationId).toBe('123456789');
+    });
+
+    // The bank's example is six digits. With 18-digit timestamp + random ids
+    // every charge failed inside the bank ("Произошла ошибка").
+    it('numbers the invoice from the sequence, after the prefix: short and digits only', async () => {
+      Object.assign(config, { invoicePrefix: '1' });
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      const created = prisma.payment.create.mock.calls[0]?.[0] as { data: { invoiceId: string } };
+      expect(created.data.invoiceId).toBe('1100042');
     });
 
     it('records a declined charge and leaves the order unpaid', async () => {
