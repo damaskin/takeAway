@@ -224,7 +224,7 @@ takeaway/
 | Stripe            | Платежи                    | ✅ Payment Intents + webhook                                 |
 | SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset                          |
 | Web Push (VAPID)  | Push для web/PWA + TMA     | ✅ через `web-push`                                          |
-| Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login Widget       |
+| Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login (OIDC)       |
 | MinIO + CDN       | Object storage             | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
 | iiko Cloud        | POS меню/stop-list/orders  | ✅ menu + stop-list (cron) + outgoing orders                 |
 | Poster            | POS + outgoing orders      | ✅ menu/stop-list/orders/webhooks                            |
@@ -240,9 +240,9 @@ takeaway/
 
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
-- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login Widget**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
+- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
 - **Customer в мобильном приложении**: Telegram, Google и Apple (только iOS). Telegram — Telegram Login (OpenID Connect): подтверждение в приложении Telegram или на странице `oauth.telegram.org`, обмен кода на ID-токен по PKCE прямо на устройстве (публичный клиент, без секрета), затем `POST /auth/telegram/oidc`. Client id (= id бота) приложение берёт из `GET /auth/telegram/config`, а не из сборки.
-- **Telegram Login на вебе и в админке**: новая библиотека `oauth.telegram.org/js/telegram-login.js` (попап → ID-токен) включается, когда в `index.html` задан `__TELEGRAM_CLIENT_ID`; до этого работает прежний Login Widget с HMAC по токену бота. ID-токены Telegram проверяются тем же `OAuthIdentityService`, что Google и Apple: JWKS `oauth.telegram.org/.well-known/jwks.json`, алгоритмы RS256/ES256, `iss = https://oauth.telegram.org`, `aud = client id`. Аккаунт ищется по `telegramUserId` (claim `id`, scope `profile`).
+- **Telegram Login на вебе и в админке**: новая библиотека `oauth.telegram.org/js/telegram-login.js` (попап → ID-токен) включается, когда в `index.html` задан `__TELEGRAM_CLIENT_ID`; без него работает прежний Login Widget с HMAC по токену бота. На проде включено 23.09.2026: бот @takaway_tgbot переключён в BotFather на OpenID Connect, старый виджет у него отключён навсегда. Redirect URI Telegram сверяет посимвольно, а библиотека передаёт адрес страницы с кнопкой, поэтому у бота перечислены `https://takeaway.md/login`, `https://www.takeaway.md/login`, `https://admin.takeaway.md/telegram-link` и `takeaway://tglogin` для приложения; Trusted Origins — три домена, Native Login — Android `md.takeaway.app` с отпечатками ключей подписи. ID-токены Telegram проверяются тем же `OAuthIdentityService`, что Google и Apple: JWKS `oauth.telegram.org/.well-known/jwks.json`, алгоритмы RS256/ES256, `iss = https://oauth.telegram.org`, `aud = client id`. Аккаунт ищется по `telegramUserId` (claim `id`, scope `profile`).
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).

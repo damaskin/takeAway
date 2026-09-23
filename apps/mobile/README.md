@@ -102,15 +102,24 @@ once:
 
 1. `TELEGRAM_BOT_TOKEN` on the API — the app reads the client id (the bot's
    numeric id) from `GET /auth/telegram/config`.
-2. In the @BotFather mini app → the bot → **Login Widget**: register the apps —
-   Android: package `md.takeaway.app` + the SHA-256 of the signing key(s)
-   (`./gradlew signingReport`); iOS: bundle `md.takeaway.app` + the Apple
-   team id — and the redirect URI `takeaway://tglogin`.
-3. Optional: to use BotFather's App Link / Universal Link
-   (`https://app<id>-login.tg.dev/tglogin`) instead of the custom scheme, pass it
-   as `TELEGRAM_REDIRECT_URI`, add the host to the second intent filter of
-   `MainActivity` (with `android:autoVerify="true"`) and
-   `applinks:app<id>-login.tg.dev` to the iOS Associated Domains.
+2. In the @BotFather mini app → the bot → **Login Widget** (switched to
+   OpenID Connect): `takeaway://tglogin` under **Redirect URIs**, and the apps
+   under **Native Login** — Android: package `md.takeaway.app` + the SHA-256
+   of every key that signs a build (`./gradlew signingReport`); iOS: bundle
+   `md.takeaway.app` + the Apple team id. For @takaway_tgbot the redirect URI
+   and the Android debug key are registered; the release / Play App Signing
+   key and the iOS app are not yet.
+3. Optional: BotFather gave the Android app the App Link host
+   `app3004048938-login.tg.dev`. To use `https://app3004048938-login.tg.dev/tglogin`
+   instead of the custom scheme, pass it as `TELEGRAM_REDIRECT_URI`, add the
+   host to the second intent filter of `MainActivity` (with
+   `android:autoVerify="true"`) and `applinks:app3004048938-login.tg.dev` to the
+   iOS Associated Domains.
+
+"redirect_uri required" on Telegram's page means the bot does not list the
+redirect URI the app sent — Telegram compares them exactly. A build made with
+`config/local.json` gets its client id from the local API, so it is that API's
+bot that needs `takeaway://tglogin` registered.
 
 The customer's account is keyed on the Telegram user id, so it is the same
 profile the Mini App and the website sign in to.
