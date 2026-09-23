@@ -14,10 +14,26 @@ export interface BrandDto {
 }
 
 export interface StoreWorkingHourDto {
+  /** 0 = Sunday … 6 = Saturday. */
   weekday: number;
+  /** Minutes since local midnight; `closesAt` 1440 is midnight at the end of the day. */
   opensAt: number;
   closesAt: number;
   isClosed: boolean;
+}
+
+export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
+export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
+export type PickupPointType = 'COUNTER' | 'SHELF' | 'LOCKER';
+export type StoreImageKind = 'hero' | 'gallery';
+
+/** The checks a closed store has to pass before it can be opened. */
+export type ReadinessCheck = 'coordinates' | 'timezone' | 'hours' | 'menu' | 'brandApproved';
+
+export interface StoreReadinessDto {
+  /** Every required check passes. */
+  ready: boolean;
+  items: Array<{ check: ReadinessCheck; ok: boolean; required: boolean }>;
 }
 
 export interface StoreAdminDto {
@@ -30,41 +46,78 @@ export interface StoreAdminDto {
   country: string;
   latitude: number;
   longitude: number;
-  status: 'OPEN' | 'CLOSED' | 'OVERLOADED';
+  status: StoreStatus;
   currency: string;
   phone?: string | null;
   email?: string | null;
   minOrderCents?: number;
   timezone?: string;
   workingHours?: StoreWorkingHourDto[];
+  fulfillmentTypes?: StoreFulfillment[];
+  pickupPointType?: PickupPointType;
+  baseEtaSeconds?: number;
+  kitchenParallelism?: number;
+  slotCapacity?: number;
+  taxRateBps?: number;
+  taxIncludedInPrice?: boolean;
+  heroImageUrl?: string | null;
+  galleryUrls?: string[];
+  deliveryFeeBaseCents?: number | null;
+  deliveryFeePerKmCents?: number | null;
+  deliveryFreeRadiusM?: number | null;
+  deliveryMaxRadiusM?: number | null;
+  readiness?: StoreReadinessDto;
+  /** Sent by the single-store endpoints: orders pin the currency and forbid deleting. */
+  hasOrders?: boolean;
 }
 
 export interface UpdateStoreInput {
   name?: string;
+  slug?: string;
   addressLine?: string;
   city?: string;
   country?: string;
   latitude?: number;
   longitude?: number;
+  timezone?: string;
+  currency?: string;
   phone?: string | null;
   email?: string | null;
-  status?: 'OPEN' | 'CLOSED' | 'OVERLOADED';
+  status?: StoreStatus;
   minOrderCents?: number;
+  fulfillmentTypes?: StoreFulfillment[];
+  pickupPointType?: PickupPointType;
+  baseEtaSeconds?: number;
+  kitchenParallelism?: number;
+  slotCapacity?: number;
+  taxRateBps?: number;
+  taxIncludedInPrice?: boolean;
+  deliveryFeeBaseCents?: number | null;
+  deliveryFeePerKmCents?: number | null;
+  deliveryFreeRadiusM?: number | null;
+  deliveryMaxRadiusM?: number | null;
 }
 
 export interface CreateStoreInput {
   brandId: string;
-  slug: string;
+  /** Generated from the brand and store name when omitted. */
+  slug?: string;
   name: string;
   addressLine: string;
   city: string;
   country: string;
   latitude: number;
   longitude: number;
-  currency: string;
+  /** The brand's currency when omitted. */
+  currency?: string;
   timezone?: string;
   phone?: string;
   email?: string;
+}
+
+export interface StoreImagesDto {
+  heroImageUrl: string | null;
+  galleryUrls: string[];
 }
 
 export interface VariationAdminDto {
@@ -242,6 +295,21 @@ export class AdminCatalogApi {
 
   replaceWorkingHours(id: string, hours: StoreWorkingHourDto[]): Observable<StoreWorkingHourDto[]> {
     return this.http.put<StoreWorkingHourDto[]>(`${this.api.baseUrl}/admin/stores/${id}/working-hours`, { hours });
+  }
+
+  /** `hero` replaces the cover photo, `gallery` adds one to the gallery. */
+  uploadStoreImage(id: string, kind: StoreImageKind, file: File): Observable<StoreImagesDto> {
+    const body = new FormData();
+    body.append('file', file);
+    return this.http.post<StoreImagesDto>(`${this.api.baseUrl}/admin/stores/${id}/images`, body, {
+      params: { kind },
+    });
+  }
+
+  removeStoreImage(id: string, kind: StoreImageKind, url?: string): Observable<StoreImagesDto> {
+    const params: Record<string, string> = { kind };
+    if (url) params['url'] = url;
+    return this.http.delete<StoreImagesDto>(`${this.api.baseUrl}/admin/stores/${id}/images`, { params });
   }
 
   listCategories(brandId?: string): Observable<CategoryAdminDto[]> {
