@@ -18,7 +18,8 @@ import 'package:url_launcher/url_launcher.dart';
 ///    `oauth.telegram.org/crossapp` turns it into a `tg://` link and the
 ///    customer confirms inside Telegram; otherwise the authorization page
 ///    opens in the system browser sheet.
-/// 2. Telegram sends the customer back through [redirectUri] with a code.
+/// 2. Telegram sends the customer back with a code — through [redirectUri]
+///    from its app, through [browserRedirectUri] from the page.
 /// 3. The code and the PKCE verifier buy an ID token from `/token` — a
 ///    public-client exchange, so no secret ever ships in the app.
 ///
@@ -27,16 +28,21 @@ import 'package:url_launcher/url_launcher.dart';
 /// the protocol is a few requests, the Android SDK is only published to a
 /// registry that needs a GitHub token to build, and this keeps one code path
 /// for both platforms.
+///
+/// The page can come back to a different address than the Telegram app:
+/// see [browserRedirectUri].
 class TelegramLogin {
   TelegramLogin({
     required this.clientId,
     required this.redirectUri,
+    Uri? browserRedirectUri,
     required this.platform,
     Dio? http,
     Random? random,
     this.scopes = defaultScopes,
     this.resumeGrace = const Duration(milliseconds: 1500),
-  }) : _http = http ?? Dio(BaseOptions(connectTimeout: _timeout, receiveTimeout: _timeout)),
+  }) : browserRedirectUri = browserRedirectUri ?? redirectUri,
+       _http = http ?? Dio(BaseOptions(connectTimeout: _timeout, receiveTimeout: _timeout)),
        _random = random ?? Random.secure();
 
   /// `profile` carries the Telegram user id the API keys accounts on;
@@ -47,7 +53,23 @@ class TelegramLogin {
   static const _timeout = Duration(seconds: 15);
 
   final String clientId;
+
+  /// Where the Telegram app sends the customer back. The app opens it
+  /// itself, so a custom scheme works everywhere.
   final Uri redirectUri;
+
+  /// Where the authorization page sends the customer back when it runs in a
+  /// browser tab; [redirectUri] unless given.
+  ///
+  /// On Android this is Telegram's App Link for the app. The page leaves for
+  /// the redirect on its own, once the login is confirmed in Telegram on
+  /// another device, and Chrome opens an app from a page only on a tap: a
+  /// custom scheme there leaves the customer on "Continue with Telegram" for
+  /// good. The App Link instead loads Telegram's "Almost done" page, whose
+  /// button is that tap. iOS's authentication session catches a custom
+  /// scheme without one.
+  final Uri browserRedirectUri;
+
   final TelegramLoginPlatform platform;
   final List<String> scopes;
 
@@ -69,6 +91,8 @@ class TelegramLogin {
 
     Uri? callback;
     var handled = false;
+    // The exchange has to name the redirect the code was issued for.
+    var usedRedirect = redirectUri;
 
     // Inside Telegram the customer is already signed in: one tap.
     if (await platform.hasTelegramApp()) {
@@ -85,9 +109,10 @@ class TelegramLogin {
     }
 
     if (!handled) {
+      usedRedirect = browserRedirectUri;
       final outcome = await platform.authenticateInBrowser(
         authorizationUrl(challenge: challenge, state: state),
-        callbackScheme: redirectUri.scheme,
+        redirectUri: browserRedirectUri,
       );
       callback = switch (outcome) {
         BrowserRedirect(:final uri) => uri,
@@ -98,7 +123,7 @@ class TelegramLogin {
 
     if (callback == null) throw const TelegramLoginCancelled();
     final code = codeFromRedirect(callback, expectedState: state);
-    return _exchange(code: code, verifier: verifier);
+    return _exchange(code: code, verifier: verifier, redirect: usedRedirect);
   }
 
   /// The browser authorization request (the standard OIDC endpoint).
@@ -106,7 +131,7 @@ class TelegramLogin {
     queryParameters: {
       'client_id': clientId,
       'response_type': 'code',
-      'redirect_uri': redirectUri.toString(),
+      'redirect_uri': browserRedirectUri.toString(),
       'scope': scopes.join(' '),
       'state': state,
       'code_challenge': challenge,
@@ -142,7 +167,7 @@ class TelegramLogin {
     }
   }
 
-  Future<String> _exchange({required String code, required String verifier}) async {
+  Future<String> _exchange({required String code, required String verifier, required Uri redirect}) async {
     final Response<Object?> response;
     try {
       response = await _http.postUri<Object?>(
@@ -151,7 +176,7 @@ class TelegramLogin {
           'grant_type': 'authorization_code',
           'client_id': clientId,
           'code': code,
-          'redirect_uri': redirectUri.toString(),
+          'redirect_uri': redirect.toString(),
           'code_verifier': verifier,
         },
         options: Options(
@@ -177,9 +202,8 @@ class TelegramLogin {
   _PendingRedirect _waitForRedirect() =>
       _PendingRedirect(links: platform.deepLinks.where(isRedirect), resumes: platform.resumes, grace: resumeGrace);
 
-  /// Whether [uri] is our redirect coming back.
-  bool isRedirect(Uri uri) =>
-      uri.scheme == redirectUri.scheme && uri.host == redirectUri.host && uri.path == redirectUri.path;
+  /// Whether [uri] is the Telegram app's redirect coming back.
+  bool isRedirect(Uri uri) => matchesRedirect(uri, redirectUri);
 
   String _randomToken(int bytes) =>
       base64UrlEncode(List<int>.generate(bytes, (_) => _random.nextInt(256))).replaceAll('=', '');
@@ -202,9 +226,17 @@ class TelegramLogin {
 String codeChallengeFor(String verifier) =>
     base64UrlEncode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
 
+/// Whether [uri] arrives at [redirect]: same scheme, host and path, the query
+/// aside. A trailing slash is not a different place.
+bool matchesRedirect(Uri uri, Uri redirect) {
+  String path(Uri u) => u.path.endsWith('/') ? u.path.substring(0, u.path.length - 1) : u.path;
+  return uri.scheme == redirect.scheme && uri.host == redirect.host && path(uri) == path(redirect);
+}
+
 /// The authorization code from Telegram's redirect. A `state` that came back
-/// must be ours; Telegram's app flow does not echo one, and PKCE binds the
-/// code to this attempt either way.
+/// must be ours; Telegram's app flow does not echo one, nor does the button
+/// on its "Almost done" page, and PKCE binds the code to this attempt either
+/// way.
 String codeFromRedirect(Uri redirect, {required String expectedState}) {
   final params = redirect.queryParameters;
   final error = params['error'];
@@ -272,8 +304,9 @@ abstract class TelegramLoginPlatform {
   /// Opens [url] in another app; false when nothing handles it.
   Future<bool> launchExternal(Uri url);
 
-  /// Opens the authorization page in the system browser sheet.
-  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required String callbackScheme});
+  /// Opens the authorization page in the system browser sheet, to come back
+  /// through [redirectUri].
+  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required Uri redirectUri});
 
   /// Deep links delivered while the app is running.
   Stream<Uri> get deepLinks;
@@ -337,12 +370,12 @@ class DeviceTelegramLoginPlatform implements TelegramLoginPlatform {
   }
 
   @override
-  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required String callbackScheme}) async {
+  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required Uri redirectUri}) async {
     if (Platform.isIOS) {
       // ASWebAuthenticationSession: shares Safari's Telegram session and
       // dismisses itself on the redirect.
       try {
-        final result = await FlutterWebAuth2.authenticate(url: url.toString(), callbackUrlScheme: callbackScheme);
+        final result = await FlutterWebAuth2.authenticate(url: url.toString(), callbackUrlScheme: redirectUri.scheme);
         return BrowserRedirect(Uri.parse(result));
       } on PlatformException catch (error) {
         if (error.code == 'CANCELED' || error.code == 'CANCELLED') return const BrowserCancelled();
@@ -352,7 +385,7 @@ class DeviceTelegramLoginPlatform implements TelegramLoginPlatform {
     // Android: a Custom Tab, as Telegram's SDK does. The redirect reopens
     // MainActivity (singleTask clears the tab) and arrives as a deep link.
     final pending = _PendingRedirect(
-      links: deepLinks.where((uri) => uri.scheme == callbackScheme),
+      links: deepLinks.where((uri) => matchesRedirect(uri, redirectUri)),
       resumes: resumes,
       grace: resumeGrace,
     );

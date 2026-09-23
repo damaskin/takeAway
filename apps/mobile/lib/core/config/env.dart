@@ -18,14 +18,24 @@ abstract final class Env {
   /// The public website, for links the app shares.
   static const webOrigin = String.fromEnvironment('WEB_ORIGIN', defaultValue: 'https://takeaway.md');
 
-  /// Where Telegram Login sends the customer back. Must be registered for
-  /// the app in @BotFather (Login Widget → the app's redirect URI). The
-  /// default custom scheme needs nothing else; an App Link / Universal Link
-  /// (`https://app<id>-login.tg.dev/tglogin`) also needs the host added to
-  /// the Android intent filter and iOS Associated Domains.
+  /// Where Telegram Login sends the customer back from the Telegram app, and
+  /// on iOS from the page too. Must be listed under the bot's Redirect URIs
+  /// in @BotFather (Login Widget). The custom scheme needs nothing else.
   static const telegramRedirectUri = String.fromEnvironment(
     'TELEGRAM_REDIRECT_URI',
     defaultValue: 'takeaway://tglogin',
+  );
+
+  /// Where Telegram Login's page, open in a Custom Tab on Android, sends the
+  /// customer back: the App Link @BotFather issued for the Android app
+  /// (Login Widget → Native Login → App URL, plus `/tglogin`). Chrome only
+  /// leaves a page for an app on a tap, and the page at this address has the
+  /// button for it. The host must match the autoVerify intent filter in
+  /// AndroidManifest.xml. Empty sends the page to [telegramRedirectUri],
+  /// which strands the customer after they confirm.
+  static const telegramAndroidAppLink = String.fromEnvironment(
+    'TELEGRAM_ANDROID_APP_LINK',
+    defaultValue: 'https://app3004048938-login.tg.dev/tglogin',
   );
 
   /// Google Sign-In. The server client id is the *web* OAuth client — ID

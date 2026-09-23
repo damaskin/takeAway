@@ -18,6 +18,7 @@ class FakePlatform implements TelegramLoginPlatform {
 
   final launched = <Uri>[];
   final browsed = <Uri>[];
+  final browserRedirects = <Uri>[];
   final _links = StreamController<Uri>.broadcast();
   final _resumes = StreamController<void>.broadcast();
 
@@ -37,8 +38,9 @@ class FakePlatform implements TelegramLoginPlatform {
   }
 
   @override
-  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required String callbackScheme}) async {
+  Future<BrowserOutcome> authenticateInBrowser(Uri url, {required Uri redirectUri}) async {
     browsed.add(url);
+    browserRedirects.add(redirectUri);
     return onBrowser?.call(url) ?? const BrowserCancelled();
   }
 
@@ -51,6 +53,7 @@ class FakePlatform implements TelegramLoginPlatform {
 
 const idToken = 'eyJhbGciOiJSUzI1NiJ9.eyJpZCI6OTg3NjU0MzIxfQ.c2ln';
 final redirect = Uri.parse('takeaway://tglogin');
+final appLink = Uri.parse('https://app1234567-login.tg.dev/tglogin');
 
 void main() {
   group('PKCE', () {
@@ -60,6 +63,21 @@ void main() {
         codeChallengeFor('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
         'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
       );
+    });
+  });
+
+  group('matchesRedirect', () {
+    test('compares where a link goes, not what it carries', () {
+      expect(matchesRedirect(Uri.parse('takeaway://tglogin?code=abc'), redirect), isTrue);
+      expect(matchesRedirect(Uri.parse('https://app1234567-login.tg.dev/tglogin?code=abc'), appLink), isTrue);
+      expect(matchesRedirect(Uri.parse('https://app1234567-login.tg.dev/tglogin/?code=abc'), appLink), isTrue);
+    });
+
+    test('tells other links apart', () {
+      expect(matchesRedirect(Uri.parse('takeaway://somewhere-else?code=abc'), redirect), isFalse);
+      expect(matchesRedirect(Uri.parse('https://app7654321-login.tg.dev/tglogin?code=abc'), appLink), isFalse);
+      expect(matchesRedirect(Uri.parse('https://app1234567-login.tg.dev/other?code=abc'), appLink), isFalse);
+      expect(matchesRedirect(Uri.parse('http://app1234567-login.tg.dev/tglogin?code=abc'), appLink), isFalse);
     });
   });
 
@@ -95,9 +113,10 @@ void main() {
     late FakeAdapter http;
     late Dio dio;
 
-    TelegramLogin flow(FakePlatform platform) => TelegramLogin(
+    TelegramLogin flow(FakePlatform platform, {Uri? browserRedirect}) => TelegramLogin(
       clientId: '7412345678',
       redirectUri: redirect,
+      browserRedirectUri: browserRedirect,
       platform: platform,
       http: dio,
       resumeGrace: const Duration(milliseconds: 50),
@@ -213,6 +232,42 @@ void main() {
 
       expect(await flow(platform).login(), idToken);
       expect((sent('/token').data as Map)['code'], 'tab-code');
+    });
+
+    // Chrome will not open a custom scheme from a page that redirects on its
+    // own, so the page comes back through Telegram's App Link — by the
+    // "Almost done" button, which drops the state.
+    test("an Android tab comes back through Telegram's App Link, state or not", () async {
+      answer();
+      late Uri page;
+      final platform = FakePlatform(
+        telegramInstalled: false,
+        onBrowser: (url) {
+          page = url;
+          return BrowserAwaitsDeepLink(Future.value(Uri.parse('$appLink?code=tab-code')));
+        },
+      );
+
+      expect(await flow(platform, browserRedirect: appLink).login(), idToken);
+      expect(page.queryParameters['redirect_uri'], appLink.toString());
+      expect(platform.browserRedirects.single, appLink);
+      final exchange = Map<String, dynamic>.from(sent('/token').data as Map);
+      expect(exchange['code'], 'tab-code');
+      expect(exchange['redirect_uri'], appLink.toString(), reason: 'the redirect the code was issued for');
+      expect(codeChallengeFor(exchange['code_verifier'] as String), page.queryParameters['code_challenge']);
+    });
+
+    test('the Telegram app keeps the custom scheme when the page has an App Link', () async {
+      answer();
+      final platform = FakePlatform();
+      final pending = flow(platform, browserRedirect: appLink).login();
+      await pumpEventQueue();
+
+      expect(sent('/crossapp').uri.queryParameters['redirect_uri'], 'takeaway://tglogin');
+      platform.sendLink(Uri.parse('takeaway://tglogin?code=app-code'));
+      expect(await pending, idToken);
+      expect((sent('/token').data as Map)['redirect_uri'], 'takeaway://tglogin');
+      expect(platform.browsed, isEmpty);
     });
 
     test('closing the page is a cancellation', () async {

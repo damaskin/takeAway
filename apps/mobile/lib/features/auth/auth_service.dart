@@ -176,6 +176,9 @@ final telegramLoginFactoryProvider = Provider<TelegramLogin Function(String clie
       (clientId) => TelegramLogin(
         clientId: clientId,
         redirectUri: Uri.parse(Env.telegramRedirectUri),
+        browserRedirectUri: Platform.isAndroid && Env.telegramAndroidAppLink.isNotEmpty
+            ? Uri.parse(Env.telegramAndroidAppLink)
+            : null,
         platform: DeviceTelegramLoginPlatform(),
       ),
 );
