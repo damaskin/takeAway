@@ -56,7 +56,7 @@ describe('KdsBoardPage ticket', () => {
         { provide: KdsApi, useValue: { list: () => of([order]) } },
         {
           provide: StoresApi,
-          useValue: { list: () => of([{ id: 'store-1', slug: 'centre', name: 'Центр', city: '' }]) },
+          useValue: { listMine: () => of([{ id: 'store-1', slug: 'centre', name: 'Центр', city: '' }]) },
         },
         { provide: KdsRealtimeService, useValue: { subscribeToStore: () => () => undefined } },
         { provide: AuthStore, useValue: { user: signal(null) } },

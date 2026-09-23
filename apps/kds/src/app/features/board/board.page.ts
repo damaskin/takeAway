@@ -9,7 +9,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { AuthStore } from '../../core/auth/auth.store';
 import { KdsApi, type KdsOrder, type KdsOrderStatus } from '../../core/kds/kds.service';
 import { KdsRealtimeService, type KdsOrderChanged } from '../../core/realtime/realtime.service';
-import { StoresApi, type StoreSummary } from '../../core/stores/stores.service';
+import { StoresApi, rememberStoreId, rememberedStoreId, type StoreSummary } from '../../core/stores/stores.service';
 
 type Column = 'NEW' | 'PREPARING' | 'READY';
 
@@ -321,14 +321,17 @@ export class KdsBoardPage implements OnInit, OnDestroy {
   private detachWs: (() => void) | null = null;
 
   ngOnInit(): void {
-    this.storesApi.list().subscribe({
+    // Only the stores this person runs, starting with the one the tablet was
+    // set up for. The public list used to put another brand's café first,
+    // and the board opened on "Store is outside your scope".
+    this.storesApi.listMine().subscribe({
       next: (list) => {
         this.stores.set(list);
-        const first = list[0];
-        if (first) {
-          this.selectedStoreId.set(first.id);
+        const start = list.find((s) => s.id === rememberedStoreId()) ?? list[0];
+        if (start) {
+          this.selectedStoreId.set(start.id);
           this.refresh();
-          this.wireRealtime(first.id);
+          this.wireRealtime(start.id);
         }
       },
     });
@@ -344,6 +347,7 @@ export class KdsBoardPage implements OnInit, OnDestroy {
 
   onStoreChange(event: Event): void {
     const id = (event.target as HTMLSelectElement).value;
+    rememberStoreId(id);
     this.selectedStoreId.set(id);
     this.refresh();
     this.wireRealtime(id);
