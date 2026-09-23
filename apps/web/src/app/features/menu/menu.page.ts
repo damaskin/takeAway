@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, ProductSummary, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 
@@ -189,6 +190,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 export class MenuPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -231,12 +233,11 @@ export class MenuPage implements OnInit {
 
   startPrepAt(store: StoreDetail): string {
     const target = new Date(Date.now() + Math.max(0, store.currentEtaSeconds) * 1000);
-    return target.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(target, store.timezone);
   }
 
   price(cents: number): string {
-    const currency = this.store()?.currency ?? 'USD';
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.store()?.currency);
   }
 
   productImageBg(p: ProductSummary): string {

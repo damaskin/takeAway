@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot, StoreListItem } from '@takeaway/shared-types';
 import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -630,6 +631,7 @@ export class CheckoutPage implements OnInit {
   private readonly promo = inject(PromoService);
   private readonly loyalty = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -642,6 +644,8 @@ export class CheckoutPage implements OnInit {
   readonly mode = signal<PickupMode>('ASAP');
   /** Prices are the store's, whatever currency the customer's profile has. */
   readonly currency = signal<string | null>(null);
+  /** Pickup times are the store's clock, wherever the customer is browsing from. */
+  readonly storeTimezone = signal<string | null>(null);
   /**
    * Whether the store takes an ASAP order right now — its switch and its
    * working hours, as the API computes them. After hours only a scheduled
@@ -788,6 +792,7 @@ export class CheckoutPage implements OnInit {
     this.taxRateBps.set(store.taxRateBps);
     this.taxIncludedInPrice.set(store.taxIncludedInPrice);
     this.currency.set(store.currency);
+    this.storeTimezone.set(store.timezone ?? null);
     // `!== false`: an API that predates the field keeps ASAP available.
     this.storeOpen.set(store.openNow !== false);
     if (!this.storeOpen()) this.selectMode('SCHEDULED');
@@ -1203,18 +1208,15 @@ export class CheckoutPage implements OnInit {
   }
 
   price(cents: number): string {
-    const currency = this.currency();
-    if (!currency) return (cents / 100).toFixed(2);
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.currency());
   }
 
   private formatTime(date: Date): string {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return this.fmt.time(date, this.storeTimezone());
   }
 
   formatKm(metres: number): string {
-    if (metres < 1000) return `${metres} m`;
-    return `${(metres / 1000).toFixed(1)} km`;
+    return this.fmt.distance(metres);
   }
 }
 

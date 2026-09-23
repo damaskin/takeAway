@@ -4,6 +4,7 @@ import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-k
 import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import {
@@ -305,6 +306,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly orders = inject(OrdersApi);
   private readonly realtime = inject(RealtimeService);
   private readonly authStore = inject(AuthStore);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly order = signal<OrderView | null>(null);
   readonly error = signal<string | null>(null);
@@ -536,10 +538,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', {
-      style: 'currency',
-      currency: this.order()?.currency ?? this.authStore.user()?.currency ?? 'USD',
-    }).format(cents / 100);
+    return this.fmt.money(cents, this.order()?.currency ?? this.authStore.user()?.currency);
   }
 
   isTerminal(status: OrderStatusString): boolean {

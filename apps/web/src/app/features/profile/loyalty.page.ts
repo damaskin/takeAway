@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
@@ -128,6 +129,7 @@ const TIER_NAMES: Record<LoyaltyAccount['tier'], string> = {
 })
 export class ProfileLoyaltyPage {
   private readonly loyalty = inject(LoyaltyService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly account = signal<LoyaltyAccount | null>(null);
   readonly error = signal<string | null>(null);
@@ -147,7 +149,6 @@ export class ProfileLoyaltyPage {
   }
 
   formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return this.fmt.dateTime(iso);
   }
 }

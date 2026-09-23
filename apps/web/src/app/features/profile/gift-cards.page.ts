@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
 
@@ -83,6 +84,7 @@ interface GiftRedemption {
 export class ProfileGiftCardsPage {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly rows = signal<GiftRedemption[] | null>(null);
   readonly error = signal<string | null>(null);
@@ -98,10 +100,6 @@ export class ProfileGiftCardsPage {
   }
 
   price(cents: number, currency: string): string {
-    try {
-      return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-    } catch {
-      return `${(cents / 100).toFixed(2)} ${currency}`;
-    }
+    return this.fmt.money(cents, currency);
   }
 }

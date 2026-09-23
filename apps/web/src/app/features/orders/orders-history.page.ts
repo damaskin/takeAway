@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { OrdersApi, type OrderStatusString, type OrderSummary } from '../../core/orders/orders.service';
 
@@ -136,7 +137,7 @@ const ACTIVE_STATUSES: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN
               <div class="flex items-center justify-between" style="gap: 12px; flex-wrap: wrap">
                 <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">
                   {{ (o.pickupMode === 'ASAP' ? 'tma.orders.pickupAsap' : 'tma.orders.pickupScheduled') | translate }}
-                  · {{ formatTime(o.pickupAt) }}
+                  · {{ formatTime(o.pickupAt, o.storeTimezone) }}
                 </span>
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 700; color: var(--color-caramel)"
@@ -152,6 +153,7 @@ const ACTIVE_STATUSES: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN
 })
 export class OrdersHistoryPage implements OnInit {
   private readonly api = inject(OrdersApi);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly tab = signal<Tab>('ACTIVE');
   readonly orders = signal<OrderSummary[]>([]);
@@ -201,15 +203,16 @@ export class OrdersHistoryPage implements OnInit {
   }
 
   price(cents: number, currency: string): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, currency);
   }
 
   formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return this.fmt.dayMonth(iso);
   }
 
-  formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  /** On the store's clock — the time the café promised. */
+  formatTime(iso: string, timeZone?: string | null): string {
+    return this.fmt.time(iso, timeZone);
   }
 
   private fetchFor(tab: Tab): void {

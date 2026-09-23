@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, StoreListItem, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -323,6 +324,7 @@ export class ProductPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly cart = inject(CartService);
   readonly authStore = inject(AuthStore);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly adding = signal(false);
   readonly addError = signal<string | null>(null);
@@ -499,9 +501,7 @@ export class ProductPage implements OnInit {
 
   price(cents: number): string {
     // The serving store's currency; the customer's profile currency is not what they pay in.
-    const currency = this.resolvedStore()?.currency;
-    if (!currency) return (cents / 100).toFixed(2);
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.resolvedStore()?.currency);
   }
 
   priceDelta(cents: number): string {
