@@ -90,6 +90,8 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           <button
             type="button"
             (click)="setPickup('ASAP')"
+            [disabled]="!storeOpen()"
+            [style.opacity]="storeOpen() ? 1 : 0.45"
             class="flex-1"
             [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
             [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
@@ -112,6 +114,11 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             {{ 'tma.checkout.schedule' | translate }}
           </button>
         </div>
+        @if (!storeOpen()) {
+          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+            'tma.checkout.closedNow' | translate
+          }}</span>
+        }
         @if (pickupMode() === 'SCHEDULED') {
           @if (slotsLoading()) {
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
@@ -119,7 +126,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             }}</span>
           } @else if (slots().length === 0) {
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">{{
-              'tma.checkout.noSlots' | translate
+              (storeOpen() ? 'tma.checkout.noSlots' : 'tma.checkout.noSlotsClosed') | translate
             }}</span>
           } @else {
             <div class="flex flex-wrap" style="gap: 8px">
@@ -409,6 +416,14 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly slots = signal<PickupSlot[]>([]);
   readonly slotsLoading = signal(false);
   readonly storeName = signal<string>('');
+  /** Prices are the store's, whatever currency the customer's profile has. */
+  readonly currency = signal<string | null>(null);
+  /**
+   * Whether the store takes an ASAP order right now — its switch and its
+   * working hours, as the API computes them. After hours only a scheduled
+   * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
+   */
+  readonly storeOpen = signal(true);
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
@@ -457,6 +472,13 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.activeStoreId = store.id;
         this.taxRateBps.set(store.taxRateBps);
         this.taxIncludedInPrice.set(store.taxIncludedInPrice);
+        this.currency.set(store.currency);
+        // `!== false`: an API that predates the field keeps ASAP available.
+        this.storeOpen.set(store.openNow !== false);
+        if (!this.storeOpen()) {
+          this.pickupMode.set('SCHEDULED');
+          this.loadSlots();
+        }
         this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
@@ -506,6 +528,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
+    if (mode === 'ASAP' && !this.storeOpen()) return;
     this.pickupMode.set(mode);
     this.tg.haptic('light');
     if (mode === 'SCHEDULED') this.loadSlots();
@@ -635,7 +658,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency: 'USD' }).format(cents / 100);
+    const currency = this.currency();
+    if (!currency) return (cents / 100).toFixed(2);
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
   }
 
   refreshMainButton(): void {

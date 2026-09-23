@@ -26,6 +26,12 @@ export interface StoreListItem {
   pickupPointType: PickupPointType;
   busyMeter: number;
   currentEtaSeconds: number;
+  /**
+   * An ASAP order placed now would be accepted: not closed, and within the
+   * store's working hours once the current ETA has passed. When false only
+   * scheduled pickup works.
+   */
+  openNow: boolean;
   /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */
   taxRateBps: number;
   /** True when the listed prices already include the tax. */

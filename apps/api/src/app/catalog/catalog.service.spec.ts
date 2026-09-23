@@ -33,6 +33,7 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     minOrderCents: 0,
     galleryUrls: [],
     brandId: 'brand-1',
+    workingHours: [],
     ...overrides,
   };
 }
@@ -88,6 +89,57 @@ describe('CatalogService', () => {
     expect(result.map((s) => s.id)).toEqual(['near']);
     expect(result[0]?.distanceMeters).toBeGreaterThan(0);
     expect(result[0]?.distanceMeters).toBeLessThan(5000);
+  });
+
+  describe('openNow', () => {
+    // 07:00–22:00 every day, Dubai time (UTC+4, no DST).
+    const dayShift = Array.from({ length: 7 }, (_, weekday) => ({
+      weekday,
+      opensAt: 7 * 60,
+      closesAt: 22 * 60,
+      isClosed: false,
+    }));
+
+    afterEach(() => jest.useRealTimers());
+
+    it('is true inside working hours', async () => {
+      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 12:00 local
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store?.openNow).toBe(true);
+    });
+
+    it('is false after hours even though the store is switched on', async () => {
+      jest.useFakeTimers({ now: new Date('2026-09-22T19:46:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 23:46 local
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store?.status).toBe('OPEN');
+      expect(store?.openNow).toBe(false);
+    });
+
+    it('is false when an ASAP order would only be ready after closing', async () => {
+      // 21:57 local; the 6-minute base ETA lands at 22:03, which order creation refuses.
+      jest.useFakeTimers({ now: new Date('2026-09-22T17:57:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store?.openNow).toBe(false);
+    });
+
+    it('treats a store with no hours on file as open, like order creation does', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.openNow).toBe(true);
+    });
+
+    it('is reported on the store page too', async () => {
+      jest.useFakeTimers({ now: new Date('2026-09-22T19:46:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      prisma.store.findFirst.mockResolvedValue({
+        ...storeFixture({ workingHours: dayShift }),
+        brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway', logoUrl: null, themeOverrides: null },
+      });
+      const store = await service.getStore('store-1');
+      expect(store.openNow).toBe(false);
+    });
   });
 
   it('throws 404 when store not found', async () => {

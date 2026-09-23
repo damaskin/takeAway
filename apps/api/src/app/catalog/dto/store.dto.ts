@@ -58,6 +58,13 @@ export class StoreListItemDto {
   @ApiProperty({ description: 'ETA for an ASAP order, in seconds. Store overhead plus the live queue.' })
   currentEtaSeconds!: number;
 
+  @ApiProperty({
+    description:
+      'True when an ASAP order placed now would be accepted: the store is not closed and is still within ' +
+      'its working hours (store timezone) once the current ETA has passed. False means scheduled pickup only.',
+  })
+  openNow!: boolean;
+
   @ApiProperty({ description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 = no tax line.' })
   taxRateBps!: number;
 

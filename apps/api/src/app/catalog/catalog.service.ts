@@ -3,6 +3,7 @@ import type { StoreFulfillment } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
@@ -37,6 +38,7 @@ export class CatalogService {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
       },
+      include: { workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } } },
       orderBy: [{ name: 'asc' }],
     });
 
@@ -48,28 +50,34 @@ export class CatalogService {
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
     const radius = query.radius ?? 5000;
 
+    const now = new Date();
+
     return stores
-      .map((s) => ({
-        id: s.id,
-        brandId: s.brandId,
-        slug: s.slug,
-        name: s.name,
-        addressLine: s.addressLine,
-        city: s.city,
-        country: s.country,
-        latitude: s.latitude,
-        longitude: s.longitude,
-        status: s.status,
-        fulfillmentTypes: this.filterFulfillment(s.fulfillmentTypes),
-        pickupPointType: s.pickupPointType,
-        busyMeter: s.busyMeter,
-        currentEtaSeconds: s.baseEtaSeconds + (waits.get(s.id) ?? 0),
-        taxRateBps: s.taxRateBps,
-        taxIncludedInPrice: s.taxIncludedInPrice,
-        currency: s.currency,
-        heroImageUrl: s.heroImageUrl,
-        distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
-      }))
+      .map((s) => {
+        const currentEtaSeconds = s.baseEtaSeconds + (waits.get(s.id) ?? 0);
+        return {
+          id: s.id,
+          brandId: s.brandId,
+          slug: s.slug,
+          name: s.name,
+          addressLine: s.addressLine,
+          city: s.city,
+          country: s.country,
+          latitude: s.latitude,
+          longitude: s.longitude,
+          status: s.status,
+          fulfillmentTypes: this.filterFulfillment(s.fulfillmentTypes),
+          pickupPointType: s.pickupPointType,
+          busyMeter: s.busyMeter,
+          currentEtaSeconds,
+          openNow: openNow(s, now, currentEtaSeconds),
+          taxRateBps: s.taxRateBps,
+          taxIncludedInPrice: s.taxIncludedInPrice,
+          currency: s.currency,
+          heroImageUrl: s.heroImageUrl,
+          distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
+        };
+      })
       .filter((s) => !hasPoint || (s.distanceMeters ?? Infinity) <= radius)
       .sort((a, b) => {
         if (a.distanceMeters !== null && b.distanceMeters !== null) return a.distanceMeters - b.distanceMeters;
@@ -115,6 +123,9 @@ export class CatalogService {
     });
     if (!store) throw new NotFoundException('Store not found');
 
+    const currentEtaSeconds =
+      store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store.id, store.kitchenParallelism));
+
     return {
       id: store.id,
       brandId: store.brandId,
@@ -129,8 +140,8 @@ export class CatalogService {
       fulfillmentTypes: this.filterFulfillment(store.fulfillmentTypes),
       pickupPointType: store.pickupPointType,
       busyMeter: store.busyMeter,
-      currentEtaSeconds:
-        store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store.id, store.kitchenParallelism)),
+      currentEtaSeconds,
+      openNow: openNow(store, new Date(), currentEtaSeconds),
       taxRateBps: store.taxRateBps,
       taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,
@@ -292,6 +303,21 @@ export class CatalogService {
       })),
     };
   }
+}
+
+/**
+ * Whether an ASAP order placed now would be accepted: the store is not
+ * switched off, and it is still open when that order would be ready — the
+ * same working-hours check order creation enforces. Without this the clients
+ * offered ASAP after hours and the customer met a bare 400 at checkout.
+ */
+function openNow(
+  store: { status: string; timezone: string; workingHours: readonly WorkingHour[] },
+  now: Date,
+  etaSeconds: number,
+): boolean {
+  if (store.status === 'CLOSED') return false;
+  return isOpenAt(store.workingHours, new Date(now.getTime() + etaSeconds * 1000), store.timezone);
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
