@@ -11,6 +11,10 @@ export interface BrandDto {
   currency: string;
   locale: string;
   logoUrl: string | null;
+  /** Where the brand stands in moderation; drives the banner in the admin shell. */
+  moderationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  moderationNote?: string | null;
+  submittedAt?: string;
 }
 
 export interface StoreWorkingHourDto {
