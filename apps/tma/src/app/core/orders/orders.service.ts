@@ -36,6 +36,8 @@ export interface OrderView {
   currency: string;
   storeId: string;
   storeName: string;
+  /** IANA zone of the store; absent from an API older than this build. */
+  storeTimezone?: string | null;
   storeLatitude: number;
   storeLongitude: number;
   storeAddress: string | null;
@@ -59,6 +61,8 @@ export interface OrderSummary {
   currency: string;
   storeId: string;
   storeName: string;
+  /** IANA zone of the store; absent from an API older than this build. */
+  storeTimezone?: string | null;
   itemCount: number;
   createdAt: string;
 }

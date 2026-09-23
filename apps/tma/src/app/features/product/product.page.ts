@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -187,6 +188,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly translate = inject(TranslateService);
   private readonly activeStore = inject(ActiveStoreService);
+  private readonly fmt = inject(LocaleFormatService);
   readonly authStore = inject(TmaAuthStore);
 
   readonly product = signal<ProductDetail | null>(null);
@@ -302,9 +304,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    const currency = this.currency();
-    if (!currency) return (cents / 100).toFixed(2);
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.currency());
   }
 
   minutes(seconds: number): number {
