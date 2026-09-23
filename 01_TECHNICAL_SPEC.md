@@ -609,7 +609,7 @@ POST   /me/referrals/apply           { code }
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow, timezone
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде
@@ -629,8 +629,11 @@ DELETE /cart
 POST   /orders                       { cartId, pickupMode, pickupAt?, couponCode?, giftCardCode?, fulfillmentType, deliveryAddress? } → { id, orderCode, qrToken, etaSeconds }
                                      // корзина пересчитывается по текущему меню; если цена или состав изменились —
                                      // 409 { code: CART_CHANGED, items: [{ cartItemId, productName, reason, previousUnitPriceCents, unitPriceCents }] }
-                                     // и корзина уже обновлена; закрытая точка или неодобренный бренд — отказ
-GET    /orders/:id
+                                     // и корзина уже обновлена; закрытая точка или неодобренный бренд — отказ;
+                                     // ошибки оформления несут code (STORE_CLOSED_AT_TIME, PICKUP_SLOT_FULL, …),
+                                     // проверка промокода — reasonCode; клиенты переводят их по коду
+                                     // пустое имя в заказе заполняется именем из профиля покупателя
+GET    /orders/:id                   // включает storeTimezone — время выдачи показывается по часам точки
 POST   /orders/:id/cancel
 POST   /orders/:id/location          { lat, lng }  // геофенсинг (триггер «I'm here» при попадании в радиус)
 
@@ -725,12 +728,12 @@ GET/POST               /admin/campaigns
 POST                   /admin/campaigns/:id/send         (синхронный fan-out)
 DELETE                 /admin/campaigns/:id
 
-# Аналитика
-GET                    /admin/analytics/summary
+# Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
+GET                    /admin/analytics/summary?days=7|14|30   // цифры за период + изменения к предыдущему такому же
 GET                    /admin/analytics/revenue
 GET                    /admin/analytics/top-products
 GET                    /admin/analytics/cohort
-GET                    /admin/analytics/stores
+GET                    /admin/analytics/stores?days=
 
 # POS
 GET                    /admin/pos/status
