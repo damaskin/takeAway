@@ -24,7 +24,7 @@ export interface KdsOrder {
   createdAt: string;
   customerName: string | null;
   notes: string | null;
-  items: Array<{ productSnapshot: { name?: string }; quantity: number }>;
+  items: Array<{ productSnapshot: unknown; quantity: number }>;
 }
 
 @Injectable({ providedIn: 'root' })

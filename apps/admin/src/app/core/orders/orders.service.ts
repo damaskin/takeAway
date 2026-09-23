@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import type { OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -33,6 +34,11 @@ export interface AdminOrderSummary {
 export interface AdminOrderItem {
   id: string;
   name: string;
+  /** Size first. Empty on orders placed before options were snapshotted. */
+  variations: OrderItemVariation[];
+  modifierLines: OrderItemModifier[];
+  /** The customer's note for this line. */
+  notes: string | null;
   quantity: number;
   unitPriceCents: number;
   totalCents: number;

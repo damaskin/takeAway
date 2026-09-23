@@ -1,4 +1,12 @@
-import { ADMIN_ROLES, type AdminRole, type NavKey, canAccess, defaultLandingFor, navLink } from './permissions';
+import {
+  ADMIN_ROLES,
+  type AdminRole,
+  type NavKey,
+  canAccess,
+  canOnStores,
+  defaultLandingFor,
+  navLink,
+} from './permissions';
 
 const ALL_KEYS = Object.keys(ADMIN_ROLES) as NavKey[];
 
@@ -95,5 +103,23 @@ describe('permissions map', () => {
       const links = ALL_KEYS.map((k) => navLink(k));
       expect(new Set(links).size).toBe(links.length);
     });
+  });
+});
+
+describe('canOnStores', () => {
+  it('leaves creating and deleting stores to the brand owner and super-admin', () => {
+    expect(canOnStores('SUPER_ADMIN', 'create')).toBe(true);
+    expect(canOnStores('BRAND_ADMIN', 'delete')).toBe(true);
+    expect(canOnStores('STORE_MANAGER', 'create')).toBe(false);
+    expect(canOnStores('STORE_MANAGER', 'delete')).toBe(false);
+    expect(canOnStores('STAFF', 'create')).toBe(false);
+  });
+
+  it('lets a manager run their store but keeps STAFF read-only', () => {
+    expect(canOnStores('STORE_MANAGER', 'edit')).toBe(true);
+    expect(canOnStores('STORE_MANAGER', 'manageStaff')).toBe(true);
+    expect(canOnStores('STAFF', 'edit')).toBe(false);
+    expect(canOnStores('STAFF', 'manageStaff')).toBe(false);
+    expect(canOnStores(null, 'edit')).toBe(false);
   });
 });

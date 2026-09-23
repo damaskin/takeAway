@@ -17,12 +17,14 @@ import {
   Prisma,
   Role,
   StoreFulfillment,
+  StoreStatus,
 } from '@prisma/client';
 import { Queue } from 'bullmq';
 
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { SecretCipher } from '../common/crypto/secret-cipher';
+import { canonicalTimeZone, isIanaTimeZone, prevailingTimeZone } from '../common/time/time-zone';
 import { PrismaService } from '../prisma/prisma.service';
 import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
@@ -382,8 +384,9 @@ export class PosService {
    * Upserts {@link Store} rows for the brand by `(externalProvider, externalId)`.
    * Lat/lng/timezone are required for native takeAway stores (used by ETA
    * and proximity), so we leave the row's existing geo data untouched on
-   * update and stamp safe placeholders on insert. The brand admin still
-   * needs to land on the store editor to fill geo before customers see it.
+   * update and stamp placeholders on insert. New rows arrive CLOSED: 0,0 or
+   * a UTC placeholder fail the admin's readiness checks, and the brand admin
+   * opens the store once the editor has the real location and zone.
    */
   async upsertImportedStores(
     integrationId: string,
@@ -394,6 +397,15 @@ export class PosService {
       select: { brandId: true, provider: true, brand: { select: { currency: true } } },
     });
     if (!integration) throw new NotFoundException('Integration not found');
+
+    // POS providers rarely report a zone; the brand's existing stores are
+    // the next best source. Without either the store stays on the UTC
+    // placeholder, which the readiness checks flag.
+    const siblings = await this.prisma.store.findMany({
+      where: { brandId: integration.brandId },
+      select: { timezone: true },
+    });
+    const brandTimeZone = prevailingTimeZone(siblings.map((s) => s.timezone));
 
     let created = 0;
     let updated = 0;
@@ -424,8 +436,9 @@ export class PosService {
             country: d.country ?? '—',
             latitude: d.latitude ?? 0,
             longitude: d.longitude ?? 0,
-            timezone: d.timezone ?? 'UTC',
+            timezone: isIanaTimeZone(d.timezone) ? canonicalTimeZone(d.timezone) : (brandTimeZone ?? 'UTC'),
             currency: integration.brand.currency,
+            status: StoreStatus.CLOSED,
             // POS providers don't model fulfillment, so seed the one mode
             // every counter supports. Without it the store advertises no way
             // to be served and the storefront can't offer delivery/pickup

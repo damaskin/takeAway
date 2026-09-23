@@ -2,8 +2,8 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { PickupSlot } from '@takeaway/shared-types';
-import { computeTax } from '@takeaway/utils';
+import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
+import { computeTax, isCartChangedError } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -74,6 +74,9 @@ interface Step {
             <a routerLink="/menu" class="underline">{{ 'web.checkout.browseMenu' | translate }}</a
             >.
           </p>
+          @if (error()) {
+            <p class="text-sm text-center mt-4" style="color: var(--color-berry)">{{ error() }}</p>
+          }
         } @else {
           <div
             class="flex flex-col items-center"
@@ -1116,8 +1119,43 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.submitting.set(false);
+        const body = (err as { error?: unknown }).error;
+        if (isCartChangedError(body)) {
+          this.onCartChanged(c.storeId, body);
+          return;
+        }
         this.error.set(extractMessage(err));
       },
+    });
+  }
+
+  /**
+   * The server priced the cart again against today's menu and refused the
+   * order: a price moved, or something in the basket is gone. It has already
+   * brought the cart up to date, so reloading shows what the order costs now.
+   * Promo, points and gift card were each worked out for the old total, so
+   * they come off; the codes stay typed in, one tap re-applies them.
+   */
+  private onCartChanged(storeId: string, conflict: CartChangedError): void {
+    const removed = [...new Set(conflict.items.filter((i) => i.unitPriceCents === null).map((i) => i.productName))];
+    const hadDiscounts = this.promoCode() !== null || this.pointsSpent() > 0 || this.giftCardCode() !== null;
+    this.clearPromo();
+    this.clearPoints();
+    this.clearGiftCard();
+    this.error.set(
+      [
+        this.translate.instant('web.checkout.cartChanged'),
+        removed.length > 0
+          ? this.translate.instant('web.checkout.cartChangedRemoved', { names: removed.join(', ') })
+          : '',
+        hadDiscounts ? this.translate.instant('web.checkout.cartChangedDiscounts') : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+    );
+    this.cartService.load(storeId).subscribe({
+      next: (cart) => this.cart.set(cart),
+      error: () => undefined,
     });
   }
 
