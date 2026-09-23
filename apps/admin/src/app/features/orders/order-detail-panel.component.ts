@@ -428,10 +428,17 @@ export class OrderDetailPanelComponent {
     } else if (typeof p['to'] === 'string') {
       parts.push(this.statusLabel(p['to']));
     }
-    if (typeof p['reason'] === 'string') parts.push(p['reason']);
+    if (typeof p['reason'] === 'string') parts.push(this.reasonLabel(p['reason']));
     if (typeof p['amountCents'] === 'number') parts.push(this.money(p['amountCents'], currency));
     if (typeof p['distanceM'] === 'number') parts.push(this.fmt.distance(p['distanceM']));
     return parts.join(' · ');
+  }
+
+  /** A known reason code in words («оплата не поступила вовремя»); anything else as sent. */
+  private reasonLabel(reason: string): string {
+    const key = `admin.orderDetail.reasons.${reason}`;
+    const text = this.translate.instant(key);
+    return text === key ? reason : text;
   }
 
   private eventLabel(type: string, payload: Record<string, unknown>): string {

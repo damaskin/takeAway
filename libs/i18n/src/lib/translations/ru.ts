@@ -849,6 +849,13 @@ export const TRANSLATIONS_RU = {
         riderAssigned: 'Назначен курьер',
         pointsMultiplier: 'Бонусы ×{{value}}',
       },
+      reasons: {
+        payment_timeout: 'оплата не поступила вовремя',
+        not_accepted: 'кухня не приняла заказ',
+        requested_by_customer: 'по просьбе клиента',
+        duplicate: 'дубль заказа',
+        fraudulent: 'мошенничество',
+      },
     },
     orders: {
       title: 'Заказы',

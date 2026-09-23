@@ -102,17 +102,23 @@ export class OrderExpiryService {
   }
 
   /**
-   * Expire one order and give back everything it was holding. Re-reads the
-   * status inside the transaction: a payment can land between the sweep's
-   * query and this call, and that customer must keep their coffee.
+   * Expire one order and give back everything it was holding.
+   *
+   * The order is claimed first, with an update that only matches while it
+   * is still CREATED. A payment can land between the sweep's query and this
+   * call, and that customer must keep their coffee; and two sweepers (two
+   * API instances, or the old and new container during a deploy) used to
+   * both read CREATED and both hand back the promo, the gift-card balance
+   * and the points — twice the money back. Now exactly one claim wins and
+   * the others match nothing.
    */
   async expire(orderId: string, reason: ExpiryReason = 'payment_timeout'): Promise<boolean> {
     const expired = await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: { id: true, status: true },
+      const claimed = await tx.order.updateMany({
+        where: { id: orderId, status: OrderStatus.CREATED },
+        data: { status: OrderStatus.EXPIRED, expiredAt: new Date() },
       });
-      if (!order || order.status !== OrderStatus.CREATED) return null;
+      if (claimed.count === 0) return null;
 
       await this.promo.releaseForOrder(tx, orderId);
       await this.giftCards.releaseForOrder(tx, orderId);
@@ -121,8 +127,6 @@ export class OrderExpiryService {
       return tx.order.update({
         where: { id: orderId },
         data: {
-          status: OrderStatus.EXPIRED,
-          expiredAt: new Date(),
           events: {
             create: {
               type: 'STATUS_CHANGED',
