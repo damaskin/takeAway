@@ -29,7 +29,8 @@ export const MAX_PRODUCT_IMAGES = 6;
  * Upper bounds keep a typo (an extra zero or three) from reaching an `Int`
  * column that overflows at 2^31 — a 500 instead of a clear 400.
  */
-const MAX_PRICE_CENTS = 100_000_000;
+// 10 000 000 in currency units: room for rupiah prices, still far below the column's limit.
+const MAX_PRICE_CENTS = 1_000_000_000;
 const MAX_PREP_SECONDS = 24 * 60 * 60;
 
 export class CreateProductDto {
