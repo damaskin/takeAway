@@ -66,6 +66,9 @@ for app in "${APPS[@]}"; do
     inject_global __SENTRY_DSN "${SENTRY_DSN_WEB:-}"
     inject_global __SENTRY_ENVIRONMENT "${SENTRY_ENVIRONMENT:-production}"
     inject_global __TELEGRAM_BOT_USERNAME "${TELEGRAM_BOT_USERNAME:-}"
+    # Empty keeps the legacy Login Widget; set it only once the bot is
+    # switched to OpenID Connect in @BotFather (see .env.production.example).
+    inject_global __TELEGRAM_CLIENT_ID "${TELEGRAM_LOGIN_CLIENT_ID:-}"
     inject_global __GOOGLE_CLIENT_ID "${GOOGLE_OAUTH_WEB_CLIENT_ID:-}"
     inject_global __APPLE_CLIENT_ID "${APPLE_OAUTH_SERVICES_ID:-}"
     inject_global __APPLE_REDIRECT_URI "${APPLE_OAUTH_REDIRECT_URI:-}"
