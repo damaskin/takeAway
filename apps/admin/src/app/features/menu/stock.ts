@@ -1,3 +1,4 @@
+import { formatTime } from '@takeaway/utils';
 import type { StopListEntryDto } from '../../core/catalog/admin-catalog.service';
 
 /**
@@ -30,14 +31,7 @@ export function nextMidnightIn(timeZone: string | null | undefined, now: Date = 
 
 /** "23:59"-style time of an instant in the store's zone. */
 export function formatStoreTime(iso: string, timeZone: string | null | undefined, locale: string): string {
-  const at = new Date(iso);
-  try {
-    return new Intl.DateTimeFormat(locale, { timeZone: timeZone || 'UTC', hour: '2-digit', minute: '2-digit' }).format(
-      at,
-    );
-  } catch {
-    return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(at);
-  }
+  return formatTime(iso, locale, timeZone || 'UTC');
 }
 
 function wallClock(timeZone: string, at: Date) {

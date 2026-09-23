@@ -1380,7 +1380,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       value: {
         percent: '{{value}}% off',
-        fixed: '${{value}} off',
+        fixed: '{{value}} off',
         bogo: 'Buy 1 get 1',
         pointsMultiplier: '{{value}}× pts',
       },

@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output, inject, signal } from '@angular
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../../core/orders/orders.service';
 
@@ -294,10 +295,10 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
               <span
                 style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); min-width: 108px"
               >
-                {{ time(event.createdAt) }}
+                {{ time(event.createdAt, o.storeTimezone) }}
               </span>
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)">
-                {{ event.type }}{{ eventDetail(event.payload) }}
+                {{ event.type }}{{ eventDetail(event.payload, o.currency) }}
               </span>
             </div>
           }
@@ -313,6 +314,7 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
 export class OrderDetailPanelComponent {
   private readonly api = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   @Input({ required: true }) set orderId(id: string) {
     this.load(id);
@@ -401,27 +403,23 @@ export class OrderDetailPanelComponent {
   }
 
   money(cents: number, currency: string): string {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, currency);
   }
 
-  time(iso: string): string {
-    return new Date(iso).toLocaleString([], {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  /** «23 сент., 05:33» on the store's clock — the year is noise in a timeline. */
+  time(iso: string, timeZone?: string | null): string {
+    return `${this.fmt.dayMonth(iso, timeZone)}, ${this.fmt.time(iso, timeZone)}`;
   }
 
   /** Surfaces the bits of an event payload a human would want to read. */
-  eventDetail(payload: unknown): string {
+  eventDetail(payload: unknown, currency: string): string {
     if (!payload || typeof payload !== 'object') return '';
     const p = payload as Record<string, unknown>;
     const parts: string[] = [];
     if (typeof p['from'] === 'string' && typeof p['to'] === 'string') parts.push(`${p['from']} → ${p['to']}`);
     else if (typeof p['to'] === 'string') parts.push(String(p['to']));
     if (typeof p['reason'] === 'string') parts.push(String(p['reason']));
-    if (typeof p['amountCents'] === 'number') parts.push(`${(p['amountCents'] as number) / 100}`);
+    if (typeof p['amountCents'] === 'number') parts.push(this.money(p['amountCents'] as number, currency));
     return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
   }
 }

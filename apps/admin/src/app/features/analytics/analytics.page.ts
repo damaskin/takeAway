@@ -1,4 +1,3 @@
-import { DecimalPipe } from '@angular/common';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -8,8 +7,8 @@ import {
   type RevenueSeries,
   type TopProduct,
 } from '../../core/analytics/analytics.service';
+import { LocaleFormatService } from '@takeaway/i18n';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { formatMoney } from '../../core/format/money';
 
 interface ChartBar {
   label: string;
@@ -26,7 +25,7 @@ interface ChartBar {
 @Component({
   selector: 'app-admin-analytics',
   standalone: true,
-  imports: [DecimalPipe, TranslatePipe],
+  imports: [TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between"
@@ -75,7 +74,7 @@ interface ChartBar {
                 [style.color]="(revenue()?.revenueDeltaPercent ?? 0) >= 0 ? '#3E8868' : 'var(--color-berry)'"
               >
                 {{ (revenue()?.revenueDeltaPercent ?? 0) >= 0 ? '▲' : '▼' }}
-                {{ revenue()?.revenueDeltaPercent ?? 0 | number: '1.1-1' }}%
+                {{ revenueDelta() }}
               </span>
             </div>
           </div>
@@ -192,7 +191,7 @@ interface ChartBar {
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
-                >{{ cohort()?.repeatRatePercent ?? 0 }}%</span
+                >{{ fmt.percent(cohort()?.repeatRatePercent ?? 0) }}</span
               >
             </div>
             <div
@@ -228,7 +227,7 @@ interface ChartBar {
               >
               <span
                 style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-espresso)"
-                >{{ cohort()?.pickupSlaPercent ?? 0 }}%</span
+                >{{ fmt.percent(cohort()?.pickupSlaPercent ?? 0) }}</span
               >
             </div>
           </div>
@@ -240,6 +239,7 @@ interface ChartBar {
 export class AdminAnalyticsPage {
   private readonly api = inject(AnalyticsApi);
   private readonly activeBrand = inject(ActiveBrandService);
+  protected readonly fmt = inject(LocaleFormatService);
 
   readonly activeRange = signal(14);
   // Labels are translated in the template via `admin.analytics.rangeShort.<days>`.
@@ -280,17 +280,23 @@ export class AdminAnalyticsPage {
     return Math.round((row.revenueCents / max) * 100);
   }
 
+  /** Unsigned — the arrow next to it says which way. */
+  revenueDelta(): string {
+    return this.fmt.percent(Math.abs(this.revenue()?.revenueDeltaPercent ?? 0));
+  }
+
   price(cents: number, wholeUnits = false): string {
-    return formatMoney(cents, this.activeBrand.active()?.currency, wholeUnits);
+    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: wholeUnits });
   }
 
-  formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  // Revenue points are keyed by UTC calendar day ("2026-09-23"): read them in
+  // UTC, or a viewer west of Greenwich sees every bar a day early.
+  formatDate(day: string): string {
+    return this.fmt.dayMonth(day, 'UTC');
   }
 
-  shortDay(iso: string): string {
-    const d = new Date(iso);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
+  shortDay(day: string): string {
+    return this.fmt.shortDay(day, 'UTC');
   }
 
   private fetch(): void {

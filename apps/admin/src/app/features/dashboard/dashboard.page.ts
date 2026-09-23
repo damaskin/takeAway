@@ -1,10 +1,10 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { formatMoney } from '../../core/format/money';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 
@@ -208,6 +208,7 @@ export class DashboardPage {
   private readonly analytics = inject(AnalyticsApi);
   private readonly orders = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly summary = signal<DashboardSummary | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
@@ -290,7 +291,7 @@ export class DashboardPage {
   }
 
   price(cents: number): string {
-    return formatMoney(cents, this.activeBrand.active()?.currency, true);
+    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: true });
   }
 
   formatSeconds(sec: number): string {

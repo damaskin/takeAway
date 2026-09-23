@@ -27,6 +27,8 @@ export interface AdminOrderSummary {
   currency: string;
   storeId: string;
   storeName: string;
+  /** IANA zone; absent from an API older than this build. */
+  storeTimezone?: string | null;
   itemCount: number;
   createdAt: string;
 }
@@ -72,6 +74,7 @@ export interface AdminOrderDetail {
   createdAt: string;
   storeId: string;
   storeName: string;
+  storeTimezone?: string | null;
   customerName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;

@@ -1382,8 +1382,8 @@ export const TRANSLATIONS_RU = {
         ENDED: 'Завершён',
       },
       value: {
-        percent: '{{value}}% скидка',
-        fixed: '${{value}} скидка',
+        percent: 'Скидка {{value}}%',
+        fixed: 'Скидка {{value}}',
         bogo: 'Купи 1 — получи 1',
         pointsMultiplier: '{{value}}× баллов',
       },
