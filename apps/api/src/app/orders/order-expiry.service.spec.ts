@@ -192,17 +192,51 @@ describe('OrderExpiryService', () => {
 
       const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
       expect(where.status).toBe('CREATED');
+      const [cardBranch] = where.OR;
+      expect(cardBranch.payments).toEqual({ some: {} });
       // The cutoff is twenty minutes behind whenever the sweep ran, which
       // is somewhere in [before, after]. Bracketing both ends keeps this
       // honest without depending on how long the call took.
-      const cutoff = (where.createdAt.lt as Date).getTime();
+      const cutoff = (cardBranch.createdAt.lt as Date).getTime();
       expect(cutoff).toBeGreaterThanOrEqual(before - 20 * 60_000);
       expect(cutoff).toBeLessThanOrEqual(after - 20 * 60_000);
     });
 
+    // A pre-order for the morning, paid at the counter, used to die fifteen
+    // minutes after it was placed.
+    it('leaves a pay-on-pickup order alone until well past its pickup time', async () => {
+      const h = harness();
+      const before = Date.now();
+
+      await h.service.sweep();
+
+      const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
+      const payOnPickup = where.OR[1];
+      expect(payOnPickup.payments).toEqual({ none: {} });
+      expect(payOnPickup.createdAt).toBeUndefined();
+      expect((payOnPickup.pickupAt.lt as Date).getTime()).toBeLessThanOrEqual(before - 60 * 60_000 + 5_000);
+    });
+
+    it('says why each order went: an unfinished payment or a kitchen that never took it', async () => {
+      const h = harness();
+      h.prisma.order.findMany.mockResolvedValue([
+        { id: 'card', _count: { payments: 1 } },
+        { id: 'counter', _count: { payments: 0 } },
+      ]);
+      const expire = jest.spyOn(h.service, 'expire').mockResolvedValue(true);
+
+      await expect(h.service.sweep()).resolves.toBe(2);
+
+      expect(expire).toHaveBeenCalledWith('card', 'payment_timeout');
+      expect(expire).toHaveBeenCalledWith('counter', 'not_accepted');
+    });
+
     it('keeps going when one order refuses to expire', async () => {
       const h = harness();
-      h.prisma.order.findMany.mockResolvedValue([{ id: 'bad' }, { id: 'good' }]);
+      h.prisma.order.findMany.mockResolvedValue([
+        { id: 'bad', _count: { payments: 1 } },
+        { id: 'good', _count: { payments: 1 } },
+      ]);
       h.tx.order.findUnique.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue(orderRow({ id: 'good' }));
 
       await expect(h.service.sweep()).resolves.toBe(1);

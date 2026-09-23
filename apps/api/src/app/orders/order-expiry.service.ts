@@ -17,6 +17,10 @@ const DEFAULT_TTL_MINUTES = 15;
 const MIN_TTL_MINUTES = 5;
 /** Orders released per sweep. Keeps one bad night from locking the table. */
 const BATCH_SIZE = 200;
+/** A pay-on-pickup order the kitchen never took is let go this long after its promised time. */
+const UNACCEPTED_GRACE_MINUTES = 60;
+
+type ExpiryReason = 'payment_timeout' | 'not_accepted';
 
 /**
  * Releases orders that were created but never paid for.
@@ -58,20 +62,34 @@ export class OrderExpiryService {
    */
   @Cron(CronExpression.EVERY_MINUTE, { name: 'order-payment-expiry' })
   async sweep(): Promise<number> {
-    const cutoff = new Date(Date.now() - this.ttlMinutes * 60_000);
+    const now = Date.now();
+    const cutoff = new Date(now - this.ttlMinutes * 60_000);
+    const pickupCutoff = new Date(now - UNACCEPTED_GRACE_MINUTES * 60_000);
 
     const stale = await this.prisma.order.findMany({
-      where: { status: OrderStatus.CREATED, createdAt: { lt: cutoff } },
-      select: { id: true },
+      where: {
+        status: OrderStatus.CREATED,
+        OR: [
+          // A card payment was started and never went through.
+          { payments: { some: {} }, createdAt: { lt: cutoff } },
+          // Paying on pickup there is nothing to wait for: CREATED only means
+          // "the kitchen has not taken it yet", hours ahead for a scheduled
+          // order. The payment timeout used to expire these after fifteen
+          // minutes — every pre-order for the morning died overnight. Only an
+          // order the kitchen never took, well past its time, is let go.
+          { payments: { none: {} }, pickupAt: { lt: pickupCutoff } },
+        ],
+      },
+      select: { id: true, _count: { select: { payments: true } } },
       take: BATCH_SIZE,
       orderBy: { createdAt: 'asc' },
     });
     if (stale.length === 0) return 0;
 
     let released = 0;
-    for (const { id } of stale) {
+    for (const { id, _count } of stale) {
       try {
-        await this.expire(id);
+        await this.expire(id, _count.payments > 0 ? 'payment_timeout' : 'not_accepted');
         released += 1;
       } catch (err) {
         // One wedged order must not stop the sweep — the next tick retries.
@@ -79,7 +97,7 @@ export class OrderExpiryService {
       }
     }
 
-    this.logger.log(`Expired ${released} unpaid order(s) older than ${this.ttlMinutes} min`);
+    this.logger.log(`Expired ${released} order(s) left unpaid or never taken by the kitchen`);
     return released;
   }
 
@@ -88,7 +106,7 @@ export class OrderExpiryService {
    * status inside the transaction: a payment can land between the sweep's
    * query and this call, and that customer must keep their coffee.
    */
-  async expire(orderId: string): Promise<boolean> {
+  async expire(orderId: string, reason: ExpiryReason = 'payment_timeout'): Promise<boolean> {
     const expired = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -111,8 +129,10 @@ export class OrderExpiryService {
               payload: {
                 from: OrderStatus.CREATED,
                 to: OrderStatus.EXPIRED,
-                reason: 'payment_timeout',
-                ttlMinutes: this.ttlMinutes,
+                reason,
+                ...(reason === 'payment_timeout'
+                  ? { ttlMinutes: this.ttlMinutes }
+                  : { graceMinutes: UNACCEPTED_GRACE_MINUTES }),
               } satisfies Prisma.InputJsonValue,
             },
           },
