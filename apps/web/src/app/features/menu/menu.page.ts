@@ -111,8 +111,8 @@ import { CatalogService } from '../../core/catalog/catalog.service';
                   [style.cursor]="p.onStopList ? 'not-allowed' : 'pointer'"
                 >
                   <div
-                    [style.background]="productImageBg(p)"
-                    style="height: 180px; background-size: cover; background-position: center"
+                    [style.background-image]="productImageBg(p)"
+                    style="height: 180px; background-size: cover; background-position: center; background-repeat: no-repeat"
                   ></div>
                   <div class="flex flex-col" style="padding: 14px; gap: 6px">
                     <span

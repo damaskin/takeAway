@@ -43,8 +43,8 @@ const VARIATION_LABELS: Record<VariationType, string> = {
         <!-- Image column -->
         <div class="flex flex-col" style="width: 560px; gap: 16px; flex-shrink: 0">
           <div
-            [style.background]="heroImageBg(p)"
-            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; overflow: hidden"
+            [style.background-image]="heroImageBg(p)"
+            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; background-repeat: no-repeat; overflow: hidden"
           ></div>
         </div>
 
