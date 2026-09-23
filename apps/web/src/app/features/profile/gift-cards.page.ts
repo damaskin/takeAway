@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
@@ -85,6 +85,7 @@ export class ProfileGiftCardsPage {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly rows = signal<GiftRedemption[] | null>(null);
   readonly error = signal<string | null>(null);
@@ -92,10 +93,7 @@ export class ProfileGiftCardsPage {
   constructor() {
     this.http.get<GiftRedemption[]>(`${this.api.baseUrl}/me/gift-cards`).subscribe({
       next: (list) => this.rows.set(list),
-      error: (err) => {
-        const maybe = err as { error?: { message?: string }; message?: string };
-        this.error.set(maybe.error?.message ?? maybe.message ?? 'Failed to load gift cards');
-      },
+      error: () => this.error.set(this.translate.instant('web.profile.giftCards.loadFailed')),
     });
   }
 

@@ -50,7 +50,7 @@ interface ProfileSection {
           </div>
           <div class="flex flex-col flex-1" style="gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 22px; font-weight: 700; color: white">{{
-              user.name || 'Guest'
+              user.name || ('web.profile.guest' | translate)
             }}</span>
             <span style="font-family: var(--font-sans); font-size: 14px; color: rgba(255,255,255,0.6)">{{
               user.phone
@@ -163,13 +163,6 @@ interface ProfileSection {
             }}</span>
           </button>
         </div>
-
-        <p
-          class="text-center"
-          style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0"
-        >
-          Role {{ user.role }} · {{ user.currency }}
-        </p>
       </section>
     }
   `,

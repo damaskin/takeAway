@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot, StoreListItem } from '@takeaway/shared-types';
 import { computeTax, isCartChangedError } from '@takeaway/utils';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -64,7 +64,8 @@ interface Step {
           class="max-w-xl mx-auto my-10 p-4 text-center"
           style="background: var(--color-amber); color: var(--color-foam); border-radius: 16px"
         >
-          Please <a routerLink="/login" class="underline">sign in</a> to place an order.
+          <a routerLink="/login" class="underline">{{ 'web.checkout.signInLink' | translate }}</a
+          >{{ 'web.checkout.signInToOrder' | translate }}
         </p>
       }
 
@@ -327,9 +328,9 @@ interface Step {
               </div>
               @if (discountCents() > 0) {
                 <div class="flex items-center justify-between">
-                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
-                    >Promo · {{ promoCode() }}</span
-                  >
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)">{{
+                    'web.checkout.promoLine' | translate: { code: promoCode() }
+                  }}</span>
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
                     >− {{ price(discountCents()) }}</span
@@ -872,7 +873,13 @@ export class CheckoutPage implements OnInit {
       next: (res) => {
         this.promoLoading.set(false);
         if (!res.valid) {
-          this.promoStatus.set(res.reason ?? this.translate.instant('web.checkout.promoInvalid'));
+          this.promoStatus.set(
+            checkoutErrorText(
+              { code: res.reasonCode, minOrderCents: res.minOrderCents, currency: res.currency },
+              this.translate,
+              this.fmt,
+            ) ?? this.translate.instant('web.checkout.promoInvalid'),
+          );
           return;
         }
         this.promoCode.set(code);
@@ -891,7 +898,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.promoLoading.set(false);
-        this.promoStatus.set(extractMessage(err));
+        this.promoStatus.set(this.errorText(err));
       },
     });
   }
@@ -932,7 +939,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.giftCardLoading.set(false);
-        this.giftCardStatus.set(extractMessage(err));
+        this.giftCardStatus.set(this.errorText(err));
       },
     });
   }
@@ -973,7 +980,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.pointsLoading.set(false);
-        this.pointsStatus.set(extractMessage(err));
+        this.pointsStatus.set(this.errorText(err));
       },
     });
   }
@@ -1144,7 +1151,7 @@ export class CheckoutPage implements OnInit {
           this.onCartChanged(c.storeId, body);
           return;
         }
-        this.error.set(extractMessage(err));
+        this.error.set(this.errorText(err));
       },
     });
   }
@@ -1202,7 +1209,7 @@ export class CheckoutPage implements OnInit {
       },
       error: (err) => {
         this.submitting.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(this.errorText(err));
       },
     });
   }
@@ -1218,11 +1225,20 @@ export class CheckoutPage implements OnInit {
   formatKm(metres: number): string {
     return this.fmt.distance(metres);
   }
-}
 
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Request failed';
+  /**
+   * What went wrong, in the customer's words. A coded API error — the store
+   * is closed then, the slot filled up — gets its translation; any other
+   * message the API sent is still shown, as the real reason beats a vaguer
+   * apology.
+   */
+  private errorText(err: unknown): string {
+    const body = (err as { error?: unknown } | null)?.error;
+    const coded = checkoutErrorText(body, this.translate, this.fmt);
+    if (coded) return coded;
+    if ((err as { status?: unknown } | null)?.status === 0) return this.translate.instant('common.networkError');
+    const message = (body as { message?: unknown } | null)?.message;
+    if (typeof message === 'string' && message) return message;
+    return this.translate.instant('common.requestFailed');
+  }
 }

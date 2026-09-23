@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, ProductSummary, StoreDetail, StoreMenu } from '@takeaway/shared-types';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -191,6 +191,7 @@ export class MenuPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly store = signal<StoreDetail | null>(null);
   readonly menu = signal<StoreMenu | null>(null);
@@ -251,7 +252,7 @@ export class MenuPage implements OnInit {
     this.error.set(null);
     this.catalog.getStore(slug).subscribe({
       next: (s) => this.store.set(s),
-      error: () => this.error.set('Store not found'),
+      error: () => this.error.set(this.translate.instant('web.menu.storeNotFound')),
     });
     this.catalog.getMenu(slug).subscribe({
       next: (m) => {
@@ -259,7 +260,7 @@ export class MenuPage implements OnInit {
         const first = m.categories[0];
         if (first) this.activeCategoryId.set(first.id);
       },
-      error: () => this.error.set('Menu not available'),
+      error: () => this.error.set(this.translate.instant('web.menu.menuUnavailable')),
     });
   }
 }

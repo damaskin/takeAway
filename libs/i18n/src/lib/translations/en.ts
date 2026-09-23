@@ -103,6 +103,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Find a store near you',
         subtitle: 'Pick up your order at any of our locations',
         cta: 'View on map',
+        readyIn: 'ready in {{min}} min',
       },
       menu: {
         title: 'From the menu',
@@ -147,6 +148,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         terms: 'Terms',
         privacy: 'Privacy',
         rights: '© 2026 takeAway. All rights reserved.',
+        tagline: 'Coffee and food to-go.',
+        taglineMore: 'Skip the queue, not the quality.',
       },
       closing: {
         title: 'Pre-order. Zero queue.',
@@ -161,6 +164,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       readyInBanner: 'Ready by {{time}}',
       prepStartsAt: 'We start prepping at {{time}}',
       changeStore: 'Change',
+      storeNotFound: 'Store not found',
+      menuUnavailable: 'The menu is not available right now',
     },
     product: {
       breadcrumbMenu: 'Menu',
@@ -185,6 +190,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         signInPrompt: 'Sign in to place an order.',
         noStore: 'No store from this brand is taking orders right now.',
       },
+      notFound: 'Product not found',
+      addFailed: 'Could not add this to the cart',
     },
     checkout: {
       title: 'When are you coming?',
@@ -195,7 +202,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupScheduled: 'Later',
       pickupAtLabel: 'Pick up at',
       scheduledHint: 'Only windows this store can still keep up with.',
-      noSlots: 'No windows free in the next few hours. Try ASAP.',
+      noSlots: 'No windows free in the next few hours. Try "Now".',
       noSlotsClosed: 'No windows free in the next few hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       slotFull: 'This window is fully booked',
@@ -242,6 +249,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       cartChanged: 'Prices or the menu have changed — please check your cart.',
       cartChangedRemoved: 'Removed from your cart: {{names}}.',
       cartChangedDiscounts: 'Discounts were worked out for the old total — please apply them again.',
+      signInLink: 'Sign in',
+      signInToOrder: ' to place an order.',
+      promoLine: 'Promo · {{code}}',
     },
     orderStatus: {
       status: {
@@ -273,6 +283,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       cancelOrder: 'Cancel order',
       openMaps: 'Open in Maps',
       yourOrder: 'Your order',
+      greeting: 'Hi, {{name}}!',
+      greetingNoName: 'Hi!',
+      ready: 'Ready',
+      thanks: 'Thanks!',
+      yourCode: 'Your code',
+      pickupIn: 'Pickup in ~{{min}} min',
+      backToMenu: 'Back to menu',
+      notFound: 'Order not found',
     },
     auth: {
       welcomeBack: 'Welcome back',
@@ -352,6 +370,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       signOut: 'Sign out',
       initials: 'G',
+      account: 'Account',
+      guest: 'Guest',
       tierGold: 'Gold',
       tierSilver: 'Silver',
       tierPlatinum: 'Platinum',
@@ -378,6 +398,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         topTier: 'You’re at the top tier — thanks for being a regular.',
         activity: 'Recent activity',
         empty: 'No activity yet — points will show up here after your first order.',
+        loadFailed: 'Could not load your loyalty programme',
       },
       payment: {
         title: 'Payment methods',
@@ -403,6 +424,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Gift cards',
         subtitle: 'Cards redeemed against your orders. Add a code at checkout — applied codes show up here.',
         empty: 'No gift cards redeemed yet. Codes are issued by takeAway brands and applied at checkout.',
+        loadFailed: 'Could not load your gift cards',
         col: {
           code: 'Code',
           balance: 'Balance',

@@ -2,7 +2,7 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { interval, type Subscription } from 'rxjs';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -41,7 +41,11 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
         <!-- Greeting -->
         <header class="text-center" style="margin-top: var(--spacing-sm)">
           <h1 class="text-4xl" style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 600">
-            Hi{{ firstName() ? ', ' + firstName() : '' }}!
+            {{
+              firstName()
+                ? ('web.orderStatus.greeting' | translate: { name: firstName() })
+                : ('web.orderStatus.greetingNoName' | translate)
+            }}
           </h1>
           <p class="mt-2" style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)">
             {{ heroSubtitle() | translate }}
@@ -77,13 +81,17 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
           style="width: 300px; height: 300px; margin-top: var(--spacing-base)"
         >
           @if (o.status === 'READY') {
-            <span style="font-family: var(--font-display); font-size: 48px; font-weight: 700">Ready</span>
+            <span style="font-family: var(--font-display); font-size: 48px; font-weight: 700">{{
+              'web.orderStatus.ready' | translate
+            }}</span>
           } @else if (o.status === 'CANCELLED') {
             <span style="font-family: var(--font-display); font-size: 36px; font-weight: 600">{{
               'web.orderStatus.status.CANCELLED' | translate
             }}</span>
           } @else if (o.status === 'PICKED_UP') {
-            <span style="font-family: var(--font-display); font-size: 40px; font-weight: 700">Thanks!</span>
+            <span style="font-family: var(--font-display); font-size: 40px; font-weight: 700">{{
+              'web.orderStatus.thanks' | translate
+            }}</span>
           } @else {
             <span style="font-family: var(--font-sans); font-size: 96px; font-weight: 700; letter-spacing: -0.03em">
               {{ countdown() }}
@@ -106,9 +114,9 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
               style="font-family: var(--font-mono); font-size: 56px; font-weight: 700; color: var(--color-espresso); letter-spacing: 0.04em"
               >{{ o.orderCode }}</span
             >
-            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-              >Your code</span
-            >
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+              'web.orderStatus.yourCode' | translate
+            }}</span>
           </div>
 
           <div
@@ -169,7 +177,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             }
             @if (minutesToPickup() > 0 && !isTerminal(o.status)) {
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
-                🚶 Pickup in ~{{ minutesToPickup() }} min
+                🚶 {{ 'web.orderStatus.pickupIn' | translate: { min: minutesToPickup() } }}
               </span>
             }
           </div>
@@ -291,7 +299,7 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
         }
 
         <a routerLink="/menu" class="text-sm mt-2 underline" style="color: var(--color-text-secondary)">
-          Back to menu
+          {{ 'web.orderStatus.backToMenu' | translate }}
         </a>
       </section>
     }
@@ -307,6 +315,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly realtime = inject(RealtimeService);
   private readonly authStore = inject(AuthStore);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly order = signal<OrderView | null>(null);
   readonly error = signal<string | null>(null);
@@ -466,13 +475,13 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
-      this.error.set('Missing order id');
+      this.error.set(this.translate.instant('web.orderStatus.notFound'));
       return;
     }
 
     this.orders.get(id).subscribe({
       next: (o) => this.order.set(o),
-      error: () => this.error.set('Order not found'),
+      error: () => this.error.set(this.translate.instant('web.orderStatus.notFound')),
     });
 
     this.detachSocket = this.realtime.subscribeToOrder(id, (event) => {
