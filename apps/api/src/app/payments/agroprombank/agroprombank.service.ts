@@ -660,7 +660,11 @@ export class AgroprombankService {
       data: { status, providerRef: operationId ?? payment.providerRef, rawJson: raw },
     });
 
-    if (compositeStatus === 0) {
+    // `cos` only means something for a composite transaction — a payout to a
+    // recipient (tip) alongside the debit, i.e. more than one <trx>. A plain
+    // charge comes back with cos=0 as well; warning on it cried wolf on every
+    // payment the first day in production.
+    if (compositeStatus === 0 && children(response, 'trx').length > 1) {
       // Composite transaction (payment + tip payout) only partly went through.
       // The customer was charged, so the order is still paid — but ops needs to
       // know the tip leg is outstanding.
