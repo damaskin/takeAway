@@ -15,12 +15,16 @@ export interface MyBrand {
   themeOverrides: Record<string, string> | null;
   moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   moderationNote: string | null;
+  /** True once the brand has an order: the API then refuses a new currency. */
+  currencyLocked?: boolean;
   _count?: { stores: number; products: number };
 }
 
 export interface UpdateMyBrandRequest {
   name?: string;
   logoUrl?: string;
+  currency?: string;
+  locale?: 'EN' | 'RU';
   themeOverrides?: Record<string, string>;
 }
 
@@ -47,9 +51,9 @@ export class SettingsService {
   }
 
   /**
-   * SUPER_ADMIN owns no brand, so the API needs to be told which one the
-   * top-bar selector is on. A BRAND_ADMIN's own brand wins server-side, so
-   * sending it for everyone is harmless.
+   * The brand picked in the top bar. A SUPER_ADMIN owns no brand and has to
+   * name one; an owner of several brands edits the one in view, and the API
+   * checks that it is theirs.
    */
   private brandParams(): HttpParams {
     const id = this.activeBrand.activeId();

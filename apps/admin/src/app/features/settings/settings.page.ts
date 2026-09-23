@@ -3,13 +3,16 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business.service';
+import { apiErrorCode } from '../../core/http/api-error';
 import { MyBrand, SettingsService } from '../../core/settings/settings.service';
 
 /**
  * Brand settings — the BRAND_ADMIN manages their own brand identity
- * (name, logo, theme overrides). SUPER_ADMIN gets here too and edits
- * whichever brand the top-bar selector is on; moderation itself stays
- * on the dedicated /admin/brands screen.
+ * (name, logo, currency, email language, theme overrides). SUPER_ADMIN gets
+ * here too and edits whichever brand the top-bar selector is on; moderation
+ * itself stays on the dedicated /admin/brands screen, and its outcome is
+ * shown to the owner by the banner in the admin shell.
  *
  * `themeOverrides` is exposed as a small fixed list of well-known CSS
  * variables + a free-form JSON fallback (advanced) so non-technical
@@ -73,37 +76,6 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
             }}</span>
           </div>
 
-          @if (brand()!.moderationStatus === 'PENDING') {
-            <div
-              style="background: var(--color-cream); border-left: 3px solid var(--color-amber); padding: 12px 16px; border-radius: 8px"
-            >
-              <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary); margin: 0">
-                {{ 'admin.settings.pendingNotice' | translate }}
-              </p>
-            </div>
-          } @else if (brand()!.moderationStatus === 'REJECTED') {
-            <div
-              style="background: var(--color-cream); border-left: 3px solid var(--color-berry); padding: 12px 16px; border-radius: 8px"
-            >
-              <p
-                style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0 0 6px; font-weight: 600"
-              >
-                {{ 'admin.settings.rejectedTitle' | translate }}
-              </p>
-              @if (brand()!.moderationNote) {
-                <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary); margin: 0">
-                  {{ brand()!.moderationNote }}
-                </p>
-              } @else {
-                <p
-                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
-                >
-                  {{ 'admin.settings.rejectedGeneric' | translate }}
-                </p>
-              }
-            </div>
-          }
-
           <label class="flex flex-col" style="gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
               'admin.settings.brandName' | translate
@@ -114,6 +86,41 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
               style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none"
             />
           </label>
+
+          <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px">
+            <label class="flex flex-col" style="gap: 6px; min-width: 0">
+              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                'admin.settings.currency' | translate
+              }}</span>
+              <select
+                formControlName="currency"
+                style="height: 44px; padding: 0 12px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none; min-width: 0"
+              >
+                @for (c of currencies; track c) {
+                  <option [value]="c">{{ 'admin.currencies.' + c | translate }}</option>
+                }
+              </select>
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                (brand()!.currencyLocked ? 'admin.settings.currencyLocked' : 'admin.settings.currencyHint') | translate
+              }}</span>
+            </label>
+
+            <label class="flex flex-col" style="gap: 6px; min-width: 0">
+              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                'admin.settings.locale' | translate
+              }}</span>
+              <select
+                formControlName="locale"
+                style="height: 44px; padding: 0 12px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none; min-width: 0"
+              >
+                <option value="RU">{{ 'admin.languages.RU' | translate }}</option>
+                <option value="EN">{{ 'admin.languages.EN' | translate }}</option>
+              </select>
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                'admin.settings.localeHint' | translate
+              }}</span>
+            </label>
+          </div>
 
           <div class="flex flex-col" style="gap: 6px">
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
@@ -213,6 +220,7 @@ export class AdminSettingsPage {
   private readonly activeBrand = inject(ActiveBrandService);
 
   readonly themeFields = THEME_FIELDS;
+  readonly currencies = BRAND_CURRENCIES;
   readonly brand = signal<MyBrand | null>(null);
   readonly loading = signal(true);
   readonly saving = signal(false);
@@ -222,6 +230,8 @@ export class AdminSettingsPage {
 
   readonly form: FormGroup<{
     name: FormControl<string>;
+    currency: FormControl<string>;
+    locale: FormControl<BrandLocale>;
     logoUrl: FormControl<string>;
     themeOverrides: FormGroup<Record<string, FormControl<string>>>;
   }>;
@@ -235,6 +245,8 @@ export class AdminSettingsPage {
     }
     this.form = new FormGroup({
       name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
+      currency: new FormControl('MDL', { nonNullable: true, validators: [Validators.required] }),
+      locale: new FormControl<BrandLocale>('RU', { nonNullable: true }),
       logoUrl: new FormControl('', { nonNullable: true }),
       themeOverrides: new FormGroup(themeCtrls),
     });
@@ -259,8 +271,15 @@ export class AdminSettingsPage {
         this.brand.set(brand);
         this.form.patchValue({
           name: brand.name,
+          currency: brand.currency,
+          locale: brand.locale,
           logoUrl: brand.logoUrl ?? '',
         });
+        // Orders are summed in the brand's currency; the API refuses a new
+        // one after the first order, so the form does not offer it.
+        const currency = this.form.controls.currency;
+        if (brand.currencyLocked) currency.disable();
+        else currency.enable();
         if (brand.themeOverrides) {
           const group = this.form.controls.themeOverrides;
           for (const [k, v] of Object.entries(brand.themeOverrides)) {
@@ -291,12 +310,18 @@ export class AdminSettingsPage {
     this.settings
       .updateMyBrand({
         name: v.name.trim(),
+        ...(this.form.controls.currency.enabled ? { currency: v.currency } : {}),
+        locale: v.locale,
         logoUrl: v.logoUrl.trim() || undefined,
         themeOverrides: overrides,
       })
       .subscribe({
         next: (updated) => {
           this.brand.set({ ...this.brand()!, ...updated });
+          this.form.markAsPristine();
+          // The header, the prices on the dashboard and the menu read the
+          // brand from the brand list; bring it up to date.
+          this.activeBrand.refresh();
           this.saving.set(false);
           this.saved.set(true);
           setTimeout(() => this.saved.set(false), 3000);
@@ -329,6 +354,11 @@ export class AdminSettingsPage {
   }
 
   private extractMessage(err: unknown): string {
+    if (apiErrorCode(err) === 'CURRENCY_LOCKED') {
+      this.brand.update((b) => (b ? { ...b, currencyLocked: true } : b));
+      this.form.controls.currency.disable();
+      return this.translate.instant('admin.settings.errors.CURRENCY_LOCKED');
+    }
     const maybe = err as { error?: { message?: unknown }; message?: unknown };
     if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
     if (Array.isArray(maybe.error?.message) && maybe.error.message.length) return maybe.error.message[0] as string;
