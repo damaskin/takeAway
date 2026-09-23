@@ -215,6 +215,9 @@ export const TRANSLATIONS_RU = {
       deliveryDistance: '≈ {{km}} до точки',
       deliveryBy: 'Доставим к {{time}}',
       prepStartHint: 'Начнём готовить в {{time}}, чтобы было свежее.',
+      cartChanged: 'Цены или состав меню изменились — проверьте корзину.',
+      cartChangedRemoved: 'Убрали из корзины: {{names}}.',
+      cartChangedDiscounts: 'Скидки были посчитаны для прежней суммы — примените их ещё раз.',
     },
     orderStatus: {
       status: {
@@ -245,6 +248,7 @@ export const TRANSLATIONS_RU = {
       iAmHere: 'Я на месте',
       cancelOrder: 'Отменить заказ',
       openMaps: 'Открыть в картах',
+      yourOrder: 'Ваш заказ',
     },
     auth: {
       welcomeBack: 'С возвращением',
