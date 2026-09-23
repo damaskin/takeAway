@@ -91,3 +91,24 @@ const NAV_LINKS: Record<NavKey, string> = {
 export function navLink(key: NavKey): string {
   return NAV_LINKS[key];
 }
+
+/**
+ * What a role may do to stores beyond looking at them. Mirrors the
+ * `@Roles` on the API's store and staff controllers, so the admin hides a
+ * button instead of letting a click end in a 403.
+ */
+export type StoreAction = 'create' | 'delete' | 'edit' | 'manageStaff';
+
+const STORE_ACTIONS: Record<StoreAction, ReadonlyArray<AdminRole>> = {
+  create: [SA, BA],
+  delete: [SA, BA],
+  // Details, hours, photos, opening and closing.
+  edit: [SA, BA, SM],
+  // Roster and kitchen PINs.
+  manageStaff: [SA, BA, SM],
+};
+
+export function canOnStores(role: AdminRole | undefined | null, action: StoreAction): boolean {
+  if (!role) return false;
+  return STORE_ACTIONS[action].includes(role);
+}
