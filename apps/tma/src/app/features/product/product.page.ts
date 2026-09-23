@@ -2,6 +2,7 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { catchError, throwError } from 'rxjs';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -229,14 +230,25 @@ export class TmaProductPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const slug = this.route.snapshot.paramMap.get('slug');
     if (!slug) return;
-    this.catalog.getProduct(slug).subscribe({
-      next: (p) => {
-        this.product.set(p);
-        this.initializeDefaults(p);
-        this.resolveStore(p.brandId);
-        this.refreshMainButton();
-      },
-    });
+    // The active store's brand first (two cafés can both have a `latte`); a
+    // product shared from another brand's menu is not there, so look again
+    // without a store.
+    const active = this.activeStore.current();
+    this.catalog
+      .getProduct(slug, active)
+      .pipe(
+        catchError((err: unknown) =>
+          active && (err as { status?: number }).status === 404 ? this.catalog.getProduct(slug) : throwError(() => err),
+        ),
+      )
+      .subscribe({
+        next: (p) => {
+          this.product.set(p);
+          this.initializeDefaults(p);
+          this.resolveStore(p.brandId);
+          this.refreshMainButton();
+        },
+      });
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();
       else void this.router.navigate(['/']);

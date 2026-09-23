@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, StoreListItem, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { catchError, throwError } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -371,8 +372,14 @@ export class ProductPage implements OnInit {
     const product = this.product();
     const stores = this.stores();
     if (!product || stores.length === 0) return null;
+    // The store the customer came from, when it can make this product.
+    const browsed = stores.find((s) => s.slug === this.browsedStore || s.id === this.browsedStore);
+    if (browsed?.brandId === product.brandId) return browsed;
     return stores.find((s) => s.brandId === product.brandId) ?? null;
   });
+
+  /** `?store=` from the menu link: which café's product this is. */
+  private browsedStore: string | null = null;
 
   /** True once we know the product's brand has no store taking orders. */
   readonly noStoreForBrand = computed(
@@ -395,13 +402,25 @@ export class ProductPage implements OnInit {
       this.error.set('Missing product');
       return;
     }
-    this.catalog.getProduct(slug).subscribe({
-      next: (p) => {
-        this.product.set(p);
-        this.initializeDefaults(p);
-      },
-      error: () => this.error.set('Product not found'),
-    });
+    this.browsedStore = this.route.snapshot.queryParamMap.get('store');
+    const browsed = this.browsedStore;
+    this.catalog
+      .getProduct(slug, browsed)
+      .pipe(
+        // A store renamed since the link was made: look the product up without it.
+        catchError((err: unknown) =>
+          browsed && (err as { status?: number }).status === 404
+            ? this.catalog.getProduct(slug)
+            : throwError(() => err),
+        ),
+      )
+      .subscribe({
+        next: (p) => {
+          this.product.set(p);
+          this.initializeDefaults(p);
+        },
+        error: () => this.error.set('Product not found'),
+      });
 
     this.catalog.listStores().subscribe({
       next: (list) => this.stores.set(list),

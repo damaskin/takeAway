@@ -31,7 +31,9 @@ export class CatalogService {
     return this.http.get<StoreMenu>(`${this.api.baseUrl}/stores/${slug}/menu`);
   }
 
-  getProduct(slug: string): Observable<ProductDetail> {
-    return this.http.get<ProductDetail>(`${this.api.baseUrl}/products/${slug}`);
+  /** `store`: the store being browsed — product slugs are unique per brand only. */
+  getProduct(slug: string, store?: string | null): Observable<ProductDetail> {
+    const params = store ? { store } : undefined;
+    return this.http.get<ProductDetail>(`${this.api.baseUrl}/products/${slug}`, { params });
   }
 }

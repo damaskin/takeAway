@@ -105,6 +105,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
               @for (p of cat.products; track p.id) {
                 <a
                   [routerLink]="['/products', p.slug]"
+                  [queryParams]="{ store: store()?.slug }"
                   class="flex flex-col transition-all"
                   [class.opacity-50]="p.onStopList"
                   style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); overflow: hidden"
