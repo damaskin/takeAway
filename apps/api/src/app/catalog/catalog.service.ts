@@ -74,6 +74,7 @@ export class CatalogService {
           taxRateBps: s.taxRateBps,
           taxIncludedInPrice: s.taxIncludedInPrice,
           currency: s.currency,
+          timezone: s.timezone,
           heroImageUrl: s.heroImageUrl,
           distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
         };
