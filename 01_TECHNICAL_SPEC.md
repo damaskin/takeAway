@@ -382,9 +382,9 @@ takeaway/
 ### 3.9. Admin panel
 
 - **Роли** (фактический enum): `SUPER_ADMIN`, `BRAND_ADMIN`, `STORE_MANAGER`, `STAFF`, `RIDER`, `CUSTOMER`. `ANALYST` из исходного ТЗ — нет, аналитика доступна `BRAND_ADMIN`/`SUPER_ADMIN`.
-- **Brand registration + moderation**: бизнес заходит через `/business/register` → `Brand.moderationStatus = PENDING` → SUPER_ADMIN approve/reject с note. До approval бренд видит баннер модерации.
-- **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов, sort-order, visibility, stop-list per store. Массовые операции — точечно.
-- **Store management**: inline editor (details + working hours), stop-list, **per-store delivery fee overrides**.
+- **Brand registration + moderation**: бизнес регистрируется в админке (`/signup` → `POST /business/register`) с валютой бренда (MDL по умолчанию) и языком писем; телефон — E.164, конфликты возвращаются кодами (`EMAIL_TAKEN`, `EMAIL_CUSTOMER_ACCOUNT`, `PHONE_TAKEN`). Бренд создаётся `PENDING`; владелец попадает на дашборд с чек-листом «Запуск бренда» (`GET /my-brand/onboarding`: логотип, точка с адресом и часами, категория и товар с фото, оплата, модерация) и видит баннер статуса на всех страницах. SUPER_ADMIN одобряет/отклоняет в модальном окне; причина отказа обязательна (и на сервере). Отклонённый бренд после правок отправляется повторно (`POST /my-brand/resubmit`). Письма владельцу («заявка получена», «одобрен», «нужны правки» — на языке бренда) и платформе (новая заявка, повторная подача — email всем SUPER_ADMIN и ops-чат в Telegram); сбой отправки не ломает запрос. Контакт поддержки — `SUPPORT_EMAIL` / `SUPPORT_TELEGRAM`.
+- **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов; цена вводится в валюте бренда, время приготовления — в минутах; до 6 фото на товар (первое — главное, JPEG/PNG/WebP/AVIF до 5 МБ, тип определяется по содержимому, SVG не принимается); слаги необязательны и генерируются из названия с транслитерацией кириллицы; порядок категорий и товаров; удаление непустой категории — 409 `CATEGORY_NOT_EMPTY` или перенос товаров (`?moveProductsTo=`); удаление товара или опции чистит корзины в транзакции; «нет в наличии» по точке — до отмены или до конца дня в часовом поясе точки; описание, КБЖУ, кофеин, диетические метки, аллергены.
+- **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
 - **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
@@ -392,7 +392,7 @@ takeaway/
 - **Analytics**: summary, revenue, top-products, cohort, stores. `mv_orders_daily` materialized view (PostgreSQL) с уникальным индексом `(brandId, storeId, day)` агрегирует non-CANCELLED orders и питает summary/revenue/stores; refresh каждые 5 минут через `AnalyticsRefreshService` (`REFRESH MATERIALIZED VIEW CONCURRENTLY`). top-products и cohort пока читают live `OrderItem`/`User`.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
-- **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд).
+- **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд) и `UserStoreScopeService`: SUPER_ADMIN — все точки, BRAND_ADMIN — точки своих брендов, STORE_MANAGER и STAFF — назначенные. Скоуп проверяется во всех per-store маршрутах, в KDS-сокете, у курьеров и в аналитике.
 
 ### 3.10. KDS (экран баристы)
 
@@ -516,6 +516,9 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        acceptedAt?, startedAt?, readyAt?, pickedUpAt?,
        outForDeliveryAt?, deliveredAt?, cancelledAt?, expiredAt?)
 OrderItem (id, orderId, productSnapshot (json), quantity, unitPriceCents, totalCents)
+// productSnapshot: { id, slug, name, variationIds[], modifiers{id: count}, notes?, unitPrepSeconds,
+//                    variations: [{ id, type, name, priceDeltaCents }]  (размер → молоко → температура → стакан),
+//                    modifierLines: [{ id, name, count, priceCents }] }  — это видят KDS, админка, чеки и клиент
 OrderEvent (id, orderId, type[STATUS_CHANGED|GEOFENCE_NEAR|GEOFENCE_HERE|RIDER_ASSIGNED|...],
             actorId?, payload?, createdAt)
 Payment (id, orderId, provider[STRIPE|TELEGRAM_PAY|...], providerRef?,
@@ -609,7 +612,7 @@ POST   /me/referrals/apply           { code }
 GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
-GET    /products/:idOrSlug          // включает brandId — по нему клиент выбирает точку, где товар можно приготовить
+GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
@@ -618,11 +621,15 @@ GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выда
 ```
 GET    /cart
 POST   /cart/items                   { productId, quantity, variationIds[], modifiers{} } → { cart, etaSeconds }
+                                     // не больше одной вариации каждого типа; неизвестный id — 400; тип без выбора — вариация по умолчанию
 PATCH  /cart/items/:itemId
 DELETE /cart/items/:itemId
 DELETE /cart
 
 POST   /orders                       { cartId, pickupMode, pickupAt?, couponCode?, giftCardCode?, fulfillmentType, deliveryAddress? } → { id, orderCode, qrToken, etaSeconds }
+                                     // корзина пересчитывается по текущему меню; если цена или состав изменились —
+                                     // 409 { code: CART_CHANGED, items: [{ cartItemId, productName, reason, previousUnitPriceCents, unitPriceCents }] }
+                                     // и корзина уже обновлена; закрытая точка или неодобренный бренд — отказ
 GET    /orders/:id
 POST   /orders/:id/cancel
 POST   /orders/:id/location          { lat, lng }  // геофенсинг (триггер «I'm here» при попадании в радиус)
@@ -672,28 +679,34 @@ PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVE
 ### 6.8. Brand owner / Business signup
 
 ```
-POST   /business/register            { brand, contact, ... } → { brand: { moderationStatus: PENDING } }
+POST   /business/register            { brand, contact, currency, locale, phone? } → { brand: { moderationStatus: PENDING } }
 GET    /my-brand[?brandId=]          (BRAND_ADMIN → свой бренд; SUPER_ADMIN → бренд из brandId)
-PATCH  /my-brand[?brandId=]          (PATCH-только для approved брендов)
+PATCH  /my-brand[?brandId=]          (название, логотип, цвета, язык; валюта — до первого заказа, иначе 409 CURRENCY_LOCKED)
 POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO)
+GET    /my-brand/onboarding[?brandId=]  → чек-лист запуска бренда
+POST   /my-brand/resubmit[?brandId=]    REJECTED → PENDING, уведомляет платформу
 ```
 
-`brandId` учитывается только для SUPER_ADMIN, у которого своего бренда нет: это бренд,
-выбранный переключателем в админке. Без параметра он получает единственный бренд установки.
-Для BRAND_ADMIN бренд всегда резолвится по `Brand.ownerId`, параметр игнорируется.
+`brandId` у SUPER_ADMIN — бренд, выбранный переключателем в админке (без параметра — единственный
+бренд установки). У BRAND_ADMIN параметр проверяется на владение (чужой — 403), без параметра —
+самый старый бренд владельца; админка всегда шлёт бренд из переключателя.
 
 ### 6.9. Admin (JWT + RBAC: SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER)
 
 ```
 # Каталог (scope to brand для BRAND_ADMIN)
-GET/POST/PATCH                       /admin/brands[, /:id, /:id/moderation]
+GET/POST/PATCH                       /admin/brands[, /:id, /:id/moderation]   // REJECTED требует note
+GET                                  /admin/brands/pending-count              // бейдж «Бренды» у SUPER_ADMIN
 #   POST /admin/brands (SUPER_ADMIN) создаёт бренд сразу APPROVED — модератор здесь
 #   сам автор; это единственный способ завести первый бренд на свежей установке.
-GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder
-GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility
+GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder, DELETE ?moveProductsTo=
+GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility, PATCH /admin/products/reorder
+                                                    + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
-GET/POST/PATCH/DELETE  /admin/stores[/:id]
+GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
+                                                    //   STORE_SLUG_TAKEN / STORE_NOT_READY
+POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
 PUT                    /admin/stores/:id/working-hours
 GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]
 
@@ -751,7 +764,7 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ```
 GET    /health                       // liveness + build triple (version/commit/builtAt)
 GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
-GET    /config/features              → { features: { campaigns, giftCards, referrals, ... } }
+GET    /config/features              → { deliveryEnabled, agroprombankEnabled, support: { email, telegram } }
 ```
 
 ### 6.13. WebSocket
