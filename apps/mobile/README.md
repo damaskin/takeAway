@@ -224,6 +224,13 @@ Runner target only), `verify_ipa` and `upload`. `fastlane ios builds` shows
 Apple's processing; `fastlane ios beta_group` makes the internal group that
 sees every build.
 
+Nobody sees a build in TestFlight until they are in a group. Internal testers
+are users of the team in App Store Connect; add one with
+`TESTER_EMAIL=... bash apps/mobile/scripts/ios-testflight.sh add_tester`.
+Apple emails them an invitation, and the app shows up in the TestFlight app on
+the iPhone. `testflight_status` lists the latest build's beta state, the groups
+and their testers.
+
 `Runner.entitlements` has `aps-environment = development`; the App Store
 profile turns it into production when the archive is signed.
 

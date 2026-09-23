@@ -249,6 +249,63 @@ platform :ios do
     builds.each { |b| UI.message("build #{b.version}  #{b.processing_state}  uploaded #{b.uploaded_date}") }
   end
 
+  desc "Who can see the builds: the latest build's beta state, the groups and their testers"
+  lane :testflight_status do
+    # "I don't see the app in TestFlight" is nearly always a tester who is not
+    # in a group, or a build whose beta state is not ready yet.
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    build = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 1).first
+    if build
+      detail = build.build_beta_detail
+      UI.message("Build #{build.version}: processing #{build.processing_state}, internal #{detail&.internal_build_state}, " \
+                 "external #{detail&.external_build_state}, non-exempt encryption #{build.uses_non_exempt_encryption.inspect}")
+    else
+      UI.message("No builds")
+    end
+    app.get_beta_groups.each do |group|
+      testers = Spaceship::ConnectAPI::BetaTester.all(filter: { betaGroups: group.id })
+      UI.message("Group '#{group.name}': internal #{group.is_internal_group}, all builds #{group.has_access_to_all_builds}, " \
+                 "testers #{testers.size}")
+      testers.each { |t| UI.message("  #{t.first_name} #{t.last_name} <#{t.email}> #{t.invite_type}") }
+    end
+    begin
+      users = Spaceship::ConnectAPI::User.all
+      UI.message("Team users: #{users.map { |u| "#{u.first_name} #{u.last_name} <#{u.username}> #{Array(u.roles).join('/')}" }.join('; ')}")
+    rescue StandardError => e
+      UI.important("Team users not readable with this key: #{e.message.lines.first&.strip}")
+    end
+  end
+
+  desc "Add an App Store Connect user to the internal group (TESTER_EMAIL=...)"
+  lane :add_tester do
+    # Internal testers must already be users of the team in App Store
+    # Connect; TestFlight then shows them every build of the group. They see
+    # it in the TestFlight app signed in with that same Apple ID.
+    email = ENV["TESTER_EMAIL"].to_s.strip
+    UI.user_error!("Set TESTER_EMAIL to the tester's App Store Connect email") if email.empty?
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    group = app.get_beta_groups.find(&:is_internal_group)
+    UI.user_error!("No internal group yet — run lane beta_group first") if group.nil?
+    if Spaceship::ConnectAPI::BetaTester.all(filter: { betaGroups: group.id }).any? { |t| t.email.casecmp?(email) }
+      UI.message("#{email} is already in '#{group.name}'")
+      next
+    end
+    user = Spaceship::ConnectAPI::User.all.find { |u| u.username.casecmp?(email) }
+    UI.user_error!("#{email} is not a user of the team in App Store Connect — invite them in Users and Access first") if user.nil?
+    Spaceship::ConnectAPI.test_flight_request_client.post("v1/betaTesters", {
+      data: {
+        type: "betaTesters",
+        attributes: { email: user.username, firstName: user.first_name, lastName: user.last_name },
+        relationships: { betaGroups: { data: [{ type: "betaGroups", id: group.id }] } }
+      }
+    })
+    UI.success("#{user.first_name} #{user.last_name} <#{user.username}> added to '#{group.name}'")
+  end
+
   desc "Internal testing group that sees every build"
   lane :beta_group do
     # Testers are added in the website (they need App Store Connect users);
