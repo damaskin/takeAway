@@ -418,7 +418,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     signup: {
       title: 'Register your business',
       subtitle:
-        'Create a brand account in minutes. We approve new brands within 1 business day; you can configure your menu and POS right away.',
+        'Create a brand account in a couple of minutes. We usually review new brands within one business day, and you can set up your store and menu right away.',
       brandName: 'Brand name',
       brandNamePlaceholder: 'Morning Brew Café',
       ownerName: 'Your name',
@@ -426,10 +426,31 @@ export const TRANSLATIONS_EN: TranslationTree = {
       password: 'Password',
       passwordHint: 'At least 8 characters.',
       phone: 'Phone (optional)',
+      phonePlaceholder: '+373 69 123 456',
+      phoneInvalid: 'Enter the number in international format, e.g. +373 69 123 456.',
+      currency: 'Currency',
+      currencyHint: 'Customers see prices and pay in it. It cannot be changed after the first order.',
       create: 'Create account',
       creating: 'Creating…',
       haveAccount: 'Already have an account?',
       signIn: 'Sign in',
+      forgotPassword: 'Reset your password',
+      errors: {
+        EMAIL_TAKEN: 'An account with this email already exists. Sign in or reset your password.',
+        EMAIL_CUSTOMER_ACCOUNT:
+          'This email is already used to sign in as a customer. Please use a different address for your business, such as a work one.',
+        PHONE_TAKEN: 'This number is already linked to another account. Use a different one or leave the field empty.',
+        invalid: 'Please check: {{fields}}.',
+        fields: {
+          brandName: 'brand name',
+          ownerName: 'your name',
+          email: 'email',
+          password: 'password',
+          phone: 'phone',
+          currency: 'currency',
+          locale: 'email language',
+        },
+      },
     },
     changePassword: {
       title: 'Set a new password',
@@ -461,6 +482,75 @@ export const TRANSLATIONS_EN: TranslationTree = {
     layout: {
       adminTag: 'Admin',
       brand: 'Brand',
+      role: {
+        SUPER_ADMIN: 'Platform admin',
+        BRAND_ADMIN: 'Brand owner',
+        STORE_MANAGER: 'Store manager',
+        MENU_EDITOR: 'Menu editor',
+        STAFF: 'Store staff',
+        RIDER: 'Rider',
+      },
+    },
+    currencies: {
+      MDL: 'Moldovan leu (MDL)',
+      RUP: 'Transnistrian ruble (RUP)',
+      USD: 'US dollar (USD)',
+      EUR: 'Euro (EUR)',
+      GBP: 'Pound sterling (GBP)',
+      AED: 'UAE dirham (AED)',
+      THB: 'Thai baht (THB)',
+      IDR: 'Indonesian rupiah (IDR)',
+    },
+    languages: {
+      RU: 'Русский',
+      EN: 'English',
+    },
+    onboarding: {
+      banner: {
+        pending:
+          'Your brand is under review — usually within one business day. Meanwhile, you can set up your store and menu.',
+        rejected: 'Your brand did not pass review.',
+        reason: 'Reason: {{reason}}',
+        noReason: "The reviewer didn't give a reason — write to support and we'll tell you what to fix.",
+        resubmit: 'Fix and resubmit',
+        resubmitting: 'Sending…',
+        confirmResubmit: "Send your brand for review again? Make sure you've addressed the reviewer's comments.",
+        support: 'Support:',
+      },
+      checklist: {
+        title: 'Launch your brand',
+        subtitle: 'Five steps to your first orders. Finished steps tick themselves off.',
+        progress: '{{done}} of {{total}} done',
+        open: 'Open',
+        loadFailed: 'Could not load the launch checklist.',
+        brand: {
+          title: 'Brand details and logo',
+          todo: 'Upload your logo — customers see it next to your menu.',
+          done: 'Logo uploaded.',
+        },
+        store: {
+          title: 'First store with address and opening hours',
+          todo: "Add a store with its address and opening hours — customers can't order without them.",
+          done: 'A store with address and opening hours is set up.',
+        },
+        menu: {
+          title: 'Menu: a category and a product with a photo',
+          todo: 'Create a category and add at least one product with a photo.',
+          done: 'Your menu has products with photos.',
+        },
+        payments: {
+          title: 'Payments',
+          card: 'Card payments are on: customers pay online when they order.',
+          onSite:
+            'Pay on pickup: customers pay when they collect their order. Online card payments are switched on by the platform.',
+        },
+        moderation: {
+          title: 'Review',
+          PENDING: 'Under review — usually within one business day.',
+          APPROVED: 'Approved and visible to customers.',
+          REJECTED: 'Changes needed — see the reason in the banner at the top.',
+        },
+      },
     },
     nav: {
       dashboard: 'Dashboard',
@@ -560,9 +650,22 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     settings: {
       title: 'Brand settings',
-      subtitle: 'Edit your brand name, logo, and theme colors.',
+      subtitle: 'Edit your brand name, logo, currency and theme colors.',
       brandName: 'Brand name',
       logoUrl: 'Logo URL',
+      logo: 'Logo',
+      uploadLogo: 'Upload logo',
+      uploading: 'Uploading…',
+      currency: 'Currency',
+      currencyHint:
+        "Customers see menu prices and pay in it. New stores and POS imports take the brand's currency; stores that already exist keep theirs.",
+      currencyLocked:
+        'This brand already has orders, so its currency can no longer change. Contact support if you need it changed.',
+      locale: 'Email language',
+      localeHint: "We write to you about your brand's review in this language.",
+      errors: {
+        CURRENCY_LOCKED: 'The currency cannot change: this brand already has orders.',
+      },
       theme: {
         title: 'Theme colors',
         hint: 'These override the Telegram palette in TMA.',
@@ -573,10 +676,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       saving: 'Saving…',
       saved: 'Saved',
-      pendingNotice:
-        'Your brand is waiting for approval. Customers won’t see your menu yet, but you can already set up stores and products.',
-      rejectedTitle: 'Your brand was rejected',
-      rejectedGeneric: 'Contact support if you think this is a mistake — the reviewer did not leave a note.',
     },
     brandContext: {
       blockedTitle: 'No active brand',
@@ -604,10 +703,22 @@ export const TRANSLATIONS_EN: TranslationTree = {
       products: 'Products',
       submitted: 'Submitted',
       moderated: 'Moderated',
-      note: 'Note',
+      note: 'Reason',
       approve: 'Approve',
       reject: 'Reject',
-      revert: 'Move to pending',
+      revert: 'Move back to review',
+      pendingBadge: 'Waiting for review: {{count}}',
+      dialog: {
+        rejectTitle: 'Reject “{{name}}”?',
+        rejectBody:
+          'The owner gets an email with the reason, fixes what you point out and sends the brand for review again.',
+        reason: 'Reason',
+        reasonPlaceholder: 'For example: upload a logo and add product photos',
+        reasonRequired: "Give a reason — without it the owner won't know what to fix.",
+        revertTitle: 'Move “{{name}}” back to review?',
+        revertBody: 'The brand goes back into the review queue. The owner is not emailed.',
+        liveWarning: 'This brand is live: customers will stop seeing it until you approve it again.',
+      },
     },
     dispatch: {
       title: 'Delivery queue',
