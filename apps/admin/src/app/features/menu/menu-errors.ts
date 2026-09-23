@@ -1,48 +1,71 @@
 import type { TranslateService } from '@ngx-translate/core';
 
+import { apiErrorCode, apiErrorMessage, type ApiErrorWording } from '../../core/http/api-error';
+
+/** The API's menu error codes (see the API's admin-menu.errors.ts); each has a text under `admin.menu.errors`. */
+const MENU_CODES = [
+  'SLUG_TAKEN',
+  'CATEGORY_NOT_EMPTY',
+  'CATEGORY_MOVE_TARGET',
+  'MIXED_CATEGORIES',
+  'MODIFIER_RANGE',
+  'TOO_MANY_IMAGES',
+  'IMAGE_NOT_ON_PRODUCT',
+  'IMAGES_CHANGED',
+] as const;
+
+/** Request properties the menu forms send, for "check the field …" when validation fails. */
+const MENU_FIELDS = [
+  'name',
+  'slug',
+  'description',
+  'basePriceCents',
+  'prepTimeSeconds',
+  'caffeineLevel',
+  'calories',
+  'proteinsGrams',
+  'fatsGrams',
+  'carbsGrams',
+  'allergens',
+  'dietTags',
+  'visible',
+  'priceDeltaCents',
+  'minCount',
+  'maxCount',
+  'sortOrder',
+] as const;
+
+const MENU_WORDING: ApiErrorWording = {
+  codes: Object.fromEntries(MENU_CODES.map((code) => [code, `admin.menu.errors.${code}`])),
+  statuses: Object.fromEntries(
+    [403, 404, 413, 415, 500, 503].map((status) => [status, `admin.menu.errors.status.${status}`]),
+  ),
+  fields: Object.fromEntries(MENU_FIELDS.map((field) => [field, `admin.menu.fields.${field}`])),
+  invalidField: 'admin.menu.errors.invalidField',
+  network: 'admin.menu.errors.status.0',
+};
+
 /**
  * One sentence for a failed menu request, in the admin's language wherever
- * we know what went wrong: the API's domain `code` first, then a known HTTP
- * status, then the server's own message — class-validator sends an array of
- * them — and only then a generic line. What used to reach the screen was
- * Angular's "Http failure response for … 400 Bad Request", which says
- * nothing to a café owner.
+ * we know what went wrong — the shared API-error wording with the menu's
+ * codes, statuses and field names. What used to reach the screen was
+ * Angular's "Http failure response for … 400 Bad Request".
  *
- * `statusKeys` overrides the status translation where the screen knows
- * better (a 503 on a photo upload means storage is not set up).
+ * `statuses` overrides a status where the screen knows better: a 503 on a
+ * photo upload means storage is not set up, not that the server is down.
  */
 export function describeMenuError(
   err: unknown,
   translate: TranslateService,
-  statusKeys: Partial<Record<number, string>> = {},
+  statuses: Partial<Record<number, string>> = {},
 ): string {
-  const { status, error } = (err ?? {}) as { status?: unknown; error?: unknown };
-  const body = typeof error === 'object' && error !== null ? (error as { code?: unknown; message?: unknown }) : {};
-
-  const known = (key: string): string | null => {
-    const text: unknown = translate.instant(key);
-    return typeof text === 'string' && text !== key ? text : null;
-  };
-
-  if (typeof body.code === 'string') {
-    const text = known(`admin.menu.errors.${body.code}`);
-    if (text) return text;
-  }
-  if (typeof status === 'number') {
-    const text = known(statusKeys[status] ?? `admin.menu.errors.status.${status}`);
-    if (text) return text;
-  }
-  const messages = (Array.isArray(body.message) ? body.message : [body.message]).filter(
-    (m): m is string => typeof m === 'string' && m.trim().length > 0,
+  const overrides = Object.fromEntries(
+    Object.entries(statuses).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
-  if (messages.length > 0) return messages.join('; ');
-  return translate.instant('admin.menu.errors.generic');
+  return apiErrorMessage(err, translate, { ...MENU_WORDING, statuses: { ...MENU_WORDING.statuses, ...overrides } });
 }
 
 /** The API's domain error code, when the failure carries one. */
 export function menuErrorCode(err: unknown): string | null {
-  const error = (err as { error?: unknown } | null)?.error;
-  if (typeof error !== 'object' || error === null) return null;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === 'string' ? code : null;
+  return apiErrorCode(err);
 }

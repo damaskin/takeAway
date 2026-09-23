@@ -5,9 +5,11 @@ import { describeMenuError, menuErrorCode } from './menu-errors';
 import { swapped } from './menu-order';
 import { isStopActive, nextMidnightIn } from './stock';
 
-/** Knows a few keys and, like ngx-translate, echoes any other key back. */
+/** Knows a few keys and, like ngx-translate, echoes any other key back; fills in {{params}}. */
 function translator(known: Record<string, string>): TranslateService {
-  return { instant: (key: string) => known[key] ?? key } as unknown as TranslateService;
+  const instant = (key: string, params: Record<string, unknown> = {}) =>
+    (known[key] ?? key).replace(/{{(\w+)}}/g, (_, name: string) => String(params[name] ?? ''));
+  return { instant } as unknown as TranslateService;
 }
 
 function httpError(status: number, error: unknown): HttpErrorResponse {
@@ -19,7 +21,11 @@ describe('describeMenuError', () => {
     'admin.menu.errors.CATEGORY_NOT_EMPTY': 'Сначала перенесите или удалите товары категории.',
     'admin.menu.errors.status.413': 'Файл больше 5 МБ',
     'admin.menu.errors.storageUnavailable': 'Загрузка фото не настроена',
-    'admin.menu.errors.generic': 'Не получилось сохранить.',
+    'admin.menu.errors.invalidField': 'Проверьте поле «{{field}}»',
+    'admin.menu.errors.status.0': 'Нет связи с сервером.',
+    'admin.menu.fields.name': 'Название',
+    'admin.menu.fields.basePriceCents': 'Цена',
+    'common.genericError': 'Что-то пошло не так',
   });
 
   it('translates a domain code first', () => {
@@ -40,19 +46,27 @@ describe('describeMenuError', () => {
     );
   });
 
-  it('joins every validation message instead of showing "Http failure response … 400"', () => {
+  it('names the fields a validation failure is about instead of showing "Http failure response … 400"', () => {
     const err = httpError(400, {
       statusCode: 400,
-      message: ['name must be longer than or equal to 1 characters', 'basePriceCents must be an integer number'],
+      message: [
+        'name must be longer than or equal to 1 characters',
+        'basePriceCents must be an integer number',
+        'something the menu has no label for',
+      ],
     });
     expect(describeMenuError(err, translate)).toBe(
-      'name must be longer than or equal to 1 characters; basePriceCents must be an integer number',
+      'Проверьте поле «Название». Проверьте поле «Цена». something the menu has no label for.',
     );
   });
 
+  it('says when the server could not be reached at all', () => {
+    expect(describeMenuError(httpError(0, null), translate)).toBe('Нет связи с сервером.');
+  });
+
   it('falls back to a plain sentence', () => {
-    expect(describeMenuError(httpError(418, null), translate)).toBe('Не получилось сохранить.');
-    expect(describeMenuError(undefined, translate)).toBe('Не получилось сохранить.');
+    expect(describeMenuError(httpError(418, null), translate)).toBe('Что-то пошло не так');
+    expect(describeMenuError(undefined, translate)).toBe('Что-то пошло не так');
   });
 
   it('exposes the code for flows that react to it', () => {
