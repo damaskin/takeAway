@@ -30,12 +30,14 @@ export class AnalyticsController {
 
   @Get('summary')
   @ApiQuery({ name: 'brandId', required: false, type: String })
+  @ApiQuery({ name: 'days', required: false, type: Number })
   @ApiOkResponse({ type: DashboardSummaryDto })
   async summary(
     @CurrentUser() user: AuthenticatedUser,
     @Query('brandId') brandId?: string,
+    @Query('days') days?: string,
   ): Promise<DashboardSummaryDto> {
-    return this.analytics.dashboardSummary(await this.scopes.resolve(user, brandId));
+    return this.analytics.dashboardSummary(await this.scopes.resolve(user, brandId), clamp(days, 1, 90, 7));
   }
 
   @Get('revenue')

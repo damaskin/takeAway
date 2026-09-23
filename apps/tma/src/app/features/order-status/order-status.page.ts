@@ -11,6 +11,7 @@ import {
   type OrderStatusString,
   type OrderView,
 } from '../../core/orders/orders.service';
+import { LocaleFormatService } from '@takeaway/i18n';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
@@ -200,6 +201,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly orders = inject(OrdersApi);
   private readonly realtime = inject(RealtimeService);
   private readonly tg = inject(TelegramBridgeService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
@@ -266,8 +268,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly paymentDetail = computed(() => {
     const payment = this.order()?.payment;
     if (!payment || payment.state === 'NONE') return '';
-    const currency = this.order()?.currency ?? 'USD';
-    const amount = new Intl.NumberFormat('en', { style: 'currency', currency }).format(payment.amountCents / 100);
+    const amount = this.fmt.money(payment.amountCents, this.order()?.currency);
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
   });
 
@@ -387,7 +388,6 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   }
 
   price(cents: number): string {
-    const currency = this.order()?.currency ?? 'USD';
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
+    return this.fmt.money(cents, this.order()?.currency);
   }
 }

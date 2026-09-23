@@ -33,6 +33,7 @@ describe('OnboardingNotifier', () => {
   let opsChat: { send: jest.Mock };
   let notifier: OnboardingNotifier;
   let logged: jest.SpyInstance;
+  let env: Record<string, string | undefined>;
 
   const sent = (): SentMail[] =>
     mail.send.mock.calls.map(([to, subject, text, html]) => ({ to, subject, text, html }) as SentMail);
@@ -50,9 +51,8 @@ describe('OnboardingNotifier', () => {
     };
     mail = { send: jest.fn().mockResolvedValue(undefined) };
     opsChat = { send: jest.fn().mockResolvedValue(true) };
-    const config = {
-      get: jest.fn((key: string) => (key === 'ADMIN_APP_URL' ? 'https://admin.takeaway.md/' : undefined)),
-    };
+    env = { ADMIN_APP_URL: 'https://admin.takeaway.md/' };
+    const config = { get: jest.fn((key: string) => env[key]) };
     const flags = { support: { email: 'help@takeaway.md', telegram: 'https://t.me/takeaway_help' } };
     notifier = new OnboardingNotifier(
       prisma as unknown as PrismaService,
@@ -76,17 +76,29 @@ describe('OnboardingNotifier', () => {
       expect(owner?.text).toContain('https://admin.takeaway.md/dashboard');
     });
 
-    it('wakes every platform admin in their own language, and the ops chat', async () => {
+    it('wakes every platform admin in the platform language — Russian by default — and the ops chat', async () => {
       await notifier.brandSubmitted('b1');
 
       expect(prisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { role: 'SUPER_ADMIN', email: { not: null }, blockedAt: null } }),
       );
+      // Whatever language each admin's account has: that defaults to English.
       expect(to('root@takeaway.md')?.subject).toBe('Новая заявка на модерацию: Ромашка');
-      expect(to('ops@takeaway.md')?.subject).toBe('New brand to review: Ромашка');
+      expect(to('ops@takeaway.md')?.subject).toBe('Новая заявка на модерацию: Ромашка');
       expect(to('ops@takeaway.md')?.text).toContain('owner@romashka.md');
       expect(to('ops@takeaway.md')?.text).toContain('https://admin.takeaway.md/brands');
       expect(opsChat.send).toHaveBeenCalledWith(expect.stringContaining('New brand to review: Ромашка'));
+    });
+
+    it('writes to the platform team in English when PLATFORM_LOCALE says so', async () => {
+      env['PLATFORM_LOCALE'] = 'EN';
+
+      await notifier.brandSubmitted('b1');
+
+      expect(to('root@takeaway.md')?.subject).toBe('New brand to review: Ромашка');
+      expect(to('ops@takeaway.md')?.subject).toBe('New brand to review: Ромашка');
+      // The owner still hears in the brand's language.
+      expect(to('owner@romashka.md')?.subject).toBe('Заявка «Ромашка» получена');
     });
 
     it('still alerts the platform about a brand with no owner to thank', async () => {

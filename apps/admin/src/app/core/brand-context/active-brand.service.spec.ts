@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
+import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { of, throwError } from 'rxjs';
 
 import { AdminCatalogApi, type BrandDto } from '../catalog/admin-catalog.service';
@@ -14,8 +16,15 @@ describe('ActiveBrandService', () => {
   function make(): ActiveBrandService {
     listMyBrands = jest.fn();
     TestBed.configureTestingModule({
-      providers: [ActiveBrandService, { provide: AdminCatalogApi, useValue: { listMyBrands } }],
+      providers: [
+        provideTranslateService(),
+        ActiveBrandService,
+        { provide: AdminCatalogApi, useValue: { listMyBrands } },
+      ],
     });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
     return TestBed.inject(ActiveBrandService);
   }
 
@@ -48,22 +57,30 @@ describe('ActiveBrandService', () => {
   // The whole point of the fix: a failed request used to be indistinguishable
   // from "this account owns no brand", which is what surfaced to the operator
   // as a flat "the user has no brand" on the stores page.
-  it('keeps the reason when the request fails, and is not "empty"', () => {
+  it('keeps the reason when the request fails, in words, and is not "empty"', () => {
     const service = make();
     listMyBrands.mockReturnValue(throwError(() => ({ status: 403, error: { message: 'Insufficient permissions' } })));
     service.refresh();
 
     expect(service.active()).toBeNull();
-    expect(service.loadError()).toBe('Insufficient permissions');
+    expect(service.loadError()).toBe('Недостаточно прав');
     expect(service.isEmpty()).toBe(false);
   });
 
-  it('falls back to a generic reason when the error carries no message', () => {
+  it('says the server is out of reach when there was no answer at all', () => {
     const service = make();
     listMyBrands.mockReturnValue(throwError(() => ({ status: 0 })));
     service.refresh();
 
-    expect(service.loadError()).toBe('Network error');
+    expect(service.loadError()).toBe('Нет связи с сервером');
+  });
+
+  it('passes on a reason the API gave that the admin has no words for', () => {
+    const service = make();
+    listMyBrands.mockReturnValue(throwError(() => ({ status: 400, error: { message: 'Brand scope is invalid' } })));
+    service.refresh();
+
+    expect(service.loadError()).toBe('Brand scope is invalid');
   });
 
   it('clears a stale error on a successful retry', () => {

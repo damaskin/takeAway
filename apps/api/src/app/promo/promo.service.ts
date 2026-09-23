@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Currency, Prisma, PromoStatus, PromoType } from '@prisma/client';
+import type { PromoErrorCode } from '@takeaway/shared-types';
 
 import type { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { checkoutError } from '../common/http/checkout-error';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ApplyPromoInput,
@@ -40,20 +42,27 @@ export class PromoService {
       include: { _count: { select: { redemptions: true } } },
     });
 
-    if (!promo) return this.invalid('Unknown promo code');
-    if (promo.status !== PromoStatus.RUNNING) return this.invalid('Promo is not active');
+    if (!promo) return this.invalid('PROMO_UNKNOWN', 'Unknown promo code');
+    if (promo.status !== PromoStatus.RUNNING) return this.invalid('PROMO_INACTIVE', 'Promo is not active');
 
     const now = new Date();
-    if (now < promo.startsAt) return this.invalid('Promo has not started yet');
-    if (now > promo.endsAt) return this.invalid('Promo has expired');
+    if (now < promo.startsAt) return this.invalid('PROMO_NOT_STARTED', 'Promo has not started yet');
+    if (now > promo.endsAt) return this.invalid('PROMO_EXPIRED', 'Promo has expired');
 
     if (promo.minSubtotalCents && subtotalCents < promo.minSubtotalCents) {
-      return this.invalid(`Minimum order is ${(promo.minSubtotalCents / 100).toFixed(2)} ${promo.currency}`);
+      return {
+        ...this.invalid(
+          'PROMO_MIN_ORDER',
+          `Minimum order is ${(promo.minSubtotalCents / 100).toFixed(2)} ${promo.currency}`,
+        ),
+        minOrderCents: promo.minSubtotalCents,
+        currency: promo.currency,
+      };
     }
 
     const redemptionsCount = promo._count.redemptions;
     if (promo.maxRedemptions > 0 && redemptionsCount >= promo.maxRedemptions) {
-      return this.invalid('Promo reached its usage limit');
+      return this.invalid('PROMO_LIMIT_REACHED', 'Promo reached its usage limit');
     }
 
     if (userId && promo.perUserLimit > 0) {
@@ -61,7 +70,7 @@ export class PromoService {
         where: { promoId: promo.id, userId },
       });
       if (usedByUser >= promo.perUserLimit) {
-        return this.invalid('You already used this promo');
+        return this.invalid('PROMO_ALREADY_USED', 'You already used this promo');
       }
     }
 
@@ -70,6 +79,7 @@ export class PromoService {
     return {
       valid: true,
       reason: null,
+      reasonCode: null,
       promo: this.toDto(promo, redemptionsCount),
       discountCents,
       pointsMultiplier,
@@ -98,7 +108,10 @@ export class PromoService {
   async applyAndRedeem(input: ApplyPromoInput, orderId: string, tx: PrismaTx): Promise<ApplyPromoResultDto> {
     const res = await this.validate(input.userId, input.code, input.brandId, input.subtotalCents);
     if (!res.valid || !res.promo) {
-      throw new BadRequestException(res.reason ?? 'Promo invalid');
+      throw checkoutError(res.reasonCode ?? 'PROMO_UNKNOWN', res.reason ?? 'Promo invalid', {
+        minOrderCents: res.minOrderCents,
+        currency: res.currency,
+      });
     }
 
     await tx.promoRedemption.create({
@@ -235,8 +248,8 @@ export class PromoService {
     }
   }
 
-  private invalid(reason: string): ValidPromoResultDto {
-    return { valid: false, reason, promo: null, discountCents: 0, pointsMultiplier: 1 };
+  private invalid(reasonCode: PromoErrorCode, reason: string): ValidPromoResultDto {
+    return { valid: false, reason, reasonCode, promo: null, discountCents: 0, pointsMultiplier: 1 };
   }
 
   private toDto(

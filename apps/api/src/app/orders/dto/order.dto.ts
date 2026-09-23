@@ -161,6 +161,13 @@ export class OrderDto {
   @ApiProperty()
   storeName!: string;
 
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "IANA zone of the store — pickup times are shown on the store's clock.",
+  })
+  storeTimezone!: string | null;
+
   @ApiProperty({ description: 'Store location — used to render the pickup map.' })
   storeLatitude!: number;
 
@@ -275,6 +282,9 @@ export class OrderSummaryDto {
 
   @ApiProperty()
   storeName!: string;
+
+  @ApiProperty({ description: "IANA zone of the store — pickup times are shown on the store's clock." })
+  storeTimezone!: string;
 
   @ApiProperty()
   itemCount!: number;

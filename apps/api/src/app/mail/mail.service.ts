@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { formatMoney } from '@takeaway/utils';
 import * as nodemailer from 'nodemailer';
 
 /**
@@ -107,7 +108,10 @@ export class MailService implements OnModuleInit {
     attachments?: MailAttachment[],
   ): Promise<void> {
     const subject = `Чек по заказу #${receipt.orderCode} / takeAway receipt #${receipt.orderCode}`;
-    const fmt = (cents: number) => formatMoney(cents, receipt.currency);
+    // The receipt is Russian with a short English footer: each part writes
+    // money its own way («38 MDL», «4,50 MDL» / "4.50 MDL").
+    const fmt = (cents: number) => formatMoney(cents, receipt.currency, 'ru');
+    const fmtEn = (cents: number) => formatMoney(cents, receipt.currency, 'en');
     const itemsText = receipt.items
       .map((i) => `  ${i.quantity} × ${i.name} — ${fmt(i.totalCents)}` + (i.options ? `\n      ${i.options}` : ''))
       .join('\n');
@@ -127,7 +131,7 @@ export class MailService implements OnModuleInit {
       `--\n\n` +
       `Thanks for your order #${receipt.orderCode} at ${receipt.storeName}.\n\n` +
       `${itemsText}\n\n` +
-      `Total: ${fmt(receipt.totalCents)}`;
+      `Total: ${fmtEn(receipt.totalCents)}`;
 
     const html = `
       <p>Спасибо за заказ <strong>#${escapeHtml(receipt.orderCode)}</strong> в ${escapeHtml(receipt.storeName)}.</p>
@@ -138,7 +142,7 @@ export class MailService implements OnModuleInit {
       <p><strong>Итого:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
       <hr />
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
-      <p><strong>Total:</strong> ${escapeHtml(fmt(receipt.totalCents))}</p>
+      <p><strong>Total:</strong> ${escapeHtml(fmtEn(receipt.totalCents))}</p>
     `;
     await this.send(email, subject, text, html, attachments);
   }
@@ -197,12 +201,4 @@ export function escapeHtml(s: string): string {
         return '&#39;';
     }
   });
-}
-
-function formatMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
-  }
 }

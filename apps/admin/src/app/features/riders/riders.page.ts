@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { AdminRidersApi, type RiderRosterEntryDto } from '../../core/riders/admin-riders.service';
@@ -166,6 +167,7 @@ export class AdminRidersPage implements OnInit {
   private readonly catalog = inject(AdminCatalogApi);
   private readonly api = inject(AdminRidersApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly selectedStoreId = signal<string | null>(null);
@@ -241,8 +243,7 @@ export class AdminRidersPage implements OnInit {
   }
 
   formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    return this.fmt.date(iso);
   }
 
   private reload(): void {

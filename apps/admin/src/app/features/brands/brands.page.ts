@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
@@ -25,7 +25,7 @@ interface PendingDecision {
 @Component({
   selector: 'app-admin-brands',
   standalone: true,
-  imports: [DatePipe, ReactiveFormsModule, TranslatePipe, ConfirmDialogComponent],
+  imports: [LocalDatePipe, ReactiveFormsModule, TranslatePipe, ConfirmDialogComponent],
   template: `
     <section style="padding: 32px; max-width: 1100px">
       <header class="flex items-center justify-between" style="gap: 16px; margin-bottom: 24px">
@@ -151,9 +151,9 @@ interface PendingDecision {
                 <div
                   style="text-align: right; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                 >
-                  <div>{{ 'admin.brands.submitted' | translate }}: {{ b.submittedAt | date: 'MMM d, y, HH:mm' }}</div>
+                  <div>{{ 'admin.brands.submitted' | translate }}: {{ b.submittedAt | localDate: 'dateTime' }}</div>
                   @if (b.moderatedAt) {
-                    <div>{{ 'admin.brands.moderated' | translate }}: {{ b.moderatedAt | date: 'MMM d, y, HH:mm' }}</div>
+                    <div>{{ 'admin.brands.moderated' | translate }}: {{ b.moderatedAt | localDate: 'dateTime' }}</div>
                   }
                 </div>
               </div>

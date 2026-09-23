@@ -1,15 +1,17 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
+import { LocaleFormatService } from '@takeaway/i18n';
 
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
-const TIER_NAMES: Record<LoyaltyAccount['tier'], string> = {
-  SILVER: 'Silver',
-  GOLD: 'Gold',
-  PLATINUM: 'Platinum',
-  SIGNATURE: 'Signature',
+/** The same words the profile page uses for each level. */
+const TIER_KEYS: Record<LoyaltyAccount['tier'], string> = {
+  SILVER: 'web.profile.tierSilver',
+  GOLD: 'web.profile.tierGold',
+  PLATINUM: 'web.profile.tierPlatinum',
+  SIGNATURE: 'web.profile.tierSignature',
 };
 
 @Component({
@@ -128,6 +130,8 @@ const TIER_NAMES: Record<LoyaltyAccount['tier'], string> = {
 })
 export class ProfileLoyaltyPage {
   private readonly loyalty = inject(LoyaltyService);
+  private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly account = signal<LoyaltyAccount | null>(null);
   readonly error = signal<string | null>(null);
@@ -135,19 +139,15 @@ export class ProfileLoyaltyPage {
   constructor() {
     this.loyalty.me().subscribe({
       next: (a) => this.account.set(a),
-      error: (err) => {
-        const maybe = err as { error?: { message?: string }; message?: string };
-        this.error.set(maybe.error?.message ?? maybe.message ?? 'Failed to load loyalty');
-      },
+      error: () => this.error.set(this.translate.instant('web.profile.loyalty.loadFailed')),
     });
   }
 
   tierName(t: LoyaltyAccount['tier']): string {
-    return TIER_NAMES[t] ?? t;
+    return TIER_KEYS[t] ? this.translate.instant(TIER_KEYS[t]) : t;
   }
 
   formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return this.fmt.dateTime(iso);
   }
 }

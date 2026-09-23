@@ -3,6 +3,7 @@ import type { CartItem, Modifier, Prisma, Product, Variation, VariationType } fr
 import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
 import { sortVariationsForDisplay } from '@takeaway/utils';
 
+import { checkoutError } from '../common/http/checkout-error';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
@@ -375,8 +376,10 @@ export class CartService {
     });
     if (stopped.length === 0) return;
 
-    const names = stopped.map((e) => e.product.name).join(', ');
-    throw new BadRequestException(`Currently unavailable at this store: ${names}`);
+    const names = stopped.map((e) => e.product.name);
+    throw checkoutError('ITEMS_UNAVAILABLE', `Currently unavailable at this store: ${names.join(', ')}`, {
+      items: names,
+    });
   }
 
   private async loadProduct(productId: string) {
@@ -398,7 +401,9 @@ export class CartService {
       select: { brandId: true, status: true, brand: { select: { moderationStatus: true } } },
     });
     if (!store || store.brand.moderationStatus !== 'APPROVED') throw new NotFoundException('Store not found');
-    if (store.status === 'CLOSED') throw new BadRequestException('This store is not taking orders right now');
+    if (store.status === 'CLOSED') {
+      throw checkoutError('STORE_NOT_TAKING_ORDERS', 'This store is not taking orders right now');
+    }
     return store.brandId;
   }
 

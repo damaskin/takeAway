@@ -12,6 +12,7 @@ import type { OrderItemSnapshot } from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
+import { checkoutError } from '../common/http/checkout-error';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, type CheckoutLine } from '../cart/cart.service';
@@ -87,7 +88,7 @@ export class OrdersService {
     });
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
-    if (cart.items.length === 0) throw new BadRequestException('Cart is empty');
+    if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
     await this.cart.assertStoreTakesOrders(cart.storeId);
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
@@ -100,14 +101,17 @@ export class OrdersService {
       // catalog layer already strips DELIVERY from public responses, so a
       // client should never see the UI — this guard catches direct API calls.
       if (!this.flags.deliveryEnabled) {
-        throw new BadRequestException('Delivery is not available at this time');
+        throw checkoutError('DELIVERY_UNAVAILABLE', 'Delivery is not available at this time');
       }
       if (!dto.deliveryAddressLine || !dto.deliveryCity) {
-        throw new BadRequestException('deliveryAddressLine and deliveryCity are required for DELIVERY orders');
+        throw checkoutError(
+          'DELIVERY_ADDRESS_REQUIRED',
+          'deliveryAddressLine and deliveryCity are required for DELIVERY orders',
+        );
       }
       // Reject DELIVERY for a store that hasn't opted in.
       if (!cart.store.fulfillmentTypes.includes('DELIVERY')) {
-        throw new BadRequestException('This store does not support delivery');
+        throw checkoutError('DELIVERY_UNAVAILABLE', 'This store does not support delivery');
       }
     }
 
@@ -134,7 +138,10 @@ export class OrdersService {
 
     const subtotalCents = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
-      throw new BadRequestException('Cart total below store minimum');
+      throw checkoutError('BELOW_MIN_ORDER', 'Cart total below store minimum', {
+        minOrderCents: cart.store.minOrderCents,
+        currency: cart.store.currency,
+      });
     }
 
     // Delivery fee — distance-based when the client sends customer coords,
@@ -155,7 +162,7 @@ export class OrdersService {
         },
       });
       if (!quote.deliverable) {
-        throw new BadRequestException('Delivery address is outside the serviceable radius');
+        throw checkoutError('DELIVERY_OUT_OF_RANGE', 'Delivery address is outside the serviceable radius');
       }
       deliveryFeeCents = quote.feeCents;
       deliveryDistanceM = quote.distanceM;
@@ -168,7 +175,10 @@ export class OrdersService {
       ? await this.promo.validate(userId, dto.couponCode, cart.store.brandId, subtotalCents)
       : null;
     if (promoResult && !promoResult.valid) {
-      throw new BadRequestException(promoResult.reason ?? 'Promo code invalid');
+      throw checkoutError(promoResult.reasonCode ?? 'PROMO_UNKNOWN', promoResult.reason ?? 'Promo code invalid', {
+        minOrderCents: promoResult.minOrderCents,
+        currency: promoResult.currency,
+      });
     }
 
     const promoDiscountCents = promoResult?.discountCents ?? 0;
@@ -215,6 +225,12 @@ export class OrdersService {
       taxIncludedInPrice: cart.store.taxIncludedInPrice,
     });
 
+    // Checkout may send no name — the field is optional and the Mini App
+    // never asks for one. The customer is signed in, though, and has a name
+    // on the profile; without it the kitchen board says «Клиент» and the
+    // admin «Без имени».
+    const customerName = dto.customerName?.trim() || (await this.profileName(userId));
+
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
         const created = await tx.order.create({
@@ -234,7 +250,7 @@ export class OrdersService {
             currency: cart.store.currency,
             orderCode,
             qrToken: randomBytes(16).toString('hex'),
-            customerName: dto.customerName,
+            customerName,
             customerPhone: dto.customerPhone,
             notes: dto.notes,
             couponCode: dto.couponCode,
@@ -346,7 +362,7 @@ export class OrdersService {
       where: { id: orderId },
       include: {
         items: true,
-        store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+        store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
         payments: {
           orderBy: { createdAt: 'desc' },
           include: { cardToken: { select: { maskedPan: true } } },
@@ -372,7 +388,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(100, Math.max(1, take)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -429,7 +445,7 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(200, Math.max(1, params.take ?? 50)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true } } },
+      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
     });
     return orders.map((o) => this.toSummary(o));
   }
@@ -446,7 +462,7 @@ export class OrdersService {
         items: true,
         payments: { orderBy: { createdAt: 'asc' } },
         events: { orderBy: { createdAt: 'asc' } },
-        store: { select: { name: true } },
+        store: { select: { name: true, timezone: true } },
         user: { select: { email: true } },
       },
     });
@@ -472,6 +488,7 @@ export class OrdersService {
       createdAt: order.createdAt.toISOString(),
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       customerEmail: order.user?.email ?? null,
@@ -528,7 +545,7 @@ export class OrdersService {
     totalCents: number;
     currency: string;
     storeId: string;
-    store: { name: string };
+    store: { name: string; timezone: string };
     items: Array<{ quantity: number }>;
     createdAt: Date;
   }): OrderSummaryDto {
@@ -542,6 +559,7 @@ export class OrdersService {
       currency: o.currency as OrderSummaryDto['currency'],
       storeId: o.storeId,
       storeName: o.store.name,
+      storeTimezone: o.store.timezone,
       itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
       createdAt: o.createdAt.toISOString(),
     };
@@ -695,7 +713,7 @@ export class OrdersService {
         },
         include: {
           items: true,
-          store: { select: { name: true, latitude: true, longitude: true, addressLine: true } },
+          store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
           payments: {
             orderBy: { createdAt: 'desc' },
             include: { cardToken: { select: { maskedPan: true } } },
@@ -825,6 +843,12 @@ export class OrdersService {
    * cached on the cart — that number was right when the customer last
    * touched their basket, and four orders may have landed since.
    */
+  /** The name on the customer's profile, trimmed; null when there is none. */
+  private async profileName(userId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    return user?.name?.trim() || null;
+  }
+
   private async resolvePickupAt(
     storeId: string,
     lines: readonly { quantity: number; unitPrepSeconds: number }[],
@@ -841,8 +865,10 @@ export class OrdersService {
     const minAt = new Date(Date.now() + MIN_SCHEDULED_LEAD_MINUTES * 60_000);
     const maxAt = new Date(Date.now() + MAX_SCHEDULED_LEAD_HOURS * 60 * 60_000);
     if (dto.pickupAt < minAt || dto.pickupAt > maxAt) {
-      throw new BadRequestException(
+      throw checkoutError(
+        'PICKUP_TIME_OUT_OF_RANGE',
         `Scheduled pickup must be between ${MIN_SCHEDULED_LEAD_MINUTES} min and ${MAX_SCHEDULED_LEAD_HOURS} h from now`,
+        { minMinutes: MIN_SCHEDULED_LEAD_MINUTES, maxHours: MAX_SCHEDULED_LEAD_HOURS },
       );
     }
     return dto.pickupAt;
@@ -899,6 +925,7 @@ export class OrdersService {
         latitude?: number | null;
         longitude?: number | null;
         addressLine?: string | null;
+        timezone?: string | null;
       } | null;
       payments?: Array<{
         status: PaymentStatus;
@@ -923,6 +950,7 @@ export class OrdersService {
       currency: order.currency,
       storeId: order.storeId,
       storeName: order.store?.name ?? '',
+      storeTimezone: order.store?.timezone ?? null,
       storeLatitude: order.store?.latitude ?? 0,
       storeLongitude: order.store?.longitude ?? 0,
       storeAddress: order.store?.addressLine ?? null,

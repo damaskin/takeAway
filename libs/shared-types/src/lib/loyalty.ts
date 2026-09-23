@@ -4,6 +4,8 @@
  * apps/api/src/app/promo/dto/promo.dto.ts.
  */
 
+import type { PromoErrorCode } from './order';
+
 export type LoyaltyTier = 'SILVER' | 'GOLD' | 'PLATINUM' | 'SIGNATURE';
 export type PointsEntryType = 'EARN' | 'SPEND' | 'EXPIRE' | 'ADJUST';
 
@@ -55,7 +57,13 @@ export interface ValidatePromoInput {
 
 export interface ValidPromoResult {
   valid: boolean;
+  /** English, for logs; show `reasonCode` in the customer's words instead. */
   reason: string | null;
+  /** Why the code does not apply; null when it does. Absent from older APIs. */
+  reasonCode?: PromoErrorCode | null;
+  /** PROMO_MIN_ORDER: the promo's minimum subtotal, in `currency`. */
+  minOrderCents?: number;
+  currency?: string;
   promo: Promo | null;
   discountCents: number;
   pointsMultiplier: number;

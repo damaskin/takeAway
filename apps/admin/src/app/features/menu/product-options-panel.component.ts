@@ -9,7 +9,7 @@ import {
   type VariationAdminDto,
   type VariationType,
 } from '../../core/catalog/admin-catalog.service';
-import { formatMoney } from '../../core/format/money';
+import { LocaleFormatService } from '@takeaway/i18n';
 import { describeMenuError } from './menu-errors';
 import { MENU_FORM_STYLES } from './menu-form.styles';
 import { countValidator, formatMoneyInput, moneyValidator, parseCount, parseMoney } from './menu-input';
@@ -273,6 +273,7 @@ const MAX_COUNT = 99;
 export class ProductOptionsPanelComponent {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly productId = input.required<string>();
   readonly currency = input<string | null>(null);
@@ -353,7 +354,7 @@ export class ProductOptionsPanelComponent {
   formatDelta(cents: number): string {
     if (cents === 0) return this.translate.instant('admin.menu.options.noSurcharge');
     const sign = cents > 0 ? '+' : '−';
-    return `${sign}${formatMoney(Math.abs(cents), this.currency())}`;
+    return `${sign}${this.fmt.money(Math.abs(cents), this.currency())}`;
   }
 
   cancelEdit(): void {
