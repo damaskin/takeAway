@@ -116,9 +116,9 @@ export type OrderItemModifier = {
  * `OrderItem.productSnapshot` — the line exactly as it was bought, so a later
  * menu edit cannot rewrite what the kitchen makes or what the receipt says.
  *
- * `variations` and `modifierLines` were added in September 2026 and are
- * empty on orders placed before that; those still carry the ids
- * (`variationIds`, `modifiers`) and the line's notes.
+ * `variations` and `modifierLines` are empty on orders placed before options
+ * were snapshotted; those still carry the ids (`variationIds`, `modifiers`)
+ * and the line's notes.
  */
 export type OrderItemSnapshot = {
   /** Product id. */
