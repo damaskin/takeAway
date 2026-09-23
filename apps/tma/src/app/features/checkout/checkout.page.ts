@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
 import { computeTax, isCartChangedError } from '@takeaway/utils';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -794,10 +794,24 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * A coded API error — the store is closed then, the slot filled up — in
+   * the customer's words; any other message the API sent as it is, since the
+   * real reason beats a vaguer apology.
+   */
   private showError(err: unknown, fallbackKey: string): void {
-    const maybe = err as { error?: { message?: string | string[] }; message?: string };
-    const raw = maybe.error?.message ?? maybe.message;
+    const body = (err as { error?: unknown } | null)?.error;
+    const coded = checkoutErrorText(body, this.translate, this.fmt);
+    if (coded) {
+      this.error.set(coded);
+      return;
+    }
+    if ((err as { status?: unknown } | null)?.status === 0) {
+      this.error.set(this.translate.instant('common.networkError'));
+      return;
+    }
+    const raw = (body as { message?: unknown } | null)?.message;
     const message = Array.isArray(raw) ? raw.join(', ') : raw;
-    this.error.set(message || this.translate.instant(fallbackKey));
+    this.error.set(typeof message === 'string' && message ? message : this.translate.instant(fallbackKey));
   }
 }

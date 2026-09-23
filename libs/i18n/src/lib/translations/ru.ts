@@ -1527,7 +1527,7 @@ export const TRANSLATIONS_RU = {
       offlineSubtitle: 'Заказы появятся, как только соединение восстановится.',
       itemsCount: '{{count}} позиций',
       pickupAsap: 'Сейчас',
-      pickupScheduled: 'По времени',
+      pickupScheduled: 'Ко времени',
       status: {
         CREATED: 'В очереди',
         PAID: 'В очереди',
@@ -1560,10 +1560,10 @@ export const TRANSLATIONS_RU = {
     },
     profile: {
       loyalty: 'ЛОЯЛЬНОСТЬ',
-      tierGold: 'Gold',
+      tierGold: 'Золотой уровень',
       pointsSuffix: 'баллов',
       pointsLine: '{{points}} баллов',
-      toPlatinum: '{{points}} баллов до Platinum',
+      toPlatinum: '{{points}} баллов до уровня «Платиновый»',
       signOut: 'Выйти',
       fallbackName: 'Пользователь Telegram',
     },
