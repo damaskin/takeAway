@@ -190,7 +190,13 @@ contract has no preauthorization.
 
 `AGROPROMBANK_INVOICE_PREFIX` must differ per environment. The `invoiceid` we
 send has to stay unique for the entire life of the merchant contract, and a
-staging deployment sharing production's numbering would collide with it.
+staging deployment sharing production's numbering would collide with it. It is
+**digits only**: the bank reads `invoiceid` as a number, and the first live
+charges, sent with the prefix `TA`, all came back as .NET's "Input string was
+not in a correct format." (`result=-1`). A prefix with anything but digits is
+now reported as a missing setting and stops every call before it leaves.
+Production uses `1`; an id is the prefix, `Date.now()` and four random digits —
+18 digits, inside a 64-bit integer.
 
 The brand's currency must be one the bank settles: `RUP` (Transnistrian rouble,
 bank code `000`) in practice. `USD`, `EUR` and `MDL` are mapped too; anything
