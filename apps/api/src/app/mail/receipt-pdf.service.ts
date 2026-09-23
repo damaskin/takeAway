@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { formatMoney } from '@takeaway/utils';
 
 const PDFDocument = require('pdfkit') as typeof import('pdfkit');
 
@@ -89,7 +90,8 @@ export class ReceiptPdfService {
   }
 
   private draw(doc: PDFKit.PDFDocument, receipt: ReceiptForPdf): void {
-    const fmt = (cents: number) => formatMoney(cents, receipt.currency);
+    // The PDF is English (Helvetica has no Cyrillic), so money is written the English way.
+    const fmt = (cents: number) => formatMoney(cents, receipt.currency, 'en');
 
     doc.font('Helvetica-Bold').fontSize(20).text('takeAway', { align: 'left' });
     doc.moveDown(0.2);
@@ -156,13 +158,5 @@ export class ReceiptPdfService {
     // the "·" and "×" the options line is written with — both are in
     // Helvetica's WinAnsi set.
     return /^[\t\n\r\x20-\x7E·×]*$/.test(probe);
-  }
-}
-
-function formatMoney(cents: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(cents / 100);
-  } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`;
   }
 }
