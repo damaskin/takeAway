@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BrandModerationStatus, type Locale, type Prisma, Role } from '@prisma/client';
+import { BrandModerationStatus, Locale, type Prisma, Role } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { MailService } from '../mail/mail.service';
@@ -92,7 +92,12 @@ export class OnboardingNotifier {
     await this.mail.send(to, m.subject, m.text, m.html);
   }
 
-  /** Every platform admin with an email, plus the ops chat when there is one. */
+  /**
+   * Every platform admin with an email, plus the ops chat when there is one.
+   * The mails are in the platform team's language (PLATFORM_LOCALE), not in
+   * each admin's account locale — that defaults to English and left a
+   * Russian-speaking team reading "New brand to review".
+   */
   private async alertPlatform(brand: BrandForMail, kind: PlatformReview['kind']): Promise<void> {
     const review: PlatformReview = {
       kind,
@@ -105,12 +110,12 @@ export class OnboardingNotifier {
     };
     const admins = await this.prisma.user.findMany({
       where: { role: Role.SUPER_ADMIN, email: { not: null }, blockedAt: null },
-      select: { email: true, locale: true },
+      select: { email: true },
     });
+    const m = platformReviewMail(this.platformLocale, review);
     await this.settle([
       ...admins.flatMap((admin) => {
         if (!admin.email) return [];
-        const m = platformReviewMail(admin.locale, review);
         return [this.mail.send(admin.email, m.subject, m.text, m.html)];
       }),
       this.opsChat.send(platformReviewChatText(review)),
@@ -133,6 +138,12 @@ export class OnboardingNotifier {
     } catch (err) {
       this.logger.error(`Could not send "${event}" notifications for brand ${brandId}: ${messageOf(err)}`);
     }
+  }
+
+  /** PLATFORM_LOCALE: `ru` (the default) or `en`. */
+  private get platformLocale(): Locale {
+    const value = this.config.get<string>('PLATFORM_LOCALE')?.trim().toLowerCase();
+    return value === 'en' ? Locale.EN : Locale.RU;
   }
 
   private get adminUrl(): string {
