@@ -36,10 +36,12 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
   template: `
     <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
-        <!-- Hero image -->
+        <!-- Hero image. background-image, not the background shorthand: the
+             shorthand resets background-size and -position, and a photo
+             came out at its natural size, cropped at the top-left corner. -->
         <div
-          [style.background]="heroBg(p)"
-          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center"
+          [style.background-image]="heroBg(p)"
+          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--color-cream)"
         ></div>
 
         <!-- Title row -->
@@ -295,7 +297,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   heroBg(p: ProductDetail): string {
     const url = p.imageUrls?.[0];
-    if (url) return `url('${url}')`;
+    // A quote in a POS-supplied URL would otherwise end the CSS string early.
+    if (url) return `url('${url.replace(/'/g, '%27')}')`;
     return 'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)';
   }
 
