@@ -218,6 +218,53 @@ export interface CartChangedError {
   items: CartChangedItem[];
 }
 
+/** Why a promo code does not apply. Sent by promo validation and by `POST /orders`. */
+export type PromoErrorCode =
+  | 'PROMO_UNKNOWN'
+  | 'PROMO_INACTIVE'
+  | 'PROMO_NOT_STARTED'
+  | 'PROMO_EXPIRED'
+  | 'PROMO_MIN_ORDER'
+  | 'PROMO_LIMIT_REACHED'
+  | 'PROMO_ALREADY_USED';
+
+/**
+ * Stable codes on the errors a customer can meet while placing an order. The
+ * API sends one beside its English `message`; web and the Mini App show
+ * their own words for it instead of the message.
+ */
+export type CheckoutErrorCode =
+  | 'CART_EMPTY'
+  | 'STORE_NOT_TAKING_ORDERS'
+  | 'STORE_CLOSED_AT_TIME'
+  | 'PICKUP_SLOT_FULL'
+  | 'PICKUP_TIME_OUT_OF_RANGE'
+  | 'ITEMS_UNAVAILABLE'
+  | 'BELOW_MIN_ORDER'
+  | 'DELIVERY_UNAVAILABLE'
+  | 'DELIVERY_ADDRESS_REQUIRED'
+  | 'DELIVERY_OUT_OF_RANGE'
+  | PromoErrorCode;
+
+/**
+ * Body of a 400 from the order path. The optional fields fill the gaps in the
+ * translated text: which items ran out, the minimum order, the booking window.
+ */
+export interface CheckoutErrorBody {
+  statusCode: 400;
+  error: 'Bad Request';
+  code: CheckoutErrorCode;
+  message: string;
+  /** ITEMS_UNAVAILABLE: the names of the items that ran out. */
+  items?: string[];
+  /** BELOW_MIN_ORDER, PROMO_MIN_ORDER: the minimum, in `currency`. */
+  minOrderCents?: number;
+  currency?: string;
+  /** PICKUP_TIME_OUT_OF_RANGE: how far ahead a pickup may be booked. */
+  minMinutes?: number;
+  maxHours?: number;
+}
+
 export interface OrderStatusEvent {
   orderId: string;
   status: OrderStatusEnum;

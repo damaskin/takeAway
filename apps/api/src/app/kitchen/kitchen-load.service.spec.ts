@@ -202,9 +202,10 @@ describe('KitchenLoadService', () => {
         },
       });
 
-      await expect(service.assertSlotAvailable('store-1', new Date('2026-08-22T08:15:00.000Z'))).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      const attempt = service.assertSlotAvailable('store-1', new Date('2026-08-22T08:15:00.000Z'));
+      await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
+      // The code is what web and the Mini App translate; the message is English.
+      await expect(attempt).rejects.toMatchObject({ response: { code: 'PICKUP_SLOT_FULL' } });
     });
 
     it('lets an order through while the slot has room', async () => {
@@ -264,9 +265,9 @@ describe('KitchenLoadService', () => {
 
     it('rejects a handover the store will not be open for', async () => {
       const { service } = makeService(morningOnly);
-      await expect(service.assertOpenAt('store-1', new Date('2026-08-22T03:00:00.000Z'))).rejects.toThrow(
-        'closed at that time',
-      );
+      const attempt = service.assertOpenAt('store-1', new Date('2026-08-22T03:00:00.000Z'));
+      await expect(attempt).rejects.toThrow('closed at that time');
+      await expect(attempt).rejects.toMatchObject({ response: { code: 'STORE_CLOSED_AT_TIME' } });
     });
 
     it('accepts a handover inside opening hours', async () => {
