@@ -41,6 +41,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     requestFailed: 'Request failed',
     retry: 'Retry',
     genericError: 'Something went wrong, please try again',
+    networkError: 'No connection to the server',
+    forbidden: 'You do not have access to this',
     units: {
       min: 'min',
       mShort: 'm',
@@ -592,7 +594,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       changeRole: 'Change role',
       saveRole: 'Save role',
       owner: {
-        title: 'Brand owner (BRAND_ADMIN)',
+        title: 'Brand owner',
         subtitle: "The owner can manage this brand's menu, stores, staff, and settings.",
         none: 'No owner assigned yet.',
         change: 'Change owner',
@@ -790,6 +792,19 @@ export const TRANSLATIONS_EN: TranslationTree = {
       confirm: 'Confirm refund',
       refunding: 'Refunding…',
       timeline: 'Timeline',
+      events: {
+        STATUS_CHANGED: 'Status',
+        ETA_UPDATED: 'Ready time changed',
+        CUSTOMER_NEARBY: 'Customer nearby',
+        CUSTOMER_HERE: 'Customer is here',
+        PAYMENT_SUCCEEDED: 'Payment succeeded',
+        PAYMENT_FAILED: 'Payment failed',
+        REFUND_ISSUED: 'Refund',
+        CANCELLED: 'Order cancelled',
+        NOTE: 'Note',
+        riderAssigned: 'Rider assigned',
+        pointsMultiplier: 'Points ×{{value}}',
+      },
     },
     orders: {
       title: 'Orders',
@@ -1377,6 +1392,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         RUNNING: 'Running',
         PAUSED: 'Paused',
         ENDED: 'Ended',
+        EXPIRED: 'Expired',
       },
       value: {
         percent: '{{value}}% off',

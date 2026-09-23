@@ -1,6 +1,8 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type BrandDto } from '../catalog/admin-catalog.service';
+import { apiErrorMessage } from '../http/api-error';
 
 const STORAGE_KEY = 'takeaway.admin.activeBrandId';
 
@@ -25,6 +27,7 @@ const STORAGE_KEY = 'takeaway.admin.activeBrandId';
 @Injectable({ providedIn: 'root' })
 export class ActiveBrandService {
   private readonly api = inject(AdminCatalogApi);
+  private readonly translate = inject(TranslateService);
 
   private readonly _brands = signal<BrandDto[]>([]);
   private readonly _activeId = signal<string | null>(this.readStored());
@@ -77,7 +80,12 @@ export class ActiveBrandService {
       error: (err) => {
         this._brands.set([]);
         this._activeId.set(null);
-        this._loadError.set(extractMessage(err));
+        this._loadError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            statuses: { 401: 'common.forbidden', 403: 'common.forbidden' },
+          }),
+        );
         this._loading.set(false);
         this._loaded.set(true);
       },
@@ -110,12 +118,4 @@ export class ActiveBrandService {
     if (typeof localStorage === 'undefined') return null;
     return localStorage.getItem(STORAGE_KEY);
   }
-}
-
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; status?: number; message?: unknown };
-  if (typeof maybe.error?.message === 'string') return maybe.error.message;
-  if (maybe.status === 0) return 'Network error';
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Failed to load brands';
 }

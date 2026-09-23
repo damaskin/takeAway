@@ -1,8 +1,9 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { type AvailableRider, DeliveryApi, type DispatchOrderRow } from '../../core/delivery/delivery.service';
+import { apiErrorMessage } from '../../core/http/api-error';
 import { DispatchRealtimeService } from '../../core/realtime/dispatch-realtime.service';
 
 /**
@@ -148,6 +149,7 @@ export class DispatchPage implements OnInit, OnDestroy {
   private readonly catalog = inject(AdminCatalogApi);
   private readonly delivery = inject(DeliveryApi);
   private readonly realtime = inject(DispatchRealtimeService);
+  private readonly translate = inject(TranslateService);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly selectedStoreId = signal<string | null>(null);
@@ -166,7 +168,7 @@ export class DispatchPage implements OnInit, OnDestroy {
         const first = list[0];
         if (first) this.selectStore(first.id);
       },
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(apiErrorMessage(err, this.translate)),
     });
   }
 
@@ -200,7 +202,7 @@ export class DispatchPage implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(apiErrorMessage(err, this.translate));
       },
     });
   }
@@ -215,7 +217,7 @@ export class DispatchPage implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.assigning.set(false);
-        this.error.set(extractMessage(err));
+        this.error.set(apiErrorMessage(err, this.translate));
       },
     });
   }
@@ -235,14 +237,7 @@ export class DispatchPage implements OnInit, OnDestroy {
   private loadRiders(storeId: string): void {
     this.delivery.listRiders(storeId).subscribe({
       next: (list) => this.riders.set(list),
-      error: (err) => this.error.set(extractMessage(err)),
+      error: (err) => this.error.set(apiErrorMessage(err, this.translate)),
     });
   }
-}
-
-function extractMessage(err: unknown): string {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return 'Request failed';
 }

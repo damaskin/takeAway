@@ -60,7 +60,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
                 <p
                   style="font-family: var(--font-mono); font-size: 12px; color: var(--color-text-tertiary); margin: 2px 0 0"
                 >
-                  {{ owner()!.email }} · Brand Admin
+                  {{ owner()!.email }} · {{ 'admin.layout.role.BRAND_ADMIN' | translate }}
                 </p>
               </div>
               <button

@@ -326,7 +326,8 @@ export class AdminOrdersPage implements OnInit {
     return (
       o.orderCode.toLowerCase().includes(q) ||
       o.storeName.toLowerCase().includes(q) ||
-      o.status.toLowerCase().includes(q)
+      o.status.toLowerCase().includes(q) ||
+      this.translate.instant(this.statusLabel(o.status)).toLowerCase().includes(q)
     );
   }
 }

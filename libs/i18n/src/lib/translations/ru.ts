@@ -40,6 +40,8 @@ export const TRANSLATIONS_RU = {
     requestFailed: 'Запрос не выполнен',
     retry: 'Повторить',
     genericError: 'Что-то пошло не так, попробуйте снова',
+    networkError: 'Нет связи с сервером',
+    forbidden: 'Недостаточно прав',
     units: {
       min: 'мин',
       mShort: 'м',
@@ -591,7 +593,7 @@ export const TRANSLATIONS_RU = {
       changeRole: 'Изменить роль',
       saveRole: 'Сохранить роль',
       owner: {
-        title: 'Владелец бренда (BRAND_ADMIN)',
+        title: 'Владелец бренда',
         subtitle: 'Владелец управляет меню, точками, сотрудниками и настройками бренда.',
         none: 'Владелец не назначен.',
         change: 'Сменить владельца',
@@ -788,6 +790,19 @@ export const TRANSLATIONS_RU = {
       confirm: 'Подтвердить возврат',
       refunding: 'Возвращаем…',
       timeline: 'История',
+      events: {
+        STATUS_CHANGED: 'Статус',
+        ETA_UPDATED: 'Время готовности изменено',
+        CUSTOMER_NEARBY: 'Клиент рядом',
+        CUSTOMER_HERE: 'Клиент на месте',
+        PAYMENT_SUCCEEDED: 'Оплата прошла',
+        PAYMENT_FAILED: 'Оплата не прошла',
+        REFUND_ISSUED: 'Возврат',
+        CANCELLED: 'Заказ отменён',
+        NOTE: 'Заметка',
+        riderAssigned: 'Назначен курьер',
+        pointsMultiplier: 'Бонусы ×{{value}}',
+      },
     },
     orders: {
       title: 'Заказы',
@@ -822,7 +837,7 @@ export const TRANSLATIONS_RU = {
       },
       pickup: {
         asap: 'Сейчас',
-        scheduled: 'По времени',
+        scheduled: 'Ко времени',
       },
     },
     menu: {
@@ -1380,6 +1395,7 @@ export const TRANSLATIONS_RU = {
         RUNNING: 'Активен',
         PAUSED: 'Пауза',
         ENDED: 'Завершён',
+        EXPIRED: 'Завершён',
       },
       value: {
         percent: 'Скидка {{value}}%',

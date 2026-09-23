@@ -4,7 +4,12 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
 import { LocaleFormatService } from '@takeaway/i18n';
 
-import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../../core/orders/orders.service';
+import {
+  AdminOrdersApi,
+  type AdminOrderDetail,
+  type AdminOrderEvent,
+  type AdminOrderItem,
+} from '../../core/orders/orders.service';
 
 /**
  * Order detail drawer, and the only way to issue a refund.
@@ -52,7 +57,7 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
               >#{{ o.orderCode }}</span
             >
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
-              {{ o.storeName }} · {{ o.status }}
+              {{ o.storeName }} · {{ 'admin.orders.status.' + o.status | translate }}
             </span>
           </div>
           <button
@@ -298,7 +303,7 @@ import { AdminOrdersApi, type AdminOrderDetail, type AdminOrderItem } from '../.
                 {{ time(event.createdAt, o.storeTimezone) }}
               </span>
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)">
-                {{ event.type }}{{ eventDetail(event.payload, o.currency) }}
+                {{ eventLine(event, o.currency) }}
               </span>
             </div>
           }
@@ -411,16 +416,45 @@ export class OrderDetailPanelComponent {
     return `${this.fmt.dayMonth(iso, timeZone)}, ${this.fmt.time(iso, timeZone)}`;
   }
 
-  /** Surfaces the bits of an event payload a human would want to read. */
-  eventDetail(payload: unknown, currency: string): string {
-    if (!payload || typeof payload !== 'object') return '';
-    const p = payload as Record<string, unknown>;
-    const parts: string[] = [];
-    if (typeof p['from'] === 'string' && typeof p['to'] === 'string') parts.push(`${p['from']} → ${p['to']}`);
-    else if (typeof p['to'] === 'string') parts.push(String(p['to']));
-    if (typeof p['reason'] === 'string') parts.push(String(p['reason']));
-    if (typeof p['amountCents'] === 'number') parts.push(this.money(p['amountCents'] as number, currency));
-    return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
+  /**
+   * «Статус · Принят → Готовится»: what happened, in words, then the bits
+   * of the payload a human would want to read.
+   */
+  eventLine(event: AdminOrderEvent, currency: string): string {
+    const p = event.payload && typeof event.payload === 'object' ? (event.payload as Record<string, unknown>) : {};
+    const parts = [this.eventLabel(event.type, p)];
+    if (typeof p['from'] === 'string' && typeof p['to'] === 'string') {
+      parts.push(`${this.statusLabel(p['from'])} → ${this.statusLabel(p['to'])}`);
+    } else if (typeof p['to'] === 'string') {
+      parts.push(this.statusLabel(p['to']));
+    }
+    if (typeof p['reason'] === 'string') parts.push(p['reason']);
+    if (typeof p['amountCents'] === 'number') parts.push(this.money(p['amountCents'], currency));
+    if (typeof p['distanceM'] === 'number') parts.push(this.fmt.distance(p['distanceM']));
+    return parts.join(' · ');
+  }
+
+  private eventLabel(type: string, payload: Record<string, unknown>): string {
+    // Notes are a catch-all: say what kind of note it is.
+    if (type === 'NOTE' && payload['kind'] === 'rider_assigned') {
+      return this.translate.instant('admin.orderDetail.events.riderAssigned');
+    }
+    if (type === 'NOTE' && typeof payload['pointsMultiplier'] === 'number') {
+      return this.translate.instant('admin.orderDetail.events.pointsMultiplier', {
+        value: payload['pointsMultiplier'],
+      });
+    }
+    return this.translated(`admin.orderDetail.events.${type}`, type);
+  }
+
+  private statusLabel(status: string): string {
+    return this.translated(`admin.orders.status.${status}`, status);
+  }
+
+  /** The translation, or the raw value when a newer API sends one this build has no words for. */
+  private translated(key: string, raw: string): string {
+    const text = this.translate.instant(key);
+    return text === key ? raw : text;
   }
 }
 
