@@ -324,10 +324,18 @@ platform :ios do
       UI.message("#{email} is already a user of the team — run add_tester")
       next
     end
-    pending = Spaceship::ConnectAPI.test_flight_request_client.get("v1/userInvitations", { filter: { email: email } })
-    if Array(pending.body["data"]).any?
-      UI.message("#{email} already has a pending invitation")
-      next
+    pending = Array(
+      Spaceship::ConnectAPI.test_flight_request_client.get("v1/userInvitations", { filter: { email: email } }).body["data"]
+    )
+    if pending.any?
+      # There is no "resend" in the API: REINVITE=1 withdraws the unanswered
+      # invitation and sends a fresh one, which also restarts its three days.
+      unless ENV["REINVITE"] == "1"
+        UI.message("#{email} already has a pending invitation (REINVITE=1 sends a fresh one)")
+        next
+      end
+      pending.each { |inv| Spaceship::ConnectAPI.test_flight_request_client.delete("v1/userInvitations/#{inv['id']}") }
+      UI.message("Withdrew the unanswered invitation for #{email}")
     end
     app = Spaceship::ConnectAPI::App.find(APP_ID)
     UI.user_error!("No app record for #{APP_ID}") if app.nil?
