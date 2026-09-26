@@ -3,7 +3,7 @@ import { Component, Injector, OnInit, afterNextRender, inject, signal } from '@a
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
-import { BrandLogoComponent } from '@takeaway/ui-kit';
+import { BrandLogoComponent, StoreLogoComponent } from '@takeaway/ui-kit';
 
 import { categoryIcon } from '../../core/catalog/category-icon';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -30,7 +30,7 @@ interface FooterLink {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, BrandLogoComponent],
+  imports: [RouterLink, TranslatePipe, BrandLogoComponent, StoreLogoComponent],
   template: `
     <!-- Hero — pencil SNCQE. The design's closing banner; it opens the page. -->
     <section
@@ -91,12 +91,7 @@ interface FooterLink {
             class="flex items-center"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); padding: 20px; gap: 16px"
           >
-            <div
-              class="flex items-center justify-center"
-              style="width: 52px; height: 52px; background: var(--color-latte); border-radius: 14px; font-size: 24px"
-            >
-              ☕
-            </div>
+            <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="52" />
             <div class="flex flex-col flex-1" style="gap: 4px">
               <span
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"

@@ -16,7 +16,8 @@ import '../l10n/app_localizations.dart';
 import '../shared/widgets/state_views.dart';
 import 'router.dart';
 
-/// Bottom-tab frame around the four main sections. Also the one place that
+/// Bottom-tab frame around the four main sections (stores, menu, orders,
+/// profile — in the order of the branches in `router.dart`). Also the one place that
 /// reacts to app-wide events: notification taps, foreground pushes, an
 /// expired session, and coming back to the foreground.
 class AppShell extends ConsumerStatefulWidget {
@@ -110,14 +111,14 @@ class _AppShellState extends ConsumerState<AppShell> {
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           destinations: [
             NavigationDestination(
-              icon: const Icon(Icons.local_cafe_outlined),
-              selectedIcon: const Icon(Icons.local_cafe_rounded),
-              label: l10n.navMenu,
-            ),
-            NavigationDestination(
               icon: const Icon(Icons.storefront_outlined),
               selectedIcon: const Icon(Icons.storefront_rounded),
               label: l10n.navStores,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.local_cafe_outlined),
+              selectedIcon: const Icon(Icons.local_cafe_rounded),
+              label: l10n.navMenu,
             ),
             NavigationDestination(
               icon: Badge.count(

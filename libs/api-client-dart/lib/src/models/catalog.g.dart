@@ -25,6 +25,8 @@ Store _$StoreFromJson(Map<String, dynamic> json) => Store(
   taxIncludedInPrice: json['taxIncludedInPrice'] as bool? ?? true,
   currency: json['currency'] as String,
   openNow: json['openNow'] as bool?,
+  brandName: json['brandName'] as String?,
+  logoUrl: json['logoUrl'] as String?,
   heroImageUrl: json['heroImageUrl'] as String?,
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
 );
@@ -48,6 +50,8 @@ Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
   'taxRateBps': instance.taxRateBps,
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,
+  'brandName': instance.brandName,
+  'logoUrl': instance.logoUrl,
   'heroImageUrl': instance.heroImageUrl,
   'distanceMeters': instance.distanceMeters,
 };

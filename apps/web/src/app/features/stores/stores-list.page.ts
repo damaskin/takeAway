@@ -1,7 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { LeafletMapComponent, StoreLogoComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -26,7 +26,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 @Component({
   selector: 'app-stores-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LeafletMapComponent],
+  imports: [RouterLink, TranslatePipe, LeafletMapComponent, StoreLogoComponent],
   template: `
     <section class="stores-shell flex" style="height: calc(100vh - 72px); overflow: hidden">
       <!-- Map area -->
@@ -109,11 +109,14 @@ const FILTER_LABELS: Record<Filter, string> = {
               "
               style="background: var(--color-cream); border-radius: 16px; padding: 16px; gap: 10px"
             >
-              <div class="flex items-center justify-between">
-                <span
-                  style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
-                  >{{ store.name }}</span
-                >
+              <div class="flex items-center justify-between" style="gap: 12px">
+                <span class="flex items-center" style="gap: 12px; min-width: 0">
+                  <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="44" />
+                  <span
+                    style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
+                    >{{ store.name }}</span
+                  >
+                </span>
                 <span
                   [style.background]="statusBg(store.status)"
                   [style.color]="statusColor(store.status)"

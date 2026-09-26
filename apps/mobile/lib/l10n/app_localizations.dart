@@ -485,8 +485,26 @@ abstract class AppLocalizations {
   /// No description provided for @chooseStoreSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Choose a store and we will show its menu and how soon your order can be ready.'**
+  /// **'Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.'**
   String get chooseStoreSubtitle;
+
+  /// No description provided for @changeStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get changeStore;
+
+  /// No description provided for @storesInactiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Not taking orders right now'**
+  String get storesInactiveTitle;
+
+  /// No description provided for @storesNoneActive.
+  ///
+  /// In en, this message translates to:
+  /// **'No store is taking orders right now. Check back a little later.'**
+  String get storesNoneActive;
 
   /// No description provided for @storeClosedBanner.
   ///
@@ -547,12 +565,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not load the menu.'**
   String get menuLoadFailed;
-
-  /// No description provided for @changeStore.
-  ///
-  /// In en, this message translates to:
-  /// **'Change'**
-  String get changeStore;
 
   /// No description provided for @addedToCart.
   ///

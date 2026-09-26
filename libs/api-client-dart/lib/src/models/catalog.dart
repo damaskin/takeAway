@@ -47,6 +47,8 @@ class Store {
     required this.taxIncludedInPrice,
     required this.currency,
     this.openNow,
+    this.brandName,
+    this.logoUrl,
     this.heroImageUrl,
     this.distanceMeters,
   });
@@ -81,6 +83,13 @@ class Store {
   @JsonKey(defaultValue: true)
   final bool taxIncludedInPrice;
   final String currency;
+
+  /// Name of the business behind the store. Null from API versions that
+  /// predate it.
+  final String? brandName;
+
+  /// Logo for the store card — the brand's, stores have none of their own.
+  final String? logoUrl;
   final String? heroImageUrl;
   final double? distanceMeters;
 

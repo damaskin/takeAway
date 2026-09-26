@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:takeaway_api/takeaway_api.dart';
@@ -8,7 +9,9 @@ import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/cup_logo.dart';
 import '../../shared/widgets/pressable.dart';
+import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../catalog/catalog_providers.dart';
@@ -20,13 +23,64 @@ String? displayAddress(Store store) {
   return text.isEmpty ? null : text;
 }
 
-/// One store row: name, address, distance, live ETA and status.
+/// The business's logo on a light tile, or the takeAway cup when the
+/// business has not uploaded one (or it fails to load).
+class StoreLogo extends StatelessWidget {
+  const StoreLogo({required this.store, this.size = 48, super.key});
+
+  final Store store;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    final url = store.logoUrl;
+    final fallback = Center(child: CupLogo(size: size * 0.62, steam: 0));
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        // Logos are drawn for a light background, so the tile stays light
+        // in the dark theme too.
+        color: ProductImage.isUsable(url) ? Colors.white : brand.caramelSoft,
+        borderRadius: BorderRadius.circular(size * 0.29),
+        border: Border.all(color: brand.borderLight),
+      ),
+      child: ProductImage.isUsable(url)
+          ? Padding(
+              padding: EdgeInsets.all(size * 0.08),
+              child: CachedNetworkImage(
+                imageUrl: url!,
+                fit: BoxFit.contain,
+                fadeInDuration: Motion.fast,
+                placeholder: (_, _) => const SizedBox.expand(),
+                errorWidget: (_, _, _) => fallback,
+              ),
+            )
+          : fallback,
+    );
+  }
+}
+
+/// One store row: logo, name, address, distance, live ETA and status.
 class StoreTile extends StatelessWidget {
-  const StoreTile({required this.item, required this.onTap, this.selected = false, this.trailing, super.key});
+  const StoreTile({
+    required this.item,
+    required this.onTap,
+    this.selected = false,
+    this.enabled = true,
+    this.trailing,
+    super.key,
+  });
 
   final StoreWithDistance item;
   final VoidCallback onTap;
   final bool selected;
+
+  /// False greys the row out and ignores taps — a store that is not taking
+  /// orders cannot be picked.
+  final bool enabled;
   final Widget? trailing;
 
   @override
@@ -37,8 +91,8 @@ class StoreTile extends StatelessWidget {
     final address = displayAddress(store);
     final locale = Localizations.localeOf(context).languageCode;
 
-    return Pressable(
-      onTap: onTap,
+    final tile = Pressable(
+      onTap: enabled ? onTap : null,
       child: AnimatedContainer(
         duration: Motion.medium,
         padding: const EdgeInsets.all(16),
@@ -50,12 +104,7 @@ class StoreTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(color: brand.caramelSoft, borderRadius: BorderRadius.circular(14)),
-              child: Icon(Icons.storefront_rounded, color: brand.caramel),
-            ),
+            StoreLogo(store: store),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -90,6 +139,7 @@ class StoreTile extends StatelessWidget {
         ),
       ),
     );
+    return enabled ? tile : Opacity(opacity: 0.5, child: tile);
   }
 }
 
@@ -156,32 +206,64 @@ class StorePickerList extends ConsumerWidget {
             hasScrollBody: false,
             child: ErrorState(error: error, onRetry: () => ref.invalidate(storesProvider), compact: true),
           ),
-          data: (list) => list.isEmpty
-              ? SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: EmptyState(icon: Icons.storefront_outlined, title: l10n.storesEmpty, compact: true),
-                )
-              : SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  sliver: SliverList.separated(
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final item = list[index];
-                      return StoreTile(
-                        item: item,
-                        selected: item.store.id == activeId,
-                        trailing: item.store.id == activeId
-                            ? Icon(Icons.check_circle_rounded, color: context.brand.caramel)
-                            : null,
-                        onTap: () {
-                          ref.read(activeStoreIdProvider.notifier).select(item.store.id);
-                          onPicked?.call();
-                        },
-                      );
-                    },
-                  ),
-                ),
+          data: (list) {
+            if (list.isEmpty) {
+              return SliverFillRemaining(
+                hasScrollBody: false,
+                child: EmptyState(icon: Icons.storefront_outlined, title: l10n.storesEmpty, compact: true),
+              );
+            }
+            // Only a store taking orders right now can be picked; the rest
+            // stay visible below so the customer knows they exist.
+            final active = [
+              for (final item in list)
+                if (item.store.isOpen) item,
+            ];
+            final inactive = [
+              for (final item in list)
+                if (!item.store.isOpen) item,
+            ];
+            Widget tile(StoreWithDistance item, {required bool enabled}) {
+              final chosen = item.store.id == activeId;
+              return StoreTile(
+                item: item,
+                enabled: enabled,
+                selected: chosen,
+                trailing: chosen ? Icon(Icons.check_circle_rounded, color: context.brand.caramel) : null,
+                onTap: () {
+                  ref.read(activeStoreIdProvider.notifier).select(item.store.id);
+                  onPicked?.call();
+                },
+              );
+            }
+
+            return SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              sliver: SliverList.list(
+                children: [
+                  if (active.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                      child: Text(
+                        l10n.storesNoneActive,
+                        style: context.text.bodyMedium?.copyWith(color: context.brand.textSecondary),
+                      ),
+                    ),
+                  for (final item in active) ...[tile(item, enabled: true), const SizedBox(height: 12)],
+                  if (inactive.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+                      child: Text(
+                        l10n.storesInactiveTitle,
+                        style: context.text.titleSmall?.copyWith(color: context.brand.textSecondary),
+                      ),
+                    ),
+                    for (final item in inactive) ...[tile(item, enabled: false), const SizedBox(height: 12)],
+                  ],
+                ],
+              ),
+            );
+          },
         ),
       ],
     );

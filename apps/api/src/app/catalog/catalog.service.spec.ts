@@ -33,6 +33,7 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     minOrderCents: 0,
     galleryUrls: [],
     brandId: 'brand-1',
+    brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway Coffee', logoUrl: null, themeOverrides: null },
     workingHours: [],
     ...overrides,
   };
@@ -78,6 +79,27 @@ describe('CatalogService', () => {
     const result = await service.listStores({});
     expect(result).toHaveLength(1);
     expect(result[0]?.distanceMeters).toBeNull();
+  });
+
+  it('names the business and carries its logo on every store, for the store cards', async () => {
+    prisma.store.findMany.mockResolvedValue([
+      storeFixture(),
+      storeFixture({
+        id: 'store-2',
+        slug: 'zerno',
+        brand: { name: 'Зерно', logoUrl: 'https://cdn.takeaway.md/zerno.png' },
+      }),
+    ]);
+    const result = await service.listStores({});
+    expect(result.map((s) => [s.brandName, s.logoUrl])).toEqual([
+      ['takeAway Coffee', null],
+      ['Зерно', 'https://cdn.takeaway.md/zerno.png'],
+    ]);
+    expect(prisma.store.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ brand: { select: { name: true, logoUrl: true } } }),
+      }),
+    );
   });
 
   it('computes distance and filters by radius when lat/lng provided', async () => {
