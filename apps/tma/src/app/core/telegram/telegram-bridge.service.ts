@@ -108,17 +108,35 @@ export class TelegramBridgeService {
     window.Telegram?.WebApp?.expand();
   }
 
+  /**
+   * Telegram's `onClick` adds a listener rather than replacing one, and pages
+   * call this on every price or option change with a fresh closure. Without
+   * dropping the previous handler one tap ran all of them: the product added
+   * to the cart once per option the customer had touched, and checkout placed
+   * the order that many times.
+   */
+  private mainButtonHandler: (() => void) | null = null;
+
   setMainButton(text: string, handler: () => void): void {
     const btn = window.Telegram?.WebApp?.MainButton;
     if (!btn) return;
+    this.dropMainButtonHandler();
     btn.setText(text);
     btn.onClick(handler);
+    this.mainButtonHandler = handler;
     btn.show();
     btn.enable();
   }
 
   hideMainButton(): void {
+    this.dropMainButtonHandler();
     window.Telegram?.WebApp?.MainButton.hide();
+  }
+
+  private dropMainButtonHandler(): void {
+    if (!this.mainButtonHandler) return;
+    window.Telegram?.WebApp?.MainButton.offClick(this.mainButtonHandler);
+    this.mainButtonHandler = null;
   }
 
   setBackButton(handler: () => void): () => void {
