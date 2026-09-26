@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { filter } from 'rxjs/operators';
+import { BrandLogoComponent } from '@takeaway/ui-kit';
 
 import { AuthStore } from '../core/auth/auth.store';
 import { BrandsService } from '../core/brands/brands.service';
@@ -37,16 +38,14 @@ interface NavItem {
 @Component({
   selector: 'app-admin-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, TranslatePipe],
+  imports: [RouterLink, RouterLinkActive, TranslatePipe, BrandLogoComponent],
   template: `
     <aside
       class="admin-aside flex flex-col"
       style="width: 260px; max-width: 100%; height: 100%; background: var(--color-foam); border-right: 1px solid var(--color-border-light); padding: 24px 16px; gap: 8px"
     >
       <div class="flex items-center" style="gap: 10px; padding: 0 8px 24px 8px">
-        <span style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-caramel)"
-          >takeAway</span
-        >
+        <lib-brand-logo [size]="22" />
         <span
           style="font-family: var(--font-sans); font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 1px"
           >{{ 'admin.layout.adminTag' | translate }}</span

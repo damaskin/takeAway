@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { BrandLogoComponent } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
@@ -15,7 +16,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 @Component({
   selector: 'app-web-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LanguageSwitcherComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LanguageSwitcherComponent, BrandLogoComponent],
   template: `
     <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-text-primary)">
       <header
@@ -39,10 +40,7 @@ import { AuthStore } from '../../core/auth/auth.store';
               <span style="font-size: 22px; line-height: 1">{{ mobileNavOpen() ? '✕' : '☰' }}</span>
             </button>
             <a routerLink="/" class="flex items-center gap-2" (click)="closeMobileNav()">
-              <span
-                style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
-                >{{ 'common.brand' | translate }}</span
-              >
+              <lib-brand-logo class="web-brand-logo" [size]="24" />
             </a>
           </div>
 
@@ -184,6 +182,9 @@ import { AuthStore } from '../../core/auth/auth.store';
       @media (max-width: 480px) {
         .web-nav-right {
           gap: 6px !important;
+        }
+        .web-brand-logo {
+          --lib-brand-logo-size: 20px !important;
         }
       }
     `,
