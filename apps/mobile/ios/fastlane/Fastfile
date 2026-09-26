@@ -1,3 +1,4 @@
+require 'json'
 require 'tmpdir'
 
 # iOS build and TestFlight delivery, run on the Mac that builds iOS —
@@ -81,6 +82,22 @@ def build_name
   version
 end
 
+# Google Sign-In on iOS returns through a URL scheme that is the iOS client
+# id reversed. Derive it from the dart-defines file so the id lives in one
+# place; Google.xcconfig includes the file written here.
+def write_google_url_scheme
+  client_id = JSON.parse(File.read(DART_DEFINES_FILE))["GOOGLE_IOS_CLIENT_ID"].to_s.strip
+  path = File.join(IOS_DIR, "Flutter", "GoogleLocal.xcconfig")
+  if client_id.empty?
+    File.delete(path) if File.exist?(path)
+    UI.important("GOOGLE_IOS_CLIENT_ID is empty: the build offers no Google sign-in")
+    return
+  end
+  reversed = client_id.split(".").reverse.join(".")
+  File.write(path, "GOOGLE_REVERSED_CLIENT_ID = #{reversed}\n")
+  UI.message("Google sign-in URL scheme: #{reversed}")
+end
+
 def next_build_number(name)
   return ENV["BUILD_NUMBER"].to_i if ENV["BUILD_NUMBER"].to_s =~ /\A\d+\z/
 
@@ -158,6 +175,7 @@ platform :ios do
   desc "Build the signed archive and the IPA (no upload)"
   lane :archive do
     UI.user_error!("No #{DART_DEFINES_FILE}: copy config/prod.example.json there and fill it in") unless File.exist?(DART_DEFINES_FILE)
+    write_google_url_scheme
     unlock_build_keychain
     identity = distribution_identity
     name = build_name

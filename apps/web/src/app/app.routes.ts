@@ -59,6 +59,11 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/profile/personal-info.page').then((m) => m.PersonalInfoPage),
       },
       {
+        path: 'profile/sign-in',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/sign-in-methods.page').then((m) => m.ProfileSignInMethodsPage),
+      },
+      {
         path: 'profile/notifications',
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/notifications.page').then((m) => m.ProfileNotificationsPage),

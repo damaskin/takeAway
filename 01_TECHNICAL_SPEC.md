@@ -245,7 +245,7 @@ takeaway/
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
-- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты.
+- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты. Клиент без email (пришёл из Telegram) привязывает Google, Apple и Telegram явно в «Профиль → Способы входа» (`/auth/me/sign-in-methods`): если у способа уже есть профиль без заказов, способ переезжает к текущему; если без заказов текущий, клиент переходит в профиль с историей и получает новую сессию; два профиля с заказами не объединяются. Telegram не отвязывается, последний способ входа не удаляется. Настройка ключей — `docs/social-sign-in.md`.
 - **JWT + refresh tokens**, logout invalidates refresh.
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
@@ -595,6 +595,9 @@ POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
+GET    /auth/me/sign-in-methods      → { telegram, google, apple }
+POST   /auth/me/sign-in-methods/google|apple|telegram  { idToken, name? } → { methods, session? }  (session — если клиент перешёл в профиль с заказами)
+DELETE /auth/me/sign-in-methods/google|apple  → { telegram, google, apple }
 POST   /auth/telegram                { initData } → tokens           (TMA)
 POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens   (legacy Login Widget, HMAC)
 POST   /auth/telegram/oidc           { idToken } → tokens            (Telegram Login, OpenID Connect)
