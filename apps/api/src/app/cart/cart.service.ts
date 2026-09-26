@@ -4,6 +4,7 @@ import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVar
 import { sortVariationsForDisplay } from '@takeaway/utils';
 
 import { checkoutError } from '../common/http/checkout-error';
+import { AVAILABLE_OPTIONS_INCLUDE } from '../catalog/option-availability';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
@@ -121,7 +122,7 @@ export class CartService {
   async updateItem(userId: string, itemId: string, dto: UpdateCartItemDto): Promise<CartDto> {
     const item = await this.prisma.cartItem.findUnique({
       where: { id: itemId },
-      include: { cart: true, product: { include: { variations: true, modifiers: true } } },
+      include: { cart: true, product: { include: AVAILABLE_OPTIONS_INCLUDE } },
     });
     if (!item || item.cart.userId !== userId) throw new NotFoundException('Item not found');
 
@@ -412,7 +413,7 @@ export class CartService {
   private async loadProduct(productId: string) {
     return this.prisma.product.findUnique({
       where: { id: productId },
-      include: { variations: true, modifiers: true },
+      include: AVAILABLE_OPTIONS_INCLUDE,
     });
   }
 

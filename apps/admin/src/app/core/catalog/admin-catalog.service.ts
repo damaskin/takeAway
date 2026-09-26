@@ -137,6 +137,22 @@ export interface VariationAdminDto {
   prepTimeDeltaSeconds: number;
   sortOrder: number;
   isDefault: boolean;
+  ingredientId: string | null;
+  ingredient: IngredientSummaryDto | null;
+}
+
+/** An option's ingredient as the product editor shows it. */
+export interface IngredientSummaryDto {
+  id: string;
+  name: string;
+  isAvailable: boolean;
+}
+
+/** A library entry: one in-stock switch for every option made of it. */
+export interface IngredientDto extends IngredientSummaryDto {
+  brandId: string;
+  /** Products with an option made of it. */
+  products: Array<{ id: string; name: string }>;
 }
 
 export interface ModifierAdminDto {
@@ -148,6 +164,8 @@ export interface ModifierAdminDto {
   minCount: number;
   maxCount: number;
   sortOrder: number;
+  ingredientId: string | null;
+  ingredient: IngredientSummaryDto | null;
 }
 
 export interface ProductDetailDto extends ProductAdminDto {
@@ -162,6 +180,8 @@ export interface CreateVariationInput {
   prepTimeDeltaSeconds?: number;
   isDefault?: boolean;
   sortOrder?: number;
+  /** Omitted on create: a milk joins the library entry of its name. `null` = not tracked. */
+  ingredientId?: string | null;
 }
 
 export type UpdateVariationInput = Partial<CreateVariationInput>;
@@ -175,6 +195,8 @@ export interface CreateModifierInput {
   minCount?: number;
   maxCount?: number;
   sortOrder?: number;
+  /** Omitted on create: joins the library entry of its name. `null` = not tracked. */
+  ingredientId?: string | null;
 }
 
 export type UpdateModifierInput = Partial<CreateModifierInput>;
@@ -450,5 +472,21 @@ export class AdminCatalogApi {
 
   deleteProduct(id: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/products/${id}`);
+  }
+
+  listIngredients(brandId: string): Observable<IngredientDto[]> {
+    return this.http.get<IngredientDto[]>(`${this.api.baseUrl}/admin/ingredients`, { params: { brandId } });
+  }
+
+  createIngredient(input: { brandId: string; name: string }): Observable<IngredientDto> {
+    return this.http.post<IngredientDto>(`${this.api.baseUrl}/admin/ingredients`, input);
+  }
+
+  updateIngredient(id: string, input: { name?: string; isAvailable?: boolean }): Observable<IngredientDto> {
+    return this.http.patch<IngredientDto>(`${this.api.baseUrl}/admin/ingredients/${id}`, input);
+  }
+
+  deleteIngredient(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/ingredients/${id}`);
   }
 }

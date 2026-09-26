@@ -5,6 +5,7 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
 import { PrismaService } from '../prisma/prisma.service';
+import { AVAILABLE_OPTION } from './option-availability';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -273,11 +274,16 @@ export class CatalogService {
       },
       orderBy: { createdAt: 'asc' },
       include: {
-        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
-        modifiers: { orderBy: { sortOrder: 'asc' } },
+        variations: {
+          orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
+          include: { ingredient: { select: { isAvailable: true } } },
+        },
+        modifiers: { where: AVAILABLE_OPTION, orderBy: { sortOrder: 'asc' } },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
+    const variations = product.variations.filter((v) => v.ingredient?.isAvailable ?? true);
+    const defaults = defaultVariationIds(product.variations, variations);
 
     return {
       id: product.id,
@@ -297,14 +303,14 @@ export class CatalogService {
       dietTags: product.dietTags,
       imageUrls: product.imageUrls,
       sortOrder: product.sortOrder,
-      variations: product.variations.map((v) => ({
+      variations: variations.map((v) => ({
         id: v.id,
         type: v.type,
         name: v.name,
         priceDeltaCents: v.priceDeltaCents,
         prepTimeDeltaSeconds: v.prepTimeDeltaSeconds,
         sortOrder: v.sortOrder,
-        isDefault: v.isDefault,
+        isDefault: defaults.has(v.id),
       })),
       modifiers: product.modifiers.map((m) => ({
         id: m.id,
@@ -318,6 +324,25 @@ export class CatalogService {
       })),
     };
   }
+}
+
+/**
+ * The pre-selected variation of each type. When the default one is hidden
+ * because its ingredient ran out (the house milk), the first remaining
+ * choice of that type takes over — the one the cart falls back to — so the
+ * screen and the price agree. A type that never had a default keeps none.
+ */
+function defaultVariationIds(
+  all: ReadonlyArray<{ type: string; isDefault: boolean }>,
+  shown: ReadonlyArray<{ id: string; type: string; isDefault: boolean }>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const type of new Set(all.filter((v) => v.isDefault).map((v) => v.type))) {
+    const ofType = shown.filter((v) => v.type === type);
+    const pick = ofType.find((v) => v.isDefault) ?? ofType[0];
+    if (pick) ids.add(pick.id);
+  }
+  return ids;
 }
 
 /**

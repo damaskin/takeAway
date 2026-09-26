@@ -19,8 +19,12 @@ import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zone';
 import { PrismaService } from '../../prisma/prisma.service';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
+import { ingredientIdFor } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
+
+/** What the menu editor shows of an option's ingredient: its name and whether it is in stock. */
+const INGREDIENT_SUMMARY = { select: { id: true, name: true, isAvailable: true } } as const;
 
 /** `null` = no brand restriction (super-admin). */
 export type BrandScope = string[] | null;
@@ -608,8 +612,8 @@ export class AdminCatalogService {
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
-        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
-        modifiers: { orderBy: { sortOrder: 'asc' } },
+        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }], include: { ingredient: INGREDIENT_SUMMARY } },
+        modifiers: { orderBy: { sortOrder: 'asc' }, include: { ingredient: INGREDIENT_SUMMARY } },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -704,8 +708,10 @@ export class AdminCatalogService {
 
   // ── Variations ────────────────────────────────────────────────────────────
   async createVariation(productId: string, dto: CreateVariationDto, scope: BrandScope = null) {
-    await this.getProduct(productId, scope);
+    const product = await this.getProduct(productId, scope);
     return this.prisma.$transaction(async (tx) => {
+      // Milk is an ingredient that runs out; sizes and cups are not.
+      const ingredientId = await ingredientIdFor(tx, product.brandId, dto.ingredientId, dto.name, dto.type === 'MILK');
       // One default per type, so the size a customer finds pre-selected is
       // never a coin toss between two "default" sizes.
       if (dto.isDefault) {
@@ -715,7 +721,7 @@ export class AdminCatalogService {
         });
       }
       const sortOrder = dto.sortOrder ?? (await nextVariationSortOrder(tx, productId, dto.type));
-      return tx.variation.create({ data: { productId, ...dto, sortOrder } });
+      return tx.variation.create({ data: { productId, ...dto, sortOrder, ingredientId } });
     });
   }
 
@@ -729,7 +735,8 @@ export class AdminCatalogService {
             data: { isDefault: false },
           });
         }
-        return tx.variation.update({ where: { id }, data: dto });
+        const ingredientId = await ingredientIdFor(tx, existing.product.brandId, dto.ingredientId, undefined, false);
+        return tx.variation.update({ where: { id }, data: { ...dto, ingredientId } });
       })
       .catch((err: unknown) => {
         if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
@@ -772,7 +779,7 @@ export class AdminCatalogService {
    * an empty slug and the modifier could not be created at all.
    */
   async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
-    await this.getProduct(productId, scope);
+    const product = await this.getProduct(productId, scope);
     assertCountRange(dto.minCount ?? 0, dto.maxCount ?? 1);
     const slug =
       dto.slug ??
@@ -782,15 +789,23 @@ export class AdminCatalogService {
         'option',
       ));
     const sortOrder = dto.sortOrder ?? (await nextModifierSortOrder(this.prisma, productId));
+    const ingredientId = await ingredientIdFor(this.prisma, product.brandId, dto.ingredientId, dto.name, true);
     return this.prisma.modifier
-      .create({ data: { productId, ...dto, slug, sortOrder } })
+      .create({ data: { productId, ...dto, slug, sortOrder, ingredientId } })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
   async updateModifier(id: string, dto: UpdateModifierDto, scope: BrandScope = null) {
     const existing = await this.findModifier(id, scope);
     assertCountRange(dto.minCount ?? existing.minCount, dto.maxCount ?? existing.maxCount);
-    return this.prisma.modifier.update({ where: { id }, data: dto }).catch((err: unknown) => {
+    const ingredientId = await ingredientIdFor(
+      this.prisma,
+      existing.product.brandId,
+      dto.ingredientId,
+      undefined,
+      false,
+    );
+    return this.prisma.modifier.update({ where: { id }, data: { ...dto, ingredientId } }).catch((err: unknown) => {
       if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
       return rethrowSlugTaken(err, dto.slug);
     });

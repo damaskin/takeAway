@@ -15,6 +15,7 @@ export type NavKey =
   | 'dashboard'
   | 'kitchen'
   | 'menu'
+  | 'ingredients'
   | 'stores'
   | 'orders'
   | 'dispatch'
@@ -45,6 +46,8 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // takes orders on, kitchen STAFF included.
   kitchen: [SA, BA, SM, ST],
   menu: [SA, BA, SM, ME],
+  // The add-ins library and its in-stock switches — whoever edits the menu.
+  ingredients: [SA, BA, SM, ME],
   stores: [SA, BA, SM, ST],
   orders: [SA, BA, SM, ST],
   dispatch: [SA, BA, SM],
@@ -82,6 +85,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   dashboard: '/dashboard',
   kitchen: '/kitchen',
   menu: '/menu',
+  ingredients: '/ingredients',
   stores: '/stores',
   orders: '/orders',
   dispatch: '/dispatch',

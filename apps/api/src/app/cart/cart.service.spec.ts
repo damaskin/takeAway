@@ -95,7 +95,15 @@ describe('CartService pricing', () => {
 // ── Fixtures for the option-rule and checkout suites ────────────────────────
 
 function variation(v: Partial<Variation> & Pick<Variation, 'id' | 'type' | 'name'>): Variation {
-  return { productId: 'p-latte', priceDeltaCents: 0, prepTimeDeltaSeconds: 0, sortOrder: 0, isDefault: false, ...v };
+  return {
+    productId: 'p-latte',
+    priceDeltaCents: 0,
+    prepTimeDeltaSeconds: 0,
+    sortOrder: 0,
+    isDefault: false,
+    ingredientId: null,
+    ...v,
+  };
 }
 
 function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifier {
@@ -109,6 +117,7 @@ function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifie
     sortOrder: 0,
     externalProvider: null,
     externalId: null,
+    ingredientId: null,
     ...m,
   };
 }
