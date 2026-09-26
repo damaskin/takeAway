@@ -2,14 +2,14 @@
 # Build each SPA image and extract its /dist into the host webroot that
 # nginx serves from. Invoked by the deploy script; safe to run on its own.
 #
-# Usage: extract-spa.sh [web|admin|kds|tma]...
-#        (no args -> extract all four)
+# Usage: extract-spa.sh [web|admin|tma]...
+#        (no args -> extract all three)
 
 set -euo pipefail
 
 APPS=("${@}")
 if [ ${#APPS[@]} -eq 0 ]; then
-  APPS=(web admin kds tma)
+  APPS=(web admin tma)
 fi
 
 WEBROOT=/opt/takeaway/www

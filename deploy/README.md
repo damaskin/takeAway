@@ -110,7 +110,7 @@ takeaway.md
 www.takeaway.md
 api.takeaway.md
 admin.takeaway.md
-kds.takeaway.md
+kds.takeaway.md   # 301 → admin.takeaway.md/login/pin (the kitchen lives in the cabinet)
 tma.takeaway.md
 cdn.takeaway.md
 ```

@@ -56,3 +56,36 @@ export class DashboardSummaryDto {
   /** Change of the average pickup time, in seconds; null unless both periods have one. */
   @ApiProperty({ nullable: true, type: Number }) pickupDeltaSeconds!: number | null;
 }
+
+export class OrderStatusPeriodDto {
+  /** Orders placed in the period, whatever became of them. */
+  @ApiProperty() total!: number;
+  /** Picked up or delivered. */
+  @ApiProperty() completed!: number;
+  @ApiProperty() cancelled!: number;
+  /** Never accepted in time. */
+  @ApiProperty() expired!: number;
+  /** Completed among the orders that have finished, 0..100; null when none has. */
+  @ApiProperty({ nullable: true, type: Number }) completionRatePercent!: number | null;
+  /** Count per `OrderStatus`, every status present. */
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } }) byStatus!: Record<string, number>;
+}
+
+export class OrderStatusStatsDto {
+  @ApiProperty() days!: number;
+  /** Orders in each open status right now, regardless of the period. */
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } }) live!: Record<string, number>;
+  @ApiProperty() liveTotal!: number;
+  @ApiProperty({ type: () => OrderStatusPeriodDto }) period!: OrderStatusPeriodDto;
+}
+
+export class BrandPerformanceDto {
+  @ApiProperty() brandId!: string;
+  @ApiProperty() brandName!: string;
+  /** Revenue is in the brand's own currency; brands are not summed across currencies. */
+  @ApiProperty() currency!: string;
+  @ApiProperty() moderationStatus!: string;
+  @ApiProperty() stores!: number;
+  @ApiProperty() orders!: number;
+  @ApiProperty() revenueCents!: number;
+}

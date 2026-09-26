@@ -141,8 +141,7 @@ takeaway/
 │   ├── api/              # NestJS backend
 │   ├── web/              # Angular web + PWA
 │   ├── tma/              # Angular Telegram Mini App
-│   ├── admin/            # Angular back office
-│   ├── kds/              # Angular kitchen display
+│   ├── admin/            # Angular кабинет бизнеса + суперадмин (кухонная доска внутри)
 │   └── mobile/           # Flutter (v2)
 ├── libs/
 │   ├── shared-types/     # DTO, интерфейсы
@@ -401,8 +400,9 @@ takeaway/
 
 ### 3.10. KDS (экран баристы)
 
-- Одно устройство на точку (iPad / Android tablet / браузер) — отдельное Angular-приложение `apps/kds`
-- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`. UI lockscreen в `apps/kds` — отдельный заход, API готов.
+- Раздел «Кухня» (`/kitchen`) в кабинете бизнеса `apps/admin`; отдельное приложение `apps/kds` выведено 26.09.2026, `kds.takeaway.md` отвечает 301 на `admin.takeaway.md/login/pin`. Планшет на точке — тот же кабинет в «режиме планшета»: без меню и шапки, тёмная доска на весь экран; включается PIN-входом или кнопкой на доске
+- Новые заказы приходят по всему кабинету: всплывающая карточка с «Принять», звук, системное уведомление из фоновой вкладки, счётчик непринятых в меню. Кабинет держит одно сокет-подключение (`kds.subscribe` на все точки активного бренда) с повторным входом в комнаты после переподключения
+- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`. UI lockscreen — `/login/pin` в кабинете (выбор точки один раз на устройство, экранная клавиатура).
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
 - Звук при новом заказе — да
 - **Dual timer на карточке**:
@@ -738,6 +738,8 @@ DELETE                 /admin/campaigns/:id
 
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
 GET                    /admin/analytics/summary?days=7|14|30   // цифры за период + изменения к предыдущему такому же
+GET                    /admin/analytics/order-statuses?days=  // открытые заказы по статусам сейчас + итог заказов периода (выданы / отменены / истекли)
+GET                    /admin/analytics/brands?days=         // SUPER_ADMIN: все бренды рядом (точки, заказы, выручка в своей валюте) — экран «Весь проект»
 GET                    /admin/analytics/revenue
 GET                    /admin/analytics/top-products
 GET                    /admin/analytics/cohort

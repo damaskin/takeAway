@@ -80,6 +80,11 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'login/pin',
+    canMatch: [anonymousGuard],
+    loadComponent: () => import('./features/login/pin.page').then((m) => m.PinLoginPage),
+  },
+  {
     path: 'signup',
     canMatch: [anonymousGuard],
     loadComponent: () => import('./features/signup/signup.page').then((m) => m.SignupPage),
@@ -112,10 +117,22 @@ export const appRoutes: Route[] = [
     children: [
       { path: '', pathMatch: 'full', canActivate: [redirectToFirstAllowed], children: [] },
       {
+        path: 'platform',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'platform' satisfies NavKey },
+        loadComponent: () => import('./features/platform/platform.page').then((m) => m.PlatformPage),
+      },
+      {
         path: 'dashboard',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'dashboard' satisfies NavKey },
         loadComponent: () => import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
+      },
+      {
+        path: 'kitchen',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'kitchen' satisfies NavKey },
+        loadComponent: () => import('./features/kitchen/kitchen.page').then((m) => m.KitchenPage),
       },
       {
         path: 'menu',

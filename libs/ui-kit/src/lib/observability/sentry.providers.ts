@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/angular';
 export interface SpaSentryConfig {
   /** Public DSN. Blank disables reporting entirely. */
   dsn: string;
-  /** Which app this is — `web`, `tma`, `admin`, `kds`. */
+  /** Which app this is — `web`, `tma`, `admin`. */
   app: string;
   /** Build version, so an issue points at an exact deploy. */
   release?: string;

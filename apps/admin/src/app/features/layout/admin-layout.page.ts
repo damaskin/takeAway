@@ -8,8 +8,13 @@ import { filter } from 'rxjs/operators';
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { KitchenModeService } from '../../core/kitchen/kitchen-mode.service';
+import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
+import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 import { BrandStatusBannerComponent } from './brand-status-banner.component';
+import { OrderAlertsComponent } from './order-alerts.component';
 
 /** Roles with a name of their own under `admin.layout.role`. */
 const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER']);
@@ -32,11 +37,16 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
     FormsModule,
     AdminSidebarComponent,
     BrandStatusBannerComponent,
+    OrderAlertsComponent,
     LanguageSwitcherComponent,
     TranslatePipe,
   ],
   template: `
-    <div class="admin-shell flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
+    <div
+      class="admin-shell flex min-h-screen"
+      [class.admin-bare]="bare()"
+      style="background: var(--color-cream); color: var(--color-text-primary)"
+    >
       <!-- Sidebar (drawer on mobile) -->
       <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events,@angular-eslint/template/interactive-supports-focus -->
       <div class="admin-sidebar-wrap" [class.admin-sidebar-open]="sidebarOpen()" (click)="onSidebarTap($event)">
@@ -98,10 +108,13 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
                 >{{ 'admin.layout.brand' | translate }}</span
               >
               <select
-                [ngModel]="activeBrand.activeId()"
+                [ngModel]="onPlatform() ? PROJECT : activeBrand.activeId()"
                 (ngModelChange)="selectBrand($event)"
                 style="height: 34px; padding: 0 28px 0 10px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary); min-width: 160px"
               >
+                @if (isPlatformAdmin()) {
+                  <option [value]="PROJECT">{{ 'admin.layout.wholeProject' | translate }}</option>
+                }
                 @for (b of activeBrand.brands(); track b.id) {
                   <option [value]="b.id">{{ b.name }}</option>
                 }
@@ -116,6 +129,23 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
             >
           }
 
+          @if (hearsOrders()) {
+            <button
+              type="button"
+              class="admin-sound flex items-center justify-center"
+              (click)="orderAlerts.toggleSound()"
+              [attr.aria-pressed]="orderAlerts.soundOn()"
+              [title]="
+                (orderAlerts.soundOn() ? 'admin.kitchen.alerts.soundOn' : 'admin.kitchen.alerts.soundOff') | translate
+              "
+              [attr.aria-label]="
+                (orderAlerts.soundOn() ? 'admin.kitchen.alerts.soundOn' : 'admin.kitchen.alerts.soundOff') | translate
+              "
+              style="width: 38px; height: 38px; border-radius: 10px; font-size: 18px"
+            >
+              {{ orderAlerts.soundOn() ? '🔔' : '🔕' }}
+            </button>
+          }
           <app-language-switcher />
           <button
             type="button"
@@ -131,6 +161,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
           <app-brand-status-banner />
           <router-outlet />
         </main>
+        <app-order-alerts />
       </div>
     </div>
   `,
@@ -141,6 +172,11 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
       }
       .admin-burger {
         display: none;
+      }
+      /* Kitchen tablet mode: the board takes the whole screen. */
+      .admin-bare .admin-sidebar-wrap,
+      .admin-bare .admin-topbar {
+        display: none !important;
       }
       .admin-backdrop {
         display: none;
@@ -193,10 +229,25 @@ export class AdminLayoutPage implements OnInit {
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
   readonly activeBrand = inject(ActiveBrandService);
+  readonly orderAlerts = inject(OrderAlertsService);
+  private readonly realtime = inject(KitchenRealtimeService);
+
+  /** Roles that take orders on get the chime toggle; the others hear nothing anyway. */
+  readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
 
   readonly sidebarOpen = signal(false);
 
-  readonly showBrandSelector = computed(() => this.activeBrand.brands().length > 1);
+  /** The picker's entry for the platform view rather than one brand. */
+  readonly PROJECT = '__project__';
+  readonly isPlatformAdmin = computed(() => this.store.user()?.role === 'SUPER_ADMIN');
+  /** True on the "whole project" page, where no single brand is in view. */
+  readonly onPlatform = signal(false);
+  private readonly onKitchen = signal(false);
+  private readonly kitchenMode = inject(KitchenModeService);
+  /** The kitchen board in tablet mode hides the sidebar and the top bar. */
+  readonly bare = computed(() => this.onKitchen() && this.kitchenMode.tablet());
+
+  readonly showBrandSelector = computed(() => this.isPlatformAdmin() || this.activeBrand.brands().length > 1);
   readonly singleBrandName = computed(() => {
     const brands = this.activeBrand.brands();
     const only = brands.length === 1 ? brands[0] : null;
@@ -206,15 +257,31 @@ export class AdminLayoutPage implements OnInit {
   constructor() {
     // Auto-close the drawer on route change so tapping a sidebar link doesn't
     // leave the overlay covering the new page.
-    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => this.sidebarOpen.set(false));
+    this.onPlatform.set(this.router.url.startsWith('/platform'));
+    this.onKitchen.set(this.router.url.startsWith('/kitchen'));
+    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
+      this.sidebarOpen.set(false);
+      this.onPlatform.set(e.urlAfterRedirects.startsWith('/platform'));
+      this.onKitchen.set(e.urlAfterRedirects.startsWith('/kitchen'));
+    });
   }
 
   ngOnInit(): void {
     this.activeBrand.refresh();
   }
 
+  /**
+   * A platform admin picks either the whole project or one brand; picking a
+   * brand from the project view opens that brand's dashboard, the way its
+   * owner lands.
+   */
   selectBrand(id: string): void {
+    if (id === this.PROJECT) {
+      void this.router.navigate(['/platform']);
+      return;
+    }
     this.activeBrand.select(id);
+    if (this.onPlatform()) void this.router.navigate(['/dashboard']);
   }
 
   @HostListener('window:keydown.escape')
@@ -265,6 +332,7 @@ export class AdminLayoutPage implements OnInit {
   logout(): void {
     this.auth.logout().subscribe({
       complete: () => {
+        this.realtime.disconnect();
         this.activeBrand.reset();
         void this.router.navigate(['/login']);
       },

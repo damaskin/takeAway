@@ -38,7 +38,7 @@
 - **Pino** для логов, **Sentry** для ошибок
 - Auth: **JWT** access (15m) + refresh в Redis (7d), Passport strategies
 
-### Web / TMA / Admin / KDS — `apps/web`, `apps/tma`, `apps/admin`, `apps/kds`
+### Web / TMA / Admin — `apps/web`, `apps/tma`, `apps/admin` (кабинет бизнеса и суперадмина, кухонная доска внутри)
 
 - **Angular 21+**, standalone components, **signals**
 - **NgRx Signal Store** для state (или Akita если станет сложнее)
@@ -109,7 +109,7 @@
 ### 3.5. Тесты
 
 - Unit через Jest (NestJS) и Vitest (Angular)
-- e2e через Playwright для web/admin/kds
+- e2e через Playwright для web/admin
 - Integration tests для backend через Supertest + testcontainers-postgres
 - Минимальный coverage: 70% для backend core модулей (auth, orders, payments, loyalty)
 
