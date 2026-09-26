@@ -622,9 +622,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
     staff: {
       title: 'Staff roster',
       subtitle:
-        'Invite managers and kitchen staff to your stores. They sign in at the admin URL with the email and temp password you set.',
+        'Invite managers and kitchen staff to your stores. They sign in at the admin URL with the email and temp password you set, and on the kitchen tablet with a PIN from the Kitchen PINs block.',
       noStores: 'Create a store first to invite staff.',
       roster: 'Current roster',
+      kitchenPins: 'Kitchen PINs',
       empty: 'No staff in this store yet.',
       addTitle: 'Invite new staff',
       email: 'Email',
@@ -1346,6 +1347,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       kitchen: {
         hint: "Staff unlock this store's kitchen tablet with a 4–6 digit PIN. A PIN works at this store only.",
+        where: 'On the tablet, open',
         empty: 'No kitchen staff or managers are assigned to this store yet.',
         toStaff: 'Add them under Staff',
         pin: 'PIN',
