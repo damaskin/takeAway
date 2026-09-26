@@ -9,7 +9,7 @@
  * into the browser's dinosaur page.
  */
 
-const CACHE = 'takeaway-admin-v1';
+const CACHE = 'takeaway-admin-v2';
 const ASSETS = ['/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 const OFFLINE_PAGE = `<!doctype html>
