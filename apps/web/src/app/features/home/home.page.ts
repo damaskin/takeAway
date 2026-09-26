@@ -1,21 +1,29 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ViewportScroller } from '@angular/common';
+import { Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
 
+import { categoryIcon } from '../../core/catalog/category-icon';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { storeAddress } from '../../core/catalog/store-place';
 
 interface HomeCategory {
-  slug: string;
+  id: string;
   name: string;
-  bg: string;
-  emoji: string;
+  icon: string;
 }
 
 interface HowStep {
-  num: string;
+  icon: string;
   title: string;
   desc: string;
+}
+
+interface FooterLink {
+  label: string;
+  route: string;
+  fragment?: string;
 }
 
 @Component({
@@ -23,6 +31,35 @@ interface HowStep {
   standalone: true,
   imports: [RouterLink, TranslatePipe],
   template: `
+    <!-- Hero — pencil SNCQE. The design's closing banner; it opens the page. -->
+    <section
+      class="flex flex-col items-center justify-center text-center"
+      style="background: var(--color-caramel); padding: clamp(56px, 9vw, 104px) clamp(20px, 7vw, 120px); gap: 24px"
+    >
+      <h1
+        style="font-family: var(--font-display); font-size: clamp(34px, 6vw, 60px); font-weight: 700; color: var(--color-cream); line-height: 1.05; max-width: 900px"
+      >
+        {{ 'web.home.closing.title' | translate }}
+      </h1>
+      <p
+        style="font-family: var(--font-sans); font-size: clamp(16px, 2vw, 20px); color: var(--color-cream); opacity: 0.9; max-width: 640px; line-height: 1.5"
+      >
+        {{ 'web.home.closing.subtitle' | translate }}
+      </p>
+      <div class="flex items-center" style="gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 8px">
+        <a
+          routerLink="/menu"
+          style="padding: 14px 32px; background: var(--color-cream); color: var(--color-caramel); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
+          >{{ 'web.home.closing.ctaMenu' | translate }}</a
+        >
+        <a
+          routerLink="/stores"
+          style="padding: 12px 30px; border: 2px solid var(--color-cream); color: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
+          >{{ 'web.home.stores.cta' | translate }}</a
+        >
+      </div>
+    </section>
+
     <!-- Store locator section — pencil IzEzR -->
     <section
       style="background: var(--color-foam); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); display: flex; flex-direction: column; gap: 32px"
@@ -64,9 +101,9 @@ interface HowStep {
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
                 >{{ store.name }}</span
               >
-              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                >{{ store.city }} · {{ 'web.home.stores.readyIn' | translate: { min: etaMin(store) } }}</span
-              >
+              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                address(store) || ('common.readyIn' | translate: { min: etaMin(store) })
+              }}</span>
             </div>
             <span
               class="flex items-center justify-center"
@@ -102,33 +139,40 @@ interface HowStep {
         >
       </div>
 
-      <div
-        class="grid"
-        style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; justify-items: center"
-      >
-        @for (cat of categories; track cat.slug) {
-          <a [routerLink]="['/menu']" [fragment]="cat.slug" class="flex flex-col items-center" style="gap: 12px">
-            <div
-              class="flex items-center justify-center"
-              [style.background]="cat.bg"
-              style="width: 80px; height: 80px; border-radius: 999px; font-size: 32px"
+      @if (menuStore(); as slug) {
+        <div
+          class="grid"
+          style="grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 24px 16px; justify-items: center"
+        >
+          @for (cat of categories(); track cat.id; let i = $index) {
+            <a
+              [routerLink]="['/stores', slug]"
+              [fragment]="'cat-' + cat.id"
+              class="flex flex-col items-center text-center"
+              style="gap: 12px"
             >
-              {{ cat.emoji }}
-            </div>
-            <span
-              style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-              >{{ cat.name | translate }}</span
-            >
-          </a>
-        }
-      </div>
+              <div
+                class="flex items-center justify-center"
+                [style.background]="tileColors[i % tileColors.length]"
+                style="width: 80px; height: 80px; border-radius: 999px; font-size: 32px"
+              >
+                {{ cat.icon }}
+              </div>
+              <span
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--color-text-primary)"
+                >{{ cat.name }}</span
+              >
+            </a>
+          }
+        </div>
+      }
     </section>
 
     <!-- How it works — pencil 0kQGF -->
     <section
       id="how-it-works"
       class="flex flex-col items-center"
-      style="background: var(--color-cream); padding: 80px; gap: 48px"
+      style="background: var(--color-cream); padding: clamp(48px, 8vw, 80px) clamp(16px, 5vw, 80px); gap: 48px"
     >
       <div class="flex flex-col items-center" style="gap: 8px">
         <h2
@@ -139,18 +183,14 @@ interface HowStep {
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 w-full" style="gap: 48px; max-width: 1200px">
-        @for (step of howSteps; track step.num) {
+        @for (step of howSteps; track step.title) {
           <article class="flex flex-col items-center" style="gap: 20px; text-align: center">
             <div
               class="flex items-center justify-center"
               style="width: 96px; height: 96px; background: var(--color-caramel-light); border-radius: 999px; font-size: 40px"
             >
-              ☕
+              {{ step.icon }}
             </div>
-            <span
-              style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-caramel)"
-              >{{ step.num }}</span
-            >
             <h3
               style="font-family: var(--font-sans); font-size: 20px; font-weight: 600; color: var(--color-text-primary)"
             >
@@ -243,13 +283,13 @@ interface HowStep {
         >
           {{ 'web.home.gift.subtitle' | translate }}
         </p>
-        <button
-          type="button"
+        <a
+          routerLink="/profile/gift-cards"
           class="self-start flex items-center justify-center"
           style="gap: 10px; height: 52px; padding: 0 28px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); background: transparent; font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-text-primary)"
         >
           {{ 'web.home.gift.cta' | translate }}
-        </button>
+        </a>
       </div>
     </section>
 
@@ -273,18 +313,13 @@ interface HowStep {
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; letter-spacing: 1px; color: rgba(248,243,235,0.4)"
               >{{ col.title | translate }}</span
             >
-            @for (link of col.links; track link) {
-              @if (footerRoutes[link]; as route) {
-                <a
-                  [routerLink]="route"
-                  style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)"
-                  >{{ link | translate }}</a
-                >
-              } @else {
-                <a href="#" style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)">{{
-                  link | translate
-                }}</a>
-              }
+            @for (link of col.links; track link.label) {
+              <a
+                [routerLink]="link.route"
+                [fragment]="link.fragment"
+                style="font-family: var(--font-sans); font-size: 14px; color: rgba(248,243,235,0.8)"
+                >{{ link.label | translate }}</a
+              >
             }
           </div>
         }
@@ -296,86 +331,63 @@ interface HowStep {
         <span style="font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.4)">
           {{ 'web.home.footer.rights' | translate }}
         </span>
-        <div class="flex items-center" style="gap: 20px; color: rgba(248,243,235,0.6)">
-          <span>📷</span><span>🐦</span><span>📘</span>
-        </div>
       </div>
     </footer>
-
-    <!-- Hero — pencil SNCQE (bottom banner) -->
-    <section
-      class="flex flex-col items-center justify-center text-center"
-      style="background: var(--color-caramel); padding: clamp(48px, 10vw, 80px) clamp(20px, 7vw, 120px); gap: 32px; min-height: 600px"
-    >
-      <h1
-        style="font-family: var(--font-display); font-size: clamp(32px, 7vw, 56px); font-weight: 700; color: var(--color-cream); line-height: 1.05; max-width: 900px"
-      >
-        {{ 'web.home.closing.title' | translate }}
-      </h1>
-      <p
-        style="font-family: var(--font-sans); font-size: 20px; color: var(--color-cream); max-width: 700px; text-align: center; line-height: 1.5"
-      >
-        {{ 'web.home.closing.subtitle' | translate }}
-      </p>
-      <div class="flex items-center" style="gap: 16px; flex-wrap: wrap; justify-content: center">
-        <a
-          routerLink="/menu"
-          style="padding: 14px 32px; background: var(--color-cream); color: var(--color-caramel); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-          >{{ 'web.home.closing.ctaMenu' | translate }}</a
-        >
-        <a
-          href="#"
-          style="padding: 14px 32px; background: var(--color-caramel); border: 2px solid var(--color-cream); color: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
-          >{{ 'web.home.closing.ctaGet' | translate }}</a
-        >
-      </div>
-    </section>
   `,
 })
 export class HomePage implements OnInit {
   private readonly catalog = inject(CatalogService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly scroller = inject(ViewportScroller);
+  private readonly injector = inject(Injector);
   readonly stores = signal<StoreListItem[]>([]);
 
-  // Category names are translated in the template via the `translate` pipe.
-  readonly categories: HomeCategory[] = [
-    { slug: 'coffee', name: 'web.home.menu.categories.coffee', bg: 'var(--color-caramel-light)', emoji: '☕' },
-    { slug: 'tea', name: 'web.home.menu.categories.tea', bg: '#9DB87E33', emoji: '🍵' },
-    { slug: 'signature', name: 'web.home.menu.categories.signature', bg: '#8E5FB033', emoji: '✨' },
-    { slug: 'breakfast', name: 'web.home.menu.categories.breakfast', bg: '#F5C95C33', emoji: '🍳' },
-    { slug: 'lunch', name: 'web.home.menu.categories.lunch', bg: '#C86A4B33', emoji: '🥗' },
-    { slug: 'desserts', name: 'web.home.menu.categories.desserts', bg: '#E8A0B433', emoji: '🍰' },
-  ];
+  /**
+   * The categories of the menu the header's "Меню" opens — the first store's
+   * — so a tile leads to a section that exists. `menuStore` is its slug.
+   */
+  readonly categories = signal<HomeCategory[]>([]);
+  readonly menuStore = signal<string | null>(null);
+  readonly tileColors = ['var(--color-caramel-light)', '#9DB87E33', '#8E5FB033', '#F5C95C33', '#C86A4B33', '#E8A0B433'];
 
   readonly howSteps: HowStep[] = [
-    { num: '01', title: 'web.home.howItWorks.step1Title', desc: 'web.home.howItWorks.step1Body' },
-    { num: '02', title: 'web.home.howItWorks.step2Title', desc: 'web.home.howItWorks.step2Body' },
-    { num: '03', title: 'web.home.howItWorks.step3Title', desc: 'web.home.howItWorks.step3Body' },
+    { icon: '📱', title: 'web.home.howItWorks.step1Title', desc: 'web.home.howItWorks.step1Body' },
+    { icon: '💳', title: 'web.home.howItWorks.step2Title', desc: 'web.home.howItWorks.step2Body' },
+    { icon: '🛍️', title: 'web.home.howItWorks.step3Title', desc: 'web.home.howItWorks.step3Body' },
   ];
 
-  // Footer column titles/links reference translation keys resolved with the
-  // `translate` pipe in the template.
-  readonly footerColumns = [
+  // Titles and labels are translation keys, run through the translate pipe.
+  readonly footerColumns: { title: string; links: FooterLink[] }[] = [
     {
       title: 'web.home.menu.title',
-      links: ['nav.menu', 'nav.stores', 'nav.loyalty', 'web.home.gift.title'],
+      links: [
+        { label: 'nav.menu', route: '/menu' },
+        { label: 'nav.stores', route: '/stores' },
+        { label: 'nav.loyalty', route: '/', fragment: 'loyalty' },
+        { label: 'web.home.gift.title', route: '/profile/gift-cards' },
+      ],
     },
     {
       title: 'nav.about',
-      links: ['web.home.footer.about', 'web.business.footerLink', 'web.home.footer.careers', 'web.home.footer.press'],
-    },
-    {
-      title: 'web.home.footer.help',
-      links: ['web.home.footer.help', 'web.home.footer.contact', 'web.home.footer.privacy', 'web.home.footer.terms'],
+      links: [
+        { label: 'nav.about', route: '/', fragment: 'how-it-works' },
+        { label: 'web.business.footerLink', route: '/business/signup' },
+      ],
     },
   ];
 
-  /** Footer entries that lead somewhere real; the rest are placeholders. */
-  readonly footerRoutes: Readonly<Record<string, string>> = { 'web.business.footerLink': '/business/signup' };
-
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
-      next: (list) => this.stores.set(list.slice(0, 6)),
+      next: (list) => {
+        this.stores.set(list.slice(0, 6));
+        const first = list[0];
+        if (first) this.loadCategories(first.slug);
+      },
     });
+  }
+
+  address(store: StoreListItem): string {
+    return storeAddress(store);
   }
 
   etaMin(store: StoreListItem): number {
@@ -386,5 +398,24 @@ export class HomePage implements OnInit {
     if (store.busyMeter >= 75) return 'var(--color-berry)';
     if (store.busyMeter >= 40) return 'var(--color-amber)';
     return 'var(--color-mint)';
+  }
+
+  private loadCategories(slug: string): void {
+    this.catalog.getMenu(slug).subscribe({
+      next: (menu) => {
+        this.menuStore.set(slug);
+        // The tiles push the sections below them down: a link to one of those
+        // ("О нас", "Лояльность") has to land on it again once they are in.
+        const fragment = this.route.snapshot.fragment;
+        if (fragment) afterNextRender(() => this.scroller.scrollToAnchor(fragment), { injector: this.injector });
+        this.categories.set(
+          menu.categories
+            .filter((c) => c.products.length > 0)
+            .slice(0, 12)
+            .map((c) => ({ id: c.id, name: c.name, icon: categoryIcon(c.name) })),
+        );
+      },
+      error: () => this.categories.set([]),
+    });
   }
 }
