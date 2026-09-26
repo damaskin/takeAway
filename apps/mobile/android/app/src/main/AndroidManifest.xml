@@ -33,15 +33,31 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- Telegram Login hands the customer back here with a code
-                 (lib/features/auth/telegram_login.dart), from the Telegram app
-                 or from the Custom Tab — singleTask closes the tab on the way.
-                 Must match TELEGRAM_REDIRECT_URI and the redirect URI
-                 registered in @BotFather. -->
+                 (lib/features/auth/telegram_login.dart). From the Telegram
+                 app: this custom scheme. Must match TELEGRAM_REDIRECT_URI and
+                 a Redirect URI registered in @BotFather. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="takeaway" android:host="tglogin" />
+            </intent-filter>
+            <!-- From the Custom Tab: Telegram's App Link for this app
+                 (@BotFather → Login Widget → Native Login → App URL). Chrome
+                 leaves a page for an app only on a tap, so the redirect lands
+                 on Telegram's "Almost done" page and its button opens us;
+                 singleTask closes the tab on the way. autoVerify checks the
+                 signing key against the SHA-256 fingerprints registered there:
+                 a build signed with an unregistered key gets the page back
+                 instead. Must match TELEGRAM_ANDROID_APP_LINK. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="app3004048938-login.tg.dev"
+                    android:pathPrefix="/tglogin" />
             </intent-filter>
             <!-- Links are read by app_links, not pushed onto the router. -->
             <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />

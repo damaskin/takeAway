@@ -47,3 +47,12 @@ app.*.map.json
 # Release dart-defines (Google / Firebase ids) stay out of git; copy
 # config/prod.example.json to config/prod.json and fill it in.
 /config/prod.json
+
+# fastlane run outputs
+ios/fastlane/report.xml
+ios/fastlane/README.md
+
+# signing files fastlane downloads (cert, sigh)
+/ios/*.cer
+/ios/*.mobileprovision
+/ios/*.p12

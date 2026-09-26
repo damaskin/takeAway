@@ -7,8 +7,10 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { AnalyticsScopeResolver } from './analytics-scope';
 import { AnalyticsService } from './analytics.service';
 import {
+  BrandPerformanceDto,
   CohortStatsDto,
   DashboardSummaryDto,
+  OrderStatusStatsDto,
   RevenueSeriesDto,
   StorePerformanceDto,
   TopProductDto,
@@ -38,6 +40,18 @@ export class AnalyticsController {
     @Query('days') days?: string,
   ): Promise<DashboardSummaryDto> {
     return this.analytics.dashboardSummary(await this.scopes.resolve(user, brandId), clamp(days, 1, 90, 7));
+  }
+
+  @Get('order-statuses')
+  @ApiQuery({ name: 'brandId', required: false, type: String })
+  @ApiQuery({ name: 'days', required: false, type: Number })
+  @ApiOkResponse({ type: OrderStatusStatsDto })
+  async orderStatuses(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('brandId') brandId?: string,
+    @Query('days') days?: string,
+  ): Promise<OrderStatusStatsDto> {
+    return this.analytics.orderStatuses(await this.scopes.resolve(user, brandId), clamp(days, 1, 90, 7));
   }
 
   @Get('revenue')
@@ -77,6 +91,15 @@ export class AnalyticsController {
   ): Promise<CohortStatsDto> {
     const scope = await this.scopes.resolve(user, brandId);
     return this.analytics.cohort(scope, clamp(days, 7, 90, 30));
+  }
+
+  /** The platform's brands side by side — the "whole project" view. */
+  @Get('brands')
+  @Roles('SUPER_ADMIN')
+  @ApiQuery({ name: 'days', required: false, type: Number })
+  @ApiOkResponse({ type: BrandPerformanceDto, isArray: true })
+  async brandPerformance(@Query('days') days?: string): Promise<BrandPerformanceDto[]> {
+    return this.analytics.brandPerformance(clamp(days, 1, 90, 7));
   }
 
   @Get('stores')

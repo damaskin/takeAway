@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import { SecretCipher } from '../../common/crypto/secret-cipher';
@@ -42,6 +42,7 @@ describe('AgroprombankService', () => {
     };
     cardBindingRequest: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
     orderEvent: { create: jest.Mock };
+    $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   }
 
@@ -112,6 +113,8 @@ describe('AgroprombankService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       orderEvent: { create: jest.fn().mockResolvedValue({}) },
+      // SELECT nextval('agroprombank_invoice_seq')
+      $queryRaw: jest.fn().mockResolvedValue([{ value: 100042n }]),
       $transaction: jest.fn((ops: unknown[]) => Promise.all(ops as Promise<unknown>[])),
     };
 
@@ -185,6 +188,51 @@ describe('AgroprombankService', () => {
       );
       expect(result.status).toBe('SUCCEEDED');
       expect(result.operationId).toBe('123456789');
+    });
+
+    // The bank's example is six digits. With 18-digit timestamp + random ids
+    // every charge failed inside the bank ("Произошла ошибка").
+    it('numbers the invoice from the sequence, after the prefix: short and digits only', async () => {
+      Object.assign(config, { invoicePrefix: '1' });
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      const created = prisma.payment.create.mock.calls[0]?.[0] as { data: { invoiceId: string } };
+      expect(created.data.invoiceId).toBe('1100042');
+    });
+
+    // What production answers to a plain charge: cos=0 and one debit <trx>.
+    it('does not report a plain charge as an incomplete composite transaction', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const plain = parseXml(
+        '<root><result>1</result><operationid>13350644</operationid><cos>0</cos>' +
+          '<trx><type>debet</type><rrn>001250167606</rrn><authcode>48A302</authcode><responsecode>00</responsecode></trx>' +
+          '</root>',
+      );
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(plain);
+
+      const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(result.status).toBe('SUCCEEDED');
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Composite transaction incomplete'));
+      warn.mockRestore();
+    });
+
+    it('reports a composite transaction whose payout leg did not go through', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const partial = parseXml(
+        '<root><result>1</result><operationid>13350645</operationid><cos>0</cos>' +
+          '<trx><type>debet</type><rrn>001250167607</rrn><responsecode>00</responsecode></trx>' +
+          '<trx><type>tips</type><rrn>001250167608</rrn><responsecode>05</responsecode></trx>' +
+          '</root>',
+      );
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(partial);
+
+      await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Composite transaction incomplete'));
+      warn.mockRestore();
     });
 
     it('records a declined charge and leaves the order unpaid', async () => {

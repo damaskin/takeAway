@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { CardToken, Currency, Payment, Prisma } from '@prisma/client';
-import { createHash, randomInt } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { SecretCipher } from '../../common/crypto/secret-cipher';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -516,8 +516,15 @@ export class AgroprombankService {
     return this.toChargeResult(updated);
   }
 
-  /** Full or partial refund of a settled payment. Irreversible. */
-  async refund(paymentId: string, refundCents: number): Promise<ChargeResult> {
+  /**
+   * Full or partial refund of a settled payment. Irreversible. `audit` lands
+   * on the REFUND_ISSUED event — who gave the money back and why.
+   */
+  async refund(
+    paymentId: string,
+    refundCents: number,
+    audit: { actorId?: string; reason?: string | null; note?: string | null; source?: string } = {},
+  ): Promise<ChargeResult> {
     this.assertEnabled();
     const payment = await this.requirePayment(paymentId);
     if (payment.status !== 'SUCCEEDED' && payment.status !== 'PARTIALLY_REFUNDED') {
@@ -546,11 +553,15 @@ export class AgroprombankService {
       data: {
         orderId: payment.orderId,
         type: 'REFUND_ISSUED',
+        ...(audit.actorId ? { actorId: audit.actorId } : {}),
         payload: {
           provider: 'AGROPROMBANK',
           invoiceId: payment.invoiceId,
           amount: refundCents,
           kind: 'refund',
+          reason: audit.reason ?? null,
+          note: audit.note ?? null,
+          source: audit.source ?? null,
         } satisfies Prisma.InputJsonValue,
       },
     });
@@ -660,7 +671,11 @@ export class AgroprombankService {
       data: { status, providerRef: operationId ?? payment.providerRef, rawJson: raw },
     });
 
-    if (compositeStatus === 0) {
+    // `cos` only means something for a composite transaction — a payout to a
+    // recipient (tip) alongside the debit, i.e. more than one <trx>. A plain
+    // charge comes back with cos=0 as well; warning on it cried wolf on every
+    // payment the first day in production.
+    if (compositeStatus === 0 && children(response, 'trx').length > 1) {
       // Composite transaction (payment + tip payout) only partly went through.
       // The customer was charged, so the order is still paid — but ops needs to
       // know the tip leg is outstanding.
@@ -717,9 +732,12 @@ export class AgroprombankService {
   /**
    * Allocates the merchant-side operation id and its Payment row.
    *
-   * `invoiceid` must stay unique for the entire life of the merchant contract,
-   * so the value is timestamp + random and the DB's unique index is the actual
-   * guarantee — we retry rather than trust the generator.
+   * `invoiceid` must stay unique for the entire life of the merchant contract.
+   * It is the prefix and the next value of `agroprombank_invoice_seq` — short
+   * numbers like the bank's own example (`123456`). The timestamp + random
+   * ids before ran to 18 digits, and every charge that carried one failed
+   * inside the bank ("Произошла ошибка", no operation on record). The DB's
+   * unique index stays the actual guarantee, so a collision is retried.
    */
   private async createPendingPayment(
     orderId: string,
@@ -738,7 +756,7 @@ export class AgroprombankService {
     },
   ): Promise<Payment & { invoiceId: string }> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const invoiceId = `${this.config.invoicePrefix}${Date.now()}${randomInt(1000, 9999)}`;
+      const invoiceId = `${this.config.invoicePrefix}${await this.nextInvoiceNumber()}`;
       try {
         const payment = await this.prisma.payment.create({
           data: {
@@ -759,6 +777,22 @@ export class AgroprombankService {
       }
     }
     throw new ConflictException('Could not allocate a unique invoice id');
+  }
+
+  /**
+   * The next number of the invoice sequence (migration
+   * 20260923160000_agroprombank_invoice_sequence). A sequence never hands a
+   * value out twice, even across concurrent charges — but a database restored
+   * from a backup rewinds it: move it past the highest invoice id the bank has
+   * already seen before taking payments again.
+   */
+  private async nextInvoiceNumber(): Promise<string> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ value: bigint }>
+    >`SELECT nextval('agroprombank_invoice_seq') AS value`;
+    const value = rows[0]?.value;
+    if (value === undefined) throw new Error('agroprombank_invoice_seq returned no value');
+    return value.toString();
   }
 
   /** Stores a freshly issued token, encrypted, and makes it the default if it is the first. */

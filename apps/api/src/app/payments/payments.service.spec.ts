@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsService } from './payments.service';
+import { AgroprombankError } from './agroprombank/agroprombank.client';
+import { AgroprombankService } from './agroprombank/agroprombank.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
 /**
@@ -136,6 +138,7 @@ describe('PaymentsService.handleWebhook', () => {
           },
         },
         { provide: STRIPE_CLIENT, useValue: stripe },
+        { provide: AgroprombankService, useValue: { refund: jest.fn() } },
       ],
     }).compile();
 
@@ -208,6 +211,9 @@ describe('PaymentsService.refundOrder', () => {
     };
 
     const refundsCreate = jest.fn(async () => ({ id: 're_test_1', amount: 0, status: 'succeeded' }));
+    const agroprombank = {
+      refund: jest.fn(async (paymentId: string) => ({ paymentId, operationId: '13350644', invoiceId: '1100001' })),
+    };
     const stripe = {
       webhooks: { constructEvent: jest.fn() },
       paymentIntents: { create: jest.fn(), retrieve: jest.fn() },
@@ -226,11 +232,63 @@ describe('PaymentsService.refundOrder', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: PosService, useValue: {} },
         { provide: STRIPE_CLIENT, useValue: stripe },
+        { provide: AgroprombankService, useValue: agroprombank },
       ],
     }).compile();
 
-    return { service: module.get(PaymentsService), prisma, stripe, refundsCreate, updateCalls, eventCalls };
+    return {
+      service: module.get(PaymentsService),
+      prisma,
+      stripe,
+      refundsCreate,
+      updateCalls,
+      eventCalls,
+      agroprombank,
+    };
   };
+
+  // Stripe is off in production; the card orders are Agroprombank's, and the
+  // admin's refund button used to fail on every one of them.
+  it('refunds a card charged through Agroprombank at that bank, not at Stripe', async () => {
+    const { service, refundsCreate, agroprombank } = await buildService([
+      {
+        id: 'pay-a',
+        provider: 'AGROPROMBANK',
+        providerRef: '13350644',
+        status: 'SUCCEEDED',
+        amountCents: 100,
+        refundedCents: 0,
+      },
+    ]);
+
+    const result = await service.refundOrder('order-r', { actorId: 'admin-x', note: 'store turned it down' });
+
+    expect(agroprombank.refund).toHaveBeenCalledWith(
+      'pay-a',
+      100,
+      expect.objectContaining({ actorId: 'admin-x', note: 'store turned it down', source: 'admin' }),
+    );
+    expect(refundsCreate).not.toHaveBeenCalled();
+    expect(result).toEqual({ refundId: '13350644', refundedCents: 100, remainingCents: 0, paymentStatus: 'REFUNDED' });
+  });
+
+  it('says so when the bank refuses the refund', async () => {
+    const { service, agroprombank } = await buildService([
+      {
+        id: 'pay-a',
+        provider: 'AGROPROMBANK',
+        providerRef: '13350644',
+        status: 'SUCCEEDED',
+        amountCents: 100,
+        refundedCents: 0,
+      },
+    ]);
+    agroprombank.refund.mockRejectedValueOnce(new AgroprombankError('RefundOperation', 12, 'Операция не найдена'));
+
+    await expect(service.refundOrder('order-r', { actorId: 'admin-x' })).rejects.toThrow(
+      /The bank refused the refund: Операция не найдена/,
+    );
+  });
 
   it('refunds the remaining balance when amountCents is omitted, marks payment REFUNDED', async () => {
     const { service, refundsCreate, updateCalls, eventCalls } = await buildService([

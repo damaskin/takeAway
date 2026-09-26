@@ -53,17 +53,18 @@ under `config/`:
 | `config/prod.example.json` | yes       | Template for release builds                                   |
 | `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
 
-| Define                                                                                                                      | Default                       | Meaning                                                    |
-| --------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------- |
-| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api` | REST base including `/api`                                 |
-| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`      | Socket.IO origin (namespace `/ws`)                         |
-| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`         | Public site, for links the app shares                      |
-| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`          | Telegram Login redirect; must match @BotFather             |
-| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button      | The **web** OAuth client id, the audience the API checks   |
-| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                         | iOS OAuth client id                                        |
-| `APPLE_SIGN_IN`                                                                                                             | `false`                       | Offer Sign in with Apple on iOS                            |
-| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off              | Firebase Cloud Messaging                                   |
-| `DEV_SIGN_IN`                                                                                                               | `false`                       | Debug builds only: a "Developer sign-in" button, see below |
+| Define                                                                                                                      | Default                                      | Meaning                                                    |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`                | REST base including `/api`                                 |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                     | Socket.IO origin (namespace `/ws`)                         |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                        | Public site, for links the app shares                      |
+| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                         | Telegram Login redirect; must match @BotFather             |
+| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | `https://app3004048938-login.tg.dev/tglogin` | Android: where Telegram's page returns; see below          |
+| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button                     | The **web** OAuth client id, the audience the API checks   |
+| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                        | iOS OAuth client id                                        |
+| `APPLE_SIGN_IN`                                                                                                             | `false`                                      | Offer Sign in with Apple on iOS                            |
+| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off                             | Firebase Cloud Messaging                                   |
+| `DEV_SIGN_IN`                                                                                                               | `false`                                      | Debug builds only: a "Developer sign-in" button, see below |
 
 A missing integration hides its UI instead of failing: no Google id, no
 Google button; no Firebase ids, no push prompt.
@@ -102,15 +103,30 @@ once:
 
 1. `TELEGRAM_BOT_TOKEN` on the API — the app reads the client id (the bot's
    numeric id) from `GET /auth/telegram/config`.
-2. In the @BotFather mini app → the bot → **Login Widget**: register the apps —
-   Android: package `md.takeaway.app` + the SHA-256 of the signing key(s)
-   (`./gradlew signingReport`); iOS: bundle `md.takeaway.app` + the Apple
-   team id — and the redirect URI `takeaway://tglogin`.
-3. Optional: to use BotFather's App Link / Universal Link
-   (`https://app<id>-login.tg.dev/tglogin`) instead of the custom scheme, pass it
-   as `TELEGRAM_REDIRECT_URI`, add the host to the second intent filter of
-   `MainActivity` (with `android:autoVerify="true"`) and
-   `applinks:app<id>-login.tg.dev` to the iOS Associated Domains.
+2. In the @BotFather mini app → the bot → **Login Widget** (switched to
+   OpenID Connect): `takeaway://tglogin` under **Redirect URIs**, and the apps
+   under **Native Login** — Android: package `md.takeaway.app` + the SHA-256
+   of every key that signs a build (`./gradlew signingReport`); iOS: bundle
+   `md.takeaway.app` + the Apple team id. For @takaway_tgbot the redirect URI
+   and the Android debug key are registered; the release / Play App Signing
+   key and the iOS app are not yet.
+3. On Android, Telegram's page (no Telegram app on the device) comes back
+   through the App Link BotFather gave the Android app,
+   `https://app3004048938-login.tg.dev/tglogin` (`TELEGRAM_ANDROID_APP_LINK`,
+   the autoVerify intent filter in `AndroidManifest.xml`). The page leaves for
+   its redirect on its own once the login is confirmed in Telegram, and
+   Chrome opens an app from a page only on a tap — with the custom scheme the
+   customer stayed on "Continue with Telegram" for good. The App Link loads
+   Telegram's "Almost done" page instead, and its **Continue** button opens the
+   app. Android verifies the link against the SHA-256 fingerprints registered
+   in BotFather, so a build signed with an unregistered key gets that page back
+   instead of the app. The Telegram app itself and iOS keep
+   `TELEGRAM_REDIRECT_URI`: they open the custom scheme directly.
+
+"redirect_uri required" on Telegram's page means the bot does not list the
+redirect URI the app sent — Telegram compares them exactly. A build made with
+`config/local.json` gets its client id from the local API, so it is that API's
+bot that needs `takeaway://tglogin` registered.
 
 The customer's account is keyed on the Telegram user id, so it is the same
 profile the Mini App and the website sign in to.
@@ -161,16 +177,62 @@ flutter build appbundle --release --dart-define-from-file=config/prod.json
 Without `key.properties` the release build is signed with the debug key —
 fine for testers, rejected by Google Play.
 
-**iOS** (needs a Mac with Xcode):
+**iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
+(`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
+Store Connect API key and a keychain of its own, because an Apple ID asks for
+2FA and the login keychain is locked over SSH. Team: Vladislav Socolov
+(`4VC4JRTQG9`), Bundle ID `md.takeaway.app` — the same team, API key and build
+keychain as RunBase and Zhmyak on that Mac.
+
+Set up once (done on the Mac mini on 2026-09-23):
+
+1. `~/.appstoreconnect/takeaway.env`, mode 600. It reuses the team's key and
+   keychain from the zhmyak setup:
+
+   ```bash
+   . "$HOME/.appstoreconnect/zhmyak-app.env"   # ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, KEYCHAIN_PASSWORD
+   BUILD_KEYCHAIN=zhmyak-app-build.keychain
+   APPLE_TEAM_ID=4VC4JRTQG9
+   FLUTTER=$HOME/sdk/flutter-3.38.8/bin/flutter
+   ```
+
+   For another team: an App Store Connect API key with the **Admin** role
+   (Users and Access → Integrations → Team Keys; the distribution certificate
+   needs it), `AuthKey_<id>.p8` in `~/.appstoreconnect/private_keys/`, and the
+   four variables set directly; the keychain is created on the first run.
+
+2. `fastlane ios register_bundle_id` registers `md.takeaway.app` with push and
+   Sign in with Apple. Only then does App Store Connect → Apps → + → New App
+   offer it: iOS, SKU `md.takeaway.app`, primary language Russian. Apple
+   refuses to create the record through the API.
+3. `apps/mobile/config/prod.json`, a copy of `prod.example.json`.
+4. Flutter 3.38.8 in `~/sdk/flutter-3.38.8`: the Homebrew one on the Mac is
+   older than the project's Dart constraint.
+
+Each release (the archive takes a while — keep it off the SSH session):
 
 ```bash
-cd ios && pod install && cd ..
-open ios/Runner.xcworkspace   # set the team, check Push Notifications and Sign in with Apple capabilities
-flutter build ipa --release --dart-define-from-file=config/prod.json
+cd ~/MyWorks/takeAway && git fetch && git checkout -f -B <branch> origin/<branch>
+nohup bash apps/mobile/scripts/ios-testflight.sh > /tmp/takeaway-ios.log 2>&1 &
+tail -f /tmp/takeaway-ios.log
 ```
 
-`Runner.entitlements` has `aps-environment = development`; Xcode switches it to
-production when archiving for the App Store.
+The lanes run `signing` (Bundle ID with Push and Sign in with Apple,
+certificate, App Store profile), `archive` (the version from `pubspec.yaml`,
+the build number one above the latest in TestFlight, manual signing for the
+Runner target only), `verify_ipa` and `upload`. `fastlane ios builds` shows
+Apple's processing; `fastlane ios beta_group` makes the internal group that
+sees every build.
+
+Nobody sees a build in TestFlight until they are in a group. Internal testers
+are users of the team in App Store Connect; add one with
+`TESTER_EMAIL=... bash apps/mobile/scripts/ios-testflight.sh add_tester`.
+Apple emails them an invitation, and the app shows up in the TestFlight app on
+the iPhone. `testflight_status` lists the latest build's beta state, the groups
+and their testers.
+
+`Runner.entitlements` has `aps-environment = development`; the App Store
+profile turns it into production when the archive is signed.
 
 ## Tests
 

@@ -1,0 +1,336 @@
+require 'tmpdir'
+
+# iOS build and TestFlight delivery, run on the Mac that builds iOS —
+# normally through scripts/ios-testflight.sh (see README → "iOS release").
+#
+# Authentication is the App Store Connect API key only: signing in with an
+# Apple ID asks for 2FA, which neither SSH nor CI can answer. The key and the
+# keychain password come from the environment, never from the repo:
+#
+#   ASC_KEY_ID         10 characters, App Store Connect → Users and Access →
+#                      Integrations → App Store Connect API
+#   ASC_ISSUER_ID      UUID shown above the team's keys
+#   ASC_KEY_PATH       path to AuthKey_<id>.p8, outside the repo
+#   KEYCHAIN_PASSWORD  password of the build keychain (created on first run)
+#   BUILD_KEYCHAIN     keychain name, default takeaway-build.keychain
+#   APPLE_TEAM_ID      default 4VC4JRTQG9 (Vladislav Socolov)
+#   FLUTTER            flutter binary, 3.38.8 or newer; default `flutter`
+#   DART_DEFINES_FILE  default ../config/prod.json (copy of prod.example.json)
+#   BUILD_NUMBER       optional; default is the latest TestFlight build + 1
+#
+# The certificate lives in a keychain of its own: the login keychain is locked
+# in an SSH session and codesign fails with "User interaction is not allowed".
+
+default_platform(:ios)
+
+APP_ID = "md.takeaway.app"
+APP_NAME = "takeAway"
+TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "4VC4JRTQG9")
+KEYCHAIN_NAME = ENV.fetch("BUILD_KEYCHAIN", "takeaway-build.keychain")
+PROFILE_NAME = "#{APP_ID} AppStore"
+IPA_NAME = "takeAway.ipa"
+
+IOS_DIR = File.expand_path("..", __dir__)
+MOBILE_DIR = File.expand_path("..", IOS_DIR)
+WORKSPACE = File.join(IOS_DIR, "Runner.xcworkspace")
+XCODEPROJ = File.join(IOS_DIR, "Runner.xcodeproj")
+BUILD_DIR = File.join(MOBILE_DIR, "build", "ios-release")
+FLUTTER = ENV.fetch("FLUTTER", "flutter")
+DART_DEFINES_FILE = File.expand_path(ENV.fetch("DART_DEFINES_FILE", File.join(MOBILE_DIR, "config", "prod.json")))
+
+# What Runner/Runner.entitlements asks for: push through APNs (Firebase
+# Cloud Messaging) and Sign in with Apple. The App ID must carry the same, or
+# the profile will not cover the entitlements and signing fails.
+CAPABILITIES = {
+  "PUSH_NOTIFICATIONS" => [],
+  "APPLE_ID_AUTH" => [{ key: "APPLE_ID_AUTH_APP_CONSENT", options: [{ key: "PRIMARY_APP_CONSENT" }] }]
+}.freeze
+
+def asc_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH"),
+    in_house: false
+  )
+end
+
+def keychain_path
+  File.expand_path("~/Library/Keychains/#{KEYCHAIN_NAME}-db")
+end
+
+def unlock_build_keychain
+  unlock_keychain(path: KEYCHAIN_NAME, password: ENV.fetch("KEYCHAIN_PASSWORD"), add_to_search_list: true, set_default: false)
+end
+
+# The team's distribution identity from our keychain, by SHA-1: other
+# keychains on the Mac hold certificates with the same kind of name, and
+# Xcode picks by name.
+def distribution_identity
+  out = `security find-identity -v -p codesigning "#{keychain_path}" 2>/dev/null`
+  line = out.lines.find { |l| l.include?("Apple Distribution") && l.include?("(#{TEAM_ID})") }
+  UI.user_error!("#{KEYCHAIN_NAME} has no Apple Distribution identity for #{TEAM_ID} — run lane signing first") if line.nil?
+  line[/\b[0-9A-F]{40}\b/]
+end
+
+# pubspec.yaml `version: 1.2.3+4` → "1.2.3". The build number is not taken
+# from there: TestFlight refuses one it has already seen.
+def build_name
+  version = File.read(File.join(MOBILE_DIR, "pubspec.yaml"))[/^version:\s*([^\s+]+)/, 1]
+  UI.user_error!("pubspec.yaml has no version") if version.nil?
+  version
+end
+
+def next_build_number(name)
+  return ENV["BUILD_NUMBER"].to_i if ENV["BUILD_NUMBER"].to_s =~ /\A\d+\z/
+
+  latest_testflight_build_number(api_key: asc_key, app_identifier: APP_ID, version: name, initial_build_number: 0) + 1
+rescue StandardError => e
+  # No app record yet: the archive can still be built and checked, the
+  # upload is what needs the record.
+  UI.important("No TestFlight builds to count from (#{e.message.lines.first&.strip}); using 1")
+  1
+end
+
+platform :ios do
+  desc "Register the Bundle ID and its capabilities in the developer portal"
+  lane :register_bundle_id do
+    # sigh does not create a missing identifier with an API key; the
+    # App Store Connect API does (unlike the app record, see below).
+    asc_key
+    bundle = Spaceship::ConnectAPI::BundleId.all(filter: { identifier: APP_ID }).find { |b| b.identifier == APP_ID }
+    if bundle
+      UI.message("Bundle ID #{APP_ID} exists (#{bundle.name})")
+    else
+      bundle = Spaceship::ConnectAPI::BundleId.create(name: APP_NAME, identifier: APP_ID, platform: "IOS")
+      UI.success("Bundle ID #{APP_ID} registered")
+    end
+    enabled = bundle.get_capabilities.map(&:capability_type)
+    CAPABILITIES.each do |capability, settings|
+      if enabled.include?(capability)
+        UI.message("Capability #{capability} already on")
+      else
+        bundle.create_capability(capability, settings: settings)
+        UI.success("Capability #{capability} turned on")
+      end
+    end
+  end
+
+  desc "Check that the app record exists in App Store Connect"
+  lane :app_record do
+    # Apple answers 403 to creating apps through the API: the record is made
+    # once in the App Store Connect website (Apps → + → New App).
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    if app
+      UI.success("App record: #{app.name} (Apple ID #{app.id})")
+    else
+      UI.user_error!("No app record for #{APP_ID} in App Store Connect — create it in the website: Apps → + → New App, " \
+                     "platform iOS, bundle ID #{APP_ID}")
+    end
+  end
+
+  desc "Distribution certificate and App Store profile, in the build keychain"
+  lane :signing do
+    register_bundle_id
+    password = ENV.fetch("KEYCHAIN_PASSWORD")
+    unless File.exist?(keychain_path)
+      create_keychain(
+        name: KEYCHAIN_NAME,
+        password: password,
+        default_keychain: false,
+        unlock: true,
+        timeout: 3600,
+        lock_when_sleeps: false
+      )
+    end
+    unlock_build_keychain
+    # Reuses a certificate whose private key is already in this keychain;
+    # otherwise creates one (Apple allows three per team).
+    cert(api_key: asc_key, development: false, team_id: TEAM_ID, keychain_path: keychain_path, keychain_password: password,
+         output_path: BUILD_DIR)
+    # force: a fresh profile picks up the certificate and the capabilities.
+    # Both leave their files in the build directory, out of git's way.
+    sigh(api_key: asc_key, app_identifier: APP_ID, team_id: TEAM_ID, platform: "ios", provisioning_name: PROFILE_NAME, force: true,
+         output_path: BUILD_DIR)
+  end
+
+  desc "Build the signed archive and the IPA (no upload)"
+  lane :archive do
+    UI.user_error!("No #{DART_DEFINES_FILE}: copy config/prod.example.json there and fill it in") unless File.exist?(DART_DEFINES_FILE)
+    unlock_build_keychain
+    identity = distribution_identity
+    name = build_name
+    number = next_build_number(name)
+    UI.message("Building #{APP_NAME} #{name} (#{number})")
+
+    # Flutter writes the version, the build number and the dart-defines into
+    # Generated.xcconfig; the archive below compiles the Dart code with them.
+    # --config-only skips a build that the archive would repeat.
+    Dir.chdir(MOBILE_DIR) do
+      sh(FLUTTER, "pub", "get")
+      sh(FLUTTER, "build", "ios", "--config-only", "--release",
+         "--dart-define-from-file=#{DART_DEFINES_FILE}", "--build-name=#{name}", "--build-number=#{number}")
+    end
+    cocoapods(podfile: File.join(IOS_DIR, "Podfile"), try_repo_update_on_error: true)
+
+    # Manual signing for the app target only. Passing a profile through
+    # xcargs would hit every Pods framework too, and they take none.
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: XCODEPROJ,
+      targets: ["Runner"],
+      build_configurations: ["Release"],
+      team_id: TEAM_ID,
+      code_sign_identity: "Apple Distribution",
+      profile_name: PROFILE_NAME
+    )
+
+    build_app(
+      workspace: WORKSPACE,
+      scheme: "Runner",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: BUILD_DIR,
+      output_name: IPA_NAME,
+      clean: false,
+      export_team_id: TEAM_ID,
+      export_options: {
+        signingStyle: "manual",
+        teamID: TEAM_ID,
+        signingCertificate: identity,
+        provisioningProfiles: { APP_ID => PROFILE_NAME }
+      },
+      xcargs: "OTHER_CODE_SIGN_FLAGS='--keychain #{keychain_path}'"
+    )
+  end
+
+  desc "Check that every framework the binaries link is inside the bundle"
+  lane :verify_ipa do
+    # A build can sign and upload fine and still die in dyld on launch because
+    # a framework it links was left out; only the IPA itself shows that.
+    ipa = File.join(BUILD_DIR, IPA_NAME)
+    UI.user_error!("No #{ipa} — run lane archive first") unless File.exist?(ipa)
+
+    Dir.mktmpdir do |tmp|
+      sh("unzip", "-q", ipa, "-d", tmp)
+      app = Dir["#{tmp}/Payload/*.app"].first
+      UI.user_error!("No .app in the IPA") if app.nil?
+
+      present = Dir["#{app}/Frameworks/*.framework"].map { |p| File.basename(p, ".framework") }
+      binaries = [File.join(app, File.basename(app, ".app"))] +
+                 Dir["#{app}/Frameworks/*.framework/*"].select { |f| File.file?(f) && File.executable?(f) }
+      missing = binaries.flat_map do |bin|
+        `otool -L "#{bin}" 2>/dev/null`.scan(%r{@rpath/([\w.+-]+)\.framework/}).flatten.uniq
+                                       .reject { |need| present.include?(need) }
+                                       .map { |need| "#{File.basename(bin)} → #{need}.framework" }
+      end
+      UI.user_error!("Frameworks linked but not in the bundle:\n  #{missing.uniq.join("\n  ")}") unless missing.empty?
+      UI.success("Every link resolves; #{present.size} frameworks in the bundle")
+    end
+  end
+
+  desc "Upload the IPA to TestFlight"
+  lane :upload do
+    app_record
+    upload_to_testflight(
+      api_key: asc_key,
+      app_identifier: APP_ID,
+      ipa: File.join(BUILD_DIR, IPA_NAME),
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+  end
+
+  desc "Latest builds in TestFlight (Apple takes 5–15 minutes to process one)"
+  lane :builds do
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    builds = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 5)
+    UI.message("No builds yet — the upload has not reached App Store Connect") if builds.empty?
+    builds.each { |b| UI.message("build #{b.version}  #{b.processing_state}  uploaded #{b.uploaded_date}") }
+  end
+
+  desc "Who can see the builds: the latest build's beta state, the groups and their testers"
+  lane :testflight_status do
+    # "I don't see the app in TestFlight" is nearly always a tester who is not
+    # in a group, or a build whose beta state is not ready yet.
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    build = Spaceship::ConnectAPI::Build.all(app_id: app.id, sort: "-uploadedDate", limit: 1).first
+    if build
+      detail = build.build_beta_detail
+      UI.message("Build #{build.version}: processing #{build.processing_state}, internal #{detail&.internal_build_state}, " \
+                 "external #{detail&.external_build_state}, non-exempt encryption #{build.uses_non_exempt_encryption.inspect}")
+    else
+      UI.message("No builds")
+    end
+    app.get_beta_groups.each do |group|
+      testers = Spaceship::ConnectAPI::BetaTester.all(filter: { betaGroups: group.id })
+      UI.message("Group '#{group.name}': internal #{group.is_internal_group}, all builds #{group.has_access_to_all_builds}, " \
+                 "testers #{testers.size}")
+      testers.each { |t| UI.message("  #{t.first_name} #{t.last_name} <#{t.email}> #{t.invite_type}") }
+    end
+    begin
+      users = Spaceship::ConnectAPI::User.all
+      UI.message("Team users: #{users.map { |u| "#{u.first_name} #{u.last_name} <#{u.username}> #{Array(u.roles).join('/')}" }.join('; ')}")
+    rescue StandardError => e
+      UI.important("Team users not readable with this key: #{e.message.lines.first&.strip}")
+    end
+  end
+
+  desc "Add an App Store Connect user to the internal group (TESTER_EMAIL=...)"
+  lane :add_tester do
+    # Internal testers must already be users of the team in App Store
+    # Connect; TestFlight then shows them every build of the group. They see
+    # it in the TestFlight app signed in with that same Apple ID.
+    email = ENV["TESTER_EMAIL"].to_s.strip
+    UI.user_error!("Set TESTER_EMAIL to the tester's App Store Connect email") if email.empty?
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    group = app.get_beta_groups.find(&:is_internal_group)
+    UI.user_error!("No internal group yet — run lane beta_group first") if group.nil?
+    if Spaceship::ConnectAPI::BetaTester.all(filter: { betaGroups: group.id }).any? { |t| t.email.casecmp?(email) }
+      UI.message("#{email} is already in '#{group.name}'")
+      next
+    end
+    user = Spaceship::ConnectAPI::User.all.find { |u| u.username.casecmp?(email) }
+    UI.user_error!("#{email} is not a user of the team in App Store Connect — invite them in Users and Access first") if user.nil?
+    Spaceship::ConnectAPI.test_flight_request_client.post("v1/betaTesters", {
+      data: {
+        type: "betaTesters",
+        attributes: { email: user.username, firstName: user.first_name, lastName: user.last_name },
+        relationships: { betaGroups: { data: [{ type: "betaGroups", id: group.id }] } }
+      }
+    })
+    UI.success("#{user.first_name} #{user.last_name} <#{user.username}> added to '#{group.name}'")
+  end
+
+  desc "Internal testing group that sees every build"
+  lane :beta_group do
+    # Testers are added in the website (they need App Store Connect users);
+    # the group with access to all builds is made here so each new build is
+    # visible without a click.
+    asc_key
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    group_name = "takeAway team"
+    if app.get_beta_groups.any? { |g| g.name == group_name }
+      UI.message("Group '#{group_name}' exists")
+    else
+      # spaceship's create_beta_group always sends public-link fields, which
+      # Apple now rejects for an internal group — hence the raw request.
+      Spaceship::ConnectAPI.test_flight_request_client.post("v1/betaGroups", {
+        data: {
+          type: "betaGroups",
+          attributes: { name: group_name, isInternalGroup: true, hasAccessToAllBuilds: true },
+          relationships: { app: { data: { id: app.id, type: "apps" } } }
+        }
+      })
+      UI.success("Group '#{group_name}' created")
+    end
+  end
+end

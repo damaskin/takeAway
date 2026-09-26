@@ -26,6 +26,11 @@ interface TelegramLoginApi {
  * through `window.opener`, so the page must not be served with
  * `Cross-Origin-Opener-Policy: same-origin` — our nginx sets no COOP.
  *
+ * The library sends the page it runs on (origin + path) as the redirect URI,
+ * and @BotFather compares redirect URIs exactly: every page that shows this
+ * button must be listed under the bot's Redirect URIs, or the popup says
+ * "redirect_uri required". See deploy/.env.production.example.
+ *
  * The button is our own markup rather than the library's auto-styled one,
  * so it sits in the same column as Google and Apple: Telegram blue, the
  * paper plane, one line of text.

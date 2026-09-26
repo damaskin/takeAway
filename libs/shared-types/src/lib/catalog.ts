@@ -1,5 +1,5 @@
 /**
- * Catalog transport types shared between apps/api, web, tma, admin, kds.
+ * Catalog transport types shared between apps/api, web, tma, admin.
  */
 
 import type { PickupPointType } from './shared-types';

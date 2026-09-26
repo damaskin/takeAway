@@ -27,6 +27,12 @@ describe('permissions map', () => {
       }
     });
 
+    it('keeps the whole-project view SUPER_ADMIN-only', () => {
+      expect(canAccess('SUPER_ADMIN', 'platform')).toBe(true);
+      expect(canAccess('BRAND_ADMIN', 'platform')).toBe(false);
+      expect(canAccess('STORE_MANAGER', 'platform')).toBe(false);
+    });
+
     it('keeps brand moderation SUPER_ADMIN-only', () => {
       expect(canAccess('BRAND_ADMIN', 'brands')).toBe(false);
       expect(canAccess('STORE_MANAGER', 'brands')).toBe(false);
@@ -41,6 +47,7 @@ describe('permissions map', () => {
 
     it('lets STAFF reach the operational sections', () => {
       expect(canAccess('STAFF', 'orders')).toBe(true);
+      expect(canAccess('STAFF', 'kitchen')).toBe(true);
       expect(canAccess('STAFF', 'stores')).toBe(true);
     });
 
@@ -60,13 +67,13 @@ describe('permissions map', () => {
 
   describe('defaultLandingFor', () => {
     it('sends SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER to the dashboard', () => {
-      expect(defaultLandingFor('SUPER_ADMIN')).toBe('/dashboard');
+      expect(defaultLandingFor('SUPER_ADMIN')).toBe('/platform');
       expect(defaultLandingFor('BRAND_ADMIN')).toBe('/dashboard');
       expect(defaultLandingFor('STORE_MANAGER')).toBe('/dashboard');
     });
 
-    it('sends STAFF to orders (no dashboard access)', () => {
-      expect(defaultLandingFor('STAFF')).toBe('/orders');
+    it('sends STAFF straight to the kitchen board (no dashboard access)', () => {
+      expect(defaultLandingFor('STAFF')).toBe('/kitchen');
     });
 
     it('sends MENU_EDITOR to the menu', () => {

@@ -120,9 +120,12 @@ export class AgroprombankConfig {
   }
 
   /**
-   * Prefix for the `invoiceid` we send to the bank. The identifier must stay
-   * unique for the entire life of the merchant contract, so a per-environment
-   * prefix keeps a staging deployment from colliding with production.
+   * Prefix for the `invoiceid` we send to the bank — digits only. The
+   * identifier must stay unique for the entire life of the merchant contract,
+   * so a per-environment prefix keeps a staging deployment from colliding with
+   * production. The bank reads `invoiceid` as a number: with a prefix of `TA`
+   * every charge came back as .NET's "Input string was not in a correct
+   * format." ({@link missingSettings} refuses such a prefix before any call).
    */
   get invoicePrefix(): string {
     return this.config.get<string>('AGROPROMBANK_INVOICE_PREFIX')?.trim() ?? '';
@@ -144,6 +147,9 @@ export class AgroprombankConfig {
     }
     if (this.verifyResponses && !this.bankCertificatePem) {
       missing.push('AGROPROMBANK_BANK_CERTIFICATE (or _FILE), or AGROPROMBANK_VERIFY_RESPONSES=false');
+    }
+    if (!/^\d*$/.test(this.invoicePrefix)) {
+      missing.push('AGROPROMBANK_INVOICE_PREFIX of digits only (the bank reads invoiceid as a number)');
     }
     return missing;
   }

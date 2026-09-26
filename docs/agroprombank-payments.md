@@ -186,11 +186,26 @@ nothing but TLS distinguishes a real "payment succeeded" from a forged one.
 `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` defaults to `true`: the card is authorized at
 checkout and only debited when the store accepts the order — see «Hold at
 checkout, capture on accept». Turn it off for a merchant whose acquiring
-contract has no preauthorization.
+contract has no preauthorization. Production runs with it off: terminal
+`E1043280` answers every preauthorization with `Invalid operation type
+"Preauthorization" for terminal "E1043280"`, so the card is charged at
+checkout, and an order the store turns down is refunded from the admin.
 
 `AGROPROMBANK_INVOICE_PREFIX` must differ per environment. The `invoiceid` we
 send has to stay unique for the entire life of the merchant contract, and a
-staging deployment sharing production's numbering would collide with it.
+staging deployment sharing production's numbering would collide with it. It is
+**digits only**: the bank reads `invoiceid` as a number, and the first live
+charges, sent with the prefix `TA`, all came back as .NET's "Input string was
+not in a correct format." (`result=-1`). A prefix with anything but digits is
+now reported as a missing setting and stops every call before it leaves.
+Production uses `1`. The number after the prefix comes from the Postgres
+sequence `agroprombank_invoice_seq` (from 100000), so ids read `1100000`,
+`1100001`… — short, like the bank's own example `123456`. The timestamp +
+random ids used before ran to 18 digits, and every charge that carried one
+failed inside the bank ("Произошла ошибка", no operation on record). A
+database restored from a backup rewinds the sequence: move it past the highest
+invoice id the bank has seen (`SELECT setval('agroprombank_invoice_seq', …)`)
+before taking payments again.
 
 The brand's currency must be one the bank settles: `RUP` (Transnistrian rouble,
 bank code `000`) in practice. `USD`, `EUR` and `MDL` are mapped too; anything

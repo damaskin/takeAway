@@ -1,5 +1,5 @@
 /**
- * Auth transport types shared between apps/api, web, tma, admin, kds.
+ * Auth transport types shared between apps/api, web, tma, admin.
  */
 
 export interface PasswordLoginRequest {
