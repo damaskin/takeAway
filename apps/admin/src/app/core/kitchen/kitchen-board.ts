@@ -1,4 +1,4 @@
-import type { KitchenAction, KitchenOrder, KitchenOrderStatus } from './kitchen.api';
+import type { KitchenAction, KitchenOrder, KitchenOrderStatus, StoreShift } from './kitchen.api';
 
 /** A `kds.orderChanged` event as the API broadcasts it to a store's room. */
 export interface KitchenOrderChanged {
@@ -7,6 +7,12 @@ export interface KitchenOrderChanged {
   orderId: string;
   /** The full board row; null on "removed", and on updates that only say "look again". */
   order: (Omit<KitchenOrder, 'status'> & { status: string }) | null;
+}
+
+/** A `kds.shiftChanged` event: someone started or finished work at the store. */
+export interface KitchenShiftChanged {
+  storeId: string;
+  shift: StoreShift;
 }
 
 export type KitchenColumn = 'NEW' | 'PREPARING' | 'READY';
@@ -57,6 +63,13 @@ export function applyKitchenEvent(list: readonly KitchenOrder[], event: KitchenO
   if (!event.order) return null;
   const incoming = event.order;
   if (!OPEN_STATUSES.includes(incoming.status)) return list.filter((o) => o.id !== incoming.id);
-  const row = incoming as KitchenOrder;
+  const known = list.find((o) => o.id === incoming.id);
+  // A row built outside the board query (a new or just-paid order) carries no
+  // arrival; keep what the board already knew rather than wiping it.
+  const row = (
+    incoming.customerArrival === undefined && known
+      ? { ...incoming, customerArrival: known.customerArrival, customerArrivedAt: known.customerArrivedAt }
+      : incoming
+  ) as KitchenOrder;
   return list.some((o) => o.id === row.id) ? list.map((o) => (o.id === row.id ? row : o)) : [...list, row];
 }
