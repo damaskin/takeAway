@@ -103,10 +103,13 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
                 >{{ 'admin.layout.brand' | translate }}</span
               >
               <select
-                [ngModel]="activeBrand.activeId()"
+                [ngModel]="onPlatform() ? PROJECT : activeBrand.activeId()"
                 (ngModelChange)="selectBrand($event)"
                 style="height: 34px; padding: 0 28px 0 10px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary); min-width: 160px"
               >
+                @if (isPlatformAdmin()) {
+                  <option [value]="PROJECT">{{ 'admin.layout.wholeProject' | translate }}</option>
+                }
                 @for (b of activeBrand.brands(); track b.id) {
                   <option [value]="b.id">{{ b.name }}</option>
                 }
@@ -224,7 +227,13 @@ export class AdminLayoutPage implements OnInit {
 
   readonly sidebarOpen = signal(false);
 
-  readonly showBrandSelector = computed(() => this.activeBrand.brands().length > 1);
+  /** The picker's entry for the platform view rather than one brand. */
+  readonly PROJECT = '__project__';
+  readonly isPlatformAdmin = computed(() => this.store.user()?.role === 'SUPER_ADMIN');
+  /** True on the "whole project" page, where no single brand is in view. */
+  readonly onPlatform = signal(false);
+
+  readonly showBrandSelector = computed(() => this.isPlatformAdmin() || this.activeBrand.brands().length > 1);
   readonly singleBrandName = computed(() => {
     const brands = this.activeBrand.brands();
     const only = brands.length === 1 ? brands[0] : null;
@@ -234,15 +243,29 @@ export class AdminLayoutPage implements OnInit {
   constructor() {
     // Auto-close the drawer on route change so tapping a sidebar link doesn't
     // leave the overlay covering the new page.
-    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe(() => this.sidebarOpen.set(false));
+    this.onPlatform.set(this.router.url.startsWith('/platform'));
+    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
+      this.sidebarOpen.set(false);
+      this.onPlatform.set(e.urlAfterRedirects.startsWith('/platform'));
+    });
   }
 
   ngOnInit(): void {
     this.activeBrand.refresh();
   }
 
+  /**
+   * A platform admin picks either the whole project or one brand; picking a
+   * brand from the project view opens that brand's dashboard, the way its
+   * owner lands.
+   */
   selectBrand(id: string): void {
+    if (id === this.PROJECT) {
+      void this.router.navigate(['/platform']);
+      return;
+    }
     this.activeBrand.select(id);
+    if (this.onPlatform()) void this.router.navigate(['/dashboard']);
   }
 
   @HostListener('window:keydown.escape')

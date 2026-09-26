@@ -526,6 +526,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       requestNewLink: 'Request a new link',
     },
     layout: {
+      wholeProject: 'Whole project',
       adminTag: 'Admin',
       brand: 'Brand',
       role: {
@@ -599,6 +600,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
     },
     nav: {
+      platform: 'Whole project',
       dashboard: 'Dashboard',
       kitchen: 'Kitchen',
       menu: 'Menu',
@@ -825,6 +827,30 @@ export const TRANSLATIONS_EN: TranslationTree = {
         soundOn: 'New-order sound is on',
         soundOff: 'New-order sound is off',
       },
+    },
+    platform: {
+      title: 'Whole project',
+      subtitle: 'Every business on the platform together. Open any of them to see its cabinet as the owner does.',
+      kpi: {
+        orders: 'Orders',
+        revenue: 'Revenue',
+        brands: 'Businesses',
+        stores: 'Stores',
+      },
+      mixedCurrencies: 'in several currencies, see per business',
+      activeBrands: 'with orders: {{count}}',
+      brandsTitle: 'Businesses',
+      pending: 'Waiting for review: {{count}}',
+      review: 'Review →',
+      cols: {
+        brand: 'Business',
+        status: 'Status',
+        stores: 'Stores',
+        orders: 'Orders',
+        revenue: 'Revenue',
+      },
+      open: 'Open cabinet',
+      empty: 'No businesses yet.',
     },
     dashboard: {
       title: 'Welcome back{{name}}',

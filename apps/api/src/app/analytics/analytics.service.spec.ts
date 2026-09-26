@@ -53,3 +53,30 @@ describe('AnalyticsService.orderStatuses', () => {
     expect(stats.period.total).toBe(3);
   });
 });
+
+describe('AnalyticsService.brandPerformance', () => {
+  it('lists every brand, busiest first, idle ones included', async () => {
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        { brandId: 'b2', storeId: 's2', day: new Date(), orderCount: 5n, revenueCents: 5000n },
+        { brandId: 'b2', storeId: 's3', day: new Date(), orderCount: 1n, revenueCents: 700n },
+        { brandId: 'b1', storeId: 's1', day: new Date(), orderCount: 2n, revenueCents: 9000n },
+      ]),
+      brand: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'b1', name: 'Alpha', currency: 'MDL', moderationStatus: 'APPROVED', _count: { stores: 1 } },
+          { id: 'b2', name: 'Beta', currency: 'MDL', moderationStatus: 'APPROVED', _count: { stores: 2 } },
+          { id: 'b3', name: 'Idle', currency: 'RUB', moderationStatus: 'PENDING', _count: { stores: 0 } },
+        ]),
+      },
+    } as unknown as PrismaService;
+
+    const rows = await new AnalyticsService(prisma).brandPerformance(7);
+
+    expect(rows.map((r) => [r.brandName, r.orders, r.revenueCents])).toEqual([
+      ['Beta', 6, 5700],
+      ['Alpha', 2, 9000],
+      ['Idle', 0, 0],
+    ]);
+  });
+});

@@ -11,10 +11,10 @@ import {
 } from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
+import { OrderStatusPanelComponent } from '../../shared/order-status-panel.component';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 
 interface KpiCard {
@@ -48,7 +48,7 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent],
+  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent, OrderStatusPanelComponent],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -116,34 +116,7 @@ interface DashboardOrder {
       </div>
 
       <!-- Where the orders stand: open ones now, and how the period ended up -->
-      <article class="dash-statuses" [attr.aria-label]="'admin.dashboard.statuses.title' | translate">
-        <header class="flex items-center justify-between">
-          <h2 class="dash-h2">{{ 'admin.dashboard.statuses.title' | translate }}</h2>
-          @if (canSeeKitchen()) {
-            <a routerLink="/kitchen" class="dash-link">{{ 'admin.dashboard.statuses.toKitchen' | translate }}</a>
-          }
-        </header>
-        <div class="dash-status-row">
-          <span class="dash-status-caption">{{ 'admin.dashboard.statuses.now' | translate }}</span>
-          @for (tile of liveTiles(); track tile.label) {
-            <div class="dash-status-tile" [class.dash-status-hot]="tile.hot">
-              <span class="dash-status-value">{{ tile.value }}</span>
-              <span class="dash-status-label">{{ tile.label | translate }}</span>
-            </div>
-          }
-        </div>
-        <div class="dash-status-row">
-          <span class="dash-status-caption">{{
-            'admin.dashboard.statuses.period' | translate: { days: statuses()?.days ?? days() }
-          }}</span>
-          @for (tile of periodTiles(); track tile.label) {
-            <div class="dash-status-tile">
-              <span class="dash-status-value">{{ tile.value }}</span>
-              <span class="dash-status-label">{{ tile.label | translate }}</span>
-            </div>
-          }
-        </div>
-      </article>
+      <app-order-status-panel [stats]="statuses()" [days]="days()" [kitchenLink]="canSeeKitchen()" />
 
       <!-- Two-column body -->
       <div class="dashboard-body grid" style="grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px">
@@ -243,75 +216,7 @@ interface DashboardOrder {
   `,
   styles: [
     `
-      .dash-statuses {
-        background: var(--color-foam);
-        border: 1px solid var(--color-border-light);
-        border-radius: 20px;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-      .dash-h2 {
-        font-family: var(--font-display);
-        font-size: 18px;
-        font-weight: 700;
-        color: var(--color-espresso);
-        margin: 0;
-      }
-      .dash-link {
-        font-family: var(--font-sans);
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--color-caramel);
-      }
-      .dash-status-row {
-        display: grid;
-        grid-template-columns: 120px repeat(auto-fit, minmax(110px, 1fr));
-        align-items: stretch;
-        gap: 10px;
-      }
-      .dash-status-caption {
-        align-self: center;
-        font-family: var(--font-sans);
-        font-size: 12px;
-        color: var(--color-text-tertiary);
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-      }
-      .dash-status-tile {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding: 10px 12px;
-        border-radius: 12px;
-        background: var(--color-surface-variant);
-      }
-      .dash-status-hot {
-        background: var(--color-caramel-light);
-        box-shadow: inset 0 0 0 1px var(--color-caramel);
-      }
-      .dash-status-hot .dash-status-value {
-        color: var(--color-caramel);
-      }
-      .dash-status-value {
-        font-family: var(--font-display);
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--color-espresso);
-      }
-      .dash-status-label {
-        font-family: var(--font-sans);
-        font-size: 12px;
-        color: var(--color-text-secondary);
-      }
       @media (max-width: 768px) {
-        .dash-status-row {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .dash-status-caption {
-          grid-column: 1 / -1;
-        }
         .dashboard-body {
           grid-template-columns: 1fr !important;
         }
@@ -337,36 +242,7 @@ export class DashboardPage {
   readonly statuses = signal<OrderStatusStats | null>(null);
 
   private readonly alerts = inject(OrderAlertsService);
-  private readonly flags = inject(FeatureFlagsStore);
   readonly canSeeKitchen = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
-
-  readonly liveTiles = computed(() => {
-    const live = this.statuses()?.live;
-    const n = (v: number | undefined) => String(v ?? 0);
-    return [
-      { label: 'admin.dashboard.statuses.waiting', value: n((live?.CREATED ?? 0) + (live?.PAID ?? 0)), hot: true },
-      { label: 'admin.orders.status.ACCEPTED', value: n(live?.ACCEPTED), hot: false },
-      { label: 'admin.orders.status.IN_PROGRESS', value: n(live?.IN_PROGRESS), hot: false },
-      { label: 'admin.orders.status.READY', value: n(live?.READY), hot: false },
-      ...(this.flags.deliveryEnabled()
-        ? [{ label: 'admin.orders.status.OUT_FOR_DELIVERY', value: n(live?.OUT_FOR_DELIVERY), hot: false }]
-        : []),
-    ];
-  });
-
-  readonly periodTiles = computed(() => {
-    const p = this.statuses()?.period;
-    return [
-      { label: 'admin.dashboard.statuses.total', value: String(p?.total ?? 0) },
-      { label: 'admin.dashboard.statuses.completed', value: String(p?.completed ?? 0) },
-      { label: 'admin.dashboard.statuses.cancelled', value: String(p?.cancelled ?? 0) },
-      { label: 'admin.dashboard.statuses.expired', value: String(p?.expired ?? 0) },
-      {
-        label: 'admin.dashboard.statuses.completionRate',
-        value: p?.completionRatePercent == null ? '—' : this.fmt.percent(p.completionRatePercent),
-      },
-    ];
-  });
 
   readonly kpis = computed<KpiCard[]>(() => {
     const s = this.summary();

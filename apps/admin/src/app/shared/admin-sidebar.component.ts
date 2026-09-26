@@ -143,6 +143,7 @@ export class AdminSidebarComponent {
   }
 
   readonly navItems: NavItem[] = [
+    { icon: '🌐', label: 'admin.nav.platform', link: '/platform', roles: ADMIN_ROLES.platform },
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
     {
       icon: '🔥',

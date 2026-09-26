@@ -529,6 +529,7 @@ export const TRANSLATIONS_RU = {
       requestNewLink: 'Запросить новую ссылку',
     },
     layout: {
+      wholeProject: 'Весь проект',
       adminTag: 'Админ',
       brand: 'Бренд',
       role: {
@@ -600,6 +601,7 @@ export const TRANSLATIONS_RU = {
       },
     },
     nav: {
+      platform: 'Весь проект',
       dashboard: 'Панель',
       kitchen: 'Кухня',
       menu: 'Меню',
@@ -824,6 +826,30 @@ export const TRANSLATIONS_RU = {
         soundOn: 'Звук новых заказов включён',
         soundOff: 'Звук новых заказов выключен',
       },
+    },
+    platform: {
+      title: 'Весь проект',
+      subtitle: 'Все бизнесы платформы вместе. Откройте любой, чтобы увидеть его кабинет глазами владельца.',
+      kpi: {
+        orders: 'Заказы',
+        revenue: 'Выручка',
+        brands: 'Бизнесы',
+        stores: 'Точки',
+      },
+      mixedCurrencies: 'в разных валютах, см. по бизнесам',
+      activeBrands: 'с заказами: {{count}}',
+      brandsTitle: 'Бизнесы',
+      pending: 'Ждут модерации: {{count}}',
+      review: 'Рассмотреть →',
+      cols: {
+        brand: 'Бизнес',
+        status: 'Статус',
+        stores: 'Точки',
+        orders: 'Заказы',
+        revenue: 'Выручка',
+      },
+      open: 'Открыть кабинет',
+      empty: 'Бизнесов пока нет.',
     },
     dashboard: {
       title: 'С возвращением{{name}}',

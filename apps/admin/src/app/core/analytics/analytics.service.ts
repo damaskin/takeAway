@@ -72,6 +72,17 @@ export interface OrderStatusStats {
   };
 }
 
+/** One brand in the platform view. Revenue is in the brand's own currency. */
+export interface BrandPerformance {
+  brandId: string;
+  brandName: string;
+  currency: string;
+  moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  stores: number;
+  orders: number;
+  revenueCents: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnalyticsApi {
   private readonly http = inject(HttpClient);
@@ -106,6 +117,13 @@ export class AnalyticsApi {
   orderStatuses(brandId?: string | null, days = 7): Observable<OrderStatusStats> {
     return this.http.get<OrderStatusStats>(`${this.api.baseUrl}/admin/analytics/order-statuses`, {
       params: params({ brandId, days }),
+    });
+  }
+
+  /** SUPER_ADMIN only: every brand side by side. */
+  brandPerformance(days = 7): Observable<BrandPerformance[]> {
+    return this.http.get<BrandPerformance[]>(`${this.api.baseUrl}/admin/analytics/brands`, {
+      params: params({ days }),
     });
   }
 

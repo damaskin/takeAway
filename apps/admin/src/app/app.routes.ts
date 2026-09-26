@@ -112,6 +112,12 @@ export const appRoutes: Route[] = [
     children: [
       { path: '', pathMatch: 'full', canActivate: [redirectToFirstAllowed], children: [] },
       {
+        path: 'platform',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'platform' satisfies NavKey },
+        loadComponent: () => import('./features/platform/platform.page').then((m) => m.PlatformPage),
+      },
+      {
         path: 'dashboard',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'dashboard' satisfies NavKey },

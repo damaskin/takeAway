@@ -27,6 +27,12 @@ describe('permissions map', () => {
       }
     });
 
+    it('keeps the whole-project view SUPER_ADMIN-only', () => {
+      expect(canAccess('SUPER_ADMIN', 'platform')).toBe(true);
+      expect(canAccess('BRAND_ADMIN', 'platform')).toBe(false);
+      expect(canAccess('STORE_MANAGER', 'platform')).toBe(false);
+    });
+
     it('keeps brand moderation SUPER_ADMIN-only', () => {
       expect(canAccess('BRAND_ADMIN', 'brands')).toBe(false);
       expect(canAccess('STORE_MANAGER', 'brands')).toBe(false);
@@ -61,7 +67,7 @@ describe('permissions map', () => {
 
   describe('defaultLandingFor', () => {
     it('sends SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER to the dashboard', () => {
-      expect(defaultLandingFor('SUPER_ADMIN')).toBe('/dashboard');
+      expect(defaultLandingFor('SUPER_ADMIN')).toBe('/platform');
       expect(defaultLandingFor('BRAND_ADMIN')).toBe('/dashboard');
       expect(defaultLandingFor('STORE_MANAGER')).toBe('/dashboard');
     });

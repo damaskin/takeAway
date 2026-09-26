@@ -78,3 +78,14 @@ export class OrderStatusStatsDto {
   @ApiProperty() liveTotal!: number;
   @ApiProperty({ type: () => OrderStatusPeriodDto }) period!: OrderStatusPeriodDto;
 }
+
+export class BrandPerformanceDto {
+  @ApiProperty() brandId!: string;
+  @ApiProperty() brandName!: string;
+  /** Revenue is in the brand's own currency; brands are not summed across currencies. */
+  @ApiProperty() currency!: string;
+  @ApiProperty() moderationStatus!: string;
+  @ApiProperty() stores!: number;
+  @ApiProperty() orders!: number;
+  @ApiProperty() revenueCents!: number;
+}

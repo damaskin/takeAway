@@ -4,6 +4,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AnalyticsScope } from './analytics-scope';
 import {
+  BrandPerformanceDto,
   CohortStatsDto,
   DashboardSummaryDto,
   OrderStatusStatsDto,
@@ -175,6 +176,41 @@ export class AnalyticsService {
       newCustomers,
       pickupSlaPercent: slaTotal ? Math.round((slaHits / slaTotal) * 100) : 0,
     };
+  }
+
+  /**
+   * The platform view: every brand with its figures for the period, busiest
+   * first. Brands without a single order are listed too — a platform admin
+   * looks here for the ones that signed up and never took off.
+   */
+  async brandPerformance(days = 7): Promise<BrandPerformanceDto[]> {
+    const since = SQL_DATE_DAY(periodStart(days));
+    const [rows, brands] = await Promise.all([
+      this.fetchOrdersDaily({ scope: { brandIds: null, storeIds: null }, sinceDay: since }),
+      this.prisma.brand.findMany({
+        select: { id: true, name: true, currency: true, moderationStatus: true, _count: { select: { stores: true } } },
+      }),
+    ]);
+
+    const byBrand = new Map<string, { orders: number; revenue: number }>();
+    for (const r of rows) {
+      const acc = byBrand.get(r.brandId) ?? { orders: 0, revenue: 0 };
+      acc.orders += Number(r.orderCount);
+      acc.revenue += Number(r.revenueCents);
+      byBrand.set(r.brandId, acc);
+    }
+
+    return brands
+      .map((b) => ({
+        brandId: b.id,
+        brandName: b.name,
+        currency: b.currency,
+        moderationStatus: b.moderationStatus,
+        stores: b._count.stores,
+        orders: byBrand.get(b.id)?.orders ?? 0,
+        revenueCents: byBrand.get(b.id)?.revenue ?? 0,
+      }))
+      .sort((a, b) => b.orders - a.orders || b.revenueCents - a.revenueCents || a.brandName.localeCompare(b.brandName));
   }
 
   async storePerformance(scope: AnalyticsScope, days = 14): Promise<StorePerformanceDto[]> {

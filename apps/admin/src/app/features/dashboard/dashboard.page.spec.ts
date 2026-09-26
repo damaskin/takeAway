@@ -11,6 +11,7 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AdminOrdersApi } from '../../core/orders/orders.service';
+import { OrderStatusPanelComponent } from '../../shared/order-status-panel.component';
 import { DashboardPage } from './dashboard.page';
 
 const WEEK: DashboardSummary = {
@@ -60,7 +61,7 @@ describe('DashboardPage', () => {
     });
     // The launch checklist has its own spec and its own API.
     TestBed.overrideComponent(DashboardPage, {
-      set: { imports: [RouterLink, TranslatePipe], schemas: [NO_ERRORS_SCHEMA] },
+      set: { imports: [RouterLink, TranslatePipe, OrderStatusPanelComponent], schemas: [NO_ERRORS_SCHEMA] },
     });
     const translate = TestBed.inject(TranslateService);
     translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);

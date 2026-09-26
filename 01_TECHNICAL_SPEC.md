@@ -739,6 +739,7 @@ DELETE                 /admin/campaigns/:id
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
 GET                    /admin/analytics/summary?days=7|14|30   // цифры за период + изменения к предыдущему такому же
 GET                    /admin/analytics/order-statuses?days=  // открытые заказы по статусам сейчас + итог заказов периода (выданы / отменены / истекли)
+GET                    /admin/analytics/brands?days=         // SUPER_ADMIN: все бренды рядом (точки, заказы, выручка в своей валюте) — экран «Весь проект»
 GET                    /admin/analytics/revenue
 GET                    /admin/analytics/top-products
 GET                    /admin/analytics/cohort
