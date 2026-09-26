@@ -75,8 +75,7 @@ interface DashboardOrder {
             }
           </select>
           <a
-            routerLink="/promo"
-            [queryParams]="{ create: 1 }"
+            routerLink="/promo/new"
             class="flex items-center"
             style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
           >

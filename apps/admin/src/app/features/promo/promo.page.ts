@@ -1,6 +1,6 @@
-import { Component, OnInit, booleanAttribute, computed, effect, inject, input, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import type { Promo, PromoStatus, PromoType } from '@takeaway/shared-types';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import type { Promo, PromoStatus } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -26,7 +26,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
 @Component({
   selector: 'app-admin-promo',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -47,14 +47,13 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
         >
           {{ (loading() ? 'common.refreshing' : 'common.refresh') | translate }}
         </button>
-        <button
-          type="button"
-          (click)="toggleForm()"
+        <a
+          routerLink="/promo/new"
           class="flex items-center"
-          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
         >
-          {{ (formOpen() ? 'admin.promo.closeForm' : 'admin.promo.newPromo') | translate }}
-        </button>
+          {{ 'admin.promo.newPromo' | translate }}
+        </a>
       </div>
     </div>
 
@@ -78,73 +77,6 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
           </article>
         }
       </div>
-
-      <!-- Create form -->
-      @if (formOpen()) {
-        <article
-          [formGroup]="form"
-          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px"
-        >
-          <input
-            formControlName="code"
-            [placeholder]="'admin.promo.form.code' | translate"
-            style="grid-column: span 1; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-mono); font-size: 13px; text-transform: uppercase"
-          />
-          <input
-            formControlName="label"
-            [placeholder]="'admin.promo.form.label' | translate"
-            style="grid-column: span 2; height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          />
-          <select
-            formControlName="type"
-            style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          >
-            <option value="PERCENT">{{ 'admin.promo.form.typePercent' | translate }}</option>
-            <option value="FIXED">{{ 'admin.promo.form.typeFixed' | translate }}</option>
-            <option value="BOGO">{{ 'admin.promo.form.typeBogo' | translate }}</option>
-            <option value="POINTS_MULTIPLIER">{{ 'admin.promo.form.typePoints' | translate }}</option>
-          </select>
-          <input
-            formControlName="value"
-            type="number"
-            [placeholder]="'admin.promo.form.value' | translate"
-            style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          />
-          <input
-            formControlName="startsAt"
-            type="datetime-local"
-            style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          />
-          <input
-            formControlName="endsAt"
-            type="datetime-local"
-            style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          />
-          <select
-            formControlName="status"
-            style="height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; font-family: var(--font-sans); font-size: 13px"
-          >
-            <option value="DRAFT">{{ 'admin.promo.form.statusDraft' | translate }}</option>
-            <option value="SCHEDULED">{{ 'admin.promo.form.statusScheduled' | translate }}</option>
-            <option value="RUNNING">{{ 'admin.promo.form.statusRunning' | translate }}</option>
-          </select>
-          <button
-            type="button"
-            (click)="submit()"
-            [disabled]="form.invalid || submitting()"
-            class="disabled:opacity-50"
-            style="grid-column: span 4; height: 42px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-          >
-            {{ (submitting() ? 'admin.promo.form.saving' : 'admin.promo.form.create') | translate }}
-          </button>
-          @if (formError()) {
-            <span
-              style="grid-column: span 4; font-family: var(--font-sans); font-size: 12px; color: var(--color-berry)"
-              >{{ formError() }}</span
-            >
-          }
-        </article>
-      }
 
       <!-- Promos table -->
       <article
@@ -286,22 +218,6 @@ export class AdminPromoPage implements OnInit {
 
   readonly loading = signal(false);
   readonly promos = signal<Promo[]>([]);
-  readonly formOpen = signal(false);
-  /** `/promo?create=1` — the dashboard's «+ Новый промо» lands on an open form. */
-  readonly create = input(false, { transform: booleanAttribute });
-  readonly submitting = signal(false);
-  readonly formError = signal<string | null>(null);
-
-  readonly form = new FormGroup({
-    code: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
-    label: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    type: new FormControl<PromoType>('PERCENT', { nonNullable: true }),
-    value: new FormControl(10, { nonNullable: true, validators: [Validators.required, Validators.min(0)] }),
-    startsAt: new FormControl(this.toLocalInput(new Date()), { nonNullable: true }),
-    endsAt: new FormControl(this.toLocalInput(new Date(Date.now() + 7 * 24 * 60 * 60_000)), { nonNullable: true }),
-    status: new FormControl<PromoStatus>('SCHEDULED', { nonNullable: true }),
-  });
-
   readonly tiers = [
     {
       name: 'Silver',
@@ -364,7 +280,6 @@ export class AdminPromoPage implements OnInit {
 
   ngOnInit(): void {
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
-    if (this.create()) this.formOpen.set(true);
   }
 
   refresh(): void {
@@ -378,61 +293,6 @@ export class AdminPromoPage implements OnInit {
       },
       error: () => this.loading.set(false),
     });
-  }
-
-  toggleForm(): void {
-    this.formOpen.update((v) => !v);
-    this.formError.set(null);
-  }
-
-  submit(): void {
-    const brandId = this.activeBrand.activeId();
-    if (!brandId) {
-      this.formError.set(
-        this.activeBrand.loadError()
-          ? `${this.translate.instant('admin.brandContext.loadFailed')} ${this.activeBrand.loadError()}`
-          : this.translate.instant('admin.brandContext.noBrandsHint'),
-      );
-      return;
-    }
-    if (this.form.invalid) return;
-    this.submitting.set(true);
-    this.formError.set(null);
-    const v = this.form.getRawValue();
-    this.api
-      .create({
-        brandId,
-        code: v.code.toUpperCase(),
-        label: v.label,
-        type: v.type,
-        value: Number(v.value),
-        startsAt: new Date(v.startsAt).toISOString(),
-        endsAt: new Date(v.endsAt).toISOString(),
-        status: v.status,
-      })
-      .subscribe({
-        next: () => {
-          this.submitting.set(false);
-          this.form.reset({
-            code: '',
-            label: '',
-            type: 'PERCENT',
-            value: 10,
-            startsAt: this.toLocalInput(new Date()),
-            endsAt: this.toLocalInput(new Date(Date.now() + 7 * 24 * 60 * 60_000)),
-            status: 'SCHEDULED',
-          });
-          this.formOpen.set(false);
-          this.refresh();
-        },
-        error: (err) => {
-          this.submitting.set(false);
-          const msg =
-            (err as { error?: { message?: string }; message?: string })?.error?.message ??
-            this.translate.instant('admin.promo.errors.createFailed');
-          this.formError.set(msg);
-        },
-      });
   }
 
   cyclePromo(p: Promo): void {
@@ -489,10 +349,5 @@ export class AdminPromoPage implements OnInit {
     if (status === 'PAUSED') return '#8A6720';
     if (status === 'EXPIRED') return '#8F2F3C';
     return 'var(--color-text-secondary)';
-  }
-
-  private toLocalInput(d: Date): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 }

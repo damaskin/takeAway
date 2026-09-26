@@ -631,6 +631,7 @@ export const TRANSLATIONS_RU = {
       email: 'Email',
       name: 'Имя',
       roleLabel: 'Роль',
+      storeLabel: 'Точка',
       role: { STORE_MANAGER: 'Менеджер', STAFF: 'Кухня', MENU_EDITOR: 'Редактор меню' },
       tempPassword: 'Временный пароль',
       tempPasswordHint: 'Передайте лично — сотрудник должен сменить пароль через /forgot-password при первом входе.',
@@ -885,6 +886,7 @@ export const TRANSLATIONS_RU = {
       viewAll: 'Все →',
       storePerf: 'По точкам',
       newPromo: '+ Новый промо',
+      createTitle: 'Новая акция',
       orderProductLine: 'Заказ · {{count}} позиций',
     },
     orderDetail: {
@@ -1130,6 +1132,7 @@ export const TRANSLATIONS_RU = {
         surcharge: 'Доплата — число не меньше нуля, например 5 или 7,50.',
         count: 'Количество и порядок — целые числа, например 1 или 3.',
         slug: 'Только строчная латиница, цифры и дефис, от 2 до 60 символов.',
+        gone: 'Не нашли — возможно, это уже удалили.',
         allergens: 'Не больше 20 аллергенов, каждый до 40 символов.',
         imageType: 'Подходят только JPEG, PNG, WebP и AVIF.',
         imageSize: 'Файл больше 5 МБ — уменьшите его и попробуйте снова.',
@@ -1392,6 +1395,7 @@ export const TRANSLATIONS_RU = {
       subtitle:
         'Соберите push, Telegram или email-рассылку для клиентов вашего бренда. Черновик сохраняется, по «Отправить» сообщение уходит сразу.',
       saveDraft: 'Сохранить черновик',
+      createTitle: 'Новая рассылка',
       send: 'Отправить',
       sending: 'Отправляем…',
       empty: 'Рассылок пока нет — соберите первую выше.',
@@ -1436,6 +1440,7 @@ export const TRANSLATIONS_RU = {
       message: 'Сообщение (необязательно)',
       issueCta: 'Выпустить карту',
       issuedHint: 'Выпущена — код: {{code}}',
+      issuedTitle: 'Карта выпущена. Передайте код клиенту:',
       cancel: 'Отменить',
       empty: 'Подарочных карт ещё нет.',
       col: {

@@ -1,4 +1,5 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { map, type Observable } from 'rxjs';
 import { LocaleFormatService } from '@takeaway/i18n';
@@ -15,8 +16,6 @@ import {
 import { describeMenuError } from './menu-errors';
 import { MenuCategoriesComponent } from './menu-categories.component';
 import { swapped } from './menu-order';
-import { ProductFormComponent, type ProductSavedEvent } from './product-form.component';
-import { ProductOptionsPanelComponent } from './product-options-panel.component';
 import { formatStoreTime, isStopActive, nextMidnightIn } from './stock';
 
 /** Roles that may take a product off sale in a store (the stop-list API's roles, minus kitchen staff). */
@@ -35,7 +34,7 @@ type StockUntil = 'manual' | 'endOfDay';
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [TranslatePipe, MenuCategoriesComponent, ProductFormComponent, ProductOptionsPanelComponent],
+  imports: [RouterLink, TranslatePipe, MenuCategoriesComponent],
   template: `
     <!-- Top bar -->
     <div
@@ -56,15 +55,15 @@ type StockUntil = 'manual' | 'endOfDay';
           >
         }
       </div>
-      @if (selectedCategoryId()) {
-        <button
-          type="button"
-          (click)="openProductForm()"
+      @if (selectedCategoryId(); as categoryId) {
+        <a
+          routerLink="/menu/products/new"
+          [queryParams]="{ category: categoryId }"
           class="flex items-center"
-          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
         >
           {{ 'admin.menu.newProduct' | translate }}
-        </button>
+        </a>
       }
     </div>
 
@@ -152,27 +151,11 @@ type StockUntil = 'manual' | 'endOfDay';
           }
         </header>
 
-        @if (productFormOpen() && selectedCategoryId() && brand(); as b) {
-          <div id="menu-product-form">
-            <app-product-form
-              [product]="editingProduct()"
-              [categoryId]="selectedCategoryId() ?? ''"
-              [categories]="categories()"
-              [brandId]="b.id"
-              [currency]="currency()"
-              [justCreated]="justCreated()"
-              (saved)="onProductSaved($event)"
-              (closed)="closeProductForm()"
-              (imagesChanged)="onImagesChanged($event)"
-            />
-          </div>
-        }
-
         @if (!selectedCategoryId()) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
             {{ 'admin.menu.select' | translate }}
           </p>
-        } @else if (products().length === 0 && !productFormOpen()) {
+        } @else if (products().length === 0) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
             {{ 'admin.menu.emptyCategory' | translate }}
           </p>
@@ -284,25 +267,18 @@ type StockUntil = 'manual' | 'endOfDay';
                       </button>
                     </td>
                     <td style="padding: 12px; text-align: right; white-space: nowrap">
-                      <button
-                        type="button"
-                        (click)="toggleOptions(p.id)"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px"
+                      <a
+                        [routerLink]="['/menu/products', p.id, 'options']"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px; text-decoration: none"
                       >
-                        {{
-                          (expandedProductId() === p.id
-                            ? 'admin.menu.product.hideOptions'
-                            : 'admin.menu.product.options'
-                          ) | translate
-                        }}
-                      </button>
-                      <button
-                        type="button"
-                        (click)="openProductEdit(p)"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px"
+                        {{ 'admin.menu.product.options' | translate }}
+                      </a>
+                      <a
+                        [routerLink]="['/menu/products', p.id]"
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px; text-decoration: none"
                       >
                         {{ 'common.change' | translate }}
-                      </button>
+                      </a>
                       <button
                         type="button"
                         (click)="deleteProduct(p)"
@@ -312,13 +288,6 @@ type StockUntil = 'manual' | 'endOfDay';
                       </button>
                     </td>
                   </tr>
-                  @if (expandedProductId() === p.id) {
-                    <tr>
-                      <td [attr.colspan]="columnCount()" style="padding: 0 12px 16px 12px">
-                        <app-product-options-panel [productId]="p.id" [currency]="currency()" />
-                      </td>
-                    </tr>
-                  }
                 }
               </tbody>
             </table>
@@ -356,10 +325,8 @@ export class MenuPage {
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly selectedCategoryId = signal<string | null>(null);
   readonly products = signal<ProductAdminDto[]>([]);
-  readonly productFormOpen = signal(false);
-  readonly editingProduct = signal<ProductAdminDto | null>(null);
-  readonly justCreated = signal(false);
-  readonly expandedProductId = signal<string | null>(null);
+  /** `/menu?category=…` — coming back from a form reopens the same category. */
+  readonly category = input<string | undefined>();
   readonly reordering = signal(false);
   readonly loadError = signal<string | null>(null);
   readonly tableError = signal<string | null>(null);
@@ -374,7 +341,6 @@ export class MenuPage {
   readonly stockPending = signal<string | null>(null);
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
-  readonly columnCount = computed(() => (this.stockStore() ? 8 : 7));
 
   // No text-align here: a [style] binding outranks the static style that sets it per column.
   readonly thStyle =
@@ -407,8 +373,6 @@ export class MenuPage {
         this.categories.set([]);
         this.products.set([]);
         this.selectedCategoryId.set(null);
-        this.closeProductForm();
-        this.expandedProductId.set(null);
         this.loadError.set(null);
         this.tableError.set(null);
         this.stores.set([]);
@@ -427,8 +391,6 @@ export class MenuPage {
 
   selectCategory(id: string): void {
     this.selectedCategoryId.set(id);
-    this.closeProductForm();
-    this.expandedProductId.set(null);
     this.tableError.set(null);
     this.loadProducts(id);
   }
@@ -446,56 +408,11 @@ export class MenuPage {
       } else {
         this.selectedCategoryId.set(null);
         this.products.set([]);
-        this.closeProductForm();
       }
     } else if (selected && selected === event.movedTo) {
       this.loadProducts(selected);
     }
     this.reloadCategories();
-  }
-
-  openProductForm(): void {
-    this.editingProduct.set(null);
-    this.justCreated.set(false);
-    this.productFormOpen.set(true);
-    this.scrollToForm();
-  }
-
-  openProductEdit(p: ProductAdminDto): void {
-    this.editingProduct.set(p);
-    this.justCreated.set(false);
-    this.productFormOpen.set(true);
-    this.scrollToForm();
-  }
-
-  closeProductForm(): void {
-    this.productFormOpen.set(false);
-    this.editingProduct.set(null);
-    this.justCreated.set(false);
-  }
-
-  onProductSaved(event: ProductSavedEvent): void {
-    if (event.created) {
-      // Stay in the editor so the photos can go on right away.
-      this.editingProduct.set(event.product);
-      this.justCreated.set(true);
-    } else {
-      this.closeProductForm();
-    }
-    const categoryId = this.selectedCategoryId();
-    if (categoryId) this.loadProducts(categoryId);
-    // Counts in the rail changed (a new product, or one moved elsewhere).
-    this.reloadCategories();
-  }
-
-  onImagesChanged(event: { productId: string; imageUrls: string[] }): void {
-    const patch = (p: ProductAdminDto) => (p.id === event.productId ? { ...p, imageUrls: event.imageUrls } : p);
-    this.products.update((list) => list.map(patch));
-    this.editingProduct.update((p) => (p ? patch(p) : p));
-  }
-
-  toggleOptions(productId: string): void {
-    this.expandedProductId.update((cur) => (cur === productId ? null : productId));
   }
 
   toggleVisibility(product: ProductAdminDto, event: Event): void {
@@ -535,8 +452,6 @@ export class MenuPage {
     this.api.deleteProduct(product.id).subscribe({
       next: () => {
         this.products.update((list) => list.filter((p) => p.id !== product.id));
-        if (this.editingProduct()?.id === product.id) this.closeProductForm();
-        if (this.expandedProductId() === product.id) this.expandedProductId.set(null);
         this.reloadCategories();
       },
       error: (err: unknown) => this.tableError.set(describeMenuError(err, this.translate)),
@@ -613,14 +528,6 @@ export class MenuPage {
     return String(value).replace('.', this.translate.getCurrentLang() === 'en' ? '.' : ',');
   }
 
-  private scrollToForm(): void {
-    // After the form renders: on a long menu it opens above the table,
-    // out of sight of the row whose "Change" was clicked.
-    setTimeout(() =>
-      document.getElementById('menu-product-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    );
-  }
-
   private loadCategories(brandId: string): void {
     this.api.listCategories(brandId).subscribe({
       next: (list) => {
@@ -628,7 +535,9 @@ export class MenuPage {
         this.categories.set(list);
         const selected = this.selectedCategoryId();
         if (!selected || !list.some((c) => c.id === selected)) {
-          if (list[0]) this.selectCategory(list[0].id);
+          // `?category=` is the one the user was on before a form took over.
+          const wanted = list.find((c) => c.id === this.category()) ?? list[0];
+          if (wanted) this.selectCategory(wanted.id);
           else {
             this.selectedCategoryId.set(null);
             this.products.set([]);

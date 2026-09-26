@@ -142,6 +142,7 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
     if (path === '/admin/stores') return json(route, [STORE]);
     if (/^\/admin\/stores\/[^/]+$/.test(path)) return json(route, STORE);
     if (path.endsWith('/staff')) return json(route, [STAFF]);
+    if (path.endsWith('/owner')) return json(route, null);
 
     if (path === '/admin/categories') return json(route, [CATEGORY]);
     if (path === '/admin/products') return json(route, [PRODUCT]);

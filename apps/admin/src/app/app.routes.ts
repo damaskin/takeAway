@@ -141,10 +141,55 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/menu/menu.page').then((m) => m.MenuPage),
       },
       {
+        path: 'menu/categories/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'menu' satisfies NavKey },
+        loadComponent: () => import('./features/menu/category-form.page').then((m) => m.CategoryFormPage),
+      },
+      {
+        path: 'menu/categories/:categoryId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'menu' satisfies NavKey },
+        loadComponent: () => import('./features/menu/category-form.page').then((m) => m.CategoryFormPage),
+      },
+      {
+        path: 'menu/products/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'menu' satisfies NavKey },
+        loadComponent: () => import('./features/menu/product-form.page').then((m) => m.ProductFormPage),
+      },
+      {
+        path: 'menu/products/:productId/options',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'menu' satisfies NavKey },
+        loadComponent: () => import('./features/menu/product-options.page').then((m) => m.ProductOptionsPage),
+      },
+      {
+        path: 'menu/products/:productId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'menu' satisfies NavKey },
+        loadComponent: () => import('./features/menu/product-form.page').then((m) => m.ProductFormPage),
+      },
+      {
         path: 'stores',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'stores' satisfies NavKey },
         loadComponent: () => import('./features/stores/stores.page').then((m) => m.StoresPage),
+      },
+      // Add/edit forms get their own routes rather than opening inside a card
+      // in the list: a form needs the whole page, and a URL you can link,
+      // reload and go back from.
+      {
+        path: 'stores/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'stores' satisfies NavKey },
+        loadComponent: () => import('./features/stores/store-create.page').then((m) => m.StoreCreatePage),
+      },
+      {
+        path: 'stores/:storeId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'stores' satisfies NavKey },
+        loadComponent: () => import('./features/stores/store-edit.page').then((m) => m.StoreEditPage),
       },
       {
         path: 'orders',
@@ -165,10 +210,28 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/riders/riders.page').then((m) => m.AdminRidersPage),
       },
       {
+        path: 'riders/add',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'riders' satisfies NavKey },
+        loadComponent: () => import('./features/riders/rider-form.page').then((m) => m.RiderFormPage),
+      },
+      {
         path: 'staff',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'staff' satisfies NavKey },
         loadComponent: () => import('./features/staff/staff.page').then((m) => m.AdminStaffPage),
+      },
+      {
+        path: 'staff/add',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'staff' satisfies NavKey },
+        loadComponent: () => import('./features/staff/staff-form.page').then((m) => m.StaffFormPage),
+      },
+      {
+        path: 'staff/owner',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'staff' satisfies NavKey },
+        loadComponent: () => import('./features/staff/staff-owner.page').then((m) => m.StaffOwnerPage),
       },
       {
         path: 'promo',
@@ -177,16 +240,34 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
       },
       {
+        path: 'promo/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'promo' satisfies NavKey },
+        loadComponent: () => import('./features/promo/promo-form.page').then((m) => m.PromoFormPage),
+      },
+      {
         path: 'gift-cards',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'giftCards' satisfies NavKey },
         loadComponent: () => import('./features/gift-cards/gift-cards.page').then((m) => m.AdminGiftCardsPage),
       },
       {
+        path: 'gift-cards/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'giftCards' satisfies NavKey },
+        loadComponent: () => import('./features/gift-cards/gift-card-form.page').then((m) => m.GiftCardFormPage),
+      },
+      {
         path: 'campaigns',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'campaigns' satisfies NavKey },
         loadComponent: () => import('./features/campaigns/campaigns.page').then((m) => m.AdminCampaignsPage),
+      },
+      {
+        path: 'campaigns/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'campaigns' satisfies NavKey },
+        loadComponent: () => import('./features/campaigns/campaign-form.page').then((m) => m.CampaignFormPage),
       },
       {
         path: 'analytics',
@@ -199,6 +280,12 @@ export const appRoutes: Route[] = [
         canActivate: [adminPermissionGuard],
         data: { navKey: 'brands' satisfies NavKey },
         loadComponent: () => import('./features/brands/brands.page').then((m) => m.AdminBrandsPage),
+      },
+      {
+        path: 'brands/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'brands' satisfies NavKey },
+        loadComponent: () => import('./features/brands/brand-form.page').then((m) => m.BrandFormPage),
       },
       {
         path: 'settings',

@@ -630,6 +630,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       email: 'Email',
       name: 'Name',
       roleLabel: 'Role',
+      storeLabel: 'Store',
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       tempPassword: 'Temporary password',
       tempPasswordHint:
@@ -886,6 +887,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       viewAll: 'View all →',
       storePerf: 'Stores performance',
       newPromo: '+ New promo',
+      createTitle: 'New promo',
       orderProductLine: 'Order · {{count}} items',
     },
     orderDetail: {
@@ -1122,6 +1124,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noModifiers: 'No extras yet.',
       },
       errors: {
+        gone: 'Not found — it may already be deleted.',
         invalidField: 'Check the field "{{field}}"',
         name: 'Enter a name.',
         price: 'Enter the price as a number, such as 35 or 35.50.',
@@ -1388,6 +1391,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle:
         'Compose a push, Telegram or email broadcast for the customers of your brand. Drafts are saved; clicking Send fans the message out immediately.',
       saveDraft: 'Save draft',
+      createTitle: 'New campaign',
       send: 'Send now',
       sending: 'Sending…',
       empty: 'No campaigns yet — compose one above.',
@@ -1432,6 +1436,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
       issuedHint: 'Issued — code: {{code}}',
+      issuedTitle: 'Issued. Hand this code to the customer:',
       cancel: 'Cancel',
       empty: 'No gift cards issued yet.',
       col: {
