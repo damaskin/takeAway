@@ -129,17 +129,18 @@ final storeDetailProvider = FutureProvider.family<StoreDetail, String>((ref, idO
 });
 
 /// The store the customer is ordering from, resolved against the live list.
-/// Falls back to the only store when there is exactly one — nothing to pick.
+///
+/// Null until the customer has picked one: on first launch the menu tab
+/// asks them to choose among the stores taking orders, even when there is
+/// only one, so they always know where the order goes.
 final activeStoreProvider = Provider<Store?>((ref) {
   final stores = ref.watch(storesProvider).valueOrNull?.value;
-  if (stores == null || stores.isEmpty) return null;
   final id = ref.watch(activeStoreIdProvider);
-  if (id != null) {
-    for (final store in stores) {
-      if (store.id == id) return store;
-    }
+  if (stores == null || id == null) return null;
+  for (final store in stores) {
+    if (store.id == id) return store;
   }
-  return stores.length == 1 ? stores.first : null;
+  return null;
 });
 
 final menuProvider = FutureProvider.family<Cached<Menu>, String>((ref, storeId) {

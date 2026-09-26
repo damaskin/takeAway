@@ -684,6 +684,10 @@ export class AgroprombankService {
       );
     }
 
+    if (status === 'REQUIRES_ACTION') {
+      await this.settlement.announceHeld(payment.orderId);
+    }
+
     if (status === 'SUCCEEDED') {
       const primary = children(response, 'trx').find((trx) => (text(trx, 'type') ?? '').toLowerCase() === 'debet');
       await this.settlement.settlePaidOrder(payment.orderId, {

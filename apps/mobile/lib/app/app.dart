@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/storage/app_prefs.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../shared/keyboard_dismiss.dart';
 import 'router.dart';
 
 class TakeAwayApp extends ConsumerWidget {
@@ -33,7 +34,7 @@ class TakeAwayApp extends ConsumerWidget {
         final media = MediaQuery.of(context);
         return MediaQuery(
           data: media.copyWith(textScaler: media.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.35)),
-          child: child!,
+          child: DismissKeyboardOnTapOutside(child: child!),
         );
       },
     );

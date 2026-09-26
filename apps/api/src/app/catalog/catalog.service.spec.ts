@@ -34,7 +34,9 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     minOrderCents: 0,
     galleryUrls: [],
     brandId: 'brand-1',
+    brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway Coffee', logoUrl: null, themeOverrides: null },
     workingHours: [],
+    shifts: [{ id: 'shift-1' }],
     ...overrides,
   };
 }
@@ -79,6 +81,27 @@ describe('CatalogService', () => {
     const result = await service.listStores({});
     expect(result).toHaveLength(1);
     expect(result[0]?.distanceMeters).toBeNull();
+  });
+
+  it('names the business and carries its logo on every store, for the store cards', async () => {
+    prisma.store.findMany.mockResolvedValue([
+      storeFixture(),
+      storeFixture({
+        id: 'store-2',
+        slug: 'zerno',
+        brand: { name: 'Зерно', logoUrl: 'https://cdn.takeaway.md/zerno.png' },
+      }),
+    ]);
+    const result = await service.listStores({});
+    expect(result.map((s) => [s.brandName, s.logoUrl])).toEqual([
+      ['takeAway Coffee', null],
+      ['Зерно', 'https://cdn.takeaway.md/zerno.png'],
+    ]);
+    expect(prisma.store.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ brand: { select: { name: true, logoUrl: true } } }),
+      }),
+    );
   });
 
   it('computes distance and filters by radius when lat/lng provided', async () => {
@@ -130,6 +153,19 @@ describe('CatalogService', () => {
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
       const [store] = await service.listStores({});
       expect(store?.openNow).toBe(true);
+    });
+
+    it('is false, and the store is not taking orders, while no shift is open', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [], shifts: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(false);
+      expect(store?.openNow).toBe(false);
+    });
+
+    it('reports a store with an open shift as taking orders', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(true);
     });
 
     it('is reported on the store page too', async () => {

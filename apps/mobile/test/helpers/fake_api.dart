@@ -23,8 +23,15 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// False = switched on but outside working hours, as the API reports it.
   bool storeOpenNow = true;
 
+  /// Stores listed after the default one, as API JSON.
+  List<Map<String, dynamic>> moreStores = [];
+
   /// Latency of reading the cart; the reply is the cart as it was when asked.
   Duration cartDelay = Duration.zero;
+
+  /// Latency of each quantity change, in the order they are sent; the change
+  /// lands on the server when its delay runs out, like a slow request would.
+  final updateDelays = <Duration>[];
 
   /// Replaces the two-category menu — see [categoryJson].
   List<Map<String, dynamic>>? menuCategories;
@@ -32,6 +39,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   static const storeJson = <String, dynamic>{
     'id': 'st_1',
     'brandId': 'br_1',
+    'brandName': 'NoName Coffee',
+    'logoUrl': null,
     'slug': 'noname-center',
     'name': 'NoName — центр',
     'addressLine': 'ул. 25 Октября, 94',
@@ -225,6 +234,7 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
     Store.fromJson({...storeJson, 'openNow': storeOpenNow}),
+    for (final json in moreStores) Store.fromJson(json),
   ];
 
   @override
@@ -350,6 +360,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Cart> updateCartItem(String itemId, Map<String, dynamic> patch) async {
+    if (updateDelays.isNotEmpty) await Future<void>.delayed(updateDelays.removeAt(0));
     final index = _cartItems.indexWhere((i) => i.id == itemId);
     final item = _cartItems[index];
     _cartItems[index] = CartItem(

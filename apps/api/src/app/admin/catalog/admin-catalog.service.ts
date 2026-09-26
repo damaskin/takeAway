@@ -208,15 +208,18 @@ export class AdminCatalogService {
   }
 
   // ── Stores ────────────────────────────────────────────────────────────────
-  async listStores(scope: BrandScope, brandId?: string): Promise<StoreView[]> {
+  /** Every store in scope, with its readiness and whether a shift is running there now. */
+  async listStores(scope: BrandScope, brandId?: string): Promise<Array<StoreView & { shiftOpen: boolean }>> {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
     const where = brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : undefined;
-    const stores = await this.prisma.store.findMany({
+    const rows = await this.prisma.store.findMany({
       where,
       orderBy: { name: 'asc' },
-      include: { workingHours: true },
+      include: { workingHours: true, shifts: { where: { closedAt: null }, select: { id: true }, take: 1 } },
     });
-    return this.withReadiness(stores);
+    const open = new Set(rows.filter((r) => r.shifts.length > 0).map((r) => r.id));
+    const stores = await this.withReadiness(rows.map(({ shifts: _shifts, ...store }) => store));
+    return stores.map((store) => ({ ...store, shiftOpen: open.has(store.id) }));
   }
 
   async getStore(id: string, scope: BrandScope = null) {

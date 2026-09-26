@@ -74,6 +74,8 @@ export interface StoreAdminDto {
   deliveryFreeRadiusM?: number | null;
   deliveryMaxRadiusM?: number | null;
   readiness?: StoreReadinessDto;
+  /** A shift is running: the store takes orders. Sent by the store list only. */
+  shiftOpen?: boolean;
   /** Sent by the single-store endpoints: orders pin the currency and forbid deleting. */
   hasOrders?: boolean;
 }

@@ -7,6 +7,11 @@ import type { TranslationTree } from './ru';
  */
 export const TRANSLATIONS_EN: TranslationTree = {
   common: {
+    storeInactive: {
+      badge: 'Not working',
+      title: 'This store is not taking orders right now',
+      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',
@@ -236,8 +241,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       giftCardLabel: 'Gift card',
       giftCardApplied: 'Applied · {{amount}} off',
       paymentTitle: 'How you’re paying',
-      payAtCounter: 'Pay at the counter',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
       addCard: 'Add another card',
+      addFirstCard: 'Add a card',
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       holdHint: 'We hold the money now and take it when the store accepts your order.',
       payCta: 'Pay {{total}} · ready by {{time}}',
       fulfillmentPickup: 'Pickup',
@@ -289,6 +300,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         failed: 'Payment did not go through',
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
+        awaiting: 'Awaiting payment',
       },
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -835,6 +847,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
       },
+      shift: {
+        closedTitle: 'Shift not started',
+        closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
+        start: 'Start work',
+        finish: 'Finish work',
+        finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
+        openSince: 'Shift running since {{time}}, the store takes orders',
+        openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
+      },
+      arrival: {
+        here: 'Customer is here',
+        nearby: 'Customer nearby',
+        ago: '{{minutes}} min',
+      },
       tablet: {
         enter: 'Tablet mode',
         leave: 'Leave tablet mode',
@@ -1209,6 +1235,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       open: 'Open store',
       close: 'Close store',
       openBlocked: 'Finish the readiness checklist first',
+      shift: {
+        open: 'Shift running — the store takes orders',
+        closed: 'Shift not started — customers see the store as inactive',
+      },
       closeConfirm: 'Close "{{name}}"? It stops taking new orders; orders already accepted stay in the kitchen.',
       delete: 'Delete',
       deleteConfirm: 'Delete "{{name}}" for good? A store that has had orders cannot be deleted — close it instead.',
@@ -1712,6 +1742,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       paymentMethod: 'Payment',
       addCard: 'Link a card',
       manageCards: 'Manage cards',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       fulfillment: 'How do you want it?',
       fulfillmentPickup: 'Pickup',
       fulfillmentDelivery: 'Delivery',

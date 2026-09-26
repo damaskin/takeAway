@@ -90,7 +90,7 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
-    await this.cart.assertStoreTakesOrders(cart.storeId);
+    await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -343,22 +343,13 @@ export class OrdersService {
       }),
     );
 
-    // Customer-facing push — "order received, awaiting payment".
-    void this.notifications.notifyOrderStatus(
-      {
-        id: order.id,
-        userId: order.userId,
-        orderCode: order.orderCode,
-        storeId: order.storeId,
-        fulfillmentType: order.fulfillmentType,
-      },
-      'CREATED',
-    );
+    // An order that has to be paid by card reaches the kitchen once its hold
+    // is in place — the payment service announces it then. Until that moment
+    // it is a basket nobody has paid for, and there is no paying at the
+    // counter any more to fall back on. Only an order with nothing to pay is
+    // announced straight away.
+    if (this.holds.cardPaymentRequired(order)) return this.toOrderDto(order);
 
-    // The board lists CREATED orders, and a card order now waits there on a
-    // hold until the kitchen accepts it — it never passes through PAID, where
-    // the other push lives. Announce it here, or the kitchen hears about it
-    // only on its next poll.
     this.realtime.emitKdsOrderChanged({
       storeId: order.storeId,
       kind: 'created',
@@ -759,18 +750,8 @@ export class OrdersService {
       updated.userId,
     );
 
-    // Fire-and-forget push. If Telegram/APNs/FCM are down this still
-    // returns the cancel result cleanly.
-    void this.notifications.notifyOrderStatus(
-      {
-        id: updated.id,
-        userId: updated.userId,
-        orderCode: updated.orderCode,
-        storeId: updated.storeId,
-        fulfillmentType: updated.fulfillmentType,
-      },
-      updated.status,
-    );
+    // No push: the customer cancelled it themselves, on the screen they are
+    // looking at. The live status above is all the confirmation they need.
 
     return this.toOrderDto(updated);
   }

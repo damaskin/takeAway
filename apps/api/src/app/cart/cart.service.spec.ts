@@ -206,7 +206,7 @@ describe('CartService option rules on add-to-cart', () => {
     store: { findUnique: jest.Mock };
     stopListEntry: { findMany: jest.Mock };
     cart: { upsert: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
-    cartItem: { create: jest.Mock };
+    cartItem: { create: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
   let service: CartService;
 
@@ -223,12 +223,59 @@ describe('CartService option rules on add-to-cart', () => {
         findUnique: jest.fn().mockResolvedValue(emptyCart()),
         update: jest.fn().mockResolvedValue({}),
       },
-      cartItem: { create: jest.fn().mockResolvedValue({}) },
+      cartItem: {
+        create: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
+      },
     };
     service = await buildService(prisma);
   });
 
   const created = () => prisma.cartItem.create.mock.calls[0]?.[0]?.data;
+
+  /** A line already in the cart, as the default latte (M, cow's milk) with vanilla. */
+  const line = (patch: Record<string, unknown> = {}) => ({
+    id: 'ci-1',
+    productId: 'p-latte',
+    quantity: 1,
+    variationIds: ['v-cow', 'v-m'],
+    modifiersJson: { 'm-vanilla': 1 },
+    notes: null,
+    ...patch,
+  });
+
+  it('adds the same drink again to its existing line instead of starting a second one', async () => {
+    prisma.cartItem.findMany.mockResolvedValue([line()]);
+
+    await add({ quantity: 2, modifiers: { 'm-vanilla': 1 } });
+
+    expect(prisma.cartItem.create).not.toHaveBeenCalled();
+    expect(prisma.cartItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-1' },
+      data: expect.objectContaining({ quantity: 3 }),
+    });
+  });
+
+  it('keeps a differently made drink on a line of its own', async () => {
+    prisma.cartItem.findMany.mockResolvedValue([line(), line({ id: 'ci-2', modifiersJson: {}, notes: 'extra hot' })]);
+
+    await add({ variationIds: ['v-l'], modifiers: { 'm-vanilla': 1 } });
+    await add({ modifiers: {} });
+
+    expect(prisma.cartItem.update).not.toHaveBeenCalled();
+    expect(prisma.cartItem.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('never merges a line past the 99 a single line may hold', async () => {
+    prisma.cartItem.findMany.mockResolvedValue([line({ quantity: 98 })]);
+
+    await add({ quantity: 5, modifiers: { 'm-vanilla': 1 } });
+
+    expect(prisma.cartItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ quantity: 99 }) }),
+    );
+  });
 
   it('refuses two sizes for one drink', async () => {
     await expect(add({ variationIds: ['v-s', 'v-l'] })).rejects.toMatchObject({

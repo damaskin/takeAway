@@ -14,6 +14,9 @@ import type { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
 
 const EARTH_RADIUS_METERS = 6371000;
 
+/** Just enough of a store's open shift, if any, to tell whether it has one. */
+const OPEN_SHIFT = { where: { closedAt: null }, select: { id: true }, take: 1 } as const;
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -39,7 +42,11 @@ export class CatalogService {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
       },
-      include: { workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } } },
+      include: {
+        workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
+        brand: { select: { name: true, logoUrl: true } },
+        shifts: OPEN_SHIFT,
+      },
       orderBy: [{ name: 'asc' }],
     });
 
@@ -59,6 +66,8 @@ export class CatalogService {
         return {
           id: s.id,
           brandId: s.brandId,
+          brandName: s.brand.name,
+          logoUrl: s.brand.logoUrl,
           slug: s.slug,
           name: s.name,
           addressLine: s.addressLine,
@@ -71,6 +80,7 @@ export class CatalogService {
           pickupPointType: s.pickupPointType,
           busyMeter: s.busyMeter,
           currentEtaSeconds,
+          acceptingOrders: acceptingOrders(s),
           openNow: openNow(s, now, currentEtaSeconds),
           taxRateBps: s.taxRateBps,
           taxIncludedInPrice: s.taxIncludedInPrice,
@@ -120,6 +130,7 @@ export class CatalogService {
       },
       include: {
         workingHours: { orderBy: { weekday: 'asc' } },
+        shifts: OPEN_SHIFT,
         brand: { select: { id: true, slug: true, name: true, logoUrl: true, themeOverrides: true } },
       },
     });
@@ -131,6 +142,8 @@ export class CatalogService {
     return {
       id: store.id,
       brandId: store.brandId,
+      brandName: store.brand.name,
+      logoUrl: store.brand.logoUrl,
       slug: store.slug,
       name: store.name,
       addressLine: store.addressLine,
@@ -143,6 +156,7 @@ export class CatalogService {
       pickupPointType: store.pickupPointType,
       busyMeter: store.busyMeter,
       currentEtaSeconds,
+      acceptingOrders: acceptingOrders(store),
       openNow: openNow(store, new Date(), currentEtaSeconds),
       taxRateBps: store.taxRateBps,
       taxIncludedInPrice: store.taxIncludedInPrice,
@@ -332,17 +346,25 @@ function defaultVariationIds(
 }
 
 /**
- * Whether an ASAP order placed now would be accepted: the store is not
- * switched off, and it is still open when that order would be ready — the
- * same working-hours check order creation enforces. Without this the clients
- * offered ASAP after hours and the customer met a bare 400 at checkout.
+ * The store takes orders at all right now: it is not switched off and staff
+ * have started a shift. False means the clients show it as inactive.
+ */
+function acceptingOrders(store: { status: string; shifts: readonly unknown[] }): boolean {
+  return store.status !== 'CLOSED' && store.shifts.length > 0;
+}
+
+/**
+ * Whether an ASAP order placed now would be accepted: the store takes orders
+ * (see acceptingOrders), and it is still open when that order would be ready —
+ * the same working-hours check order creation enforces. Without this the
+ * clients offered ASAP after hours and the customer met a bare 400 at checkout.
  */
 function openNow(
-  store: { status: string; timezone: string; workingHours: readonly WorkingHour[] },
+  store: { status: string; shifts: readonly unknown[]; timezone: string; workingHours: readonly WorkingHour[] },
   now: Date,
   etaSeconds: number,
 ): boolean {
-  if (store.status === 'CLOSED') return false;
+  if (!acceptingOrders(store)) return false;
   return isOpenAt(store.workingHours, new Date(now.getTime() + etaSeconds * 1000), store.timezone);
 }
 

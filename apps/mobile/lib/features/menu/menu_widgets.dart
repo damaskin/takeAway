@@ -17,8 +17,9 @@ import '../cart/cart_controller.dart';
 import '../orders/orders_providers.dart';
 import '../stores/store_widgets.dart';
 
-/// Greeting plus the store selector — where the order will be picked up and
-/// how soon it can be ready, one tap away from changing.
+/// Greeting plus the business plate: whose menu this is, where the order
+/// will be picked up and how soon it can be ready — one tap away from
+/// changing the store.
 class MenuHeader extends ConsumerWidget {
   const MenuHeader({required this.store, required this.onSearch, super.key});
 
@@ -36,10 +37,9 @@ class MenuHeader extends ConsumerWidget {
         : hour < 18
         ? l10n.greetingAfternoon
         : l10n.greetingEvening;
-    final address = displayAddress(store);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+      padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -48,7 +48,7 @@ class MenuHeader extends ConsumerWidget {
               Expanded(
                 child: Text(
                   name.isEmpty ? greeting : l10n.greetingWithName(greeting, name),
-                  style: context.text.headlineLarge,
+                  style: context.text.titleLarge?.copyWith(color: brand.textSecondary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -61,51 +61,102 @@ class MenuHeader extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Pressable(
-            onTap: () => showStorePicker(context),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-              decoration: BoxDecoration(
-                color: brand.foam,
-                borderRadius: BorderRadius.circular(Radii.card),
-                border: Border.all(color: brand.borderLight),
-                boxShadow: brand.softShadow,
-              ),
-              child: Row(
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: BusinessPlate(store: store),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The business the customer is ordering from, set apart from the menu on
+/// a dark plate: its logo and name large, the pickup store under it, and
+/// the live ETA (or why there is none). Tapping it changes the store.
+class BusinessPlate extends StatelessWidget {
+  const BusinessPlate({required this.store, super.key});
+
+  final Store store;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    // Espresso is the darkest token in the light theme and the lightest in
+    // the dark one, so the plate always stands out from the cream page.
+    final ink = brand.cream;
+    final address = displayAddress(store);
+    final businessName = store.brandName?.trim();
+    final title = businessName == null || businessName.isEmpty ? store.name : businessName;
+    final showStoreName = title != store.name;
+
+    return Semantics(
+      button: true,
+      label: l10n.chooseStoreTitle,
+      child: Pressable(
+        onTap: () => showStorePicker(context),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 10, 12),
+          decoration: BoxDecoration(
+            color: brand.espresso,
+            borderRadius: BorderRadius.circular(Radii.card),
+            boxShadow: brand.liftedShadow,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(color: brand.caramelSoft, borderRadius: BorderRadius.circular(12)),
-                    child: Icon(Icons.storefront_rounded, color: brand.caramel, size: 22),
-                  ),
-                  const SizedBox(width: 12),
+                  StoreLogo(store: store, size: 56),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(l10n.pickupPoint, style: context.text.labelSmall?.copyWith(color: brand.textTertiary)),
+                        Text(
+                          title,
+                          style: context.text.headlineSmall?.copyWith(color: ink, fontWeight: FontWeight.w800),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         const SizedBox(height: 2),
-                        Text(store.name, style: context.text.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        if (address != null)
-                          Text(address, style: context.text.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(
+                          [if (showStoreName) store.name, ?address].join(' · '),
+                          style: context.text.bodySmall?.copyWith(color: ink.withValues(alpha: 0.72)),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  // An ETA for a store that is not taking ASAP orders would
-                  // be a promise nobody can keep.
-                  if (store.isOpen)
-                    EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter)
-                  else
-                    StoreStatusBadge(status: store.effectiveStatus),
-                  Icon(Icons.expand_more_rounded, color: brand.textTertiary),
                 ],
               ),
-            ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(color: brand.foam, borderRadius: BorderRadius.circular(Radii.pill)),
+                    // An ETA for a store that is not taking ASAP orders would
+                    // be a promise nobody can keep.
+                    child: store.isOpen
+                        ? EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter)
+                        : Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            child: StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
+                          ),
+                  ),
+                  const Spacer(),
+                  Text(l10n.changeStore, style: context.text.labelLarge?.copyWith(color: ink.withValues(alpha: 0.8))),
+                  Icon(Icons.chevron_right_rounded, size: 20, color: ink.withValues(alpha: 0.8)),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -124,6 +175,8 @@ class StoreNotice extends StatelessWidget {
     final brand = context.brand;
     final (String? text, Color color, IconData icon) = offline
         ? (l10n.offlineMenu, brand.textSecondary, Icons.cloud_off_rounded)
+        : store.isInactive
+        ? (l10n.storeInactiveBanner, brand.berry, Icons.do_not_disturb_on_rounded)
         : store.effectiveStatus == StoreStatus.closed
         ? (l10n.storeClosedBanner, brand.berry, Icons.nightlight_round)
         : store.effectiveStatus == StoreStatus.overloaded

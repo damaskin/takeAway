@@ -35,6 +35,9 @@ export interface CheckoutLine extends PricedLine {
   notes: string | null;
 }
 
+/** Mirrors the DTO's limit — merging two lines never builds one past it. */
+const MAX_LINE_QUANTITY = 99;
+
 @Injectable()
 export class CartService {
   constructor(
@@ -76,18 +79,42 @@ export class CartService {
       create: { userId, storeId: dto.storeId },
     });
 
-    await this.prisma.cartItem.create({
-      data: {
-        cartId: cart.id,
-        productId: product.id,
-        quantity: dto.quantity,
-        variationIds: priced.variationIds,
-        modifiersJson: priced.modifiers,
-        unitPriceCents: priced.unitPriceCents,
-        unitPrepSeconds: priced.unitPrepSeconds,
-        notes: dto.notes,
-      },
-    });
+    // The same latte added twice is one line of two, not two lines of one:
+    // otherwise the cart shows "×1" twice and its steppers each count only
+    // their own half. A line only matches when the kitchen would make it the
+    // same way — same size, same extras, same note.
+    const notes = normalizeNotes(dto.notes);
+    const existing = await this.prisma.cartItem.findMany({ where: { cartId: cart.id, productId: product.id } });
+    const same = existing.find(
+      (item) =>
+        sameIds(item.variationIds, priced.variationIds) &&
+        sameCounts(storedModifiers(item.modifiersJson), priced.modifiers) &&
+        normalizeNotes(item.notes) === notes,
+    );
+
+    if (same) {
+      await this.prisma.cartItem.update({
+        where: { id: same.id },
+        data: {
+          quantity: Math.min(same.quantity + dto.quantity, MAX_LINE_QUANTITY),
+          unitPriceCents: priced.unitPriceCents,
+          unitPrepSeconds: priced.unitPrepSeconds,
+        },
+      });
+    } else {
+      await this.prisma.cartItem.create({
+        data: {
+          cartId: cart.id,
+          productId: product.id,
+          quantity: dto.quantity,
+          variationIds: priced.variationIds,
+          modifiersJson: priced.modifiers,
+          unitPriceCents: priced.unitPriceCents,
+          unitPrepSeconds: priced.unitPrepSeconds,
+          notes,
+        },
+      });
+    }
 
     return this.recalculate(cart.id);
   }
@@ -391,18 +418,26 @@ export class CartService {
   }
 
   /**
-   * The store exists, is not switched off, and its brand passed moderation.
+   * The store exists, is not switched off, its brand passed moderation and,
+   * when `requireShift` is set, staff have started a shift there. The shift is
+   * checked on the order path only: a customer may still fill a basket at an
+   * inactive store, but cannot send an order nobody is there to take.
    * The catalog only hides the rest; a direct link, a QR code or an old cart
    * could still order from a closed store or an unapproved brand. Returns
    * the store's brand id.
    */
-  async assertStoreTakesOrders(storeId: string): Promise<string> {
+  async assertStoreTakesOrders(storeId: string, { requireShift = false } = {}): Promise<string> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: { brandId: true, status: true, brand: { select: { moderationStatus: true } } },
+      select: {
+        brandId: true,
+        status: true,
+        brand: { select: { moderationStatus: true } },
+        shifts: { where: { closedAt: null }, select: { id: true }, take: 1 },
+      },
     });
     if (!store || store.brand.moderationStatus !== 'APPROVED') throw new NotFoundException('Store not found');
-    if (store.status === 'CLOSED') {
+    if (store.status === 'CLOSED' || (requireShift && store.shifts.length === 0)) {
       throw checkoutError('STORE_NOT_TAKING_ORDERS', 'This store is not taking orders right now');
     }
     return store.brandId;
@@ -475,6 +510,17 @@ function toCount(raw: unknown): number {
 /** The `{ modifierId: count }` a cart row keeps, read without trusting the JSON. */
 function storedModifiers(json: Prisma.JsonValue): Record<string, unknown> {
   return typeof json === 'object' && json !== null && !Array.isArray(json) ? json : {};
+}
+
+/** Whether two variation selections pick the same variations, in any order. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
+
+/** A blank note is no note, so "" and null land on the same line. */
+function normalizeNotes(notes: string | null | undefined): string | null {
+  const trimmed = notes?.trim();
+  return trimmed ? trimmed : null;
 }
 
 /** Whether two extra selections take the same extras in the same numbers. */

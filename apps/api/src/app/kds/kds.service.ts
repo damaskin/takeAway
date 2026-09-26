@@ -3,6 +3,7 @@ import type { Order, OrderStatus, Prisma } from '@prisma/client';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { AgroprombankService } from '../payments/agroprombank/agroprombank.service';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -15,6 +16,52 @@ const ALLOWED_TRANSITIONS: Record<string, OrderStatus[]> = {
   pickedUp: ['READY'],
 };
 
+/** What a board row needs beyond the order itself: its lines and the customer's arrival pings. */
+const BOARD_INCLUDE = {
+  items: true,
+  events: {
+    where: { type: { in: ['CUSTOMER_NEARBY', 'CUSTOMER_HERE'] } },
+    select: { type: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  },
+} satisfies Prisma.OrderInclude;
+
+type BoardOrder = Prisma.OrderGetPayload<{ include: typeof BOARD_INCLUDE }>;
+
+/**
+ * Where the customer is, from the pings their app sends: HERE once they
+ * tapped "I'm here" (or walked into the store), NEARBY when they are close.
+ * The latest-reached level wins, so HERE is never downgraded.
+ */
+export function customerArrival(events: readonly { type: string; createdAt: Date }[]): {
+  customerArrival: 'NEARBY' | 'HERE' | null;
+  customerArrivedAt: string | null;
+} {
+  const here = events.find((e) => e.type === 'CUSTOMER_HERE');
+  if (here) return { customerArrival: 'HERE', customerArrivedAt: here.createdAt.toISOString() };
+  const nearby = events.find((e) => e.type === 'CUSTOMER_NEARBY');
+  if (nearby) return { customerArrival: 'NEARBY', customerArrivedAt: nearby.createdAt.toISOString() };
+  return { customerArrival: null, customerArrivedAt: null };
+}
+
+function toBoardRow(o: BoardOrder) {
+  return {
+    id: o.id,
+    orderCode: o.orderCode,
+    status: o.status,
+    pickupMode: o.pickupMode,
+    pickupAt: o.pickupAt.toISOString(),
+    createdAt: o.createdAt.toISOString(),
+    customerName: o.customerName,
+    notes: o.notes,
+    ...customerArrival(o.events),
+    items: o.items.map((i) => ({
+      productSnapshot: i.productSnapshot,
+      quantity: i.quantity,
+    })),
+  };
+}
+
 @Injectable()
 export class KdsService {
   constructor(
@@ -22,29 +69,28 @@ export class KdsService {
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
     private readonly payments: AgroprombankService,
+    private readonly holds: PaymentHoldsService,
   ) {}
 
   async listOpen(storeId: string) {
     const orders = await this.prisma.order.findMany({
       where: { storeId, status: { in: OPEN_STATUSES } },
       orderBy: { pickupAt: 'asc' },
-      include: { items: true },
+      include: {
+        ...BOARD_INCLUDE,
+        payments: {
+          where: { provider: 'AGROPROMBANK', status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
+          select: { id: true },
+        },
+      },
     });
 
-    return orders.map((o) => ({
-      id: o.id,
-      orderCode: o.orderCode,
-      status: o.status,
-      pickupMode: o.pickupMode,
-      pickupAt: o.pickupAt.toISOString(),
-      createdAt: o.createdAt.toISOString(),
-      customerName: o.customerName,
-      notes: o.notes,
-      items: o.items.map((i) => ({
-        productSnapshot: i.productSnapshot,
-        quantity: i.quantity,
-      })),
-    }));
+    // A new order the customer has not paid for yet is not the kitchen's
+    // business: it shows up once its card hold is in place.
+    const payable = orders.filter(
+      (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
+    );
+    return payable.map(toBoardRow);
   }
 
   /**
@@ -66,14 +112,23 @@ export class KdsService {
 
   /**
    * Captures whatever is held against the order. A bank refusal surfaces to the
-   * staff member as a failed accept — they can take cash instead, or the
-   * customer can pay with another card — so the failure is deliberately not
-   * swallowed.
+   * staff member as a failed accept — the customer can pay with another
+   * card — so the failure is deliberately not swallowed.
    */
   private async captureHold(storeId: string, orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
     if (!(ALLOWED_TRANSITIONS['accept'] ?? []).includes(order.status)) return;
+
+    // Nothing is paid at the counter any more: an order that costs money is
+    // taken on only with the customer's card behind it.
+    if (
+      order.status === 'CREATED' &&
+      this.holds.cardPaymentRequired(order) &&
+      !(await this.holds.hasCardPayment(orderId))
+    ) {
+      throw new BadRequestException('The customer has not paid for this order yet');
+    }
 
     try {
       await this.payments.capturePreauthorizedForOrder(orderId);
@@ -206,21 +261,8 @@ export class KdsService {
   private async listOpenByIds(storeId: string, ids: string[]) {
     const orders = await this.prisma.order.findMany({
       where: { storeId, id: { in: ids } },
-      include: { items: true },
+      include: BOARD_INCLUDE,
     });
-    return orders.map((o) => ({
-      id: o.id,
-      orderCode: o.orderCode,
-      status: o.status,
-      pickupMode: o.pickupMode,
-      pickupAt: o.pickupAt.toISOString(),
-      createdAt: o.createdAt.toISOString(),
-      customerName: o.customerName,
-      notes: o.notes,
-      items: o.items.map((i) => ({
-        productSnapshot: i.productSnapshot,
-        quantity: i.quantity,
-      })),
-    }));
+    return orders.map(toBoardRow);
   }
 }

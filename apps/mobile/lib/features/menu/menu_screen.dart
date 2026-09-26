@@ -5,7 +5,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
-import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -24,12 +23,6 @@ class MenuScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stores = ref.watch(storesProvider);
     final store = ref.watch(activeStoreProvider);
-
-    // A single store is chosen for the customer; remember it so the cart
-    // and checkout agree on it.
-    if (store != null && ref.read(activeStoreIdProvider) != store.id) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(activeStoreIdProvider.notifier).select(store.id));
-    }
 
     return Scaffold(
       body: stores.when(

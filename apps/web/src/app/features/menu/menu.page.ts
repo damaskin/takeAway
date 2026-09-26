@@ -16,6 +16,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { isStoreInactive } from '@takeaway/utils';
 import { Subscription, catchError, map, of } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -74,7 +75,11 @@ import { categoryIcon } from '../../core/catalog/category-icon';
             'common.change' | translate
           }}</a>
         </div>
-        @if (s.openNow) {
+        @if (inactive(s)) {
+          <span class="store-eta is-closed" data-testid="store-inactive">{{
+            'common.storeInactive.title' | translate
+          }}</span>
+        } @else if (s.openNow) {
           <span class="store-eta">
             <svg
               viewBox="0 0 24 24"
@@ -528,6 +533,10 @@ export class MenuPage {
   private readonly rail = viewChild<ElementRef<HTMLElement>>('rail');
 
   readonly store = signal<StoreDetail | null>(null);
+
+  inactive(store: StoreDetail): boolean {
+    return isStoreInactive(store);
+  }
   readonly menu = signal<StoreMenu | null>(null);
   readonly error = signal<string | null>(null);
   readonly activeCategoryId = signal<string | null>(null);

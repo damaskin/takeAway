@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { AgroprombankService } from '../payments/agroprombank/agroprombank.service';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { KdsService } from './kds.service';
@@ -30,6 +31,7 @@ describe('KdsService.accept', () => {
 
   let prisma: { order: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock } };
   let payments: { capturePreauthorizedForOrder: jest.Mock };
+  let holds: { cardPaymentRequired: jest.Mock; hasCardPayment: jest.Mock };
   let service: KdsService;
 
   beforeEach(async () => {
@@ -42,6 +44,7 @@ describe('KdsService.accept', () => {
       },
     };
     payments = { capturePreauthorizedForOrder: jest.fn().mockResolvedValue(null) };
+    holds = { cardPaymentRequired: jest.fn().mockReturnValue(true), hasCardPayment: jest.fn().mockResolvedValue(true) };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -53,6 +56,7 @@ describe('KdsService.accept', () => {
         },
         { provide: NotificationsService, useValue: { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) } },
         { provide: AgroprombankService, useValue: payments },
+        { provide: PaymentHoldsService, useValue: holds },
       ],
     }).compile();
 
@@ -86,5 +90,66 @@ describe('KdsService.accept', () => {
     await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toThrow(BadRequestException);
 
     expect(payments.capturePreauthorizedForOrder).not.toHaveBeenCalled();
+  });
+
+  /** There is no paying at the counter: no card behind the order, no ticket. */
+  it('refuses an order the customer has not paid for yet', async () => {
+    holds.hasCardPayment.mockResolvedValue(false);
+
+    await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toThrow(
+      'The customer has not paid for this order yet',
+    );
+
+    expect(payments.capturePreauthorizedForOrder).not.toHaveBeenCalled();
+    expect(prisma.order.update).not.toHaveBeenCalled();
+  });
+
+  it('takes on an order with nothing to pay without asking for a card', async () => {
+    holds.cardPaymentRequired.mockReturnValue(false);
+    holds.hasCardPayment.mockResolvedValue(false);
+
+    await service.accept('store-1', order.id, 'staff-1');
+
+    expect(prisma.order.update).toHaveBeenCalled();
+  });
+});
+
+describe('KdsService.listOpen', () => {
+  it('shows the kitchen a new order only once it is paid for or held', async () => {
+    const base = {
+      storeId: 'store-1',
+      orderCode: '1',
+      pickupMode: 'ASAP',
+      pickupAt: new Date('2026-09-22T10:00:00.000Z'),
+      createdAt: new Date('2026-09-22T09:50:00.000Z'),
+      customerName: null,
+      notes: null,
+      items: [],
+      events: [],
+      totalCents: 3000,
+    };
+    const prisma = {
+      order: {
+        findMany: jest.fn().mockResolvedValue([
+          { ...base, id: 'unpaid', status: 'CREATED', payments: [] },
+          { ...base, id: 'held', status: 'CREATED', payments: [{ id: 'p-1' }] },
+          { ...base, id: 'accepted', status: 'ACCEPTED', payments: [] },
+        ]),
+      },
+    };
+    const module = await Test.createTestingModule({
+      providers: [
+        KdsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: RealtimeGateway, useValue: {} },
+        { provide: NotificationsService, useValue: {} },
+        { provide: AgroprombankService, useValue: {} },
+        { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
+      ],
+    }).compile();
+
+    const rows = await module.get(KdsService).listOpen('store-1');
+
+    expect(rows.map((r) => r.id)).toEqual(['held', 'accepted']);
   });
 });

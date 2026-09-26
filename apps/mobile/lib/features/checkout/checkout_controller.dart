@@ -82,7 +82,8 @@ class CheckoutState {
   final PointsState points;
   final DeliveryState delivery;
 
-  /// Card to charge; null means "pay at the counter".
+  /// Card to charge. Null only until the customer has a usable card: there is
+  /// no paying at the counter.
   final String? cardId;
 
   /// Whether the customer picked the method themselves (so a late-loading
@@ -151,7 +152,7 @@ class CheckoutValidation implements Exception {
   final CheckoutProblem reason;
 }
 
-enum CheckoutProblem { deliveryAddress, pickSlot, outsideDeliveryArea }
+enum CheckoutProblem { deliveryAddress, pickSlot, outsideDeliveryArea, cardNeeded }
 
 /// All of checkout's moving parts. Discounts are always the server's
 /// numbers (validated against the cart), and the total is computed with the
@@ -362,6 +363,13 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     return cardsOn && state.cardId != null;
   }
 
+  /// Every order that costs anything is paid by card — the amount is held at
+  /// checkout and taken when the store accepts. Only an order that points or
+  /// a gift card covered in full goes through without one.
+  bool needsCard(Cart cart, Store store) => breakdown(cart, store).totalCents > 0;
+
+  bool canPay(Cart cart, Store store) => !needsCard(cart, store) || payingByCard;
+
   // ── Place order ────────────────────────────────────────────────────────
 
   /// Creates the order (once) and charges the chosen card. Returns the
@@ -378,6 +386,8 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
       throw const CheckoutValidation(CheckoutProblem.deliveryAddress);
     }
     if (delivery && s.delivery.outside) throw const CheckoutValidation(CheckoutProblem.outsideDeliveryArea);
+    final byCard = needsCard(cart, store);
+    if (byCard && !payingByCard) throw const CheckoutValidation(CheckoutProblem.cardNeeded);
 
     state = s.copyWith(submitting: true, error: () => null);
     try {
@@ -407,7 +417,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 
-      if (payingByCard) {
+      if (byCard) {
         await _api.payWithCard({'orderId': orderId, 'cardId': state.cardId});
         ref.invalidate(cardsProvider);
       }
