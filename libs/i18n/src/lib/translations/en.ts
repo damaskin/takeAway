@@ -529,6 +529,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     layout: {
       wholeProject: 'Whole project',
       adminTag: 'Admin',
+      install: 'Install app',
+      installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',

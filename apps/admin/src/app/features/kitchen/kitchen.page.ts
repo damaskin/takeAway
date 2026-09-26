@@ -208,7 +208,9 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         --color-border: #3a3430;
         --color-surface-variant: #2a2523;
         --color-caramel-light: #c77d3b33;
+        /* Tablet mode hides the shell, so the board is the whole screen. */
         min-height: 100vh;
+        min-height: 100dvh;
         background: #0e0b0a;
       }
       .kitchen-dark .kitchen-note {
