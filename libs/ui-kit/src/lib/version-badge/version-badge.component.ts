@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, booleanAttribute, inject, input, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { catchError, of } from 'rxjs';
 
@@ -17,6 +17,10 @@ interface VersionInfo {
  * Click → copies the full triple to the clipboard so QA can paste into
  * a bug report. Hidden when `?no-version` is in the URL — useful for
  * screenshots — and silently absent on dev where /version.json 404s.
+ *
+ * `optIn` is for customer-facing sites, where the pill sat on top of the
+ * page's own buttons: there it shows only once the page has been opened
+ * with `?version`, and then for the rest of that tab.
  */
 @Component({
   selector: 'lib-version-badge',
@@ -64,11 +68,13 @@ interface VersionInfo {
 })
 export class VersionBadgeComponent implements OnInit {
   private readonly http = inject(HttpClient);
+  readonly optIn = input(false, { transform: booleanAttribute });
   readonly info = signal<VersionInfo | null>(null);
   readonly suppressed = typeof window !== 'undefined' && window.location.search.includes('no-version');
 
   ngOnInit(): void {
     if (this.suppressed) return;
+    if (this.optIn() && !askedFor()) return;
     this.http
       .get<VersionInfo>('/version.json', { headers: { 'Cache-Control': 'no-cache' } })
       .pipe(catchError(() => of(null)))
@@ -94,5 +100,21 @@ export class VersionBadgeComponent implements OnInit {
       // some embedded browsers (older TMA WebView) refuse anyway. Silent
       // failure is fine — the tooltip already shows the same content.
     }
+  }
+}
+
+const ASKED_KEY = 'takeaway.showVersion';
+
+/** `?version` in the URL now, or earlier in this tab. */
+function askedFor(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).has('version')) {
+      sessionStorage.setItem(ASKED_KEY, '1');
+      return true;
+    }
+    return sessionStorage.getItem(ASKED_KEY) === '1';
+  } catch {
+    return false;
   }
 }

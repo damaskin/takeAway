@@ -6,6 +6,6 @@ import { VersionBadgeComponent } from '@takeaway/ui-kit';
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, VersionBadgeComponent],
-  template: `<router-outlet /><lib-version-badge />`,
+  template: `<router-outlet /><lib-version-badge optIn />`,
 })
 export class App {}

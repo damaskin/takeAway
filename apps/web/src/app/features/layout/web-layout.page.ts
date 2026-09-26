@@ -1,10 +1,14 @@
-import { Component, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ViewportScroller } from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { stickyTopInset } from '../../core/layout/sticky-inset';
 
 /**
  * Web shell — sticky top nav. On desktop the four-link nav lives in the
@@ -15,11 +19,12 @@ import { AuthStore } from '../../core/auth/auth.store';
 @Component({
   selector: 'app-web-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, TranslatePipe, LanguageSwitcherComponent],
+  imports: [RouterOutlet, RouterLink, TranslatePipe, LanguageSwitcherComponent],
   template: `
     <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-text-primary)">
       <header
         class="sticky top-0 z-10"
+        data-sticky-top
         style="background: var(--color-foam); border-bottom: 1px solid var(--color-border-light)"
       >
         <div
@@ -48,33 +53,14 @@ import { AuthStore } from '../../core/auth/auth.store';
 
           <!-- Desktop primary nav -->
           <nav class="web-nav-desktop items-center" style="gap: 32px">
-            <a
-              routerLink="/menu"
-              routerLinkActive="opacity-100"
-              [routerLinkActiveOptions]="{ exact: false }"
-              class="opacity-70 hover:opacity-100"
-              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >{{ 'nav.menu' | translate }}</a
-            >
-            <a
-              routerLink="/stores"
-              routerLinkActive="opacity-100"
-              class="opacity-70 hover:opacity-100"
-              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >{{ 'nav.stores' | translate }}</a
-            >
-            <a
-              href="#how-it-works"
-              class="opacity-70 hover:opacity-100"
-              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >{{ 'nav.about' | translate }}</a
-            >
-            <a
-              href="#loyalty"
-              class="opacity-70 hover:opacity-100"
-              style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
-              >{{ 'nav.loyalty' | translate }}</a
-            >
+            <a routerLink="/menu" class="web-nav-link" [class.is-active]="section() === 'menu'">{{
+              'nav.menu' | translate
+            }}</a>
+            <a routerLink="/stores" class="web-nav-link" [class.is-active]="section() === 'stores'">{{
+              'nav.stores' | translate
+            }}</a>
+            <a routerLink="/" fragment="how-it-works" class="web-nav-link">{{ 'nav.about' | translate }}</a>
+            <a routerLink="/" fragment="loyalty" class="web-nav-link">{{ 'nav.loyalty' | translate }}</a>
           </nav>
 
           <!-- Right cluster: language + auth + order. Wraps to icons on mobile. -->
@@ -161,6 +147,30 @@ import { AuthStore } from '../../core/auth/auth.store';
       .web-nav-burger {
         display: none;
       }
+      .web-nav-link {
+        position: relative;
+        padding: 6px 0;
+        font-family: var(--font-sans);
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--color-text-primary);
+        opacity: 0.7;
+        transition: opacity 0.15s;
+      }
+      .web-nav-link:hover,
+      .web-nav-link.is-active {
+        opacity: 1;
+      }
+      .web-nav-link.is-active::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -2px;
+        height: 2px;
+        border-radius: 2px;
+        background: var(--color-caramel);
+      }
       .web-nav-desktop {
         display: flex;
       }
@@ -196,6 +206,31 @@ export class WebLayoutPage {
   private readonly router = inject(Router);
 
   readonly mobileNavOpen = signal(false);
+
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+
+  /**
+   * Which header link the page belongs to. A store's own page is its menu,
+   * so it lights up "Меню" rather than "Точки", and so does a product.
+   */
+  readonly section = computed<'menu' | 'stores' | null>(() => {
+    const path = this.url().split(/[?#]/)[0] ?? '';
+    if (/^\/(menu|products\/|stores\/[^/]+)/.test(path)) return 'menu';
+    if (/^\/stores\/?$/.test(path)) return 'stores';
+    return null;
+  });
+
+  constructor() {
+    // "О нас" and "Лояльность" jump to home-page sections: land them below
+    // the header instead of under it.
+    inject(ViewportScroller).setOffset(() => [0, stickyTopInset() + 16]);
+  }
 
   isAuthed(): boolean {
     return this.store.isAuthenticated();
