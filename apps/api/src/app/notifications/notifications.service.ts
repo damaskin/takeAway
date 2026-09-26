@@ -16,6 +16,27 @@ interface OrderLike {
   fulfillmentType: 'PICKUP' | 'DINE_IN' | 'DELIVERY';
 }
 
+/** Why an order expired, so the push can say what happened to the money. */
+export interface OrderExpiryInfo {
+  reason: 'payment_timeout' | 'not_accepted';
+  /** A card hold was reversed — the customer paid and the store never accepted. */
+  holdReleased: boolean;
+}
+
+export interface OrderStatusPushOptions {
+  expiry?: OrderExpiryInfo;
+}
+
+/** Transitions the customer hears about; everything else they see live in the app. */
+const NOTIFIED_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
+  'ACCEPTED',
+  'READY',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+
 /**
  * Fans out user-facing notifications. Only order-status events are wired
  * today — the call site decides which status changes warrant a push
@@ -41,14 +62,20 @@ export class NotificationsService {
   }
 
   /** Push a customer-facing notification for an order status transition. */
-  async notifyOrderStatus(order: OrderLike, newStatus: OrderStatus): Promise<void> {
-    const message = this.buildOrderStatusMessage(order, newStatus);
-    if (!message) return; // some transitions we deliberately don't notify on
+  async notifyOrderStatus(
+    order: OrderLike,
+    newStatus: OrderStatus,
+    options: OrderStatusPushOptions = {},
+  ): Promise<void> {
+    if (!NOTIFIED_STATUSES.has(newStatus)) return; // see buildOrderStatusMessage
 
     const recipient = await this.loadRecipient(order.userId);
     if (!recipient) return;
     // User opted out of order push on /profile/notifications.
     if (!recipient.notifyOrderUpdates) return;
+
+    const message = this.buildOrderStatusMessage(order, newStatus, recipient.locale, options);
+    if (!message) return;
 
     // Parallel fan-out; log provider results for debugging but never throw.
     const results = await Promise.allSettled(
@@ -285,78 +312,99 @@ export class NotificationsService {
   }
 
   /**
-   * Copy is intentionally very small for v1. Localization is a follow-up:
-   * for now we keep it friendly and use both languages in the body so
-   * no customer is left staring at the wrong language.
+   * Customer copy, in the customer's language. Only the moments the customer
+   * waits for get a push — accepted, ready, on the way, delivered — plus the
+   * ones that end the order without them doing anything. CREATED and PAID
+   * happen while the customer is still on the checkout screen, and under
+   * `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` PAID lands in the same second as
+   * ACCEPTED, so a push for each would arrive as a pair.
    */
-  private buildOrderStatusMessage(order: OrderLike, status: OrderStatus): PushMessage | null {
-    const codeTag = `#${order.orderCode}`;
+  private buildOrderStatusMessage(
+    order: OrderLike,
+    status: OrderStatus,
+    locale: PushRecipient['locale'],
+    options: OrderStatusPushOptions,
+  ): PushMessage | null {
+    const ru = locale !== 'EN';
+    const code = `#${order.orderCode}`;
+    const message = (kind: PushMessage['kind'], title: string, body: string): PushMessage => ({
+      kind,
+      title,
+      body,
+      orderId: order.id,
+    });
+
     switch (status) {
-      case 'CREATED':
-        return {
-          kind: 'order_status',
-          title: `Заказ ${codeTag} создан`,
-          body: `Ожидаем оплату. / Awaiting payment.`,
-          orderId: order.id,
-        };
-      case 'PAID':
-        return {
-          kind: 'order_status',
-          title: `Заказ ${codeTag} оплачен`,
-          body: `Передали на кухню. / Sent to the kitchen.`,
-          orderId: order.id,
-        };
       case 'ACCEPTED':
-        return {
-          kind: 'order_status',
-          title: `Заказ ${codeTag} принят`,
-          body: `Кухня приступает к вашему заказу. / Your order has been accepted.`,
-          orderId: order.id,
-        };
+        return ru
+          ? message('order_status', `Заказ ${code} принят`, 'Заведение уже готовит ваш заказ.')
+          : message('order_status', `Order ${code} accepted`, 'The store is preparing your order.');
       case 'READY':
-        return {
-          kind: 'order_ready',
-          title: `Заказ ${codeTag} готов ☕`,
-          body:
-            order.fulfillmentType === 'DELIVERY'
-              ? `Ждём курьера. / Awaiting a rider.`
-              : `Заберите у стойки. / Ready for pickup.`,
-          orderId: order.id,
-        };
+        if (order.fulfillmentType === 'DELIVERY') {
+          return ru
+            ? message('order_ready', `Заказ ${code} готов`, 'Ждём курьера, скоро выедет к вам.')
+            : message('order_ready', `Order ${code} is ready`, 'Waiting for the rider to pick it up.');
+        }
+        return ru
+          ? message('order_ready', `Заказ ${code} готов ☕`, 'Можно забирать у стойки.')
+          : message('order_ready', `Order ${code} is ready ☕`, 'Pick it up at the counter.');
       case 'OUT_FOR_DELIVERY':
-        return {
-          kind: 'order_out_for_delivery',
-          title: `Заказ ${codeTag} в пути 🛵`,
-          body: `Курьер выехал к вам. / Rider is on the way.`,
-          orderId: order.id,
-        };
+        return ru
+          ? message('order_out_for_delivery', `Заказ ${code} в пути 🛵`, 'Курьер выехал к вам.')
+          : message('order_out_for_delivery', `Order ${code} is on its way 🛵`, 'The rider is heading to you.');
       case 'DELIVERED':
-        return {
-          kind: 'order_delivered',
-          title: `Заказ ${codeTag} доставлен ✅`,
-          body: `Приятного аппетита! / Enjoy!`,
-          orderId: order.id,
-        };
+        return ru
+          ? message('order_delivered', `Заказ ${code} доставлен`, 'Приятного аппетита!')
+          : message('order_delivered', `Order ${code} delivered`, 'Enjoy!');
       case 'CANCELLED':
-        return {
-          kind: 'order_status',
-          title: `Заказ ${codeTag} отменён`,
-          body: `Свяжитесь с нами, если это неожиданно. / Please contact us if unexpected.`,
-          orderId: order.id,
-        };
+        return ru
+          ? message('order_status', `Заказ ${code} отменён`, 'Если это неожиданно, свяжитесь с заведением.')
+          : message('order_status', `Order ${code} cancelled`, 'Please contact the store if this is unexpected.');
       case 'EXPIRED':
-        return {
-          kind: 'order_status',
-          title: `Заказ ${codeTag} отменён — оплата не прошла`,
-          body: `Промокод и подарочная карта возвращены. / Your promo code and gift card have been returned.`,
-          orderId: order.id,
-        };
-      case 'IN_PROGRESS':
-      case 'PICKED_UP':
+        return this.buildExpiredMessage(code, ru, options.expiry, message);
       default:
-        // IN_PROGRESS is chatty (kitchen picked it up — customer sees it in
-        // the UI anyway); PICKED_UP the user already has the cup in hand.
+        // CREATED / PAID: see above. IN_PROGRESS is chatty (the customer sees
+        // it live anyway); PICKED_UP — the cup is already in their hand.
         return null;
     }
+  }
+
+  private buildExpiredMessage(
+    code: string,
+    ru: boolean,
+    expiry: OrderExpiryInfo | undefined,
+    message: (kind: PushMessage['kind'], title: string, body: string) => PushMessage,
+  ): PushMessage {
+    // A released card hold means the payment went through and the store never
+    // took the order; without one, the payment itself was never completed.
+    if (expiry?.holdReleased) {
+      return ru
+        ? message(
+            'order_status',
+            `Заказ ${code} не принят`,
+            'Заведение не подтвердило заказ вовремя. Деньги не списаны, бронь на карте снята.',
+          )
+        : message(
+            'order_status',
+            `Order ${code} was not accepted`,
+            'The store did not confirm it in time. You were not charged and the card hold is released.',
+          );
+    }
+    if (expiry?.reason === 'not_accepted') {
+      return ru
+        ? message('order_status', `Заказ ${code} не принят`, 'Заведение не подтвердило заказ вовремя.')
+        : message('order_status', `Order ${code} was not accepted`, 'The store did not confirm it in time.');
+    }
+    return ru
+      ? message(
+          'order_status',
+          `Заказ ${code} отменён`,
+          'Оплата не завершилась. Промокод, бонусы и баланс подарочной карты возвращены.',
+        )
+      : message(
+          'order_status',
+          `Order ${code} cancelled`,
+          'The payment was not completed. Your promo code, points and gift card balance are back.',
+        );
   }
 }
