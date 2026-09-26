@@ -96,7 +96,8 @@ void main() {
   });
 
   testWidgets('after hours the store reads as closed and checkout only takes a scheduled pickup', (tester) async {
-    final api = FakeApi()
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
       ..storeOpenNow = false
       ..seedCart(FakeApi.croissant());
     final h = await pumpApp(tester, api: api);
@@ -114,7 +115,7 @@ void main() {
     expect(find.text('Выберите время'), findsNothing);
     await tester.tap(find.text('Как можно скорее'));
     await settle(tester);
-    await tester.tap(find.textContaining('Заказать ·'));
+    await tester.tap(find.textContaining('Оплатить'));
     await settle(tester);
     expect(h.api.created, isEmpty, reason: 'no ASAP order goes out after hours');
     expect(find.text('Выберите время'), findsOneWidget);
@@ -123,7 +124,9 @@ void main() {
   });
 
   testWidgets('checkout places an ASAP order and opens the live order screen', (tester) async {
-    final api = FakeApi()..seedCart(FakeApi.croissant(), quantity: 2);
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
+      ..seedCart(FakeApi.croissant(), quantity: 2);
     final h = await pumpApp(tester, api: api);
 
     await tester.tap(find.textContaining('2 позиции'));
@@ -134,16 +137,17 @@ void main() {
     await tester.tap(find.textContaining('К оформлению'));
     await settle(tester);
     expect(find.text('Оформление'), findsOneWidget);
-    expect(find.text('Оплата на месте'), findsWidgets);
+    expect(find.textContaining('9104 **** **** 1234'), findsOneWidget);
+    expect(find.text('Оплата на месте'), findsNothing, reason: 'orders are paid by card only');
 
-    await tester.tap(find.textContaining('Заказать ·'));
+    await tester.tap(find.textContaining('Оплатить'));
     await settle(tester, const Duration(seconds: 2));
 
     final order = h.api.created.single;
     expect(order.cartId, 'cart_1');
     expect(order.pickupMode, PickupMode.asap);
     expect(order.customerName, 'Иван Дамаскин', reason: 'contact is prefilled from the profile');
-    expect(h.api.paid, isEmpty, reason: 'paying at the counter charges nothing');
+    expect(h.api.paid.single, {'orderId': 'ord_1', 'cardId': 'card_1'});
 
     expect(find.text('Заказ #4821'), findsOneWidget);
     expect(find.text('4821'), findsWidgets);
@@ -152,7 +156,9 @@ void main() {
   });
 
   testWidgets('scheduled checkout needs a slot and sends it', (tester) async {
-    final api = FakeApi()..seedCart(FakeApi.croissant());
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
+      ..seedCart(FakeApi.croissant());
     final h = await pumpApp(tester, api: api);
 
     await tester.tap(find.textContaining('1 позиция'));
@@ -170,7 +176,7 @@ void main() {
     await tester.tap(find.textContaining(label).first);
     await settle(tester);
 
-    await tester.tap(find.textContaining('Заказать ·'));
+    await tester.tap(find.textContaining('Оплатить'));
     await settle(tester, const Duration(seconds: 2));
 
     final order = h.api.created.single;

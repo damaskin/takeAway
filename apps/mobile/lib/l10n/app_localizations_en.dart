@@ -497,10 +497,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentTitle => 'Payment';
 
   @override
-  String get payAtCounter => 'Pay at the counter';
+  String get cardPaymentsUnavailable =>
+      'Card payments are unavailable right now, so the order can\'t be placed. Please try again a bit later.';
 
   @override
-  String get payAtCounterHint => 'Cash or card when you pick up';
+  String get addCardToOrder => 'Orders are paid by card. Add a card to place your order.';
 
   @override
   String get addCard => 'Add a card';
@@ -608,6 +609,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentStateAtCounter => 'Paying at the counter';
+
+  @override
+  String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
   String get pickupCode => 'Pickup code';

@@ -974,17 +974,17 @@ abstract class AppLocalizations {
   /// **'Payment'**
   String get paymentTitle;
 
-  /// No description provided for @payAtCounter.
+  /// No description provided for @cardPaymentsUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Pay at the counter'**
-  String get payAtCounter;
+  /// **'Card payments are unavailable right now, so the order can\'t be placed. Please try again a bit later.'**
+  String get cardPaymentsUnavailable;
 
-  /// No description provided for @payAtCounterHint.
+  /// No description provided for @addCardToOrder.
   ///
   /// In en, this message translates to:
-  /// **'Cash or card when you pick up'**
-  String get payAtCounterHint;
+  /// **'Orders are paid by card. Add a card to place your order.'**
+  String get addCardToOrder;
 
   /// No description provided for @addCard.
   ///
@@ -1183,6 +1183,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Paying at the counter'**
   String get paymentStateAtCounter;
+
+  /// No description provided for @paymentStateAwaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting payment'**
+  String get paymentStateAwaiting;
 
   /// No description provided for @pickupCode.
   ///

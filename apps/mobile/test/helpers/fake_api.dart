@@ -25,6 +25,10 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// Latency of reading the cart; the reply is the cart as it was when asked.
   Duration cartDelay = Duration.zero;
 
+  /// Latency of each quantity change, in the order they are sent; the change
+  /// lands on the server when its delay runs out, like a slow request would.
+  final updateDelays = <Duration>[];
+
   /// Replaces the two-category menu — see [categoryJson].
   List<Map<String, dynamic>>? menuCategories;
 
@@ -333,6 +337,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Cart> updateCartItem(String itemId, Map<String, dynamic> patch) async {
+    if (updateDelays.isNotEmpty) await Future<void>.delayed(updateDelays.removeAt(0));
     final index = _cartItems.indexWhere((i) => i.id == itemId);
     final item = _cartItems[index];
     _cartItems[index] = CartItem(
