@@ -229,7 +229,17 @@ class AppLocalizationsRu extends AppLocalizations {
   String get chooseStoreTitle => 'Где заберёте заказ?';
 
   @override
-  String get chooseStoreSubtitle => 'Выберите точку — покажем её меню и через сколько будет готово.';
+  String get chooseStoreSubtitle =>
+      'Выберите точку, которая сейчас принимает заказы, — покажем её меню и через сколько будет готово.';
+
+  @override
+  String get changeStore => 'Сменить';
+
+  @override
+  String get storesInactiveTitle => 'Сейчас не принимают заказы';
+
+  @override
+  String get storesNoneActive => 'Сейчас ни одна точка не принимает заказы. Загляните чуть позже.';
 
   @override
   String get storeClosedBanner => 'Сейчас закрыто — можно оформить заказ на более позднее время.';
@@ -266,9 +276,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Не удалось загрузить меню.';
-
-  @override
-  String get changeStore => 'Сменить';
 
   @override
   String addedToCart(String name) {

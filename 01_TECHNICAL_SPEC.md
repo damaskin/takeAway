@@ -626,7 +626,7 @@ POST   /me/referrals/apply           { code }
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде

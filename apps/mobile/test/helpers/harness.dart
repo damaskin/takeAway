@@ -76,9 +76,14 @@ Future<Harness> pumpApp(
   bool signedIn = true,
   bool onboarded = true,
   Locale locale = const Locale('ru'),
+  String? activeStoreId = 'st_1',
 }) async {
   AppTheme.useGoogleFonts = false;
-  SharedPreferences.setMockInitialValues({'app.onboarding.done': onboarded, 'app.locale': locale.languageCode});
+  SharedPreferences.setMockInitialValues({
+    'app.onboarding.done': onboarded,
+    'app.locale': locale.languageCode,
+    'app.activeStoreId': ?activeStoreId,
+  });
   final prefs = await SharedPreferences.getInstance();
   final fakeApi = api ?? FakeApi();
   final sessions = SessionManager(storage: MemorySessionStorage(), initial: signedIn ? testSession() : null);

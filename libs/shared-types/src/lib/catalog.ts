@@ -14,6 +14,10 @@ export type { PickupPointType };
 export interface StoreListItem {
   id: string;
   brandId: string;
+  /** Name of the business the store belongs to. Absent from older API builds. */
+  brandName?: string;
+  /** Logo for the store card: the brand's, since stores have none of their own. */
+  logoUrl?: string | null;
   slug: string;
   name: string;
   addressLine: string;

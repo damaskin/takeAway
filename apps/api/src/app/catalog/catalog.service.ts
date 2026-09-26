@@ -43,6 +43,7 @@ export class CatalogService {
       },
       include: {
         workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
+        brand: { select: { name: true, logoUrl: true } },
         shifts: OPEN_SHIFT,
       },
       orderBy: [{ name: 'asc' }],
@@ -64,6 +65,8 @@ export class CatalogService {
         return {
           id: s.id,
           brandId: s.brandId,
+          brandName: s.brand.name,
+          logoUrl: s.brand.logoUrl,
           slug: s.slug,
           name: s.name,
           addressLine: s.addressLine,
@@ -138,6 +141,8 @@ export class CatalogService {
     return {
       id: store.id,
       brandId: store.brandId,
+      brandName: store.brand.name,
+      logoUrl: store.brand.logoUrl,
       slug: store.slug,
       name: store.name,
       addressLine: store.addressLine,

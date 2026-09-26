@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { isStoreInactive } from '@takeaway/utils';
-import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
+import { LeafletMapComponent, StoreLogoComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -21,7 +21,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-stores',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent, StoreLogoComponent],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
       <h1
@@ -66,11 +66,14 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
             [attr.data-inactive]="inactive(s) || null"
             style="background: var(--color-foam); border-radius: 16px; padding: 16px; gap: 8px"
           >
-            <div class="flex items-center justify-between">
-              <span
-                style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)"
-                >{{ s.name }}</span
-              >
+            <div class="flex items-center justify-between" style="gap: 10px">
+              <span class="flex items-center" style="gap: 10px; min-width: 0">
+                <lib-store-logo [url]="s.logoUrl" [name]="s.brandName ?? s.name" [size]="40" />
+                <span
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)"
+                  >{{ s.name }}</span
+                >
+              </span>
               <span
                 [style.background]="statusBg(inactive(s) ? 'CLOSED' : s.status)"
                 [style.color]="statusColor(inactive(s) ? 'CLOSED' : s.status)"

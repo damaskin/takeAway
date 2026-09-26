@@ -115,7 +115,10 @@
     }
   },
   "chooseStoreTitle": "Where are you picking up?",
-  "chooseStoreSubtitle": "Choose a store and we will show its menu and how soon your order can be ready.",
+  "chooseStoreSubtitle": "Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.",
+  "changeStore": "Change store",
+  "storesInactiveTitle": "Not taking orders right now",
+  "storesNoneActive": "No store is taking orders right now. Check back a little later.",
   "storeClosedBanner": "Closed right now — you can still schedule for later.",
   "storeBusyBanner": "The kitchen is busy — orders take a little longer.",
   "storeInactiveBanner": "This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.",

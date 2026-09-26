@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { StoreLogoComponent } from '@takeaway/ui-kit';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
@@ -13,7 +14,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-home',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, StoreLogoComponent],
   template: `
     <section style="padding: 24px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
       <div class="flex flex-col" style="gap: 4px">
@@ -47,7 +48,8 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: 16px; gap: 8px"
           >
             <div class="flex items-start justify-between" style="gap: 12px">
-              <div class="flex flex-col" style="gap: 4px">
+              <lib-store-logo [url]="s.logoUrl" [name]="s.brandName ?? s.name" [size]="44" />
+              <div class="flex flex-col flex-1" style="gap: 4px">
                 <span
                   style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
                   >{{ s.name }}</span
