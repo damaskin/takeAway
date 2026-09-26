@@ -25,6 +25,9 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// Latency of reading the cart; the reply is the cart as it was when asked.
   Duration cartDelay = Duration.zero;
 
+  /// Replaces the two-category menu — see [categoryJson].
+  List<Map<String, dynamic>>? menuCategories;
+
   static const storeJson = <String, dynamic>{
     'id': 'st_1',
     'brandId': 'br_1',
@@ -65,6 +68,23 @@ class FakeApi extends Fake implements TakeAwayApi {
     'imageUrls': <String>[],
     'sortOrder': 0,
     'onStopList': false,
+  };
+
+  static Map<String, dynamic> categoryJson(
+    String id,
+    String name,
+    List<Map<String, dynamic>> products, {
+    int sortOrder = 0,
+  }) => {
+    'id': id,
+    'slug': id,
+    'name': name,
+    'description': null,
+    'iconUrl': null,
+    'sortOrder': sortOrder,
+    'availableFrom': null,
+    'availableTo': null,
+    'products': products,
   };
 
   final _cartItems = <CartItem>[];
@@ -223,30 +243,32 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<Menu> menu(String idOrSlug) async => Menu.fromJson({
     'storeId': 'st_1',
     'storeSlug': 'noname-center',
-    'categories': [
-      {
-        'id': 'cat_coffee',
-        'slug': 'coffee',
-        'name': 'Кофе',
-        'description': null,
-        'iconUrl': null,
-        'sortOrder': 0,
-        'availableFrom': null,
-        'availableTo': null,
-        'products': [productJson('p_latte', 'Латте', 2000)],
-      },
-      {
-        'id': 'cat_food',
-        'slug': 'food',
-        'name': 'Выпечка',
-        'description': null,
-        'iconUrl': null,
-        'sortOrder': 1,
-        'availableFrom': null,
-        'availableTo': null,
-        'products': [productJson('p_croissant', 'Круассан', 1500, category: 'cat_food')],
-      },
-    ],
+    'categories':
+        menuCategories ??
+        [
+          {
+            'id': 'cat_coffee',
+            'slug': 'coffee',
+            'name': 'Кофе',
+            'description': null,
+            'iconUrl': null,
+            'sortOrder': 0,
+            'availableFrom': null,
+            'availableTo': null,
+            'products': [productJson('p_latte', 'Латте', 2000)],
+          },
+          {
+            'id': 'cat_food',
+            'slug': 'food',
+            'name': 'Выпечка',
+            'description': null,
+            'iconUrl': null,
+            'sortOrder': 1,
+            'availableFrom': null,
+            'availableTo': null,
+            'products': [productJson('p_croissant', 'Круассан', 1500, category: 'cat_food')],
+          },
+        ],
   });
 
   @override

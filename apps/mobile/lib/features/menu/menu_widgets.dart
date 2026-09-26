@@ -322,36 +322,47 @@ class CategoryBarDelegate extends SliverPersistentHeaderDelegate {
         color: background,
         border: Border(bottom: BorderSide(color: overlapsContent ? divider : Colors.transparent)),
       ),
-      child: ListView.separated(
+      // Every chip is built, not only those near the screen — a menu has a
+      // dozen categories, not hundreds — so the one the scroll-spy lights up
+      // can always be scrolled into view, however far along the row it is.
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        itemCount: categories.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final active = index == selected;
-          return Pressable(
-            key: chipKeys[index],
-            onTap: () => onSelect(index),
-            child: AnimatedContainer(
-              duration: Motion.medium,
-              curve: Motion.emphasized,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: active ? brand.espresso : brand.foam,
-                borderRadius: BorderRadius.circular(Radii.pill),
-                border: Border.all(color: active ? brand.espresso : brand.borderLight),
-              ),
-              child: Text(
-                categories[index].name,
-                style: context.text.labelMedium?.copyWith(
-                  color: active ? brand.cream : brand.textPrimary,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ),
-          );
-        },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var index = 0; index < categories.length; index++) ...[
+              if (index > 0) const SizedBox(width: 8),
+              _chip(context, brand, index),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, BrandColors brand, int index) {
+    final active = index == selected;
+    return Pressable(
+      key: chipKeys[index],
+      onTap: () => onSelect(index),
+      child: AnimatedContainer(
+        duration: Motion.medium,
+        curve: Motion.emphasized,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? brand.espresso : brand.foam,
+          borderRadius: BorderRadius.circular(Radii.pill),
+          border: Border.all(color: active ? brand.espresso : brand.borderLight),
+        ),
+        child: Text(
+          categories[index].name,
+          style: context.text.labelMedium?.copyWith(
+            color: active ? brand.cream : brand.textPrimary,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

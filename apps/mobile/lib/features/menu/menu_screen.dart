@@ -106,11 +106,22 @@ class _MenuViewState extends ConsumerState<_MenuView> {
     }
   }
 
+  /// Scrolls the chip row — and only the chip row — to the highlighted chip.
+  ///
+  /// `Scrollable.ensureVisible` walks every scrollable around the chip, the
+  /// menu included: it scrolled the menu to bring the pinned bar "into view",
+  /// which is back where the bar starts, so each time the customer reached
+  /// the next category the menu threw them to its top.
   void _revealChip(int index) {
+    if (index >= _chipKeys.length) return;
     final chip = _chipKeys[index].currentContext;
-    if (chip != null) {
-      unawaited(Scrollable.ensureVisible(chip, alignment: 0.4, duration: Motion.medium, curve: Curves.easeOutCubic));
-    }
+    final box = chip?.findRenderObject();
+    if (chip == null || box == null || !box.attached) return;
+    unawaited(
+      Scrollable.of(
+        chip,
+      ).position.ensureVisible(box, alignment: 0.4, duration: Motion.medium, curve: Curves.easeOutCubic),
+    );
   }
 
   Future<void> _jumpTo(int index) async {
