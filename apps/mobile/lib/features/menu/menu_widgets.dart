@@ -99,7 +99,7 @@ class MenuHeader extends ConsumerWidget {
                   if (store.isOpen)
                     EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter)
                   else
-                    StoreStatusBadge(status: store.effectiveStatus),
+                    StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
                   Icon(Icons.expand_more_rounded, color: brand.textTertiary),
                 ],
               ),
@@ -124,6 +124,8 @@ class StoreNotice extends StatelessWidget {
     final brand = context.brand;
     final (String? text, Color color, IconData icon) = offline
         ? (l10n.offlineMenu, brand.textSecondary, Icons.cloud_off_rounded)
+        : store.isInactive
+        ? (l10n.storeInactiveBanner, brand.berry, Icons.do_not_disturb_on_rounded)
         : store.effectiveStatus == StoreStatus.closed
         ? (l10n.storeClosedBanner, brand.berry, Icons.nightlight_round)
         : store.effectiveStatus == StoreStatus.overloaded

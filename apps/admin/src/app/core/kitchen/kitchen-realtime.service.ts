@@ -2,9 +2,10 @@ import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { type Socket, io } from 'socket.io-client';
 
 import { AuthStore } from '../auth/auth.store';
-import type { KitchenOrderChanged } from './kitchen-board';
+import type { KitchenOrderChanged, KitchenShiftChanged } from './kitchen-board';
 
 type Handler = (event: KitchenOrderChanged) => void;
+type ShiftHandler = (event: KitchenShiftChanged) => void;
 
 /** How long to wait before dialling back in after the server hung up. */
 const REDIAL_MS = 5_000;
@@ -25,6 +26,7 @@ export class KitchenRealtimeService implements OnDestroy {
   private socket: Socket | null = null;
   private readonly rooms = new Map<string, number>();
   private readonly handlers = new Set<Handler>();
+  private readonly shiftHandlers = new Set<ShiftHandler>();
   private redial: ReturnType<typeof setTimeout> | null = null;
 
   readonly connected = signal(false);
@@ -33,14 +35,18 @@ export class KitchenRealtimeService implements OnDestroy {
    * Starts delivering `storeId`'s kitchen events to `handler`. Returns the
    * function that stops it; the room is left once nobody watches it.
    */
-  watch(storeId: string, handler: Handler): () => void {
+  watch(storeId: string, handler: Handler, onShift?: ShiftHandler): () => void {
     const socket = this.ensureSocket();
     if (!socket) return () => undefined;
 
     const scoped: Handler = (event) => {
       if (event.storeId === storeId) handler(event);
     };
+    const scopedShift: ShiftHandler = (event) => {
+      if (event.storeId === storeId) onShift?.(event);
+    };
     this.handlers.add(scoped);
+    if (onShift) this.shiftHandlers.add(scopedShift);
     const count = this.rooms.get(storeId) ?? 0;
     this.rooms.set(storeId, count + 1);
     if (count === 0 && socket.connected) socket.emit('kds.subscribe', { storeId });
@@ -50,6 +56,7 @@ export class KitchenRealtimeService implements OnDestroy {
       if (!active) return;
       active = false;
       this.handlers.delete(scoped);
+      this.shiftHandlers.delete(scopedShift);
       const left = (this.rooms.get(storeId) ?? 1) - 1;
       if (left > 0) {
         this.rooms.set(storeId, left);
@@ -68,6 +75,7 @@ export class KitchenRealtimeService implements OnDestroy {
     this.socket = null;
     this.rooms.clear();
     this.handlers.clear();
+    this.shiftHandlers.clear();
     this.connected.set(false);
   }
 
@@ -95,6 +103,9 @@ export class KitchenRealtimeService implements OnDestroy {
     });
     socket.on('kds.orderChanged', (event: KitchenOrderChanged) => {
       for (const handler of [...this.handlers]) handler(event);
+    });
+    socket.on('kds.shiftChanged', (event: KitchenShiftChanged) => {
+      for (const handler of [...this.shiftHandlers]) handler(event);
     });
     this.socket = socket;
     return socket;

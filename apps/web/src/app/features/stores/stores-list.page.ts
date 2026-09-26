@@ -1,6 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { isStoreInactive } from '@takeaway/utils';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
@@ -107,6 +108,8 @@ const FILTER_LABELS: Record<Filter, string> = {
               [style.border]="
                 selectedId() === store.id ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
               "
+              [style.opacity]="inactive(store) ? 0.6 : 1"
+              [attr.data-inactive]="inactive(store) || null"
               style="background: var(--color-cream); border-radius: 16px; padding: 16px; gap: 10px"
             >
               <div class="flex items-center justify-between">
@@ -115,10 +118,10 @@ const FILTER_LABELS: Record<Filter, string> = {
                   >{{ store.name }}</span
                 >
                 <span
-                  [style.background]="statusBg(store.status)"
-                  [style.color]="statusColor(store.status)"
+                  [style.background]="statusBg(inactive(store) ? 'CLOSED' : store.status)"
+                  [style.color]="statusColor(inactive(store) ? 'CLOSED' : store.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600"
-                  >{{ statusLabel(store.status) | translate }}</span
+                  >{{ (inactive(store) ? 'common.storeInactive.badge' : statusLabel(store.status)) | translate }}</span
                 >
               </div>
               @if (address(store); as a) {
@@ -201,7 +204,7 @@ export class StoresListPage implements OnInit {
       return words.every((w) => text.includes(w));
     });
     const f = this.filter();
-    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN');
+    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && !isStoreInactive(s));
     if (f === 'NEAR') {
       // By distance once the customer has shared where they are, by wait until then.
       return [...list].sort(
@@ -273,6 +276,10 @@ export class StoresListPage implements OnInit {
   }
 
   /** Returns a translation key; the template runs it through the translate pipe. */
+  inactive(store: StoreListItem): boolean {
+    return isStoreInactive(store);
+  }
+
   statusLabel(status: StoreListItem['status']): string {
     if (status === 'OPEN') return 'web.stores.status.OPEN';
     if (status === 'OVERLOADED') return 'web.stores.status.OVERLOADED';

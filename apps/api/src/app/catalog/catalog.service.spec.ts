@@ -34,6 +34,7 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     galleryUrls: [],
     brandId: 'brand-1',
     workingHours: [],
+    shifts: [{ id: 'shift-1' }],
     ...overrides,
   };
 }
@@ -129,6 +130,19 @@ describe('CatalogService', () => {
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
       const [store] = await service.listStores({});
       expect(store?.openNow).toBe(true);
+    });
+
+    it('is false, and the store is not taking orders, while no shift is open', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [], shifts: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(false);
+      expect(store?.openNow).toBe(false);
+    });
+
+    it('reports a store with an open shift as taking orders', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(true);
     });
 
     it('is reported on the store page too', async () => {

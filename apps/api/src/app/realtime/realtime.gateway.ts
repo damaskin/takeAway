@@ -160,6 +160,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
+   * A shift opened or closed at this store. Every kitchen screen and cabinet
+   * following the store flips its "Start work" / "Finish work" button.
+   */
+  emitKdsShiftChanged(payload: { storeId: string; shift: unknown }): void {
+    this.server.to(this.kdsRoom(payload.storeId)).emit('kds.shiftChanged', payload);
+  }
+
+  /**
    * Dispatcher clients (admins + store managers) subscribe to the delivery
    * queue of a store within their scope. RIDER and CUSTOMER get {ok:false}.
    */

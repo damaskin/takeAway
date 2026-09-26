@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
+import { isStoreInactive } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -43,6 +44,23 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
     }
 
     <section style="padding: 16px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
+      @if (store(); as s) {
+        @if (inactive(s)) {
+          <div
+            role="status"
+            data-testid="store-inactive"
+            class="flex flex-col"
+            style="gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
+          >
+            <strong style="font-size: 14px; color: var(--color-espresso)">{{
+              'common.storeInactive.title' | translate
+            }}</strong>
+            <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+              'common.storeInactive.hint' | translate
+            }}</span>
+          </div>
+        }
+      }
       <!-- Category chips -->
       <div class="flex" style="gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px">
         @for (cat of categories(); track cat.id; let i = $index) {
@@ -124,6 +142,10 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly fmt = inject(LocaleFormatService);
 
   readonly store = signal<StoreDetail | null>(null);
+
+  inactive(store: StoreDetail): boolean {
+    return isStoreInactive(store);
+  }
   readonly menu = signal<StoreMenu | null>(null);
   readonly activeCategoryId = signal<string | null>(null);
   readonly categories = computed<CategoryWithProducts[]>(() => this.menu()?.categories ?? []);
