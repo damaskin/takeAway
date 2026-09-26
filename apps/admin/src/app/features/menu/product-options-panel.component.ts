@@ -1,10 +1,12 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { Observable } from 'rxjs';
 
 import {
   AdminCatalogApi,
+  type IngredientDto,
   type ModifierAdminDto,
   type VariationAdminDto,
   type VariationType,
@@ -27,7 +29,7 @@ const MAX_COUNT = 99;
 @Component({
   selector: 'app-product-options-panel',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
   styles: [MENU_FORM_STYLES],
   template: `
     <div
@@ -66,6 +68,17 @@ const MAX_COUNT = 99;
                       <input class="control small" formControlName="sortOrder" inputmode="numeric" autocomplete="off" />
                     </label>
                   </div>
+                  <label class="field">
+                    <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
+                    <select class="control small" formControlName="ingredientId">
+                      <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                      @for (i of ingredients(); track i.id) {
+                        <option [value]="i.id">
+                          {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
+                        </option>
+                      }
+                    </select>
+                  </label>
                   <label class="check">
                     <input type="checkbox" formControlName="isDefault" />
                     <span>{{ 'admin.menu.options.default' | translate }}</span>
@@ -87,6 +100,11 @@ const MAX_COUNT = 99;
                   <span [style]="nameStyle">{{ v.name }}</span>
                   @if (v.isDefault) {
                     <span [style]="badgeStyle">{{ 'admin.menu.options.default' | translate }}</span>
+                  }
+                  @if (v.ingredient && !v.ingredient.isAvailable) {
+                    <span [style]="outBadgeStyle" data-testid="option-out-of-stock">{{
+                      'admin.menu.options.outOfStock' | translate
+                    }}</span>
                   }
                   <span [style]="deltaStyle">{{ formatDelta(v.priceDeltaCents) }}</span>
                   <span class="flex items-center" style="gap: 10px">
@@ -123,6 +141,7 @@ const MAX_COUNT = 99;
                 class="control small"
                 formControlName="name"
                 maxlength="60"
+                [attr.list]="variationAdd.controls.type.value === 'MILK' ? 'ingredient-names' : null"
                 [placeholder]="'admin.menu.options.namePlaceholder' | translate"
               />
             </label>
@@ -190,6 +209,17 @@ const MAX_COUNT = 99;
                 </label>
               </div>
               <span class="hint">{{ 'admin.menu.options.countHint' | translate }}</span>
+              <label class="field">
+                <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
+                <select class="control small" formControlName="ingredientId">
+                  <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                  @for (i of ingredients(); track i.id) {
+                    <option [value]="i.id">
+                      {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
+                    </option>
+                  }
+                </select>
+              </label>
               @if (modifierEditSubmitted() && modifierEditError(); as key) {
                 <span class="error">{{ key | translate }}</span>
               }
@@ -205,6 +235,11 @@ const MAX_COUNT = 99;
           } @else {
             <div [style]="rowStyle">
               <span [style]="nameStyle">{{ m.name }}</span>
+              @if (m.ingredient && !m.ingredient.isAvailable) {
+                <span [style]="outBadgeStyle" data-testid="option-out-of-stock">{{
+                  'admin.menu.options.outOfStock' | translate
+                }}</span>
+              }
               <span class="hint">{{
                 'admin.menu.options.countRange' | translate: { min: m.minCount, max: m.maxCount }
               }}</span>
@@ -233,6 +268,7 @@ const MAX_COUNT = 99;
                 class="control small"
                 formControlName="name"
                 maxlength="80"
+                list="ingredient-names"
                 [placeholder]="'admin.menu.options.modPlaceholder' | translate"
               />
             </label>
@@ -264,6 +300,16 @@ const MAX_COUNT = 99;
         </form>
       </section>
 
+      <p class="hint" style="grid-column: 1 / -1; margin: 0">
+        {{ 'admin.menu.options.libraryHint' | translate }}
+        <a routerLink="/ingredients" class="link">{{ 'admin.menu.options.libraryLink' | translate }}</a>
+      </p>
+      <datalist id="ingredient-names">
+        @for (i of ingredients(); track i.id) {
+          <option [value]="i.name"></option>
+        }
+      </datalist>
+
       @if (error()) {
         <p role="alert" class="error" style="grid-column: 1 / -1; margin: 0; font-size: 13px">{{ error() }}</p>
       }
@@ -281,6 +327,8 @@ export class ProductOptionsPanelComponent {
   readonly variationTypes = VARIATION_TYPES;
   readonly variations = signal<VariationAdminDto[]>([]);
   readonly modifiers = signal<ModifierAdminDto[]>([]);
+  /** The brand's add-ins library, to link options to and to suggest names from. */
+  readonly ingredients = signal<IngredientDto[]>([]);
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
@@ -309,6 +357,8 @@ export class ProductOptionsPanelComponent {
     'flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)';
   readonly badgeStyle =
     'padding: 2px 8px; border-radius: 9999px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-sans); font-size: 10px; font-weight: 700';
+  readonly outBadgeStyle =
+    'padding: 2px 8px; border-radius: 9999px; background: #d94b5e1a; color: var(--color-berry); font-family: var(--font-sans); font-size: 10px; font-weight: 700';
   readonly deltaStyle = 'font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary)';
   readonly editBoxStyle =
     'display: flex; flex-direction: column; gap: 8px; background: var(--color-foam); border: 1px solid var(--color-caramel); border-radius: 10px; padding: 10px';
@@ -325,6 +375,8 @@ export class ProductOptionsPanelComponent {
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     sortOrder: new FormControl('', { nonNullable: true, validators: [countValidator(0, 10_000)] }),
     isDefault: new FormControl(false, { nonNullable: true }),
+    /** '' = not tracked. */
+    ingredientId: new FormControl('', { nonNullable: true }),
   });
 
   readonly modifierAdd = new FormGroup({
@@ -339,6 +391,8 @@ export class ProductOptionsPanelComponent {
     minCount: new FormControl('', { nonNullable: true, validators: [countValidator(0, MAX_COUNT)] }),
     maxCount: new FormControl('', { nonNullable: true, validators: [countValidator(1, MAX_COUNT)] }),
     sortOrder: new FormControl('', { nonNullable: true, validators: [countValidator(0, 10_000)] }),
+    /** '' = not tracked. */
+    ingredientId: new FormControl('', { nonNullable: true }),
   });
 
   constructor() {
@@ -392,6 +446,7 @@ export class ProductOptionsPanelComponent {
       price: formatMoneyInput(v.priceDeltaCents, this.separator()),
       sortOrder: String(v.sortOrder),
       isDefault: v.isDefault,
+      ingredientId: v.ingredientId ?? '',
     });
   }
 
@@ -402,7 +457,13 @@ export class ProductOptionsPanelComponent {
     const sortOrder = f.sortOrder.trim() ? parseCount(f.sortOrder) : v.sortOrder;
     if (this.variationEdit.invalid || priceDeltaCents === null || sortOrder === null) return;
     this.mutate(
-      this.api.updateVariation(v.id, { name: f.name.trim(), priceDeltaCents, sortOrder, isDefault: f.isDefault }),
+      this.api.updateVariation(v.id, {
+        name: f.name.trim(),
+        priceDeltaCents,
+        sortOrder,
+        isDefault: f.isDefault,
+        ingredientId: f.ingredientId || null,
+      }),
       () => this.cancelEdit(),
     );
   }
@@ -433,6 +494,7 @@ export class ProductOptionsPanelComponent {
       minCount: String(m.minCount),
       maxCount: String(m.maxCount),
       sortOrder: String(m.sortOrder),
+      ingredientId: m.ingredientId ?? '',
     });
   }
 
@@ -469,7 +531,14 @@ export class ProductOptionsPanelComponent {
     const sortOrder = parseCount(f.sortOrder) ?? m.sortOrder;
     if (priceDeltaCents === null) return;
     this.mutate(
-      this.api.updateModifier(m.id, { name: f.name.trim(), priceDeltaCents, minCount, maxCount, sortOrder }),
+      this.api.updateModifier(m.id, {
+        name: f.name.trim(),
+        priceDeltaCents,
+        minCount,
+        maxCount,
+        sortOrder,
+        ingredientId: f.ingredientId || null,
+      }),
       () => this.cancelEdit(),
     );
   }
@@ -507,6 +576,11 @@ export class ProductOptionsPanelComponent {
         this.loading.set(false);
         this.variations.set(p.variations ?? []);
         this.modifiers.set(p.modifiers ?? []);
+        // A new extra may have just joined the library; keep the list current.
+        this.api.listIngredients(p.brandId).subscribe({
+          next: (list) => this.ingredients.set([...list].sort((a, b) => a.name.localeCompare(b.name))),
+          error: () => this.ingredients.set([]),
+        });
       },
       error: (err: unknown) => {
         this.loading.set(false);

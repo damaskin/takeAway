@@ -24,6 +24,27 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('a milk that ran out is gone the next time the latte is opened', (tester) async {
+    final h = await pumpApp(tester);
+
+    await tester.tap(find.text('Латте'));
+    await settle(tester);
+    expect(find.text('Овсяное'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await settle(tester);
+
+    h.api.soldOut.add('v_oat');
+    await tester.tap(find.text('Латте'));
+    await settle(tester);
+
+    expect(find.text('Овсяное'), findsNothing);
+    expect(find.text('Размер'), findsOneWidget, reason: 'the latte itself stays on the menu');
+    await tester.tap(find.text('В корзину'));
+    await settle(tester);
+    expect(h.api.added.single.variationIds, isNot(contains('v_oat')));
+    await h.unmount(tester);
+  });
+
   testWidgets('customising a latte updates the price and sends the chosen options to the cart', (tester) async {
     final h = await pumpApp(tester);
 

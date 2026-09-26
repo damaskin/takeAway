@@ -501,11 +501,14 @@ Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
          imageUrls[], visible, sortOrder, availableFrom?, availableTo?,
          externalProvider?, externalId?)
 Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
-           prepTimeDeltaSeconds, isDefault)
+           prepTimeDeltaSeconds, isDefault, ingredientId?)
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
-          minCount, maxCount, externalProvider?, externalId?)
+          minCount, maxCount, externalProvider?, externalId?, ingredientId?)
+Ingredient (id, brandId, name, isAvailable)   -- библиотека добавок бренда, (brandId, name) уникально
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
 ```
+
+**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Наличие общее для бренда, не для отдельной точки.
 
 ### 5.4. Cart / Order / Payment
 
@@ -721,6 +724,7 @@ GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     библиотека добавок бренда (GET ?brandId=), PATCH { isAvailable } — «закончилось/появилось»
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
 POST/DELETE            /admin/stores/:id/images?kind=hero|gallery

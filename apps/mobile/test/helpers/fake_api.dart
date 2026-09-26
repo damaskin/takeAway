@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:takeaway_api/takeaway_api.dart';
@@ -272,7 +273,23 @@ class FakeApi extends Fake implements TakeAwayApi {
   });
 
   @override
-  Future<ProductDetail> product(String idOrSlug) async => idOrSlug == 'p_latte' ? latte() : croissant();
+  Future<ProductDetail> product(String idOrSlug) async {
+    final detail = idOrSlug == 'p_latte' ? latte() : croissant();
+    if (soldOut.isEmpty) return detail;
+    // What the API does for an add-in marked out of stock: the option is
+    // left out, the product stays.
+    final json = jsonDecode(jsonEncode(detail)) as Map<String, dynamic>;
+    for (final key in ['variations', 'modifiers']) {
+      json[key] = [
+        for (final option in json[key] as List<dynamic>)
+          if (!soldOut.contains((option as Map<String, dynamic>)['id'])) option,
+      ];
+    }
+    return ProductDetail.fromJson(json);
+  }
+
+  /// Ids of options whose add-in has run out since the test started.
+  final Set<String> soldOut = {};
 
   /// Fixed per instance so a test can compare what it tapped with what was sent.
   late final DateTime _slotsStart = () {

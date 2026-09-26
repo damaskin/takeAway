@@ -5,6 +5,7 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
+import { AVAILABLE_OPTION } from './option-availability';
 
 function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -240,5 +241,54 @@ describe('CatalogService', () => {
 
     await expect(service.getProduct('latte', 'nowhere')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.product.findFirst).not.toHaveBeenCalled();
+  });
+  // Oat milk ran out: the latte stays on the menu, only the option goes —
+  // and the screen pre-selects what the cart would put in the cup instead.
+  it('hides options whose ingredient is out of stock and moves the default on', async () => {
+    const milk = (id: string, sortOrder: number, isDefault: boolean, isAvailable: boolean | null) => ({
+      id,
+      type: 'MILK',
+      name: id,
+      priceDeltaCents: 0,
+      prepTimeDeltaSeconds: 0,
+      sortOrder,
+      isDefault,
+      ingredient: isAvailable === null ? null : { isAvailable },
+    });
+    prisma.product.findFirst.mockResolvedValue({
+      id: 'p-latte',
+      categoryId: 'c-coffee',
+      brandId: 'brand-1',
+      slug: 'latte',
+      name: 'Latte',
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 60,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: [],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+      variations: [milk('oat', 0, true, false), milk('whole', 1, false, true), milk('almond', 2, false, null)],
+      modifiers: [],
+    });
+
+    const product = await service.getProduct('latte');
+
+    expect(product.variations.map((v) => [v.id, v.isDefault])).toEqual([
+      ['whole', true],
+      ['almond', false],
+    ]);
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          modifiers: expect.objectContaining({ where: AVAILABLE_OPTION }),
+        }),
+      }),
+    );
   });
 });

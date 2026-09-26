@@ -16,6 +16,7 @@ import { checkoutError } from '../common/http/checkout-error';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, type CheckoutLine } from '../cart/cart.service';
+import { AVAILABLE_OPTIONS_INCLUDE } from '../catalog/option-availability';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -82,7 +83,7 @@ export class OrdersService {
     const cart = await this.prisma.cart.findUnique({
       where: { id: dto.cartId },
       include: {
-        items: { include: { product: { include: { variations: true, modifiers: true } } } },
+        items: { include: { product: { include: AVAILABLE_OPTIONS_INCLUDE } } },
         store: true,
       },
     });

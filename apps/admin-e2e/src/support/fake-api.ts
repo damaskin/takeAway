@@ -100,6 +100,15 @@ const USER = {
   telegramUserId: null,
 };
 
+/** One add-in of the library, used by the latte. */
+export const OAT_MILK = {
+  id: 'ing-oat',
+  brandId: BRAND.id,
+  name: 'Овсяное молоко',
+  isAvailable: true,
+  products: [{ id: PRODUCT.id, name: PRODUCT.name }],
+};
+
 /** Signs the browser in before the app boots, the way a real session is. */
 export async function signIn(context: BrowserContext): Promise<void> {
   await context.addInitScript((user) => {
@@ -146,6 +155,11 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
     if (path === '/admin/categories') return json(route, [CATEGORY]);
     if (path === '/admin/products') return json(route, [PRODUCT]);
     if (/^\/admin\/products\/[^/]+$/.test(path)) return json(route, { ...PRODUCT, variations: [], modifiers: [] });
+
+    if (path === '/admin/ingredients') return json(route, [OAT_MILK]);
+    if (/^\/admin\/ingredients\/[^/]+$/.test(path) && route.request().method() === 'PATCH') {
+      return json(route, { ...OAT_MILK, ...(route.request().postDataJSON() as object) });
+    }
 
     if (path === '/admin/analytics/summary') {
       return json(route, {

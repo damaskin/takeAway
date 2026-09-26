@@ -213,6 +213,16 @@ export class CreateVariationDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ingredient from the brand library this option is made of; hidden from customers while it is out of stock. ' +
+      'On create, omitted = linked to the library entry of the same name (created if missing) for milk, other types stay untracked; null = not tracked',
+  })
+  @IsOptional()
+  @IsString()
+  ingredientId?: string | null;
 }
 
 export class UpdateVariationDto extends PartialType(CreateVariationDto) {}
@@ -265,6 +275,16 @@ export class CreateModifierDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ingredient from the brand library this option is made of; hidden from customers while it is out of stock. ' +
+      'On create, omitted = linked to the library entry of the same name (created if missing); null = not tracked',
+  })
+  @IsOptional()
+  @IsString()
+  ingredientId?: string | null;
 }
 
 export class UpdateModifierDto extends PartialType(CreateModifierDto) {}

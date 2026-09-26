@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { of } from 'rxjs';
@@ -31,7 +32,11 @@ const LATTE: ProductAdminDto = {
 function setup<T>(component: new (...args: never[]) => T, api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>) {
   TestBed.configureTestingModule({
     imports: [component],
-    providers: [provideTranslateService(), { provide: AdminCatalogApi, useValue: api }],
+    providers: [
+      provideTranslateService(),
+      provideRouter([]),
+      { provide: AdminCatalogApi, useValue: { listIngredients: jest.fn().mockReturnValue(of([])), ...api } },
+    ],
   });
   const translate = TestBed.inject(TranslateService);
   translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
@@ -141,6 +146,8 @@ describe('ProductOptionsPanelComponent', () => {
             prepTimeDeltaSeconds: 0,
             sortOrder: 0,
             isDefault: false,
+            ingredientId: null,
+            ingredient: null,
           },
         ],
         modifiers: [],
@@ -157,5 +164,40 @@ describe('ProductOptionsPanelComponent', () => {
     expect(text).not.toContain('MILK');
     // The surcharge is in the brand's currency, not "±¢", written the Russian way.
     expect(text).toContain('+5\u00a0MDL');
+  });
+
+  it('marks an extra whose add-in ran out, and can stop tracking it', () => {
+    const syrup = {
+      id: 'm1',
+      slug: 'vanilla',
+      name: 'Ванильный сироп',
+      priceDeltaCents: 500,
+      prepTimeDeltaSeconds: 0,
+      minCount: 0,
+      maxCount: 3,
+      sortOrder: 0,
+      ingredientId: 'i1',
+      ingredient: { id: 'i1', name: 'Ванильный сироп', isAvailable: false },
+    };
+    const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [syrup] }));
+    const listIngredients = jest
+      .fn()
+      .mockReturnValue(of([{ id: 'i1', brandId: 'b1', name: 'Ванильный сироп', isAvailable: false, products: [] }]));
+    const updateModifier = jest.fn().mockReturnValue(of({}));
+    const fixture = setup(ProductOptionsPanelComponent, { getProduct, listIngredients, updateModifier });
+    fixture.componentRef.setInput('productId', 'p1');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(listIngredients).toHaveBeenCalledWith('b1');
+    expect(el.querySelector('[data-testid="option-out-of-stock"]')?.textContent).toContain('Нет в наличии');
+
+    const panel = fixture.componentInstance;
+    panel.editModifier(syrup);
+    expect(panel.modifierEdit.controls.ingredientId.value).toBe('i1');
+    panel.modifierEdit.controls.ingredientId.setValue('');
+    panel.saveModifier(syrup);
+
+    expect(updateModifier).toHaveBeenCalledWith('m1', expect.objectContaining({ ingredientId: null }));
   });
 });
