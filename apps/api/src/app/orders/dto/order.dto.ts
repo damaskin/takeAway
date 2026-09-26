@@ -104,7 +104,9 @@ export type OrderPaymentState = 'NONE' | 'PENDING' | 'HELD' | 'PAID' | 'FAILED' 
 export class OrderPaymentDto {
   @ApiProperty({
     enum: ['NONE', 'PENDING', 'HELD', 'PAID', 'FAILED', 'REFUNDED'],
-    description: 'NONE when the order carries no card payment at all (paid at the counter).',
+    description:
+      'NONE when the order carries no card payment yet (a new order before its hold), or never needed one ' +
+      '(a zero total; orders from before card-only checkout, paid at the counter).',
   })
   state!: OrderPaymentState;
 
