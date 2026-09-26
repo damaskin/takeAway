@@ -22,6 +22,16 @@ export class StoreListItemDto {
   @ApiProperty()
   brandId!: string;
 
+  @ApiProperty({ description: 'Name of the business the store belongs to, for the store card and menu header.' })
+  brandName!: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "Logo shown on the store card. Stores have no logo of their own yet, so this is the brand's.",
+  })
+  logoUrl!: string | null;
+
   @ApiProperty()
   slug!: string;
 
@@ -57,6 +67,13 @@ export class StoreListItemDto {
 
   @ApiProperty({ description: 'ETA for an ASAP order, in seconds. Store overhead plus the live queue.' })
   currentEtaSeconds!: number;
+
+  @ApiProperty({
+    description:
+      'True while the store takes orders at all: it is not closed and staff have started a shift ' +
+      '("Start work"). False means the store is shown as inactive and checkout is refused.',
+  })
+  acceptingOrders!: boolean;
 
   @ApiProperty({
     description:

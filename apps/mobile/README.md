@@ -267,9 +267,11 @@ of ASAP.
   `dart run build_runner build --delete-conflicting-outputs && dart format lib`
   in that package. CI fails if the generated code is stale.
 - **Strings** — edit both ARB files in `lib/l10n`; `flutter pub get` regenerates.
-- **Icons and splash** — `python tool/generate_icons.py` (Pillow) redraws the
-  launcher icons, adaptive and monochrome layers, notification icon and splash
-  from code.
+- **Icons and splash** — `python tool/generate_icons.py` (Pillow, numpy) lifts
+  the mark out of the logo artwork in `tool/brand/mark-source.jpg` and redraws
+  the iOS icon set and launch image, the Android launcher icons (legacy,
+  adaptive, monochrome), splash mark and notification icon, in the brand
+  colours. A new logo: replace that file and run it again.
 - **Map tiles** — OpenStreetMap's public tile servers are fine for a pilot but
   not for a large audience; switch `osmTiles` in `lib/shared/widgets/store_map.dart`
   to a commercial provider before a wide launch.

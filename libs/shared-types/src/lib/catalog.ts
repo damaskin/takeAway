@@ -14,6 +14,10 @@ export type { PickupPointType };
 export interface StoreListItem {
   id: string;
   brandId: string;
+  /** Name of the business the store belongs to. Absent from older API builds. */
+  brandName?: string;
+  /** Logo for the store card: the brand's, since stores have none of their own. */
+  logoUrl?: string | null;
   slug: string;
   name: string;
   addressLine: string;
@@ -26,6 +30,12 @@ export interface StoreListItem {
   pickupPointType: PickupPointType;
   busyMeter: number;
   currentEtaSeconds: number;
+  /**
+   * The store takes orders at all: not closed, and staff have started a shift
+   * ("Start work"). When false the store is shown as inactive and checkout is
+   * refused with STORE_NOT_TAKING_ORDERS. Optional for older API builds.
+   */
+  acceptingOrders?: boolean;
   /**
    * An ASAP order placed now would be accepted: not closed, and within the
    * store's working hours once the current ETA has passed. When false only

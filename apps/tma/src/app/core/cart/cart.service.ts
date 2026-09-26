@@ -55,6 +55,12 @@ export class CartService {
     return this.http.post<CartView>(`${this.api.baseUrl}/cart/items`, input).pipe(tap((c) => this._cart.set(c)));
   }
 
+  updateQuantity(itemId: string, quantity: number): Observable<CartView> {
+    return this.http
+      .patch<CartView>(`${this.api.baseUrl}/cart/items/${itemId}`, { quantity })
+      .pipe(tap((c) => this._cart.set(c)));
+  }
+
   remove(itemId: string): Observable<CartView> {
     return this.http.delete<CartView>(`${this.api.baseUrl}/cart/items/${itemId}`).pipe(tap((c) => this._cart.set(c)));
   }

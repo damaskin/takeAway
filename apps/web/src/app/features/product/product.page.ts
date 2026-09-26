@@ -41,28 +41,34 @@ const VARIATION_LABELS: Record<VariationType, string> = {
   imports: [FormsModule, RouterLink, TranslatePipe],
   template: `
     @if (product(); as p) {
-      <section style="padding: 48px 80px; display: flex; gap: 64px; max-width: 1440px; margin: 0 auto">
+      <section class="pdp">
         <!-- Image column -->
-        <div class="flex flex-col" style="width: 560px; gap: 16px; flex-shrink: 0">
+        <div class="pdp-media flex flex-col" style="gap: 16px">
           <div
+            class="pdp-hero"
             [style.background-image]="heroImageBg(p)"
-            style="height: 480px; border-radius: 24px; background-size: cover; background-position: center; background-repeat: no-repeat; overflow: hidden"
+            style="border-radius: 24px; background-size: cover; background-position: center; background-repeat: no-repeat; overflow: hidden"
           ></div>
         </div>
 
         <!-- Detail column -->
         <div class="flex flex-col flex-1" style="gap: 20px">
           <!-- Breadcrumb -->
-          <nav class="flex items-center" style="gap: 8px">
+          <nav class="flex items-center flex-wrap" style="gap: 8px">
             <a
-              routerLink="/menu"
+              [routerLink]="menuLink()"
               style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
               >{{ 'web.product.breadcrumbMenu' | translate }}</a
             >
-            <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
-            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
-              'web.product.breadcrumbCoffee' | translate
-            }}</span>
+            @if (category(); as c) {
+              <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
+              <a
+                [routerLink]="menuLink()"
+                [fragment]="'cat-' + c.id"
+                style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)"
+                >{{ c.name }}</a
+              >
+            }
             <span style="color: var(--color-text-tertiary); font-size: 11px">›</span>
             <span
               style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-primary)"
@@ -305,7 +311,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
     }
 
     @if (error()) {
-      <section style="padding: 48px 80px; max-width: 1440px; margin: 0 auto">
+      <section style="padding: clamp(24px, 5vw, 48px) clamp(16px, 5vw, 80px); max-width: 1440px; margin: 0 auto">
         <button
           type="button"
           (click)="back()"
@@ -317,6 +323,38 @@ const VARIATION_LABELS: Record<VariationType, string> = {
       </section>
     }
   `,
+  styles: [
+    `
+      .pdp {
+        display: flex;
+        gap: 64px;
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 48px clamp(24px, 5vw, 80px);
+      }
+      .pdp-media {
+        flex: none;
+        width: min(560px, 45%);
+      }
+      .pdp-hero {
+        aspect-ratio: 7 / 6;
+        max-height: 480px;
+      }
+      @media (max-width: 900px) {
+        .pdp {
+          flex-direction: column;
+          gap: 24px;
+          padding: 16px 16px 32px;
+        }
+        .pdp-media {
+          width: 100%;
+        }
+        .pdp-hero {
+          aspect-ratio: 4 / 3;
+        }
+      }
+    `,
+  ],
 })
 export class ProductPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
@@ -383,6 +421,23 @@ export class ProductPage implements OnInit {
 
   /** `?store=` from the menu link: which café's product this is. */
   private browsedStore: string | null = null;
+
+  /** The menu the customer came from, or the default one after a direct link. */
+  readonly menuLink = computed<string[]>(() => {
+    const store = this.resolvedStore();
+    return store ? ['/stores', store.slug] : ['/menu'];
+  });
+
+  /**
+   * The product's category, named from that store's menu when the customer
+   * has just been looking at it; after a direct link the crumb is left out.
+   */
+  readonly category = computed(() => {
+    const product = this.product();
+    const store = this.resolvedStore();
+    if (!product || !store) return null;
+    return this.catalog.cachedMenu(store.slug)?.categories.find((c) => c.id === product.categoryId) ?? null;
+  });
 
   /** True once we know the product's brand has no store taking orders. */
   readonly noStoreForBrand = computed(

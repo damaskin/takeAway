@@ -25,6 +25,7 @@ import { CATEGORY, PRODUCT, STORE, installFakeApi, signIn } from './support/fake
 const LIST_ROUTES = [
   'dashboard',
   'menu',
+  'ingredients',
   'stores',
   'orders',
   'dispatch',

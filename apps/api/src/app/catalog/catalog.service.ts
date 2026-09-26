@@ -5,6 +5,7 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
 import { PrismaService } from '../prisma/prisma.service';
+import { AVAILABLE_OPTION } from './option-availability';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -12,6 +13,9 @@ import type { ProductDetailDto } from './dto/product.dto';
 import type { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
 
 const EARTH_RADIUS_METERS = 6371000;
+
+/** Just enough of a store's open shift, if any, to tell whether it has one. */
+const OPEN_SHIFT = { where: { closedAt: null }, select: { id: true }, take: 1 } as const;
 
 @Injectable()
 export class CatalogService {
@@ -38,7 +42,11 @@ export class CatalogService {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
       },
-      include: { workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } } },
+      include: {
+        workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
+        brand: { select: { name: true, logoUrl: true } },
+        shifts: OPEN_SHIFT,
+      },
       orderBy: [{ name: 'asc' }],
     });
 
@@ -58,6 +66,8 @@ export class CatalogService {
         return {
           id: s.id,
           brandId: s.brandId,
+          brandName: s.brand.name,
+          logoUrl: s.brand.logoUrl,
           slug: s.slug,
           name: s.name,
           addressLine: s.addressLine,
@@ -70,6 +80,7 @@ export class CatalogService {
           pickupPointType: s.pickupPointType,
           busyMeter: s.busyMeter,
           currentEtaSeconds,
+          acceptingOrders: acceptingOrders(s),
           openNow: openNow(s, now, currentEtaSeconds),
           taxRateBps: s.taxRateBps,
           taxIncludedInPrice: s.taxIncludedInPrice,
@@ -119,6 +130,7 @@ export class CatalogService {
       },
       include: {
         workingHours: { orderBy: { weekday: 'asc' } },
+        shifts: OPEN_SHIFT,
         brand: { select: { id: true, slug: true, name: true, logoUrl: true, themeOverrides: true } },
       },
     });
@@ -130,6 +142,8 @@ export class CatalogService {
     return {
       id: store.id,
       brandId: store.brandId,
+      brandName: store.brand.name,
+      logoUrl: store.brand.logoUrl,
       slug: store.slug,
       name: store.name,
       addressLine: store.addressLine,
@@ -142,6 +156,7 @@ export class CatalogService {
       pickupPointType: store.pickupPointType,
       busyMeter: store.busyMeter,
       currentEtaSeconds,
+      acceptingOrders: acceptingOrders(store),
       openNow: openNow(store, new Date(), currentEtaSeconds),
       taxRateBps: store.taxRateBps,
       taxIncludedInPrice: store.taxIncludedInPrice,
@@ -259,11 +274,16 @@ export class CatalogService {
       },
       orderBy: { createdAt: 'asc' },
       include: {
-        variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }] },
-        modifiers: { orderBy: { sortOrder: 'asc' } },
+        variations: {
+          orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
+          include: { ingredient: { select: { isAvailable: true } } },
+        },
+        modifiers: { where: AVAILABLE_OPTION, orderBy: { sortOrder: 'asc' } },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
+    const variations = product.variations.filter((v) => v.ingredient?.isAvailable ?? true);
+    const defaults = defaultVariationIds(product.variations, variations);
 
     return {
       id: product.id,
@@ -283,14 +303,14 @@ export class CatalogService {
       dietTags: product.dietTags,
       imageUrls: product.imageUrls,
       sortOrder: product.sortOrder,
-      variations: product.variations.map((v) => ({
+      variations: variations.map((v) => ({
         id: v.id,
         type: v.type,
         name: v.name,
         priceDeltaCents: v.priceDeltaCents,
         prepTimeDeltaSeconds: v.prepTimeDeltaSeconds,
         sortOrder: v.sortOrder,
-        isDefault: v.isDefault,
+        isDefault: defaults.has(v.id),
       })),
       modifiers: product.modifiers.map((m) => ({
         id: m.id,
@@ -307,17 +327,44 @@ export class CatalogService {
 }
 
 /**
- * Whether an ASAP order placed now would be accepted: the store is not
- * switched off, and it is still open when that order would be ready — the
- * same working-hours check order creation enforces. Without this the clients
- * offered ASAP after hours and the customer met a bare 400 at checkout.
+ * The pre-selected variation of each type. When the default one is hidden
+ * because its ingredient ran out (the house milk), the first remaining
+ * choice of that type takes over — the one the cart falls back to — so the
+ * screen and the price agree. A type that never had a default keeps none.
+ */
+function defaultVariationIds(
+  all: ReadonlyArray<{ type: string; isDefault: boolean }>,
+  shown: ReadonlyArray<{ id: string; type: string; isDefault: boolean }>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const type of new Set(all.filter((v) => v.isDefault).map((v) => v.type))) {
+    const ofType = shown.filter((v) => v.type === type);
+    const pick = ofType.find((v) => v.isDefault) ?? ofType[0];
+    if (pick) ids.add(pick.id);
+  }
+  return ids;
+}
+
+/**
+ * The store takes orders at all right now: it is not switched off and staff
+ * have started a shift. False means the clients show it as inactive.
+ */
+function acceptingOrders(store: { status: string; shifts: readonly unknown[] }): boolean {
+  return store.status !== 'CLOSED' && store.shifts.length > 0;
+}
+
+/**
+ * Whether an ASAP order placed now would be accepted: the store takes orders
+ * (see acceptingOrders), and it is still open when that order would be ready —
+ * the same working-hours check order creation enforces. Without this the
+ * clients offered ASAP after hours and the customer met a bare 400 at checkout.
  */
 function openNow(
-  store: { status: string; timezone: string; workingHours: readonly WorkingHour[] },
+  store: { status: string; shifts: readonly unknown[]; timezone: string; workingHours: readonly WorkingHour[] },
   now: Date,
   etaSeconds: number,
 ): boolean {
-  if (store.status === 'CLOSED') return false;
+  if (!acceptingOrders(store)) return false;
   return isOpenAt(store.workingHours, new Date(now.getTime() + etaSeconds * 1000), store.timezone);
 }
 

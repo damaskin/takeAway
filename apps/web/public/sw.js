@@ -19,7 +19,7 @@
  * promise about a time.
  */
 
-const SHELL_CACHE = 'takeaway-shell-v1';
+const SHELL_CACHE = 'takeaway-shell-v2';
 const SHELL_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {

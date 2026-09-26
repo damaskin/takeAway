@@ -171,6 +171,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/menu/product-form.page').then((m) => m.ProductFormPage),
       },
       {
+        path: 'ingredients',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'ingredients' satisfies NavKey },
+        loadComponent: () => import('./features/ingredients/ingredients.page').then((m) => m.IngredientsPage),
+      },
+      {
         path: 'stores',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'stores' satisfies NavKey },

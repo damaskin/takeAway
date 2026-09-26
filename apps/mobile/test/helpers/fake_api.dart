@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:takeaway_api/takeaway_api.dart';
@@ -22,12 +23,24 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// False = switched on but outside working hours, as the API reports it.
   bool storeOpenNow = true;
 
+  /// Stores listed after the default one, as API JSON.
+  List<Map<String, dynamic>> moreStores = [];
+
   /// Latency of reading the cart; the reply is the cart as it was when asked.
   Duration cartDelay = Duration.zero;
+
+  /// Latency of each quantity change, in the order they are sent; the change
+  /// lands on the server when its delay runs out, like a slow request would.
+  final updateDelays = <Duration>[];
+
+  /// Replaces the two-category menu — see [categoryJson].
+  List<Map<String, dynamic>>? menuCategories;
 
   static const storeJson = <String, dynamic>{
     'id': 'st_1',
     'brandId': 'br_1',
+    'brandName': 'NoName Coffee',
+    'logoUrl': null,
     'slug': 'noname-center',
     'name': 'NoName — центр',
     'addressLine': 'ул. 25 Октября, 94',
@@ -65,6 +78,23 @@ class FakeApi extends Fake implements TakeAwayApi {
     'imageUrls': <String>[],
     'sortOrder': 0,
     'onStopList': false,
+  };
+
+  static Map<String, dynamic> categoryJson(
+    String id,
+    String name,
+    List<Map<String, dynamic>> products, {
+    int sortOrder = 0,
+  }) => {
+    'id': id,
+    'slug': id,
+    'name': name,
+    'description': null,
+    'iconUrl': null,
+    'sortOrder': sortOrder,
+    'availableFrom': null,
+    'availableTo': null,
+    'products': products,
   };
 
   final _cartItems = <CartItem>[];
@@ -204,6 +234,7 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
     Store.fromJson({...storeJson, 'openNow': storeOpenNow}),
+    for (final json in moreStores) Store.fromJson(json),
   ];
 
   @override
@@ -223,34 +254,52 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<Menu> menu(String idOrSlug) async => Menu.fromJson({
     'storeId': 'st_1',
     'storeSlug': 'noname-center',
-    'categories': [
-      {
-        'id': 'cat_coffee',
-        'slug': 'coffee',
-        'name': 'Кофе',
-        'description': null,
-        'iconUrl': null,
-        'sortOrder': 0,
-        'availableFrom': null,
-        'availableTo': null,
-        'products': [productJson('p_latte', 'Латте', 2000)],
-      },
-      {
-        'id': 'cat_food',
-        'slug': 'food',
-        'name': 'Выпечка',
-        'description': null,
-        'iconUrl': null,
-        'sortOrder': 1,
-        'availableFrom': null,
-        'availableTo': null,
-        'products': [productJson('p_croissant', 'Круассан', 1500, category: 'cat_food')],
-      },
-    ],
+    'categories':
+        menuCategories ??
+        [
+          {
+            'id': 'cat_coffee',
+            'slug': 'coffee',
+            'name': 'Кофе',
+            'description': null,
+            'iconUrl': null,
+            'sortOrder': 0,
+            'availableFrom': null,
+            'availableTo': null,
+            'products': [productJson('p_latte', 'Латте', 2000)],
+          },
+          {
+            'id': 'cat_food',
+            'slug': 'food',
+            'name': 'Выпечка',
+            'description': null,
+            'iconUrl': null,
+            'sortOrder': 1,
+            'availableFrom': null,
+            'availableTo': null,
+            'products': [productJson('p_croissant', 'Круассан', 1500, category: 'cat_food')],
+          },
+        ],
   });
 
   @override
-  Future<ProductDetail> product(String idOrSlug) async => idOrSlug == 'p_latte' ? latte() : croissant();
+  Future<ProductDetail> product(String idOrSlug) async {
+    final detail = idOrSlug == 'p_latte' ? latte() : croissant();
+    if (soldOut.isEmpty) return detail;
+    // What the API does for an add-in marked out of stock: the option is
+    // left out, the product stays.
+    final json = jsonDecode(jsonEncode(detail)) as Map<String, dynamic>;
+    for (final key in ['variations', 'modifiers']) {
+      json[key] = [
+        for (final option in json[key] as List<dynamic>)
+          if (!soldOut.contains((option as Map<String, dynamic>)['id'])) option,
+      ];
+    }
+    return ProductDetail.fromJson(json);
+  }
+
+  /// Ids of options whose add-in has run out since the test started.
+  final Set<String> soldOut = {};
 
   /// Fixed per instance so a test can compare what it tapped with what was sent.
   late final DateTime _slotsStart = () {
@@ -311,6 +360,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Cart> updateCartItem(String itemId, Map<String, dynamic> patch) async {
+    if (updateDelays.isNotEmpty) await Future<void>.delayed(updateDelays.removeAt(0));
     final index = _cartItems.indexWhere((i) => i.id == itemId);
     final item = _cartItems[index];
     _cartItems[index] = CartItem(

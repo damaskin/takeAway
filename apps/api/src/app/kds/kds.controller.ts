@@ -7,6 +7,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { KdsService } from './kds.service';
+import { StoreShiftService } from './store-shift.service';
 
 @ApiTags('kds')
 @ApiBearerAuth()
@@ -15,6 +16,7 @@ import { KdsService } from './kds.service';
 export class KdsController {
   constructor(
     private readonly kds: KdsService,
+    private readonly shifts: StoreShiftService,
     private readonly scope: UserStoreScopeService,
   ) {}
 
@@ -23,6 +25,30 @@ export class KdsController {
   async list(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
     await this.assertInScope(user, storeId);
     return this.kds.listOpen(storeId);
+  }
+
+  /** The store's shift: open means it takes orders. */
+  @Get('shift')
+  @ApiQuery({ name: 'storeId', required: true })
+  async shift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.current(storeId);
+  }
+
+  /** "Start work": the store appears as active and takes orders. */
+  @Post('shift/open')
+  @ApiQuery({ name: 'storeId', required: true })
+  async openShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.open(storeId, user.id);
+  }
+
+  /** "Finish work": new orders stop; the ones already on the board stay. */
+  @Post('shift/close')
+  @ApiQuery({ name: 'storeId', required: true })
+  async closeShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.close(storeId, user.id);
   }
 
   @Post('orders/:id/accept')

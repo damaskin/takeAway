@@ -545,6 +545,13 @@ class _PaymentCard extends StatelessWidget {
       PaymentState.pending => (l10n.paymentStatePending, Icons.hourglass_top_rounded, brand.amber),
       PaymentState.failed => (l10n.paymentStateFailed, Icons.error_outline_rounded, brand.berry),
       PaymentState.refunded => (l10n.paymentStateRefunded, Icons.undo_rounded, brand.textSecondary),
+      // A new order with nothing on it yet is waiting for its card; only old
+      // orders from before card-only checkout were paid at the counter.
+      PaymentState.none when order.status == OrderStatus.created => (
+        l10n.paymentStateAwaiting,
+        Icons.hourglass_top_rounded,
+        brand.amber,
+      ),
       PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
     };
     final detail = p.state == PaymentState.none
