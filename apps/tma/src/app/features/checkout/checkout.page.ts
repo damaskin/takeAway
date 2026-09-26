@@ -7,7 +7,7 @@ import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
-import { CartService, type CartView } from '../../core/cart/cart.service';
+import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
@@ -274,12 +274,48 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
               style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 12px"
             >
               @for (item of c.items; track item.id) {
-                <div class="flex items-start justify-between" style="gap: 12px">
+                <div class="flex items-center justify-between" style="gap: 12px">
                   <span
                     class="flex-1"
                     style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-                    >{{ item.quantity }} × {{ item.productName }}</span
+                    >{{ item.productName }}</span
                   >
+                  @if (!placedOrder()) {
+                    <div
+                      class="flex items-center"
+                      style="border: 1px solid var(--color-border-light); border-radius: 999px; height: 30px"
+                      [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
+                    >
+                      <button
+                        type="button"
+                        (click)="changeQuantity(item, -1)"
+                        [disabled]="changingItemId() !== null"
+                        [attr.aria-label]="
+                          (item.quantity === 1 ? 'tma.checkout.remove' : 'tma.checkout.decrease') | translate
+                        "
+                        style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
+                      >
+                        {{ item.quantity === 1 ? '🗑' : '−' }}
+                      </button>
+                      <span
+                        style="min-width: 18px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                        >{{ item.quantity }}</span
+                      >
+                      <button
+                        type="button"
+                        (click)="changeQuantity(item, 1)"
+                        [disabled]="changingItemId() !== null || item.quantity >= 99"
+                        [attr.aria-label]="'tma.checkout.increase' | translate"
+                        style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  } @else {
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                      >× {{ item.quantity }}</span
+                    >
+                  }
                   <span
                     style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
                     >{{ price(item.unitPriceCents * item.quantity) }}</span
@@ -322,14 +358,25 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
-      <!-- Payment method (Agroprombank card) -->
-      @if (cardPaymentsEnabled()) {
+      <!-- Payment method: orders are paid by card only (Agroprombank). -->
+      @if (!cardPaymentsEnabled()) {
+        <p
+          style="margin: 0; padding: 12px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+        >
+          {{ 'tma.checkout.cardsUnavailable' | translate }}
+        </p>
+      } @else {
         <div class="flex flex-col" style="gap: 10px">
           <span
             style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
             >{{ 'tma.checkout.paymentMethod' | translate }}</span
           >
           @if (cards().length === 0) {
+            @if (needsCard()) {
+              <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
+                {{ 'tma.checkout.cardOnly' | translate }}
+              </p>
+            }
             <button
               type="button"
               (click)="goToCards()"
@@ -483,6 +530,17 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
    * when the customer taps pay again — we retry the payment against this one.
    */
   private placedOrderId: string | null = null;
+  /** The order exists and only its payment is left; the basket is fixed from here. */
+  readonly placedOrder = signal(false);
+  /** The line whose quantity is on its way to the server; the steppers wait for it. */
+  readonly changingItemId = signal<string | null>(null);
+
+  readonly needsCard = computed(() => {
+    const c = this.cart();
+    return !!c && this.totalCents(c.subtotalCents) > 0;
+  });
+
+  readonly payingByCard = computed(() => this.cardPaymentsEnabled() && this.selectedCardId() !== null);
 
   private detachBack: (() => void) | null = null;
 
@@ -550,9 +608,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.selectedCardId.set((cards.find((c) => c.isDefault) ?? cards[0])?.id ?? null);
         this.refreshMainButton();
       },
-      // A card-list outage must not block ordering — checkout falls back to
-      // placing the order unpaid, exactly as it behaved before.
-      error: () => undefined,
+      // Nothing to pay with: the main button stays hidden.
+      error: () => this.refreshMainButton(),
     });
   }
 
@@ -689,6 +746,31 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return this.fmt.money(cents, this.currency());
   }
 
+  /**
+   * One step of a line's quantity. Steppers are off while a change is in
+   * flight, so each tap builds on the count the server confirmed and a quick
+   * double tap cannot send the same number twice. Below one the line goes.
+   */
+  changeQuantity(item: CartItemView, delta: number): void {
+    if (!this.cart() || this.changingItemId()) return;
+    const next = item.quantity + delta;
+    if (next > 99) return;
+    this.tg.haptic('light');
+    this.changingItemId.set(item.id);
+    const request = next < 1 ? this.cartService.remove(item.id) : this.cartService.updateQuantity(item.id, next);
+    request.subscribe({
+      next: (cart) => {
+        this.cart.set(cart);
+        this.changingItemId.set(null);
+        this.refreshMainButton();
+      },
+      error: (err) => {
+        this.changingItemId.set(null);
+        this.showError(err, 'tma.checkout.placeOrderFailed');
+      },
+    });
+  }
+
   refreshMainButton(): void {
     const c = this.cart();
     if (!c || c.items.length === 0 || !this.authStore.isAuthenticated() || this.storeInactive()) {
@@ -706,6 +788,12 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     }
     if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() && this.deliveryDistanceM() != null) {
       // OUTSIDE_RADIUS — server would 400, so block at the button.
+      this.tg.hideMainButton();
+      return;
+    }
+    // Orders are paid by card only; until there is one to hold the amount
+    // on, there is nothing to press.
+    if (this.needsCard() && !this.payingByCard()) {
       this.tg.hideMainButton();
       return;
     }
@@ -731,6 +819,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.payFor(this.placedOrderId);
       return;
     }
+    if (this.needsCard() && !this.payingByCard()) {
+      this.error.set(this.translate.instant('tma.checkout.cardOnly'));
+      return;
+    }
     const isDelivery = this.fulfillmentType() === 'DELIVERY';
     const pickupAt = this.pickupMode() === 'SCHEDULED' ? this.scheduledAt() : undefined;
     const input = {
@@ -751,6 +843,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     this.orders.create(input).subscribe({
       next: (order) => {
         this.placedOrderId = order.id;
+        this.placedOrder.set(true);
         this.payFor(order.id);
       },
       error: (err) => {
@@ -792,14 +885,17 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   /**
-   * Charges the selected card and opens the order screen. With no card bound
-   * (or card payments switched off) the order is simply placed unpaid, which
-   * is how checkout behaved before the bank integration.
+   * Holds the amount on the selected card and opens the order screen. Only an
+   * order with nothing left to pay goes there without a card.
    */
   private payFor(orderId: string): void {
     const cardId = this.selectedCardId();
-    if (!this.cardPaymentsEnabled() || !cardId) {
+    if (!this.needsCard()) {
       void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+    if (!this.cardPaymentsEnabled() || !cardId) {
+      this.error.set(this.translate.instant('tma.checkout.cardOnly'));
       return;
     }
 

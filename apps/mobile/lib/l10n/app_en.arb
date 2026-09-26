@@ -322,8 +322,8 @@
     }
   },
   "paymentTitle": "Payment",
-  "payAtCounter": "Pay at the counter",
-  "payAtCounterHint": "Cash or card when you pick up",
+  "cardPaymentsUnavailable": "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+  "addCardToOrder": "Orders are paid by card. Add a card to place your order.",
   "addCard": "Add a card",
   "holdHint": "We hold the amount now and charge it when the store accepts your order.",
   "summaryTitle": "Summary",
@@ -385,6 +385,7 @@
   "paymentStateFailed": "Payment did not go through",
   "paymentStateRefunded": "Money returned",
   "paymentStateAtCounter": "Paying at the counter",
+  "paymentStateAwaiting": "Awaiting payment",
   "pickupCode": "Pickup code",
   "showQr": "Show QR",
   "qrHint": "Show this at the counter",

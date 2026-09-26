@@ -3,6 +3,7 @@ import type { Order, OrderStatus, Prisma } from '@prisma/client';
 
 import { NotificationsService } from '../notifications/notifications.service';
 import { AgroprombankService } from '../payments/agroprombank/agroprombank.service';
+import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
@@ -68,15 +69,28 @@ export class KdsService {
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
     private readonly payments: AgroprombankService,
+    private readonly holds: PaymentHoldsService,
   ) {}
 
   async listOpen(storeId: string) {
     const orders = await this.prisma.order.findMany({
       where: { storeId, status: { in: OPEN_STATUSES } },
       orderBy: { pickupAt: 'asc' },
-      include: BOARD_INCLUDE,
+      include: {
+        ...BOARD_INCLUDE,
+        payments: {
+          where: { provider: 'AGROPROMBANK', status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
+          select: { id: true },
+        },
+      },
     });
-    return orders.map(toBoardRow);
+
+    // A new order the customer has not paid for yet is not the kitchen's
+    // business: it shows up once its card hold is in place.
+    const payable = orders.filter(
+      (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
+    );
+    return payable.map(toBoardRow);
   }
 
   /**
@@ -98,14 +112,23 @@ export class KdsService {
 
   /**
    * Captures whatever is held against the order. A bank refusal surfaces to the
-   * staff member as a failed accept — they can take cash instead, or the
-   * customer can pay with another card — so the failure is deliberately not
-   * swallowed.
+   * staff member as a failed accept — the customer can pay with another
+   * card — so the failure is deliberately not swallowed.
    */
   private async captureHold(storeId: string, orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
     if (!(ALLOWED_TRANSITIONS['accept'] ?? []).includes(order.status)) return;
+
+    // Nothing is paid at the counter any more: an order that costs money is
+    // taken on only with the customer's card behind it.
+    if (
+      order.status === 'CREATED' &&
+      this.holds.cardPaymentRequired(order) &&
+      !(await this.holds.hasCardPayment(orderId))
+    ) {
+      throw new BadRequestException('The customer has not paid for this order yet');
+    }
 
     try {
       await this.payments.capturePreauthorizedForOrder(orderId);

@@ -38,6 +38,29 @@ export class PaymentHoldsService {
   }
 
   /**
+   * Whether an order has to be paid by card before the kitchen may take it.
+   *
+   * Paying at the counter is gone: with card payments on, an order that costs
+   * anything waits for its hold before it reaches the kitchen board, and the
+   * board cannot accept it without one. A zero total (points or a gift card
+   * covered it all) has nothing to hold. With card payments switched off on a
+   * deployment nothing can be held, so the rule stands down rather than
+   * locking every order out.
+   */
+  cardPaymentRequired(order: { totalCents: number }): boolean {
+    return this.config.enabled && order.totalCents > 0;
+  }
+
+  /** A hold or a completed card charge is on the order. */
+  async hasCardPayment(orderId: string): Promise<boolean> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { orderId, provider: 'AGROPROMBANK', status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
+      select: { id: true },
+    });
+    return payment !== null;
+  }
+
+  /**
    * Gives the held money back when the order will never be fulfilled — the
    * customer cancelled, or the store turned it down.
    *

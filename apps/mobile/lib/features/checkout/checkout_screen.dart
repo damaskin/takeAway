@@ -175,7 +175,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
           ),
           _DiscountsSection(state: state, currency: store.currency),
-          _PaymentSection(state: state, flags: flags),
+          _PaymentSection(state: state, flags: flags, needsCard: controller.needsCard(cart, store)),
           _SummarySection(cart: cart, store: store, state: state, breakdown: breakdown),
           if (belowMinimum)
             Padding(
@@ -219,10 +219,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             PrimaryButton(
               loading: state.submitting,
-              onPressed: belowMinimum || store.isInactive ? null : _submit,
-              label: state.placedOrderId != null && controller.payingByCard
+              onPressed: belowMinimum || store.isInactive || !controller.canPay(cart, store) ? null : _submit,
+              label: state.placedOrderId != null && controller.needsCard(cart, store)
                   ? l10n.retryPayment
-                  : controller.payingByCard
+                  : controller.needsCard(cart, store)
                   ? l10n.placeOrderPay(context.money(breakdown.totalCents, store.currency))
                   : l10n.placeOrder(context.money(breakdown.totalCents, store.currency)),
               trailing: Text(
@@ -516,10 +516,13 @@ class _DiscountsSection extends ConsumerWidget {
 }
 
 class _PaymentSection extends ConsumerWidget {
-  const _PaymentSection({required this.state, required this.flags});
+  const _PaymentSection({required this.state, required this.flags, required this.needsCard});
 
   final CheckoutState state;
   final FeatureFlags flags;
+
+  /// False when points or a gift card already cover the whole order.
+  final bool needsCard;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -604,7 +607,11 @@ class _PaymentSection extends ConsumerWidget {
                   : [if (card.label != null) card.maskedPan, card.instituteName].whereType<String>().join(' · '),
               enabled: !card.isInactive,
             ),
-          option(id: null, icon: Icons.storefront_outlined, title: l10n.payAtCounter, subtitle: l10n.payAtCounterHint),
+          // Orders are paid by card only; there is no paying at the counter.
+          if (!flags.agroprombankEnabled)
+            _PaymentNotice(text: l10n.cardPaymentsUnavailable)
+          else if (needsCard && !cards.any((c) => !c.isInactive))
+            _PaymentNotice(text: l10n.addCardToOrder),
           if (flags.agroprombankEnabled && !locked)
             Align(
               alignment: Alignment.centerLeft,
@@ -615,6 +622,29 @@ class _PaymentSection extends ConsumerWidget {
               ),
             ),
           if (flags.agroprombankEnabled && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentNotice extends StatelessWidget {
+  const _PaymentNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(color: brand.cream, borderRadius: BorderRadius.circular(Radii.button)),
+      child: Row(
+        children: [
+          Icon(Icons.credit_card_rounded, color: brand.caramel),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: context.text.bodyMedium)),
         ],
       ),
     );

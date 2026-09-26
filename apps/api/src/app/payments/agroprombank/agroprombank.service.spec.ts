@@ -23,7 +23,7 @@ const PAYMENT_OK = parseXml(
 describe('AgroprombankService', () => {
   let service: AgroprombankService;
   let client: { invoke: jest.Mock; invokeRaw: jest.Mock };
-  let settlement: { settlePaidOrder: jest.Mock };
+  let settlement: { settlePaidOrder: jest.Mock; announceHeld: jest.Mock };
   let holds: { findHold: jest.Mock };
   let config: { holdUntilAccepted: boolean } & Partial<AgroprombankConfig>;
   let prisma: PrismaMock;
@@ -119,7 +119,10 @@ describe('AgroprombankService', () => {
     };
 
     client = { invoke: jest.fn(), invokeRaw: jest.fn() };
-    settlement = { settlePaidOrder: jest.fn().mockResolvedValue(order) };
+    settlement = {
+      settlePaidOrder: jest.fn().mockResolvedValue(order),
+      announceHeld: jest.fn().mockResolvedValue(undefined),
+    };
     holds = { findHold: jest.fn().mockResolvedValue(null) };
     config = {
       enabled: true,
@@ -315,6 +318,8 @@ describe('AgroprombankService', () => {
       );
       expect(result.status).toBe('REQUIRES_ACTION');
       expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
+      // The order was kept off the kitchen board until now; the hold puts it there.
+      expect(settlement.announceHeld).toHaveBeenCalledWith(order.id);
     });
 
     it('records what it asked the bank for, so a timed-out hold is not reconciled as paid', async () => {

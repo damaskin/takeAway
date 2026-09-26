@@ -203,6 +203,8 @@ function harness() {
   const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitKdsOrderChanged: jest.fn() };
+  // Card payments off unless a test says otherwise.
+  const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
 
   const cart = new CartService(prisma as unknown as PrismaService, kitchen as unknown as KitchenLoadService);
   const service = new OrdersService(
@@ -220,10 +222,10 @@ function harness() {
     {} as ReferralsService,
     kitchen as unknown as KitchenLoadService,
     cart,
-    {} as PaymentHoldsService,
+    holds as unknown as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail, realtime };
+  return { service, prisma, tx, mail, realtime, holds };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -284,6 +286,16 @@ describe('OrdersService.create', () => {
         }),
       }),
     );
+  });
+
+  it('keeps an order that has to be paid by card off the kitchen board until its hold is in place', async () => {
+    const { service, prisma, realtime, holds } = harness();
+    holds.cardPaymentRequired.mockReturnValue(true);
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', placeOrder);
+
+    expect(realtime.emitKdsOrderChanged).not.toHaveBeenCalled();
   });
 
   it('keeps the name the customer gave at checkout', async () => {

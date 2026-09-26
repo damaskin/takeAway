@@ -518,10 +518,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentTitle => 'Оплата';
 
   @override
-  String get payAtCounter => 'Оплата на месте';
+  String get cardPaymentsUnavailable =>
+      'Оплата картой сейчас недоступна, поэтому заказ оформить нельзя. Попробуйте чуть позже.';
 
   @override
-  String get payAtCounterHint => 'Наличными или картой при получении';
+  String get addCardToOrder => 'Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.';
 
   @override
   String get addCard => 'Привязать карту';
@@ -629,6 +630,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get paymentStateAtCounter => 'Оплата на месте';
+
+  @override
+  String get paymentStateAwaiting => 'Ждём оплату';
 
   @override
   String get pickupCode => 'Код получения';

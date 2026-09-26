@@ -97,6 +97,20 @@ export class OrderSettlementService {
   }
 
   /**
+   * A card hold is in place: the order is now the kitchen's to accept.
+   *
+   * Under `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` an order never passes through
+   * PAID before the kitchen takes it, and it is not announced when it is
+   * created either, because nobody has paid for it at that point. This is
+   * the moment the board and the order alerts should hear about it.
+   */
+  async announceHeld(orderId: string): Promise<void> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order || order.status !== 'CREATED') return;
+    await this.pushToKds(order);
+  }
+
+  /**
    * A new PAID order should appear on the KDS board without waiting for the
    * 5s polling tick, so we load the fresh row (with items) and broadcast it.
    */
