@@ -1,181 +1,130 @@
-"""Renders the takeAway launcher icons and launch-screen logo.
+"""Regenerates every launcher icon, splash mark and notification icon of the
+app from one image of the brand mark.
 
-The mark is a takeaway cup drawn from primitives, so the whole set can be
-regenerated without a design tool:
+    python tool/generate_icons.py [path/to/mark.png]
 
-    python tool/generate_icons.py
+The source is the square logo artwork: the caramel mark on a light
+background (default: tool/brand/mark-source.jpg; the full logo with the
+wordmark is next to it, tool/brand/logo-full.jpg). The mark is lifted out by
+colour — caramel against cream — so paper texture and JPEG noise stay behind,
+its edges are redrawn smooth, and it is painted in the brand colours below
+rather than the artwork's own, which are a shade off.
 
-Writes Android mipmaps (legacy + adaptive + monochrome), the Android splash
-logo and notification icon, the iOS AppIcon set and the iOS launch image.
-Requires Pillow.
+Needs Pillow and numpy. Writes into ios/ and android/ in place; review the
+diff and commit the result together with any change to the source.
 """
 
 from __future__ import annotations
 
-import os
-import math
+import json
+import sys
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = Path(__file__).resolve().parent.parent
-SS = 4  # supersampling factor for anti-aliased edges
+HERE = Path(__file__).resolve().parent
+APP = HERE.parent
+IOS_ICONS = APP / 'ios/Runner/Assets.xcassets/AppIcon.appiconset'
+IOS_LAUNCH = APP / 'ios/Runner/Assets.xcassets/LaunchImage.imageset'
+RES = APP / 'android/app/src/main/res'
 
-CARAMEL = (199, 125, 59)
-CARAMEL_LIGHT = (214, 145, 82)
-CARAMEL_DARK = (122, 69, 32)
-CREAM = (248, 243, 235)
-FOAM = (255, 255, 255)
-ESPRESSO = (26, 20, 20)
+CARAMEL = (0xC7, 0x7D, 0x3B)  # brand_caramel
+CREAM = (0xF8, 0xF3, 0xEB)  # brand_cream
+WHITE = (0xFF, 0xFF, 0xFF)
 
-
-def _cup(draw: ImageDraw.ImageDraw, scale: float, ox: float, oy: float, *, mono: bool = False,
-         body=CREAM, lid=FOAM, sleeve=CARAMEL_DARK, steam=(255, 255, 255, 150)) -> None:
-    """Draws the cup in a 1024-unit design space, scaled and offset."""
-
-    def p(x: float, y: float) -> tuple[float, float]:
-        return (ox + x * scale, oy + y * scale)
-
-    def poly(points, fill):
-        draw.polygon([p(x, y) for x, y in points], fill=fill)
-
-    def rrect(x0, y0, x1, y1, r, fill):
-        (ax, ay), (bx, by) = p(x0, y0), p(x1, y1)
-        radius = max(0.0, min(r * scale, (by - ay) / 2 - 1, (bx - ax) / 2 - 1))
-        draw.rounded_rectangle([(ax, ay), (bx, by)], radius=radius, fill=fill)
-
-    white = (255, 255, 255, 255)
-    if mono:
-        body = lid = white
-        sleeve = (0, 0, 0, 0)
-
-    # Steam — two soft strokes above the lid.
-    if not mono:
-        for dx in (-62, 62):
-            pts = []
-            for i in range(0, 41):
-                t = i / 40
-                y = 206 - t * 104
-                x = 512 + dx + 16 * math.sin(t * 1.6 * math.pi)
-                pts.append(p(x, y))
-            draw.line(pts, fill=steam, width=max(1, int(20 * scale)), joint='curve')
-
-    # Body — a tapered cup with a slightly rounded base.
-    poly([(318, 330), (706, 330), (650, 800), (374, 800)], body)
-    rrect(372, 772, 652, 812, 20, body)
-
-    # Sleeve band following the taper.
-    if not mono:
-        poly([(334, 480), (690, 480), (673, 628), (351, 628)], sleeve)
-
-    # Lid — rim plus raised cap.
-    rrect(290, 280, 734, 338, 26, lid)
-    rrect(338, 236, 686, 292, 24, lid)
-    if not mono:
-        rrect(300, 322, 724, 338, 8, (230, 222, 210, 255))
+DENSITIES = {'mdpi': 1.0, 'hdpi': 1.5, 'xhdpi': 2.0, 'xxhdpi': 3.0, 'xxxhdpi': 4.0}
 
 
-def render_icon(size: int, *, full_bleed: bool, rounded: bool) -> Image.Image:
-    """Full icon: caramel field with the cup centred."""
-    big = size * SS
-    img = Image.new('RGBA', (big, big), (0, 0, 0, 0))
+def extract_mark(source: Path) -> Image.Image:
+    """The mark as an 8-bit alpha mask, cropped to its bounds."""
+    rgb = np.asarray(Image.open(source).convert('RGB')).astype(np.float32)
+    # Caramel and cream differ most in red minus blue (≈133 vs ≈18); texture
+    # and JPEG noise move it by a few units, so a band either side of the
+    # midpoint turns it into coverage without picking the noise up.
+    rb = rgb[..., 0] - rgb[..., 2]
+    lo, hi = np.percentile(rb, 20), np.percentile(rb, 99)
+    span = hi - lo
+    alpha = np.clip((rb - (lo + 0.25 * span)) / (0.5 * span), 0.0, 1.0)
 
-    field = Image.new('RGBA', (big, big), CARAMEL + (255,))
-    glow_mask = Image.new('L', (big, big), 0)
-    ImageDraw.Draw(glow_mask).ellipse([big * 0.12, big * 0.04, big * 0.88, big * 0.8], fill=150)
-    glow_mask = glow_mask.filter(ImageFilter.GaussianBlur(big * 0.14))
-    field.paste(Image.new('RGBA', (big, big), CARAMEL_LIGHT + (255,)), (0, 0), glow_mask)
+    # Redraw the edges: at twice the size, soften, then cut again with a
+    # narrow ramp — smooth, anti-aliased contours instead of JPEG steps.
+    mask = Image.fromarray((alpha * 255).astype(np.uint8), 'L')
+    big = mask.resize((mask.width * 2, mask.height * 2), Image.BICUBIC).filter(ImageFilter.GaussianBlur(3))
+    a = np.asarray(big).astype(np.float32) / 255.0
+    a = np.clip((a - 0.42) / 0.16, 0.0, 1.0)
+    a = a * a * (3 - 2 * a)
+    clean = Image.fromarray((a * 255).astype(np.uint8), 'L').resize(mask.size, Image.LANCZOS)
 
-    if rounded:
-        mask = Image.new('L', (big, big), 0)
-        ImageDraw.Draw(mask).rounded_rectangle([0, 0, big - 1, big - 1], radius=big * 0.22, fill=255)
-        img.paste(field, (0, 0), mask)
-    else:
-        img = field
-
-    draw = ImageDraw.Draw(img)
-    inset = 0.0 if full_bleed else 0.08
-    scale = big * (1 - 2 * inset) / 1024 * 0.86
-    ox = big * inset + (big * (1 - 2 * inset) - 1024 * scale) / 2
-    oy = big * inset + (big * (1 - 2 * inset) - 1024 * scale) / 2 + big * 0.02
-    _cup(draw, scale, ox, oy)
-    return img.resize((size, size), Image.LANCZOS)
-
-
-def render_foreground(size: int, *, mono: bool = False) -> Image.Image:
-    """Adaptive-icon foreground: the cup inside the 66 % safe zone, transparent field."""
-    big = size * SS
-    img = Image.new('RGBA', (big, big), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    safe = big * 0.62
-    scale = safe / 1024
-    ox = (big - 1024 * scale) / 2
-    oy = (big - 1024 * scale) / 2 + big * 0.015
-    _cup(draw, scale, ox, oy, mono=mono)
-    return img.resize((size, size), Image.LANCZOS)
+    bbox = clean.point(lambda v: 255 if v > 8 else 0).getbbox()
+    if bbox is None:
+        raise SystemExit(f'No mark found in {source}')
+    return clean.crop(bbox)
 
 
-def render_status_icon(size: int) -> Image.Image:
-    """Notification small icon: white silhouette, Android tints it."""
-    big = size * SS
-    img = Image.new('RGBA', (big, big), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    scale = big * 0.92 / 1024
-    ox = (big - 1024 * scale) / 2
-    oy = (big - 1024 * scale) / 2 - big * 0.06
-    _cup(draw, scale, ox, oy, mono=True)
-    return img.resize((size, size), Image.LANCZOS)
+def painted(mask: Image.Image, color: tuple[int, int, int]) -> Image.Image:
+    layer = Image.new('RGBA', mask.size, color + (0,))
+    layer.putalpha(mask)
+    return layer
 
 
-def render_logo(size: int) -> Image.Image:
-    """Launch-screen mark: caramel cup on transparent."""
-    big = size * SS
-    img = Image.new('RGBA', (big, big), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    scale = big / 1024
-    _cup(draw, scale, 0, 0, body=CARAMEL + (255,), lid=CARAMEL_DARK + (255,), sleeve=(90, 52, 24, 255),
-         steam=CARAMEL + (140,))
-    return img.resize((size, size), Image.LANCZOS)
+def mark_on_canvas(mask: Image.Image, size: int, height_ratio: float, color, background=None) -> Image.Image:
+    """The mark centred on a square canvas, `height_ratio` of it tall."""
+    h = round(size * height_ratio)
+    w = round(h * mask.width / mask.height)
+    mark = painted(mask.resize((w, h), Image.LANCZOS), color)
+    canvas = Image.new('RGBA', (size, size), (background or color) + ((255,) if background else (0,)))
+    canvas.alpha_composite(mark, ((size - w) // 2, (size - h) // 2))
+    return canvas
 
 
-def save(img: Image.Image, path: Path, *, rgb: bool = False) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if rgb:
-        background = Image.new('RGB', img.size, CARAMEL)
-        background.paste(img, mask=img.split()[3])
-        img = background
-    img.save(path, optimize=True)
-    print('wrote', path.relative_to(ROOT))
+def rounded_square(size: int, radius_ratio: float) -> Image.Image:
+    """Mask of a rounded square, drawn big and scaled down for a smooth edge."""
+    big = size * 4
+    m = Image.new('L', (big, big), 0)
+    ImageDraw.Draw(m).rounded_rectangle((0, 0, big - 1, big - 1), radius=round(big * radius_ratio), fill=255)
+    return m.resize((size, size), Image.LANCZOS)
 
 
 def main() -> None:
-    res = ROOT / 'android' / 'app' / 'src' / 'main' / 'res'
-    densities = {'mdpi': 1.0, 'hdpi': 1.5, 'xhdpi': 2.0, 'xxhdpi': 3.0, 'xxxhdpi': 4.0}
-    for name, factor in densities.items():
-        folder = res / f'mipmap-{name}'
-        save(render_icon(round(48 * factor), full_bleed=False, rounded=True), folder / 'ic_launcher.png')
-        save(render_foreground(round(108 * factor)), folder / 'ic_launcher_foreground.png')
-        save(render_foreground(round(108 * factor), mono=True), folder / 'ic_launcher_monochrome.png')
-        save(render_logo(round(120 * factor)), res / f'drawable-{name}' / 'splash_logo.png')
-        save(render_status_icon(round(24 * factor)), res / f'drawable-{name}' / 'ic_stat_takeaway.png')
+    source = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / 'brand' / 'mark-source.jpg'
+    mask = extract_mark(source)
 
-    ios = ROOT / 'ios' / 'Runner' / 'Assets.xcassets'
-    icon_sizes = {
-        'Icon-App-20x20@1x.png': 20, 'Icon-App-20x20@2x.png': 40, 'Icon-App-20x20@3x.png': 60,
-        'Icon-App-29x29@1x.png': 29, 'Icon-App-29x29@2x.png': 58, 'Icon-App-29x29@3x.png': 87,
-        'Icon-App-40x40@1x.png': 40, 'Icon-App-40x40@2x.png': 80, 'Icon-App-40x40@3x.png': 120,
-        'Icon-App-60x60@2x.png': 120, 'Icon-App-60x60@3x.png': 180,
-        'Icon-App-76x76@1x.png': 76, 'Icon-App-76x76@2x.png': 152,
-        'Icon-App-83.5x83.5@2x.png': 167, 'Icon-App-1024x1024@1x.png': 1024,
-    }
-    for filename, px in icon_sizes.items():
-        # App Store rejects icons with an alpha channel; iOS applies its own mask.
-        save(render_icon(px, full_bleed=True, rounded=False), ios / 'AppIcon.appiconset' / filename, rgb=True)
+    # iOS: the store and home-screen icon has no transparency — cream field,
+    # caramel mark. 58% of the height reads at 60 pt without crowding.
+    master = mark_on_canvas(mask, 1024, 0.58, CARAMEL, CREAM).convert('RGB')
+    contents = json.loads((IOS_ICONS / 'Contents.json').read_text(encoding='utf-8'))
+    for image in contents['images']:
+        points = float(image['size'].split('x')[0])
+        px = round(points * int(image['scale'].rstrip('x')))
+        master.resize((px, px), Image.LANCZOS).save(IOS_ICONS / image['filename'], optimize=True)
 
-    for filename, px in {'LaunchImage.png': 120, 'LaunchImage@2x.png': 240, 'LaunchImage@3x.png': 360}.items():
-        save(render_logo(px), ios / 'LaunchImage.imageset' / filename)
+    # iOS launch screen: the mark alone, on the storyboard's cream.
+    for scale, name in ((1, 'LaunchImage.png'), (2, 'LaunchImage@2x.png'), (3, 'LaunchImage@3x.png')):
+        mark_on_canvas(mask, 120 * scale, 0.8, CARAMEL).save(IOS_LAUNCH / name, optimize=True)
+
+    for density, k in DENSITIES.items():
+        folder = RES / f'mipmap-{density}'
+        # Adaptive icon (API 26+): the cream background is a colour resource;
+        # the mark sits inside the 66 dp safe circle of the 108 dp layer.
+        layer = round(108 * k)
+        mark_on_canvas(mask, layer, 0.48, CARAMEL).save(folder / 'ic_launcher_foreground.png', optimize=True)
+        # Themed icon (Android 13): one colour, the launcher tints it.
+        mark_on_canvas(mask, layer, 0.48, WHITE).save(folder / 'ic_launcher_monochrome.png', optimize=True)
+        # Legacy launchers get the whole icon, shape included.
+        size = round(48 * k)
+        legacy = mark_on_canvas(mask, size, 0.58, CARAMEL, CREAM)
+        legacy.putalpha(rounded_square(size, 0.22))
+        legacy.save(folder / 'ic_launcher.png', optimize=True)
+
+        drawables = RES / f'drawable-{density}'
+        # Pre-Android 12 splash: the mark on the launch background.
+        mark_on_canvas(mask, round(120 * k), 0.8, CARAMEL).save(drawables / 'splash_logo.png', optimize=True)
+        # Status bar: a white silhouette; the system colours it.
+        mark_on_canvas(mask, round(24 * k), 0.84, WHITE).save(drawables / 'ic_stat_takeaway.png', optimize=True)
+
+    print(f'mark {mask.width}x{mask.height} from {source.name}: iOS icons, launch image, Android icons and splash written')
 
 
 if __name__ == '__main__':
-    os.chdir(ROOT)
     main()
