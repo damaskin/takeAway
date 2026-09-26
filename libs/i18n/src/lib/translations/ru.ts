@@ -532,6 +532,8 @@ export const TRANSLATIONS_RU = {
     layout: {
       wholeProject: 'Весь проект',
       adminTag: 'Админ',
+      install: 'Установить приложение',
+      installHint: 'Кабинет откроется отдельным окном с иконкой на рабочем столе или домашнем экране',
       brand: 'Бренд',
       role: {
         SUPER_ADMIN: 'Администратор платформы',

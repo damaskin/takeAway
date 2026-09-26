@@ -8,6 +8,7 @@ import { AuthStore } from '../core/auth/auth.store';
 import { BrandsService } from '../core/brands/brands.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
+import { PwaService } from '../core/pwa/pwa.service';
 
 import { ADMIN_ROLES, type AdminRole } from '../core/permissions/permissions';
 
@@ -39,8 +40,8 @@ interface NavItem {
   imports: [RouterLink, RouterLinkActive, TranslatePipe],
   template: `
     <aside
-      class="flex flex-col"
-      style="width: 260px; background: var(--color-foam); border-right: 1px solid var(--color-border-light); padding: 24px 16px; gap: 8px"
+      class="admin-aside flex flex-col"
+      style="width: 260px; max-width: 100%; height: 100%; background: var(--color-foam); border-right: 1px solid var(--color-border-light); padding: 24px 16px; gap: 8px"
     >
       <div class="flex items-center" style="gap: 10px; padding: 0 8px 24px 8px">
         <span style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-caramel)"
@@ -80,10 +81,39 @@ interface NavItem {
           }
         </a>
       }
+
+      <div class="admin-aside-bottom flex flex-col" style="gap: 8px">
+        @if (pwa.canInstall()) {
+          <button
+            type="button"
+            class="admin-install flex items-center"
+            (click)="pwa.install()"
+            [title]="'admin.layout.installHint' | translate"
+          >
+            <span style="font-size: 18px">⬇</span>
+            <span class="flex-1" style="text-align: left">{{ 'admin.layout.install' | translate }}</span>
+          </button>
+        }
+        <!-- The layout puts the account and sign-out here on a phone. -->
+        <ng-content />
+      </div>
     </aside>
   `,
   styles: [
     `
+      :host {
+        display: block;
+        height: 100%;
+      }
+      /* Full height of the screen; a menu taller than that scrolls by itself. */
+      .admin-aside {
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      /* Rows keep their height and the column scrolls, not squashes. */
+      .admin-aside > * {
+        flex-shrink: 0;
+      }
       .admin-nav {
         color: var(--color-text-secondary);
       }
@@ -113,6 +143,27 @@ interface NavItem {
       .admin-nav-badge-live {
         background: var(--color-berry);
       }
+      .admin-aside-bottom {
+        margin-top: auto;
+        padding-top: 8px;
+      }
+      .admin-install {
+        flex: 0 0 auto;
+        height: 42px;
+        padding: 0 12px;
+        gap: 10px;
+        border-radius: 10px;
+        border: 1px dashed var(--color-border);
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .admin-install:hover {
+        color: var(--color-caramel);
+        border-color: var(--color-caramel);
+      }
     `,
   ],
 })
@@ -121,6 +172,7 @@ export class AdminSidebarComponent {
   private readonly authStore = inject(AuthStore);
   private readonly brands = inject(BrandsService);
   private readonly orderAlerts = inject(OrderAlertsService);
+  readonly pwa = inject(PwaService);
 
   /** Brands waiting for a platform admin's decision; zero hides the badge. */
   readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
