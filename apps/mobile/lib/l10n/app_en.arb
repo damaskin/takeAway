@@ -96,6 +96,7 @@
   "storeStatusOpen": "Open",
   "storeStatusBusy": "Busy",
   "storeStatusClosed": "Closed",
+  "storeStatusNotWorking": "Not working",
   "orderHere": "Order here",
   "distanceAway": "{distance} away",
   "@distanceAway": {
@@ -120,6 +121,7 @@
   "storesNoneActive": "No store is taking orders right now. Check back a little later.",
   "storeClosedBanner": "Closed right now — you can still schedule for later.",
   "storeBusyBanner": "The kitchen is busy — orders take a little longer.",
+  "storeInactiveBanner": "This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.",
   "openingHours": "Opening hours",
   "closedAllDay": "Closed",
   "buildRoute": "Build route",

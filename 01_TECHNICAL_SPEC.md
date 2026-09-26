@@ -410,6 +410,8 @@ takeaway/
 - Новые заказы приходят по всему кабинету: всплывающая карточка с «Принять», звук, системное уведомление из фоновой вкладки, счётчик непринятых в меню. Кабинет держит одно сокет-подключение (`kds.subscribe` на все точки активного бренда) с повторным входом в комнаты после переподключения
 - Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`. UI lockscreen — `/login/pin` в кабинете (выбор точки один раз на устройство, экранная клавиатура).
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
+- **Смена точки**: точка принимает заказы, только пока открыта смена (`StoreShift` с `closedAt = null`). Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках». Пока смена закрыта, `GET /stores` отдаёт `acceptingOrders: false` (и `openNow: false`), клиенты показывают точку «Не работает», создание заказа отвечает `STORE_NOT_TAKING_ORDERS`. Корзину собрать можно. Смена открывается и закрывается только вручную; остальные планшеты узнают об этом по `kds.shiftChanged`
+- **Клиент на месте**: строка доски несёт `customerArrival` (`NEARBY` | `HERE` | null) и `customerArrivedAt` из событий `CUSTOMER_NEARBY` / `CUSTOMER_HERE`; на карточке — плашка «Клиент рядом» / зелёная «Клиент на месте · N мин»
 - Звук при новом заказе — да
 - **Dual timer на карточке**:
   - Время до pickup (обещанное клиенту) — основной
@@ -489,6 +491,7 @@ Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
 StoreWorkingHour (storeId, weekday[0..6], opensAt, closesAt, isClosed)
+StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не больше одной открытой на точку (частичный уникальный индекс)
 ```
 
 ### 5.3. Catalog
@@ -623,7 +626,7 @@ POST   /me/referrals/apply           { code }
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде
@@ -764,7 +767,10 @@ GET                    /admin/pos/jobs/:provider
 ### 6.10. KDS (экран баристы)
 
 ```
-GET    /kds/orders
+GET    /kds/orders                    // + customerArrival, customerArrivedAt
+GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName }
+POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
+POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно
 POST   /kds/orders/:id/accept
 POST   /kds/orders/:id/start
 POST   /kds/orders/:id/ready

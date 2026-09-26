@@ -89,7 +89,7 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
-    await this.cart.assertStoreTakesOrders(cart.storeId);
+    await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -340,18 +340,6 @@ export class OrdersService {
 
         return created;
       }),
-    );
-
-    // Customer-facing push — "order received, awaiting payment".
-    void this.notifications.notifyOrderStatus(
-      {
-        id: order.id,
-        userId: order.userId,
-        orderCode: order.orderCode,
-        storeId: order.storeId,
-        fulfillmentType: order.fulfillmentType,
-      },
-      'CREATED',
     );
 
     // The board lists CREATED orders, and a card order now waits there on a
@@ -758,18 +746,8 @@ export class OrdersService {
       updated.userId,
     );
 
-    // Fire-and-forget push. If Telegram/APNs/FCM are down this still
-    // returns the cancel result cleanly.
-    void this.notifications.notifyOrderStatus(
-      {
-        id: updated.id,
-        userId: updated.userId,
-        orderCode: updated.orderCode,
-        storeId: updated.storeId,
-        fulfillmentType: updated.fulfillmentType,
-      },
-      updated.status,
-    );
+    // No push: the customer cancelled it themselves, on the screen they are
+    // looking at. The live status above is all the confirmation they need.
 
     return this.toOrderDto(updated);
   }

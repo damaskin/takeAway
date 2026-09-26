@@ -458,6 +458,12 @@ abstract class AppLocalizations {
   /// **'Closed'**
   String get storeStatusClosed;
 
+  /// No description provided for @storeStatusNotWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Not working'**
+  String get storeStatusNotWorking;
+
   /// No description provided for @orderHere.
   ///
   /// In en, this message translates to:
@@ -517,6 +523,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The kitchen is busy — orders take a little longer.'**
   String get storeBusyBanner;
+
+  /// No description provided for @storeInactiveBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.'**
+  String get storeInactiveBanner;
 
   /// No description provided for @openingHours.
   ///

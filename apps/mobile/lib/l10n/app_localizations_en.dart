@@ -203,6 +203,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeStatusClosed => 'Closed';
 
   @override
+  String get storeStatusNotWorking => 'Not working';
+
+  @override
   String get orderHere => 'Order here';
 
   @override
@@ -236,6 +239,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get storeBusyBanner => 'The kitchen is busy — orders take a little longer.';
+
+  @override
+  String get storeInactiveBanner =>
+      'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.';
 
   @override
   String get openingHours => 'Opening hours';

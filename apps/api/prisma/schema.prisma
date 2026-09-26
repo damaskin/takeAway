@@ -315,6 +315,8 @@ model User {
   // Cards bound to the merchant for tokenized payments (Agroprombank).
   cardTokens          CardToken[]
   cardBindings        CardBindingRequest[]
+  shiftsOpened        StoreShift[]         @relation("ShiftOpenedBy")
+  shiftsClosed        StoreShift[]         @relation("ShiftClosedBy")
 
   // Referral program — every user gets a unique code lazily on first read.
   // referredByUserId points at the user whose code unlocked this account's
@@ -557,6 +559,7 @@ model Store {
   orders          Order[]
   userStores      UserStore[]
   kdsPinUsers     User[]             @relation("KdsPinStore")
+  shifts          StoreShift[]
 
   @@unique([brandId, externalProvider, externalId])
   @@index([brandId])
@@ -579,6 +582,27 @@ model UserStore {
 
   @@id([userId, storeId])
   @@index([storeId])
+}
+
+/// A working shift at one store. The store takes orders only while it has a
+/// shift with `closedAt = null`: staff open it with "Start work" in the
+/// cabinet or on the kitchen tablet and close it with "Finish work". Working
+/// hours say when the store is meant to be open; the shift says someone is
+/// actually there. At most one open shift per store (partial unique index in
+/// the migration — Prisma cannot model it).
+model StoreShift {
+  id         String    @id @default(cuid())
+  storeId    String
+  openedAt   DateTime  @default(now())
+  openedById String?
+  closedAt   DateTime?
+  closedById String?
+
+  store    Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  openedBy User? @relation("ShiftOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  closedBy User? @relation("ShiftClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+
+  @@index([storeId, closedAt])
 }
 
 model StoreWorkingHour {

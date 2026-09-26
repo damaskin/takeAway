@@ -18,6 +18,13 @@ void main() {
         'status': 'CLOSED',
         'openNow': false,
       },
+      {
+        ...FakeApi.storeJson,
+        'id': 'st_3',
+        'slug': 'noname-kirova',
+        'name': 'NoName — Кирова',
+        'acceptingOrders': false,
+      },
     ];
 
   testWidgets('first launch asks for a store and only lets an active one be picked', (tester) async {
@@ -32,6 +39,11 @@ void main() {
     await settle(tester);
     expect(find.byType(BusinessPlate), findsNothing);
     expect(find.text('Где заберёте заказ?'), findsOneWidget);
+
+    // Nor does one that is switched on but has no shift started.
+    await tester.tap(find.text('NoName — Кирова'));
+    await settle(tester);
+    expect(find.byType(BusinessPlate), findsNothing);
 
     await tester.tap(find.text('NoName — центр'));
     await settle(tester);

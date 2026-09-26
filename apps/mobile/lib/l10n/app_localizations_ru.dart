@@ -210,6 +210,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storeStatusClosed => 'Закрыто';
 
   @override
+  String get storeStatusNotWorking => 'Не работает';
+
+  @override
   String get orderHere => 'Заказать здесь';
 
   @override
@@ -243,6 +246,10 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get storeBusyBanner => 'Кухня загружена — заказы готовятся чуть дольше.';
+
+  @override
+  String get storeInactiveBanner =>
+      'Точка сейчас не принимает заказы: смена не началась или уже закончилась. Выберите другую точку или загляните позже.';
 
   @override
   String get openingHours => 'Часы работы';

@@ -219,7 +219,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             PrimaryButton(
               loading: state.submitting,
-              onPressed: belowMinimum ? null : _submit,
+              onPressed: belowMinimum || store.isInactive ? null : _submit,
               label: state.placedOrderId != null && controller.payingByCard
                   ? l10n.retryPayment
                   : controller.payingByCard
@@ -308,9 +308,18 @@ class _WhenSection extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 10),
               child: Row(
                 children: [
-                  Icon(Icons.nightlight_round, size: 16, color: brand.berry),
+                  Icon(
+                    store.isInactive ? Icons.do_not_disturb_on_rounded : Icons.nightlight_round,
+                    size: 16,
+                    color: brand.berry,
+                  ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(l10n.storeClosedBanner, style: context.text.bodySmall)),
+                  Expanded(
+                    child: Text(
+                      store.isInactive ? l10n.storeInactiveBanner : l10n.storeClosedBanner,
+                      style: context.text.bodySmall,
+                    ),
+                  ),
                 ],
               ),
             ),

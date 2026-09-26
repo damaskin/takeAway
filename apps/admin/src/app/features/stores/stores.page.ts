@@ -12,7 +12,8 @@ import {
   type StoreAdminDto,
   type StoreStatus,
 } from '../../core/catalog/admin-catalog.service';
-import { apiErrorCode } from '../../core/http/api-error';
+import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
+import { KitchenApi } from '../../core/kitchen/kitchen.api';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { type EditorTab, StoreEditorComponent } from './store-editor.component';
 import { storeErrorMessage } from './store-errors';
@@ -347,6 +348,39 @@ interface CardError {
               >
             </div>
 
+            @if (s.status !== 'CLOSED' && s.shiftOpen !== undefined) {
+              <div
+                class="flex items-center flex-wrap"
+                [attr.data-testid]="'store-shift-' + s.id"
+                [style.background]="s.shiftOpen ? '#7BC4A422' : '#E9A84B26'"
+                style="gap: 8px 12px; padding: 10px 12px; border-radius: 12px"
+              >
+                <span
+                  style="flex: 1 1 160px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                  [style.color]="s.shiftOpen ? '#3E8868' : '#8A6720'"
+                  >{{ (s.shiftOpen ? 'admin.stores.shift.open' : 'admin.stores.shift.closed') | translate }}</span
+                >
+                <button
+                  type="button"
+                  (click)="setShift(s, !s.shiftOpen)"
+                  [disabled]="busyId() === s.id"
+                  [style.background]="s.shiftOpen ? 'transparent' : 'var(--color-caramel)'"
+                  [style.color]="s.shiftOpen ? 'var(--color-text-primary)' : 'white'"
+                  [style.border]="s.shiftOpen ? '1px solid var(--color-border)' : 'none'"
+                  style="height: 34px; padding: 0 14px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; cursor: pointer"
+                >
+                  {{
+                    (busyId() === s.id
+                      ? 'common.loading'
+                      : s.shiftOpen
+                        ? 'admin.kitchen.shift.finish'
+                        : 'admin.kitchen.shift.start'
+                    ) | translate
+                  }}
+                </button>
+              </div>
+            }
+
             @if (s.readiness && showReadiness(s)) {
               <app-store-readiness
                 [readiness]="s.readiness"
@@ -445,6 +479,7 @@ interface CardError {
 })
 export class StoresPage implements OnInit {
   private readonly api = inject(AdminCatalogApi);
+  private readonly kitchen = inject(KitchenApi);
   private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthStore);
   readonly activeBrand = inject(ActiveBrandService);
@@ -679,6 +714,26 @@ export class StoresPage implements OnInit {
       error: (err) => {
         this.busyId.set(null);
         this.setCardError(store.id, { text: storeErrorMessage(err, this.translate), offerClose: false });
+      },
+    });
+  }
+
+  /** "Start work" / "Finish work": the store takes orders only while a shift is open. */
+  setShift(store: StoreAdminDto, open: boolean): void {
+    if (!open && !confirm(this.translate.instant('admin.kitchen.shift.finishConfirm'))) return;
+    this.busyId.set(store.id);
+    this.clearCardError(store.id);
+    this.kitchen.setShift(store.id, open).subscribe({
+      next: (shift) => {
+        this.busyId.set(null);
+        this.stores.update((list) => list.map((s) => (s.id === store.id ? { ...s, shiftOpen: shift.open } : s)));
+      },
+      error: (err) => {
+        this.busyId.set(null);
+        this.setCardError(store.id, {
+          text: apiErrorMessage(err, this.translate, { network: 'common.networkError' }),
+          offerClose: false,
+        });
       },
     });
   }

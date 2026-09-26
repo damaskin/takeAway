@@ -123,7 +123,7 @@ class StoreTile extends StatelessWidget {
                     children: [
                       if (store.isOpen)
                         EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter, dense: true),
-                      StoreStatusBadge(status: store.effectiveStatus),
+                      StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
                       if (item.distanceMeters != null)
                         Text(
                           l10n.distanceAway(formatDistance(item.distanceMeters!, locale: locale)),

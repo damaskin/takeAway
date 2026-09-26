@@ -146,7 +146,7 @@ class BusinessPlate extends StatelessWidget {
                         ? EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter)
                         : Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            child: StoreStatusBadge(status: store.effectiveStatus),
+                            child: StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
                           ),
                   ),
                   const Spacer(),
@@ -175,6 +175,8 @@ class StoreNotice extends StatelessWidget {
     final brand = context.brand;
     final (String? text, Color color, IconData icon) = offline
         ? (l10n.offlineMenu, brand.textSecondary, Icons.cloud_off_rounded)
+        : store.isInactive
+        ? (l10n.storeInactiveBanner, brand.berry, Icons.do_not_disturb_on_rounded)
         : store.effectiveStatus == StoreStatus.closed
         ? (l10n.storeClosedBanner, brand.berry, Icons.nightlight_round)
         : store.effectiveStatus == StoreStatus.overloaded
