@@ -7,6 +7,11 @@ import type { TranslationTree } from './ru';
  */
 export const TRANSLATIONS_EN: TranslationTree = {
   common: {
+    storeInactive: {
+      badge: 'Not working',
+      title: 'This store is not taking orders right now',
+      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',

@@ -3,7 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot, StoreListItem } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -600,6 +600,22 @@ interface Step {
               }
             </section>
 
+            @if (storeInactive()) {
+              <div
+                role="status"
+                data-testid="store-inactive"
+                class="flex flex-col"
+                style="max-width: 500px; gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
+              >
+                <strong style="font-size: 14px; color: var(--color-espresso)">{{
+                  'common.storeInactive.title' | translate
+                }}</strong>
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'common.storeInactive.hint' | translate
+                }}</span>
+              </div>
+            }
+
             <button
               type="button"
               (click)="placeOrder()"
@@ -653,6 +669,8 @@ export class CheckoutPage implements OnInit {
    * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
    */
   readonly storeOpen = signal(true);
+  /** The store takes no orders at all right now: no shift started, or switched off. */
+  readonly storeInactive = signal(false);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
   /**
@@ -760,6 +778,7 @@ export class CheckoutPage implements OnInit {
     const c = this.cart();
     if (!c || c.items.length === 0) return false;
     if (!this.authStore.isAuthenticated()) return false;
+    if (this.storeInactive()) return false;
     if (this.mode() === 'SCHEDULED' && !this.scheduledAt()) return false;
     // Outside the serviceable radius — server will 400 anyway, stop the
     // customer at the button instead of letting them tap into an error.
@@ -803,6 +822,7 @@ export class CheckoutPage implements OnInit {
     this.storeTimezone.set(store.timezone ?? null);
     // `!== false`: an API that predates the field keeps ASAP available.
     this.storeOpen.set(store.openNow !== false);
+    this.storeInactive.set(isStoreInactive(store));
     if (!this.storeOpen()) this.selectMode('SCHEDULED');
     this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
     this.refreshFeeQuote();

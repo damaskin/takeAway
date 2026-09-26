@@ -6,6 +6,11 @@
  */
 export const TRANSLATIONS_RU = {
   common: {
+    storeInactive: {
+      badge: 'Не работает',
+      title: 'Точка сейчас не принимает заказы',
+      hint: 'Смена ещё не началась или уже закончилась. Выберите другую точку или загляните позже.',
+    },
     brand: 'takeAway',
     signIn: 'Войти',
     signOut: 'Выйти',
