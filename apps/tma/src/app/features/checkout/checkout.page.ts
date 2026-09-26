@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -451,6 +451,14 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   /** Card payments are only offered where ops enabled the bank integration. */
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /**
+   * `/config/features` answers after init, so a guard that read the flag once
+   * saw it off and never offered the customer's cards. Load them as soon as
+   * card payments turn out to be on.
+   */
+  private readonly loadCardsOnceEnabled = effect(() => {
+    if (this.cardPaymentsEnabled()) untracked(() => this.loadCards());
+  });
   readonly cards = signal<BoundCard[]>([]);
   readonly selectedCardId = signal<string | null>(null);
   readonly paying = signal(false);
@@ -495,7 +503,6 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     });
 
     this.flags.load();
-    this.loadCards();
 
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();

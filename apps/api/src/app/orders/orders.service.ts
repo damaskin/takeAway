@@ -354,6 +354,27 @@ export class OrdersService {
       'CREATED',
     );
 
+    // The board lists CREATED orders, and a card order now waits there on a
+    // hold until the kitchen accepts it — it never passes through PAID, where
+    // the other push lives. Announce it here, or the kitchen hears about it
+    // only on its next poll.
+    this.realtime.emitKdsOrderChanged({
+      storeId: order.storeId,
+      kind: 'created',
+      orderId: order.id,
+      order: {
+        id: order.id,
+        orderCode: order.orderCode,
+        status: order.status,
+        pickupMode: order.pickupMode,
+        pickupAt: order.pickupAt.toISOString(),
+        createdAt: order.createdAt.toISOString(),
+        customerName: order.customerName,
+        notes: order.notes,
+        items: order.items.map((i) => ({ productSnapshot: i.productSnapshot, quantity: i.quantity })),
+      },
+    });
+
     return this.toOrderDto(order);
   }
 

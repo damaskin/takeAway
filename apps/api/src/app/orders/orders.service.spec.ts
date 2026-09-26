@@ -201,11 +201,12 @@ function harness() {
   const receiptPdf = { render: jest.fn().mockResolvedValue(null) };
   const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
+  const realtime = { emitKdsOrderChanged: jest.fn() };
 
   const cart = new CartService(prisma as unknown as PrismaService, kitchen as unknown as KitchenLoadService);
   const service = new OrdersService(
     prisma as unknown as PrismaService,
-    {} as RealtimeGateway,
+    realtime as unknown as RealtimeGateway,
     {} as PromoService,
     loyalty as unknown as LoyaltyService,
     {} as ConfigService,
@@ -221,7 +222,7 @@ function harness() {
     {} as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail };
+  return { service, prisma, tx, mail, realtime };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -243,6 +244,28 @@ describe('OrdersService.create', () => {
     });
     expect(order.subtotalCents).toBe(1500);
     expect(order.items[0]?.productSnapshot).toEqual(LATTE_SNAPSHOT);
+  });
+
+  // A card order waits on the board as CREATED with a hold until the kitchen
+  // accepts it, so the PAID-time push never fires for it; without this one
+  // the kitchen learnt about the order only on its next poll.
+  it('announces the new order to the store kitchen right away', async () => {
+    const { service, prisma, realtime } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', placeOrder);
+
+    expect(realtime.emitKdsOrderChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'created',
+        orderId: 'order-1',
+        order: expect.objectContaining({
+          id: 'order-1',
+          status: 'CREATED',
+          items: [{ productSnapshot: LATTE_SNAPSHOT, quantity: 2 }],
+        }),
+      }),
+    );
   });
 
   it('keeps the name the customer gave at checkout', async () => {

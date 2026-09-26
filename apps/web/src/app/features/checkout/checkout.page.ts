@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -655,6 +655,14 @@ export class CheckoutPage implements OnInit {
   readonly storeOpen = signal(true);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /**
+   * `/config/features` answers after init, so a guard that read the flag once
+   * saw it off and never offered the customer's cards. Load them as soon as
+   * card payments turn out to be on.
+   */
+  private readonly loadCardsOnceEnabled = effect(() => {
+    if (this.cardPaymentsEnabled()) untracked(() => this.loadCards());
+  });
   readonly cards = signal<BoundCard[]>([]);
   /** `null` means "pay at the counter" — always an option, cards or not. */
   readonly selectedCardId = signal<string | null>(null);
@@ -761,7 +769,6 @@ export class CheckoutPage implements OnInit {
 
   ngOnInit(): void {
     this.flags.load();
-    this.loadCards();
 
     // Balance up front: the points section only renders when there is
     // enough to redeem, and an empty section is worse than none.
