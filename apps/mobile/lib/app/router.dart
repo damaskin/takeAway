@@ -21,6 +21,7 @@ import '../features/profile/payment_methods_screen.dart';
 import '../features/profile/personal_info_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/referrals_screen.dart';
+import '../features/profile/sign_in_methods_screen.dart';
 import '../features/stores/stores_screen.dart';
 import 'app_shell.dart';
 
@@ -39,6 +40,7 @@ abstract final class Routes {
   static String order(String id, {bool placed = false}) => placed ? '/order/$id?placed=1' : '/order/$id';
   static const personal = '/profile/personal';
   static const notifications = '/profile/notifications';
+  static const signInMethods = '/profile/sign-in';
   static const loyalty = '/profile/loyalty';
   static const referrals = '/profile/referrals';
   static const giftCards = '/profile/gift-cards';
@@ -53,6 +55,7 @@ const _signedInOnly = [
   '/order/',
   Routes.personal,
   Routes.notifications,
+  Routes.signInMethods,
   Routes.loyalty,
   Routes.referrals,
   Routes.giftCards,
@@ -95,6 +98,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 routes: [
                   GoRoute(path: 'personal', builder: (context, state) => const PersonalInfoScreen()),
                   GoRoute(path: 'notifications', builder: (context, state) => const NotificationsScreen()),
+                  GoRoute(path: 'sign-in', builder: (context, state) => const SignInMethodsScreen()),
                   GoRoute(path: 'loyalty', builder: (context, state) => const LoyaltyScreen()),
                   GoRoute(path: 'referrals', builder: (context, state) => const ReferralsScreen()),
                   GoRoute(path: 'gift-cards', builder: (context, state) => const GiftCardsScreen()),

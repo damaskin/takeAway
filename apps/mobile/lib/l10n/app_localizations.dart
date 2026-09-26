@@ -392,6 +392,66 @@ abstract class AppLocalizations {
   /// **'Could not sign in. Please try again.'**
   String get signInFailed;
 
+  /// No description provided for @signInMethodsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in methods'**
+  String get signInMethodsTitle;
+
+  /// No description provided for @signInMethodsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.'**
+  String get signInMethodsSubtitle;
+
+  /// No description provided for @signInMethodLinked.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get signInMethodLinked;
+
+  /// No description provided for @signInMethodNotLinked.
+  ///
+  /// In en, this message translates to:
+  /// **'Not connected'**
+  String get signInMethodNotLinked;
+
+  /// No description provided for @signInMethodLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get signInMethodLink;
+
+  /// No description provided for @signInMethodUnlink.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get signInMethodUnlink;
+
+  /// No description provided for @signInMethodUnlinkConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect {provider}?'**
+  String signInMethodUnlinkConfirm(String provider);
+
+  /// No description provided for @signInMethodUnlinkHint.
+  ///
+  /// In en, this message translates to:
+  /// **'You will no longer be able to sign in with {provider}.'**
+  String signInMethodUnlinkHint(String provider);
+
+  /// No description provided for @signInMethodSwitched.
+  ///
+  /// In en, this message translates to:
+  /// **'That account already had orders, so you are now in that profile.'**
+  String get signInMethodSwitched;
+
+  /// No description provided for @signInMethodIosOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'On iPhone'**
+  String get signInMethodIosOnly;
+
   /// No description provided for @telegramSignInFailed.
   ///
   /// In en, this message translates to:

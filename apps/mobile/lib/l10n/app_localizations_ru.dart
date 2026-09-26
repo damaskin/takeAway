@@ -177,6 +177,41 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signInFailed => 'Не удалось войти. Попробуйте ещё раз.';
 
   @override
+  String get signInMethodsTitle => 'Способы входа';
+
+  @override
+  String get signInMethodsSubtitle =>
+      'Подключите Telegram, Google и Apple к одному профилю, и заказы с баллами останутся с вами, как бы вы ни вошли.';
+
+  @override
+  String get signInMethodLinked => 'Подключён';
+
+  @override
+  String get signInMethodNotLinked => 'Не подключён';
+
+  @override
+  String get signInMethodLink => 'Подключить';
+
+  @override
+  String get signInMethodUnlink => 'Отключить';
+
+  @override
+  String signInMethodUnlinkConfirm(String provider) {
+    return 'Отключить $provider?';
+  }
+
+  @override
+  String signInMethodUnlinkHint(String provider) {
+    return 'Входить через $provider больше не получится.';
+  }
+
+  @override
+  String get signInMethodSwitched => 'У этого аккаунта уже были заказы, поэтому вы перешли в тот профиль.';
+
+  @override
+  String get signInMethodIosOnly => 'На iPhone';
+
+  @override
   String get telegramSignInFailed => 'Telegram не подтвердил вход. Попробуйте ещё раз.';
 
   @override

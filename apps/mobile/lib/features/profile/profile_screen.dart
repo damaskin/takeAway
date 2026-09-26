@@ -75,6 +75,11 @@ class ProfileScreen extends ConsumerWidget {
                     onTap: () => context.push(Routes.referrals),
                   ),
                   _Tile(
+                    icon: Icons.key_rounded,
+                    title: l10n.signInMethodsTitle,
+                    onTap: () => context.push(Routes.signInMethods),
+                  ),
+                  _Tile(
                     icon: Icons.notifications_none_rounded,
                     title: l10n.profileNotifications,
                     onTap: () => context.push(Routes.notifications),

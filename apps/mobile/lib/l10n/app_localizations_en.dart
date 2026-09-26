@@ -170,6 +170,41 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInFailed => 'Could not sign in. Please try again.';
 
   @override
+  String get signInMethodsTitle => 'Sign-in methods';
+
+  @override
+  String get signInMethodsSubtitle =>
+      'Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.';
+
+  @override
+  String get signInMethodLinked => 'Connected';
+
+  @override
+  String get signInMethodNotLinked => 'Not connected';
+
+  @override
+  String get signInMethodLink => 'Connect';
+
+  @override
+  String get signInMethodUnlink => 'Disconnect';
+
+  @override
+  String signInMethodUnlinkConfirm(String provider) {
+    return 'Disconnect $provider?';
+  }
+
+  @override
+  String signInMethodUnlinkHint(String provider) {
+    return 'You will no longer be able to sign in with $provider.';
+  }
+
+  @override
+  String get signInMethodSwitched => 'That account already had orders, so you are now in that profile.';
+
+  @override
+  String get signInMethodIosOnly => 'On iPhone';
+
+  @override
   String get telegramSignInFailed => 'Telegram didn\'t confirm the sign-in. Please try again.';
 
   @override

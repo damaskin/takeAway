@@ -50,6 +50,22 @@ abstract class TakeAwayApi {
   @PATCH('/auth/me')
   Future<AuthUser> updateMe(@Body() Map<String, dynamic> patch);
 
+  @GET('/auth/me/sign-in-methods')
+  Future<SignInMethods> signInMethods();
+
+  @POST('/auth/me/sign-in-methods/google')
+  Future<LinkSignInMethodResult> linkGoogle(@Body() OAuthLoginRequest body);
+
+  @POST('/auth/me/sign-in-methods/apple')
+  Future<LinkSignInMethodResult> linkApple(@Body() OAuthLoginRequest body);
+
+  @POST('/auth/me/sign-in-methods/telegram')
+  Future<LinkSignInMethodResult> linkTelegram(@Body() TelegramIdTokenRequest body);
+
+  /// [provider] is `google` or `apple`; Telegram cannot be unlinked.
+  @DELETE('/auth/me/sign-in-methods/{provider}')
+  Future<SignInMethods> unlinkSignInMethod(@Path('provider') String provider);
+
   @GET('/auth/me/notifications')
   Future<NotificationPrefs> notificationPrefs();
 

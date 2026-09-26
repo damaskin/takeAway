@@ -30,6 +30,9 @@ final telegramConfigProvider = FutureProvider<TelegramAuthConfig?>((ref) async {
   }
 });
 
+/// The three ways a customer can sign in.
+enum SignInProvider { telegram, google, apple }
+
 /// Which sign-in buttons this build can offer.
 class SignInOptions {
   const SignInOptions({required this.telegram, required this.google, required this.apple, required this.dev});
@@ -40,6 +43,12 @@ class SignInOptions {
   final bool dev;
 
   bool get any => telegram || google || apple || dev;
+
+  bool offers(SignInProvider provider) => switch (provider) {
+    SignInProvider.telegram => telegram,
+    SignInProvider.google => google,
+    SignInProvider.apple => apple,
+  };
 }
 
 final signInOptionsProvider = FutureProvider<SignInOptions>((ref) async {
@@ -70,19 +79,56 @@ class AuthService {
   /// it is installed, on Telegram's page otherwise. The API verifies the
   /// resulting ID token against Telegram's keys and our client id.
   Future<void> signInWithTelegram() async {
-    final config = await _ref.read(telegramConfigProvider.future);
-    if (config == null) throw StateError('Telegram sign-in is not configured');
-
-    final String idToken;
-    try {
-      idToken = await _ref.read(telegramLoginFactoryProvider)(config.clientId!).login();
-    } on TelegramLoginCancelled {
-      throw const SignInCancelled();
-    }
-    await _complete(await _api.signInWithTelegramIdToken(TelegramIdTokenRequest(idToken)));
+    await _complete(await _api.signInWithTelegramIdToken(TelegramIdTokenRequest(await _telegramIdToken())));
   }
 
   Future<void> signInWithGoogle() async {
+    await _complete(await _api.signInWithGoogle(await _googleCredential()));
+  }
+
+  Future<void> signInWithApple() async {
+    await _complete(await _api.signInWithApple(await _appleCredential()));
+  }
+
+  // ── Linking ───────────────────────────────────────────────────────────
+  //
+  // A customer who started in the Telegram Mini App has no email, so Google
+  // or Apple on the phone cannot find their profile by address. Linking
+  // from the profile screen joins the methods explicitly.
+
+  Future<SignInMethods> signInMethods() => _api.signInMethods();
+
+  Future<SignInMethods> link(SignInProvider provider) async {
+    final result = switch (provider) {
+      SignInProvider.telegram => await _api.linkTelegram(TelegramIdTokenRequest(await _telegramIdToken())),
+      SignInProvider.google => await _api.linkGoogle(await _googleCredential()),
+      SignInProvider.apple => await _api.linkApple(await _appleCredential()),
+    };
+    // The API moved this (empty) profile into the one the method already
+    // led to, where the order history is: continue as that customer.
+    final session = result.session;
+    if (session != null) await _complete(session);
+    return result.methods;
+  }
+
+  Future<SignInMethods> unlink(SignInProvider provider) {
+    assert(provider != SignInProvider.telegram, 'Telegram cannot be unlinked');
+    return _api.unlinkSignInMethod(provider.name);
+  }
+
+  // ── Provider credentials ──────────────────────────────────────────────
+
+  Future<String> _telegramIdToken() async {
+    final config = await _ref.read(telegramConfigProvider.future);
+    if (config == null) throw StateError('Telegram sign-in is not configured');
+    try {
+      return await _ref.read(telegramLoginFactoryProvider)(config.clientId!).login();
+    } on TelegramLoginCancelled {
+      throw const SignInCancelled();
+    }
+  }
+
+  Future<OAuthLoginRequest> _googleCredential() async {
     final google = GoogleSignIn.instance;
     if (!_googleReady) {
       await google.initialize(
@@ -104,10 +150,10 @@ class AuthService {
     }
     final idToken = account.authentication.idToken;
     if (idToken == null) throw StateError('Google returned no ID token');
-    await _complete(await _api.signInWithGoogle(OAuthLoginRequest(idToken: idToken)));
+    return OAuthLoginRequest(idToken: idToken);
   }
 
-  Future<void> signInWithApple() async {
+  Future<OAuthLoginRequest> _appleCredential() async {
     final AuthorizationCredentialAppleID credential;
     try {
       credential = await SignInWithApple.getAppleIDCredential(
@@ -121,7 +167,7 @@ class AuthService {
     if (idToken == null) throw StateError('Apple returned no identity token');
     // Apple reveals the name only on the very first consent.
     final name = [credential.givenName, credential.familyName].whereType<String>().join(' ').trim();
-    await _complete(await _api.signInWithApple(OAuthLoginRequest(idToken: idToken, name: name.isEmpty ? null : name)));
+    return OAuthLoginRequest(idToken: idToken, name: name.isEmpty ? null : name);
   }
 
   /// Debug builds against a local API only: the widget endpoint accepts an
