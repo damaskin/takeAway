@@ -80,6 +80,11 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
   },
   {
+    path: 'login/pin',
+    canMatch: [anonymousGuard],
+    loadComponent: () => import('./features/login/pin.page').then((m) => m.PinLoginPage),
+  },
+  {
     path: 'signup',
     canMatch: [anonymousGuard],
     loadComponent: () => import('./features/signup/signup.page').then((m) => m.SignupPage),

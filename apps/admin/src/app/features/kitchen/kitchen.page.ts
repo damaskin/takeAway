@@ -18,13 +18,14 @@ import {
   nextAction,
 } from '../../core/kitchen/kitchen-board';
 import { KitchenApi, type KitchenAction, type KitchenOrder } from '../../core/kitchen/kitchen.api';
+import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
+import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
+import { AuthService } from '../../core/auth/auth.service';
 import type { KitchenStore } from '../../core/kitchen/order-alerts.service';
 
 /** One line of a ticket: how many, and exactly what goes in the cup. */
 type TicketLine = OrderItemSnapshot & { quantity: number };
-
-const STORE_KEY = 'takeaway.admin.kitchenStoreId';
 
 const COLUMN_META: Record<KitchenColumn, { label: string; tint: string; text: string }> = {
   NEW: { label: 'kds.cols.new', tint: 'var(--color-caramel-light)', text: 'var(--color-caramel)' },
@@ -53,7 +54,7 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
   standalone: true,
   imports: [TranslatePipe],
   template: `
-    <section class="kitchen">
+    <section class="kitchen" [class.kitchen-dark]="mode.tablet()">
       <header class="kitchen-head">
         <div class="flex flex-col" style="gap: 4px">
           <h1 class="kitchen-title">{{ 'admin.kitchen.title' | translate }}</h1>
@@ -76,6 +77,24 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
             <strong>{{ orders().length }}</strong> {{ 'kds.topbar.inQueue' | translate }}
           </span>
           <span class="kitchen-clock">{{ clock() }}</span>
+          @if (mode.tablet()) {
+            <button
+              type="button"
+              class="kitchen-tool"
+              (click)="alerts.toggleSound()"
+              [attr.aria-pressed]="alerts.soundOn()"
+            >
+              {{ alerts.soundOn() ? '🔔' : '🔕' }}
+            </button>
+            <button type="button" class="kitchen-tool" (click)="mode.leave()">
+              {{ 'admin.kitchen.tablet.leave' | translate }}
+            </button>
+            <button type="button" class="kitchen-tool" (click)="signOut()">{{ 'common.signOut' | translate }}</button>
+          } @else {
+            <button type="button" class="kitchen-tool" (click)="mode.enter()">
+              {{ 'admin.kitchen.tablet.enter' | translate }}
+            </button>
+          }
           <span
             class="kitchen-live"
             [class.kitchen-live-off]="!realtime.connected()"
@@ -178,6 +197,32 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         flex-direction: column;
         gap: 16px;
         font-family: var(--font-sans);
+      }
+      .kitchen-dark {
+        --color-foam: #1c1817;
+        --color-espresso: #f8f3eb;
+        --color-text-primary: #f8f3eb;
+        --color-text-secondary: rgba(248, 243, 235, 0.7);
+        --color-text-tertiary: rgba(248, 243, 235, 0.5);
+        --color-border-light: #2a2523;
+        --color-border: #3a3430;
+        --color-surface-variant: #2a2523;
+        --color-caramel-light: #c77d3b33;
+        min-height: 100vh;
+        background: #0e0b0a;
+      }
+      .kitchen-dark .kitchen-note {
+        color: var(--color-amber);
+      }
+      .kitchen-tool {
+        height: 34px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border-light);
+        background: var(--color-foam);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--color-text-primary);
       }
       .kitchen-head {
         display: flex;
@@ -399,6 +444,9 @@ export class KitchenPage {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   readonly realtime = inject(KitchenRealtimeService);
+  readonly mode = inject(KitchenModeService);
+  readonly alerts = inject(OrderAlertsService);
+  private readonly auth = inject(AuthService);
 
   readonly columns = KITCHEN_COLUMNS;
   readonly stores = signal<KitchenStore[]>([]);
@@ -449,9 +497,20 @@ export class KitchenPage {
     this.destroyRef.onDestroy(() => this.detach?.());
   }
 
+  /** A tablet signs out back to the PIN screen, not the email form. */
+  signOut(): void {
+    this.auth.logout().subscribe({
+      complete: () => {
+        this.realtime.disconnect();
+        this.activeBrand.reset();
+        void this.router.navigate(['/login/pin']);
+      },
+    });
+  }
+
   pickStore(id: string): void {
     if (!this.stores().some((s) => s.id === id)) return;
-    remember(id);
+    write(KITCHEN_STORE_KEY, id);
     this.storeId.set(id);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { store: id }, replaceUrl: true });
   }
@@ -544,7 +603,7 @@ export class KitchenPage {
         this.stores.set(stores);
         this.loaded.set(true);
         this.error.set(null);
-        const wanted = [this.route.snapshot.queryParamMap.get('store'), this.storeId(), remembered()];
+        const wanted = [this.route.snapshot.queryParamMap.get('store'), this.storeId(), read(KITCHEN_STORE_KEY)];
         const start = wanted.map((id) => stores.find((s) => s.id === id)).find(Boolean) ?? stores[0] ?? null;
         this.storeId.set(start?.id ?? null);
       },
@@ -580,21 +639,5 @@ export class KitchenPage {
       },
       error: (err) => this.error.set(apiErrorMessage(err, this.translate, { network: 'common.networkError' })),
     });
-  }
-}
-
-function remembered(): string | null {
-  try {
-    return localStorage.getItem(STORE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function remember(id: string): void {
-  try {
-    localStorage.setItem(STORE_KEY, id);
-  } catch {
-    // Storage-disabled browsers: the board still works, it just forgets.
   }
 }

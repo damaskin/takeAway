@@ -43,6 +43,11 @@ export class KitchenApi {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
 
+  /** Every public store — what a tablet can be set up for before anyone signs in. */
+  publicStores(): Observable<Array<{ id: string; name: string; city: string }>> {
+    return this.http.get<Array<{ id: string; name: string; city: string }>>(`${this.api.baseUrl}/stores`);
+  }
+
   list(storeId: string): Observable<KitchenOrder[]> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.get<KitchenOrder[]>(`${this.api.baseUrl}/kds/orders`, { params });

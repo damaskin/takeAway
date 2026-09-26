@@ -8,6 +8,7 @@ import { filter } from 'rxjs/operators';
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { KitchenModeService } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
@@ -41,7 +42,11 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
     TranslatePipe,
   ],
   template: `
-    <div class="admin-shell flex min-h-screen" style="background: var(--color-cream); color: var(--color-text-primary)">
+    <div
+      class="admin-shell flex min-h-screen"
+      [class.admin-bare]="bare()"
+      style="background: var(--color-cream); color: var(--color-text-primary)"
+    >
       <!-- Sidebar (drawer on mobile) -->
       <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events,@angular-eslint/template/interactive-supports-focus -->
       <div class="admin-sidebar-wrap" [class.admin-sidebar-open]="sidebarOpen()" (click)="onSidebarTap($event)">
@@ -168,6 +173,11 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
       .admin-burger {
         display: none;
       }
+      /* Kitchen tablet mode: the board takes the whole screen. */
+      .admin-bare .admin-sidebar-wrap,
+      .admin-bare .admin-topbar {
+        display: none !important;
+      }
       .admin-backdrop {
         display: none;
       }
@@ -232,6 +242,10 @@ export class AdminLayoutPage implements OnInit {
   readonly isPlatformAdmin = computed(() => this.store.user()?.role === 'SUPER_ADMIN');
   /** True on the "whole project" page, where no single brand is in view. */
   readonly onPlatform = signal(false);
+  private readonly onKitchen = signal(false);
+  private readonly kitchenMode = inject(KitchenModeService);
+  /** The kitchen board in tablet mode hides the sidebar and the top bar. */
+  readonly bare = computed(() => this.onKitchen() && this.kitchenMode.tablet());
 
   readonly showBrandSelector = computed(() => this.isPlatformAdmin() || this.activeBrand.brands().length > 1);
   readonly singleBrandName = computed(() => {
@@ -244,9 +258,11 @@ export class AdminLayoutPage implements OnInit {
     // Auto-close the drawer on route change so tapping a sidebar link doesn't
     // leave the overlay covering the new page.
     this.onPlatform.set(this.router.url.startsWith('/platform'));
+    this.onKitchen.set(this.router.url.startsWith('/kitchen'));
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
       this.sidebarOpen.set(false);
       this.onPlatform.set(e.urlAfterRedirects.startsWith('/platform'));
+      this.onKitchen.set(e.urlAfterRedirects.startsWith('/kitchen'));
     });
   }
 

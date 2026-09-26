@@ -453,6 +453,7 @@ export const TRANSLATIONS_RU = {
   },
   admin: {
     login: {
+      kitchenPin: 'Вход для кухни по PIN',
       title: 'Вход в панель',
       subtitle: 'Для сотрудников бренда',
       passwordPrompt: 'Войдите по рабочему email и паролю',
@@ -817,6 +818,10 @@ export const TRANSLATIONS_RU = {
       pendingBadge: 'Ждут принятия: {{count}}',
       errors: {
         gone: 'Заказ уже изменился — доска обновлена.',
+      },
+      tablet: {
+        enter: 'Режим планшета',
+        leave: 'Выйти из режима планшета',
       },
       alerts: {
         new: 'Новый заказ',

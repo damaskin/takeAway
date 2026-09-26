@@ -35,6 +35,13 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
+  /** Kitchen tablet sign-in: a short PIN valid for one store. */
+  loginWithPin(storeId: string, pin: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin })
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
   forgotPassword(body: PasswordForgotRequest): Observable<void> {
     return this.http.post<void>(`${this.api.baseUrl}/auth/password/forgot`, body);
   }

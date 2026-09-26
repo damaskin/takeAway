@@ -450,6 +450,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
   },
   admin: {
     login: {
+      kitchenPin: 'Kitchen sign-in with a PIN',
       title: 'Sign in to admin',
       subtitle: 'Staff access only',
       passwordPrompt: 'Sign in with your work email and password',
@@ -818,6 +819,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pendingBadge: 'Waiting to be accepted: {{count}}',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
+      },
+      tablet: {
+        enter: 'Tablet mode',
+        leave: 'Leave tablet mode',
       },
       alerts: {
         new: 'New order',
