@@ -7,6 +7,7 @@ import { filter } from 'rxjs/operators';
 import { AuthStore } from '../core/auth/auth.store';
 import { BrandsService } from '../core/brands/brands.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
+import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
 
 import { ADMIN_ROLES, type AdminRole } from '../core/permissions/permissions';
 
@@ -20,7 +21,7 @@ interface NavItem {
   /** Role gate — item is hidden for users whose role is not in this list. */
   roles?: ReadonlyArray<AdminRole>;
   /** A live counter shown next to the label. */
-  badge?: 'pendingBrands';
+  badge?: 'pendingBrands' | 'pendingOrders';
 }
 
 /**
@@ -61,6 +62,14 @@ interface NavItem {
         >
           <span class="admin-nav-icon" style="font-size: 18px">{{ item.icon }}</span>
           <span class="flex-1">{{ item.label | translate }}</span>
+          @if (item.badge === 'pendingOrders' && pendingOrders(); as count) {
+            <span
+              class="admin-nav-badge admin-nav-badge-live"
+              [title]="'admin.kitchen.pendingBadge' | translate: { count: count }"
+              [attr.aria-label]="'admin.kitchen.pendingBadge' | translate: { count: count }"
+              >{{ count }}</span
+            >
+          }
           @if (item.badge === 'pendingBrands' && pendingBrands(); as count) {
             <span
               class="admin-nav-badge"
@@ -101,6 +110,9 @@ interface NavItem {
         line-height: 22px;
         text-align: center;
       }
+      .admin-nav-badge-live {
+        background: var(--color-berry);
+      }
     `,
   ],
 })
@@ -108,9 +120,12 @@ export class AdminSidebarComponent {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly authStore = inject(AuthStore);
   private readonly brands = inject(BrandsService);
+  private readonly orderAlerts = inject(OrderAlertsService);
 
   /** Brands waiting for a platform admin's decision; zero hides the badge. */
   readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
+  /** Orders nobody has accepted yet, across the brand's stores; zero hides it. */
+  readonly pendingOrders = computed(() => this.orderAlerts.pendingCount());
 
   constructor() {
     // New applications arrive while the platform admin works, so the count
@@ -129,6 +144,13 @@ export class AdminSidebarComponent {
 
   readonly navItems: NavItem[] = [
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
+    {
+      icon: '🔥',
+      label: 'admin.nav.kitchen',
+      link: '/kitchen',
+      roles: ADMIN_ROLES.kitchen,
+      badge: 'pendingOrders',
+    },
     { icon: '🍽', label: 'admin.nav.menu', link: '/menu', roles: ADMIN_ROLES.menu },
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores', roles: ADMIN_ROLES.stores },
     { icon: '🧾', label: 'admin.nav.orders', link: '/orders', roles: ADMIN_ROLES.orders },

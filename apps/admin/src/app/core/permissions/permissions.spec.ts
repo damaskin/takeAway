@@ -41,6 +41,7 @@ describe('permissions map', () => {
 
     it('lets STAFF reach the operational sections', () => {
       expect(canAccess('STAFF', 'orders')).toBe(true);
+      expect(canAccess('STAFF', 'kitchen')).toBe(true);
       expect(canAccess('STAFF', 'stores')).toBe(true);
     });
 
@@ -65,8 +66,8 @@ describe('permissions map', () => {
       expect(defaultLandingFor('STORE_MANAGER')).toBe('/dashboard');
     });
 
-    it('sends STAFF to orders (no dashboard access)', () => {
-      expect(defaultLandingFor('STAFF')).toBe('/orders');
+    it('sends STAFF straight to the kitchen board (no dashboard access)', () => {
+      expect(defaultLandingFor('STAFF')).toBe('/kitchen');
     });
 
     it('sends MENU_EDITOR to the menu', () => {

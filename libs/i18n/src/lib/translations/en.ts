@@ -600,6 +600,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     nav: {
       dashboard: 'Dashboard',
+      kitchen: 'Kitchen',
       menu: 'Menu',
       stores: 'Stores',
       orders: 'Orders',
@@ -803,6 +804,27 @@ export const TRANSLATIONS_EN: TranslationTree = {
       claim: 'Claim delivery',
       markOut: 'Picked up — heading to customer',
       markDelivered: 'Handed to customer',
+    },
+    kitchen: {
+      title: 'Kitchen',
+      subtitle: "The store's orders live: accept, start, hand over.",
+      store: 'Store',
+      live: 'Updating live',
+      offline: 'No live connection; the board refreshes every 30 seconds',
+      noStores: 'This brand has no stores you can run yet.',
+      working: 'One moment…',
+      pendingBadge: 'Waiting to be accepted: {{count}}',
+      errors: {
+        gone: 'The order has already changed — the board is refreshed.',
+      },
+      alerts: {
+        new: 'New order',
+        items: 'items: {{count}}',
+        open: 'To the kitchen',
+        systemTitle: 'New order {{code}}',
+        soundOn: 'New-order sound is on',
+        soundOff: 'New-order sound is off',
+      },
     },
     dashboard: {
       title: 'Welcome back{{name}}',

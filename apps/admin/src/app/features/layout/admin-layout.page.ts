@@ -8,8 +8,12 @@ import { filter } from 'rxjs/operators';
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
+import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 import { BrandStatusBannerComponent } from './brand-status-banner.component';
+import { OrderAlertsComponent } from './order-alerts.component';
 
 /** Roles with a name of their own under `admin.layout.role`. */
 const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER']);
@@ -32,6 +36,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
     FormsModule,
     AdminSidebarComponent,
     BrandStatusBannerComponent,
+    OrderAlertsComponent,
     LanguageSwitcherComponent,
     TranslatePipe,
   ],
@@ -116,6 +121,23 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
             >
           }
 
+          @if (hearsOrders()) {
+            <button
+              type="button"
+              class="admin-sound flex items-center justify-center"
+              (click)="orderAlerts.toggleSound()"
+              [attr.aria-pressed]="orderAlerts.soundOn()"
+              [title]="
+                (orderAlerts.soundOn() ? 'admin.kitchen.alerts.soundOn' : 'admin.kitchen.alerts.soundOff') | translate
+              "
+              [attr.aria-label]="
+                (orderAlerts.soundOn() ? 'admin.kitchen.alerts.soundOn' : 'admin.kitchen.alerts.soundOff') | translate
+              "
+              style="width: 38px; height: 38px; border-radius: 10px; font-size: 18px"
+            >
+              {{ orderAlerts.soundOn() ? '🔔' : '🔕' }}
+            </button>
+          }
           <app-language-switcher />
           <button
             type="button"
@@ -131,6 +153,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
           <app-brand-status-banner />
           <router-outlet />
         </main>
+        <app-order-alerts />
       </div>
     </div>
   `,
@@ -193,6 +216,11 @@ export class AdminLayoutPage implements OnInit {
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
   readonly activeBrand = inject(ActiveBrandService);
+  readonly orderAlerts = inject(OrderAlertsService);
+  private readonly realtime = inject(KitchenRealtimeService);
+
+  /** Roles that take orders on get the chime toggle; the others hear nothing anyway. */
+  readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
 
   readonly sidebarOpen = signal(false);
 
@@ -265,6 +293,7 @@ export class AdminLayoutPage implements OnInit {
   logout(): void {
     this.auth.logout().subscribe({
       complete: () => {
+        this.realtime.disconnect();
         this.activeBrand.reset();
         void this.router.navigate(['/login']);
       },

@@ -118,6 +118,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
       },
       {
+        path: 'kitchen',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'kitchen' satisfies NavKey },
+        loadComponent: () => import('./features/kitchen/kitchen.page').then((m) => m.KitchenPage),
+      },
+      {
         path: 'menu',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'menu' satisfies NavKey },

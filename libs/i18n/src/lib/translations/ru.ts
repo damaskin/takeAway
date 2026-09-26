@@ -601,6 +601,7 @@ export const TRANSLATIONS_RU = {
     },
     nav: {
       dashboard: 'Панель',
+      kitchen: 'Кухня',
       menu: 'Меню',
       stores: 'Точки',
       orders: 'Заказы',
@@ -802,6 +803,27 @@ export const TRANSLATIONS_RU = {
       claim: 'Взять в доставку',
       markOut: 'Забрал — еду к клиенту',
       markDelivered: 'Вручил клиенту',
+    },
+    kitchen: {
+      title: 'Кухня',
+      subtitle: 'Заказы точки в реальном времени: примите, начните, отдайте.',
+      store: 'Точка',
+      live: 'Обновляется в реальном времени',
+      offline: 'Нет связи в реальном времени, доска обновляется раз в 30 секунд',
+      noStores: 'У этого бренда пока нет точек, доступных вам.',
+      working: 'Секунду…',
+      pendingBadge: 'Ждут принятия: {{count}}',
+      errors: {
+        gone: 'Заказ уже изменился — доска обновлена.',
+      },
+      alerts: {
+        new: 'Новый заказ',
+        items: 'позиций: {{count}}',
+        open: 'На кухню',
+        systemTitle: 'Новый заказ {{code}}',
+        soundOn: 'Звук новых заказов включён',
+        soundOff: 'Звук новых заказов выключен',
+      },
     },
     dashboard: {
       title: 'С возвращением{{name}}',
