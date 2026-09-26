@@ -342,18 +342,6 @@ export class OrdersService {
       }),
     );
 
-    // Customer-facing push — "order received, awaiting payment".
-    void this.notifications.notifyOrderStatus(
-      {
-        id: order.id,
-        userId: order.userId,
-        orderCode: order.orderCode,
-        storeId: order.storeId,
-        fulfillmentType: order.fulfillmentType,
-      },
-      'CREATED',
-    );
-
     // An order that has to be paid by card reaches the kitchen once its hold
     // is in place — the payment service announces it then. Until that moment
     // it is a basket nobody has paid for, and there is no paying at the
@@ -761,18 +749,8 @@ export class OrdersService {
       updated.userId,
     );
 
-    // Fire-and-forget push. If Telegram/APNs/FCM are down this still
-    // returns the cancel result cleanly.
-    void this.notifications.notifyOrderStatus(
-      {
-        id: updated.id,
-        userId: updated.userId,
-        orderCode: updated.orderCode,
-        storeId: updated.storeId,
-        fulfillmentType: updated.fulfillmentType,
-      },
-      updated.status,
-    );
+    // No push: the customer cancelled it themselves, on the screen they are
+    // looking at. The live status above is all the confirmation they need.
 
     return this.toOrderDto(updated);
   }
