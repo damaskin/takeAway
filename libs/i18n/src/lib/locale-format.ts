@@ -74,6 +74,26 @@ export class LocaleFormatService {
   percent(value: number, options?: FormatPercentOptions): string {
     return formatPercent(value, this.lang(), options);
   }
+
+  /**
+   * «1 позиция», «3 позиции», «24 позиции». `key` names a group of
+   * `one` / `few` / `many` / `other` forms with `{{count}}` in them; the
+   * language's plural rules pick the form, so Russian gets all three.
+   */
+  plural(key: string, count: number): string {
+    return this.translate.instant(`${key}.${pluralRules(this.lang()).select(count)}`, { count });
+  }
+}
+
+const pluralRulesByLocale = new Map<AppLocale, Intl.PluralRules>();
+
+function pluralRules(locale: AppLocale): Intl.PluralRules {
+  let rules = pluralRulesByLocale.get(locale);
+  if (!rules) {
+    rules = new Intl.PluralRules(locale);
+    pluralRulesByLocale.set(locale, rules);
+  }
+  return rules;
 }
 
 /**
