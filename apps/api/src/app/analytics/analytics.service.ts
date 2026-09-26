@@ -6,6 +6,7 @@ import type { AnalyticsScope } from './analytics-scope';
 import {
   CohortStatsDto,
   DashboardSummaryDto,
+  OrderStatusStatsDto,
   RevenuePointDto,
   RevenueSeriesDto,
   StorePerformanceDto,
@@ -212,6 +213,50 @@ export class AnalyticsService {
    * The dashboard's KPI cards: the last `days` calendar days, today
    * included, each against the `days` before them.
    */
+  /**
+   * Where the orders stand: how many sit in each open status right now, and
+   * how the orders placed in the period ended up. `live` ignores the period
+   * on purpose — an order accepted yesterday and still on the board matters
+   * today.
+   */
+  async orderStatuses(scope: AnalyticsScope, days = 7): Promise<OrderStatusStatsDto> {
+    const base = orderScope(scope);
+    const [live, period] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ['status'],
+        where: { ...base, status: { in: LIVE_STATUSES } },
+        _count: { _all: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['status'],
+        where: { ...base, createdAt: { gte: periodStart(days) } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const liveCounts = countByStatus(live, LIVE_STATUSES);
+    const byStatus = countByStatus(period, Object.values(OrderStatus));
+    const total = Object.values(byStatus).reduce((sum, n) => sum + n, 0);
+    const completed = byStatus.PICKED_UP + byStatus.DELIVERED;
+    // Only orders that have finished one way or another count towards the
+    // rate; the ones still in the kitchen have not failed yet.
+    const settled = completed + byStatus.CANCELLED + byStatus.EXPIRED;
+
+    return {
+      days,
+      live: liveCounts,
+      liveTotal: Object.values(liveCounts).reduce((sum, n) => sum + n, 0),
+      period: {
+        total,
+        completed,
+        cancelled: byStatus.CANCELLED,
+        expired: byStatus.EXPIRED,
+        completionRatePercent: settled > 0 ? Math.round((completed / settled) * 1000) / 10 : null,
+        byStatus,
+      },
+    };
+  }
+
   async dashboardSummary(scope: AnalyticsScope, days = 7): Promise<DashboardSummaryDto> {
     const start = periodStart(days);
     const previousStart = new Date(start.getTime() - days * DAY_MS);
@@ -336,6 +381,28 @@ export class AnalyticsService {
 }
 
 /** The scope as a filter on live `Order` rows. */
+/** Statuses of an order that is still somebody's job. */
+const LIVE_STATUSES: OrderStatus[] = [
+  OrderStatus.CREATED,
+  OrderStatus.PAID,
+  OrderStatus.ACCEPTED,
+  OrderStatus.IN_PROGRESS,
+  OrderStatus.READY,
+  OrderStatus.OUT_FOR_DELIVERY,
+];
+
+/** Every requested status present, zero where nothing matched. */
+function countByStatus<S extends OrderStatus>(
+  rows: ReadonlyArray<{ status: OrderStatus; _count: { _all: number } }>,
+  statuses: readonly S[],
+): Record<S, number> {
+  const counts = Object.fromEntries(statuses.map((s) => [s, 0])) as Record<S, number>;
+  for (const row of rows) {
+    if ((statuses as readonly OrderStatus[]).includes(row.status)) counts[row.status as S] = row._count._all;
+  }
+  return counts;
+}
+
 function orderScope(scope: AnalyticsScope): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {};
   if (scope.storeIds) where.storeId = { in: [...scope.storeIds] };

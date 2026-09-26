@@ -55,6 +55,23 @@ export interface DashboardSummary {
   pickupDeltaSeconds: number | null;
 }
 
+/** Where the orders stand: open ones right now, and how the period ended up. */
+export interface OrderStatusStats {
+  days: number;
+  /** Open statuses only, each present, regardless of the period. */
+  live: Record<'CREATED' | 'PAID' | 'ACCEPTED' | 'IN_PROGRESS' | 'READY' | 'OUT_FOR_DELIVERY', number>;
+  liveTotal: number;
+  period: {
+    total: number;
+    completed: number;
+    cancelled: number;
+    expired: number;
+    /** Null until an order of the period has finished one way or another. */
+    completionRatePercent: number | null;
+    byStatus: Record<string, number>;
+  };
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnalyticsApi {
   private readonly http = inject(HttpClient);
@@ -83,6 +100,12 @@ export class AnalyticsApi {
   cohort(days = 30, brandId?: string | null): Observable<CohortStats> {
     return this.http.get<CohortStats>(`${this.api.baseUrl}/admin/analytics/cohort`, {
       params: params({ days, brandId }),
+    });
+  }
+
+  orderStatuses(brandId?: string | null, days = 7): Observable<OrderStatusStats> {
+    return this.http.get<OrderStatusStats>(`${this.api.baseUrl}/admin/analytics/order-statuses`, {
+      params: params({ brandId, days }),
     });
   }
 

@@ -9,6 +9,7 @@ import { AnalyticsService } from './analytics.service';
 import {
   CohortStatsDto,
   DashboardSummaryDto,
+  OrderStatusStatsDto,
   RevenueSeriesDto,
   StorePerformanceDto,
   TopProductDto,
@@ -38,6 +39,18 @@ export class AnalyticsController {
     @Query('days') days?: string,
   ): Promise<DashboardSummaryDto> {
     return this.analytics.dashboardSummary(await this.scopes.resolve(user, brandId), clamp(days, 1, 90, 7));
+  }
+
+  @Get('order-statuses')
+  @ApiQuery({ name: 'brandId', required: false, type: String })
+  @ApiQuery({ name: 'days', required: false, type: Number })
+  @ApiOkResponse({ type: OrderStatusStatsDto })
+  async orderStatuses(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('brandId') brandId?: string,
+    @Query('days') days?: string,
+  ): Promise<OrderStatusStatsDto> {
+    return this.analytics.orderStatuses(await this.scopes.resolve(user, brandId), clamp(days, 1, 90, 7));
   }
 
   @Get('revenue')

@@ -159,6 +159,14 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
         pickupDeltaSeconds: null,
       });
     }
+    if (path === '/admin/analytics/order-statuses') {
+      return json(route, {
+        days: 7,
+        live: { CREATED: 0, PAID: 1, ACCEPTED: 0, IN_PROGRESS: 1, READY: 0, OUT_FOR_DELIVERY: 0 },
+        liveTotal: 2,
+        period: { total: 4, completed: 3, cancelled: 1, expired: 0, completionRatePercent: 75, byStatus: {} },
+      });
+    }
     if (path.startsWith('/admin/orders')) return json(route, { items: [], total: 0 });
     if (path.startsWith('/admin/pos/status')) return json(route, { connections: [] });
 

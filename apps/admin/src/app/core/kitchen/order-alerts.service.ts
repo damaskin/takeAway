@@ -68,6 +68,9 @@ export class OrderAlertsService {
   readonly alerts = this._alerts.asReadonly();
   readonly stores = this._stores.asReadonly();
   readonly soundOn = signal(readSoundPreference());
+  /** Bumped on every order change in the watched stores, for pages that show live figures. */
+  private readonly _revision = signal(0);
+  readonly revision = this._revision.asReadonly();
 
   private detach: Array<() => void> = [];
   private resync: Subscription | null = null;
@@ -172,6 +175,7 @@ export class OrderAlertsService {
   }
 
   private onEvent(store: KitchenStore, event: KitchenOrderChanged): void {
+    this._revision.update((n) => n + 1);
     if (event.kind === 'removed') {
       this.forget(event.orderId);
       return;
