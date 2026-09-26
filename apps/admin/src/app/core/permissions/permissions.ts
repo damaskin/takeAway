@@ -11,7 +11,9 @@
 export type AdminRole = 'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'MENU_EDITOR' | 'STAFF' | 'RIDER';
 
 export type NavKey =
+  | 'platform'
   | 'dashboard'
+  | 'kitchen'
   | 'menu'
   | 'stores'
   | 'orders'
@@ -36,7 +38,12 @@ const ST = 'STAFF' as const;
 export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // Dashboard surfaces revenue + NPS — financial stats, so kitchen STAFF
   // is excluded. STORE_MANAGER keeps it as an operational shift summary.
+  // Every brand of the platform at once — the platform admin's own view.
+  platform: [SA],
   dashboard: [SA, BA, SM],
+  // The order board the standalone kitchen app used to be: everyone who
+  // takes orders on, kitchen STAFF included.
+  kitchen: [SA, BA, SM, ST],
   menu: [SA, BA, SM, ME],
   stores: [SA, BA, SM, ST],
   orders: [SA, BA, SM, ST],
@@ -63,7 +70,7 @@ export function canAccess(role: AdminRole | undefined | null, key: NavKey): bool
 /** First nav section accessible to the given role — used as a landing fallback. */
 export function defaultLandingFor(role: AdminRole | undefined | null): string {
   if (!role) return '/login';
-  const order: NavKey[] = ['dashboard', 'orders', 'menu', 'stores', 'analytics', 'settings'];
+  const order: NavKey[] = ['platform', 'dashboard', 'kitchen', 'orders', 'menu', 'stores', 'analytics', 'settings'];
   for (const k of order) {
     if (canAccess(role, k)) return navLink(k);
   }
@@ -71,7 +78,9 @@ export function defaultLandingFor(role: AdminRole | undefined | null): string {
 }
 
 const NAV_LINKS: Record<NavKey, string> = {
+  platform: '/platform',
   dashboard: '/dashboard',
+  kitchen: '/kitchen',
   menu: '/menu',
   stores: '/stores',
   orders: '/orders',

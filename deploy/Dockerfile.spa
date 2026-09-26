@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Universal Angular SPA Dockerfile for this monorepo.
-# Pass --build-arg APP_NAME=web|admin|kds|tma.
+# Pass --build-arg APP_NAME=web|admin|tma.
 #
 # The final image only contains the built static assets under /dist.
 # It's not meant to run as a service — the deploy script extracts /dist

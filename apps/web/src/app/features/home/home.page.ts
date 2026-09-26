@@ -3,6 +3,7 @@ import { Component, Injector, OnInit, afterNextRender, inject, signal } from '@a
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { TranslatePipe } from '@ngx-translate/core';
+import { BrandLogoComponent } from '@takeaway/ui-kit';
 
 import { categoryIcon } from '../../core/catalog/category-icon';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -29,7 +30,7 @@ interface FooterLink {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, BrandLogoComponent],
   template: `
     <!-- Hero — pencil SNCQE. The design's closing banner; it opens the page. -->
     <section
@@ -299,9 +300,7 @@ interface FooterLink {
     >
       <div class="flex items-start justify-between flex-wrap" style="gap: 32px">
         <div class="flex flex-col" style="max-width: 280px; gap: 16px">
-          <span style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-caramel)"
-            >takeAway</span
-          >
+          <lib-brand-logo [size]="28" style="align-self: flex-start" />
           <p style="font-family: var(--font-sans); font-size: 14px; line-height: 1.6; color: rgba(248,243,235,0.6)">
             {{ 'web.home.footer.tagline' | translate }}<br />{{ 'web.home.footer.taglineMore' | translate }}
           </p>

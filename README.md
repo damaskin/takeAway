@@ -53,8 +53,7 @@ takeaway/
 │   ├── api/              NestJS backend (Fastify + Prisma)
 │   ├── web/              Angular web + PWA
 │   ├── tma/              Angular Telegram Mini App
-│   ├── admin/            Angular back office
-│   ├── kds/              Angular kitchen display
+│   ├── admin/            Angular business cabinet + platform admin (kitchen board inside)
 │   └── mobile/           Flutter (v2 — not in this milestone)
 ├── libs/
 │   ├── shared-types/     Cross-app DTOs and enums
@@ -89,7 +88,6 @@ pnpm nx serve api       # backend on http://localhost:3000/api
 pnpm nx serve web       # web on http://localhost:4200
 pnpm nx serve tma       # telegram mini app
 pnpm nx serve admin     # admin
-pnpm nx serve kds       # kds
 ```
 
 Swagger UI: http://localhost:3000/api/docs

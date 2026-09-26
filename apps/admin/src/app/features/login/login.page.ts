@@ -74,6 +74,12 @@ import { AuthService } from '../../core/auth/auth.service';
         @if (error()) {
           <p class="mt-4 text-sm" style="color: var(--color-berry)">{{ error() }}</p>
         }
+
+        <p class="mt-6 text-sm text-center">
+          <a routerLink="/login/pin" style="color: var(--color-text-secondary); text-decoration: underline">
+            {{ 'admin.login.kitchenPin' | translate }}
+          </a>
+        </p>
       </section>
     </main>
   `,

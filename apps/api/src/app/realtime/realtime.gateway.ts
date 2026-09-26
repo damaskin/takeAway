@@ -161,8 +161,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /**
    * Dispatcher clients (admins + store managers) subscribe to the delivery
-   * queue for their store. Only staff-level roles pass — RIDER and CUSTOMER
-   * get {ok:false}.
+   * queue of a store within their scope. RIDER and CUSTOMER get {ok:false}.
    */
   @SubscribeMessage('dispatch.subscribe')
   async subscribeToDispatch(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
@@ -176,6 +175,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!user || !['STORE_MANAGER', 'BRAND_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
       return { ok: false };
     }
+    // The same store scope as the kitchen feed: the role alone let a manager
+    // of one brand follow another brand's delivery queue.
+    const scope = await this.stores.getScope(userId, user.role);
+    if (scope !== '*' && !scope.includes(body.storeId)) return { ok: false };
     await client.join(this.dispatchRoom(body.storeId));
     return { ok: true };
   }

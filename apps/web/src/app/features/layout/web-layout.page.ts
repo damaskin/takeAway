@@ -3,6 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { BrandLogoComponent } from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { filter, map } from 'rxjs';
 
@@ -19,7 +20,7 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
 @Component({
   selector: 'app-web-layout',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, TranslatePipe, LanguageSwitcherComponent],
+  imports: [RouterOutlet, RouterLink, TranslatePipe, LanguageSwitcherComponent, BrandLogoComponent],
   template: `
     <div class="min-h-screen flex flex-col" style="background: var(--color-cream); color: var(--color-text-primary)">
       <header
@@ -44,10 +45,7 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
               <span style="font-size: 22px; line-height: 1">{{ mobileNavOpen() ? '✕' : '☰' }}</span>
             </button>
             <a routerLink="/" class="flex items-center gap-2" (click)="closeMobileNav()">
-              <span
-                style="font-family: var(--font-display); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
-                >{{ 'common.brand' | translate }}</span
-              >
+              <lib-brand-logo class="web-brand-logo" [size]="24" />
             </a>
           </div>
 
@@ -194,6 +192,9 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
       @media (max-width: 480px) {
         .web-nav-right {
           gap: 6px !important;
+        }
+        .web-brand-logo {
+          --lib-brand-logo-size: 20px !important;
         }
       }
     `,

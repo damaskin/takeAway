@@ -1,12 +1,20 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
-import { AnalyticsApi, type DashboardSummary, type StorePerformance } from '../../core/analytics/analytics.service';
+import {
+  AnalyticsApi,
+  type DashboardSummary,
+  type OrderStatusStats,
+  type StorePerformance,
+} from '../../core/analytics/analytics.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
+import { OrderStatusPanelComponent } from '../../shared/order-status-panel.component';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 
 interface KpiCard {
@@ -40,7 +48,7 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent],
+  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent, OrderStatusPanelComponent],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -106,6 +114,9 @@ interface DashboardOrder {
           </article>
         }
       </div>
+
+      <!-- Where the orders stand: open ones now, and how the period ended up -->
+      <app-order-status-panel [stats]="statuses()" [days]="days()" [kitchenLink]="canSeeKitchen()" />
 
       <!-- Two-column body -->
       <div class="dashboard-body grid" style="grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px">
@@ -228,6 +239,10 @@ export class DashboardPage {
   readonly summary = signal<DashboardSummary | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
   readonly storePerfRaw = signal<StorePerformance[]>([]);
+  readonly statuses = signal<OrderStatusStats | null>(null);
+
+  private readonly alerts = inject(OrderAlertsService);
+  readonly canSeeKitchen = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
 
   readonly kpis = computed<KpiCard[]>(() => {
     const s = this.summary();
@@ -292,11 +307,19 @@ export class DashboardPage {
   constructor() {
     // The numbers belong to the brand picked in the header — a brand owner's
     // own, or whichever one a platform admin is looking at — and follow it.
+    // Live figures also follow the kitchen feed: every order change in the
+    // brand's stores re-reads them, so the page never needs a refresh.
     effect(() => {
       const brandId = this.activeBrand.activeId();
+      const days = this.days();
+      this.alerts.revision();
       if (!brandId) return;
-      this.orders.list({ take: 10, brandId }).subscribe({
-        next: (list) => this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
+      untracked(() => {
+        this.orders.list({ take: 10, brandId }).subscribe({
+          next: (list) =>
+            this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
+        });
+        this.analytics.orderStatuses(brandId, days).subscribe({ next: (stats) => this.statuses.set(stats) });
       });
     });
     // The KPI cards and the store list cover the period picked in the header.

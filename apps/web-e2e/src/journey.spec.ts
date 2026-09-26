@@ -164,7 +164,7 @@ test.describe('customer journey', () => {
     await page.getByRole('button', { name: /add to cart/i }).click();
     await page.goto('/checkout?store=dubai-marina');
 
-    // 18.00 subtotal, so the total starts there (tax is inside the price).
+    // 18 AED subtotal, so the total starts there (tax is inside the price).
     await expect(page.getByText('18 AED').first()).toBeVisible();
 
     await expect(page.getByText(/500 points available/i)).toBeVisible();
@@ -174,7 +174,7 @@ test.describe('customer journey', () => {
     await page.getByTestId('points-apply').click();
 
     await expect(page.getByText(/500 points applied/i)).toBeVisible();
-    // 500 points at a cent each is 5.00 off.
+    // 500 points at a cent each is 5 AED off.
     await expect(page.getByText('13 AED').first()).toBeVisible();
 
     await placeOrder(page).click();
