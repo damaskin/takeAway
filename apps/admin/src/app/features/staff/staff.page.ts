@@ -14,11 +14,12 @@ import {
 } from '../../core/staff/staff.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { StoreKitchenAccessComponent } from '../stores/store-kitchen-access.component';
 
 @Component({
   selector: 'app-admin-staff',
   standalone: true,
-  imports: [LocalDatePipe, ReactiveFormsModule, TranslatePipe],
+  imports: [LocalDatePipe, ReactiveFormsModule, StoreKitchenAccessComponent, TranslatePipe],
   template: `
     <section style="padding: 32px; max-width: 980px">
       <h1 style="font-family: var(--font-display); font-size: 28px; color: var(--color-espresso); margin: 0 0 8px">
@@ -262,6 +263,20 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
               </ul>
             }
           </div>
+
+          <!-- Kitchen PINs: the tablet sign-in for the people listed above -->
+          <section
+            aria-labelledby="staff-kitchen-pins"
+            style="background: var(--color-foam); border-radius: var(--radius-card); padding: 20px; box-shadow: var(--shadow-soft)"
+          >
+            <h2
+              id="staff-kitchen-pins"
+              style="font-family: var(--font-display); font-size: 18px; color: var(--color-espresso); margin: 0 0 12px"
+            >
+              {{ 'admin.staff.kitchenPins' | translate }}
+            </h2>
+            <app-store-kitchen-access [storeId]="selectedStoreId()!" [showStaffLink]="false" [reloadOn]="roster()" />
+          </section>
 
           <!-- Add form -->
           <form
