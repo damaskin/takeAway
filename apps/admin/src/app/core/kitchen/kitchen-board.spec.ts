@@ -74,4 +74,29 @@ describe('kitchen board', () => {
       expect(applyKitchenEvent(board, { storeId: 's', kind: 'updated', orderId: 'a', order: null })).toBeNull();
     });
   });
+
+  it("keeps the customer's arrival when an update arrives without it", () => {
+    const here = {
+      ...order('a', 'ACCEPTED'),
+      customerArrival: 'HERE' as const,
+      customerArrivedAt: '2026-09-26T09:58:00Z',
+    };
+    const next = applyKitchenEvent([here], {
+      storeId: 's',
+      kind: 'created',
+      orderId: 'a',
+      order: order('a', 'IN_PROGRESS'),
+    });
+    expect(next?.[0]).toMatchObject({ status: 'IN_PROGRESS', customerArrival: 'HERE' });
+  });
+
+  it('takes the arrival from a row that carries it', () => {
+    const next = applyKitchenEvent([order('a', 'ACCEPTED')], {
+      storeId: 's',
+      kind: 'updated',
+      orderId: 'a',
+      order: { ...order('a', 'ACCEPTED'), customerArrival: 'NEARBY', customerArrivedAt: '2026-09-26T09:58:00Z' },
+    });
+    expect(next?.[0]?.customerArrival).toBe('NEARBY');
+  });
 });

@@ -17,11 +17,24 @@ export interface KitchenOrder {
   createdAt: string;
   customerName: string | null;
   notes: string | null;
+  /** HERE once the customer tapped "I'm here" (or walked in), NEARBY when close. Absent from older API builds. */
+  customerArrival?: 'NEARBY' | 'HERE' | null;
+  customerArrivedAt?: string | null;
   items: Array<{
     /** Raw `OrderItem.productSnapshot`; read it with `readOrderItemSnapshot`. */
     productSnapshot: unknown;
     quantity: number;
   }>;
+}
+
+/** `GET /kds/shift` — whether the store is working, i.e. takes orders. */
+export interface StoreShift {
+  storeId: string;
+  open: boolean;
+  openedAt: string | null;
+  openedByName: string | null;
+  closedAt: string | null;
+  closedByName: string | null;
 }
 
 export type KitchenAction = 'accept' | 'start' | 'ready' | 'pickedUp';
@@ -51,6 +64,17 @@ export class KitchenApi {
   list(storeId: string): Observable<KitchenOrder[]> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.get<KitchenOrder[]>(`${this.api.baseUrl}/kds/orders`, { params });
+  }
+
+  shift(storeId: string): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.get<StoreShift>(`${this.api.baseUrl}/kds/shift`, { params });
+  }
+
+  /** "Start work" (`open`) or "Finish work" (`close`) at the store. */
+  setShift(storeId: string, open: boolean): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.post<StoreShift>(`${this.api.baseUrl}/kds/shift/${open ? 'open' : 'close'}`, {}, { params });
   }
 
   run(action: KitchenAction, storeId: string, orderId: string): Observable<{ id: string; status: string }> {

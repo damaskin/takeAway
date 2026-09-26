@@ -9,3 +9,4 @@ export * from './lib/leaflet-map/leaflet-map.component';
 export * from './lib/observability/sentry.providers';
 export * from './lib/version-badge/version-badge.component';
 export * from './lib/brand-logo/brand-logo.component';
+export * from './lib/store-logo/store-logo.component';

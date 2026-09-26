@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
@@ -115,7 +115,21 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             {{ 'tma.checkout.schedule' | translate }}
           </button>
         </div>
-        @if (!storeOpen()) {
+        @if (storeInactive()) {
+          <div
+            role="status"
+            data-testid="store-inactive"
+            class="flex flex-col"
+            style="gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
+          >
+            <strong style="font-size: 14px; color: var(--color-espresso)">{{
+              'common.storeInactive.title' | translate
+            }}</strong>
+            <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+              'common.storeInactive.hint' | translate
+            }}</span>
+          </div>
+        } @else if (!storeOpen()) {
           <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
             'tma.checkout.closedNow' | translate
           }}</span>
@@ -475,6 +489,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
    * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
    */
   readonly storeOpen = signal(true);
+  /** The store takes no orders at all right now: no shift started, or switched off. */
+  readonly storeInactive = signal(false);
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
@@ -546,6 +562,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.storeTimezone.set(store.timezone ?? null);
         // `!== false`: an API that predates the field keeps ASAP available.
         this.storeOpen.set(store.openNow !== false);
+        this.storeInactive.set(isStoreInactive(store));
         if (!this.storeOpen()) {
           this.pickupMode.set('SCHEDULED');
           this.loadSlots();
@@ -756,7 +773,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   refreshMainButton(): void {
     const c = this.cart();
-    if (!c || c.items.length === 0 || !this.authStore.isAuthenticated()) {
+    if (!c || c.items.length === 0 || !this.authStore.isAuthenticated() || this.storeInactive()) {
       this.tg.hideMainButton();
       return;
     }

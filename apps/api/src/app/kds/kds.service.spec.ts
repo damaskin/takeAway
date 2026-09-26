@@ -125,6 +125,7 @@ describe('KdsService.listOpen', () => {
       customerName: null,
       notes: null,
       items: [],
+      events: [],
       totalCents: 3000,
     };
     const prisma = {

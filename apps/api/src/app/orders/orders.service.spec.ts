@@ -179,6 +179,7 @@ function harness() {
         brandId: 'brand-a',
         status: 'OPEN',
         brand: { moderationStatus: 'APPROVED' },
+        shifts: [{ id: 'shift-1' }],
       }),
     },
     stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
@@ -251,6 +252,23 @@ describe('OrdersService.create', () => {
   // A card order waits on the board as CREATED with a hold until the kitchen
   // accepts it, so the PAID-time push never fires for it; without this one
   // the kitchen learnt about the order only on its next poll.
+  it('refuses the order while nobody has started a shift at the store', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.store.findUnique.mockResolvedValueOnce({
+      brandId: 'brand-a',
+      status: 'OPEN',
+      brand: { moderationStatus: 'APPROVED' },
+      shifts: [],
+    });
+
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({ code: 'STORE_NOT_TAKING_ORDERS' }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
   it('announces the new order to the store kitchen right away', async () => {
     const { service, prisma, realtime } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));

@@ -39,19 +39,24 @@ class EtaChip extends StatelessWidget {
 }
 
 class StoreStatusBadge extends StatelessWidget {
-  const StoreStatusBadge({required this.status, super.key});
+  const StoreStatusBadge({required this.status, this.notWorking = false, super.key});
 
   final StoreStatus status;
+
+  /// No shift is running: the store takes no orders at all right now.
+  final bool notWorking;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
-    final (label, color) = switch (status) {
-      StoreStatus.open => (l10n.storeStatusOpen, brand.mint),
-      StoreStatus.overloaded => (l10n.storeStatusBusy, brand.amber),
-      StoreStatus.closed || StoreStatus.unknown => (l10n.storeStatusClosed, brand.berry),
-    };
+    final (label, color) = notWorking
+        ? (l10n.storeStatusNotWorking, brand.berry)
+        : switch (status) {
+            StoreStatus.open => (l10n.storeStatusOpen, brand.mint),
+            StoreStatus.overloaded => (l10n.storeStatusBusy, brand.amber),
+            StoreStatus.closed || StoreStatus.unknown => (l10n.storeStatusClosed, brand.berry),
+          };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

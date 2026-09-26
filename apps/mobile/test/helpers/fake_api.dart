@@ -22,6 +22,9 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// False = switched on but outside working hours, as the API reports it.
   bool storeOpenNow = true;
 
+  /// Stores listed after the default one, as API JSON.
+  List<Map<String, dynamic>> moreStores = [];
+
   /// Latency of reading the cart; the reply is the cart as it was when asked.
   Duration cartDelay = Duration.zero;
 
@@ -35,6 +38,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   static const storeJson = <String, dynamic>{
     'id': 'st_1',
     'brandId': 'br_1',
+    'brandName': 'NoName Coffee',
+    'logoUrl': null,
     'slug': 'noname-center',
     'name': 'NoName — центр',
     'addressLine': 'ул. 25 Октября, 94',
@@ -228,6 +233,7 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
     Store.fromJson({...storeJson, 'openNow': storeOpenNow}),
+    for (final json in moreStores) Store.fromJson(json),
   ];
 
   @override

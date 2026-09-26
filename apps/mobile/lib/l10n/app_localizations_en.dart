@@ -203,6 +203,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeStatusClosed => 'Closed';
 
   @override
+  String get storeStatusNotWorking => 'Not working';
+
+  @override
   String get orderHere => 'Order here';
 
   @override
@@ -219,13 +222,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chooseStoreTitle => 'Where are you picking up?';
 
   @override
-  String get chooseStoreSubtitle => 'Choose a store and we will show its menu and how soon your order can be ready.';
+  String get chooseStoreSubtitle =>
+      'Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.';
+
+  @override
+  String get changeStore => 'Change';
+
+  @override
+  String get storesInactiveTitle => 'Not taking orders right now';
+
+  @override
+  String get storesNoneActive => 'No store is taking orders right now. Check back a little later.';
 
   @override
   String get storeClosedBanner => 'Closed right now — you can still schedule for later.';
 
   @override
   String get storeBusyBanner => 'The kitchen is busy — orders take a little longer.';
+
+  @override
+  String get storeInactiveBanner =>
+      'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.';
 
   @override
   String get openingHours => 'Opening hours';
@@ -252,9 +269,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Could not load the menu.';
-
-  @override
-  String get changeStore => 'Change';
 
   @override
   String addedToCart(String name) {

@@ -15,7 +15,8 @@ void main() {
     final h = await pumpApp(tester);
 
     expect(find.textContaining('Иван'), findsWidgets, reason: 'greeting uses the first name');
-    expect(find.text('NoName — центр'), findsOneWidget);
+    expect(find.text('NoName Coffee'), findsOneWidget, reason: 'the business plate names the brand');
+    expect(find.textContaining('NoName — центр'), findsOneWidget);
     expect(find.text('Кофе'), findsWidgets);
     expect(find.text('Латте'), findsOneWidget);
     expect(find.text('20 MDL'), findsOneWidget);

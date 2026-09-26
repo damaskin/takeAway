@@ -417,18 +417,26 @@ export class CartService {
   }
 
   /**
-   * The store exists, is not switched off, and its brand passed moderation.
+   * The store exists, is not switched off, its brand passed moderation and,
+   * when `requireShift` is set, staff have started a shift there. The shift is
+   * checked on the order path only: a customer may still fill a basket at an
+   * inactive store, but cannot send an order nobody is there to take.
    * The catalog only hides the rest; a direct link, a QR code or an old cart
    * could still order from a closed store or an unapproved brand. Returns
    * the store's brand id.
    */
-  async assertStoreTakesOrders(storeId: string): Promise<string> {
+  async assertStoreTakesOrders(storeId: string, { requireShift = false } = {}): Promise<string> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: { brandId: true, status: true, brand: { select: { moderationStatus: true } } },
+      select: {
+        brandId: true,
+        status: true,
+        brand: { select: { moderationStatus: true } },
+        shifts: { where: { closedAt: null }, select: { id: true }, take: 1 },
+      },
     });
     if (!store || store.brand.moderationStatus !== 'APPROVED') throw new NotFoundException('Store not found');
-    if (store.status === 'CLOSED') {
+    if (store.status === 'CLOSED' || (requireShift && store.shifts.length === 0)) {
       throw checkoutError('STORE_NOT_TAKING_ORDERS', 'This store is not taking orders right now');
     }
     return store.brandId;
