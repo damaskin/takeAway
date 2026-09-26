@@ -60,6 +60,13 @@ export class StoreListItemDto {
 
   @ApiProperty({
     description:
+      'True while the store takes orders at all: it is not closed and staff have started a shift ' +
+      '("Start work"). False means the store is shown as inactive and checkout is refused.',
+  })
+  acceptingOrders!: boolean;
+
+  @ApiProperty({
+    description:
       'True when an ASAP order placed now would be accepted: the store is not closed and is still within ' +
       'its working hours (store timezone) once the current ETA has passed. False means scheduled pickup only.',
   })

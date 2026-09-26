@@ -89,7 +89,7 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
-    await this.cart.assertStoreTakesOrders(cart.storeId);
+    await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
