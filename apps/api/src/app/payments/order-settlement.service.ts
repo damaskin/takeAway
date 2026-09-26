@@ -129,8 +129,6 @@ export class OrderSettlementService {
       storeId: order.storeId,
       fulfillmentType: order.fulfillmentType,
     };
-    // Customer-facing push — "payment confirmed".
-    void this.notifications.notifyOrderStatus(orderLike, 'PAID');
     // Brand-staff push — BRAND_ADMIN + STORE_MANAGER/STAFF assigned to the
     // store, so they aren't waiting on the polling dashboard.
     void this.notifications.notifyBrandStaffNewOrder(orderLike);
