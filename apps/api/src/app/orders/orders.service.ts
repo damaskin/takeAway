@@ -354,10 +354,13 @@ export class OrdersService {
       'CREATED',
     );
 
-    // The board lists CREATED orders, and a card order now waits there on a
-    // hold until the kitchen accepts it — it never passes through PAID, where
-    // the other push lives. Announce it here, or the kitchen hears about it
-    // only on its next poll.
+    // An order that has to be paid by card reaches the kitchen once its hold
+    // is in place — the payment service announces it then. Until that moment
+    // it is a basket nobody has paid for, and there is no paying at the
+    // counter any more to fall back on. Only an order with nothing to pay is
+    // announced straight away.
+    if (this.holds.cardPaymentRequired(order)) return this.toOrderDto(order);
+
     this.realtime.emitKdsOrderChanged({
       storeId: order.storeId,
       kind: 'created',
