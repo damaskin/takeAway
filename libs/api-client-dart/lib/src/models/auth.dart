@@ -145,3 +145,30 @@ class RefreshRequest {
 
   Map<String, dynamic> toJson() => _$RefreshRequestToJson(this);
 }
+
+/// Which of Telegram, Google and Apple lead into the signed-in profile.
+@JsonSerializable(createToJson: false)
+class SignInMethods {
+  const SignInMethods({required this.telegram, required this.google, required this.apple});
+
+  factory SignInMethods.fromJson(Map<String, dynamic> json) => _$SignInMethodsFromJson(json);
+
+  final bool telegram;
+  final bool google;
+  final bool apple;
+
+  int get count => [telegram, google, apple].where((linked) => linked).length;
+}
+
+/// Result of linking a sign-in method. [session] is set when the customer
+/// was moved into the profile that method already belonged to (the one with
+/// the order history): the app must switch to it.
+@JsonSerializable(createToJson: false)
+class LinkSignInMethodResult {
+  const LinkSignInMethodResult({required this.methods, this.session});
+
+  factory LinkSignInMethodResult.fromJson(Map<String, dynamic> json) => _$LinkSignInMethodResultFromJson(json);
+
+  final SignInMethods methods;
+  final AuthSessionResponse? session;
+}

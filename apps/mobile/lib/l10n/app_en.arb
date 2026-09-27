@@ -85,6 +85,30 @@
   "signInAgreement": "By continuing you agree to the Terms of Service and Privacy Policy.",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
+  "signInMethodsTitle": "Sign-in methods",
+  "signInMethodsSubtitle": "Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.",
+  "signInMethodLinked": "Connected",
+  "signInMethodNotLinked": "Not connected",
+  "signInMethodLink": "Connect",
+  "signInMethodUnlink": "Disconnect",
+  "signInMethodUnlinkConfirm": "Disconnect {provider}?",
+  "@signInMethodUnlinkConfirm": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "signInMethodUnlinkHint": "You will no longer be able to sign in with {provider}.",
+  "@signInMethodUnlinkHint": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "signInMethodSwitched": "That account already had orders, so you are now in that profile.",
+  "signInMethodIosOnly": "On iPhone",
   "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
   "storesTitle": "Stores",
   "storesSearchHint": "Search by name or address",

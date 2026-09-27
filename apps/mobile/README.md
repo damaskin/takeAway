@@ -136,8 +136,8 @@ lives in: an Android client (package `md.takeaway.app`, SHA-1 of the release
 and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
 
 - `GOOGLE_SERVER_CLIENT_ID` = the existing **web** client id;
-- `GOOGLE_IOS_CLIENT_ID` = the iOS client id, and its reversed form
-  (`com.googleusercontent.apps.…`) in `ios/Flutter/Google.xcconfig`;
+- `GOOGLE_IOS_CLIENT_ID` = the iOS client id; fastlane's `archive` lane writes
+  its reversed form (the URL scheme) to `ios/Flutter/GoogleLocal.xcconfig`;
 - API: `GOOGLE_OAUTH_CLIENT_IDS` must list the web **and** the iOS client ids —
   depending on the platform the token's audience is one or the other.
 
@@ -145,6 +145,9 @@ and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
 developer portal, add `md.takeaway.app` to the API's `APPLE_OAUTH_CLIENT_IDS`
 and build with `APPLE_SIGN_IN=true`. App Review (guideline 4.8) expects it
 next to third-party logins such as Telegram and Google.
+
+Profile → Sign-in methods links the other providers to the signed-in profile.
+The whole setup, server side included, is in `docs/social-sign-in.md`.
 
 ## Push notifications
 

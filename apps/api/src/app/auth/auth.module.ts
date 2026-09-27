@@ -15,6 +15,7 @@ import { BrandScopeService } from './services/brand-scope.service';
 import { KdsPinService } from './services/kds-pin.service';
 import { OAuthIdentityService } from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
+import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 import { UserStoreScopeService } from './services/user-store-scope.service';
@@ -50,6 +51,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PasswordService,
     KdsPinService,
     OAuthIdentityService,
+    SignInMethodsService,
     TokensService,
     TelegramService,
     UserStoreScopeService,

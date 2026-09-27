@@ -16,6 +16,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   final cancelled = <String>[];
   Order? currentOrder;
   List<BoundCard> boundCards = const [];
+  SignInMethods methods = const SignInMethods(telegram: true, google: false, apple: false);
+  final unlinked = <String>[];
 
   /// Bank verdict for the next card payment; null means it goes through.
   String? declineWith;
@@ -230,6 +232,19 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<TelegramAuthConfig> telegramConfig() async => const TelegramAuthConfig();
+
+  @override
+  Future<SignInMethods> signInMethods() async => methods;
+
+  @override
+  Future<SignInMethods> unlinkSignInMethod(String provider) async {
+    unlinked.add(provider);
+    return methods = SignInMethods(
+      telegram: methods.telegram,
+      google: methods.google && provider != 'google',
+      apple: methods.apple && provider != 'apple',
+    );
+  }
 
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [

@@ -78,3 +78,11 @@ Map<String, dynamic> _$OAuthLoginRequestToJson(OAuthLoginRequest instance) => <S
 Map<String, dynamic> _$RefreshRequestToJson(RefreshRequest instance) => <String, dynamic>{
   'refreshToken': instance.refreshToken,
 };
+
+SignInMethods _$SignInMethodsFromJson(Map<String, dynamic> json) =>
+    SignInMethods(telegram: json['telegram'] as bool, google: json['google'] as bool, apple: json['apple'] as bool);
+
+LinkSignInMethodResult _$LinkSignInMethodResultFromJson(Map<String, dynamic> json) => LinkSignInMethodResult(
+  methods: SignInMethods.fromJson(json['methods'] as Map<String, dynamic>),
+  session: json['session'] == null ? null : AuthSessionResponse.fromJson(json['session'] as Map<String, dynamic>),
+);

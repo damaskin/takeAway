@@ -384,6 +384,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
         browserPushHint: 'Order ready alerts on this device, even if the tab is closed.',
         browserPushBlocked: 'Browser blocked notifications. Allow them in your site settings and try again.',
       },
+      signInMethods: {
+        title: 'Sign-in methods',
+        subtitle:
+          'Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.',
+        linked: 'Connected',
+        notLinked: 'Not connected',
+        unlink: 'Disconnect',
+        unlinkConfirm: 'Disconnect {{provider}}? You will no longer be able to sign in with it.',
+        switched: 'That account already had orders, so you are now in that profile.',
+      },
       personalInfo: {
         title: 'Personal info',
         subtitle: 'These details appear on your orders.',
@@ -412,6 +422,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         gift: 'Gift cards',
         loyalty: 'Loyalty',
         referrals: 'Invite a friend',
+        signInMethods: 'Sign-in methods',
         notifications: 'Notifications',
         language: 'Language',
       },

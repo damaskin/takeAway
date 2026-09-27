@@ -32,3 +32,6 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# Written by fastlane from config/prod.json (GOOGLE_IOS_CLIENT_ID).
+Flutter/GoogleLocal.xcconfig

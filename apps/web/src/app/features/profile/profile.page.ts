@@ -186,6 +186,7 @@ export class ProfilePage implements OnInit {
     { icon: '💳', label: 'web.profile.sections.payment', link: '/profile/payment-methods' },
     { icon: '🎁', label: 'web.profile.sections.gift', link: '/profile/gift-cards' },
     { icon: '🤝', label: 'web.profile.sections.referrals', link: '/profile/referrals' },
+    { icon: '🔑', label: 'web.profile.sections.signInMethods', link: '/profile/sign-in' },
     { icon: '🔔', label: 'web.profile.sections.notifications', link: '/profile/notifications' },
     { icon: '⭐', label: 'web.profile.sections.loyalty', link: '/profile/loyalty' },
   ];

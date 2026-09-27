@@ -4,7 +4,7 @@
   "TELEGRAM_REDIRECT_URI": "takeaway://tglogin",
   "GOOGLE_SERVER_CLIENT_ID": "",
   "GOOGLE_IOS_CLIENT_ID": "",
-  "APPLE_SIGN_IN": "false",
+  "APPLE_SIGN_IN": "true",
   "FIREBASE_API_KEY": "",
   "FIREBASE_PROJECT_ID": "",
   "FIREBASE_MESSAGING_SENDER_ID": "",
