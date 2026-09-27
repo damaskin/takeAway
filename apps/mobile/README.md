@@ -107,7 +107,7 @@ once:
    OpenID Connect): `takeaway://tglogin` under **Redirect URIs**, and the apps
    under **Native Login** — Android: package `md.takeaway.app` + the SHA-256
    of every key that signs a build (`./gradlew signingReport`); iOS: bundle
-   `md.takeaway.app` + the Apple team id. For @takaway_tgbot the redirect URI
+   `md.takeaway.ios` + the Apple team id `FGN8R2D6QW`. For @takaway_tgbot the redirect URI
    and the Android debug key are registered; the release / Play App Signing
    key and the iOS app are not yet.
 3. On Android, Telegram's page (no Telegram app on the device) comes back
@@ -133,7 +133,7 @@ profile the Mini App and the website sign in to.
 
 **Google.** Create OAuth clients in the Google Cloud project the web client
 lives in: an Android client (package `md.takeaway.app`, SHA-1 of the release
-and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
+and debug keys) and an iOS client (bundle `md.takeaway.ios`). Then:
 
 - `GOOGLE_SERVER_CLIENT_ID` = the existing **web** client id;
 - `GOOGLE_IOS_CLIENT_ID` = the iOS client id; fastlane's `archive` lane writes
@@ -141,8 +141,8 @@ and debug keys) and an iOS client (bundle `md.takeaway.app`). Then:
 - API: `GOOGLE_OAUTH_CLIENT_IDS` must list the web **and** the iOS client ids —
   depending on the platform the token's audience is one or the other.
 
-**Apple** (iOS only). Enable Sign in with Apple for `md.takeaway.app` in the
-developer portal, add `md.takeaway.app` to the API's `APPLE_OAUTH_CLIENT_IDS`
+**Apple** (iOS only). Enable Sign in with Apple for `md.takeaway.ios` in the
+developer portal, add `md.takeaway.ios` to the API's `APPLE_OAUTH_CLIENT_IDS`
 and build with `APPLE_SIGN_IN=true`. App Review (guideline 4.8) expects it
 next to third-party logins such as Telegram and Google.
 
@@ -152,7 +152,7 @@ The whole setup, server side included, is in `docs/social-sign-in.md`.
 ## Push notifications
 
 1. Create a Firebase project, add an Android app (`md.takeaway.app`) and an iOS
-   app (`md.takeaway.app`), upload an APNs auth key to Firebase.
+   app (`md.takeaway.ios`), upload an APNs auth key to Firebase.
 2. App: the five `FIREBASE_*` defines from the Firebase app settings — no
    `google-services.json` / `GoogleService-Info.plist` is needed.
 3. API: a service account with the "Firebase Cloud Messaging API Admin" role →
@@ -183,19 +183,22 @@ fine for testers, rejected by Google Play.
 **iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
 (`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
 Store Connect API key and a keychain of its own, because an Apple ID asks for
-2FA and the login keychain is locked over SSH. Team: Vladislav Socolov
-(`4VC4JRTQG9`), Bundle ID `md.takeaway.app` — the same team, API key and build
-keychain as RunBase and Zhmyak on that Mac.
+2FA and the login keychain is locked over SSH. Team: Ivan Damaschin
+(`FGN8R2D6QW`, Individual), Bundle ID `md.takeaway.ios` — the same team, API
+key and build keychain as RunBase and Zhmyak on that Mac.
 
-Set up once (done on the Mac mini on 2026-09-23):
+The iOS bundle id differs from the Android package (`md.takeaway.app`): the app
+moved from Vladislav Socolov's team (`4VC4JRTQG9`) before its first App Store
+release, App Transfer only moves released apps, and Apple never gives a bundle
+id with uploaded builds to anyone else.
+
+Set up once (done on the Mac mini; moved to the own team on 2026-09-27):
 
 1. `~/.appstoreconnect/takeaway.env`, mode 600. It reuses the team's key and
-   keychain from the zhmyak setup:
+   keychain shared by every app of the team:
 
    ```bash
-   . "$HOME/.appstoreconnect/zhmyak-app.env"   # ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, KEYCHAIN_PASSWORD
-   BUILD_KEYCHAIN=zhmyak-app-build.keychain
-   APPLE_TEAM_ID=4VC4JRTQG9
+   . "$HOME/.appstoreconnect/fgn8r2d6qw.env"   # ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, KEYCHAIN_PASSWORD, BUILD_KEYCHAIN, APPLE_TEAM_ID
    FLUTTER=$HOME/sdk/flutter-3.38.8/bin/flutter
    ```
 
@@ -204,9 +207,9 @@ Set up once (done on the Mac mini on 2026-09-23):
    needs it), `AuthKey_<id>.p8` in `~/.appstoreconnect/private_keys/`, and the
    four variables set directly; the keychain is created on the first run.
 
-2. `fastlane ios register_bundle_id` registers `md.takeaway.app` with push and
+2. `fastlane ios register_bundle_id` registers `md.takeaway.ios` with push and
    Sign in with Apple. Only then does App Store Connect → Apps → + → New App
-   offer it: iOS, SKU `md.takeaway.app`, primary language Russian. Apple
+   offer it: iOS, SKU `md.takeaway.ios`, primary language Russian. Apple
    refuses to create the record through the API.
 3. `apps/mobile/config/prod.json`, a copy of `prod.example.json`.
 4. Flutter 3.38.8 in `~/sdk/flutter-3.38.8`: the Homebrew one on the Mac is

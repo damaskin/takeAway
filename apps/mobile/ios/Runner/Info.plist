@@ -36,7 +36,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>md.takeaway.app.telegram-login</string>
+			<string>md.takeaway.ios.telegram-login</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>takeaway</string>

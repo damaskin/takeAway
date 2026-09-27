@@ -195,7 +195,7 @@ takeaway/
 
 ### 2.3. Mobile — фактически
 
-- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Bundle / application id — `md.takeaway.app`
+- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Android application id — `md.takeaway.app`, iOS bundle id — `md.takeaway.ios` (команда Apple `FGN8R2D6QW`)
 - **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
 - **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
 - **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
