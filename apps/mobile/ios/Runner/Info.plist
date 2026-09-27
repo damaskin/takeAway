@@ -75,6 +75,8 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>takeAway uses your location to show the nearest stores and to tell the barista you have arrived for your order.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>takeAway uses your location only while the app is open: to show the nearest stores and to tell the barista you have arrived for your order.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
