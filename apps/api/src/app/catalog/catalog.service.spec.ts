@@ -5,6 +5,7 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
+import { AVAILABLE_OPTION } from './option-availability';
 
 function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -33,7 +34,9 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     minOrderCents: 0,
     galleryUrls: [],
     brandId: 'brand-1',
+    brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway Coffee', logoUrl: null, themeOverrides: null },
     workingHours: [],
+    shifts: [{ id: 'shift-1' }],
     ...overrides,
   };
 }
@@ -78,6 +81,27 @@ describe('CatalogService', () => {
     const result = await service.listStores({});
     expect(result).toHaveLength(1);
     expect(result[0]?.distanceMeters).toBeNull();
+  });
+
+  it('names the business and carries its logo on every store, for the store cards', async () => {
+    prisma.store.findMany.mockResolvedValue([
+      storeFixture(),
+      storeFixture({
+        id: 'store-2',
+        slug: 'zerno',
+        brand: { name: 'Зерно', logoUrl: 'https://cdn.takeaway.md/zerno.png' },
+      }),
+    ]);
+    const result = await service.listStores({});
+    expect(result.map((s) => [s.brandName, s.logoUrl])).toEqual([
+      ['takeAway Coffee', null],
+      ['Зерно', 'https://cdn.takeaway.md/zerno.png'],
+    ]);
+    expect(prisma.store.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ brand: { select: { name: true, logoUrl: true } } }),
+      }),
+    );
   });
 
   it('computes distance and filters by radius when lat/lng provided', async () => {
@@ -129,6 +153,19 @@ describe('CatalogService', () => {
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
       const [store] = await service.listStores({});
       expect(store?.openNow).toBe(true);
+    });
+
+    it('is false, and the store is not taking orders, while no shift is open', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [], shifts: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(false);
+      expect(store?.openNow).toBe(false);
+    });
+
+    it('reports a store with an open shift as taking orders', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
+      const [store] = await service.listStores({});
+      expect(store?.acceptingOrders).toBe(true);
     });
 
     it('is reported on the store page too', async () => {
@@ -240,5 +277,54 @@ describe('CatalogService', () => {
 
     await expect(service.getProduct('latte', 'nowhere')).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.product.findFirst).not.toHaveBeenCalled();
+  });
+  // Oat milk ran out: the latte stays on the menu, only the option goes —
+  // and the screen pre-selects what the cart would put in the cup instead.
+  it('hides options whose ingredient is out of stock and moves the default on', async () => {
+    const milk = (id: string, sortOrder: number, isDefault: boolean, isAvailable: boolean | null) => ({
+      id,
+      type: 'MILK',
+      name: id,
+      priceDeltaCents: 0,
+      prepTimeDeltaSeconds: 0,
+      sortOrder,
+      isDefault,
+      ingredient: isAvailable === null ? null : { isAvailable },
+    });
+    prisma.product.findFirst.mockResolvedValue({
+      id: 'p-latte',
+      categoryId: 'c-coffee',
+      brandId: 'brand-1',
+      slug: 'latte',
+      name: 'Latte',
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 60,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: [],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+      variations: [milk('oat', 0, true, false), milk('whole', 1, false, true), milk('almond', 2, false, null)],
+      modifiers: [],
+    });
+
+    const product = await service.getProduct('latte');
+
+    expect(product.variations.map((v) => [v.id, v.isDefault])).toEqual([
+      ['whole', true],
+      ['almond', false],
+    ]);
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          modifiers: expect.objectContaining({ where: AVAILABLE_OPTION }),
+        }),
+      }),
+    );
   });
 });

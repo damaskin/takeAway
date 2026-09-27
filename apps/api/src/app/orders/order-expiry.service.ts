@@ -150,7 +150,7 @@ export class OrderExpiryService {
     // An order the store never took on must not keep the customer's money
     // frozen. The bank call cannot join the transaction above, so it runs here
     // and reports rather than throws — see PaymentHoldsService.
-    await this.holds.releaseForOrder(orderId, 'order-expired');
+    const released = await this.holds.releaseForOrder(orderId, 'order-expired');
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -168,7 +168,9 @@ export class OrderExpiryService {
       orderId: expired.id,
       order: null,
     });
-    void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED);
+    void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, {
+      expiry: { reason, holdReleased: released !== null },
+    });
 
     return true;
   }

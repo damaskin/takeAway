@@ -63,6 +63,10 @@ function build() {
       update: jest.fn(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'm1', ...data })),
       delete: jest.fn().mockResolvedValue({}),
     },
+    ingredient: {
+      findFirst: jest.fn(),
+      upsert: jest.fn(({ create }: { create: { name: string } }) => Promise.resolve({ id: `ing-${create.name}` })),
+    },
     cartItem: {
       findMany: jest.fn().mockResolvedValue([]),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -418,7 +422,80 @@ describe('AdminCatalogService — options', () => {
 
     expect(prisma.variation.updateMany).not.toHaveBeenCalled();
     expect(prisma.variation.create).toHaveBeenCalledWith({
-      data: { productId: 'p1', type: 'MILK', name: 'Овсяное', priceDeltaCents: 500, sortOrder: 0 },
+      data: {
+        productId: 'p1',
+        type: 'MILK',
+        name: 'Овсяное',
+        priceDeltaCents: 500,
+        sortOrder: 0,
+        ingredientId: 'ing-Овсяное',
+      },
+    });
+  });
+
+  it('puts a new milk in the ingredient library, but not a new size', async () => {
+    const { svc, prisma } = withOptions();
+
+    await svc.createVariation('p1', { type: 'MILK', name: ' Овсяное ' }, ['b1']);
+    await svc.createVariation('p1', { type: 'SIZE', name: 'Большой' }, ['b1']);
+
+    expect(prisma.ingredient.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { brandId_name: { brandId: 'b1', name: 'Овсяное' } },
+        create: { brandId: 'b1', name: 'Овсяное' },
+      }),
+    );
+    expect(prisma.variation.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({ name: 'Большой', ingredientId: undefined }),
+    });
+  });
+
+  it('links a new extra to the library entry of the same name', async () => {
+    const { svc, prisma } = withOptions();
+
+    await svc.createModifier('p1', { name: 'Ванильный сироп' }, ['b1']);
+
+    expect(prisma.modifier.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Ванильный сироп', ingredientId: 'ing-Ванильный сироп' }),
+    });
+  });
+
+  it('leaves an extra untracked when asked to', async () => {
+    const { svc, prisma } = withOptions();
+
+    await svc.createModifier('p1', { name: 'Корица', ingredientId: null }, ['b1']);
+
+    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+    expect(prisma.modifier.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ ingredientId: null }),
+    });
+  });
+
+  it("refuses to link an option to another brand's ingredient", async () => {
+    const { svc, prisma } = withOptions();
+    prisma.ingredient.findFirst.mockResolvedValue(null);
+
+    const err = await rejection(svc.updateModifier('m1', { ingredientId: 'ing-foreign' }, ['b1']));
+
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(body(err)['code']).toBe('INGREDIENT_UNKNOWN');
+    expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
+      where: { id: 'ing-foreign', brandId: 'b1' },
+      select: { id: true },
+    });
+    expect(prisma.modifier.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the link of an extra that is only renamed', async () => {
+    const { svc, prisma } = withOptions();
+
+    await svc.updateModifier('m1', { name: 'Сироп ваниль' }, ['b1']);
+
+    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+    expect(prisma.modifier.update).toHaveBeenCalledWith({
+      where: { id: 'm1' },
+      data: { name: 'Сироп ваниль', ingredientId: undefined },
     });
   });
 

@@ -20,9 +20,13 @@ import 'package:takeaway_mobile/main.dart';
 import 'package:takeaway_mobile/shared/widgets/pressable.dart';
 
 /// End-to-end on a device or emulator against a real API with the dev seed
-/// (`pnpm prisma:seed`): sign in, order a latte, pay at the counter, then
+/// (`pnpm prisma:seed`): sign in, order a latte, pay for it by card, then
 /// move the order through the kitchen with the KDS endpoints and watch the
 /// app follow live.
+///
+/// Orders are paid by card only, so the API needs card payments on — the
+/// sandbox stack's bank stand-in (`deploy/docker-compose.sandbox.yml`) does
+/// that — and the developer account a bound card.
 ///
 ///   flutter test integration_test/ordering_e2e_test.dart -d emulator-5554 \
 ///     --dart-define=API_BASE_URL=http://10.0.2.2:3000/api --dart-define=DEV_SIGN_IN=true \
@@ -85,7 +89,7 @@ void main() {
     }
   }
 
-  testWidgets('guest orders a latte, pays at the counter and follows it to pickup', (tester) async {
+  testWidgets('guest orders a latte, pays by card and follows it to pickup', (tester) async {
     expect(Env.devSignIn, isTrue, reason: 'run with --dart-define=DEV_SIGN_IN=true');
 
     // debugPrint is throttled: whatever is still queued when the run ends —
@@ -134,7 +138,7 @@ void main() {
     if (find.byType(SlotPicker).evaluate().isNotEmpty) {
       await tapWhenVisible(tester, find.descendant(of: find.byType(SlotPicker), matching: find.byType(Pressable)));
     }
-    await tapWhenVisible(tester, find.textContaining(RegExp(r'Place order|Заказать')));
+    await tapWhenVisible(tester, find.textContaining(RegExp(r'Pay |Оплатить')));
 
     // The live order screen.
     await waitFor(tester, find.byType(OrderStatusScreen), timeout: const Duration(seconds: 30));

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/app/router.dart';
 
@@ -39,7 +38,7 @@ void main() {
       expect(find.text('Заказ #4821'), findsOneWidget);
       expect(find.text('4821'), findsWidgets);
       expect(find.text('Заказ получен'), findsOneWidget);
-      expect(find.text('Оплата на месте'), findsOneWidget);
+      expect(find.text('Ждём оплату'), findsOneWidget, reason: 'a new order with no card on it yet is unpaid');
       expect(find.text('Я на месте'), findsOneWidget);
 
       await reveal(tester, find.text('Отменить заказ'));
@@ -129,26 +128,32 @@ void main() {
       await h.unmount(tester);
     });
 
-    testWidgets('after a decline the customer can switch to paying at the counter', (tester) async {
-      final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
-        ..boundCards = [FakeApi.card()]
-        ..declineWith = 'Карта заблокирована'
-        ..seedCart(FakeApi.croissant());
+    testWidgets('there is no paying at the counter: without a card the order cannot be placed', (tester) async {
+      final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))..seedCart(FakeApi.croissant());
       final h = await pumpApp(tester, api: api);
       await openCheckout(tester);
 
-      await tester.tap(find.textContaining('Оплатить'));
-      await settle(tester, const Duration(seconds: 2));
+      expect(find.text('Оплата на месте'), findsNothing);
+      await reveal(tester, find.text('Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.'));
+      expect(find.text('Привязать карту'), findsOneWidget);
 
-      await reveal(tester, find.text('Наличными или картой при получении'));
-      await tester.tap(find.text('Наличными или картой при получении'));
-      await settle(tester);
-      await tester.tap(find.textContaining('Заказать ·'));
-      await settle(tester, const Duration(seconds: 2));
+      await tester.tap(find.textContaining('Оплатить'), warnIfMissed: false);
+      await settle(tester, const Duration(seconds: 1));
 
-      expect(api.created, hasLength(1));
-      expect(api.paid, hasLength(1));
-      expect(GoRouter.of(tester.element(find.text('Заказ #4821'))).state.uri.path, '/order/ord_1');
+      expect(api.created, isEmpty, reason: 'the button stays off until a card is bound');
+      await h.unmount(tester);
+    });
+
+    testWidgets('with card payments switched off the customer is told why nothing can be ordered', (tester) async {
+      final api = FakeApi()..seedCart(FakeApi.croissant());
+      final h = await pumpApp(tester, api: api);
+      await openCheckout(tester);
+
+      await reveal(tester, find.textContaining('Оплата картой сейчас недоступна'));
+      await tester.tap(find.textContaining('Оплатить'), warnIfMissed: false);
+      await settle(tester, const Duration(seconds: 1));
+
+      expect(api.created, isEmpty);
       await h.unmount(tester);
     });
   });

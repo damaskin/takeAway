@@ -24,6 +24,7 @@ import { installFakeApi, signIn } from './support/fake-api';
 const PAGES = [
   'dashboard',
   'menu',
+  'ingredients',
   'stores',
   'orders',
   'dispatch',

@@ -188,6 +188,7 @@ describe('OrderExpiryService', () => {
       expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'order-1' }),
         'EXPIRED',
+        { expiry: { reason: 'payment_timeout', holdReleased: false } },
       );
     });
   });

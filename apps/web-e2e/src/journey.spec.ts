@@ -16,11 +16,10 @@ import { useEnglish } from './support/locale';
  * in CI without Postgres, and so a test can assert on what checkout
  * actually sent rather than only on what it drew.
  *
- * Card payment is out of scope here: the fake API leaves
- * `/config/features` empty, so `agroprombankEnabled` stays off and checkout
- * offers only paying at the counter — which is exactly the path this suite
- * walks. Driving a real charge needs the bank's sandbox, which the mock
- * gateway under tools/agroprombank-mock covers instead.
+ * Orders are paid by card only. The fake API switches card payments on and
+ * gives the customer one bound card, so checkout holds the amount on it the
+ * way production does; what the bank then does with the hold is covered by
+ * the mock gateway under tools/agroprombank-mock, not here.
  */
 
 test.beforeEach(async ({ page }) => {
@@ -130,6 +129,42 @@ test.describe('customer journey', () => {
     expect(sent['pickupMode']).toBe('ASAP');
     // ASAP must not carry a time — the server quotes it from the queue.
     expect(sent['pickupAt']).toBeUndefined();
+    // And the amount went on the customer's card.
+    expect(api.payments).toEqual([{ orderId: 'order-1', cardId: 'card-1' }]);
+  });
+
+  test('there is no paying at the counter: without a card nothing can be ordered', async ({ page }) => {
+    const api = await installFakeApi(page, { cards: [] });
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+
+    await expect(page.getByText(/orders are paid by card/i)).toBeVisible();
+    await expect(page.getByText(/pay at the counter/i)).toHaveCount(0);
+    await expect(placeOrder(page)).toBeDisabled();
+    expect(api.orders).toHaveLength(0);
+  });
+
+  test('the same drink added twice is one line whose count the customer can change', async ({ page }) => {
+    await installFakeApi(page);
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    const addToCart = page.getByRole('button', { name: /add to cart/i });
+    await addToCart.click();
+    await expect(addToCart).toBeEnabled();
+    await addToCart.click();
+
+    await page.goto('/checkout?store=dubai-marina');
+    const more = page.getByRole('button', { name: 'More' });
+    await expect(more).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Fewer' })).toBeVisible();
+
+    await more.click();
+    await expect(placeOrder(page)).toContainText(/Pay\s/);
+    await expect(page.getByText(/^\s*3\s*$/).first()).toBeVisible();
   });
 
   test('after hours checkout offers only a scheduled pickup', async ({ page }) => {

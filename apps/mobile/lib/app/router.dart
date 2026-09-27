@@ -81,11 +81,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => AppShell(shell: shell),
         branches: [
-          StatefulShellBranch(
-            routes: [GoRoute(path: Routes.menu, builder: (context, state) => const MenuScreen())],
-          ),
+          // Stores come first: the customer picks where to order before what.
           StatefulShellBranch(
             routes: [GoRoute(path: Routes.stores, builder: (context, state) => const StoresScreen())],
+          ),
+          StatefulShellBranch(
+            routes: [GoRoute(path: Routes.menu, builder: (context, state) => const MenuScreen())],
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: Routes.orders, builder: (context, state) => const OrdersScreen())],

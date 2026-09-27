@@ -47,6 +47,9 @@ class Store {
     required this.taxIncludedInPrice,
     required this.currency,
     this.openNow,
+    this.acceptingOrders,
+    this.brandName,
+    this.logoUrl,
     this.heroImageUrl,
     this.distanceMeters,
   });
@@ -76,11 +79,23 @@ class Store {
   /// plus working hours, computed by the API in the store's timezone. Null
   /// from API versions that predate it.
   final bool? openNow;
+
+  /// Whether the store takes orders at all right now: staff have started a
+  /// shift ("Start work") and it is not switched off. Null from API versions
+  /// that predate shifts.
+  final bool? acceptingOrders;
   @JsonKey(defaultValue: 0)
   final int taxRateBps;
   @JsonKey(defaultValue: true)
   final bool taxIncludedInPrice;
   final String currency;
+
+  /// Name of the business behind the store. Null from API versions that
+  /// predate it.
+  final String? brandName;
+
+  /// Logo for the store card — the brand's, stores have none of their own.
+  final String? logoUrl;
   final String? heroImageUrl;
   final double? distanceMeters;
 
@@ -88,7 +103,11 @@ class Store {
 
   /// Takes ASAP orders right now. Falls back to the manual switch alone when
   /// the API does not send [openNow].
-  bool get isOpen => status != StoreStatus.closed && (openNow ?? true);
+  bool get isOpen => status != StoreStatus.closed && !isInactive && (openNow ?? true);
+
+  /// Takes no orders at all right now — no shift started, or switched off.
+  /// Shown as "not working"; checkout is refused.
+  bool get isInactive => status == StoreStatus.closed || acceptingOrders == false;
 
   /// [status] with working hours applied: a store switched on but outside its
   /// hours reads as closed.
@@ -160,6 +179,7 @@ class StoreDetail extends Store {
     required this.workingHours,
     required this.brand,
     super.openNow,
+    super.acceptingOrders,
     super.heroImageUrl,
     super.distanceMeters,
     this.phone,

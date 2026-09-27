@@ -215,7 +215,7 @@ class _StoreSummary extends StatelessWidget {
           if (store.isOpen)
             EtaChip(etaSeconds: cart.etaSeconds, busyMeter: store.busyMeter)
           else
-            StoreStatusBadge(status: store.effectiveStatus),
+            StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
         ],
       ),
     );

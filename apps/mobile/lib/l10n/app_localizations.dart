@@ -518,6 +518,12 @@ abstract class AppLocalizations {
   /// **'Closed'**
   String get storeStatusClosed;
 
+  /// No description provided for @storeStatusNotWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Not working'**
+  String get storeStatusNotWorking;
+
   /// No description provided for @orderHere.
   ///
   /// In en, this message translates to:
@@ -545,8 +551,26 @@ abstract class AppLocalizations {
   /// No description provided for @chooseStoreSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Choose a store and we will show its menu and how soon your order can be ready.'**
+  /// **'Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.'**
   String get chooseStoreSubtitle;
+
+  /// No description provided for @changeStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get changeStore;
+
+  /// No description provided for @storesInactiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Not taking orders right now'**
+  String get storesInactiveTitle;
+
+  /// No description provided for @storesNoneActive.
+  ///
+  /// In en, this message translates to:
+  /// **'No store is taking orders right now. Check back a little later.'**
+  String get storesNoneActive;
 
   /// No description provided for @storeClosedBanner.
   ///
@@ -559,6 +583,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The kitchen is busy — orders take a little longer.'**
   String get storeBusyBanner;
+
+  /// No description provided for @storeInactiveBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.'**
+  String get storeInactiveBanner;
 
   /// No description provided for @openingHours.
   ///
@@ -607,12 +637,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not load the menu.'**
   String get menuLoadFailed;
-
-  /// No description provided for @changeStore.
-  ///
-  /// In en, this message translates to:
-  /// **'Change'**
-  String get changeStore;
 
   /// No description provided for @addedToCart.
   ///
@@ -1034,17 +1058,17 @@ abstract class AppLocalizations {
   /// **'Payment'**
   String get paymentTitle;
 
-  /// No description provided for @payAtCounter.
+  /// No description provided for @cardPaymentsUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Pay at the counter'**
-  String get payAtCounter;
+  /// **'Card payments are unavailable right now, so the order can\'t be placed. Please try again a bit later.'**
+  String get cardPaymentsUnavailable;
 
-  /// No description provided for @payAtCounterHint.
+  /// No description provided for @addCardToOrder.
   ///
   /// In en, this message translates to:
-  /// **'Cash or card when you pick up'**
-  String get payAtCounterHint;
+  /// **'Orders are paid by card. Add a card to place your order.'**
+  String get addCardToOrder;
 
   /// No description provided for @addCard.
   ///
@@ -1243,6 +1267,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Paying at the counter'**
   String get paymentStateAtCounter;
+
+  /// No description provided for @paymentStateAwaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Awaiting payment'**
+  String get paymentStateAwaiting;
 
   /// No description provided for @pickupCode.
   ///

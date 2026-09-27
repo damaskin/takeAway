@@ -1,7 +1,8 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
+import { isStoreInactive } from '@takeaway/utils';
+import { LeafletMapComponent, StoreLogoComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -20,7 +21,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-stores',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent],
+  imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent, StoreLogoComponent],
   template: `
     <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
       <h1
@@ -61,18 +62,23 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
             [routerLink]="['/stores', s.slug]"
             class="flex flex-col"
             [style.border]="i === 0 ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'"
+            [style.opacity]="inactive(s) ? 0.6 : 1"
+            [attr.data-inactive]="inactive(s) || null"
             style="background: var(--color-foam); border-radius: 16px; padding: 16px; gap: 8px"
           >
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" style="gap: 10px">
+              <span class="flex items-center" style="gap: 10px; min-width: 0">
+                <lib-store-logo [url]="s.logoUrl" [name]="s.brandName ?? s.name" [size]="40" />
+                <span
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)"
+                  >{{ s.name }}</span
+                >
+              </span>
               <span
-                style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)"
-                >{{ s.name }}</span
-              >
-              <span
-                [style.background]="statusBg(s.status)"
-                [style.color]="statusColor(s.status)"
+                [style.background]="statusBg(inactive(s) ? 'CLOSED' : s.status)"
+                [style.color]="statusColor(inactive(s) ? 'CLOSED' : s.status)"
                 style="padding: 3px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                >{{ statusLabel(s.status) | translate }}</span
+                >{{ (inactive(s) ? 'common.storeInactive.badge' : statusLabel(s.status)) | translate }}</span
               >
             </div>
             <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
@@ -119,6 +125,10 @@ export class TmaStoresPage implements OnInit {
   }
 
   /** Returns a translation key — resolved via | translate in the template. */
+  inactive(store: StoreListItem): boolean {
+    return isStoreInactive(store);
+  }
+
   statusLabel(status: StoreListItem['status']): string {
     if (status === 'OPEN') return 'web.stores.status.OPEN';
     if (status === 'OVERLOADED') return 'web.stores.status.OVERLOADED';

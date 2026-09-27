@@ -19,7 +19,15 @@ import type { ReferralsService } from '../referrals/referrals.service';
 import { OrdersService } from './orders.service';
 
 function variation(v: Partial<Variation> & Pick<Variation, 'id' | 'type' | 'name'>): Variation {
-  return { productId: 'p-latte', priceDeltaCents: 0, prepTimeDeltaSeconds: 0, sortOrder: 0, isDefault: false, ...v };
+  return {
+    productId: 'p-latte',
+    priceDeltaCents: 0,
+    prepTimeDeltaSeconds: 0,
+    sortOrder: 0,
+    isDefault: false,
+    ingredientId: null,
+    ...v,
+  };
 }
 
 function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifier {
@@ -33,6 +41,7 @@ function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifie
     sortOrder: 0,
     externalProvider: null,
     externalId: null,
+    ingredientId: null,
     ...m,
   };
 }
@@ -179,6 +188,7 @@ function harness() {
         brandId: 'brand-a',
         status: 'OPEN',
         brand: { moderationStatus: 'APPROVED' },
+        shifts: [{ id: 'shift-1' }],
       }),
     },
     stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
@@ -202,6 +212,8 @@ function harness() {
   const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitKdsOrderChanged: jest.fn() };
+  // Card payments off unless a test says otherwise.
+  const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
 
   const cart = new CartService(prisma as unknown as PrismaService, kitchen as unknown as KitchenLoadService);
   const service = new OrdersService(
@@ -219,10 +231,10 @@ function harness() {
     {} as ReferralsService,
     kitchen as unknown as KitchenLoadService,
     cart,
-    {} as PaymentHoldsService,
+    holds as unknown as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail, realtime };
+  return { service, prisma, tx, mail, realtime, holds };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -249,6 +261,23 @@ describe('OrdersService.create', () => {
   // A card order waits on the board as CREATED with a hold until the kitchen
   // accepts it, so the PAID-time push never fires for it; without this one
   // the kitchen learnt about the order only on its next poll.
+  it('refuses the order while nobody has started a shift at the store', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.store.findUnique.mockResolvedValueOnce({
+      brandId: 'brand-a',
+      status: 'OPEN',
+      brand: { moderationStatus: 'APPROVED' },
+      shifts: [],
+    });
+
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({ code: 'STORE_NOT_TAKING_ORDERS' }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
   it('announces the new order to the store kitchen right away', async () => {
     const { service, prisma, realtime } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
@@ -266,6 +295,16 @@ describe('OrdersService.create', () => {
         }),
       }),
     );
+  });
+
+  it('keeps an order that has to be paid by card off the kitchen board until its hold is in place', async () => {
+    const { service, prisma, realtime, holds } = harness();
+    holds.cardPaymentRequired.mockReturnValue(true);
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', placeOrder);
+
+    expect(realtime.emitKdsOrderChanged).not.toHaveBeenCalled();
   });
 
   it('keeps the name the customer gave at checkout', async () => {

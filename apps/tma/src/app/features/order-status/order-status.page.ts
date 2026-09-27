@@ -261,7 +261,11 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
       case 'REFUNDED':
         return 'web.orderStatus.payment.refunded';
       default:
-        return 'web.orderStatus.payment.atCounter';
+        // Nothing on a new order yet means its card has not gone through;
+        // only orders from before card-only checkout were paid at the counter.
+        return this.order()?.status === 'CREATED'
+          ? 'web.orderStatus.payment.awaiting'
+          : 'web.orderStatus.payment.atCounter';
     }
   });
 

@@ -7,6 +7,11 @@ import type { TranslationTree } from './ru';
  */
 export const TRANSLATIONS_EN: TranslationTree = {
   common: {
+    storeInactive: {
+      badge: 'Not working',
+      title: 'This store is not taking orders right now',
+      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',
@@ -236,8 +241,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       giftCardLabel: 'Gift card',
       giftCardApplied: 'Applied · {{amount}} off',
       paymentTitle: 'How you’re paying',
-      payAtCounter: 'Pay at the counter',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
       addCard: 'Add another card',
+      addFirstCard: 'Add a card',
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       holdHint: 'We hold the money now and take it when the store accepts your order.',
       payCta: 'Pay {{total}} · ready by {{time}}',
       fulfillmentPickup: 'Pickup',
@@ -289,6 +300,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         failed: 'Payment did not go through',
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
+        awaiting: 'Awaiting payment',
       },
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -630,6 +642,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       dashboard: 'Dashboard',
       kitchen: 'Kitchen',
       menu: 'Menu',
+      ingredients: 'Add-ins',
       stores: 'Stores',
       orders: 'Orders',
       dispatch: 'Dispatch',
@@ -845,6 +858,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
       },
+      shift: {
+        closedTitle: 'Shift not started',
+        closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
+        start: 'Start work',
+        finish: 'Finish work',
+        finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
+        openSince: 'Shift running since {{time}}, the store takes orders',
+        openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
+      },
+      arrival: {
+        here: 'Customer is here',
+        nearby: 'Customer nearby',
+        ago: '{{minutes}} min',
+      },
       tablet: {
         enter: 'Tablet mode',
         leave: 'Leave tablet mode',
@@ -1033,6 +1060,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         minCount: 'Minimum',
         maxCount: 'Maximum',
         sortOrder: 'Position',
+        ingredientId: 'Stock from the library',
+        isAvailable: 'In stock',
       },
       category: {
         name: 'Category name',
@@ -1145,6 +1174,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         deleteConfirm: 'Delete "{{name}}"?',
         noVariations: 'No variations yet.',
         noModifiers: 'No extras yet.',
+        ingredient: 'Stock from the library',
+        ingredientNone: 'Not tracked — always shown',
+        outOfStock: 'Out of stock',
+        libraryHint:
+          'Extras and milks join the add-ins library by name. When one runs out, mark it there: the option disappears for customers in every product, and the products stay on the menu.',
+        libraryLink: 'Open the add-ins library →',
       },
       errors: {
         invalidField: 'Check the field "{{field}}"',
@@ -1167,6 +1202,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         TOO_MANY_IMAGES: 'This product already has 6 photos. Remove one to add another.',
         IMAGE_NOT_ON_PRODUCT: 'This photo is no longer on the product. Reload the page.',
         IMAGES_CHANGED: 'The photos were just changed in another window. Reload the page.',
+        INGREDIENT_UNKNOWN: 'This add-in is no longer in the library. Refresh the page.',
+        INGREDIENT_NAME_TAKEN: 'The library already has an add-in with this name.',
         status: {
           '0': 'No connection to the server. Check the internet and try again.',
           '403': 'You do not have permission to do this.',
@@ -1178,6 +1215,27 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
       },
     },
+    ingredients: {
+      title: 'Add-ins and stock',
+      hint: "All of the brand's add-ins in one list: milks, syrups, shots, toppings. When one runs out, mark it «Out of stock» — the option is hidden from customers on the site, in Telegram and in the app, in every product that has it, and the products stay on the menu. Switch it back to «In stock» and the option returns.",
+      newLabel: 'New add-in',
+      newPlaceholder: 'E.g. Lactose-free milk',
+      add: '+ Add',
+      filterAll: 'All · {{count}}',
+      filterOut: 'Out of stock · {{count}}',
+      search: 'Search by name',
+      available: 'In stock',
+      unavailable: 'Out of stock',
+      usedIn: 'In: {{products}}',
+      andMore: 'and {{count}} more',
+      unused: 'Not used in any product yet',
+      rename: 'Rename',
+      deleteConfirm: 'Delete «{{name}}» from the library?',
+      deleteUsedConfirm:
+        'Delete «{{name}}» from the library? The options in products ({{count}}) stay, but will no longer hide when it runs out.',
+      empty: 'The library is empty. Add the first add-in above, or add an option to a product in the menu.',
+      nothingFound: 'Nothing found.',
+    },
     stores: {
       title: 'Stores',
       add: '+ Add store',
@@ -1188,6 +1246,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       open: 'Open store',
       close: 'Close store',
       openBlocked: 'Finish the readiness checklist first',
+      shift: {
+        open: 'Shift running — the store takes orders',
+        closed: 'Shift not started — customers see the store as inactive',
+      },
       closeConfirm: 'Close "{{name}}"? It stops taking new orders; orders already accepted stay in the kitchen.',
       delete: 'Delete',
       deleteConfirm: 'Delete "{{name}}" for good? A store that has had orders cannot be deleted — close it instead.',
@@ -1691,6 +1753,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       paymentMethod: 'Payment',
       addCard: 'Link a card',
       manageCards: 'Manage cards',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       fulfillment: 'How do you want it?',
       fulfillmentPickup: 'Pickup',
       fulfillmentDelivery: 'Delivery',

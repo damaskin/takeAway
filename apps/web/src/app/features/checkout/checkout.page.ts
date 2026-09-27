@@ -3,11 +3,11 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot, StoreListItem } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError } from '@takeaway/utils';
+import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
-import { CartService, type CartView } from '../../core/cart/cart.service';
+import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
@@ -306,12 +306,51 @@ interface Step {
               style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: var(--spacing-base) var(--spacing-lg); display: flex; flex-direction: column; gap: 12px"
             >
               @for (item of c.items; track item.id) {
-                <div class="flex items-center justify-between">
-                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
-                    {{ item.productName }} × {{ item.quantity }}
-                  </span>
+                <div class="flex items-center justify-between" style="gap: 12px">
                   <span
-                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                    class="flex-1"
+                    style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                  >
+                    {{ item.productName }}
+                  </span>
+                  @if (!placedOrder()) {
+                    <div
+                      class="flex items-center"
+                      style="border: 1px solid var(--color-border); border-radius: 999px; height: 32px"
+                      [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
+                    >
+                      <button
+                        type="button"
+                        (click)="changeQuantity(item, -1)"
+                        [disabled]="changingItemId() !== null"
+                        [attr.aria-label]="
+                          (item.quantity === 1 ? 'web.checkout.remove' : 'web.checkout.decrease') | translate
+                        "
+                        style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
+                      >
+                        {{ item.quantity === 1 ? '🗑' : '−' }}
+                      </button>
+                      <span
+                        style="min-width: 20px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                        >{{ item.quantity }}</span
+                      >
+                      <button
+                        type="button"
+                        (click)="changeQuantity(item, 1)"
+                        [disabled]="changingItemId() !== null || item.quantity >= 99"
+                        [attr.aria-label]="'web.checkout.increase' | translate"
+                        style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
+                      >
+                        +
+                      </button>
+                    </div>
+                  } @else {
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                      >× {{ item.quantity }}</span
+                    >
+                  }
+                  <span
+                    style="min-width: 72px; text-align: right; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
                   >
                     {{ price(item.unitPriceCents * item.quantity) }}
                   </span>
@@ -547,9 +586,9 @@ interface Step {
               />
             </form>
 
-            <!-- How the order gets paid for. Card payments only appear once the
-                 acquirer is switched on; until then the honest answer is that
-                 the customer pays at the counter. -->
+            <!-- How the order gets paid for: by card, always. The amount is
+                 held now and taken when the store accepts the order; there is
+                 no paying at the counter. -->
             <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-sm)">
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
@@ -573,24 +612,25 @@ interface Step {
                 }
               }
 
-              <button
-                type="button"
-                (click)="selectCard(null)"
-                class="flex items-center"
-                [style.background]="selectedCardId() === null ? 'var(--color-espresso)' : 'var(--color-cream)'"
-                [style.color]="selectedCardId() === null ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                [style.border]="selectedCardId() === null ? 'none' : '1px solid var(--color-border)'"
-                style="height: 50px; padding: 0 16px; gap: 10px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-              >
-                <span>🏪</span>
-                <span class="flex-1 text-left">{{ 'web.checkout.payAtCounter' | translate }}</span>
-              </button>
+              @if (!cardPaymentsEnabled()) {
+                <p
+                  style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                >
+                  {{ 'web.checkout.cardsUnavailable' | translate }}
+                </p>
+              } @else if (cards().length === 0 && totalCents(c.subtotalCents) > 0) {
+                <p
+                  style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                >
+                  {{ 'web.checkout.cardOnly' | translate }}
+                </p>
+              }
 
               @if (cardPaymentsEnabled()) {
                 <a
                   routerLink="/profile/payment-methods"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
-                  >{{ 'web.checkout.addCard' | translate }}</a
+                  >{{ (cards().length === 0 ? 'web.checkout.addFirstCard' : 'web.checkout.addCard') | translate }}</a
                 >
                 @if (selectedCardId()) {
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
@@ -599,6 +639,22 @@ interface Step {
                 }
               }
             </section>
+
+            @if (storeInactive()) {
+              <div
+                role="status"
+                data-testid="store-inactive"
+                class="flex flex-col"
+                style="max-width: 500px; gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
+              >
+                <strong style="font-size: 14px; color: var(--color-espresso)">{{
+                  'common.storeInactive.title' | translate
+                }}</strong>
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'common.storeInactive.hint' | translate
+                }}</span>
+              </div>
+            }
 
             <button
               type="button"
@@ -653,6 +709,8 @@ export class CheckoutPage implements OnInit {
    * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
    */
   readonly storeOpen = signal(true);
+  /** The store takes no orders at all right now: no shift started, or switched off. */
+  readonly storeInactive = signal(false);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
   /**
@@ -664,10 +722,12 @@ export class CheckoutPage implements OnInit {
     if (this.cardPaymentsEnabled()) untracked(() => this.loadCards());
   });
   readonly cards = signal<BoundCard[]>([]);
-  /** `null` means "pay at the counter" — always an option, cards or not. */
+  /** The card to hold the amount on; `null` only while the customer has none. */
   readonly selectedCardId = signal<string | null>(null);
   /** Set once the order exists, so a declined card retries the charge rather than placing a second order. */
   private placedOrderId: string | null = null;
+  /** The order exists and only its payment is left; the basket is fixed from here. */
+  readonly placedOrder = signal(false);
   /** ISO start of the chosen slot; empty until the customer picks one. */
   readonly scheduledAt = signal<string>('');
   readonly slots = signal<PickupSlot[]>([]);
@@ -760,12 +820,23 @@ export class CheckoutPage implements OnInit {
     const c = this.cart();
     if (!c || c.items.length === 0) return false;
     if (!this.authStore.isAuthenticated()) return false;
+    if (this.storeInactive()) return false;
     if (this.mode() === 'SCHEDULED' && !this.scheduledAt()) return false;
     // Outside the serviceable radius — server will 400 anyway, stop the
     // customer at the button instead of letting them tap into an error.
     if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() === 'OUTSIDE_RADIUS') return false;
+    // Orders are paid by card only; a total that points or a gift card
+    // covered in full is the one thing that needs no card.
+    if (this.needsCard() && !this.payingByCard()) return false;
     return true;
   });
+
+  readonly needsCard = computed(() => {
+    const c = this.cart();
+    return !!c && this.totalCents(c.subtotalCents) > 0;
+  });
+
+  readonly payingByCard = computed(() => this.cardPaymentsEnabled() && this.selectedCardId() !== null);
 
   ngOnInit(): void {
     this.flags.load();
@@ -803,6 +874,7 @@ export class CheckoutPage implements OnInit {
     this.storeTimezone.set(store.timezone ?? null);
     // `!== false`: an API that predates the field keeps ASAP available.
     this.storeOpen.set(store.openNow !== false);
+    this.storeInactive.set(isStoreInactive(store));
     if (!this.storeOpen()) this.selectMode('SCHEDULED');
     this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
     this.refreshFeeQuote();
@@ -1087,8 +1159,8 @@ export class CheckoutPage implements OnInit {
 
   /**
    * Cards are only offered once the acquirer is switched on, and the list is
-   * whatever the customer bound in their profile. A silent failure here just
-   * means checkout falls back to paying at the counter.
+   * whatever the customer bound in their profile. A silent failure here
+   * leaves the order button off, since there is nothing to pay with.
    */
   private loadCards(): void {
     if (!this.cardPaymentsEnabled()) return;
@@ -1111,6 +1183,11 @@ export class CheckoutPage implements OnInit {
     // again rather than placing a duplicate.
     if (this.placedOrderId) {
       this.payFor(this.placedOrderId);
+      return;
+    }
+    if (this.needsCard() && !this.payingByCard()) {
+      this.submitting.set(false);
+      this.error.set(this.translate.instant('web.checkout.cardOnly'));
       return;
     }
 
@@ -1149,6 +1226,7 @@ export class CheckoutPage implements OnInit {
     this.orders.create(input).subscribe({
       next: (order) => {
         this.placedOrderId = order.id;
+        this.placedOrder.set(true);
         this.payFor(order.id);
       },
       error: (err) => {
@@ -1194,18 +1272,23 @@ export class CheckoutPage implements OnInit {
   }
 
   /**
-   * Charges the chosen card and then opens the order screen. Paying at the
-   * counter skips straight there — the order is placed either way, and the
-   * order screen is what tells the customer where their money stands.
+   * Holds the amount on the chosen card and then opens the order screen,
+   * which is what tells the customer where their money stands. Only an
+   * order with nothing left to pay skips the card.
    *
    * A decline keeps the customer on checkout with the reason, because that is
    * the only screen where they can pick a different card.
    */
   private payFor(orderId: string): void {
     const cardId = this.selectedCardId();
-    if (!this.cardPaymentsEnabled() || !cardId) {
+    if (!this.needsCard()) {
       this.submitting.set(false);
       void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+    if (!this.cardPaymentsEnabled() || !cardId) {
+      this.submitting.set(false);
+      this.error.set(this.translate.instant('web.checkout.cardOnly'));
       return;
     }
 
@@ -1219,6 +1302,47 @@ export class CheckoutPage implements OnInit {
         this.error.set(this.errorText(err));
       },
     });
+  }
+
+  /** The line whose quantity is on its way to the server; the steppers wait for it. */
+  readonly changingItemId = signal<string | null>(null);
+
+  /**
+   * One step of a line's quantity. Steppers are off while a change is in
+   * flight, so each tap builds on the count the server confirmed and a quick
+   * double tap cannot send the same number twice. Below one the line goes.
+   */
+  changeQuantity(item: CartItemView, delta: number): void {
+    const c = this.cart();
+    if (!c || this.changingItemId()) return;
+    const next = item.quantity + delta;
+    if (next > 99) return;
+    this.changingItemId.set(item.id);
+    const request = next < 1 ? this.cartService.remove(item.id) : this.cartService.updateQuantity(item.id, next);
+    request.subscribe({
+      next: (cart) => {
+        this.cart.set(cart);
+        this.changingItemId.set(null);
+        this.onCartQuantityChanged();
+      },
+      error: (err) => {
+        this.changingItemId.set(null);
+        this.error.set(this.errorText(err));
+      },
+    });
+  }
+
+  /**
+   * Promo, points and gift card were each worked out for the old subtotal,
+   * so they come off, as they do when the server re-prices the cart; the
+   * codes stay typed in and one tap re-applies them.
+   */
+  private onCartQuantityChanged(): void {
+    if (this.promoCode() === null && this.pointsSpent() === 0 && this.giftCardCode() === null) return;
+    this.clearPromo();
+    this.clearPoints();
+    this.clearGiftCard();
+    this.error.set(this.translate.instant('web.checkout.cartChangedDiscounts'));
   }
 
   price(cents: number): string {
