@@ -12,6 +12,7 @@ import '../../core/auth/session_manager.dart';
 import '../../core/config/env.dart';
 import '../../core/providers.dart';
 import '../../core/push/push_service.dart';
+import '../../core/storage/app_prefs.dart';
 import 'telegram_login.dart';
 
 /// Thrown when the customer backs out of a provider's own sign-in UI. Not
@@ -211,6 +212,32 @@ class AuthService {
     } on Object {
       // The refresh token dies with its TTL anyway; never block sign-out.
     }
+    await _forgetSession();
+  }
+
+  /// Deletes the customer's account on the server, then forgets it on this
+  /// device the way [signOut] does. When the API refuses (403 for staff) or
+  /// cannot be reached, the error propagates and the customer stays signed in.
+  Future<void> deleteAccount() async {
+    if (_sessions.current == null) return;
+    final push = _ref.read(pushServiceProvider);
+    // Detach the device while the token still works: once the account is
+    // gone every authenticated call answers 401, which would read as an
+    // expired session.
+    await push.unregister();
+    try {
+      await _api.deleteMe();
+    } on Object {
+      unawaited(push.syncToken());
+      rethrow;
+    }
+    // The refresh tokens went with the account, so there is nothing to log
+    // out of. The contact details checkout remembered are personal data too.
+    await _ref.read(contactPrefsProvider).forget();
+    await _forgetSession();
+  }
+
+  Future<void> _forgetSession() async {
     if (_googleReady) unawaited(GoogleSignIn.instance.signOut().catchError((Object _) {}));
     await _sessions.end(SessionEndReason.signedOut);
   }

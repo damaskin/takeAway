@@ -494,6 +494,12 @@
   "profileAbout": "About the app",
   "signOut": "Sign out",
   "signOutConfirm": "Sign out of takeAway?",
+  "deleteAccount": "Delete account",
+  "deleteAccountTitle": "Delete your account?",
+  "deleteAccountBody": "Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.",
+  "deleteAccountConfirm": "Delete for good",
+  "deleteAccountStaff": "Staff accounts are deleted by the business admin.",
+  "accountDeleted": "Your account has been deleted",
   "appVersion": "Version {version}",
   "@appVersion": {
     "placeholders": {

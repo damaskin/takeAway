@@ -811,6 +811,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signOutConfirm => 'Sign out of takeAway?';
 
   @override
+  String get deleteAccount => 'Delete account';
+
+  @override
+  String get deleteAccountTitle => 'Delete your account?';
+
+  @override
+  String get deleteAccountBody =>
+      'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.';
+
+  @override
+  String get deleteAccountConfirm => 'Delete for good';
+
+  @override
+  String get deleteAccountStaff => 'Staff accounts are deleted by the business admin.';
+
+  @override
+  String get accountDeleted => 'Your account has been deleted';
+
+  @override
   String appVersion(String version) {
     return 'Version $version';
   }

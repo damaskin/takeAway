@@ -1,17 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../app/router.dart';
+import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/cup_logo.dart';
+import '../../shared/widgets/state_views.dart';
 import '../auth/auth_service.dart';
 import '../auth/sign_in_sheet.dart';
 import '../catalog/catalog_providers.dart';
@@ -114,6 +117,8 @@ class ProfileScreen extends ConsumerWidget {
                 danger: true,
                 onPressed: () => _signOut(context, ref),
               ),
+              const SizedBox(height: 8),
+              const _DeleteAccountButton(),
             ],
           ],
         ),
@@ -182,6 +187,79 @@ Future<void> showLanguagePicker(BuildContext context, WidgetRef ref) async {
       ref.read(authServiceProvider).updateProfile({'locale': choice.toUpperCase()}).catchError((Object _) {
         return ref.read(currentUserProvider)!;
       }),
+    );
+  }
+}
+
+/// Deletes the account from inside the app, as App Review requires of any
+/// app that lets people create one (guideline 5.1.1(v)).
+class _DeleteAccountButton extends ConsumerStatefulWidget {
+  const _DeleteAccountButton();
+
+  @override
+  ConsumerState<_DeleteAccountButton> createState() => _DeleteAccountButtonState();
+}
+
+class _DeleteAccountButtonState extends ConsumerState<_DeleteAccountButton> {
+  bool _busy = false;
+
+  Future<void> _delete() async {
+    if (_busy) return;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.deleteAccountTitle),
+        content: Text(l10n.deleteAccountBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              backgroundColor: context.brand.berry,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            child: Text(l10n.deleteAccountConfirm),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // Once the session ends this screen turns into the guest card and this
+    // button goes away, so take the router now.
+    final router = GoRouter.of(context);
+    setState(() => _busy = true);
+    try {
+      await ref.read(authServiceProvider).deleteAccount();
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (ApiError.from(error).statusCode == 403) {
+        Snack.show(context, l10n.deleteAccountStaff, icon: Icons.admin_panel_settings_outlined);
+      } else {
+        Snack.error(context, error);
+      }
+      return;
+    }
+    unawaited(HapticFeedback.mediumImpact());
+    router.go(Routes.menu);
+    final appContext = rootNavigatorKey.currentContext;
+    if (appContext != null && appContext.mounted) {
+      Snack.show(appContext, l10n.accountDeleted, icon: Icons.check_circle_outline_rounded);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return TextButton.icon(
+      onPressed: _busy ? null : _delete,
+      style: TextButton.styleFrom(foregroundColor: brand.berry),
+      icon: _busy
+          ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: brand.berry))
+          : const Icon(Icons.delete_forever_outlined, size: 20),
+      label: Text(AppLocalizations.of(context).deleteAccount),
     );
   }
 }

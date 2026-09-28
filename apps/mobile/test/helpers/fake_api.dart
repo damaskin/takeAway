@@ -19,6 +19,13 @@ class FakeApi extends Fake implements TakeAwayApi {
   SignInMethods methods = const SignInMethods(telegram: true, google: false, apple: false);
   final unlinked = <String>[];
 
+  /// How many times the account was deleted.
+  int accountsDeleted = 0;
+
+  /// Status the next account deletion fails with, e.g. 403 for staff; null
+  /// means it goes through.
+  int? deleteAccountStatus;
+
   /// Bank verdict for the next card payment; null means it goes through.
   String? declineWith;
 
@@ -244,6 +251,20 @@ class FakeApi extends Fake implements TakeAwayApi {
       google: methods.google && provider != 'google',
       apple: methods.apple && provider != 'apple',
     );
+  }
+
+  @override
+  Future<void> deleteMe() async {
+    final status = deleteAccountStatus;
+    if (status != null) {
+      final request = RequestOptions(path: '/auth/me', method: 'DELETE');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(requestOptions: request, statusCode: status, data: {'statusCode': status}),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    accountsDeleted++;
   }
 
   @override

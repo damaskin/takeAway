@@ -818,6 +818,25 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signOutConfirm => 'Выйти из takeAway?';
 
   @override
+  String get deleteAccount => 'Удалить аккаунт';
+
+  @override
+  String get deleteAccountTitle => 'Удалить аккаунт?';
+
+  @override
+  String get deleteAccountBody =>
+      'Профиль, сохранённые карты, баллы лояльности, способы входа и личные данные будут удалены. История заказов останется у заведений только в обезличенном виде. Отменить удаление нельзя.';
+
+  @override
+  String get deleteAccountConfirm => 'Удалить навсегда';
+
+  @override
+  String get deleteAccountStaff => 'Аккаунты сотрудников удаляет администратор заведения.';
+
+  @override
+  String get accountDeleted => 'Аккаунт удалён';
+
+  @override
   String appVersion(String version) {
     return 'Версия $version';
   }

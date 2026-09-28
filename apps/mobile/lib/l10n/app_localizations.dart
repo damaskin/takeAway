@@ -1550,6 +1550,42 @@ abstract class AppLocalizations {
   /// **'Sign out of takeAway?'**
   String get signOutConfirm;
 
+  /// No description provided for @deleteAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete account'**
+  String get deleteAccount;
+
+  /// No description provided for @deleteAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete your account?'**
+  String get deleteAccountTitle;
+
+  /// No description provided for @deleteAccountBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.'**
+  String get deleteAccountBody;
+
+  /// No description provided for @deleteAccountConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for good'**
+  String get deleteAccountConfirm;
+
+  /// No description provided for @deleteAccountStaff.
+  ///
+  /// In en, this message translates to:
+  /// **'Staff accounts are deleted by the business admin.'**
+  String get deleteAccountStaff;
+
+  /// No description provided for @accountDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account has been deleted'**
+  String get accountDeleted;
+
   /// No description provided for @appVersion.
   ///
   /// In en, this message translates to:
