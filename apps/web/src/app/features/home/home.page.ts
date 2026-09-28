@@ -368,6 +368,14 @@ export class HomePage implements OnInit {
         { label: 'web.business.footerLink', route: '/business/signup' },
       ],
     },
+    {
+      title: 'web.home.footer.help',
+      links: [
+        { label: 'web.legal.support', route: '/support' },
+        { label: 'web.legal.terms', route: '/terms' },
+        { label: 'web.legal.privacy', route: '/privacy' },
+      ],
+    },
   ];
 
   ngOnInit(): void {
