@@ -829,10 +829,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.';
 
   @override
+  String get deleteAccountApple => 'Apple will ask you to confirm, and takeAway will stop using your Apple ID.';
+
+  @override
   String get deleteAccountConfirm => 'Delete for good';
 
   @override
   String get deleteAccountStaff => 'Staff accounts are deleted by the business admin.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Deleting the account needs your confirmation with Apple.';
 
   @override
   String get accountDeleted => 'Your account has been deleted';

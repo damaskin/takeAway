@@ -836,10 +836,17 @@ class AppLocalizationsRu extends AppLocalizations {
       'Профиль, сохранённые карты, баллы лояльности, способы входа и личные данные будут удалены. История заказов останется у заведений только в обезличенном виде. Отменить удаление нельзя.';
 
   @override
+  String get deleteAccountApple =>
+      'Apple попросит подтвердить удаление, и takeAway перестанет использовать ваш Apple ID.';
+
+  @override
   String get deleteAccountConfirm => 'Удалить навсегда';
 
   @override
   String get deleteAccountStaff => 'Аккаунты сотрудников удаляет администратор заведения.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Для удаления аккаунта нужно подтверждение через Apple.';
 
   @override
   String get accountDeleted => 'Аккаунт удалён';

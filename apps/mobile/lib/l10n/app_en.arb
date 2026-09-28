@@ -510,8 +510,10 @@
   "deleteAccount": "Delete account",
   "deleteAccountTitle": "Delete your account?",
   "deleteAccountBody": "Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.",
+  "deleteAccountApple": "Apple will ask you to confirm, and takeAway will stop using your Apple ID.",
   "deleteAccountConfirm": "Delete for good",
   "deleteAccountStaff": "Staff accounts are deleted by the business admin.",
+  "deleteAccountAppleCancelled": "Deleting the account needs your confirmation with Apple.",
   "accountDeleted": "Your account has been deleted",
   "appVersion": "Version {version}",
   "@appVersion": {

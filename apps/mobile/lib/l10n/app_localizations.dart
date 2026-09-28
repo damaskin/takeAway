@@ -1580,6 +1580,12 @@ abstract class AppLocalizations {
   /// **'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.'**
   String get deleteAccountBody;
 
+  /// No description provided for @deleteAccountApple.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple will ask you to confirm, and takeAway will stop using your Apple ID.'**
+  String get deleteAccountApple;
+
   /// No description provided for @deleteAccountConfirm.
   ///
   /// In en, this message translates to:
@@ -1591,6 +1597,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Staff accounts are deleted by the business admin.'**
   String get deleteAccountStaff;
+
+  /// No description provided for @deleteAccountAppleCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting the account needs your confirmation with Apple.'**
+  String get deleteAccountAppleCancelled;
 
   /// No description provided for @accountDeleted.
   ///

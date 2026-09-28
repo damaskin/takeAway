@@ -19,8 +19,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   SignInMethods methods = const SignInMethods(telegram: true, google: false, apple: false);
   final unlinked = <String>[];
 
-  /// How many times the account was deleted.
-  int accountsDeleted = 0;
+  /// Every account deletion the app asked for, with its body.
+  final deleteRequests = <DeleteAccountRequest?>[];
 
   /// Status the next account deletion fails with, e.g. 403 for staff; null
   /// means it goes through.
@@ -254,7 +254,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   }
 
   @override
-  Future<void> deleteMe() async {
+  Future<void> deleteMe([DeleteAccountRequest? body]) async {
+    deleteRequests.add(body);
     final status = deleteAccountStatus;
     if (status != null) {
       final request = RequestOptions(path: '/auth/me', method: 'DELETE');
@@ -264,7 +265,6 @@ class FakeApi extends Fake implements TakeAwayApi {
         type: DioExceptionType.badResponse,
       );
     }
-    accountsDeleted++;
   }
 
   @override

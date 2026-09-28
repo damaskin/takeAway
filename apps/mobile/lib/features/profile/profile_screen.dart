@@ -207,11 +207,17 @@ class _DeleteAccountButtonState extends ConsumerState<_DeleteAccountButton> {
   Future<void> _delete() async {
     if (_busy) return;
     final l10n = AppLocalizations.of(context);
+    final auth = ref.read(authServiceProvider);
+    setState(() => _busy = true);
+    // Only for the wording: deleteAccount checks again and asks Apple itself.
+    final withApple = await auth.deletionNeedsApple().catchError((Object _) => false);
+    if (!mounted) return;
+    setState(() => _busy = false);
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l10n.deleteAccountTitle),
-        content: Text(l10n.deleteAccountBody),
+        content: Text(withApple ? '${l10n.deleteAccountBody}\n\n${l10n.deleteAccountApple}' : l10n.deleteAccountBody),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
           TextButton(
@@ -232,7 +238,12 @@ class _DeleteAccountButtonState extends ConsumerState<_DeleteAccountButton> {
     final router = GoRouter.of(context);
     setState(() => _busy = true);
     try {
-      await ref.read(authServiceProvider).deleteAccount();
+      await auth.deleteAccount();
+    } on SignInCancelled {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      Snack.show(context, l10n.deleteAccountAppleCancelled, icon: Icons.apple);
+      return;
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
