@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_mobile/core/storage/app_prefs.dart';
@@ -65,21 +66,25 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('store cards show the business logo, or the takeAway cup without one', (tester) async {
+  testWidgets('store cards show the business logo across the whole square, or a quiet storefront without one', (
+    tester,
+  ) async {
     final api = FakeApi()
       ..moreStores = [
         {...FakeApi.storeJson, 'id': 'st_2', 'name': 'С логотипом', 'logoUrl': 'https://cdn.takeaway.md/logo.png'},
       ];
     final h = await pumpApp(tester, api: api, activeStoreId: null);
 
-    expect(find.byType(StoreLogo), findsNWidgets(2));
-    expect(
-      find.descendant(
-        of: find.ancestor(of: find.text('С логотипом'), matching: find.byType(StoreTile)),
-        matching: find.byWidgetPredicate((w) => w.runtimeType.toString() == 'CachedNetworkImage'),
-      ),
-      findsOneWidget,
+    Finder inTile(String name, Finder matching) => find.descendant(
+      of: find.ancestor(of: find.text(name), matching: find.byType(StoreTile)),
+      matching: matching,
     );
+
+    final image = inTile('С логотипом', find.byType(CachedNetworkImage));
+    expect(image, findsOneWidget);
+    expect(tester.widget<CachedNetworkImage>(image).fit, BoxFit.cover, reason: 'the logo fills the square');
+    expect(tester.getSize(image), tester.getSize(inTile('С логотипом', find.byType(StoreLogo))));
+    expect(inTile('NoName — центр', find.byIcon(Icons.storefront_rounded)), findsOneWidget);
 
     await h.unmount(tester);
   });
