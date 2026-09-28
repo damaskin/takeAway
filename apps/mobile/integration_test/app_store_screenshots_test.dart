@@ -21,10 +21,13 @@ import 'package:takeaway_mobile/main.dart';
 /// and answers with the `.done` file. Flutter's own screenshots would leave
 /// the status bar out.
 ///
-///   flutter test integration_test/app_store_screenshots_test.dart -d <simulator> \
+///   flutter test integration_test/app_store_screenshots_test.dart -d SIMULATOR_ID \
 ///     --dart-define-from-file=config/prod.json --dart-define=SHOT_STORE="NoName - центр"
 const _storeName = String.fromEnvironment('SHOT_STORE', defaultValue: 'NoName - центр');
-const _product = String.fromEnvironment('SHOT_PRODUCT', defaultValue: 'Латте');
+const _product = String.fromEnvironment('SHOT_PRODUCT', defaultValue: 'Айс Латте');
+/// How far the menu is scrolled for its screenshot: past the first row, which
+/// holds the store's own test items.
+const _menuScroll = int.fromEnvironment('SHOT_MENU_SCROLL', defaultValue: 560);
 const _category = String.fromEnvironment('SHOT_CATEGORY', defaultValue: 'Холодные напитки');
 
 void main() {
@@ -91,6 +94,8 @@ void main() {
       await tapWhenVisible(tester, find.text(_storeName));
     }
     await waitFor(tester, find.byType(ProductCard));
+    await pumpFor(tester, const Duration(seconds: 2));
+    await tester.drag(find.byType(Scrollable).first, Offset(0, -_menuScroll.toDouble()));
     await shot(tester, '02_menu');
 
     // Another category, further down the menu.
@@ -100,9 +105,7 @@ void main() {
       await shot(tester, '03_category');
     }
 
-    // A product with its options.
-    container.read(routerProvider).go(Routes.menu);
-    await pumpFor(tester, const Duration(seconds: 1));
+    // A product with its options, from the category on screen.
     await tapWhenVisible(tester, find.text(_product));
     await waitFor(tester, find.byIcon(Icons.close_rounded));
     await shot(tester, '04_product');
