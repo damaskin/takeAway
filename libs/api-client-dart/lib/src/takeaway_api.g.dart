@@ -265,11 +265,13 @@ class _TakeAwayApi implements TakeAwayApi {
   }
 
   @override
-  Future<void> deleteMe() async {
+  Future<void> deleteMe([DeleteAccountRequest? body]) async {
     final _extra = <String, dynamic>{};
     final queryParameters = <String, dynamic>{};
+    queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};
-    const Map<String, dynamic>? _data = null;
+    final _data = <String, dynamic>{};
+    _data.addAll(body?.toJson() ?? <String, dynamic>{});
     final _options = _setStreamType<void>(
       Options(method: 'DELETE', headers: _headers, extra: _extra)
           .compose(

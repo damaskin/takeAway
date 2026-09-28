@@ -79,6 +79,10 @@ Map<String, dynamic> _$RefreshRequestToJson(RefreshRequest instance) => <String,
   'refreshToken': instance.refreshToken,
 };
 
+Map<String, dynamic> _$DeleteAccountRequestToJson(DeleteAccountRequest instance) => <String, dynamic>{
+  'appleAuthorizationCode': ?instance.appleAuthorizationCode,
+};
+
 SignInMethods _$SignInMethodsFromJson(Map<String, dynamic> json) =>
     SignInMethods(telegram: json['telegram'] as bool, google: json['google'] as bool, apple: json['apple'] as bool);
 
