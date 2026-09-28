@@ -4,6 +4,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 
+import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 
 interface IssuedTokens {
@@ -28,6 +29,7 @@ export class TokensService {
   constructor(
     private readonly jwt: JwtService,
     private readonly redis: RedisService,
+    private readonly prisma: PrismaService,
     config: ConfigService,
   ) {
     this.accessTtlSeconds = parseDurationSeconds(config.get<string>('JWT_ACCESS_TTL') ?? '15m');
@@ -66,6 +68,13 @@ export class TokensService {
 
     const parsed = JSON.parse(session) as RefreshSession;
     await this.redis.del(key);
+    // Blocking and account deletion both stamp `blockedAt`. A refresh token
+    // minted before that — or one that slipped in while it happened — must
+    // not keep the session alive.
+    const user = await this.prisma.user.findUnique({ where: { id: parsed.userId }, select: { blockedAt: true } });
+    if (!user || user.blockedAt) {
+      throw new UnauthorizedException('User not found or blocked');
+    }
     return this.issue(parsed.userId, parsed.deviceId);
   }
 
@@ -76,6 +85,15 @@ export class TokensService {
     } catch {
       // Swallow — logout must be idempotent even on stale or invalid tokens.
     }
+  }
+
+  /**
+   * Ends every session of a user: all of their refresh tokens stop rotating.
+   * Access tokens are short-lived and are refused by the JWT strategy once
+   * the account is blocked, so there is nothing to revoke for them here.
+   */
+  revokeAll(userId: string): Promise<number> {
+    return this.redis.delMatching(this.refreshKey(escapeGlob(userId), '*'));
   }
 
   private async verifyRefresh(token: string): Promise<{ sub: string; jti: string }> {
@@ -91,6 +109,11 @@ export class TokensService {
   private refreshKey(userId: string, tokenId: string): string {
     return `auth:refresh:${userId}:${tokenId}`;
   }
+}
+
+/** User ids are cuids, but a glob must never widen because of one. */
+function escapeGlob(value: string): string {
+  return value.replace(/[*?[\]\\]/g, '\\$&');
 }
 
 function parseDurationSeconds(input: string): number {
