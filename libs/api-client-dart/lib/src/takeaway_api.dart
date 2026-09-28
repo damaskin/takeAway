@@ -50,6 +50,11 @@ abstract class TakeAwayApi {
   @PATCH('/auth/me')
   Future<AuthUser> updateMe(@Body() Map<String, dynamic> patch);
 
+  /// Deletes the signed-in customer's account for good (204). Staff
+  /// accounts get 403: the business admin removes those.
+  @DELETE('/auth/me')
+  Future<void> deleteMe();
+
   @GET('/auth/me/sign-in-methods')
   Future<SignInMethods> signInMethods();
 
