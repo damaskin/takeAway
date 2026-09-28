@@ -329,7 +329,19 @@ export const TRANSLATIONS_RU = {
       noProviders: 'Для этого окружения не настроен ни один способ входа.',
       or: 'или',
       signingIn: 'Входим…',
-      agreement: 'Продолжая, вы принимаете Условия и Политику конфиденциальности.',
+      // «Продолжая, вы принимаете <Условия использования> и <Политику конфиденциальности>.»
+      // Split so each document can be a link.
+      agreementLead: 'Продолжая, вы принимаете',
+      agreementTerms: 'Условия использования',
+      agreementAnd: 'и',
+      agreementPrivacy: 'Политику конфиденциальности',
+    },
+    legal: {
+      privacy: 'Политика конфиденциальности',
+      terms: 'Условия использования',
+      support: 'Поддержка',
+      contents: 'Содержание',
+      related: 'Документы и помощь',
     },
     business: {
       title: 'Разместите бизнес на takeAway',

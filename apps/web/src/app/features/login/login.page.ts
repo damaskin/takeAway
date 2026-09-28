@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslateService, TranslatePipe } from '@ngx-translate/core';
 import {
   AppleLoginButtonComponent,
@@ -22,7 +22,8 @@ import { AuthService } from '../../core/auth/auth.service';
  *
  * Layout:
  *   authLeft (fill, cream) — logo, H1 "Welcome back", the three sign-in
- *     providers stacked in a 400px column, small agreement footer.
+ *     providers stacked in a 400px column, small agreement footer linking
+ *     /terms and /privacy.
  *   authRight (560px) — branded hero photograph, hidden below md.
  *
  * Provider order is deliberate: Google first (largest share on the launch
@@ -37,6 +38,7 @@ import { AuthService } from '../../core/auth/auth.service';
   selector: 'app-login',
   standalone: true,
   imports: [
+    RouterLink,
     TranslatePipe,
     TelegramLoginButtonComponent,
     TelegramOidcButtonComponent,
@@ -124,7 +126,18 @@ import { AuthService } from '../../core/auth/auth.service';
         </div>
 
         <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
-          {{ 'web.auth.agreement' | translate }}
+          {{ 'web.auth.agreementLead' | translate }}
+          <a
+            routerLink="/terms"
+            style="color: var(--color-caramel); text-decoration: underline; text-underline-offset: 2px"
+            >{{ 'web.auth.agreementTerms' | translate }}</a
+          >
+          {{ 'web.auth.agreementAnd' | translate }}
+          <a
+            routerLink="/privacy"
+            style="color: var(--color-caramel); text-decoration: underline; text-underline-offset: 2px"
+            >{{ 'web.auth.agreementPrivacy' | translate }}</a
+          >.
         </p>
       </div>
 

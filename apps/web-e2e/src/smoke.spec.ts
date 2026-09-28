@@ -46,7 +46,42 @@ test.describe('takeAway web — smoke', () => {
     // telegram.org and never loads in an offline test run, so the host
     // element has no size. Its presence is the thing worth asserting.
     await expect(page.locator('lib-telegram-login-button')).toBeAttached();
-    await expect(page.getByText(/terms and privacy policy/i)).toBeVisible();
+    await expect(page.getByText(/by continuing you agree to our/i)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute('href', '/terms');
+    await expect(page.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy');
+  });
+
+  test('home footer links the legal pages', async ({ page }) => {
+    await page.goto('/');
+    const footer = page.locator('footer');
+    await expect(footer.getByRole('link', { name: 'Support' })).toHaveAttribute('href', '/support');
+    await expect(footer.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute('href', '/terms');
+    await expect(footer.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy');
+  });
+
+  // App Store review opens these without an account: they must render for a
+  // signed-out visitor instead of falling back to the home page.
+  for (const { path, heading } of [
+    { path: '/privacy', heading: 'Privacy Policy' },
+    { path: '/terms', heading: 'Terms of Service' },
+    { path: '/support', heading: 'Support' },
+  ]) {
+    test(`${path} is public and names the support contacts`, async ({ page }) => {
+      await page.goto(path);
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'help@takeaway.md' }).first()).toHaveAttribute(
+        'href',
+        'mailto:help@takeaway.md',
+      );
+      await expect(page).toHaveTitle(`${heading} — takeAway`);
+    });
+  }
+
+  test('legal pages follow the language switcher', async ({ page }) => {
+    await page.goto('/privacy');
+    await page.getByRole('button', { name: /switch language to русский/i }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Политика конфиденциальности' })).toBeVisible();
   });
 
   test('stores page renders the map chrome + nearby sidebar', async ({ page }) => {

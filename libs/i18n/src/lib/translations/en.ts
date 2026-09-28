@@ -329,7 +329,19 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
-      agreement: 'By continuing you agree to our Terms and Privacy Policy.',
+      // "By continuing you agree to our <Terms of Service> and <Privacy Policy>."
+      // Split so each document can be a link.
+      agreementLead: 'By continuing you agree to our',
+      agreementTerms: 'Terms of Service',
+      agreementAnd: 'and',
+      agreementPrivacy: 'Privacy Policy',
+    },
+    legal: {
+      privacy: 'Privacy Policy',
+      terms: 'Terms of Service',
+      support: 'Support',
+      contents: 'Contents',
+      related: 'Documents and help',
     },
     business: {
       title: 'List your business on takeAway',
