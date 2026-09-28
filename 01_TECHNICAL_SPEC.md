@@ -614,7 +614,10 @@ POST   /auth/telegram/link/oidc      { idToken }                     (auth, то
 POST   /auth/refresh                 { refreshToken }
 POST   /auth/logout
 GET    /auth/me
+DELETE /auth/me                      { appleAuthorizationCode? } → 204   (удаление аккаунта; только CUSTOMER, staff и владелец бренда → 403)
 ```
+
+`DELETE /auth/me` (App Store 5.1.1(v)) не удаляет строку `User`, а превращает её в обезличенную заглушку в одной транзакции: имя, email, телефон, аватар, дата рождения, `telegramUserId`, `passwordHash`, `referralCode` → null, notify-флаги → false, `blockedAt = now()`. Удаляются `OAuthAccount`, `Device`, `Cart`, `CardToken`, `CardBindingRequest`, `PasswordResetToken`; баланс `LoyaltyAccount` обнуляется записью `EXPIRE` в ledger. Заказы, платежи, ledger, промо-погашения, рефералы и подарочные карты остаются и ссылаются на ту же строку. Все refresh-токены пользователя удаляются из Redis, ротация и WebSocket-рукопожатие отказывают заблокированному аккаунту. Повторный вход тем же Telegram / Google / Apple создаёт новый пустой профиль. Тело необязательное: iOS-приложение перед удалением заново проходит Sign in with Apple и присылает свежий `appleAuthorizationCode` — до транзакции (и только после проверки прав) API меняет его на токены в `appleid.apple.com/auth/token` и отзывает refresh-токен (или access) через `/auth/revoke`. `client_secret` — ES256 JWT, подписанный ключом Sign in with Apple (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`), client id — `APPLE_REVOKE_CLIENT_ID` или первый из `APPLE_OAUTH_CLIENT_IDS`, не равный `APPLE_OAUTH_SERVICES_ID`. Отзыв best-effort: сбой Apple или отсутствие ключа логируются и удаление не блокируют. Логика и решения по каждой связи — `AccountDeletionService`, отзыв Apple — `AppleTokenRevocationService`.
 
 ### 6.2. Профиль и уведомления
 
