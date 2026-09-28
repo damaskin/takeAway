@@ -66,6 +66,8 @@ describe('DELETE /auth/me', () => {
     cardToken: { deleteMany: jest.fn() },
     passwordResetToken: { deleteMany: jest.fn() },
     userStore: { deleteMany: jest.fn() },
+    order: { updateMany: jest.fn() },
+    orderEvent: { findMany: jest.fn(async () => []), update: jest.fn() },
     loyaltyAccount: { findUnique: jest.fn(async () => null) },
   };
   const prisma = { ...tx, $transaction: jest.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) };
@@ -156,6 +158,7 @@ describe('DELETE /auth/me', () => {
     expect(res.body).toBe('');
     expect(users.get('ana')).toMatchObject({ email: null, name: null, blockedAt: expect.any(Date) });
     expect(revokeAll).toHaveBeenCalledWith('ana');
+    expect(tx.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: 'ana' } }));
     expect(revokeAuthorizationCode).not.toHaveBeenCalled();
 
     expect((await del(token)).statusCode).toBe(401);
