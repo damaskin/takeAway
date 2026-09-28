@@ -374,11 +374,23 @@ abstract class AppLocalizations {
   /// **'Signing in…'**
   String get signingIn;
 
-  /// No description provided for @signInAgreement.
+  /// The two placeholders become links, filled with signInAgreementTerms and signInAgreementPrivacy.
   ///
   /// In en, this message translates to:
-  /// **'By continuing you agree to the Terms of Service and Privacy Policy.'**
-  String get signInAgreement;
+  /// **'By continuing you agree to the {terms} and {privacy}.'**
+  String signInAgreement(String terms, String privacy);
+
+  /// No description provided for @signInAgreementTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Service'**
+  String get signInAgreementTerms;
+
+  /// No description provided for @signInAgreementPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get signInAgreementPrivacy;
 
   /// No description provided for @signInUnavailable.
   ///
@@ -2023,6 +2035,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.'**
   String get aboutBody;
+
+  /// No description provided for @aboutPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get aboutPrivacy;
+
+  /// No description provided for @aboutTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Service'**
+  String get aboutTerms;
+
+  /// No description provided for @aboutSupport.
+  ///
+  /// In en, this message translates to:
+  /// **'Support'**
+  String get aboutSupport;
 
   /// No description provided for @locationDenied.
   ///

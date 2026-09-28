@@ -168,7 +168,15 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signingIn => 'Входим…';
 
   @override
-  String get signInAgreement => 'Продолжая, вы принимаете Условия использования и Политику конфиденциальности.';
+  String signInAgreement(String terms, String privacy) {
+    return 'Продолжая, вы соглашаетесь с $terms и $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Условиями использования';
+
+  @override
+  String get signInAgreementPrivacy => 'Политикой конфиденциальности';
 
   @override
   String get signInUnavailable => 'В этой сборке не настроен ни один способ входа.';
@@ -1078,6 +1086,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — предзаказ кофе и еды. Выбирайте, оплачивайте и забирайте без очереди.';
+
+  @override
+  String get aboutPrivacy => 'Политика конфиденциальности';
+
+  @override
+  String get aboutTerms => 'Условия использования';
+
+  @override
+  String get aboutSupport => 'Поддержка';
 
   @override
   String get locationDenied => 'Доступ к геолокации выключен. Разрешите его в настройках, чтобы видеть точки рядом.';

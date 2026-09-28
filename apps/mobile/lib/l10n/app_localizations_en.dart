@@ -161,7 +161,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signingIn => 'Signing in…';
 
   @override
-  String get signInAgreement => 'By continuing you agree to the Terms of Service and Privacy Policy.';
+  String signInAgreement(String terms, String privacy) {
+    return 'By continuing you agree to the $terms and $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Terms of Service';
+
+  @override
+  String get signInAgreementPrivacy => 'Privacy Policy';
 
   @override
   String get signInUnavailable => 'No sign-in method is configured for this build.';
@@ -1065,6 +1073,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.';
+
+  @override
+  String get aboutPrivacy => 'Privacy Policy';
+
+  @override
+  String get aboutTerms => 'Terms of Service';
+
+  @override
+  String get aboutSupport => 'Support';
 
   @override
   String get locationDenied => 'Location access is off. Allow it in settings to see stores near you.';

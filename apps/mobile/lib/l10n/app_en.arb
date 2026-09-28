@@ -82,7 +82,20 @@
   "continueWithApple": "Continue with Apple",
   "devSignIn": "Developer sign-in",
   "signingIn": "Signing in…",
-  "signInAgreement": "By continuing you agree to the Terms of Service and Privacy Policy.",
+  "signInAgreement": "By continuing you agree to the {terms} and {privacy}.",
+  "@signInAgreement": {
+    "description": "The two placeholders become links, filled with signInAgreementTerms and signInAgreementPrivacy.",
+    "placeholders": {
+      "terms": {
+        "type": "String"
+      },
+      "privacy": {
+        "type": "String"
+      }
+    }
+  },
+  "signInAgreementTerms": "Terms of Service",
+  "signInAgreementPrivacy": "Privacy Policy",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
   "signInMethodsTitle": "Sign-in methods",
@@ -631,6 +644,9 @@
   "languageEnglish": "English",
   "languageRussian": "Русский",
   "aboutBody": "takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.",
+  "aboutPrivacy": "Privacy Policy",
+  "aboutTerms": "Terms of Service",
+  "aboutSupport": "Support",
   "locationDenied": "Location access is off. Allow it in settings to see stores near you.",
   "locationServiceOff": "Location services are turned off.",
   "greetingMorning": "Good morning",

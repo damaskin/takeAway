@@ -20,6 +20,7 @@ import '../auth/sign_in_sheet.dart';
 import '../catalog/catalog_providers.dart';
 import 'loyalty_widgets.dart';
 import 'profile_providers.dart';
+import 'settings_list.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -49,40 +50,40 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const LoyaltyCardTile(),
               const SizedBox(height: 16),
-              _Group(
+              SettingsGroup(
                 children: [
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.receipt_long_outlined,
                     title: l10n.ordersTitle,
                     onTap: () => context.go(Routes.orders),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.badge_outlined,
                     title: l10n.profilePersonal,
                     onTap: () => context.push(Routes.personal),
                   ),
                   if (flags.agroprombankEnabled)
-                    _Tile(
+                    SettingsTile(
                       icon: Icons.credit_card_rounded,
                       title: l10n.profilePayment,
                       onTap: () => context.push(Routes.paymentMethods),
                     ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.card_giftcard_rounded,
                     title: l10n.profileGiftCards,
                     onTap: () => context.push(Routes.giftCards),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.group_add_outlined,
                     title: l10n.profileReferrals,
                     onTap: () => context.push(Routes.referrals),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.key_rounded,
                     title: l10n.signInMethodsTitle,
                     onTap: () => context.push(Routes.signInMethods),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.notifications_none_rounded,
                     title: l10n.profileNotifications,
                     onTap: () => context.push(Routes.notifications),
@@ -91,9 +92,9 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: 16),
-            _Group(
+            SettingsGroup(
               children: [
-                _Tile(
+                SettingsTile(
                   icon: Icons.translate_rounded,
                   title: l10n.profileLanguage,
                   trailing: Text(
@@ -102,7 +103,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   onTap: () => showLanguagePicker(context, ref),
                 ),
-                _Tile(
+                SettingsTile(
                   icon: Icons.info_outline_rounded,
                   title: l10n.profileAbout,
                   onTap: () => context.push(Routes.about),
@@ -332,58 +333,6 @@ class _UserHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Group extends StatelessWidget {
-  const _Group({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = context.brand;
-    return Container(
-      decoration: BoxDecoration(
-        color: brand.foam,
-        borderRadius: BorderRadius.circular(Radii.card),
-        border: Border.all(color: brand.borderLight),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) Divider(indent: 56, color: brand.borderLight),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.title, required this.onTap, this.trailing});
-
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ?trailing,
-          Icon(Icons.chevron_right_rounded, color: context.brand.textTertiary),
-        ],
-      ),
-      onTap: onTap,
     );
   }
 }
