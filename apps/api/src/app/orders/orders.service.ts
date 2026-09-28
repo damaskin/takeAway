@@ -32,6 +32,7 @@ import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import type { OrderDto, OrderItemDto, OrderPaymentDto, OrderPaymentState, OrderSummaryDto } from './dto/order.dto';
+import { withoutCoordinates } from './order-event-payload';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
@@ -544,7 +545,9 @@ export class OrdersService {
         type: e.type,
         createdAt: e.createdAt.toISOString(),
         actorId: e.actorId,
-        payload: e.payload,
+        // Arrival pings store where the customer was; the timeline only
+        // needs how far from the store, so the coordinates never leave.
+        payload: withoutCoordinates(e.payload),
       })),
     };
   }

@@ -267,8 +267,9 @@ export class AuthController {
 
   /**
    * Delete the signed-in customer's account (App Store guideline 5.1.1(v)).
-   * Personal data is erased and every session ends; orders, payments and
-   * loyalty history stay, attached to an anonymised profile. Signing in
+   * Personal data is erased and every session ends; orders (stripped of the
+   * customer's name, phone, address and location), payments and loyalty
+   * history stay, attached to an anonymised profile. Signing in
    * again with the same Telegram, Google or Apple account starts a new,
    * empty profile. Staff accounts and brand owners are refused — their
    * business admin or support removes them.

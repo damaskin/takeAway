@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PointsEntryType, Prisma, Role } from '@prisma/client';
 
+import { CUSTOMER_ARRIVAL_EVENTS, withoutCoordinates } from '../../orders/order-event-payload';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { StorageService } from '../../storage/storage.service';
@@ -81,9 +82,22 @@ export class AccountDeletionService {
    *                       Lifetime points and tier are aggregates of the kept
    *                       ledger and stay as they are.
    *   pointsLedger        kept — financial history of the loyalty programme.
-   *   orders              kept untouched, including the name and phone
-   *                       snapshot taken at checkout: that is the receipt of
-   *                       a sale, not a profile field.
+   *   orders              kept for the business's accounting, anonymised:
+   *                       the checkout snapshot of the person — customerName,
+   *                       customerPhone, delivery address line and city,
+   *                       courier notes, delivery coordinates — is nulled
+   *                       (all nullable, no placeholder needed). Items and
+   *                       their options and comments, the order comment,
+   *                       amounts, statuses, store, timestamps, delivery fee
+   *                       and distance stay. There is no customer email on an
+   *                       order; the admin view reads it from this row, which
+   *                       is already cleared. Nulled on every order, in-flight
+   *                       ones included: a delivery still on its way loses
+   *                       its address.
+   *   order events        kept; the arrival pings (CUSTOMER_NEARBY / _HERE)
+   *                       lose the coordinates they were written with and
+   *                       keep their kind and the distance to the store.
+   *   payments            kept untouched — accounting and refunds.
    *   assignedDeliveries  kept — rider side; a customer has none.
    *   promoRedemptions    kept — per-promo usage accounting.
    *   giftCardsPurchased  kept — the card belongs to whoever holds the code;
@@ -145,6 +159,28 @@ export class AccountDeletionService {
       await tx.cardToken.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
       await tx.userStore.deleteMany({ where: { userId } });
+
+      await tx.order.updateMany({
+        where: { userId },
+        data: {
+          customerName: null,
+          customerPhone: null,
+          deliveryAddressLine: null,
+          deliveryCity: null,
+          deliveryNotes: null,
+          deliveryLatitude: null,
+          deliveryLongitude: null,
+        },
+      });
+      const arrivals = await tx.orderEvent.findMany({
+        where: { order: { userId }, type: { in: [...CUSTOMER_ARRIVAL_EVENTS] } },
+        select: { id: true, payload: true },
+      });
+      for (const event of arrivals) {
+        const payload = withoutCoordinates(event.payload);
+        if (payload === event.payload) continue;
+        await tx.orderEvent.update({ where: { id: event.id }, data: { payload: payload ?? Prisma.JsonNull } });
+      }
 
       const loyalty = await tx.loyaltyAccount.findUnique({ where: { userId } });
       if (loyalty && loyalty.pointsBalance !== 0) {

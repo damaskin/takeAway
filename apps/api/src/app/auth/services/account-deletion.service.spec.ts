@@ -58,6 +58,7 @@ interface Tables {
   loyaltyAccounts: Row[];
   pointsLedger: Row[];
   orders: Row[];
+  orderEvents: Row[];
   payments: Row[];
   referrals: Row[];
   promoRedemptions: Row[];
@@ -85,6 +86,33 @@ function user(id: string, extra: Partial<FakeUser> = {}): FakeUser {
     blockedAt: null,
     locale: 'EN',
     currency: 'USD',
+    ...extra,
+  };
+}
+
+/** An order row with every column deletion looks at; personal ones empty unless given. */
+function order(id: string, userId: string, extra: Row = {}): Row {
+  return {
+    id,
+    userId,
+    storeId: 'store-1',
+    status: 'PICKED_UP',
+    fulfillmentType: 'PICKUP',
+    orderCode: `C-${id}`,
+    customerName: null,
+    customerPhone: null,
+    notes: null,
+    deliveryAddressLine: null,
+    deliveryCity: null,
+    deliveryNotes: null,
+    deliveryLatitude: null,
+    deliveryLongitude: null,
+    deliveryFeeCents: 0,
+    deliveryDistanceM: null,
+    subtotalCents: 1000,
+    totalCents: 1000,
+    currency: 'MDL',
+    createdAt: new Date('2026-09-20T08:00:00Z'),
     ...extra,
   };
 }
@@ -139,8 +167,45 @@ function seed(): Tables {
       { id: 'pl-2', loyaltyAccountId: 'la-ana', userId: 'ana', orderId: 'order-2', type: 'SPEND', amount: -480 },
     ],
     orders: [
-      { id: 'order-1', userId: 'ana', customerName: 'Ana Customer', customerPhone: '+37377700000', totalCents: 4500 },
-      { id: 'order-2', userId: 'ana', customerName: 'Ana Customer', customerPhone: null, totalCents: 1200 },
+      order('order-1', 'ana', {
+        customerName: 'Ana Customer',
+        customerPhone: '+37377700000',
+        notes: 'oat milk, please',
+        totalCents: 4500,
+      }),
+      order('order-2', 'ana', {
+        status: 'OUT_FOR_DELIVERY',
+        fulfillmentType: 'DELIVERY',
+        customerName: 'Ana Customer',
+        deliveryAddressLine: 'str. 25 Octombrie 12, ap. 5',
+        deliveryCity: 'Tiraspol',
+        deliveryNotes: 'Entrance 2, door code 1234',
+        deliveryLatitude: 46.8403,
+        deliveryLongitude: 29.6433,
+        deliveryFeeCents: 1500,
+        deliveryDistanceM: 2300,
+        totalCents: 1200,
+      }),
+      order('order-3', 'bob', {
+        customerName: 'Bob',
+        customerPhone: '+37377711111',
+        fulfillmentType: 'DELIVERY',
+        deliveryAddressLine: 'Bob street 1',
+        deliveryCity: 'Tiraspol',
+        deliveryLatitude: 46.1,
+        deliveryLongitude: 29.1,
+      }),
+    ],
+    orderEvents: [
+      { id: 'ev-1', orderId: 'order-1', type: 'STATUS_CHANGED', payload: { from: 'CREATED', to: 'PAID' } },
+      {
+        id: 'ev-2',
+        orderId: 'order-1',
+        type: 'CUSTOMER_NEARBY',
+        payload: { distanceM: 180.4, lat: 46.84, lng: 29.63 },
+      },
+      { id: 'ev-3', orderId: 'order-1', type: 'CUSTOMER_HERE', payload: { distanceM: 12.1, lat: 46.841, lng: 29.631 } },
+      { id: 'ev-4', orderId: 'order-3', type: 'CUSTOMER_HERE', payload: { distanceM: 5, lat: 46.1, lng: 29.1 } },
     ],
     payments: [
       { id: 'pay-1', orderId: 'order-1', cardTokenId: 'card-1', invoiceId: 'INV-1', amountCents: 4500 },
@@ -290,6 +355,24 @@ function fakeDb(t: Tables) {
         return copy(row);
       }),
     },
+    order: {
+      updateMany: jest.fn(async ({ where, data }: { where: { userId: string }; data: Row }) => {
+        const mine = t.orders.filter((o) => o['userId'] === where.userId);
+        for (const o of mine) Object.assign(o, data);
+        return { count: mine.length };
+      }),
+    },
+    orderEvent: {
+      findMany: jest.fn(async ({ where }: { where: { order: { userId: string }; type: { in: string[] } } }) => {
+        const orderIds = new Set(t.orders.filter((o) => o['userId'] === where.order.userId).map((o) => o['id']));
+        return t.orderEvents
+          .filter((e) => orderIds.has(e['orderId']) && where.type.in.includes(e['type'] as string))
+          .map((e) => ({ id: e['id'], payload: structuredClone(e['payload']) }));
+      }),
+      update: jest.fn(async ({ where, data }: { where: { id: string }; data: Row }) =>
+        copy(Object.assign(t.orderEvents.find((e) => e['id'] === where.id) as Row, data)),
+      ),
+    },
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown): Promise<unknown> => fn(db)),
   };
   return db;
@@ -364,12 +447,50 @@ describe('AccountDeletionService', () => {
     expect(t.users.find((u) => u.id === 'bob')).toMatchObject({ email: 'bob@example.com', telegramUserId: 888n });
   });
 
-  it('leaves orders, payments, promo redemptions, referrals and gift cards in place', async () => {
+  it('anonymises every order of the customer and keeps what the business accounts with', async () => {
     const { svc, t } = setup();
     const before = snapshot(t);
     await svc.deleteOwnAccount('ana');
 
-    expect(t.orders).toEqual(before.orders);
+    const personal = {
+      customerName: null,
+      customerPhone: null,
+      deliveryAddressLine: null,
+      deliveryCity: null,
+      deliveryNotes: null,
+      deliveryLatitude: null,
+      deliveryLongitude: null,
+    };
+    // Same rows, same ids, amounts, statuses, store, times, fee and distance —
+    // only the person is gone. The in-flight delivery is included.
+    expect(t.orders).toEqual([
+      { ...before.orders[0], ...personal },
+      { ...before.orders[1], ...personal },
+      before.orders[2],
+    ]);
+    expect(t.orders[0]).toMatchObject({ notes: 'oat milk, please', totalCents: 4500, status: 'PICKED_UP' });
+    expect(t.orders[1]).toMatchObject({ deliveryFeeCents: 1500, deliveryDistanceM: 2300 });
+  });
+
+  it('drops the coordinates from arrival pings and keeps their kind and distance', async () => {
+    const { svc, t } = setup();
+    const before = snapshot(t);
+    await svc.deleteOwnAccount('ana');
+
+    expect(t.orderEvents).toEqual([
+      before.orderEvents[0],
+      { id: 'ev-2', orderId: 'order-1', type: 'CUSTOMER_NEARBY', payload: { distanceM: 180.4 } },
+      { id: 'ev-3', orderId: 'order-1', type: 'CUSTOMER_HERE', payload: { distanceM: 12.1 } },
+      // Someone else's order keeps its event as it was.
+      before.orderEvents[3],
+    ]);
+  });
+
+  it('leaves payments, promo redemptions, referrals and gift cards in place', async () => {
+    const { svc, t } = setup();
+    const before = snapshot(t);
+    await svc.deleteOwnAccount('ana');
+
     expect(t.promoRedemptions).toEqual(before.promoRedemptions);
     expect(t.referrals).toEqual(before.referrals);
     expect(t.giftCards).toEqual(before.giftCards);
