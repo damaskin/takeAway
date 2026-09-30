@@ -25,6 +25,7 @@ import 'package:takeaway_mobile/main.dart';
 ///     --dart-define-from-file=config/prod.json --dart-define=SHOT_STORE="NoName - центр"
 const _storeName = String.fromEnvironment('SHOT_STORE', defaultValue: 'NoName - центр');
 const _product = String.fromEnvironment('SHOT_PRODUCT', defaultValue: 'Айс Латте');
+
 /// How far the menu is scrolled for its screenshot: past the first row, which
 /// holds the store's own test items.
 const _menuScroll = int.fromEnvironment('SHOT_MENU_SCROLL', defaultValue: 560);
