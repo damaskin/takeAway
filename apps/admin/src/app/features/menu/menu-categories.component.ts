@@ -1,11 +1,11 @@
 import { Component, computed, inject, input, output, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type CategoryAdminDto } from '../../core/catalog/admin-catalog.service';
 import { describeMenuError, menuErrorCode } from './menu-errors';
 import { MENU_FORM_STYLES } from './menu-form.styles';
-import { slugValidator } from './menu-input';
 import { swapped } from './menu-order';
 
 /**
@@ -17,7 +17,7 @@ import { swapped } from './menu-order';
 @Component({
   selector: 'app-menu-categories',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
   styles: [MENU_FORM_STYLES],
   template: `
     <aside
@@ -30,15 +30,14 @@ import { swapped } from './menu-order';
         >
           {{ 'admin.menu.categories' | translate }}
         </h2>
-        <button
-          type="button"
-          (click)="openCreate()"
-          [disabled]="!brandId()"
-          class="disabled:opacity-50"
-          style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel)"
-        >
-          {{ 'admin.menu.add' | translate }}
-        </button>
+        @if (brandId()) {
+          <a
+            routerLink="/menu/categories/new"
+            style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-caramel); text-decoration: none"
+          >
+            {{ 'admin.menu.add' | translate }}
+          </a>
+        }
       </div>
 
       @if (categories().length === 0) {
@@ -101,15 +100,16 @@ import { swapped } from './menu-order';
           >
             ↓
           </button>
-          <button
-            type="button"
-            (click)="openEdit(cat)"
+          <a
+            class="flex items-center justify-center"
+            [routerLink]="['/menu/categories', cat.id]"
             [title]="'common.change' | translate"
             [attr.aria-label]="'common.change' | translate"
             [style]="iconStyle"
+            style="text-decoration: none"
           >
             ✎
-          </button>
+          </a>
           <button
             type="button"
             (click)="startDelete(cat)"
@@ -163,60 +163,6 @@ import { swapped } from './menu-order';
         }
       }
 
-      @if (formOpen()) {
-        <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col" style="gap: 10px; margin-top: 12px">
-          <span style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: var(--color-espresso)">
-            @if (editing(); as c) {
-              {{ 'admin.menu.category.editTitle' | translate: { name: c.name } }}
-            } @else {
-              {{ 'admin.menu.category.newTitle' | translate }}
-            }
-          </span>
-          <label class="field">
-            <span class="label">{{ 'admin.menu.category.name' | translate }}</span>
-            <input
-              class="control"
-              formControlName="name"
-              maxlength="120"
-              [placeholder]="'admin.menu.category.namePlaceholder' | translate"
-            />
-            @if (submitted() && form.controls.name.invalid) {
-              <span class="error">{{ 'admin.menu.errors.name' | translate }}</span>
-            }
-          </label>
-          <label class="check">
-            <input type="checkbox" formControlName="visible" />
-            <span>{{ 'admin.menu.fields.visible' | translate }}</span>
-          </label>
-          <details>
-            <summary
-              style="cursor: pointer; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-            >
-              {{ 'admin.menu.slug.advanced' | translate }}
-            </summary>
-            <label class="field" style="margin-top: 8px">
-              <span class="label">{{ 'admin.menu.slug.label' | translate }}</span>
-              <input class="control small mono" formControlName="slug" autocomplete="off" [readonly]="!!editing()" />
-              @if (form.controls.slug.invalid) {
-                <span class="error">{{ 'admin.menu.errors.slug' | translate }}</span>
-              } @else {
-                <span class="hint">{{
-                  (editing() ? 'admin.menu.slug.locked' : 'admin.menu.slug.hint') | translate
-                }}</span>
-              }
-            </label>
-          </details>
-          <div class="flex" style="gap: 8px">
-            <button type="submit" [disabled]="busy()" class="primary small disabled:opacity-50" style="flex: 1">
-              {{ (editing() ? 'common.save' : 'admin.menu.create') | translate }}
-            </button>
-            <button type="button" (click)="closeForm()" class="link muted" style="padding: 0 8px; font-size: 13px">
-              {{ 'common.cancel' | translate }}
-            </button>
-          </div>
-        </form>
-      }
-
       @if (error()) {
         <p role="alert" class="error" style="margin: 8px 0 0; padding: 0 8px; font-size: 13px">{{ error() }}</p>
       }
@@ -237,12 +183,9 @@ export class MenuCategoriesComponent {
   /** A category is gone; `movedTo` got its products. */
   readonly deleted = output<{ id: string; movedTo: string | null }>();
 
-  readonly formOpen = signal(false);
-  readonly editing = signal<CategoryAdminDto | null>(null);
   readonly deleting = signal<CategoryAdminDto | null>(null);
   readonly deletingCount = signal(0);
   readonly busy = signal(false);
-  readonly submitted = signal(false);
   readonly error = signal<string | null>(null);
 
   readonly moveTarget = new FormControl('', { nonNullable: true });
@@ -251,57 +194,6 @@ export class MenuCategoriesComponent {
   readonly iconStyle =
     'width: 26px; height: 28px; flex: 0 0 auto; font-size: 14px; color: var(--color-text-tertiary); background: transparent';
   readonly deleteIconStyle = `${this.iconStyle}; color: var(--color-berry); margin-right: 4px`;
-
-  readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
-    visible: new FormControl(true, { nonNullable: true }),
-    slug: new FormControl('', { nonNullable: true, validators: [slugValidator] }),
-  });
-
-  openCreate(): void {
-    this.editing.set(null);
-    this.form.reset({ name: '', visible: true, slug: '' });
-    this.openForm();
-  }
-
-  openEdit(cat: CategoryAdminDto): void {
-    this.editing.set(cat);
-    this.form.reset({ name: cat.name, visible: cat.visible, slug: cat.slug });
-    this.openForm();
-  }
-
-  closeForm(): void {
-    this.formOpen.set(false);
-    this.editing.set(null);
-    this.submitted.set(false);
-  }
-
-  submit(): void {
-    this.submitted.set(true);
-    const brandId = this.brandId();
-    if (this.form.invalid || !brandId) return;
-    const { name, visible, slug } = this.form.getRawValue();
-    const editing = this.editing();
-    this.busy.set(true);
-    this.error.set(null);
-    if (editing) {
-      this.api.updateCategory(editing.id, { name: name.trim(), visible }).subscribe({
-        next: () => this.done(),
-        error: (err: unknown) => this.fail(err),
-      });
-      return;
-    }
-    this.api
-      .createCategory({ brandId, name: name.trim(), visible, ...(slug.trim() ? { slug: slug.trim() } : {}) })
-      .subscribe({
-        next: (created) => {
-          this.done();
-          // The next thing anyone does with a new category is fill it.
-          this.selected.emit(created.id);
-        },
-        error: (err: unknown) => this.fail(err),
-      });
-  }
 
   move(index: number, delta: -1 | 1): void {
     const list = swapped(this.categories(), index, index + delta);
@@ -332,7 +224,6 @@ export class MenuCategoriesComponent {
       next: () => {
         this.busy.set(false);
         this.deleting.set(null);
-        if (this.editing()?.id === cat.id) this.closeForm();
         this.deleted.emit({ id: cat.id, movedTo: moveTo || null });
       },
       error: (err: unknown) => {
@@ -351,19 +242,6 @@ export class MenuCategoriesComponent {
     this.deleting.set(cat);
     this.deletingCount.set(count);
     this.moveTarget.setValue(this.moveTargets()[0]?.id ?? '');
-  }
-
-  private openForm(): void {
-    this.submitted.set(false);
-    this.error.set(null);
-    this.formOpen.set(true);
-  }
-
-  private done(): void {
-    this.busy.set(false);
-    this.submitted.set(false);
-    this.closeForm();
-    this.changed.emit();
   }
 
   private fail(err: unknown): void {
