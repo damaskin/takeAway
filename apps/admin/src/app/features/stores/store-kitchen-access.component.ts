@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -12,6 +12,9 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
  * lockscreen asks for a 4–6 digit PIN scoped to one store; until now there
  * was no screen to set one, so staff could only sign in with email and
  * password on a shared tablet.
+ *
+ * Shown in the store editor and on the Staff page, next to the roster the
+ * PINs belong to — owners looked for them there first.
  */
 @Component({
   selector: 'app-store-kitchen-access',
@@ -21,6 +24,10 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
     <div class="flex flex-col" style="gap: 12px">
       <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
         {{ 'admin.stores.kitchen.hint' | translate }}
+      </p>
+      <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
+        {{ 'admin.stores.kitchen.where' | translate }}
+        <a routerLink="/login/pin" style="color: var(--color-caramel); font-family: var(--font-mono)">{{ pinUrl }}</a>
       </p>
 
       @if (loading()) {
@@ -43,9 +50,11 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
       } @else if (people().length === 0) {
         <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
           {{ 'admin.stores.kitchen.empty' | translate }}
-          <a routerLink="/staff" style="color: var(--color-caramel)">{{
-            'admin.stores.kitchen.toStaff' | translate
-          }}</a>
+          @if (showStaffLink()) {
+            <a routerLink="/staff" style="color: var(--color-caramel)">{{
+              'admin.stores.kitchen.toStaff' | translate
+            }}</a>
+          }
         </p>
       } @else {
         <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
@@ -131,8 +140,12 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
     </div>
   `,
 })
-export class StoreKitchenAccessComponent implements OnInit {
+export class StoreKitchenAccessComponent {
   readonly storeId = input.required<string>();
+  /** Off on the Staff page, where the invite form is right below. */
+  readonly showStaffLink = input(true);
+  /** Any change re-reads the roster — the Staff page passes its own list. */
+  readonly reloadOn = input<unknown>(null);
 
   private readonly staff = inject(StaffService);
   private readonly translate = inject(TranslateService);
@@ -148,8 +161,15 @@ export class StoreKitchenAccessComponent implements OnInit {
   /** Only the roles the KDS lets in: menu editors never work the pass. */
   readonly people = computed(() => this.roster().filter((p) => p.role === 'STAFF' || p.role === 'STORE_MANAGER'));
 
-  ngOnInit(): void {
-    this.load();
+  /** Where the tablet signs in, spelled out so it can be typed on the tablet. */
+  readonly pinUrl = `${location.host}/login/pin`;
+
+  constructor() {
+    effect(() => {
+      this.storeId();
+      this.reloadOn();
+      untracked(() => this.load());
+    });
   }
 
   load(): void {
