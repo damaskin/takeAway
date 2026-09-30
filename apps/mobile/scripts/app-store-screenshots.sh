@@ -5,6 +5,12 @@
 #
 #   bash apps/mobile/scripts/app-store-screenshots.sh                    # iPhone 17 Pro Max (6.9")
 #   DEVICE="iPhone 16 Pro Max" OUT=/tmp/shots bash apps/mobile/scripts/app-store-screenshots.sh
+#   DEVICE="iPad Pro 13-inch (M5)" bash apps/mobile/scripts/app-store-screenshots.sh  # iPad (13")
+#
+# The app ships for iPhone and iPad, so App Store Connect wants both sets.
+# Each run only replaces its own device's files (named <device>_<screen>.png),
+# so running it for the iPhone and then the iPad leaves one folder with both;
+# deliver sorts them into device classes by resolution.
 #
 # integration_test/app_store_screenshots_test.dart walks the screens and, at
 # each stop, drops shot_<name>.ready into the app's tmp directory; the watcher
@@ -18,6 +24,7 @@ cd "$(dirname "$0")/.."
 
 DEVICE="${DEVICE:-iPhone 17 Pro Max}"
 OUT="${OUT:-$PWD/build/app-store-screenshots}"
+SLUG="$(printf '%s' "$DEVICE" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/-$//' | tr 'A-Z' 'a-z')"
 FLUTTER="${FLUTTER:-$HOME/sdk/flutter-3.38.8/bin/flutter}"
 CONFIG="${CONFIG:-config/prod.json}"
 BUNDLE="md.takeaway.ios"
@@ -48,7 +55,7 @@ xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMo
 xcrun simctl location "$UDID" set 46.8403,29.6433 # Tiraspol
 
 mkdir -p "$OUT"
-rm -f "$OUT"/*.png
+rm -f "$OUT/${SLUG}"_*.png
 
 run_test() {
   "$FLUTTER" test integration_test/app_store_screenshots_test.dart -d "$UDID" \
@@ -72,7 +79,7 @@ xcrun simctl privacy "$UDID" grant location "$BUNDLE" || true
         name="$(basename "$ready" .ready)"
         name="${name#shot_}"
         rm -f "$ready"
-        xcrun simctl io "$UDID" screenshot --type=png "$OUT/$name.png" >/dev/null 2>&1
+        xcrun simctl io "$UDID" screenshot --type=png "$OUT/${SLUG}_$name.png" >/dev/null 2>&1
         touch "$container/tmp/shot_$name.done"
         echo "   shot $name"
       done
