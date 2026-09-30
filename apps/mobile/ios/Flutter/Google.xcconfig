@@ -3,3 +3,7 @@
 // the build with --dart-define=GOOGLE_IOS_CLIENT_ID=...; until then this
 // placeholder scheme is registered and simply never matches.
 GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.takeaway-not-configured
+
+// fastlane's archive lane writes the real value here from GOOGLE_IOS_CLIENT_ID
+// in the dart-defines file, so nobody edits this file by hand.
+#include? "GoogleLocal.xcconfig"

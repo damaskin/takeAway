@@ -7,7 +7,11 @@ export class AdminOrderEventDto {
   @ApiProperty() type!: string;
   @ApiProperty() createdAt!: string;
   @ApiPropertyOptional({ type: String, nullable: true }) actorId!: string | null;
-  @ApiPropertyOptional({ nullable: true }) payload!: unknown;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Event details as recorded, minus customer coordinates (arrival events keep `distanceM`)',
+  })
+  payload!: unknown;
 }
 
 export class AdminOrderPaymentDto {

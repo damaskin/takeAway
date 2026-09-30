@@ -17,7 +17,7 @@ import {
   inColumn,
   nextAction,
 } from '../../core/kitchen/kitchen-board';
-import { KitchenApi, type KitchenAction, type KitchenOrder } from '../../core/kitchen/kitchen.api';
+import { KitchenApi, type KitchenAction, type KitchenOrder, type StoreShift } from '../../core/kitchen/kitchen.api';
 import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
@@ -107,6 +107,36 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         <p class="kitchen-error" role="alert">{{ error() }}</p>
       }
 
+      @if (storeId() && shift(); as sh) {
+        @if (sh.open) {
+          <div class="kitchen-shift kitchen-shift-open" data-testid="shift-open">
+            <span class="kitchen-shift-dot"></span>
+            <span class="kitchen-shift-text">
+              {{
+                (sh.openedByName ? 'admin.kitchen.shift.openSinceBy' : 'admin.kitchen.shift.openSince')
+                  | translate: { time: shiftTime(sh.openedAt), name: sh.openedByName }
+              }}
+            </span>
+            <button type="button" class="kitchen-tool" [disabled]="shiftBusy()" (click)="setShift(false)">
+              {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.finish') | translate }}
+            </button>
+          </div>
+        } @else {
+          <div class="kitchen-shift kitchen-shift-closed" role="status" data-testid="shift-closed">
+            <div class="flex flex-col" style="gap: 4px; min-width: 0">
+              <strong class="kitchen-shift-title">{{ 'admin.kitchen.shift.closedTitle' | translate }}</strong>
+              <span class="kitchen-shift-text">{{ 'admin.kitchen.shift.closedHint' | translate }}</span>
+            </div>
+            <button type="button" class="kitchen-shift-start" [disabled]="shiftBusy()" (click)="setShift(true)">
+              {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.start') | translate }}
+            </button>
+          </div>
+        }
+        @if (shiftError()) {
+          <p class="kitchen-error" role="alert">{{ shiftError() }}</p>
+        }
+      }
+
       @if (loaded() && stores().length === 0) {
         <p class="kitchen-empty-state">{{ 'admin.kitchen.noStores' | translate }}</p>
       } @else {
@@ -119,7 +149,26 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
               </div>
               <div class="kitchen-cards">
                 @for (order of ordersIn(col); track order.id) {
-                  <article class="kitchen-card" [style.border]="cardBorder(order)">
+                  <article
+                    class="kitchen-card"
+                    [class.kitchen-card-here]="order.customerArrival === 'HERE'"
+                    [style.border]="cardBorder(order)"
+                  >
+                    @if (order.customerArrival; as arrival) {
+                      <div
+                        class="kitchen-arrival"
+                        [class.kitchen-arrival-here]="arrival === 'HERE'"
+                        [attr.data-testid]="'arrival-' + arrival"
+                      >
+                        {{
+                          (arrival === 'HERE' ? 'admin.kitchen.arrival.here' : 'admin.kitchen.arrival.nearby')
+                            | translate
+                        }}
+                        @if (order.customerArrivedAt) {
+                          <span class="kitchen-arrival-ago">{{ arrivedAgo(order.customerArrivedAt) }}</span>
+                        }
+                      </div>
+                    }
                     <div class="flex items-center justify-between">
                       <span class="kitchen-code">{{ order.orderCode }}</span>
                       <div class="flex flex-col items-end" style="gap: 2px">
@@ -208,7 +257,9 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         --color-border: #3a3430;
         --color-surface-variant: #2a2523;
         --color-caramel-light: #c77d3b33;
+        /* Tablet mode hides the shell, so the board is the whole screen. */
         min-height: 100vh;
+        min-height: 100dvh;
         background: #0e0b0a;
       }
       .kitchen-dark .kitchen-note {
@@ -424,6 +475,75 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         opacity: 0.6;
         cursor: progress;
       }
+      .kitchen-shift {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 12px 16px;
+        border-radius: 14px;
+      }
+      .kitchen-shift-open {
+        background: rgba(123, 196, 164, 0.16);
+      }
+      .kitchen-shift-closed {
+        justify-content: space-between;
+        background: rgba(233, 168, 75, 0.18);
+        border: 1px solid var(--color-amber);
+      }
+      .kitchen-shift-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 9999px;
+        background: var(--color-mint);
+      }
+      .kitchen-shift-title {
+        font-size: 16px;
+        color: var(--color-text-primary);
+      }
+      .kitchen-shift-text {
+        flex: 1 1 200px;
+        font-size: 13px;
+        color: var(--color-text-secondary);
+      }
+      .kitchen-shift-start {
+        height: 48px;
+        padding: 0 24px;
+        border-radius: 12px;
+        background: var(--color-caramel);
+        color: white;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .kitchen-shift-start:disabled,
+      .kitchen-tool:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      .kitchen-arrival {
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        background: rgba(233, 168, 75, 0.18);
+        color: #8a6720;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .kitchen-arrival-here {
+        background: #3e8868;
+        color: white;
+        font-size: 15px;
+      }
+      .kitchen-arrival-ago {
+        font-weight: 500;
+        opacity: 0.85;
+      }
+      .kitchen-card-here {
+        box-shadow: 0 0 0 3px rgba(62, 136, 104, 0.35);
+      }
       .kitchen-empty {
         padding: 32px 0;
         text-align: center;
@@ -458,6 +578,10 @@ export class KitchenPage {
   /** Why the last action on a ticket failed — a declined card, most often. */
   readonly failures = signal<Readonly<Record<string, string>>>({});
   readonly now = signal(Date.now());
+  /** The store's shift; null until read. Closed means it takes no orders. */
+  readonly shift = signal<StoreShift | null>(null);
+  readonly shiftBusy = signal(false);
+  readonly shiftError = signal<string | null>(null);
 
   readonly store = computed(() => this.stores().find((s) => s.id === this.storeId()) ?? null);
   readonly clock = computed(() => this.fmt.time(this.now(), this.store()?.timezone));
@@ -569,6 +693,40 @@ export class KitchenPage {
     });
   }
 
+  /** "Start work" / "Finish work" for the store on the board. */
+  setShift(open: boolean): void {
+    const storeId = this.storeId();
+    if (!storeId || this.shiftBusy()) return;
+    if (!open && !window.confirm(this.translate.instant('admin.kitchen.shift.finishConfirm'))) return;
+    this.shiftBusy.set(true);
+    this.shiftError.set(null);
+    this.api.setShift(storeId, open).subscribe({
+      next: (shift) => {
+        this.shiftBusy.set(false);
+        if (this.storeId() === storeId) this.shift.set(shift);
+      },
+      error: (err) => {
+        this.shiftBusy.set(false);
+        this.shiftError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            statuses: { 403: 'common.forbidden' },
+          }),
+        );
+      },
+    });
+  }
+
+  shiftTime(iso: string | null): string {
+    return iso ? this.fmt.time(iso, this.store()?.timezone) : '';
+  }
+
+  /** Minutes since the customer arrived: "3 min". */
+  arrivedAgo(iso: string): string {
+    const minutes = Math.max(0, Math.floor((this.now() - new Date(iso).getTime()) / 60_000));
+    return this.translate.instant('admin.kitchen.arrival.ago', { minutes });
+  }
+
   dueLabel(order: KitchenOrder): string {
     const diff = new Date(order.pickupAt).getTime() - this.now();
     const abs = Math.abs(Math.round(diff / 1000));
@@ -590,6 +748,7 @@ export class KitchenPage {
 
   cardBorder(order: KitchenOrder): string {
     const diff = (new Date(order.pickupAt).getTime() - this.now()) / 1000;
+    if (order.customerArrival === 'HERE') return '2px solid #3E8868';
     if (order.status === 'READY') return '1px solid var(--color-mint)';
     if (diff < 0) return '2px solid var(--color-berry)';
     if (diff < 120) return '1px solid var(--color-amber)';
@@ -619,18 +778,31 @@ export class KitchenPage {
     this.detach = null;
     this.orders.set([]);
     this.failures.set({});
+    this.shift.set(null);
+    this.shiftError.set(null);
     if (!storeId) return;
     this.refresh();
-    this.detach = this.realtime.watch(storeId, (event) => {
-      const next = applyKitchenEvent(this.orders(), event);
-      if (next) this.orders.set(next);
-      else this.refresh();
-    });
+    this.detach = this.realtime.watch(
+      storeId,
+      (event) => {
+        const next = applyKitchenEvent(this.orders(), event);
+        if (next) this.orders.set(next);
+        else this.refresh();
+      },
+      (event) => this.shift.set(event.shift),
+    );
   }
 
   private refresh(): void {
     const storeId = this.storeId();
     if (!storeId) return;
+    this.api.shift(storeId).subscribe({
+      next: (shift) => {
+        if (this.storeId() === storeId) this.shift.set(shift);
+      },
+      // The board still works without it; the next refresh tries again.
+      error: () => undefined,
+    });
     this.api.list(storeId).subscribe({
       next: (list) => {
         if (this.storeId() !== storeId) return;

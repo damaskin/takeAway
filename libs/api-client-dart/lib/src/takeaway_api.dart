@@ -50,6 +50,28 @@ abstract class TakeAwayApi {
   @PATCH('/auth/me')
   Future<AuthUser> updateMe(@Body() Map<String, dynamic> patch);
 
+  /// Deletes the signed-in customer's account for good (204). Staff
+  /// accounts get 403: the business admin removes those. Without [body]
+  /// the request carries an empty JSON object.
+  @DELETE('/auth/me')
+  Future<void> deleteMe([@Body() DeleteAccountRequest? body]);
+
+  @GET('/auth/me/sign-in-methods')
+  Future<SignInMethods> signInMethods();
+
+  @POST('/auth/me/sign-in-methods/google')
+  Future<LinkSignInMethodResult> linkGoogle(@Body() OAuthLoginRequest body);
+
+  @POST('/auth/me/sign-in-methods/apple')
+  Future<LinkSignInMethodResult> linkApple(@Body() OAuthLoginRequest body);
+
+  @POST('/auth/me/sign-in-methods/telegram')
+  Future<LinkSignInMethodResult> linkTelegram(@Body() TelegramIdTokenRequest body);
+
+  /// [provider] is `google` or `apple`; Telegram cannot be unlinked.
+  @DELETE('/auth/me/sign-in-methods/{provider}')
+  Future<SignInMethods> unlinkSignInMethod(@Path('provider') String provider);
+
   @GET('/auth/me/notifications')
   Future<NotificationPrefs> notificationPrefs();
 

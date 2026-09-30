@@ -109,7 +109,23 @@ function slots(): unknown[] {
 export interface FakeApi {
   /** Orders the app has created, newest last. */
   readonly orders: Array<Record<string, unknown>>;
+  /** Card payments the app asked for, as sent. */
+  readonly payments: Array<Record<string, unknown>>;
 }
+
+/** The customer's bound card, as `/payments/agroprombank/cards` lists it. */
+export const CARD = {
+  id: 'card-1',
+  maskedPan: '9104 **** **** 1234',
+  embossing: null,
+  institute: null,
+  instituteName: 'Агропромбанк',
+  label: null,
+  isDefault: true,
+  cardState: 0,
+  createdAt: '2026-09-01T10:00:00.000Z',
+  lastUsedAt: null,
+};
 
 /**
  * Installs the fake API on a page and returns a handle to inspect what the
@@ -122,11 +138,16 @@ export async function installFakeApi(
     pointsBalance?: number;
     /** False = switched on but outside working hours, as the API reports it. */
     storeOpenNow?: boolean;
+    /** Card payments on the deployment; on unless a test switches them off. */
+    cardPayments?: boolean;
+    /** The customer's bound cards; one by default. */
+    cards?: Array<typeof CARD>;
   } = {},
 ): Promise<FakeApi> {
   const store = { ...STORE, openNow: opts.storeOpenNow ?? STORE.openNow };
   const items: CartItem[] = [];
   const orders: Array<Record<string, unknown>> = [];
+  const payments: Array<Record<string, unknown>> = [];
   let nextId = 1;
 
   const cart = () => {
@@ -224,10 +245,44 @@ export async function installFakeApi(
       });
     }
 
+    // ── Config & payments ───────────────────────────────────────────────
+    if (path === '/config/features') {
+      return json(route, {
+        deliveryEnabled: false,
+        agroprombankEnabled: opts.cardPayments ?? true,
+        support: { email: null, telegram: null },
+      });
+    }
+    if (path === '/payments/agroprombank/cards' && method === 'GET') return json(route, opts.cards ?? [CARD]);
+    if (path === '/payments/agroprombank/pay' && method === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      payments.push(body);
+      // Held, not taken: the store's accept is what captures it.
+      return json(route, { paymentId: 'pay-1', status: 'REQUIRES_ACTION', amountCents: 0 });
+    }
+
     // ── Cart ────────────────────────────────────────────────────────────
     if (path === '/cart' && method === 'GET') return json(route, cart());
+    const itemPath = path.match(/^\/cart\/items\/([^/]+)$/);
+    if (itemPath && method === 'PATCH') {
+      const item = items.find((i) => i.id === itemPath[1]);
+      const body = request.postDataJSON() as { quantity?: number };
+      if (item && body.quantity) item.quantity = body.quantity;
+      return json(route, cart());
+    }
+    if (itemPath && method === 'DELETE') {
+      const index = items.findIndex((i) => i.id === itemPath[1]);
+      if (index >= 0) items.splice(index, 1);
+      return json(route, cart());
+    }
     if (path === '/cart/items' && method === 'POST') {
       const body = request.postDataJSON() as { productId: string; quantity: number };
+      // Like the server: the same product with the same options is one line.
+      const same = items.find((i) => i.productId === body.productId);
+      if (same) {
+        same.quantity += body.quantity ?? 1;
+        return json(route, cart());
+      }
       items.push({
         id: `item-${nextId++}`,
         productId: body.productId,
@@ -282,5 +337,5 @@ export async function installFakeApi(
     return json(route, {});
   });
 
-  return { orders };
+  return { orders, payments };
 }

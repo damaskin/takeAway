@@ -16,6 +16,7 @@ import { checkoutError } from '../common/http/checkout-error';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, type CheckoutLine } from '../cart/cart.service';
+import { AVAILABLE_OPTIONS_INCLUDE } from '../catalog/option-availability';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -31,6 +32,7 @@ import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import type { OrderDto, OrderItemDto, OrderPaymentDto, OrderPaymentState, OrderSummaryDto } from './dto/order.dto';
+import { withoutCoordinates } from './order-event-payload';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
@@ -82,14 +84,14 @@ export class OrdersService {
     const cart = await this.prisma.cart.findUnique({
       where: { id: dto.cartId },
       include: {
-        items: { include: { product: { include: { variations: true, modifiers: true } } } },
+        items: { include: { product: { include: AVAILABLE_OPTIONS_INCLUDE } } },
         store: true,
       },
     });
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
-    await this.cart.assertStoreTakesOrders(cart.storeId);
+    await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -342,22 +344,13 @@ export class OrdersService {
       }),
     );
 
-    // Customer-facing push — "order received, awaiting payment".
-    void this.notifications.notifyOrderStatus(
-      {
-        id: order.id,
-        userId: order.userId,
-        orderCode: order.orderCode,
-        storeId: order.storeId,
-        fulfillmentType: order.fulfillmentType,
-      },
-      'CREATED',
-    );
+    // An order that has to be paid by card reaches the kitchen once its hold
+    // is in place — the payment service announces it then. Until that moment
+    // it is a basket nobody has paid for, and there is no paying at the
+    // counter any more to fall back on. Only an order with nothing to pay is
+    // announced straight away.
+    if (this.holds.cardPaymentRequired(order)) return this.toOrderDto(order);
 
-    // The board lists CREATED orders, and a card order now waits there on a
-    // hold until the kitchen accepts it — it never passes through PAID, where
-    // the other push lives. Announce it here, or the kitchen hears about it
-    // only on its next poll.
     this.realtime.emitKdsOrderChanged({
       storeId: order.storeId,
       kind: 'created',
@@ -552,7 +545,9 @@ export class OrdersService {
         type: e.type,
         createdAt: e.createdAt.toISOString(),
         actorId: e.actorId,
-        payload: e.payload,
+        // Arrival pings store where the customer was; the timeline only
+        // needs how far from the store, so the coordinates never leave.
+        payload: withoutCoordinates(e.payload),
       })),
     };
   }
@@ -758,18 +753,8 @@ export class OrdersService {
       updated.userId,
     );
 
-    // Fire-and-forget push. If Telegram/APNs/FCM are down this still
-    // returns the cancel result cleanly.
-    void this.notifications.notifyOrderStatus(
-      {
-        id: updated.id,
-        userId: updated.userId,
-        orderCode: updated.orderCode,
-        storeId: updated.storeId,
-        fulfillmentType: updated.fulfillmentType,
-      },
-      updated.status,
-    );
+    // No push: the customer cancelled it themselves, on the screen they are
+    // looking at. The live status above is all the confirmation they need.
 
     return this.toOrderDto(updated);
   }

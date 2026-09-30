@@ -5,7 +5,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
-import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -24,12 +23,6 @@ class MenuScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stores = ref.watch(storesProvider);
     final store = ref.watch(activeStoreProvider);
-
-    // A single store is chosen for the customer; remember it so the cart
-    // and checkout agree on it.
-    if (store != null && ref.read(activeStoreIdProvider) != store.id) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(activeStoreIdProvider.notifier).select(store.id));
-    }
 
     return Scaffold(
       body: stores.when(
@@ -106,11 +99,22 @@ class _MenuViewState extends ConsumerState<_MenuView> {
     }
   }
 
+  /// Scrolls the chip row — and only the chip row — to the highlighted chip.
+  ///
+  /// `Scrollable.ensureVisible` walks every scrollable around the chip, the
+  /// menu included: it scrolled the menu to bring the pinned bar "into view",
+  /// which is back where the bar starts, so each time the customer reached
+  /// the next category the menu threw them to its top.
   void _revealChip(int index) {
+    if (index >= _chipKeys.length) return;
     final chip = _chipKeys[index].currentContext;
-    if (chip != null) {
-      unawaited(Scrollable.ensureVisible(chip, alignment: 0.4, duration: Motion.medium, curve: Curves.easeOutCubic));
-    }
+    final box = chip?.findRenderObject();
+    if (chip == null || box == null || !box.attached) return;
+    unawaited(
+      Scrollable.of(
+        chip,
+      ).position.ensureVisible(box, alignment: 0.4, duration: Motion.medium, curve: Curves.easeOutCubic),
+    );
   }
 
   Future<void> _jumpTo(int index) async {

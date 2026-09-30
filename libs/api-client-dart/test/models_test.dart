@@ -23,6 +23,20 @@ void main() {
       expect(pos.fulfillmentTypes, contains('TAKEAWAY'));
     });
 
+    test('reads a store without a running shift as not working, and one from an older API as working', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final idle = Store.fromJson({...raw, 'status': 'OPEN', 'acceptingOrders': false, 'openNow': false});
+      expect(idle.isInactive, isTrue);
+      expect(idle.isOpen, isFalse);
+
+      final working = Store.fromJson({...raw, 'status': 'OPEN', 'acceptingOrders': true});
+      expect(working.isInactive, isFalse);
+
+      final older = Store.fromJson({...raw, 'status': 'OPEN'}..remove('acceptingOrders'));
+      expect(older.acceptingOrders, isNull);
+      expect(older.isInactive, isFalse);
+    });
+
     test('parses store detail with brand and empty working hours', () {
       final store = StoreDetail.fromJson(fixture('store_detail.json')! as Map<String, dynamic>);
       expect(store.brand.name, 'NoName Coffee');
@@ -223,6 +237,13 @@ void main() {
         'productId': 'p',
         'quantity': 1,
       });
+    });
+  });
+
+  group('auth', () {
+    test('sends the Apple authorization code with an account deletion only when there is one', () {
+      expect(const DeleteAccountRequest(appleAuthorizationCode: 'c1').toJson(), {'appleAuthorizationCode': 'c1'});
+      expect(const DeleteAccountRequest().toJson(), isEmpty);
     });
   });
 

@@ -49,9 +49,23 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
   final Map<String, int> _modifiers = {};
   final _notes = TextEditingController();
   int _quantity = 1;
-  bool _initialised = false;
+  ProductDetail? _optionsFrom;
   bool _adding = false;
   bool _showNotes = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Product details are kept for the session, but an add-in can run out
+    // in between and its option is then gone from the menu. A product that
+    // was opened before is fetched again, so the screen offers only what
+    // can be ordered now.
+    if (ref.read(productDetailProvider(widget.productId)).hasValue) {
+      Future.microtask(() {
+        if (mounted) ref.invalidate(productDetailProvider(widget.productId));
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -59,17 +73,27 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     super.dispose();
   }
 
+  /// Picks the defaults, and again whenever a fresher copy of the product
+  /// arrives: choices that are still on offer stay as the customer left
+  /// them, ones that ran out fall back to the default or are dropped.
   void _initDefaults(ProductDetail product) {
-    if (_initialised) return;
-    _initialised = true;
+    if (identical(product, _optionsFrom)) return;
+    _optionsFrom = product;
+    final types = <VariationType>{};
     for (final type in _variationOrder) {
       final group = product.variations.where((v) => v.type == type).toList()
         ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       if (group.isEmpty) continue;
+      types.add(type);
+      final chosen = _variations[type];
+      if (chosen != null && group.any((v) => v.id == chosen)) continue;
       _variations[type] = (group.firstWhere((v) => v.isDefault, orElse: () => group.first)).id;
     }
+    _variations.removeWhere((type, _) => !types.contains(type));
+    final offered = {for (final m in product.modifiers) m.id: m};
+    _modifiers.removeWhere((id, _) => !offered.containsKey(id));
     for (final m in product.modifiers) {
-      _modifiers[m.id] = m.minCount;
+      _modifiers.putIfAbsent(m.id, () => m.minCount);
     }
   }
 

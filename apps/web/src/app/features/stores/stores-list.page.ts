@@ -1,19 +1,20 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { LeafletMapComponent, type MapMarker } from '@takeaway/ui-kit';
+import { isStoreInactive } from '@takeaway/utils';
+import { LeafletMapComponent, StoreLogoComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { hasLocation, storeAddress } from '../../core/catalog/store-place';
 
-type Filter = 'ALL' | 'OPEN' | 'NEAR' | 'FAV';
+type Filter = 'ALL' | 'OPEN' | 'NEAR';
 
 const FILTER_LABELS: Record<Filter, string> = {
   ALL: 'web.stores.filters.all',
   OPEN: 'web.stores.filters.open',
   NEAR: 'web.stores.filters.near',
-  FAV: 'web.stores.filters.fav',
 };
 
 /**
@@ -26,12 +27,16 @@ const FILTER_LABELS: Record<Filter, string> = {
 @Component({
   selector: 'app-stores-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LeafletMapComponent],
+  imports: [RouterLink, TranslatePipe, LeafletMapComponent, StoreLogoComponent],
   template: `
     <section class="stores-shell flex" style="height: calc(100vh - 72px); overflow: hidden">
       <!-- Map area -->
       <div class="stores-map relative flex-1" style="background: var(--color-latte); overflow: hidden">
-        <lib-leaflet-map [markers]="storeMarkers()" (markerClicked)="selectedId.set($event)" />
+        <lib-leaflet-map
+          [markers]="storeMarkers()"
+          [userPosition]="userPosition()"
+          (markerClicked)="selectedId.set($event)"
+        />
 
         <!-- Map top bar (overlay) -->
         <div
@@ -40,14 +45,19 @@ const FILTER_LABELS: Record<Filter, string> = {
         >
           <span style="color: var(--color-text-secondary); font-size: 18px">🔍</span>
           <input
+            #search
             type="search"
+            [value]="query()"
+            (input)="query.set(search.value)"
             [placeholder]="'web.stores.searchPlaceholder' | translate"
-            class="flex-1 outline-none bg-transparent"
+            class="flex-1 min-w-0 outline-none bg-transparent"
             style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
           />
           <button
             type="button"
-            class="flex items-center justify-center"
+            (click)="locate()"
+            [disabled]="locating()"
+            class="flex items-center justify-center disabled:opacity-60"
             style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
           >
             {{ 'web.stores.useLocation' | translate }}
@@ -98,23 +108,32 @@ const FILTER_LABELS: Record<Filter, string> = {
               [style.border]="
                 selectedId() === store.id ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
               "
+              [style.opacity]="inactive(store) ? 0.6 : 1"
+              [attr.data-inactive]="inactive(store) || null"
               style="background: var(--color-cream); border-radius: 16px; padding: 16px; gap: 10px"
             >
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" style="gap: 12px">
+                <span class="flex items-center" style="gap: 12px; min-width: 0">
+                  <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="44" />
+                  <span
+                    style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
+                    >{{ store.name }}</span
+                  >
+                </span>
                 <span
-                  style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
-                  >{{ store.name }}</span
-                >
-                <span
-                  [style.background]="statusBg(store.status)"
-                  [style.color]="statusColor(store.status)"
+                  [style.background]="statusBg(inactive(store) ? 'CLOSED' : store.status)"
+                  [style.color]="statusColor(inactive(store) ? 'CLOSED' : store.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600"
-                  >{{ statusLabel(store.status) | translate }}</span
+                  >{{ (inactive(store) ? 'common.storeInactive.badge' : statusLabel(store.status)) | translate }}</span
                 >
               </div>
-              <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
-                {{ store.addressLine }}, {{ store.city }}
-              </p>
+              @if (address(store); as a) {
+                <p
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
+                >
+                  {{ a }}
+                </p>
+              }
               <div class="flex items-center" style="gap: 16px">
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                   >⏱ {{ 'common.readyIn' | translate: { min: etaMinutes(store) } }}</span
@@ -176,21 +195,35 @@ export class StoresListPage implements OnInit {
   readonly stores = signal<StoreListItem[]>([]);
   readonly filter = signal<Filter>('ALL');
   readonly selectedId = signal<string | null>(null);
-  readonly filters: Filter[] = ['ALL', 'OPEN', 'NEAR', 'FAV'];
+  readonly filters: Filter[] = ['ALL', 'OPEN', 'NEAR'];
+  readonly query = signal('');
+  readonly userPosition = signal<LatLng | null>(null);
+  readonly locating = signal(false);
 
   readonly filteredStores = computed(() => {
-    const list = this.stores();
+    const words = this.query().toLowerCase().split(/s+/).filter(Boolean);
+    const list = this.stores().filter((s) => {
+      const text = `${s.name} ${storeAddress(s)}`.toLowerCase();
+      return words.every((w) => text.includes(w));
+    });
     const f = this.filter();
-    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN');
+    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && !isStoreInactive(s));
     if (f === 'NEAR') {
-      return [...list].sort((a, b) => (a.currentEtaSeconds ?? 0) - (b.currentEtaSeconds ?? 0));
+      // By distance once the customer has shared where they are, by wait until then.
+      return [...list].sort(
+        (a, b) =>
+          (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) ||
+          (a.currentEtaSeconds ?? 0) - (b.currentEtaSeconds ?? 0),
+      );
     }
-    // FAV is a stub — show all until we have favorites wired up.
     return list;
   });
 
+  /** Stores without a pin yet stay in the list but off the map. */
   readonly storeMarkers = computed<MapMarker[]>(() =>
-    this.filteredStores().map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
+    this.filteredStores()
+      .filter(hasLocation)
+      .map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
   );
 
   ngOnInit(): void {
@@ -207,6 +240,32 @@ export class StoresListPage implements OnInit {
     this.filter.set(f);
   }
 
+  address(store: StoreListItem): string {
+    return storeAddress(store);
+  }
+
+  /** Asks the browser where the customer is, then lists the stores by distance from there. */
+  locate(): void {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    this.locating.set(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        this.userPosition.set(here);
+        this.catalog.listStores(here).subscribe({
+          next: (list) => {
+            this.stores.set(list);
+            this.filter.set('NEAR');
+            this.locating.set(false);
+          },
+          error: () => this.locating.set(false),
+        });
+      },
+      () => this.locating.set(false),
+      { timeout: 10_000, maximumAge: 300_000 },
+    );
+  }
+
   filterLabel(f: Filter): string {
     return FILTER_LABELS[f];
   }
@@ -220,6 +279,10 @@ export class StoresListPage implements OnInit {
   }
 
   /** Returns a translation key; the template runs it through the translate pipe. */
+  inactive(store: StoreListItem): boolean {
+    return isStoreInactive(store);
+  }
+
   statusLabel(status: StoreListItem['status']): string {
     if (status === 'OPEN') return 'web.stores.status.OPEN';
     if (status === 'OVERLOADED') return 'web.stores.status.OVERLOADED';

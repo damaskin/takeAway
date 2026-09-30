@@ -68,3 +68,20 @@ export interface JwtAccessPayload {
   iat: number;
   exp: number;
 }
+
+/** Which of Telegram, Google and Apple lead into the signed-in customer's profile. */
+export interface SignInMethods {
+  telegram: boolean;
+  google: boolean;
+  apple: boolean;
+}
+
+/**
+ * Result of linking a sign-in method. `session` is present when the method
+ * already led into a profile with orders and this one had none: the customer
+ * was moved there, and the client must switch to the new session.
+ */
+export interface LinkSignInMethodResult {
+  methods: SignInMethods;
+  session?: AuthSession;
+}

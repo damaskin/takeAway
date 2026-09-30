@@ -6,15 +6,19 @@ import { PassportModule } from '@nestjs/passport';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { MailModule } from '../mail/mail.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { AccountDeletionService } from './services/account-deletion.service';
+import { AppleTokenRevocationService } from './services/apple-token-revocation.service';
 import { BrandScopeService } from './services/brand-scope.service';
 import { KdsPinService } from './services/kds-pin.service';
 import { OAuthIdentityService } from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
+import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 import { UserStoreScopeService } from './services/user-store-scope.service';
@@ -24,6 +28,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [
     UsersModule,
     MailModule,
+    // Account deletion drops the user's open sockets.
+    RealtimeModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -47,9 +53,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AccountDeletionService,
+    AppleTokenRevocationService,
     PasswordService,
     KdsPinService,
     OAuthIdentityService,
+    SignInMethodsService,
     TokensService,
     TelegramService,
     UserStoreScopeService,

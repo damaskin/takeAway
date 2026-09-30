@@ -195,7 +195,7 @@ takeaway/
 
 ### 2.3. Mobile — фактически
 
-- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Bundle / application id — `md.takeaway.app`
+- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Android application id — `md.takeaway.app`, iOS bundle id — `md.takeaway.ios` (команда Apple `FGN8R2D6QW`)
 - **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
 - **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
 - **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
@@ -245,7 +245,7 @@ takeaway/
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
 - **Password reset**: email-based one-shot токен (SHA-256 hash в `PasswordResetToken`).
-- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты.
+- **Google / Apple**: ID-токен проверяется на сервере по JWKS провайдера — подпись RS256 (алгоритм зафиксирован, `alg` из заголовка не используется), `iss`, `aud` против собственных client id, `exp`. Ключи кешируются на час с обработкой ротации. Учётка привязывается через `OAuthAccount`; при совпадении **подтверждённого** email со существующим `CUSTOMER` аккаунт связывается (один профиль на все каналы), staff-аккаунты для такой привязки закрыты. Клиент без email (пришёл из Telegram) привязывает Google, Apple и Telegram явно в «Профиль → Способы входа» (`/auth/me/sign-in-methods`): если у способа уже есть профиль без заказов, способ переезжает к текущему; если без заказов текущий, клиент переходит в профиль с историей и получает новую сессию; два профиля с заказами не объединяются. Telegram не отвязывается, последний способ входа не удаляется. Настройка ключей — `docs/social-sign-in.md`.
 - **JWT + refresh tokens**, logout invalidates refresh.
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
@@ -258,6 +258,12 @@ takeaway/
 - Service worker регистрируется при старте приложения, не при включении пушей
 - Офлайн: кэшируется только оболочка и иконки. Ответы `/api/*` не кэшируются никогда — устаревший ETA хуже честной ошибки
 - nginx: `sw.js` отдаётся с `no-store` (иначе годовой `immutable`-кэш заморозил бы воркер навсегда), `.webmanifest` — с `application/manifest+json`
+
+### 3.1b. PWA (admin)
+
+- Каркас-приложение: высота ровно в экран, прокручивается только `<main>`; шапка и меню на всю высоту закреплены. На ≤900px меню — выезжающая панель по кнопке, аккаунт и выход — внизу панели
+- Манифест (`standalone`, любая ориентация — кухонные планшеты), свои иконки на тёмном фоне, ярлыки «Кухня» и «Заказы»; кнопка «Установить приложение» в меню по `beforeinstallprompt`
+- Service worker кэширует только манифест и иконки; упавшая навигация отдаёт встроенную офлайн-страницу. `/api/*` и сокет идут мимо
 
 ### 3.2. Каталог / меню
 
@@ -292,6 +298,7 @@ takeaway/
 **Главный механизм продукта. Вся UX-энергия направлена в этот флоу.**
 
 - Корзина привязана к выбранной точке
+- Один и тот же товар с теми же вариациями, добавками и комментарием — одна строка корзины: повторное добавление увеличивает её количество (не больше 99)
 - При смене точки — предупреждение, если товара нет
 - Корзина синкается между устройствами через user_id (Redis)
 - **Расчёт времени готовности на лету** (`KitchenLoadService`). ETA пересчитывается при каждом изменении корзины и ещё раз при чтении — очередь движется без нас:
@@ -317,7 +324,7 @@ takeaway/
   3. Контакт: имя на заказе + телефон для SMS-подтверждения
   4. Промокод / применение баллов
   5. Комментарий к заказу
-  6. Оплата: привязанная карта Агропромбанка в одно нажатие или оплата на месте. Карты клиент привязывает в профиле («Способы оплаты») — в TMA и в вебе одинаково. Stripe Payment Intents остались в API запасным путём
+  6. Оплата: только привязанная карта Агропромбанка, в одно нажатие; оплаты на месте нет. Сумма бронируется на чекауте и списывается, когда точка принимает заказ; новый заказ попадает на доску кухни, только когда бронь прошла, и принять его без брони нельзя. Заказ с нулевой суммой (всё покрыли баллы или подарочная карта) проходит без карты. Карты клиент привязывает в профиле («Способы оплаты») — в TMA и в вебе одинаково. Stripe Payment Intents остались в API запасным путём
 - Тип получения: `PICKUP` (default), `DINE_IN` (secondary, если точка поддерживает), **`DELIVERY` — реализовано** (см. 3.11) с per-store fee overrides
 - **Часы работы точки** проверяются при создании заказа и при выдаче слотов — в таймзоне точки (`Intl`, не фиксированный сдвиг), с поддержкой ночных смен. Точка без расписания считается работающей круглосуточно
 - **Стоп-лист** блокирует добавление в корзину, изменение позиции и создание заказа. Записи с истёкшим `expiresAt` не блокируют
@@ -404,6 +411,8 @@ takeaway/
 - Новые заказы приходят по всему кабинету: всплывающая карточка с «Принять», звук, системное уведомление из фоновой вкладки, счётчик непринятых в меню. Кабинет держит одно сокет-подключение (`kds.subscribe` на все точки активного бренда) с повторным входом в комнаты после переподключения
 - Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`. UI lockscreen — `/login/pin` в кабинете (выбор точки один раз на устройство, экранная клавиатура).
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
+- **Смена точки**: точка принимает заказы, только пока открыта смена (`StoreShift` с `closedAt = null`). Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках». Пока смена закрыта, `GET /stores` отдаёт `acceptingOrders: false` (и `openNow: false`), клиенты показывают точку «Не работает», создание заказа отвечает `STORE_NOT_TAKING_ORDERS`. Корзину собрать можно. Смена открывается и закрывается только вручную; остальные планшеты узнают об этом по `kds.shiftChanged`
+- **Клиент на месте**: строка доски несёт `customerArrival` (`NEARBY` | `HERE` | null) и `customerArrivedAt` из событий `CUSTOMER_NEARBY` / `CUSTOMER_HERE`; на карточке — плашка «Клиент рядом» / зелёная «Клиент на месте · N мин»
 - Звук при новом заказе — да
 - **Dual timer на карточке**:
   - Время до pickup (обещанное клиенту) — основной
@@ -483,6 +492,7 @@ Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
 StoreWorkingHour (storeId, weekday[0..6], opensAt, closesAt, isClosed)
+StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не больше одной открытой на точку (частичный уникальный индекс)
 ```
 
 ### 5.3. Catalog
@@ -495,11 +505,14 @@ Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
          imageUrls[], visible, sortOrder, availableFrom?, availableTo?,
          externalProvider?, externalId?)
 Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
-           prepTimeDeltaSeconds, isDefault)
+           prepTimeDeltaSeconds, isDefault, ingredientId?)
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
-          minCount, maxCount, externalProvider?, externalId?)
+          minCount, maxCount, externalProvider?, externalId?, ingredientId?)
+Ingredient (id, brandId, name, isAvailable)   -- библиотека добавок бренда, (brandId, name) уникально
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
 ```
+
+**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Наличие общее для бренда, не для отдельной точки.
 
 ### 5.4. Cart / Order / Payment
 
@@ -589,6 +602,9 @@ POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
+GET    /auth/me/sign-in-methods      → { telegram, google, apple }
+POST   /auth/me/sign-in-methods/google|apple|telegram  { idToken, name? } → { methods, session? }  (session — если клиент перешёл в профиль с заказами)
+DELETE /auth/me/sign-in-methods/google|apple  → { telegram, google, apple }
 POST   /auth/telegram                { initData } → tokens           (TMA)
 POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens   (legacy Login Widget, HMAC)
 POST   /auth/telegram/oidc           { idToken } → tokens            (Telegram Login, OpenID Connect)
@@ -598,7 +614,10 @@ POST   /auth/telegram/link/oidc      { idToken }                     (auth, то
 POST   /auth/refresh                 { refreshToken }
 POST   /auth/logout
 GET    /auth/me
+DELETE /auth/me                      { appleAuthorizationCode? } → 204   (удаление аккаунта; только CUSTOMER, staff и владелец бренда → 403)
 ```
+
+`DELETE /auth/me` (App Store 5.1.1(v)) не удаляет строку `User`, а превращает её в обезличенную заглушку в одной транзакции: имя, email, телефон, аватар, дата рождения, `telegramUserId`, `passwordHash`, `referralCode` → null, notify-флаги → false, `blockedAt = now()`. Удаляются `OAuthAccount`, `Device`, `Cart`, `CardToken`, `CardBindingRequest`, `PasswordResetToken`; баланс `LoyaltyAccount` обнуляется записью `EXPIRE` в ledger. Заказы, платежи, ledger, промо-погашения, рефералы и подарочные карты остаются и ссылаются на ту же строку, но заказы — только в обезличенном виде: у всех заказов пользователя (и у ещё не выполненных тоже) обнуляются `customerName`, `customerPhone`, адрес доставки (`deliveryAddressLine`, `deliveryCity`), `deliveryNotes`, `deliveryLatitude`/`deliveryLongitude`; позиции с опциями и комментариями, комментарий к заказу, суммы, статусы, точка, время, стоимость доставки и расстояние сохраняются. У событий прихода клиента (`CUSTOMER_NEARBY` / `CUSTOMER_HERE`) из payload удаляются координаты, тип и `distanceM` остаются. Координаты клиента не отдаёт и `GET /admin/orders/:id`: в событиях заказа админ видит только расстояние. Все refresh-токены пользователя удаляются из Redis, ротация и WebSocket-рукопожатие отказывают заблокированному аккаунту. Повторный вход тем же Telegram / Google / Apple создаёт новый пустой профиль. Тело необязательное: iOS-приложение перед удалением заново проходит Sign in with Apple и присылает свежий `appleAuthorizationCode` — до транзакции (и только после проверки прав) API меняет его на токены в `appleid.apple.com/auth/token` и отзывает refresh-токен (или access) через `/auth/revoke`. `client_secret` — ES256 JWT, подписанный ключом Sign in with Apple (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`), client id — `APPLE_REVOKE_CLIENT_ID` или первый из `APPLE_OAUTH_CLIENT_IDS`, не равный `APPLE_OAUTH_SERVICES_ID`. Отзыв best-effort: сбой Apple или отсутствие ключа логируются и удаление не блокируют. Логика и решения по каждой связи — `AccountDeletionService`, отзыв Apple — `AppleTokenRevocationService`.
 
 ### 6.2. Профиль и уведомления
 
@@ -617,7 +636,7 @@ POST   /me/referrals/apply           { code }
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, openNow, timezone
+GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде
@@ -715,6 +734,7 @@ GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     библиотека добавок бренда (GET ?brandId=), PATCH { isAvailable } — «закончилось/появилось»
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
 POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
@@ -758,7 +778,10 @@ GET                    /admin/pos/jobs/:provider
 ### 6.10. KDS (экран баристы)
 
 ```
-GET    /kds/orders
+GET    /kds/orders                    // + customerArrival, customerArrivedAt
+GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName }
+POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
+POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно
 POST   /kds/orders/:id/accept
 POST   /kds/orders/:id/start
 POST   /kds/orders/:id/ready
@@ -849,7 +872,7 @@ OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, о
 - Каркас, тема по дизайн-токенам (светлая/тёмная), RU/EN, иконки и сплэш ✅
 - Вход Telegram / Google / Apple, secure storage, ротация refresh ✅
 - Точки (карта + список, «рядом», «открыто сейчас»), меню с поиском, быстрое добавление, конструктор товара ✅
-- Корзина, чекаут ASAP/ко времени, промо, подарочные карты, баллы, доставка, оплата картой Агропромбанка или на месте ✅
+- Корзина, чекаут ASAP/ко времени, промо, подарочные карты, баллы, доставка, оплата только картой Агропромбанка (бронь на чекауте, списание при принятии) ✅
 - Live-статус: сокет + опрос, кольцо ETA, код и QR, «Я на месте», геофенсинг, отмена, повтор, чек на почту ✅
 - Push: FCM на сервере + `firebase_messaging` в приложении ✅ (ждёт ключей)
 - Профиль: лояльность, рефералы, подарочные карты, способы оплаты, уведомления ✅

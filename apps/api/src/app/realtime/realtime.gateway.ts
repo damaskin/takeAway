@@ -76,8 +76,16 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const secret = this.config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access';
       const payload = await this.jwt.verifyAsync<{ sub: string }>(token, { secret });
+      // Same rule as the HTTP JWT strategy: a blocked or deleted account's
+      // access token is still signed and unexpired for a few minutes, and
+      // must not open a socket in that window.
+      const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { blockedAt: true } });
+      if (!user || user.blockedAt) {
+        client.disconnect(true);
+        return;
+      }
       client.data['userId'] = payload.sub;
-      client.join(`user:${payload.sub}`);
+      client.join(this.userRoom(payload.sub));
       this.logger.debug(`WS connected: ${client.id} (user ${payload.sub})`);
     } catch {
       client.disconnect(true);
@@ -112,7 +120,15 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** Emit order.statusChanged to everyone listening to the order and its owner. */
   emitOrderStatusChanged(payload: OrderStatusPayload, ownerUserId: string): void {
     this.server.to(this.orderRoom(payload.orderId)).emit('order.statusChanged', payload);
-    this.server.to(`user:${ownerUserId}`).emit('order.statusChanged', payload);
+    this.server.to(this.userRoom(ownerUserId)).emit('order.statusChanged', payload);
+  }
+
+  /**
+   * Drops every socket a user has open. Each socket joins the user's room on
+   * connect, so this also takes it out of any order room it followed.
+   */
+  disconnectUser(userId: string): void {
+    this.server.in(this.userRoom(userId)).disconnectSockets(true);
   }
 
   /** Emit store-level busy/ETA updates (public channel). */
@@ -160,6 +176,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   /**
+   * A shift opened or closed at this store. Every kitchen screen and cabinet
+   * following the store flips its "Start work" / "Finish work" button.
+   */
+  emitKdsShiftChanged(payload: { storeId: string; shift: unknown }): void {
+    this.server.to(this.kdsRoom(payload.storeId)).emit('kds.shiftChanged', payload);
+  }
+
+  /**
    * Dispatcher clients (admins + store managers) subscribe to the delivery
    * queue of a store within their scope. RIDER and CUSTOMER get {ok:false}.
    */
@@ -192,6 +216,10 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** Broadcast a dispatch-queue change to every connected dispatcher for this store. */
   emitDispatchChanged(payload: DispatchChangedPayload): void {
     this.server.to(this.dispatchRoom(payload.storeId)).emit('dispatch.orderChanged', payload);
+  }
+
+  private userRoom(userId: string): string {
+    return `user:${userId}`;
   }
 
   private orderRoom(orderId: string): string {

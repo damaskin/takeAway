@@ -2,23 +2,37 @@ import {
   Body,
   Controller,
   ConflictException,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Param,
+  ParseEnumPipe,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { AccountDeletionService } from './services/account-deletion.service';
+import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { KdsPinLoginDto } from './dto/kds-pin-login.dto';
 import { PasswordChangeSelfDto } from './dto/password-change-self.dto';
 import { PasswordForgotDto } from './dto/password-forgot.dto';
@@ -27,6 +41,7 @@ import { PasswordResetDto } from './dto/password-reset.dto';
 import { NotificationPrefsDto, UpdateNotificationPrefsDto } from './dto/notification-prefs.dto';
 import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { LinkSignInMethodResultDto, SignInMethodsDto } from './dto/sign-in-methods.dto';
 import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { TelegramConfigDto } from './dto/telegram-config.dto';
 import { TelegramIdTokenDto } from './dto/telegram-id-token.dto';
@@ -61,6 +76,8 @@ export class AuthController {
     private readonly users: UsersService,
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
+    private readonly signInMethods: SignInMethodsService,
+    private readonly accountDeletion: AccountDeletionService,
   ) {}
 
   @Public()
@@ -246,6 +263,85 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
     return this.auth.toAuthUser(dbUser);
+  }
+
+  /**
+   * Delete the signed-in customer's account (App Store guideline 5.1.1(v)).
+   * Personal data is erased and every session ends; orders (stripped of the
+   * customer's name, phone, address and location), payments and loyalty
+   * history stay, attached to an anonymised profile. Signing in
+   * again with the same Telegram, Google or Apple account starts a new,
+   * empty profile. Staff accounts and brand owners are refused — their
+   * business admin or support removes them.
+   *
+   * The body is optional: the iOS app adds a fresh Sign in with Apple
+   * authorization code so the Apple grant is revoked too.
+   */
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiBody({ type: DeleteAccountDto, required: false })
+  @ApiNoContentResponse({ description: 'Account deleted; every session of it is revoked' })
+  @ApiUnauthorizedResponse({ description: 'No valid access token' })
+  @ApiForbiddenResponse({ description: 'Staff account or brand owner — removed by the business admin or support' })
+  async deleteMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: DeleteAccountDto): Promise<void> {
+    await this.accountDeletion.deleteOwnAccount(user.id, { appleAuthorizationCode: dto.appleAuthorizationCode });
+  }
+
+  /** Which of Telegram, Google and Apple lead into the signed-in customer's profile. */
+  @Get('me/sign-in-methods')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: SignInMethodsDto })
+  mySignInMethods(@CurrentUser() user: AuthenticatedUser): Promise<SignInMethodsDto> {
+    return this.signInMethods.list(user.id);
+  }
+
+  /**
+   * Add Google to the signed-in customer's profile. When the Google account
+   * already has a profile with orders and this one has none, the customer is
+   * moved into that profile and the response carries a new `session`.
+   */
+  @Post('me/sign-in-methods/google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.oauth, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: LinkSignInMethodResultDto })
+  linkGoogle(@CurrentUser() user: AuthenticatedUser, @Body() dto: OAuthLoginDto): Promise<LinkSignInMethodResultDto> {
+    return this.signInMethods.linkOAuth(user.id, 'GOOGLE', dto.idToken);
+  }
+
+  /** Add Apple to the signed-in customer's profile; same rules as Google. */
+  @Post('me/sign-in-methods/apple')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.oauth, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: LinkSignInMethodResultDto })
+  linkApple(@CurrentUser() user: AuthenticatedUser, @Body() dto: OAuthLoginDto): Promise<LinkSignInMethodResultDto> {
+    return this.signInMethods.linkOAuth(user.id, 'APPLE', dto.idToken, dto.name);
+  }
+
+  /** Add Telegram (Telegram Login ID token) to the signed-in customer's profile. */
+  @Post('me/sign-in-methods/telegram')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: limits.telegram, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: LinkSignInMethodResultDto })
+  linkTelegramMethod(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: TelegramIdTokenDto,
+  ): Promise<LinkSignInMethodResultDto> {
+    return this.signInMethods.linkTelegram(user.id, dto.idToken);
+  }
+
+  /** Remove Google or Apple. Refused when it is the profile's last way in. */
+  @Delete('me/sign-in-methods/:provider')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: SignInMethodsDto })
+  unlinkSignInMethod(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('provider', new ParseEnumPipe({ google: 'GOOGLE', apple: 'APPLE' })) provider: 'GOOGLE' | 'APPLE',
+  ): Promise<SignInMethodsDto> {
+    return this.signInMethods.unlink(user.id, provider);
   }
 
   @Get('me/notifications')

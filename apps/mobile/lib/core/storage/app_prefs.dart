@@ -82,6 +82,12 @@ class ContactPrefs {
     if (name != null && name.trim().isNotEmpty) await prefs.setString(_nameKey, name.trim());
     if (phone != null && phone.trim().isNotEmpty) await prefs.setString(_phoneKey, phone.trim());
   }
+
+  Future<void> forget() async {
+    final prefs = _ref.read(sharedPreferencesProvider);
+    await prefs.remove(_nameKey);
+    await prefs.remove(_phoneKey);
+  }
 }
 
 final contactPrefsProvider = Provider<ContactPrefs>((ref) => ContactPrefs(ref));

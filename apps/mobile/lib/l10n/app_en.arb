@@ -82,9 +82,46 @@
   "continueWithApple": "Continue with Apple",
   "devSignIn": "Developer sign-in",
   "signingIn": "Signing in…",
-  "signInAgreement": "By continuing you agree to the Terms of Service and Privacy Policy.",
+  "signInAgreement": "By continuing you agree to the {terms} and {privacy}.",
+  "@signInAgreement": {
+    "description": "The two placeholders become links, filled with signInAgreementTerms and signInAgreementPrivacy.",
+    "placeholders": {
+      "terms": {
+        "type": "String"
+      },
+      "privacy": {
+        "type": "String"
+      }
+    }
+  },
+  "signInAgreementTerms": "Terms of Service",
+  "signInAgreementPrivacy": "Privacy Policy",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
+  "signInMethodsTitle": "Sign-in methods",
+  "signInMethodsSubtitle": "Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.",
+  "signInMethodLinked": "Connected",
+  "signInMethodNotLinked": "Not connected",
+  "signInMethodLink": "Connect",
+  "signInMethodUnlink": "Disconnect",
+  "signInMethodUnlinkConfirm": "Disconnect {provider}?",
+  "@signInMethodUnlinkConfirm": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "signInMethodUnlinkHint": "You will no longer be able to sign in with {provider}.",
+  "@signInMethodUnlinkHint": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "signInMethodSwitched": "That account already had orders, so you are now in that profile.",
+  "signInMethodIosOnly": "On iPhone",
   "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
   "storesTitle": "Stores",
   "storesSearchHint": "Search by name or address",
@@ -96,6 +133,7 @@
   "storeStatusOpen": "Open",
   "storeStatusBusy": "Busy",
   "storeStatusClosed": "Closed",
+  "storeStatusNotWorking": "Not working",
   "orderHere": "Order here",
   "distanceAway": "{distance} away",
   "@distanceAway": {
@@ -114,9 +152,13 @@
     }
   },
   "chooseStoreTitle": "Where are you picking up?",
-  "chooseStoreSubtitle": "Choose a store and we will show its menu and how soon your order can be ready.",
+  "chooseStoreSubtitle": "Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.",
+  "changeStore": "Change store",
+  "storesInactiveTitle": "Not taking orders right now",
+  "storesNoneActive": "No store is taking orders right now. Check back a little later.",
   "storeClosedBanner": "Closed right now — you can still schedule for later.",
   "storeBusyBanner": "The kitchen is busy — orders take a little longer.",
+  "storeInactiveBanner": "This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.",
   "openingHours": "Opening hours",
   "closedAllDay": "Closed",
   "buildRoute": "Build route",
@@ -317,8 +359,8 @@
     }
   },
   "paymentTitle": "Payment",
-  "payAtCounter": "Pay at the counter",
-  "payAtCounterHint": "Cash or card when you pick up",
+  "cardPaymentsUnavailable": "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+  "addCardToOrder": "Orders are paid by card. Add a card to place your order.",
   "addCard": "Add a card",
   "holdHint": "We hold the amount now and charge it when the store accepts your order.",
   "summaryTitle": "Summary",
@@ -380,6 +422,7 @@
   "paymentStateFailed": "Payment did not go through",
   "paymentStateRefunded": "Money returned",
   "paymentStateAtCounter": "Paying at the counter",
+  "paymentStateAwaiting": "Awaiting payment",
   "pickupCode": "Pickup code",
   "showQr": "Show QR",
   "qrHint": "Show this at the counter",
@@ -464,6 +507,14 @@
   "profileAbout": "About the app",
   "signOut": "Sign out",
   "signOutConfirm": "Sign out of takeAway?",
+  "deleteAccount": "Delete account",
+  "deleteAccountTitle": "Delete your account?",
+  "deleteAccountBody": "Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.",
+  "deleteAccountApple": "Apple will ask you to confirm, and takeAway will stop using your Apple ID.",
+  "deleteAccountConfirm": "Delete for good",
+  "deleteAccountStaff": "Staff accounts are deleted by the business admin.",
+  "deleteAccountAppleCancelled": "Deleting the account needs your confirmation with Apple.",
+  "accountDeleted": "Your account has been deleted",
   "appVersion": "Version {version}",
   "@appVersion": {
     "placeholders": {
@@ -595,6 +646,9 @@
   "languageEnglish": "English",
   "languageRussian": "Русский",
   "aboutBody": "takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.",
+  "aboutPrivacy": "Privacy Policy",
+  "aboutTerms": "Terms of Service",
+  "aboutSupport": "Support",
   "locationDenied": "Location access is off. Allow it in settings to see stores near you.",
   "locationServiceOff": "Location services are turned off.",
   "greetingMorning": "Good morning",

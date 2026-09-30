@@ -124,72 +124,69 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.checkoutTitle)),
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          children: [
-            _WhenSection(store: store, cart: cart, state: state, flags: flags, readyAt: readyAt, problem: _problem),
-            if (state.fulfillment == FulfillmentType.delivery)
-              _DeliverySection(
-                state: state,
-                currency: store.currency,
-                address: _address,
-                city: _city,
-                notes: _deliveryNotes,
-                problem: _problem,
-              ),
-            CheckoutSection(
-              title: l10n.contactTitle,
-              icon: Icons.person_outline_rounded,
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _name,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.name],
-                    decoration: InputDecoration(labelText: l10n.contactName),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _phone,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.telephoneNumber],
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9+()\s-]')),
-                      LengthLimitingTextInputFormatter(20),
-                    ],
-                    decoration: InputDecoration(labelText: l10n.contactPhone),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _notes,
-                    maxLength: 500,
-                    minLines: 1,
-                    maxLines: 3,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(labelText: l10n.orderNotes, counterText: ''),
-                  ),
-                ],
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        children: [
+          _WhenSection(store: store, cart: cart, state: state, flags: flags, readyAt: readyAt, problem: _problem),
+          if (state.fulfillment == FulfillmentType.delivery)
+            _DeliverySection(
+              state: state,
+              currency: store.currency,
+              address: _address,
+              city: _city,
+              notes: _deliveryNotes,
+              problem: _problem,
+            ),
+          CheckoutSection(
+            title: l10n.contactTitle,
+            icon: Icons.person_outline_rounded,
+            child: Column(
+              children: [
+                TextField(
+                  controller: _name,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
+                  decoration: InputDecoration(labelText: l10n.contactName),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.telephoneNumber],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9+()\s-]')),
+                    LengthLimitingTextInputFormatter(20),
+                  ],
+                  decoration: InputDecoration(labelText: l10n.contactPhone),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _notes,
+                  maxLength: 500,
+                  minLines: 1,
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(labelText: l10n.orderNotes, counterText: ''),
+                ),
+              ],
+            ),
+          ),
+          _DiscountsSection(state: state, currency: store.currency),
+          _PaymentSection(state: state, flags: flags, needsCard: controller.needsCard(cart, store)),
+          _SummarySection(cart: cart, store: store, state: state, breakdown: breakdown),
+          if (belowMinimum)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                l10n.minOrderNotice(context.money(minOrder, store.currency)),
+                textAlign: TextAlign.center,
+                style: context.text.bodyMedium?.copyWith(color: context.brand.berry),
               ),
             ),
-            _DiscountsSection(state: state, currency: store.currency),
-            _PaymentSection(state: state, flags: flags),
-            _SummarySection(cart: cart, store: store, state: state, breakdown: breakdown),
-            if (belowMinimum)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  l10n.minOrderNotice(context.money(minOrder, store.currency)),
-                  textAlign: TextAlign.center,
-                  style: context.text.bodyMedium?.copyWith(color: context.brand.berry),
-                ),
-              ),
-          ],
-        ),
+        ],
       ),
       // The failure sits right above the button that caused it: a declined
       // card must be impossible to miss, wherever the form is scrolled.
@@ -222,10 +219,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             PrimaryButton(
               loading: state.submitting,
-              onPressed: belowMinimum ? null : _submit,
-              label: state.placedOrderId != null && controller.payingByCard
+              onPressed: belowMinimum || store.isInactive || !controller.canPay(cart, store) ? null : _submit,
+              label: state.placedOrderId != null && controller.needsCard(cart, store)
                   ? l10n.retryPayment
-                  : controller.payingByCard
+                  : controller.needsCard(cart, store)
                   ? l10n.placeOrderPay(context.money(breakdown.totalCents, store.currency))
                   : l10n.placeOrder(context.money(breakdown.totalCents, store.currency)),
               trailing: Text(
@@ -311,9 +308,18 @@ class _WhenSection extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 10),
               child: Row(
                 children: [
-                  Icon(Icons.nightlight_round, size: 16, color: brand.berry),
+                  Icon(
+                    store.isInactive ? Icons.do_not_disturb_on_rounded : Icons.nightlight_round,
+                    size: 16,
+                    color: brand.berry,
+                  ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(l10n.storeClosedBanner, style: context.text.bodySmall)),
+                  Expanded(
+                    child: Text(
+                      store.isInactive ? l10n.storeInactiveBanner : l10n.storeClosedBanner,
+                      style: context.text.bodySmall,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -510,10 +516,13 @@ class _DiscountsSection extends ConsumerWidget {
 }
 
 class _PaymentSection extends ConsumerWidget {
-  const _PaymentSection({required this.state, required this.flags});
+  const _PaymentSection({required this.state, required this.flags, required this.needsCard});
 
   final CheckoutState state;
   final FeatureFlags flags;
+
+  /// False when points or a gift card already cover the whole order.
+  final bool needsCard;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -598,7 +607,11 @@ class _PaymentSection extends ConsumerWidget {
                   : [if (card.label != null) card.maskedPan, card.instituteName].whereType<String>().join(' · '),
               enabled: !card.isInactive,
             ),
-          option(id: null, icon: Icons.storefront_outlined, title: l10n.payAtCounter, subtitle: l10n.payAtCounterHint),
+          // Orders are paid by card only; there is no paying at the counter.
+          if (!flags.agroprombankEnabled)
+            _PaymentNotice(text: l10n.cardPaymentsUnavailable)
+          else if (needsCard && !cards.any((c) => !c.isInactive))
+            _PaymentNotice(text: l10n.addCardToOrder),
           if (flags.agroprombankEnabled && !locked)
             Align(
               alignment: Alignment.centerLeft,
@@ -609,6 +622,29 @@ class _PaymentSection extends ConsumerWidget {
               ),
             ),
           if (flags.agroprombankEnabled && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _PaymentNotice extends StatelessWidget {
+  const _PaymentNotice({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(color: brand.cream, borderRadius: BorderRadius.circular(Radii.button)),
+      child: Row(
+        children: [
+          Icon(Icons.credit_card_rounded, color: brand.caramel),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: context.text.bodyMedium)),
         ],
       ),
     );

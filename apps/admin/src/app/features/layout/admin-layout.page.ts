@@ -1,4 +1,4 @@
-import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
@@ -22,12 +22,19 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
 /**
  * Admin layout — pencil F52Ar sidebar + 64px foam top bar.
  *
- * Desktop (≥901px): persistent 260px sidebar on the left, 64px top bar on
- * the right.
+ * An app shell rather than a scrolling document: the shell is exactly one
+ * viewport tall and only `<main>` scrolls, so the top bar and the sidebar
+ * stay where they are however long the page is — the way an installed app
+ * behaves, and the admin can be installed as one (see public/manifest).
  *
- * Mobile (≤900px): the sidebar is hidden by default and slides in from the
- * left as an off-canvas drawer when the user taps the hamburger in the top
- * bar. Tapping outside the drawer or following any router link closes it.
+ * Desktop (≥901px): persistent 260px sidebar the full height of the screen
+ * on the left (it scrolls on its own if the menu is taller than the
+ * screen), 64px top bar over the page on the right.
+ *
+ * Mobile (≤900px): the top bar stays pinned; the sidebar is hidden and
+ * slides in from the left as an off-canvas drawer when the user taps the
+ * hamburger. Tapping the backdrop, pressing Escape or following any router
+ * link closes it.
  */
 @Component({
   selector: 'app-admin-layout',
@@ -43,14 +50,49 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
   ],
   template: `
     <div
-      class="admin-shell flex min-h-screen"
+      class="admin-shell flex"
       [class.admin-bare]="bare()"
       style="background: var(--color-cream); color: var(--color-text-primary)"
     >
       <!-- Sidebar (drawer on mobile) -->
       <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events,@angular-eslint/template/interactive-supports-focus -->
-      <div class="admin-sidebar-wrap" [class.admin-sidebar-open]="sidebarOpen()" (click)="onSidebarTap($event)">
-        <app-admin-sidebar />
+      <div
+        id="admin-sidebar"
+        class="admin-sidebar-wrap"
+        [class.admin-sidebar-open]="sidebarOpen()"
+        (click)="onSidebarTap($event)"
+      >
+        <app-admin-sidebar>
+          <!-- On a phone the top bar has no room for the account: it lives
+               at the foot of the drawer instead. -->
+          <div class="admin-drawer-account flex items-center">
+            <span
+              class="flex items-center justify-center flex-shrink-0"
+              style="width: 34px; height: 34px; border-radius: 9999px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-sans); font-size: 13px; font-weight: 700"
+            >
+              {{ initials() }}
+            </span>
+            <div class="flex flex-col min-w-0 flex-1">
+              <span
+                class="truncate"
+                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                >{{ userName() }}</span
+              >
+              <span
+                class="truncate"
+                style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary); letter-spacing: 0.5px"
+                >{{ roleLabel() | translate }}</span
+              >
+            </div>
+            <button
+              type="button"
+              (click)="logout()"
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel); padding: 8px 4px"
+            >
+              {{ 'common.signOut' | translate }}
+            </button>
+          </div>
+        </app-admin-sidebar>
       </div>
 
       <!-- Backdrop for mobile drawer -->
@@ -63,10 +105,10 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
         ></button>
       }
 
-      <div class="flex-1 flex flex-col min-w-0">
+      <div class="admin-column flex-1 flex flex-col min-w-0">
         <header
           class="admin-topbar flex items-center"
-          style="height: 64px; padding: 0 clamp(12px, 3vw, 32px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
+          style="flex: 0 0 64px; height: 64px; padding: 0 clamp(12px, 3vw, 32px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
         >
           <button
             type="button"
@@ -75,11 +117,12 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
             style="width: 38px; height: 38px; border-radius: 10px; background: transparent; color: var(--color-text-primary)"
             [attr.aria-label]="'common.menu' | translate"
             [attr.aria-expanded]="sidebarOpen()"
+            aria-controls="admin-sidebar"
           >
             <span style="font-size: 22px; line-height: 1">☰</span>
           </button>
 
-          <div class="flex items-center flex-1 min-w-0" style="gap: 10px">
+          <div class="admin-account flex items-center flex-1 min-w-0" style="gap: 10px">
             <span
               class="flex items-center justify-center flex-shrink-0"
               style="width: 34px; height: 34px; border-radius: 9999px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-sans); font-size: 13px; font-weight: 700"
@@ -157,7 +200,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
           </button>
         </header>
 
-        <main class="flex-1 overflow-auto" style="background: var(--color-cream)">
+        <main #scroller class="admin-main flex-1 overflow-auto" style="background: var(--color-cream)">
           <app-brand-status-banner />
           <router-outlet />
         </main>
@@ -170,6 +213,25 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
       :host {
         display: block;
       }
+      /*
+       * One viewport tall, never taller: the top bar and the sidebar are
+       * pinned because nothing outside <main> ever scrolls. dvh rather than
+       * vh so a phone's collapsing address bar cannot push the bottom of
+       * the page under the browser chrome; vh is the fallback.
+       */
+      .admin-shell {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      .admin-column {
+        min-height: 0;
+      }
+      .admin-main {
+        min-height: 0;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
       .admin-burger {
         display: none;
       }
@@ -181,23 +243,40 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
       .admin-backdrop {
         display: none;
       }
+      .admin-drawer-account {
+        display: none;
+        gap: 10px;
+        padding: 12px 8px 4px;
+        border-top: 1px solid var(--color-border-light);
+      }
       .admin-sidebar-wrap {
         flex: 0 0 auto;
+        height: 100%;
       }
       @media (max-width: 900px) {
         .admin-burger {
           display: inline-flex;
+        }
+        .admin-drawer-account {
+          display: flex;
         }
         .admin-sidebar-wrap {
           position: fixed;
           inset: 0 auto 0 0;
           z-index: 30;
           transform: translateX(-100%);
-          transition: transform 200ms ease;
+          transition:
+            transform 220ms cubic-bezier(0.2, 0, 0, 1),
+            visibility 0s linear 220ms;
+          visibility: hidden;
+          max-width: 85vw;
           box-shadow: 4px 0 18px rgba(0, 0, 0, 0.18);
         }
+        /* Hidden drawers stay out of the tab order and screen readers. */
         .admin-sidebar-wrap.admin-sidebar-open {
           transform: translateX(0);
+          visibility: visible;
+          transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
         }
         .admin-backdrop {
           display: block;
@@ -209,15 +288,28 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
           padding: 0;
         }
       }
+      @media (prefers-reduced-motion: reduce) {
+        .admin-sidebar-wrap {
+          transition: none !important;
+        }
+      }
       @media (max-width: 720px) {
         .admin-brand-picker-label,
         .admin-brand-single {
           display: none;
         }
       }
-      @media (max-width: 480px) {
+      /* A phone: the account and sign-out move into the drawer. */
+      @media (max-width: 600px) {
+        .admin-account {
+          visibility: hidden;
+        }
         .admin-signout {
           display: none;
+        }
+        .admin-brand-picker select {
+          min-width: 0 !important;
+          max-width: 46vw;
         }
       }
     `,
@@ -236,6 +328,10 @@ export class AdminLayoutPage implements OnInit {
   readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
 
   readonly sidebarOpen = signal(false);
+
+  /** The one scrolling element of the shell. */
+  private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
+  private lastPath = '';
 
   /** The picker's entry for the platform view rather than one brand. */
   readonly PROJECT = '__project__';
@@ -259,10 +355,17 @@ export class AdminLayoutPage implements OnInit {
     // leave the overlay covering the new page.
     this.onPlatform.set(this.router.url.startsWith('/platform'));
     this.onKitchen.set(this.router.url.startsWith('/kitchen'));
+    this.lastPath = pathOf(this.router.url);
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)).subscribe((e) => {
       this.sidebarOpen.set(false);
       this.onPlatform.set(e.urlAfterRedirects.startsWith('/platform'));
       this.onKitchen.set(e.urlAfterRedirects.startsWith('/kitchen'));
+      // <main> scrolls, not the window, so the router's own scroll handling
+      // never sees it: a new page would open scrolled as far down as the
+      // last one. A query-only change (a filter, a tab) keeps its place.
+      const path = pathOf(e.urlAfterRedirects);
+      if (path !== this.lastPath) this.scroller()?.nativeElement.scrollTo({ top: 0 });
+      this.lastPath = path;
     });
   }
 
@@ -338,4 +441,8 @@ export class AdminLayoutPage implements OnInit {
       },
     });
   }
+}
+
+function pathOf(url: string): string {
+  return url.split(/[?#]/)[0] ?? url;
 }

@@ -1,3 +1,4 @@
+require 'json'
 require 'tmpdir'
 
 # iOS build and TestFlight delivery, run on the Mac that builds iOS —
@@ -13,7 +14,7 @@ require 'tmpdir'
 #   ASC_KEY_PATH       path to AuthKey_<id>.p8, outside the repo
 #   KEYCHAIN_PASSWORD  password of the build keychain (created on first run)
 #   BUILD_KEYCHAIN     keychain name, default takeaway-build.keychain
-#   APPLE_TEAM_ID      default 4VC4JRTQG9 (Vladislav Socolov)
+#   APPLE_TEAM_ID      default FGN8R2D6QW (Ivan Damaschin)
 #   FLUTTER            flutter binary, 3.38.8 or newer; default `flutter`
 #   DART_DEFINES_FILE  default ../config/prod.json (copy of prod.example.json)
 #   BUILD_NUMBER       optional; default is the latest TestFlight build + 1
@@ -23,9 +24,9 @@ require 'tmpdir'
 
 default_platform(:ios)
 
-APP_ID = "md.takeaway.app"
+APP_ID = "md.takeaway.ios"
 APP_NAME = "takeAway"
-TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "4VC4JRTQG9")
+TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "FGN8R2D6QW")
 KEYCHAIN_NAME = ENV.fetch("BUILD_KEYCHAIN", "takeaway-build.keychain")
 PROFILE_NAME = "#{APP_ID} AppStore"
 IPA_NAME = "takeAway.ipa"
@@ -79,6 +80,22 @@ def build_name
   version = File.read(File.join(MOBILE_DIR, "pubspec.yaml"))[/^version:\s*([^\s+]+)/, 1]
   UI.user_error!("pubspec.yaml has no version") if version.nil?
   version
+end
+
+# Google Sign-In on iOS returns through a URL scheme that is the iOS client
+# id reversed. Derive it from the dart-defines file so the id lives in one
+# place; Google.xcconfig includes the file written here.
+def write_google_url_scheme
+  client_id = JSON.parse(File.read(DART_DEFINES_FILE))["GOOGLE_IOS_CLIENT_ID"].to_s.strip
+  path = File.join(IOS_DIR, "Flutter", "GoogleLocal.xcconfig")
+  if client_id.empty?
+    File.delete(path) if File.exist?(path)
+    UI.important("GOOGLE_IOS_CLIENT_ID is empty: the build offers no Google sign-in")
+    return
+  end
+  reversed = client_id.split(".").reverse.join(".")
+  File.write(path, "GOOGLE_REVERSED_CLIENT_ID = #{reversed}\n")
+  UI.message("Google sign-in URL scheme: #{reversed}")
 end
 
 def next_build_number(name)
@@ -158,6 +175,7 @@ platform :ios do
   desc "Build the signed archive and the IPA (no upload)"
   lane :archive do
     UI.user_error!("No #{DART_DEFINES_FILE}: copy config/prod.example.json there and fill it in") unless File.exist?(DART_DEFINES_FILE)
+    write_google_url_scheme
     unlock_build_keychain
     identity = distribution_identity
     name = build_name
@@ -309,6 +327,49 @@ platform :ios do
     UI.success("#{user.first_name} #{user.last_name} <#{user.username}> added to '#{group.name}'")
   end
 
+  desc "Invite a person to the App Store Connect team, to test this app (INVITE_EMAIL, INVITE_FIRST, INVITE_LAST)"
+  lane :invite_user do
+    # Internal testers have to be users of the team. The invitation gives the
+    # Developer role, no certificates, and this app only; once it is accepted,
+    # add_tester puts the person into the internal group.
+    email = ENV["INVITE_EMAIL"].to_s.strip
+    UI.user_error!("Set INVITE_EMAIL") if email.empty?
+    first = ENV["INVITE_FIRST"].to_s.strip
+    last = ENV["INVITE_LAST"].to_s.strip
+    UI.user_error!("Set INVITE_FIRST and INVITE_LAST — App Store Connect needs a name") if first.empty? || last.empty?
+    asc_key
+    if Spaceship::ConnectAPI::User.all.any? { |u| u.username.casecmp?(email) }
+      UI.message("#{email} is already a user of the team — run add_tester")
+      next
+    end
+    pending = Array(
+      Spaceship::ConnectAPI.test_flight_request_client.get("v1/userInvitations", { filter: { email: email } }).body["data"]
+    )
+    if pending.any?
+      # There is no "resend" in the API: REINVITE=1 withdraws the unanswered
+      # invitation and sends a fresh one, which also restarts its three days.
+      unless ENV["REINVITE"] == "1"
+        UI.message("#{email} already has a pending invitation (REINVITE=1 sends a fresh one)")
+        next
+      end
+      pending.each { |inv| Spaceship::ConnectAPI.test_flight_request_client.delete("v1/userInvitations/#{inv['id']}") }
+      UI.message("Withdrew the unanswered invitation for #{email}")
+    end
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("No app record for #{APP_ID}") if app.nil?
+    Spaceship::ConnectAPI.test_flight_request_client.post("v1/userInvitations", {
+      data: {
+        type: "userInvitations",
+        attributes: {
+          email: email, firstName: first, lastName: last,
+          roles: ["DEVELOPER"], allAppsVisible: false, provisioningAllowed: false
+        },
+        relationships: { visibleApps: { data: [{ type: "apps", id: app.id }] } }
+      }
+    })
+    UI.success("Invited #{first} #{last} <#{email}> as Developer, #{app.name} only")
+  end
+
   desc "Internal testing group that sees every build"
   lane :beta_group do
     # Testers are added in the website (they need App Store Connect users);
@@ -332,5 +393,42 @@ platform :ios do
       })
       UI.success("Group '#{group_name}' created")
     end
+  end
+
+  # The App Store listing lives in ios/fastlane/metadata (texts, URLs,
+  # categories, review notes). Screenshots come from SCREENSHOTS_PATH — see
+  # scripts/app-store-screenshots.sh — and replace whatever is uploaded.
+  # REVIEW_PHONE (App Review's contact number) stays out of the repository.
+  # SUBMIT=1 also attaches BUILD_NUMBER (default: the latest build of this
+  # version) and sends the version to App Review; it is released as soon as
+  # Apple approves it.
+  desc "Upload the App Store listing; SUBMIT=1 sends it to App Review"
+  lane :store_listing do
+    screenshots = ENV["SCREENSHOTS_PATH"].to_s
+    submit = ENV["SUBMIT"] == "1"
+    options = {
+      api_key: asc_key,
+      app_identifier: APP_ID,
+      platform: "ios",
+      app_version: build_name,
+      metadata_path: File.expand_path("metadata", __dir__),
+      skip_binary_upload: true,
+      skip_screenshots: screenshots.empty?,
+      overwrite_screenshots: true,
+      force: true,
+      run_precheck_before_submit: false,
+      submit_for_review: submit,
+      automatic_release: true,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: true,
+        content_rights_has_rights: true
+      }
+    }
+    options[:screenshots_path] = screenshots unless screenshots.empty?
+    options[:build_number] = ENV["BUILD_NUMBER"] if submit && ENV["BUILD_NUMBER"]
+    options[:app_review_information] = { phone_number: ENV["REVIEW_PHONE"] } if ENV["REVIEW_PHONE"]
+    deliver(**options)
   end
 end

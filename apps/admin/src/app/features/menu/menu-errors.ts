@@ -12,6 +12,8 @@ const MENU_CODES = [
   'TOO_MANY_IMAGES',
   'IMAGE_NOT_ON_PRODUCT',
   'IMAGES_CHANGED',
+  'INGREDIENT_UNKNOWN',
+  'INGREDIENT_NAME_TAKEN',
 ] as const;
 
 /** Request properties the menu forms send, for "check the field …" when validation fails. */
@@ -33,6 +35,8 @@ const MENU_FIELDS = [
   'minCount',
   'maxCount',
   'sortOrder',
+  'ingredientId',
+  'isAvailable',
 ] as const;
 
 const MENU_WORDING: ApiErrorWording = {

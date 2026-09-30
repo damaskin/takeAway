@@ -168,13 +168,56 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signingIn => 'Входим…';
 
   @override
-  String get signInAgreement => 'Продолжая, вы принимаете Условия использования и Политику конфиденциальности.';
+  String signInAgreement(String terms, String privacy) {
+    return 'Продолжая, вы соглашаетесь с $terms и $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Условиями использования';
+
+  @override
+  String get signInAgreementPrivacy => 'Политикой конфиденциальности';
 
   @override
   String get signInUnavailable => 'В этой сборке не настроен ни один способ входа.';
 
   @override
   String get signInFailed => 'Не удалось войти. Попробуйте ещё раз.';
+
+  @override
+  String get signInMethodsTitle => 'Способы входа';
+
+  @override
+  String get signInMethodsSubtitle =>
+      'Подключите Telegram, Google и Apple к одному профилю, и заказы с баллами останутся с вами, как бы вы ни вошли.';
+
+  @override
+  String get signInMethodLinked => 'Подключён';
+
+  @override
+  String get signInMethodNotLinked => 'Не подключён';
+
+  @override
+  String get signInMethodLink => 'Подключить';
+
+  @override
+  String get signInMethodUnlink => 'Отключить';
+
+  @override
+  String signInMethodUnlinkConfirm(String provider) {
+    return 'Отключить $provider?';
+  }
+
+  @override
+  String signInMethodUnlinkHint(String provider) {
+    return 'Входить через $provider больше не получится.';
+  }
+
+  @override
+  String get signInMethodSwitched => 'У этого аккаунта уже были заказы, поэтому вы перешли в тот профиль.';
+
+  @override
+  String get signInMethodIosOnly => 'На iPhone';
 
   @override
   String get telegramSignInFailed => 'Telegram не подтвердил вход. Попробуйте ещё раз.';
@@ -210,6 +253,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storeStatusClosed => 'Закрыто';
 
   @override
+  String get storeStatusNotWorking => 'Не работает';
+
+  @override
   String get orderHere => 'Заказать здесь';
 
   @override
@@ -226,13 +272,27 @@ class AppLocalizationsRu extends AppLocalizations {
   String get chooseStoreTitle => 'Где заберёте заказ?';
 
   @override
-  String get chooseStoreSubtitle => 'Выберите точку — покажем её меню и через сколько будет готово.';
+  String get chooseStoreSubtitle =>
+      'Выберите точку, которая сейчас принимает заказы, — покажем её меню и через сколько будет готово.';
+
+  @override
+  String get changeStore => 'Сменить';
+
+  @override
+  String get storesInactiveTitle => 'Сейчас не принимают заказы';
+
+  @override
+  String get storesNoneActive => 'Сейчас ни одна точка не принимает заказы. Загляните чуть позже.';
 
   @override
   String get storeClosedBanner => 'Сейчас закрыто — можно оформить заказ на более позднее время.';
 
   @override
   String get storeBusyBanner => 'Кухня загружена — заказы готовятся чуть дольше.';
+
+  @override
+  String get storeInactiveBanner =>
+      'Точка сейчас не принимает заказы: смена не началась или уже закончилась. Выберите другую точку или загляните позже.';
 
   @override
   String get openingHours => 'Часы работы';
@@ -259,9 +319,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Не удалось загрузить меню.';
-
-  @override
-  String get changeStore => 'Сменить';
 
   @override
   String addedToCart(String name) {
@@ -504,10 +561,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentTitle => 'Оплата';
 
   @override
-  String get payAtCounter => 'Оплата на месте';
+  String get cardPaymentsUnavailable =>
+      'Оплата картой сейчас недоступна, поэтому заказ оформить нельзя. Попробуйте чуть позже.';
 
   @override
-  String get payAtCounterHint => 'Наличными или картой при получении';
+  String get addCardToOrder => 'Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.';
 
   @override
   String get addCard => 'Привязать карту';
@@ -615,6 +673,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get paymentStateAtCounter => 'Оплата на месте';
+
+  @override
+  String get paymentStateAwaiting => 'Ждём оплату';
 
   @override
   String get pickupCode => 'Код получения';
@@ -763,6 +824,32 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get signOutConfirm => 'Выйти из takeAway?';
+
+  @override
+  String get deleteAccount => 'Удалить аккаунт';
+
+  @override
+  String get deleteAccountTitle => 'Удалить аккаунт?';
+
+  @override
+  String get deleteAccountBody =>
+      'Профиль, сохранённые карты, баллы лояльности, способы входа и личные данные будут удалены. История заказов останется у заведений только в обезличенном виде. Отменить удаление нельзя.';
+
+  @override
+  String get deleteAccountApple =>
+      'Apple попросит подтвердить удаление, и takeAway перестанет использовать ваш Apple ID.';
+
+  @override
+  String get deleteAccountConfirm => 'Удалить навсегда';
+
+  @override
+  String get deleteAccountStaff => 'Аккаунты сотрудников удаляет администратор заведения.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Для удаления аккаунта нужно подтверждение через Apple.';
+
+  @override
+  String get accountDeleted => 'Аккаунт удалён';
 
   @override
   String appVersion(String version) {
@@ -1006,6 +1093,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — предзаказ кофе и еды. Выбирайте, оплачивайте и забирайте без очереди.';
+
+  @override
+  String get aboutPrivacy => 'Политика конфиденциальности';
+
+  @override
+  String get aboutTerms => 'Условия использования';
+
+  @override
+  String get aboutSupport => 'Поддержка';
 
   @override
   String get locationDenied => 'Доступ к геолокации выключен. Разрешите его в настройках, чтобы видеть точки рядом.';

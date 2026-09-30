@@ -33,3 +33,37 @@ describe('RealtimeGateway store rooms', () => {
     await expect(gw.subscribeToDispatch(client, { storeId: 'any' })).resolves.toEqual({ ok: true });
   });
 });
+
+describe('RealtimeGateway handshake', () => {
+  function connect(user: { blockedAt: Date | null } | null) {
+    const jwt = { verifyAsync: jest.fn().mockResolvedValue({ sub: 'u1' }) } as unknown as JwtService;
+    const config = { get: jest.fn() } as unknown as ConfigService;
+    const prisma = { user: { findUnique: jest.fn().mockResolvedValue(user) } } as unknown as PrismaService;
+    const gw = new RealtimeGateway(jwt, config, prisma, {} as UserStoreScopeService);
+    const client = {
+      handshake: { auth: { token: 'access-token' }, headers: {} },
+      data: {} as Record<string, unknown>,
+      join: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    return { gw, client, socket: client as unknown as Socket };
+  }
+
+  it('joins an active user to their own room', async () => {
+    const { gw, client, socket } = connect({ blockedAt: null });
+    await gw.handleConnection(socket);
+    expect(client.join).toHaveBeenCalledWith('user:u1');
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['blocked or deleted', { blockedAt: new Date() }],
+    ['missing', null],
+  ])('turns away a %s account whose access token is still valid', async (_label, user) => {
+    const { gw, client, socket } = connect(user);
+    await gw.handleConnection(socket);
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(client.join).not.toHaveBeenCalled();
+    expect(client.data['userId']).toBeUndefined();
+  });
+});

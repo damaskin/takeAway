@@ -161,13 +161,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signingIn => 'Signing in…';
 
   @override
-  String get signInAgreement => 'By continuing you agree to the Terms of Service and Privacy Policy.';
+  String signInAgreement(String terms, String privacy) {
+    return 'By continuing you agree to the $terms and $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Terms of Service';
+
+  @override
+  String get signInAgreementPrivacy => 'Privacy Policy';
 
   @override
   String get signInUnavailable => 'No sign-in method is configured for this build.';
 
   @override
   String get signInFailed => 'Could not sign in. Please try again.';
+
+  @override
+  String get signInMethodsTitle => 'Sign-in methods';
+
+  @override
+  String get signInMethodsSubtitle =>
+      'Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.';
+
+  @override
+  String get signInMethodLinked => 'Connected';
+
+  @override
+  String get signInMethodNotLinked => 'Not connected';
+
+  @override
+  String get signInMethodLink => 'Connect';
+
+  @override
+  String get signInMethodUnlink => 'Disconnect';
+
+  @override
+  String signInMethodUnlinkConfirm(String provider) {
+    return 'Disconnect $provider?';
+  }
+
+  @override
+  String signInMethodUnlinkHint(String provider) {
+    return 'You will no longer be able to sign in with $provider.';
+  }
+
+  @override
+  String get signInMethodSwitched => 'That account already had orders, so you are now in that profile.';
+
+  @override
+  String get signInMethodIosOnly => 'On iPhone';
 
   @override
   String get telegramSignInFailed => 'Telegram didn\'t confirm the sign-in. Please try again.';
@@ -203,6 +246,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeStatusClosed => 'Closed';
 
   @override
+  String get storeStatusNotWorking => 'Not working';
+
+  @override
   String get orderHere => 'Order here';
 
   @override
@@ -219,13 +265,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chooseStoreTitle => 'Where are you picking up?';
 
   @override
-  String get chooseStoreSubtitle => 'Choose a store and we will show its menu and how soon your order can be ready.';
+  String get chooseStoreSubtitle =>
+      'Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.';
+
+  @override
+  String get changeStore => 'Change';
+
+  @override
+  String get storesInactiveTitle => 'Not taking orders right now';
+
+  @override
+  String get storesNoneActive => 'No store is taking orders right now. Check back a little later.';
 
   @override
   String get storeClosedBanner => 'Closed right now — you can still schedule for later.';
 
   @override
   String get storeBusyBanner => 'The kitchen is busy — orders take a little longer.';
+
+  @override
+  String get storeInactiveBanner =>
+      'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.';
 
   @override
   String get openingHours => 'Opening hours';
@@ -252,9 +312,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Could not load the menu.';
-
-  @override
-  String get changeStore => 'Change';
 
   @override
   String addedToCart(String name) {
@@ -497,10 +554,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentTitle => 'Payment';
 
   @override
-  String get payAtCounter => 'Pay at the counter';
+  String get cardPaymentsUnavailable =>
+      'Card payments are unavailable right now, so the order can\'t be placed. Please try again a bit later.';
 
   @override
-  String get payAtCounterHint => 'Cash or card when you pick up';
+  String get addCardToOrder => 'Orders are paid by card. Add a card to place your order.';
 
   @override
   String get addCard => 'Add a card';
@@ -608,6 +666,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentStateAtCounter => 'Paying at the counter';
+
+  @override
+  String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
   String get pickupCode => 'Pickup code';
@@ -756,6 +817,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signOutConfirm => 'Sign out of takeAway?';
+
+  @override
+  String get deleteAccount => 'Delete account';
+
+  @override
+  String get deleteAccountTitle => 'Delete your account?';
+
+  @override
+  String get deleteAccountBody =>
+      'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.';
+
+  @override
+  String get deleteAccountApple => 'Apple will ask you to confirm, and takeAway will stop using your Apple ID.';
+
+  @override
+  String get deleteAccountConfirm => 'Delete for good';
+
+  @override
+  String get deleteAccountStaff => 'Staff accounts are deleted by the business admin.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Deleting the account needs your confirmation with Apple.';
+
+  @override
+  String get accountDeleted => 'Your account has been deleted';
 
   @override
   String appVersion(String version) {
@@ -993,6 +1079,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.';
+
+  @override
+  String get aboutPrivacy => 'Privacy Policy';
+
+  @override
+  String get aboutTerms => 'Terms of Service';
+
+  @override
+  String get aboutSupport => 'Support';
 
   @override
   String get locationDenied => 'Location access is off. Allow it in settings to see stores near you.';

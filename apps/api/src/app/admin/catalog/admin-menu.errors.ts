@@ -13,7 +13,9 @@ export type MenuErrorCode =
   | 'MODIFIER_RANGE'
   | 'TOO_MANY_IMAGES'
   | 'IMAGE_NOT_ON_PRODUCT'
-  | 'IMAGES_CHANGED';
+  | 'IMAGES_CHANGED'
+  | 'INGREDIENT_UNKNOWN'
+  | 'INGREDIENT_NAME_TAKEN';
 
 export function menuConflict(
   code: MenuErrorCode,

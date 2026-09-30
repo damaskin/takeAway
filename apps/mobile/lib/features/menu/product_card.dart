@@ -44,7 +44,9 @@ class _ProductCardState extends ConsumerState<ProductCard> {
     if (!await ensureSignedIn(context, ref)) return;
     setState(() => _adding = true);
     try {
-      final detail = await ref.read(productDetailProvider(widget.product.id).future);
+      // Fetched afresh: a required add-in may have run out since the
+      // product was last opened, and the cart would refuse it.
+      final detail = await ref.refresh(productDetailProvider(widget.product.id).future);
       if (!mounted) return;
       if (detail.variations.isNotEmpty) {
         setState(() => _adding = false);

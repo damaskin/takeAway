@@ -6,6 +6,11 @@
  */
 export const TRANSLATIONS_RU = {
   common: {
+    storeInactive: {
+      badge: 'Не работает',
+      title: 'Точка сейчас не принимает заказы',
+      hint: 'Смена ещё не началась или уже закончилась. Выберите другую точку или загляните позже.',
+    },
     brand: 'takeAway',
     signIn: 'Войти',
     signOut: 'Выйти',
@@ -20,7 +25,12 @@ export const TRANSLATIONS_RU = {
     refresh: 'Обновить',
     refreshing: 'Обновляем…',
     change: 'Изменить',
-    items: 'позиций',
+    itemsCount: {
+      one: '{{count}} позиция',
+      few: '{{count}} позиции',
+      many: '{{count}} позиций',
+      other: '{{count}} позиции',
+    },
     minShort: 'мин',
     ago: 'назад',
     now: 'только что',
@@ -123,7 +133,7 @@ export const TRANSLATIONS_RU = {
         step1Title: '1. Выбирайте',
         step1Body: 'Кофе, блюдо или десерт в приложении.',
         step2Title: '2. Оплатите',
-        step2Body: 'Apple Pay, Google Pay или картой.',
+        step2Body: 'Картой онлайн или на кассе при получении.',
         step3Title: '3. Забирайте',
         step3Body: 'Минуя очередь, по номеру или QR-коду.',
       },
@@ -163,10 +173,17 @@ export const TRANSLATIONS_RU = {
       categoryHeader: 'Меню',
       sidebarHeading: 'КАТЕГОРИИ',
       readyInBanner: 'Готовим к {{time}}',
-      prepStartsAt: 'Начинаем готовить в {{time}}',
       changeStore: 'Сменить точку',
       storeNotFound: 'Точка не найдена',
       menuUnavailable: 'Меню сейчас недоступно',
+      categoriesLabel: 'Категории меню',
+      closedNow: 'Сейчас закрыто',
+      empty: 'В этой точке пока нет меню.',
+      otherStores: 'Выбрать другую точку',
+      cart: {
+        checkout: 'Оформить заказ',
+        aria: 'Корзина: {{items}} на {{total}}. Оформить заказ',
+      },
     },
     product: {
       breadcrumbMenu: 'Меню',
@@ -225,8 +242,13 @@ export const TRANSLATIONS_RU = {
       giftCardLabel: 'Подарочная карта',
       giftCardApplied: 'Применена · списание {{amount}}',
       paymentTitle: 'Чем платите',
-      payAtCounter: 'Оплата на месте',
+      cardOnly: 'Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.',
+      cardsUnavailable: 'Оплата картой сейчас недоступна, поэтому заказ оформить нельзя. Попробуйте чуть позже.',
       addCard: 'Привязать ещё карту',
+      addFirstCard: 'Привязать карту',
+      decrease: 'Меньше',
+      increase: 'Больше',
+      remove: 'Убрать из корзины',
       holdHint: 'Деньги забронируем сейчас, а спишем, когда точка примет заказ.',
       payCta: 'Оплатить {{total}} · готово к {{time}}',
       fulfillmentPickup: 'Самовывоз',
@@ -278,6 +300,7 @@ export const TRANSLATIONS_RU = {
         failed: 'Оплата не прошла',
         refunded: 'Деньги возвращены',
         atCounter: 'Оплата на месте',
+        awaiting: 'Ждём оплату',
       },
       codeLabel: 'код {{code}}',
       iAmHere: 'Я на месте',
@@ -306,7 +329,19 @@ export const TRANSLATIONS_RU = {
       noProviders: 'Для этого окружения не настроен ни один способ входа.',
       or: 'или',
       signingIn: 'Входим…',
-      agreement: 'Продолжая, вы принимаете Условия и Политику конфиденциальности.',
+      // «Продолжая, вы принимаете <Условия использования> и <Политику конфиденциальности>.»
+      // Split so each document can be a link.
+      agreementLead: 'Продолжая, вы принимаете',
+      agreementTerms: 'Условия использования',
+      agreementAnd: 'и',
+      agreementPrivacy: 'Политику конфиденциальности',
+    },
+    legal: {
+      privacy: 'Политика конфиденциальности',
+      terms: 'Условия использования',
+      support: 'Поддержка',
+      contents: 'Содержание',
+      related: 'Документы и помощь',
     },
     business: {
       title: 'Разместите бизнес на takeAway',
@@ -361,6 +396,16 @@ export const TRANSLATIONS_RU = {
         browserPushHint: 'Сообщения о готовности заказа в этом браузере, даже если вкладка закрыта.',
         browserPushBlocked: 'Браузер заблокировал уведомления. Разрешите их в настройках сайта и повторите попытку.',
       },
+      signInMethods: {
+        title: 'Способы входа',
+        subtitle:
+          'Подключите Telegram, Google и Apple к одному профилю, и заказы с баллами останутся с вами, как бы вы ни вошли.',
+        linked: 'Подключён',
+        notLinked: 'Не подключён',
+        unlink: 'Отключить',
+        unlinkConfirm: 'Отключить {{provider}}? Входить через него больше не получится.',
+        switched: 'У этого аккаунта уже были заказы, поэтому вы перешли в тот профиль.',
+      },
       personalInfo: {
         title: 'Личные данные',
         subtitle: 'Эти поля подставляются в заказы.',
@@ -389,6 +434,7 @@ export const TRANSLATIONS_RU = {
         gift: 'Подарочные карты',
         loyalty: 'Программа лояльности',
         referrals: 'Пригласить друга',
+        signInMethods: 'Способы входа',
         notifications: 'Уведомления',
         language: 'Язык',
       },
@@ -532,6 +578,8 @@ export const TRANSLATIONS_RU = {
     layout: {
       wholeProject: 'Весь проект',
       adminTag: 'Админ',
+      install: 'Установить приложение',
+      installHint: 'Кабинет откроется отдельным окном с иконкой на рабочем столе или домашнем экране',
       brand: 'Бренд',
       role: {
         SUPER_ADMIN: 'Администратор платформы',
@@ -606,6 +654,7 @@ export const TRANSLATIONS_RU = {
       dashboard: 'Панель',
       kitchen: 'Кухня',
       menu: 'Меню',
+      ingredients: 'Добавки',
       stores: 'Точки',
       orders: 'Заказы',
       dispatch: 'Доставка',
@@ -632,6 +681,7 @@ export const TRANSLATIONS_RU = {
       email: 'Email',
       name: 'Имя',
       roleLabel: 'Роль',
+      storeLabel: 'Точка',
       role: { STORE_MANAGER: 'Менеджер', STAFF: 'Кухня', MENU_EDITOR: 'Редактор меню' },
       tempPassword: 'Временный пароль',
       tempPasswordHint: 'Передайте лично — сотрудник должен сменить пароль через /forgot-password при первом входе.',
@@ -820,6 +870,21 @@ export const TRANSLATIONS_RU = {
       errors: {
         gone: 'Заказ уже изменился — доска обновлена.',
       },
+      shift: {
+        closedTitle: 'Смена не начата',
+        closedHint: 'Пока смена закрыта, точка показана клиентам неактивной и не принимает заказы.',
+        start: 'Начать работу',
+        finish: 'Закончить работу',
+        finishConfirm:
+          'Закончить работу? Точка сразу перестанет принимать заказы. Заказы, которые уже на доске, останутся.',
+        openSince: 'Смена идёт с {{time}}, точка принимает заказы',
+        openSinceBy: 'Смена идёт с {{time}} ({{name}}), точка принимает заказы',
+      },
+      arrival: {
+        here: 'Клиент на месте',
+        nearby: 'Клиент рядом',
+        ago: '{{minutes}} мин',
+      },
       tablet: {
         enter: 'Режим планшета',
         leave: 'Выйти из режима планшета',
@@ -886,6 +951,7 @@ export const TRANSLATIONS_RU = {
       viewAll: 'Все →',
       storePerf: 'По точкам',
       newPromo: '+ Новый промо',
+      createTitle: 'Новая акция',
       orderProductLine: 'Заказ · {{count}} позиций',
     },
     orderDetail: {
@@ -1008,6 +1074,8 @@ export const TRANSLATIONS_RU = {
         minCount: 'Минимум',
         maxCount: 'Максимум',
         sortOrder: 'Порядок',
+        ingredientId: 'Наличие по справочнику',
+        isAvailable: 'В наличии',
       },
       category: {
         name: 'Название категории',
@@ -1121,6 +1189,12 @@ export const TRANSLATIONS_RU = {
         deleteConfirm: 'Удалить «{{name}}»?',
         noVariations: 'Пока нет вариантов.',
         noModifiers: 'Пока нет добавок.',
+        ingredient: 'Наличие по справочнику',
+        ingredientNone: 'Не отслеживать — показывать всегда',
+        outOfStock: 'Нет в наличии',
+        libraryHint:
+          'Добавки и молоко попадают в справочник по названию. Закончилось — отметьте там, и опция пропадёт у покупателей во всех товарах, а сами товары останутся в меню.',
+        libraryLink: 'Открыть справочник добавок →',
       },
       errors: {
         invalidField: 'Проверьте поле «{{field}}»',
@@ -1131,6 +1205,7 @@ export const TRANSLATIONS_RU = {
         surcharge: 'Доплата — число не меньше нуля, например 5 или 7,50.',
         count: 'Количество и порядок — целые числа, например 1 или 3.',
         slug: 'Только строчная латиница, цифры и дефис, от 2 до 60 символов.',
+        gone: 'Не нашли — возможно, это уже удалили.',
         allergens: 'Не больше 20 аллергенов, каждый до 40 символов.',
         imageType: 'Подходят только JPEG, PNG, WebP и AVIF.',
         imageSize: 'Файл больше 5 МБ — уменьшите его и попробуйте снова.',
@@ -1143,6 +1218,8 @@ export const TRANSLATIONS_RU = {
         TOO_MANY_IMAGES: 'У товара уже 6 фото. Удалите одно, чтобы добавить новое.',
         IMAGE_NOT_ON_PRODUCT: 'Этого фото у товара уже нет. Обновите страницу.',
         IMAGES_CHANGED: 'Фото товара только что изменили в другом окне. Обновите страницу.',
+        INGREDIENT_UNKNOWN: 'Этой добавки уже нет в справочнике. Обновите страницу.',
+        INGREDIENT_NAME_TAKEN: 'Добавка с таким названием уже есть в справочнике.',
         status: {
           '0': 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.',
           '403': 'Недостаточно прав для этого действия.',
@@ -1154,6 +1231,27 @@ export const TRANSLATIONS_RU = {
         },
       },
     },
+    ingredients: {
+      title: 'Добавки и наличие',
+      hint: 'Все добавки бренда в одном списке: молоко, сиропы, шоты, топпинги. Если что-то закончилось, отметьте «Нет в наличии» — опция скроется у покупателей на сайте, в Telegram и в приложении во всех товарах, где она есть, а сами товары останутся в меню. Вернёте «В наличии» — опция снова появится.',
+      newLabel: 'Новая добавка',
+      newPlaceholder: 'Например, Безлактозное молоко',
+      add: '+ Добавить',
+      filterAll: 'Все · {{count}}',
+      filterOut: 'Нет в наличии · {{count}}',
+      search: 'Поиск по названию',
+      available: 'В наличии',
+      unavailable: 'Нет в наличии',
+      usedIn: 'В товарах: {{products}}',
+      andMore: 'и ещё {{count}}',
+      unused: 'Пока ни в одном товаре',
+      rename: 'Переименовать',
+      deleteConfirm: 'Удалить «{{name}}» из справочника?',
+      deleteUsedConfirm:
+        'Удалить «{{name}}» из справочника? Опции в товарах ({{count}}) останутся, но перестанут скрываться, когда добавка закончится.',
+      empty: 'Справочник пуст. Добавьте первую добавку выше или добавьте опцию к товару в меню.',
+      nothingFound: 'Ничего не найдено.',
+    },
     stores: {
       title: 'Точки',
       add: '+ Добавить точку',
@@ -1164,6 +1262,10 @@ export const TRANSLATIONS_RU = {
       open: 'Открыть точку',
       close: 'Закрыть точку',
       openBlocked: 'Сначала выполните пункты из списка готовности',
+      shift: {
+        open: 'Смена идёт — точка принимает заказы',
+        closed: 'Смена не начата — клиенты видят точку неактивной',
+      },
       closeConfirm: 'Закрыть точку «{{name}}»? Она перестанет принимать новые заказы, уже принятые останутся в работе.',
       delete: 'Удалить',
       deleteConfirm:
@@ -1394,6 +1496,7 @@ export const TRANSLATIONS_RU = {
       subtitle:
         'Соберите push, Telegram или email-рассылку для клиентов вашего бренда. Черновик сохраняется, по «Отправить» сообщение уходит сразу.',
       saveDraft: 'Сохранить черновик',
+      createTitle: 'Новая рассылка',
       send: 'Отправить',
       sending: 'Отправляем…',
       empty: 'Рассылок пока нет — соберите первую выше.',
@@ -1438,6 +1541,7 @@ export const TRANSLATIONS_RU = {
       message: 'Сообщение (необязательно)',
       issueCta: 'Выпустить карту',
       issuedHint: 'Выпущена — код: {{code}}',
+      issuedTitle: 'Карта выпущена. Передайте код клиенту:',
       cancel: 'Отменить',
       empty: 'Подарочных карт ещё нет.',
       col: {
@@ -1672,6 +1776,11 @@ export const TRANSLATIONS_RU = {
       paymentMethod: 'Оплата',
       addCard: 'Привязать карту',
       manageCards: 'Управление картами',
+      cardOnly: 'Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.',
+      cardsUnavailable: 'Оплата картой сейчас недоступна, поэтому заказ оформить нельзя. Попробуйте чуть позже.',
+      decrease: 'Меньше',
+      increase: 'Больше',
+      remove: 'Убрать из корзины',
       fulfillment: 'Как удобнее?',
       fulfillmentPickup: 'Самовывоз',
       fulfillmentDelivery: 'Доставка',

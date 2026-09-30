@@ -7,6 +7,11 @@ import type { TranslationTree } from './ru';
  */
 export const TRANSLATIONS_EN: TranslationTree = {
   common: {
+    storeInactive: {
+      badge: 'Not working',
+      title: 'This store is not taking orders right now',
+      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',
@@ -21,7 +26,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
     refresh: 'Refresh',
     refreshing: 'Refreshing…',
     change: 'Change',
-    items: 'items',
+    itemsCount: {
+      one: '{{count}} item',
+      few: '{{count}} items',
+      many: '{{count}} items',
+      other: '{{count}} items',
+    },
     minShort: 'min',
     ago: 'ago',
     now: 'just now',
@@ -123,7 +133,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         step1Title: '1. Choose',
         step1Body: 'Pick a coffee, meal or dessert in the app.',
         step2Title: '2. Pay',
-        step2Body: 'Apple Pay, Google Pay or card.',
+        step2Body: 'By card online, or at the counter when you collect.',
         step3Title: '3. Pick up',
         step3Body: 'Skip the queue — by code or QR.',
       },
@@ -162,10 +172,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
       categoryHeader: 'Menu',
       sidebarHeading: 'CATEGORIES',
       readyInBanner: 'Ready by {{time}}',
-      prepStartsAt: 'We start prepping at {{time}}',
       changeStore: 'Change',
       storeNotFound: 'Store not found',
       menuUnavailable: 'The menu is not available right now',
+      categoriesLabel: 'Menu categories',
+      closedNow: 'Closed now',
+      empty: 'This store has no menu yet.',
+      otherStores: 'Choose another store',
+      cart: {
+        checkout: 'Checkout',
+        aria: 'Cart: {{items}}, {{total}}. Check out',
+      },
     },
     product: {
       breadcrumbMenu: 'Menu',
@@ -224,8 +241,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       giftCardLabel: 'Gift card',
       giftCardApplied: 'Applied · {{amount}} off',
       paymentTitle: 'How you’re paying',
-      payAtCounter: 'Pay at the counter',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
       addCard: 'Add another card',
+      addFirstCard: 'Add a card',
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       holdHint: 'We hold the money now and take it when the store accepts your order.',
       payCta: 'Pay {{total}} · ready by {{time}}',
       fulfillmentPickup: 'Pickup',
@@ -277,6 +300,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         failed: 'Payment did not go through',
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
+        awaiting: 'Awaiting payment',
       },
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -305,7 +329,19 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
-      agreement: 'By continuing you agree to our Terms and Privacy Policy.',
+      // "By continuing you agree to our <Terms of Service> and <Privacy Policy>."
+      // Split so each document can be a link.
+      agreementLead: 'By continuing you agree to our',
+      agreementTerms: 'Terms of Service',
+      agreementAnd: 'and',
+      agreementPrivacy: 'Privacy Policy',
+    },
+    legal: {
+      privacy: 'Privacy Policy',
+      terms: 'Terms of Service',
+      support: 'Support',
+      contents: 'Contents',
+      related: 'Documents and help',
     },
     business: {
       title: 'List your business on takeAway',
@@ -360,6 +396,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
         browserPushHint: 'Order ready alerts on this device, even if the tab is closed.',
         browserPushBlocked: 'Browser blocked notifications. Allow them in your site settings and try again.',
       },
+      signInMethods: {
+        title: 'Sign-in methods',
+        subtitle:
+          'Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.',
+        linked: 'Connected',
+        notLinked: 'Not connected',
+        unlink: 'Disconnect',
+        unlinkConfirm: 'Disconnect {{provider}}? You will no longer be able to sign in with it.',
+        switched: 'That account already had orders, so you are now in that profile.',
+      },
       personalInfo: {
         title: 'Personal info',
         subtitle: 'These details appear on your orders.',
@@ -388,6 +434,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         gift: 'Gift cards',
         loyalty: 'Loyalty',
         referrals: 'Invite a friend',
+        signInMethods: 'Sign-in methods',
         notifications: 'Notifications',
         language: 'Language',
       },
@@ -529,6 +576,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     layout: {
       wholeProject: 'Whole project',
       adminTag: 'Admin',
+      install: 'Install app',
+      installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
@@ -605,6 +654,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       dashboard: 'Dashboard',
       kitchen: 'Kitchen',
       menu: 'Menu',
+      ingredients: 'Add-ins',
       stores: 'Stores',
       orders: 'Orders',
       dispatch: 'Dispatch',
@@ -631,6 +681,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       email: 'Email',
       name: 'Name',
       roleLabel: 'Role',
+      storeLabel: 'Store',
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       tempPassword: 'Temporary password',
       tempPasswordHint:
@@ -821,6 +872,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
       },
+      shift: {
+        closedTitle: 'Shift not started',
+        closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
+        start: 'Start work',
+        finish: 'Finish work',
+        finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
+        openSince: 'Shift running since {{time}}, the store takes orders',
+        openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
+      },
+      arrival: {
+        here: 'Customer is here',
+        nearby: 'Customer nearby',
+        ago: '{{minutes}} min',
+      },
       tablet: {
         enter: 'Tablet mode',
         leave: 'Leave tablet mode',
@@ -887,6 +952,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       viewAll: 'View all →',
       storePerf: 'Stores performance',
       newPromo: '+ New promo',
+      createTitle: 'New promo',
       orderProductLine: 'Order · {{count}} items',
     },
     orderDetail: {
@@ -1009,6 +1075,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         minCount: 'Minimum',
         maxCount: 'Maximum',
         sortOrder: 'Position',
+        ingredientId: 'Stock from the library',
+        isAvailable: 'In stock',
       },
       category: {
         name: 'Category name',
@@ -1121,8 +1189,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
         deleteConfirm: 'Delete "{{name}}"?',
         noVariations: 'No variations yet.',
         noModifiers: 'No extras yet.',
+        ingredient: 'Stock from the library',
+        ingredientNone: 'Not tracked — always shown',
+        outOfStock: 'Out of stock',
+        libraryHint:
+          'Extras and milks join the add-ins library by name. When one runs out, mark it there: the option disappears for customers in every product, and the products stay on the menu.',
+        libraryLink: 'Open the add-ins library →',
       },
       errors: {
+        gone: 'Not found — it may already be deleted.',
         invalidField: 'Check the field "{{field}}"',
         name: 'Enter a name.',
         price: 'Enter the price as a number, such as 35 or 35.50.',
@@ -1143,6 +1218,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         TOO_MANY_IMAGES: 'This product already has 6 photos. Remove one to add another.',
         IMAGE_NOT_ON_PRODUCT: 'This photo is no longer on the product. Reload the page.',
         IMAGES_CHANGED: 'The photos were just changed in another window. Reload the page.',
+        INGREDIENT_UNKNOWN: 'This add-in is no longer in the library. Refresh the page.',
+        INGREDIENT_NAME_TAKEN: 'The library already has an add-in with this name.',
         status: {
           '0': 'No connection to the server. Check the internet and try again.',
           '403': 'You do not have permission to do this.',
@@ -1154,6 +1231,27 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
       },
     },
+    ingredients: {
+      title: 'Add-ins and stock',
+      hint: "All of the brand's add-ins in one list: milks, syrups, shots, toppings. When one runs out, mark it «Out of stock» — the option is hidden from customers on the site, in Telegram and in the app, in every product that has it, and the products stay on the menu. Switch it back to «In stock» and the option returns.",
+      newLabel: 'New add-in',
+      newPlaceholder: 'E.g. Lactose-free milk',
+      add: '+ Add',
+      filterAll: 'All · {{count}}',
+      filterOut: 'Out of stock · {{count}}',
+      search: 'Search by name',
+      available: 'In stock',
+      unavailable: 'Out of stock',
+      usedIn: 'In: {{products}}',
+      andMore: 'and {{count}} more',
+      unused: 'Not used in any product yet',
+      rename: 'Rename',
+      deleteConfirm: 'Delete «{{name}}» from the library?',
+      deleteUsedConfirm:
+        'Delete «{{name}}» from the library? The options in products ({{count}}) stay, but will no longer hide when it runs out.',
+      empty: 'The library is empty. Add the first add-in above, or add an option to a product in the menu.',
+      nothingFound: 'Nothing found.',
+    },
     stores: {
       title: 'Stores',
       add: '+ Add store',
@@ -1164,6 +1262,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       open: 'Open store',
       close: 'Close store',
       openBlocked: 'Finish the readiness checklist first',
+      shift: {
+        open: 'Shift running — the store takes orders',
+        closed: 'Shift not started — customers see the store as inactive',
+      },
       closeConfirm: 'Close "{{name}}"? It stops taking new orders; orders already accepted stay in the kitchen.',
       delete: 'Delete',
       deleteConfirm: 'Delete "{{name}}" for good? A store that has had orders cannot be deleted — close it instead.',
@@ -1390,6 +1492,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle:
         'Compose a push, Telegram or email broadcast for the customers of your brand. Drafts are saved; clicking Send fans the message out immediately.',
       saveDraft: 'Save draft',
+      createTitle: 'New campaign',
       send: 'Send now',
       sending: 'Sending…',
       empty: 'No campaigns yet — compose one above.',
@@ -1434,6 +1537,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
       issuedHint: 'Issued — code: {{code}}',
+      issuedTitle: 'Issued. Hand this code to the customer:',
       cancel: 'Cancel',
       empty: 'No gift cards issued yet.',
       col: {
@@ -1668,6 +1772,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       paymentMethod: 'Payment',
       addCard: 'Link a card',
       manageCards: 'Manage cards',
+      cardOnly: 'Orders are paid by card. Add a card to place your order.',
+      cardsUnavailable:
+        "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+      decrease: 'Fewer',
+      increase: 'More',
+      remove: 'Remove from cart',
       fulfillment: 'How do you want it?',
       fulfillmentPickup: 'Pickup',
       fulfillmentDelivery: 'Delivery',

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/error_message.dart';
+import '../../shared/web_pages.dart';
 import '../../shared/widgets/cup_logo.dart';
 import 'auth_service.dart';
 
@@ -164,13 +166,62 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
                   ),
           ),
           const SizedBox(height: 16),
-          Text(
-            l10n.signInAgreement,
-            textAlign: TextAlign.center,
-            style: context.text.bodySmall?.copyWith(color: brand.textTertiary),
-          ),
+          const _Agreement(),
         ],
       ),
+    );
+  }
+}
+
+/// "By continuing you agree to the Terms of Service and Privacy Policy",
+/// with both documents as links. The sentence is translated whole and the
+/// link texts fill its placeholders, so every language keeps its word order.
+class _Agreement extends StatefulWidget {
+  const _Agreement();
+
+  @override
+  State<_Agreement> createState() => _AgreementState();
+}
+
+class _AgreementState extends State<_Agreement> {
+  final _terms = TapGestureRecognizer()..onTap = () => unawaited(openWebPage(WebPages.terms));
+  final _privacy = TapGestureRecognizer()..onTap = () => unawaited(openWebPage(WebPages.privacy));
+
+  @override
+  void dispose() {
+    _terms.dispose();
+    _privacy.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    final links = {
+      '{terms}': (l10n.signInAgreementTerms, _terms),
+      '{privacy}': (l10n.signInAgreementPrivacy, _privacy),
+    };
+    final sentence = l10n.signInAgreement('{terms}', '{privacy}');
+    final linkStyle = TextStyle(
+      color: brand.caramel,
+      decoration: TextDecoration.underline,
+      decorationColor: brand.caramel,
+    );
+    final spans = <InlineSpan>[];
+    var start = 0;
+    for (final match in RegExp(r'\{terms\}|\{privacy\}').allMatches(sentence)) {
+      final (text, recognizer) = links[match[0]]!;
+      spans
+        ..add(TextSpan(text: sentence.substring(start, match.start)))
+        ..add(TextSpan(text: text, style: linkStyle, recognizer: recognizer));
+      start = match.end;
+    }
+    spans.add(TextSpan(text: sentence.substring(start)));
+    return Text.rich(
+      TextSpan(children: spans),
+      textAlign: TextAlign.center,
+      style: context.text.bodySmall?.copyWith(color: brand.textTertiary),
     );
   }
 }

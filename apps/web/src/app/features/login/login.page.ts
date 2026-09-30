@@ -1,8 +1,9 @@
 import { Component, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslateService, TranslatePipe } from '@ngx-translate/core';
 import {
   AppleLoginButtonComponent,
+  BrandLogoComponent,
   GoogleLoginButtonComponent,
   SOCIAL_AUTH_CONFIG,
   TELEGRAM_AUTH_CONFIG,
@@ -21,7 +22,8 @@ import { AuthService } from '../../core/auth/auth.service';
  *
  * Layout:
  *   authLeft (fill, cream) — logo, H1 "Welcome back", the three sign-in
- *     providers stacked in a 400px column, small agreement footer.
+ *     providers stacked in a 400px column, small agreement footer linking
+ *     /terms and /privacy.
  *   authRight (560px) — branded hero photograph, hidden below md.
  *
  * Provider order is deliberate: Google first (largest share on the launch
@@ -36,20 +38,19 @@ import { AuthService } from '../../core/auth/auth.service';
   selector: 'app-login',
   standalone: true,
   imports: [
+    RouterLink,
     TranslatePipe,
     TelegramLoginButtonComponent,
     TelegramOidcButtonComponent,
     GoogleLoginButtonComponent,
     AppleLoginButtonComponent,
+    BrandLogoComponent,
   ],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
       <!-- Left column: sign-in providers -->
       <div class="flex flex-col justify-center" style="flex: 1; padding: 64px 80px; gap: 40px">
-        <span
-          style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-caramel)"
-          >{{ 'common.brand' | translate }}</span
-        >
+        <lib-brand-logo [size]="28" style="align-self: flex-start" />
 
         <div class="flex flex-col" style="gap: 8px">
           <h1
@@ -125,7 +126,18 @@ import { AuthService } from '../../core/auth/auth.service';
         </div>
 
         <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0">
-          {{ 'web.auth.agreement' | translate }}
+          {{ 'web.auth.agreementLead' | translate }}
+          <a
+            routerLink="/terms"
+            style="color: var(--color-caramel); text-decoration: underline; text-underline-offset: 2px"
+            >{{ 'web.auth.agreementTerms' | translate }}</a
+          >
+          {{ 'web.auth.agreementAnd' | translate }}
+          <a
+            routerLink="/privacy"
+            style="color: var(--color-caramel); text-decoration: underline; text-underline-offset: 2px"
+            >{{ 'web.auth.agreementPrivacy' | translate }}</a
+          >.
         </p>
       </div>
 
