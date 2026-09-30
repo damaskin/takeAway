@@ -146,6 +146,19 @@ class RefreshRequest {
   Map<String, dynamic> toJson() => _$RefreshRequestToJson(this);
 }
 
+/// Body of `DELETE /auth/me`. When Sign in with Apple leads into the
+/// profile, a fresh authorization code lets the API revoke the tokens Apple
+/// issued for it.
+@JsonSerializable(createFactory: false)
+class DeleteAccountRequest {
+  const DeleteAccountRequest({this.appleAuthorizationCode});
+
+  @JsonKey(includeIfNull: false)
+  final String? appleAuthorizationCode;
+
+  Map<String, dynamic> toJson() => _$DeleteAccountRequestToJson(this);
+}
+
 /// Which of Telegram, Google and Apple lead into the signed-in profile.
 @JsonSerializable(createToJson: false)
 class SignInMethods {

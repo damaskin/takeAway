@@ -14,7 +14,7 @@ require 'tmpdir'
 #   ASC_KEY_PATH       path to AuthKey_<id>.p8, outside the repo
 #   KEYCHAIN_PASSWORD  password of the build keychain (created on first run)
 #   BUILD_KEYCHAIN     keychain name, default takeaway-build.keychain
-#   APPLE_TEAM_ID      default 4VC4JRTQG9 (Vladislav Socolov)
+#   APPLE_TEAM_ID      default FGN8R2D6QW (Ivan Damaschin)
 #   FLUTTER            flutter binary, 3.38.8 or newer; default `flutter`
 #   DART_DEFINES_FILE  default ../config/prod.json (copy of prod.example.json)
 #   BUILD_NUMBER       optional; default is the latest TestFlight build + 1
@@ -24,9 +24,9 @@ require 'tmpdir'
 
 default_platform(:ios)
 
-APP_ID = "md.takeaway.app"
+APP_ID = "md.takeaway.ios"
 APP_NAME = "takeAway"
-TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "4VC4JRTQG9")
+TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "FGN8R2D6QW")
 KEYCHAIN_NAME = ENV.fetch("BUILD_KEYCHAIN", "takeaway-build.keychain")
 PROFILE_NAME = "#{APP_ID} AppStore"
 IPA_NAME = "takeAway.ipa"
@@ -393,5 +393,42 @@ platform :ios do
       })
       UI.success("Group '#{group_name}' created")
     end
+  end
+
+  # The App Store listing lives in ios/fastlane/metadata (texts, URLs,
+  # categories, review notes). Screenshots come from SCREENSHOTS_PATH — see
+  # scripts/app-store-screenshots.sh — and replace whatever is uploaded.
+  # REVIEW_PHONE (App Review's contact number) stays out of the repository.
+  # SUBMIT=1 also attaches BUILD_NUMBER (default: the latest build of this
+  # version) and sends the version to App Review; it is released as soon as
+  # Apple approves it.
+  desc "Upload the App Store listing; SUBMIT=1 sends it to App Review"
+  lane :store_listing do
+    screenshots = ENV["SCREENSHOTS_PATH"].to_s
+    submit = ENV["SUBMIT"] == "1"
+    options = {
+      api_key: asc_key,
+      app_identifier: APP_ID,
+      platform: "ios",
+      app_version: build_name,
+      metadata_path: File.expand_path("metadata", __dir__),
+      skip_binary_upload: true,
+      skip_screenshots: screenshots.empty?,
+      overwrite_screenshots: true,
+      force: true,
+      run_precheck_before_submit: false,
+      submit_for_review: submit,
+      automatic_release: true,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: true,
+        content_rights_has_rights: true
+      }
+    }
+    options[:screenshots_path] = screenshots unless screenshots.empty?
+    options[:build_number] = ENV["BUILD_NUMBER"] if submit && ENV["BUILD_NUMBER"]
+    options[:app_review_information] = { phone_number: ENV["REVIEW_PHONE"] } if ENV["REVIEW_PHONE"]
+    deliver(**options)
   end
 end

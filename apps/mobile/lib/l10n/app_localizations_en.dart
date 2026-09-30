@@ -161,7 +161,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signingIn => 'Signing in…';
 
   @override
-  String get signInAgreement => 'By continuing you agree to the Terms of Service and Privacy Policy.';
+  String signInAgreement(String terms, String privacy) {
+    return 'By continuing you agree to the $terms and $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Terms of Service';
+
+  @override
+  String get signInAgreementPrivacy => 'Privacy Policy';
 
   @override
   String get signInUnavailable => 'No sign-in method is configured for this build.';
@@ -811,6 +819,31 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signOutConfirm => 'Sign out of takeAway?';
 
   @override
+  String get deleteAccount => 'Delete account';
+
+  @override
+  String get deleteAccountTitle => 'Delete your account?';
+
+  @override
+  String get deleteAccountBody =>
+      'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.';
+
+  @override
+  String get deleteAccountApple => 'Apple will ask you to confirm, and takeAway will stop using your Apple ID.';
+
+  @override
+  String get deleteAccountConfirm => 'Delete for good';
+
+  @override
+  String get deleteAccountStaff => 'Staff accounts are deleted by the business admin.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Deleting the account needs your confirmation with Apple.';
+
+  @override
+  String get accountDeleted => 'Your account has been deleted';
+
+  @override
   String appVersion(String version) {
     return 'Version $version';
   }
@@ -1046,6 +1079,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.';
+
+  @override
+  String get aboutPrivacy => 'Privacy Policy';
+
+  @override
+  String get aboutTerms => 'Terms of Service';
+
+  @override
+  String get aboutSupport => 'Support';
 
   @override
   String get locationDenied => 'Location access is off. Allow it in settings to see stores near you.';

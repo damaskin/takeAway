@@ -1,0 +1,8 @@
+takeAway lets customers pre-order coffee and food for pickup from partner coffee shops.
+
+- Browsing stores and menus needs no account.
+- To order, sign in with Apple (or Google / Telegram) from the sign-in sheet that opens when you add an item to the cart. No demo account is needed.
+- The live partner is NoName Coffee in Tiraspol, Moldova. Orders are paid by card on the bank's secure page (ZAO Agroprombank) and are prepared by a real coffee shop, so please stop at the bank's payment page rather than completing a payment.
+- Goods are physical and consumed outside the app, so payments do not use In-App Purchase (guideline 3.1.3(e)).
+- Account deletion: Profile -> Delete account (Apple-linked accounts are asked to confirm with Apple, and the Apple tokens are revoked).
+- Privacy Policy: https://takeaway.md/privacy, Terms: https://takeaway.md/terms, Support: https://takeaway.md/support

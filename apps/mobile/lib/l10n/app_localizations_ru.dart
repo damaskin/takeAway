@@ -168,7 +168,15 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signingIn => 'Входим…';
 
   @override
-  String get signInAgreement => 'Продолжая, вы принимаете Условия использования и Политику конфиденциальности.';
+  String signInAgreement(String terms, String privacy) {
+    return 'Продолжая, вы соглашаетесь с $terms и $privacy.';
+  }
+
+  @override
+  String get signInAgreementTerms => 'Условиями использования';
+
+  @override
+  String get signInAgreementPrivacy => 'Политикой конфиденциальности';
 
   @override
   String get signInUnavailable => 'В этой сборке не настроен ни один способ входа.';
@@ -818,6 +826,32 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signOutConfirm => 'Выйти из takeAway?';
 
   @override
+  String get deleteAccount => 'Удалить аккаунт';
+
+  @override
+  String get deleteAccountTitle => 'Удалить аккаунт?';
+
+  @override
+  String get deleteAccountBody =>
+      'Профиль, сохранённые карты, баллы лояльности, способы входа и личные данные будут удалены. История заказов останется у заведений только в обезличенном виде. Отменить удаление нельзя.';
+
+  @override
+  String get deleteAccountApple =>
+      'Apple попросит подтвердить удаление, и takeAway перестанет использовать ваш Apple ID.';
+
+  @override
+  String get deleteAccountConfirm => 'Удалить навсегда';
+
+  @override
+  String get deleteAccountStaff => 'Аккаунты сотрудников удаляет администратор заведения.';
+
+  @override
+  String get deleteAccountAppleCancelled => 'Для удаления аккаунта нужно подтверждение через Apple.';
+
+  @override
+  String get accountDeleted => 'Аккаунт удалён';
+
+  @override
   String appVersion(String version) {
     return 'Версия $version';
   }
@@ -1059,6 +1093,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get aboutBody => 'takeAway — предзаказ кофе и еды. Выбирайте, оплачивайте и забирайте без очереди.';
+
+  @override
+  String get aboutPrivacy => 'Политика конфиденциальности';
+
+  @override
+  String get aboutTerms => 'Условия использования';
+
+  @override
+  String get aboutSupport => 'Поддержка';
 
   @override
   String get locationDenied => 'Доступ к геолокации выключен. Разрешите его в настройках, чтобы видеть точки рядом.';

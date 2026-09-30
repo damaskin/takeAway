@@ -1,22 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../app/router.dart';
+import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/cup_logo.dart';
+import '../../shared/widgets/state_views.dart';
 import '../auth/auth_service.dart';
 import '../auth/sign_in_sheet.dart';
 import '../catalog/catalog_providers.dart';
 import 'loyalty_widgets.dart';
 import 'profile_providers.dart';
+import 'settings_list.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -46,40 +50,40 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const LoyaltyCardTile(),
               const SizedBox(height: 16),
-              _Group(
+              SettingsGroup(
                 children: [
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.receipt_long_outlined,
                     title: l10n.ordersTitle,
                     onTap: () => context.go(Routes.orders),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.badge_outlined,
                     title: l10n.profilePersonal,
                     onTap: () => context.push(Routes.personal),
                   ),
                   if (flags.agroprombankEnabled)
-                    _Tile(
+                    SettingsTile(
                       icon: Icons.credit_card_rounded,
                       title: l10n.profilePayment,
                       onTap: () => context.push(Routes.paymentMethods),
                     ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.card_giftcard_rounded,
                     title: l10n.profileGiftCards,
                     onTap: () => context.push(Routes.giftCards),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.group_add_outlined,
                     title: l10n.profileReferrals,
                     onTap: () => context.push(Routes.referrals),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.key_rounded,
                     title: l10n.signInMethodsTitle,
                     onTap: () => context.push(Routes.signInMethods),
                   ),
-                  _Tile(
+                  SettingsTile(
                     icon: Icons.notifications_none_rounded,
                     title: l10n.profileNotifications,
                     onTap: () => context.push(Routes.notifications),
@@ -88,9 +92,9 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: 16),
-            _Group(
+            SettingsGroup(
               children: [
-                _Tile(
+                SettingsTile(
                   icon: Icons.translate_rounded,
                   title: l10n.profileLanguage,
                   trailing: Text(
@@ -99,7 +103,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   onTap: () => showLanguagePicker(context, ref),
                 ),
-                _Tile(
+                SettingsTile(
                   icon: Icons.info_outline_rounded,
                   title: l10n.profileAbout,
                   onTap: () => context.push(Routes.about),
@@ -114,6 +118,8 @@ class ProfileScreen extends ConsumerWidget {
                 danger: true,
                 onPressed: () => _signOut(context, ref),
               ),
+              const SizedBox(height: 8),
+              const _DeleteAccountButton(),
             ],
           ],
         ),
@@ -186,6 +192,90 @@ Future<void> showLanguagePicker(BuildContext context, WidgetRef ref) async {
   }
 }
 
+/// Deletes the account from inside the app, as App Review requires of any
+/// app that lets people create one (guideline 5.1.1(v)).
+class _DeleteAccountButton extends ConsumerStatefulWidget {
+  const _DeleteAccountButton();
+
+  @override
+  ConsumerState<_DeleteAccountButton> createState() => _DeleteAccountButtonState();
+}
+
+class _DeleteAccountButtonState extends ConsumerState<_DeleteAccountButton> {
+  bool _busy = false;
+
+  Future<void> _delete() async {
+    if (_busy) return;
+    final l10n = AppLocalizations.of(context);
+    final auth = ref.read(authServiceProvider);
+    setState(() => _busy = true);
+    // Only for the wording: deleteAccount checks again and asks Apple itself.
+    final withApple = await auth.deletionNeedsApple().catchError((Object _) => false);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.deleteAccountTitle),
+        content: Text(withApple ? '${l10n.deleteAccountBody}\n\n${l10n.deleteAccountApple}' : l10n.deleteAccountBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              backgroundColor: context.brand.berry,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            child: Text(l10n.deleteAccountConfirm),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // Once the session ends this screen turns into the guest card and this
+    // button goes away, so take the router now.
+    final router = GoRouter.of(context);
+    setState(() => _busy = true);
+    try {
+      await auth.deleteAccount();
+    } on SignInCancelled {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      Snack.show(context, l10n.deleteAccountAppleCancelled, icon: Icons.apple);
+      return;
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      if (ApiError.from(error).statusCode == 403) {
+        Snack.show(context, l10n.deleteAccountStaff, icon: Icons.admin_panel_settings_outlined);
+      } else {
+        Snack.error(context, error);
+      }
+      return;
+    }
+    unawaited(HapticFeedback.mediumImpact());
+    router.go(Routes.menu);
+    final appContext = rootNavigatorKey.currentContext;
+    if (appContext != null && appContext.mounted) {
+      Snack.show(appContext, l10n.accountDeleted, icon: Icons.check_circle_outline_rounded);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return TextButton.icon(
+      onPressed: _busy ? null : _delete,
+      style: TextButton.styleFrom(foregroundColor: brand.berry),
+      icon: _busy
+          ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: brand.berry))
+          : const Icon(Icons.delete_forever_outlined, size: 20),
+      label: Text(AppLocalizations.of(context).deleteAccount),
+    );
+  }
+}
+
 class _GuestCard extends ConsumerWidget {
   const _GuestCard();
 
@@ -254,58 +344,6 @@ class _UserHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Group extends StatelessWidget {
-  const _Group({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = context.brand;
-    return Container(
-      decoration: BoxDecoration(
-        color: brand.foam,
-        borderRadius: BorderRadius.circular(Radii.card),
-        border: Border.all(color: brand.borderLight),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            if (i > 0) Divider(indent: 56, color: brand.borderLight),
-            children[i],
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _Tile extends StatelessWidget {
-  const _Tile({required this.icon, required this.title, required this.onTap, this.trailing});
-
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ?trailing,
-          Icon(Icons.chevron_right_rounded, color: context.brand.textTertiary),
-        ],
-      ),
-      onTap: onTap,
     );
   }
 }

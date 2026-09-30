@@ -329,7 +329,19 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
-      agreement: 'By continuing you agree to our Terms and Privacy Policy.',
+      // "By continuing you agree to our <Terms of Service> and <Privacy Policy>."
+      // Split so each document can be a link.
+      agreementLead: 'By continuing you agree to our',
+      agreementTerms: 'Terms of Service',
+      agreementAnd: 'and',
+      agreementPrivacy: 'Privacy Policy',
+    },
+    legal: {
+      privacy: 'Privacy Policy',
+      terms: 'Terms of Service',
+      support: 'Support',
+      contents: 'Contents',
+      related: 'Documents and help',
     },
     business: {
       title: 'List your business on takeAway',
@@ -660,14 +672,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
     staff: {
       title: 'Staff roster',
       subtitle:
-        'Invite managers and kitchen staff to your stores. They sign in at the admin URL with the email and temp password you set.',
+        'Invite managers and kitchen staff to your stores. They sign in at the admin URL with the email and temp password you set, and on the kitchen tablet with a PIN from the Kitchen PINs block.',
       noStores: 'Create a store first to invite staff.',
       roster: 'Current roster',
+      kitchenPins: 'Kitchen PINs',
       empty: 'No staff in this store yet.',
       addTitle: 'Invite new staff',
       email: 'Email',
       name: 'Name',
       roleLabel: 'Role',
+      storeLabel: 'Store',
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       tempPassword: 'Temporary password',
       tempPasswordHint:
@@ -938,6 +952,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       viewAll: 'View all →',
       storePerf: 'Stores performance',
       newPromo: '+ New promo',
+      createTitle: 'New promo',
       orderProductLine: 'Order · {{count}} items',
     },
     orderDetail: {
@@ -1182,6 +1197,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         libraryLink: 'Open the add-ins library →',
       },
       errors: {
+        gone: 'Not found — it may already be deleted.',
         invalidField: 'Check the field "{{field}}"',
         name: 'Enter a name.',
         price: 'Enter the price as a number, such as 35 or 35.50.',
@@ -1433,6 +1449,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       kitchen: {
         hint: "Staff unlock this store's kitchen tablet with a 4–6 digit PIN. A PIN works at this store only.",
+        where: 'On the tablet, open',
         empty: 'No kitchen staff or managers are assigned to this store yet.',
         toStaff: 'Add them under Staff',
         pin: 'PIN',
@@ -1475,6 +1492,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle:
         'Compose a push, Telegram or email broadcast for the customers of your brand. Drafts are saved; clicking Send fans the message out immediately.',
       saveDraft: 'Save draft',
+      createTitle: 'New campaign',
       send: 'Send now',
       sending: 'Sending…',
       empty: 'No campaigns yet — compose one above.',
@@ -1519,6 +1537,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
       issuedHint: 'Issued — code: {{code}}',
+      issuedTitle: 'Issued. Hand this code to the customer:',
       cancel: 'Cancel',
       empty: 'No gift cards issued yet.',
       col: {

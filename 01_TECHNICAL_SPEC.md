@@ -195,7 +195,7 @@ takeaway/
 
 ### 2.3. Mobile — фактически
 
-- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Bundle / application id — `md.takeaway.app`
+- **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Android application id — `md.takeaway.app`, iOS bundle id — `md.takeaway.ios` (команда Apple `FGN8R2D6QW`)
 - **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
 - **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
 - **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
@@ -614,7 +614,10 @@ POST   /auth/telegram/link/oidc      { idToken }                     (auth, то
 POST   /auth/refresh                 { refreshToken }
 POST   /auth/logout
 GET    /auth/me
+DELETE /auth/me                      { appleAuthorizationCode? } → 204   (удаление аккаунта; только CUSTOMER, staff и владелец бренда → 403)
 ```
+
+`DELETE /auth/me` (App Store 5.1.1(v)) не удаляет строку `User`, а превращает её в обезличенную заглушку в одной транзакции: имя, email, телефон, аватар, дата рождения, `telegramUserId`, `passwordHash`, `referralCode` → null, notify-флаги → false, `blockedAt = now()`. Удаляются `OAuthAccount`, `Device`, `Cart`, `CardToken`, `CardBindingRequest`, `PasswordResetToken`; баланс `LoyaltyAccount` обнуляется записью `EXPIRE` в ledger. Заказы, платежи, ledger, промо-погашения, рефералы и подарочные карты остаются и ссылаются на ту же строку, но заказы — только в обезличенном виде: у всех заказов пользователя (и у ещё не выполненных тоже) обнуляются `customerName`, `customerPhone`, адрес доставки (`deliveryAddressLine`, `deliveryCity`), `deliveryNotes`, `deliveryLatitude`/`deliveryLongitude`; позиции с опциями и комментариями, комментарий к заказу, суммы, статусы, точка, время, стоимость доставки и расстояние сохраняются. У событий прихода клиента (`CUSTOMER_NEARBY` / `CUSTOMER_HERE`) из payload удаляются координаты, тип и `distanceM` остаются. Координаты клиента не отдаёт и `GET /admin/orders/:id`: в событиях заказа админ видит только расстояние. Все refresh-токены пользователя удаляются из Redis, ротация и WebSocket-рукопожатие отказывают заблокированному аккаунту. Повторный вход тем же Telegram / Google / Apple создаёт новый пустой профиль. Тело необязательное: iOS-приложение перед удалением заново проходит Sign in with Apple и присылает свежий `appleAuthorizationCode` — до транзакции (и только после проверки прав) API меняет его на токены в `appleid.apple.com/auth/token` и отзывает refresh-токен (или access) через `/auth/revoke`. `client_secret` — ES256 JWT, подписанный ключом Sign in with Apple (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`), client id — `APPLE_REVOKE_CLIENT_ID` или первый из `APPLE_OAUTH_CLIENT_IDS`, не равный `APPLE_OAUTH_SERVICES_ID`. Отзыв best-effort: сбой Apple или отсутствие ключа логируются и удаление не блокируют. Логика и решения по каждой связи — `AccountDeletionService`, отзыв Apple — `AppleTokenRevocationService`.
 
 ### 6.2. Профиль и уведомления
 

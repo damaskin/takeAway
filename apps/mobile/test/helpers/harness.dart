@@ -77,6 +77,9 @@ Future<Harness> pumpApp(
   bool onboarded = true,
   Locale locale = const Locale('ru'),
   String? activeStoreId = 'st_1',
+
+  /// Extra provider overrides, e.g. a stand-in for a platform sheet.
+  List<Override> overrides = const [],
 }) async {
   AppTheme.useGoogleFonts = false;
   SharedPreferences.setMockInitialValues({
@@ -101,6 +104,7 @@ Future<Harness> pumpApp(
         ref.onDispose(realtime.dispose);
         return realtime;
       }),
+      ...overrides,
     ],
   );
 

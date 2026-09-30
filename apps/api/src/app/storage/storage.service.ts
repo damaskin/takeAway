@@ -9,7 +9,7 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 import { MAX_IMAGE_BYTES } from '../common/upload/uploaded-image.decorator';
 
@@ -97,6 +97,23 @@ export class StorageService {
       }),
     );
     return { url: `${this.publicBase}/${key}`, key };
+  }
+
+  /**
+   * Removes an object this service uploaded, addressed by the public URL
+   * `uploadImage` returned. Resolves `false` without touching the bucket when
+   * storage is not configured or the URL is not ours — a picture URL from
+   * Telegram or Google is not a file we can or should delete. Storage errors
+   * propagate; the caller decides whether a leftover file is worth failing.
+   */
+  async deleteByPublicUrl(url: string): Promise<boolean> {
+    if (!this.client || !this.bucket || !this.publicBase) return false;
+    const prefix = `${this.publicBase}/`;
+    if (!url.startsWith(prefix)) return false;
+    const key = url.slice(prefix.length).split(/[?#]/, 1)[0] ?? '';
+    if (!key || key.split('/').includes('..')) return false;
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    return true;
   }
 }
 

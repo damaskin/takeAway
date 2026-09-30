@@ -240,6 +240,13 @@ void main() {
     });
   });
 
+  group('auth', () {
+    test('sends the Apple authorization code with an account deletion only when there is one', () {
+      expect(const DeleteAccountRequest(appleAuthorizationCode: 'c1').toJson(), {'appleAuthorizationCode': 'c1'});
+      expect(const DeleteAccountRequest().toJson(), isEmpty);
+    });
+  });
+
   group('payments and loyalty', () {
     test('parses the issuer list', () {
       final list = (fixture('institutes.json')! as List).map((e) => CardInstitute.fromJson(e as Map<String, dynamic>));

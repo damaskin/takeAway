@@ -374,11 +374,23 @@ abstract class AppLocalizations {
   /// **'Signing in…'**
   String get signingIn;
 
-  /// No description provided for @signInAgreement.
+  /// The two placeholders become links, filled with signInAgreementTerms and signInAgreementPrivacy.
   ///
   /// In en, this message translates to:
-  /// **'By continuing you agree to the Terms of Service and Privacy Policy.'**
-  String get signInAgreement;
+  /// **'By continuing you agree to the {terms} and {privacy}.'**
+  String signInAgreement(String terms, String privacy);
+
+  /// No description provided for @signInAgreementTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Service'**
+  String get signInAgreementTerms;
+
+  /// No description provided for @signInAgreementPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get signInAgreementPrivacy;
 
   /// No description provided for @signInUnavailable.
   ///
@@ -1550,6 +1562,54 @@ abstract class AppLocalizations {
   /// **'Sign out of takeAway?'**
   String get signOutConfirm;
 
+  /// No description provided for @deleteAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete account'**
+  String get deleteAccount;
+
+  /// No description provided for @deleteAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete your account?'**
+  String get deleteAccountTitle;
+
+  /// No description provided for @deleteAccountBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.'**
+  String get deleteAccountBody;
+
+  /// No description provided for @deleteAccountApple.
+  ///
+  /// In en, this message translates to:
+  /// **'Apple will ask you to confirm, and takeAway will stop using your Apple ID.'**
+  String get deleteAccountApple;
+
+  /// No description provided for @deleteAccountConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete for good'**
+  String get deleteAccountConfirm;
+
+  /// No description provided for @deleteAccountStaff.
+  ///
+  /// In en, this message translates to:
+  /// **'Staff accounts are deleted by the business admin.'**
+  String get deleteAccountStaff;
+
+  /// No description provided for @deleteAccountAppleCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting the account needs your confirmation with Apple.'**
+  String get deleteAccountAppleCancelled;
+
+  /// No description provided for @accountDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account has been deleted'**
+  String get accountDeleted;
+
   /// No description provided for @appVersion.
   ///
   /// In en, this message translates to:
@@ -1987,6 +2047,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.'**
   String get aboutBody;
+
+  /// No description provided for @aboutPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy Policy'**
+  String get aboutPrivacy;
+
+  /// No description provided for @aboutTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Service'**
+  String get aboutTerms;
+
+  /// No description provided for @aboutSupport.
+  ///
+  /// In en, this message translates to:
+  /// **'Support'**
+  String get aboutSupport;
 
   /// No description provided for @locationDenied.
   ///

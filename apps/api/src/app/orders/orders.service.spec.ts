@@ -434,6 +434,41 @@ describe('OrdersService order detail and receipt', () => {
     expect(detail.items[1]).toMatchObject({ name: 'Латте', variations: [], modifierLines: [], notes: null });
   });
 
+  it('shows the admin how far the customer was, never where', async () => {
+    const { service, prisma } = harness();
+    const stored = storedOrder([LATTE_SNAPSHOT]);
+    const at = new Date('2026-09-23T08:10:00Z');
+    stored.events = [
+      { id: 'ev-1', type: 'STATUS_CHANGED', createdAt: at, actorId: null, payload: { from: 'CREATED', to: 'PAID' } },
+      {
+        id: 'ev-2',
+        type: 'CUSTOMER_NEARBY',
+        createdAt: at,
+        actorId: 'user-1',
+        payload: { distanceM: 180.4, lat: 46.84, lng: 29.63 },
+      },
+      {
+        id: 'ev-3',
+        type: 'CUSTOMER_HERE',
+        createdAt: at,
+        actorId: 'user-1',
+        payload: { distanceM: 12.1, lat: 46.841, lng: 29.631 },
+      },
+      { id: 'ev-4', type: 'NOTE', createdAt: at, actorId: null, payload: null },
+    ] as never[];
+    prisma.order.findUnique.mockResolvedValue(stored);
+
+    const detail = await service.getForAdmin('order-1');
+
+    expect(detail.events.map((e) => e.payload)).toEqual([
+      { from: 'CREATED', to: 'PAID' },
+      { distanceM: 180.4 },
+      { distanceM: 12.1 },
+      null,
+    ]);
+    expect(JSON.stringify(detail)).not.toMatch(/"(lat|lng)"/);
+  });
+
   it('prints the options under each line of the receipt', async () => {
     const { service, prisma, mail } = harness();
     prisma.order.findUnique.mockResolvedValue(storedOrder([LATTE_SNAPSHOT, LEGACY_SNAPSHOT]));

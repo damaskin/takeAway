@@ -119,3 +119,30 @@ test.describe('kitchen tablet', () => {
     await expect(page.locator('app-admin-sidebar')).toBeVisible();
   });
 });
+
+test.describe('kitchen PINs', () => {
+  test('the Staff page sets a PIN for the kitchen tablet', async ({ context, page }) => {
+    await signIn(context);
+    await installFakeApi(context);
+    const puts: Array<{ url: string; body: unknown }> = [];
+    await context.route('**/api/admin/stores/*/staff/*/kds-pin', async (route) => {
+      puts.push({ url: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+      return route.fulfill({ status: 204 });
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/staff');
+
+    const pins = page.getByRole('region', { name: 'PIN для кухни' });
+    await expect(pins).toBeVisible();
+    await expect(pins.getByText('/login/pin')).toBeVisible();
+    await pins.getByRole('textbox', { name: 'PIN: Ion' }).fill('4321');
+    await pins.getByRole('button', { name: 'Задать PIN' }).click();
+
+    await expect
+      .poll(() => puts)
+      .toEqual([{ url: `/api/admin/stores/${STORE.id}/staff/user-2/kds-pin`, body: { pin: '4321' } }]);
+    await expect(pins.getByText('PIN задан')).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath('staff-kitchen-pins.png'), fullPage: true });
+  });
+});

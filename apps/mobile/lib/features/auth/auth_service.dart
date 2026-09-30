@@ -12,6 +12,7 @@ import '../../core/auth/session_manager.dart';
 import '../../core/config/env.dart';
 import '../../core/providers.dart';
 import '../../core/push/push_service.dart';
+import '../../core/storage/app_prefs.dart';
 import 'telegram_login.dart';
 
 /// Thrown when the customer backs out of a provider's own sign-in UI. Not
@@ -56,10 +57,25 @@ final signInOptionsProvider = FutureProvider<SignInOptions>((ref) async {
   return SignInOptions(
     telegram: telegram != null,
     google: Env.googleSignInConfigured,
-    apple: !kIsWeb && Platform.isIOS && Env.appleSignInEnabled,
+    apple: ref.watch(appleAuthorizationProvider).available,
     dev: Env.devSignIn,
   );
 });
+
+/// Apple's own Sign in with Apple sheet.
+class AppleAuthorization {
+  const AppleAuthorization();
+
+  /// Offered on iOS only, and only when enabled for this build: the bundle
+  /// id also has to be listed in the API's `APPLE_OAUTH_CLIENT_IDS`.
+  bool get available => !kIsWeb && Platform.isIOS && Env.appleSignInEnabled;
+
+  Future<AuthorizationCredentialAppleID> request(List<AppleIDAuthorizationScopes> scopes) =>
+      SignInWithApple.getAppleIDCredential(scopes: scopes);
+}
+
+/// Overridden in tests.
+final appleAuthorizationProvider = Provider<AppleAuthorization>((ref) => const AppleAuthorization());
 
 /// Customer sign-in and sign-out.
 ///
@@ -154,20 +170,21 @@ class AuthService {
   }
 
   Future<OAuthLoginRequest> _appleCredential() async {
-    final AuthorizationCredentialAppleID credential;
-    try {
-      credential = await SignInWithApple.getAppleIDCredential(
-        scopes: const [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
-      );
-    } on SignInWithAppleAuthorizationException catch (error) {
-      if (error.code == AuthorizationErrorCode.canceled) throw const SignInCancelled();
-      rethrow;
-    }
+    final credential = await _askApple(const [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName]);
     final idToken = credential.identityToken;
     if (idToken == null) throw StateError('Apple returned no identity token');
     // Apple reveals the name only on the very first consent.
     final name = [credential.givenName, credential.familyName].whereType<String>().join(' ').trim();
     return OAuthLoginRequest(idToken: idToken, name: name.isEmpty ? null : name);
+  }
+
+  Future<AuthorizationCredentialAppleID> _askApple(List<AppleIDAuthorizationScopes> scopes) async {
+    try {
+      return await _ref.read(appleAuthorizationProvider).request(scopes);
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) throw const SignInCancelled();
+      rethrow;
+    }
   }
 
   /// Debug builds against a local API only: the widget endpoint accepts an
@@ -211,6 +228,46 @@ class AuthService {
     } on Object {
       // The refresh token dies with its TTL anyway; never block sign-out.
     }
+    await _forgetSession();
+  }
+
+  /// Whether deleting the account starts with a confirmation in Apple's
+  /// sheet: this build offers Sign in with Apple and Apple leads into this
+  /// profile.
+  Future<bool> deletionNeedsApple() async {
+    if (!_ref.read(appleAuthorizationProvider).available) return false;
+    return (await signInMethods()).apple;
+  }
+
+  /// Deletes the customer's account on the server, then forgets it on this
+  /// device the way [signOut] does. When the API refuses (403 for staff) or
+  /// cannot be reached, the error propagates and the customer stays signed in.
+  ///
+  /// A profile Apple leads into first asks Apple for a fresh authorization
+  /// code, which the API uses to revoke the tokens Apple issued for it
+  /// (App Review guideline 5.1.1(v)). Backing out of Apple's sheet throws
+  /// [SignInCancelled] and nothing is deleted.
+  Future<void> deleteAccount() async {
+    if (_sessions.current == null) return;
+    final appleCode = await deletionNeedsApple() ? (await _askApple(const [])).authorizationCode : null;
+    final push = _ref.read(pushServiceProvider);
+    // Detach the device while the token still works: once the account is
+    // gone every authenticated call answers 401, which would read as an
+    // expired session.
+    await push.unregister();
+    try {
+      await _api.deleteMe(DeleteAccountRequest(appleAuthorizationCode: appleCode));
+    } on Object {
+      unawaited(push.syncToken());
+      rethrow;
+    }
+    // The refresh tokens went with the account, so there is nothing to log
+    // out of. The contact details checkout remembered are personal data too.
+    await _ref.read(contactPrefsProvider).forget();
+    await _forgetSession();
+  }
+
+  Future<void> _forgetSession() async {
     if (_googleReady) unawaited(GoogleSignIn.instance.signOut().catchError((Object _) {}));
     await _sessions.end(SessionEndReason.signedOut);
   }

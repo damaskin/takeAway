@@ -1,27 +1,12 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, computed, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
-
-interface GiftCardRow {
-  id: string;
-  code: string;
-  brandId: string;
-  initialAmountCents: number;
-  balanceCents: number;
-  currency: string;
-  status: 'ACTIVE' | 'REDEEMED' | 'EXPIRED' | 'CANCELLED';
-  recipientEmail: string | null;
-  recipientName: string | null;
-  message: string | null;
-  expiresAt: string | null;
-  createdAt: string;
-}
-
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
+import { extractMessage } from '../../core/http/extract-message';
+import type { GiftCardRow } from './gift-card.types';
 
 /**
  * Brand-admin gift card roster + manual issue. v1: codes are admin-issued
@@ -31,96 +16,30 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
 @Component({
   selector: 'app-admin-gift-cards',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <section style="padding: 24px; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
-      <header style="display: flex; flex-direction: column; gap: 4px">
-        <h1 style="font-family: var(--font-display); font-size: 24px; color: var(--color-espresso); margin: 0">
-          {{ 'admin.giftCards.title' | translate }}
-        </h1>
-        <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
-          {{ 'admin.giftCards.subtitle' | translate }}
-        </p>
-      </header>
-
-      <!-- Issue form -->
-      <form
-        [formGroup]="form"
-        (ngSubmit)="issue()"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 18px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr))"
-      >
-        <label style="display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.giftCards.amount' | translate
-          }}</span>
-          <input
-            type="number"
-            min="1"
-            step="0.01"
-            formControlName="amount"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          />
-        </label>
-        <label style="display: flex; flex-direction: column; gap: 4px">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.giftCards.currency' | translate
-          }}</span>
-          <select
-            formControlName="currency"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          >
-            @for (c of currencies; track c) {
-              <option [value]="c">{{ c }}</option>
-            }
-          </select>
-        </label>
-        <label style="display: flex; flex-direction: column; gap: 4px; grid-column: span 2">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.giftCards.recipientEmail' | translate
-          }}</span>
-          <input
-            type="email"
-            formControlName="recipientEmail"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          />
-        </label>
-        <label style="display: flex; flex-direction: column; gap: 4px; grid-column: span 4">
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-            'admin.giftCards.message' | translate
-          }}</span>
-          <input
-            type="text"
-            maxlength="500"
-            formControlName="message"
-            style="height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px"
-          />
-        </label>
-        <button
-          type="submit"
-          [disabled]="form.invalid || issuing()"
-          style="grid-column: span 4; justify-self: end; height: 36px; padding: 0 18px; background: var(--color-caramel); color: white; border-radius: 8px; font-family: var(--font-sans); font-weight: 600"
+      <header class="flex items-start justify-between flex-wrap" style="gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <h1 style="font-family: var(--font-display); font-size: 24px; color: var(--color-espresso); margin: 0">
+            {{ 'admin.giftCards.title' | translate }}
+          </h1>
+          <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
+            {{ 'admin.giftCards.subtitle' | translate }}
+          </p>
+        </div>
+        <a
+          routerLink="/gift-cards/new"
+          class="flex items-center"
+          style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
         >
-          {{ (issuing() ? 'common.loading' : 'admin.giftCards.issueCta') | translate }}
-        </button>
-        @if (lastIssued(); as just) {
-          <p
-            style="grid-column: span 4; font-family: var(--font-sans); font-size: 13px; color: var(--color-mint); margin: 0"
-          >
-            {{ 'admin.giftCards.issuedHint' | translate: { code: just.code } }}
-          </p>
-        }
-        @if (error()) {
-          <p
-            style="grid-column: span 4; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0"
-          >
-            {{ error() }}
-          </p>
-        }
-      </form>
+          {{ 'admin.giftCards.issueCta' | translate }}
+        </a>
+      </header>
 
       <!-- List -->
       <div
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; overflow: hidden"
+        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; overflow: hidden; overflow-x: auto"
       >
         <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 13px">
           <thead style="background: var(--color-cream)">
@@ -174,6 +93,12 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as c
           </tbody>
         </table>
       </div>
+
+      @if (error(); as message) {
+        <p role="alert" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0">
+          {{ message }}
+        </p>
+      }
     </section>
   `,
 })
@@ -183,52 +108,12 @@ export class AdminGiftCardsPage {
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
 
-  readonly currencies = CURRENCIES;
   readonly rows = signal<GiftCardRow[]>([]);
-  readonly issuing = signal(false);
   readonly cancelling = signal<string | null>(null);
-  readonly lastIssued = signal<GiftCardRow | null>(null);
   readonly error = signal<string | null>(null);
-
-  readonly currencyHint = computed(() => this.form.controls.currency.value);
-
-  readonly form = new FormGroup({
-    amount: new FormControl<number | null>(null, { validators: [Validators.required, Validators.min(0.01)] }),
-    currency: new FormControl<(typeof CURRENCIES)[number]>('USD', { nonNullable: true }),
-    recipientEmail: new FormControl<string>('', { nonNullable: true }),
-    message: new FormControl<string>('', { nonNullable: true }),
-  });
 
   constructor() {
     this.refresh();
-  }
-
-  issue(): void {
-    const v = this.form.getRawValue();
-    if (!v.amount) return;
-    this.issuing.set(true);
-    this.error.set(null);
-    this.http
-      .post<GiftCardRow>(`${this.api.baseUrl}/admin/gift-cards`, {
-        amountCents: Math.round(v.amount * 100),
-        currency: v.currency,
-        recipientEmail: v.recipientEmail || undefined,
-        message: v.message || undefined,
-      })
-      .subscribe({
-        next: (row) => {
-          this.issuing.set(false);
-          this.lastIssued.set(row);
-          this.rows.update((rs) => [row, ...rs]);
-          this.form.controls.amount.reset();
-          this.form.controls.recipientEmail.reset('');
-          this.form.controls.message.reset('');
-        },
-        error: (err) => {
-          this.issuing.set(false);
-          this.error.set(extractMessage(err) ?? this.translate.instant('common.genericError'));
-        },
-      });
   }
 
   cancel(card: GiftCardRow): void {
@@ -273,11 +158,4 @@ export class AdminGiftCardsPage {
       error: (err) => this.error.set(extractMessage(err)),
     });
   }
-}
-
-function extractMessage(err: unknown): string | null {
-  const maybe = err as { error?: { message?: unknown }; message?: unknown };
-  if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-  if (typeof maybe.message === 'string') return maybe.message;
-  return null;
 }

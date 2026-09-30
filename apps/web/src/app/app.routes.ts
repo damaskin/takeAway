@@ -12,6 +12,22 @@ export const appRoutes: Route[] = [
         path: 'login',
         loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage),
       },
+      // Public on purpose: the App Store listing links /privacy and /support.
+      {
+        path: 'privacy',
+        data: { doc: 'privacy' },
+        loadComponent: () => import('./features/legal/legal.page').then((m) => m.LegalPage),
+      },
+      {
+        path: 'terms',
+        data: { doc: 'terms' },
+        loadComponent: () => import('./features/legal/legal.page').then((m) => m.LegalPage),
+      },
+      {
+        path: 'support',
+        data: { doc: 'support' },
+        loadComponent: () => import('./features/legal/legal.page').then((m) => m.LegalPage),
+      },
       {
         path: 'business/signup',
         loadComponent: () =>

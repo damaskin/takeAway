@@ -48,7 +48,7 @@ remaining method cannot be removed.
    `takeaway.md`, scopes `openid`, `email`, `profile`. Publish it.
 2. OAuth client **Web application**: authorised JavaScript origin
    `https://takeaway.md`. Its client id is the _web client id_.
-3. OAuth client **iOS**: bundle id `md.takeaway.app`, team `4VC4JRTQG9`. Its
+3. OAuth client **iOS**: bundle id `md.takeaway.ios`, team `FGN8R2D6QW`. Its
    client id is the _iOS client id_.
 4. OAuth client **Android** (when Android ships): package `md.takeaway.app`,
    SHA-1 of the release and debug signing keys. It needs no configuration in
@@ -56,13 +56,17 @@ remaining method cannot be removed.
 
 ### Apple (developer.apple.com → Certificates, Identifiers & Profiles)
 
-1. App ID `md.takeaway.app` has the _Sign in with Apple_ capability (fastlane's
+1. App ID `md.takeaway.ios` has the _Sign in with Apple_ capability (fastlane's
    `register_bundle_id` lane turns it on). Nothing else is needed for the app.
 2. For the website: an **Services ID**, e.g. `md.takeaway.web`, with Sign in
-   with Apple enabled, primary App ID `md.takeaway.app`, domain `takeaway.md`
+   with Apple enabled, primary App ID `md.takeaway.ios`, domain `takeaway.md`
    and return URL `https://takeaway.md/login`.
-
-No private key is needed: the API only verifies Apple's ID tokens.
+3. A **key** with _Sign in with Apple_ enabled (Keys → +), primary App ID
+   `md.takeaway.ios`. Download the `.p8` once and note its Key ID. Signing in
+   does not need it — the API only verifies Apple's ID tokens — but deleting
+   an account does: Apple requires the app to revoke the customer's Apple
+   tokens, and the API signs its requests to Apple with this key. Without it
+   the account is still deleted and the API logs a warning.
 
 ## Where the values go
 
@@ -70,10 +74,13 @@ Server, `deploy/.env.production` (then redeploy):
 
 ```
 GOOGLE_OAUTH_CLIENT_IDS=<web client id>,<iOS client id>
-APPLE_OAUTH_CLIENT_IDS=md.takeaway.app,md.takeaway.web
+APPLE_OAUTH_CLIENT_IDS=md.takeaway.ios,md.takeaway.web
 GOOGLE_OAUTH_WEB_CLIENT_ID=<web client id>
 APPLE_OAUTH_SERVICES_ID=md.takeaway.web
 APPLE_OAUTH_REDIRECT_URI=https://takeaway.md/login
+APPLE_TEAM_ID=FGN8R2D6QW
+APPLE_KEY_ID=<key id>
+APPLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
 ```
 
 iOS build, `apps/mobile/config/prod.json` on the Mac that builds:
