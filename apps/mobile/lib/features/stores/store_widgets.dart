@@ -9,7 +9,6 @@ import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/chips.dart';
-import '../../shared/widgets/cup_logo.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -23,8 +22,9 @@ String? displayAddress(Store store) {
   return text.isEmpty ? null : text;
 }
 
-/// The business's logo on a light tile, or the takeAway cup when the
-/// business has not uploaded one (or it fails to load).
+/// The business's logo filling the whole rounded square, or — when the
+/// business has not uploaded one, or it fails to load — the quiet storefront
+/// tile store cards had before logos.
 class StoreLogo extends StatelessWidget {
   const StoreLogo({required this.store, this.size = 48, super.key});
 
@@ -35,30 +35,26 @@ class StoreLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final brand = context.brand;
     final url = store.logoUrl;
-    final fallback = Center(child: CupLogo(size: size * 0.62, steam: 0));
-    return Container(
-      width: size,
-      height: size,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        // Logos are drawn for a light background, so the tile stays light
-        // in the dark theme too.
-        color: ProductImage.isUsable(url) ? Colors.white : brand.caramelSoft,
-        borderRadius: BorderRadius.circular(size * 0.29),
-        border: Border.all(color: brand.borderLight),
+    final placeholder = ColoredBox(
+      color: brand.caramelSoft,
+      child: Center(
+        child: Icon(Icons.storefront_rounded, color: brand.caramel, size: size * 0.5),
       ),
-      child: ProductImage.isUsable(url)
-          ? Padding(
-              padding: EdgeInsets.all(size * 0.08),
-              child: CachedNetworkImage(
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.29),
+      child: SizedBox.square(
+        dimension: size,
+        child: ProductImage.isUsable(url)
+            ? CachedNetworkImage(
                 imageUrl: url!,
-                fit: BoxFit.contain,
+                fit: BoxFit.cover,
                 fadeInDuration: Motion.fast,
-                placeholder: (_, _) => const SizedBox.expand(),
-                errorWidget: (_, _, _) => fallback,
-              ),
-            )
-          : fallback,
+                placeholder: (_, _) => ColoredBox(color: brand.caramelSoft),
+                errorWidget: (_, _, _) => placeholder,
+              )
+            : placeholder,
+      ),
     );
   }
 }
