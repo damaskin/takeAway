@@ -108,8 +108,12 @@ once:
    under **Native Login** — Android: package `md.takeaway.app` + the SHA-256
    of every key that signs a build (`./gradlew signingReport`); iOS: bundle
    `md.takeaway.ios` + the Apple team id `FGN8R2D6QW`. For @takaway_tgbot the redirect URI
-   and the Android debug key are registered; the release / Play App Signing
-   key and the iOS app are not yet.
+   and the Android debug key (`B0:EB:0B:…`) are registered. Still missing as
+   of 2026-10-01: the Play App Signing key, the upload key (both are listed
+   under "Building releases") and the iOS app. Telegram publishes what is
+   registered at
+   `https://app3004048938-login.tg.dev/.well-known/assetlinks.json`, so that
+   file shows what is in.
 3. On Android, Telegram's page (no Telegram app on the device) comes back
    through the App Link BotFather gave the Android app,
    `https://app3004048938-login.tg.dev/tglogin` (`TELEGRAM_ANDROID_APP_LINK`,
@@ -179,6 +183,45 @@ flutter build appbundle --release --dart-define-from-file=config/prod.json
 
 Without `key.properties` the release build is signed with the debug key —
 fine for testers, rejected by Google Play.
+
+**Android → Google Play.** App `md.takeaway.app` in the Play Console of
+developer account 5193596306797096194. Play re-signs every build with its own
+key (Play App Signing), so a device sees Google's key, not the upload key:
+
+| Key                                                | SHA-1                                                         | SHA-256                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Upload (`~/.takeaway/android/upload-keystore.jks`) | `BB:BA:A1:38:32:E9:81:7C:CB:5A:AC:65:01:EA:C3:57:CA:B7:82:F8` | `76:7E:37:F2:A1:04:49:0C:E4:AD:F9:9A:D7:D0:1C:14:2E:75:60:8C:BE:5E:52:F3:64:F5:8E:76:F5:47:D7:EB` |
+| Play App Signing, current                          | `80:2E:C9:4F:FF:7A:54:C0:31:4B:1B:27:FE:6B:6E:F6:5B:72:2C:5E` | `11:3C:6A:21:42:79:92:76:CC:FF:C7:6B:71:6E:CD:86:93:5F:17:F0:97:CF:05:78:2F:06:97:3B:6D:69:32:D5` |
+| Play App Signing, first (28.09)                    | `8C:53:FE:40:D7:72:67:17:FC:5B:65:1A:24:65:D3:BF:9C:BE:C6:4A` | `41:F8:F8:8D:B3:D4:29:FA:CB:91:58:F6:7E:9E:CA:1C:AD:80:FD:C8:CC:E9:F6:D3:86:46:78:D4:61:29:F7:4D` |
+
+Any service that checks the signature needs the Play keys: all of them are
+in the Firebase Android app (Firebase creates an Android OAuth client for
+each SHA-1, which Google Sign-In needs), and the SHA-256 values are what
+BotFather's Native Login needs. Play Console shows the app-signing values
+under Test and release → App integrity → App signing, only as copy buttons.
+
+Store listing texts and graphics live in `android/play/` (Russian only). A
+release:
+
+```bash
+# versionCode must grow: Play keeps every one it has seen (1.1.0 was 1)
+flutter build appbundle --release --build-number=<n> --dart-define-from-file=config/prod.json
+bash scripts/play-store-screenshots.sh        # only when screens changed; needs a booted emulator
+python scripts/play-store-compose.py
+PYTHONIOENCODING=utf-8 python scripts/play-store-publish.py
+```
+
+`play-store-publish.py` writes the listing, graphics and the AAB into one edit
+and commits it. By default the release is a draft: open Publishing overview
+in Play Console and click "Send for review". Run it with `--status completed`
+to roll out as soon as review passes. It authenticates with a service account
+that is invited in Play Console, using the key in
+`~/.takeaway/play/play-publisher.json`.
+
+Review needs a Google account to sign in with. Reviewers may not create
+accounts or use their own. Play Console → App content → Sign-in details holds
+`takeaway.testreview@gmail.com` and English instructions. The customer
+profile appears on the account's first sign-in.
 
 **iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
 (`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
