@@ -20,6 +20,14 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
+// Telegram Login's App Link host (@BotFather → Login Widget → Native Login).
+// BotFather takes one SHA-256 per Android entry and derives the host from it,
+// so each signing key has its own: the release host is registered with the
+// Play App Signing key Google signs store builds with, the debug host with
+// ~/.android/debug.keystore. Must match TELEGRAM_ANDROID_APP_LINK (env.dart).
+val telegramReleaseHost = "app3387643188-login.tg.dev"
+val telegramDebugHost = "app3004048938-login.tg.dev"
+
 android {
     namespace = "md.takeaway.app"
     compileSdk = flutter.compileSdkVersion
@@ -41,6 +49,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["telegramAppLinkHost"] = telegramDebugHost
     }
 
     signingConfigs {
@@ -57,6 +66,10 @@ android {
     buildTypes {
         release {
             signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            // A release APK signed with the upload or debug key (not from
+            // Play) fails this host's verification and gets Telegram's page
+            // back instead of the app; the Telegram-app path still works.
+            manifestPlaceholders["telegramAppLinkHost"] = telegramReleaseHost
         }
     }
 }

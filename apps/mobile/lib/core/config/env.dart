@@ -30,13 +30,18 @@ abstract final class Env {
   /// customer back: the App Link @BotFather issued for the Android app
   /// (Login Widget → Native Login → App URL, plus `/tglogin`). Chrome only
   /// leaves a page for an app on a tap, and the page at this address has the
-  /// button for it. The host must match the autoVerify intent filter in
-  /// AndroidManifest.xml. Empty sends the page to [telegramRedirectUri],
-  /// which strands the customer after they confirm.
-  static const telegramAndroidAppLink = String.fromEnvironment(
-    'TELEGRAM_ANDROID_APP_LINK',
-    defaultValue: 'https://app3004048938-login.tg.dev/tglogin',
-  );
+  /// button for it. BotFather derives the host from the signing key, so
+  /// release builds (signed by Play App Signing) and debug builds (the debug
+  /// keystore) have different ones; each must match the autoVerify intent
+  /// filter, whose host build.gradle.kts sets per build type. The define
+  /// overrides both.
+  static const _telegramAndroidAppLink = String.fromEnvironment('TELEGRAM_ANDROID_APP_LINK');
+  static String get telegramAndroidAppLink {
+    if (_telegramAndroidAppLink.isNotEmpty) return _telegramAndroidAppLink;
+    return kReleaseMode
+        ? 'https://app3387643188-login.tg.dev/tglogin'
+        : 'https://app3004048938-login.tg.dev/tglogin';
+  }
 
   /// Google Sign-In. The server client id is the *web* OAuth client — ID
   /// tokens minted for it are what `/auth/google` already accepts.

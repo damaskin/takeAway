@@ -47,16 +47,18 @@
                  leaves a page for an app only on a tap, so the redirect lands
                  on Telegram's "Almost done" page and its button opens us;
                  singleTask closes the tab on the way. autoVerify checks the
-                 signing key against the SHA-256 fingerprints registered there:
+                 signing key against the SHA-256 fingerprint registered there:
                  a build signed with an unregistered key gets the page back
-                 instead. Must match TELEGRAM_ANDROID_APP_LINK. -->
+                 instead. The host differs per signing key, so it comes from
+                 build.gradle.kts per build type. Must match
+                 TELEGRAM_ANDROID_APP_LINK. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="app3004048938-login.tg.dev"
+                    android:host="${telegramAppLinkHost}"
                     android:pathPrefix="/tglogin" />
             </intent-filter>
             <!-- Links are read by app_links, not pushed onto the router. -->
