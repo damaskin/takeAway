@@ -1,4 +1,11 @@
-import type { KitchenAction, KitchenOrder, KitchenOrderStatus, StoreShift } from './kitchen.api';
+import type {
+  KitchenAction,
+  KitchenOrder,
+  KitchenOrderStatus,
+  KitchenRejectMoney,
+  KitchenRejectReason,
+  StoreShift,
+} from './kitchen.api';
 
 /** A `kds.orderChanged` event as the API broadcasts it to a store's room. */
 export interface KitchenOrderChanged {
@@ -30,6 +37,19 @@ const OPEN_STATUSES: readonly string[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PRO
 /** Orders someone still has to take on — what the new-order alerts count. */
 export function awaitsAcceptance(order: { status: string }): boolean {
   return order.status === 'CREATED' || order.status === 'PAID';
+}
+
+/** The reasons the kitchen picks from, in the order the dialog lists them. */
+export const KITCHEN_REJECT_REASONS: readonly KitchenRejectReason[] = ['OUT_OF_STOCK', 'TOO_BUSY', 'CLOSING', 'OTHER'];
+
+/** Only an order nobody has accepted can be turned down; later it has to be finished. */
+export function canReject(order: { status: string }): boolean {
+  return awaitsAcceptance(order);
+}
+
+/** The translation key of the "order rejected" notice, by what happened to the money. */
+export function rejectOutcomeKey(money: KitchenRejectMoney): string {
+  return `admin.kitchen.reject.done.${money}`;
 }
 
 export function inColumn(order: KitchenOrder, column: KitchenColumn): boolean {

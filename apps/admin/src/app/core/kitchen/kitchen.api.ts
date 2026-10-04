@@ -39,6 +39,33 @@ export interface StoreShift {
 
 export type KitchenAction = 'accept' | 'start' | 'ready' | 'pickedUp';
 
+/** Why the kitchen turns an order down before accepting it; the customer sees it. */
+export type KitchenRejectReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER';
+
+/** The longest comment the API takes with a rejection. */
+export const KITCHEN_REJECT_COMMENT_MAX = 200;
+
+export interface KitchenRejectBody {
+  reason: KitchenRejectReason;
+  /** Shown to the customer; at most {@link KITCHEN_REJECT_COMMENT_MAX} characters. */
+  comment?: string;
+}
+
+/**
+ * What happened to the customer's money: a held payment was `released`, a
+ * captured one `refunded`, a refund the bank has yet to confirm is `pending`,
+ * and `none` when nothing had been paid.
+ */
+export type KitchenRejectMoney = 'released' | 'refunded' | 'pending' | 'none';
+
+/** `POST /kds/orders/:id/reject` */
+export interface KitchenRejectResult {
+  id: string;
+  status: 'CANCELLED';
+  orderCode: string;
+  money: KitchenRejectMoney;
+}
+
 const ACTION_PATHS: Record<KitchenAction, string> = {
   accept: 'accept',
   start: 'start',
@@ -84,5 +111,16 @@ export class KitchenApi {
       {},
       { params },
     );
+  }
+
+  /**
+   * Turns down an order nobody has accepted yet (CREATED or PAID). The API
+   * gives the customer's money back and tells them why; anything later is a 400.
+   */
+  reject(storeId: string, orderId: string, body: KitchenRejectBody): Observable<KitchenRejectResult> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.post<KitchenRejectResult>(`${this.api.baseUrl}/kds/orders/${orderId}/reject`, body, {
+      params,
+    });
   }
 }

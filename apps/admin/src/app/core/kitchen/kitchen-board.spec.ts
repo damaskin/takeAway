@@ -1,4 +1,12 @@
-import { applyKitchenEvent, awaitsAcceptance, inColumn, nextAction } from './kitchen-board';
+import {
+  KITCHEN_REJECT_REASONS,
+  applyKitchenEvent,
+  awaitsAcceptance,
+  canReject,
+  inColumn,
+  nextAction,
+  rejectOutcomeKey,
+} from './kitchen-board';
 import type { KitchenOrder } from './kitchen.api';
 
 function order(id: string, status: KitchenOrder['status']): KitchenOrder {
@@ -30,6 +38,25 @@ describe('kitchen board', () => {
     expect(nextAction(order('a', 'ACCEPTED'))).toBe('start');
     expect(nextAction(order('a', 'IN_PROGRESS'))).toBe('ready');
     expect(nextAction(order('a', 'READY'))).toBe('pickedUp');
+  });
+
+  it('lets the kitchen turn down only orders nobody has accepted', () => {
+    expect(canReject(order('a', 'CREATED'))).toBe(true);
+    expect(canReject(order('a', 'PAID'))).toBe(true);
+    expect(canReject(order('a', 'ACCEPTED'))).toBe(false);
+    expect(canReject(order('a', 'IN_PROGRESS'))).toBe(false);
+    expect(canReject(order('a', 'READY'))).toBe(false);
+  });
+
+  it('offers the four rejection reasons the API takes', () => {
+    expect(KITCHEN_REJECT_REASONS).toEqual(['OUT_OF_STOCK', 'TOO_BUSY', 'CLOSING', 'OTHER']);
+  });
+
+  it('words the rejection notice by what happened to the money', () => {
+    expect(rejectOutcomeKey('released')).toBe('admin.kitchen.reject.done.released');
+    expect(rejectOutcomeKey('refunded')).toBe('admin.kitchen.reject.done.refunded');
+    expect(rejectOutcomeKey('pending')).toBe('admin.kitchen.reject.done.pending');
+    expect(rejectOutcomeKey('none')).toBe('admin.kitchen.reject.done.none');
   });
 
   it('counts only orders nobody has accepted as waiting', () => {

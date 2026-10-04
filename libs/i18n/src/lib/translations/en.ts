@@ -872,6 +872,28 @@ export const TRANSLATIONS_EN: TranslationTree = {
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
       },
+      reject: {
+        button: 'Reject',
+        title: 'Reject order {{code}}?',
+        body: 'The customer is notified with the reason and gets their money back automatically.',
+        reasonLabel: 'Reason',
+        reasons: {
+          OUT_OF_STOCK: 'Out of stock',
+          TOO_BUSY: 'Too many orders',
+          CLOSING: 'Closing',
+          OTHER: 'Other',
+        },
+        commentLabel: 'Comment for the customer (optional)',
+        commentLabelOther: 'Comment for the customer — best to explain what happened',
+        commentPlaceholder: 'For example: we ran out of oat milk',
+        confirm: 'Reject order',
+        done: {
+          released: 'Order rejected, the hold on the card is released',
+          refunded: 'Order rejected, the money is refunded to the card',
+          pending: 'Order rejected, the money will be returned automatically',
+          none: 'Order rejected',
+        },
+      },
       shift: {
         closedTitle: 'Shift not started',
         closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
