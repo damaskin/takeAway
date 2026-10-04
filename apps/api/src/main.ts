@@ -8,6 +8,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app/app.module';
+import { WEB_PAYMENT_ROUTE } from './app/payments/agroprombank-web/constants';
 import { SentryExceptionFilter } from './app/common/observability/sentry-exception.filter';
 
 async function bootstrap(): Promise<void> {
@@ -40,6 +41,36 @@ async function bootstrap(): Promise<void> {
   // needs its own parser — Express's FileInterceptor never sees the file.
   // Per-route limits live in the UploadedImage decorator.
   await app.register(import('@fastify/multipart'), { limits: { files: 1, fields: 10 } });
+
+  // The bank's Web-платёж posts its notification and its redirects back as an
+  // HTML form. Only those routes take a form body: everywhere else a
+  // form-encoded request stays a 415, so no other endpoint becomes reachable
+  // by a plain cross-site <form> post.
+  const webPaymentPrefix = `/${globalPrefix}/${WEB_PAYMENT_ROUTE}/`;
+  const formParser = app.getHttpAdapter().getInstance() as unknown as {
+    addContentTypeParser(
+      type: string,
+      options: { parseAs: 'string'; bodyLimit: number },
+      parser: (
+        req: { url?: string },
+        body: string,
+        done: (err: (Error & { statusCode?: number }) | null, value?: unknown) => void,
+      ) => void,
+    ): void;
+  };
+  formParser.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string', bodyLimit: 16 * 1024 },
+    (req, body, done) => {
+      if (!req.url?.startsWith(webPaymentPrefix)) {
+        const refused: Error & { statusCode?: number } = new Error('Unsupported Media Type');
+        refused.statusCode = 415;
+        done(refused);
+        return;
+      }
+      done(null, Object.fromEntries(new URLSearchParams(body)));
+    },
+  );
 
   await app.register(import('@fastify/helmet'), {
     contentSecurityPolicy: false,

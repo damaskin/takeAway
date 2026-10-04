@@ -140,6 +140,8 @@ enum PaymentProvider {
   GOOGLE_PAY
   /// ЗАО «Агропромбанк» — tokenized card payments in the «Клевер» scheme.
   AGROPROMBANK
+  /// ЗАО «Агропромбанк» «Web-платёж» — the bank's hosted payment page.
+  AGROPROMBANK_WEB
 }
 
 /// Lifecycle of a card bound to the merchant through a payment provider.

@@ -21,3 +21,16 @@ export const DEFAULT_ENDPOINT = 'https://ws.agroprombank.com/merchant/MerchantCA
 
 /** `targetNamespace` of MerchantCAPService.asmx — also the SOAPAction prefix. */
 export const DEFAULT_NAMESPACE = 'http://services.agroprombank.com';
+
+/**
+ * Currency codes from the ПРБ directory the bank uses, shared by the tokenized
+ * flow and Web-платёж. `000` is the Transnistrian rouble — the only currency
+ * the «Клевер» scheme settles in today; the rest are listed so a misconfigured
+ * brand fails loudly instead of silently charging in the wrong currency.
+ */
+export const BANK_CURRENCY_CODES: Readonly<Record<string, string>> = {
+  RUP: '000',
+  USD: '840',
+  EUR: '978',
+  MDL: '498',
+};
