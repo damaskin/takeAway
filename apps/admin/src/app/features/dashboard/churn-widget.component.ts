@@ -115,6 +115,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
         padding: 12px;
         border-radius: 14px;
         background: var(--color-cream);
@@ -124,6 +125,9 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-size: 24px;
         font-weight: 700;
         color: var(--color-espresso);
+        /* A large sum with its currency breaks onto a second line rather than
+           pushing the tile past the card. */
+        overflow-wrap: anywhere;
       }
       .churn-label {
         font-family: var(--font-sans);

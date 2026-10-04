@@ -238,6 +238,11 @@ interface DashboardOrder {
       .dashboard-widgets {
         grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
       }
+      /* Grid items default to min-width: auto — a long value in one widget
+         would otherwise widen its track past the row. */
+      .dashboard-widgets > * {
+        min-width: 0;
+      }
       @media (max-width: 768px) {
         .dashboard-body {
           grid-template-columns: 1fr !important;
