@@ -64,8 +64,16 @@ void main() {
       h.realtime.emit(const OrderStatusEvent(orderId: 'ord_1', status: OrderStatus.ready, etaSeconds: 0));
       await settle(tester);
 
-      expect(find.text('Готов к выдаче'), findsWidgets);
+      // The headline is the product's promise: ready, and no queue.
+      expect(find.text('Ваш заказ готов'), findsOneWidget);
+      expect(find.text('Вы простояли в очереди 0 минут. Наслаждайтесь!'), findsOneWidget);
       expect(find.text('Готово'), findsWidgets, reason: 'the ring switches from countdown to ready');
+
+      api.currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP');
+      h.realtime.emit(const OrderStatusEvent(orderId: 'ord_1', status: OrderStatus.pickedUp, etaSeconds: 0));
+      await settle(tester);
+      expect(find.text('Приятного аппетита!'), findsOneWidget);
+      expect(find.text('Ни минуты в очереди — так и задумано. Хорошего дня!'), findsOneWidget);
       await h.unmount(tester);
     });
 
