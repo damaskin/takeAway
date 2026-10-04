@@ -19,6 +19,10 @@ const MIN_TTL_MINUTES = 5;
 const BATCH_SIZE = 200;
 /** A pay-on-pickup order the kitchen never took is let go this long after its promised time. */
 const UNACCEPTED_GRACE_MINUTES = 60;
+/** A held (paid-for) order the kitchen has not accepted is let go after this long. */
+const DEFAULT_ACCEPT_TTL_MINUTES = 30;
+/** …and, for a scheduled order, no earlier than this long past its pickup time. */
+const DEFAULT_ACCEPT_GRACE_MINUTES = 15;
 
 type ExpiryReason = 'payment_timeout' | 'not_accepted';
 
@@ -56,6 +60,23 @@ export class OrderExpiryService {
   }
 
   /**
+   * How long a paid-for (held) order may wait for the kitchen to accept it
+   * (`ORDER_ACCEPT_TTL_MINUTES`). Counted from the moment the hold landed.
+   */
+  get acceptTtlMinutes(): number {
+    return this.minutes('ORDER_ACCEPT_TTL_MINUTES', DEFAULT_ACCEPT_TTL_MINUTES);
+  }
+
+  /**
+   * A scheduled order is the kitchen's to accept up to its pickup time, plus
+   * this much (`ORDER_ACCEPT_GRACE_MINUTES`): a pre-order for the morning
+   * placed the night before is not abandoned at 23:30.
+   */
+  get acceptGraceMinutes(): number {
+    return this.minutes('ORDER_ACCEPT_GRACE_MINUTES', DEFAULT_ACCEPT_GRACE_MINUTES);
+  }
+
+  /**
    * Every minute rather than every five: the point is to free the pickup
    * slot, and a slot released four minutes late is a slot somebody else
    * could not book. One indexed query when there is nothing to do.
@@ -65,31 +86,54 @@ export class OrderExpiryService {
     const now = Date.now();
     const cutoff = new Date(now - this.ttlMinutes * 60_000);
     const pickupCutoff = new Date(now - UNACCEPTED_GRACE_MINUTES * 60_000);
+    const heldCutoff = new Date(now - this.acceptTtlMinutes * 60_000);
+    const heldPickupCutoff = new Date(now - this.acceptGraceMinutes * 60_000);
 
     const stale = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.CREATED,
         OR: [
-          // A card payment was started and never went through.
-          { payments: { some: {} }, createdAt: { lt: cutoff } },
+          // A card payment was started and never went through. Measured from
+          // the latest attempt as well as from the order: a customer who is
+          // still on the bank's payment page is not expired under them.
+          {
+            payments: {
+              some: {},
+              none: { OR: [{ status: 'REQUIRES_ACTION' }, { createdAt: { gte: cutoff } }] },
+            },
+            createdAt: { lt: cutoff },
+          },
           // Paying on pickup there is nothing to wait for: CREATED only means
           // "the kitchen has not taken it yet", hours ahead for a scheduled
           // order. The payment timeout used to expire these after fifteen
           // minutes — every pre-order for the morning died overnight. Only an
           // order the kitchen never took, well past its time, is let go.
           { payments: { none: {} }, pickupAt: { lt: pickupCutoff } },
+          // Paid for — the amount is held on the card — and the kitchen never
+          // accepted it: after its own window, and for a scheduled order not
+          // before its pickup time has come and gone. The hold is released.
+          {
+            payments: { some: { status: 'REQUIRES_ACTION', updatedAt: { lt: heldCutoff } } },
+            pickupAt: { lt: heldPickupCutoff },
+          },
         ],
       },
-      select: { id: true, _count: { select: { payments: true } } },
+      select: {
+        id: true,
+        _count: { select: { payments: true } },
+        payments: { where: { status: 'REQUIRES_ACTION' }, select: { id: true }, take: 1 },
+      },
       take: BATCH_SIZE,
       orderBy: { createdAt: 'asc' },
     });
     if (stale.length === 0) return 0;
 
     let released = 0;
-    for (const { id, _count } of stale) {
+    for (const { id, _count, payments } of stale) {
       try {
-        await this.expire(id, _count.payments > 0 ? 'payment_timeout' : 'not_accepted');
+        const reason: ExpiryReason =
+          payments.length > 0 ? 'not_accepted' : _count.payments > 0 ? 'payment_timeout' : 'not_accepted';
+        await this.expire(id, reason);
         released += 1;
       } catch (err) {
         // One wedged order must not stop the sweep — the next tick retries.
@@ -99,6 +143,12 @@ export class OrderExpiryService {
 
     this.logger.log(`Expired ${released} order(s) left unpaid or never taken by the kitchen`);
     return released;
+  }
+
+  private minutes(key: string, fallback: number): number {
+    const raw = Number(this.config.get(key));
+    if (!Number.isFinite(raw) || raw <= 0) return fallback;
+    return Math.max(MIN_TTL_MINUTES, Math.floor(raw));
   }
 
   /**
@@ -136,7 +186,11 @@ export class OrderExpiryService {
                 reason,
                 ...(reason === 'payment_timeout'
                   ? { ttlMinutes: this.ttlMinutes }
-                  : { graceMinutes: UNACCEPTED_GRACE_MINUTES }),
+                  : {
+                      graceMinutes: UNACCEPTED_GRACE_MINUTES,
+                      acceptTtlMinutes: this.acceptTtlMinutes,
+                      acceptGraceMinutes: this.acceptGraceMinutes,
+                    }),
               } satisfies Prisma.InputJsonValue,
             },
           },

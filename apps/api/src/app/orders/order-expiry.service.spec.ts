@@ -210,7 +210,11 @@ describe('OrderExpiryService', () => {
       const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
       expect(where.status).toBe('CREATED');
       const [cardBranch] = where.OR;
-      expect(cardBranch.payments).toEqual({ some: {} });
+      // Not an order whose card is held, and not one with a payment attempt
+      // still inside the window — the customer may be on the bank's page.
+      expect(cardBranch.payments.some).toEqual({});
+      expect(cardBranch.payments.none.OR[0]).toEqual({ status: 'REQUIRES_ACTION' });
+      expect((cardBranch.payments.none.OR[1].createdAt.gte as Date).getTime()).toBe(cardBranch.createdAt.lt.getTime());
       // The cutoff is twenty minutes behind whenever the sweep ran, which
       // is somewhere in [before, after]. Bracketing both ends keeps this
       // honest without depending on how long the call took.
@@ -234,25 +238,56 @@ describe('OrderExpiryService', () => {
       expect((payOnPickup.pickupAt.lt as Date).getTime()).toBeLessThanOrEqual(before - 60 * 60_000 + 5_000);
     });
 
+    /**
+     * A held order is paid for: it gets its own, longer window for the kitchen
+     * to accept it, and a scheduled one is never let go before its pickup time
+     * has passed.
+     */
+    it('gives a held order its own acceptance window, past its pickup time', async () => {
+      const h = harness({ env: { ORDER_ACCEPT_TTL_MINUTES: '40', ORDER_ACCEPT_GRACE_MINUTES: '20' } });
+      const before = Date.now();
+
+      await h.service.sweep();
+      const after = Date.now();
+
+      const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
+      const held = where.OR[2];
+      expect(held.payments.some.status).toBe('REQUIRES_ACTION');
+      const heldCutoff = (held.payments.some.updatedAt.lt as Date).getTime();
+      expect(heldCutoff).toBeGreaterThanOrEqual(before - 40 * 60_000);
+      expect(heldCutoff).toBeLessThanOrEqual(after - 40 * 60_000);
+      const pickupCutoff = (held.pickupAt.lt as Date).getTime();
+      expect(pickupCutoff).toBeGreaterThanOrEqual(before - 20 * 60_000);
+      expect(pickupCutoff).toBeLessThanOrEqual(after - 20 * 60_000);
+    });
+
+    it('defaults the acceptance window to 30 minutes and 15 past pickup', () => {
+      const h = harness();
+      expect(h.service.acceptTtlMinutes).toBe(30);
+      expect(h.service.acceptGraceMinutes).toBe(15);
+    });
+
     it('says why each order went: an unfinished payment or a kitchen that never took it', async () => {
       const h = harness();
       h.prisma.order.findMany.mockResolvedValue([
-        { id: 'card', _count: { payments: 1 } },
-        { id: 'counter', _count: { payments: 0 } },
+        { id: 'card', _count: { payments: 1 }, payments: [] },
+        { id: 'counter', _count: { payments: 0 }, payments: [] },
+        { id: 'held', _count: { payments: 1 }, payments: [{ id: 'hold-1' }] },
       ]);
       const expire = jest.spyOn(h.service, 'expire').mockResolvedValue(true);
 
-      await expect(h.service.sweep()).resolves.toBe(2);
+      await expect(h.service.sweep()).resolves.toBe(3);
 
       expect(expire).toHaveBeenCalledWith('card', 'payment_timeout');
       expect(expire).toHaveBeenCalledWith('counter', 'not_accepted');
+      expect(expire).toHaveBeenCalledWith('held', 'not_accepted');
     });
 
     it('keeps going when one order refuses to expire', async () => {
       const h = harness();
       h.prisma.order.findMany.mockResolvedValue([
-        { id: 'bad', _count: { payments: 1 } },
-        { id: 'good', _count: { payments: 1 } },
+        { id: 'bad', _count: { payments: 1 }, payments: [] },
+        { id: 'good', _count: { payments: 1 }, payments: [] },
       ]);
       h.tx.order.updateMany.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue({ count: 1 });
 
