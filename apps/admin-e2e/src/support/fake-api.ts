@@ -90,6 +90,21 @@ const STAFF = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
+/** The same person as the Staff page sees them: one role, a list of stores. */
+export const STAFF_MEMBER = {
+  userId: STAFF.userId,
+  email: STAFF.email,
+  phone: null,
+  name: STAFF.name,
+  role: 'STAFF',
+  blocked: false,
+  addedAt: STAFF.createdAt,
+  stores: [{ id: STORE.id, name: STORE.name }],
+  kdsPinStoreId: null,
+  hasKdsPin: false,
+  editable: true,
+};
+
 const USER = {
   id: 'user-1',
   email: 'owner@takeaway.md',
@@ -178,6 +193,8 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
       if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 });
       return json(route, { expiresAt: null });
     }
+    if (path === '/admin/staff') return json(route, [STAFF_MEMBER]);
+    if (/^\/admin\/staff\/[^/]+$/.test(path)) return json(route, STAFF_MEMBER);
     if (path.endsWith('/staff')) return json(route, [STAFF]);
     if (path.endsWith('/owner')) return json(route, null);
 

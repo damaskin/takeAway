@@ -133,16 +133,22 @@ test.describe('kitchen PINs', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/staff');
 
+    // The Staff page lists people; the PIN lives on the person's own page.
+    await page.getByRole('link', { name: /Ion/ }).click();
+    await expect(page).toHaveURL(/\/staff\/user-2$/);
+
     const pins = page.getByRole('region', { name: 'PIN для кухни' });
     await expect(pins).toBeVisible();
-    await expect(pins.getByText('/login/pin')).toBeVisible();
-    await pins.getByRole('textbox', { name: 'PIN: Ion' }).fill('4321');
+    await expect(pins.getByText('PIN не задан')).toBeVisible();
+    await expect(pins.getByRole('combobox', { name: 'Точка для PIN' })).toHaveValue(STORE.id);
+    await pins.getByRole('textbox', { name: 'PIN' }).fill('4321');
     await pins.getByRole('button', { name: 'Задать PIN' }).click();
 
     await expect
       .poll(() => puts)
       .toEqual([{ url: `/api/admin/stores/${STORE.id}/staff/user-2/kds-pin`, body: { pin: '4321' } }]);
-    await expect(pins.getByText('PIN задан')).toBeVisible();
+    await expect(pins.getByText(`PIN открывает планшет кухни точки «${STORE.name}».`)).toBeVisible();
+    await expect(pins.getByRole('button', { name: 'Сменить PIN' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('staff-kitchen-pins.png'), fullPage: true });
   });
 });
