@@ -164,6 +164,30 @@ final productDetailProvider = FutureProvider.family<ProductDetail, String>((ref,
   }
 });
 
+/// The product as one store sells it: without the options that store has run
+/// out of. For the product screen and quick add, where the customer chooses
+/// what to order. A store that does not sell the product (another brand's,
+/// or a branch it is not listed in) answers 404; the brand-wide copy is
+/// shown then, so a shared link still opens, and the cart says where it
+/// cannot be ordered.
+final storeProductProvider = FutureProvider.family<ProductDetail, ({String productId, String? storeId})>((
+  ref,
+  key,
+) async {
+  final api = ref.watch(apiProvider);
+  try {
+    if (key.storeId == null) return await api.product(key.productId);
+    try {
+      return await api.product(key.productId, store: key.storeId);
+    } on Object catch (error) {
+      if (ApiError.from(error).kind != ApiErrorKind.notFound) rethrow;
+      return await api.product(key.productId);
+    }
+  } on Object catch (error) {
+    throw ApiError.from(error);
+  }
+});
+
 final pickupSlotsProvider = FutureProvider.autoDispose.family<List<PickupSlot>, String>((ref, storeId) async {
   try {
     return await ref.watch(apiProvider).pickupSlots(storeId);

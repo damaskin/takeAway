@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/format/time.dart';
+import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
@@ -60,9 +61,10 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     // in between and its option is then gone from the menu. A product that
     // was opened before is fetched again, so the screen offers only what
     // can be ordered now.
-    if (ref.read(productDetailProvider(widget.productId)).hasValue) {
+    final key = (productId: widget.productId, storeId: ref.read(activeStoreIdProvider));
+    if (ref.read(storeProductProvider(key)).hasValue) {
       Future.microtask(() {
-        if (mounted) ref.invalidate(productDetailProvider(widget.productId));
+        if (mounted) ref.invalidate(storeProductProvider(key));
       });
     }
   }
@@ -148,7 +150,9 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(productDetailProvider(widget.productId));
+    // As the store being browsed sells it: options it ran out of are not offered.
+    final key = (productId: widget.productId, storeId: ref.watch(activeStoreIdProvider));
+    final async = ref.watch(storeProductProvider(key));
     final product = async.valueOrNull;
     if (product != null) _initDefaults(product);
     final preview = product ?? widget.preview;
@@ -190,10 +194,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
               transform: Matrix4.translationValues(0, -24, 0),
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               child: async.hasError && preview == null
-                  ? ErrorState(
-                      error: async.error!,
-                      onRetry: () => ref.invalidate(productDetailProvider(widget.productId)),
-                    )
+                  ? ErrorState(error: async.error!, onRetry: () => ref.invalidate(storeProductProvider(key)))
                   : _Details(
                       preview: preview,
                       product: product,

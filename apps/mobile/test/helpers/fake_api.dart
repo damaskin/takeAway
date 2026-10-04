@@ -319,8 +319,10 @@ class FakeApi extends Fake implements TakeAwayApi {
   });
 
   @override
-  Future<ProductDetail> product(String idOrSlug) async {
+  Future<ProductDetail> product(String idOrSlug, {String? store}) async {
+    productStores.add(store);
     final detail = idOrSlug == 'p_latte' ? latte() : croissant();
+    final soldOut = {...this.soldOut, ...?soldOutAt[store]};
     if (soldOut.isEmpty) return detail;
     // What the API does for an add-in marked out of stock: the option is
     // left out, the product stays.
@@ -336,6 +338,13 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   /// Ids of options whose add-in has run out since the test started.
   final Set<String> soldOut = {};
+
+  /// Ids of options one store has run out of: left out only when the product
+  /// is fetched for that store.
+  final Map<String, Set<String>> soldOutAt = {};
+
+  /// The `store` each product lookup was made for.
+  final List<String?> productStores = [];
 
   /// Fixed per instance so a test can compare what it tapped with what was sent.
   late final DateTime _slotsStart = () {

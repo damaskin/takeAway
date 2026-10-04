@@ -600,9 +600,10 @@ class _TakeAwayApi implements TakeAwayApi {
   }
 
   @override
-  Future<ProductDetail> product(String idOrSlug) async {
+  Future<ProductDetail> product(String idOrSlug, {String? store}) async {
     final _extra = <String, dynamic>{};
-    final queryParameters = <String, dynamic>{};
+    final queryParameters = <String, dynamic>{r'store': store};
+    queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};
     const Map<String, dynamic>? _data = null;
     final _options = _setStreamType<ProductDetail>(
