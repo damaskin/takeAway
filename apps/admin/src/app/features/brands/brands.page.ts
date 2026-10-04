@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocalDatePipe } from '@takeaway/i18n';
+import { BRAND_PLANS, type BrandPlan, DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
 
 import {
   AdminBrand,
@@ -125,7 +126,56 @@ interface PendingDecision {
                   <dt style="color: var(--color-text-tertiary)">{{ 'admin.brands.products' | translate }}</dt>
                   <dd style="margin: 2px 0 0; color: var(--color-text-primary)">{{ b._count.products }}</dd>
                 </div>
+                <div>
+                  <dt style="color: var(--color-text-tertiary)">{{ 'admin.brands.plan.label' | translate }}</dt>
+                  <dd class="flex items-center" style="margin: 2px 0 0; gap: 8px; color: var(--color-text-primary)">
+                    <span class="plan-pill" [attr.data-plan]="b.plan">{{
+                      'admin.plans.names.' + b.plan | translate
+                    }}</span>
+                    {{ percent(b.commissionBps) }} %
+                    @if (planEdit()?.id !== b.id) {
+                      <button type="button" class="plan-edit" (click)="editPlan(b)">
+                        {{ 'admin.brands.plan.change' | translate }}
+                      </button>
+                    }
+                  </dd>
+                </div>
               </dl>
+
+              @if (planEdit(); as edit) {
+                @if (edit.id === b.id) {
+                  <form class="plan-form" (submit)="$event.preventDefault(); savePlan(b)">
+                    <label>
+                      <span>{{ 'admin.brands.plan.label' | translate }}</span>
+                      <select (change)="setDraftPlan($any($event.target).value)">
+                        @for (p of planOptions; track p) {
+                          <option [value]="p" [selected]="edit.plan === p">
+                            {{ 'admin.plans.names.' + p | translate }} · {{ defaultPercent(p) }} %
+                          </option>
+                        }
+                      </select>
+                    </label>
+                    <label>
+                      <span>{{ 'admin.brands.plan.commission' | translate }}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="0.5"
+                        [value]="edit.percent"
+                        (input)="setDraftPercent($any($event.target).value)"
+                      />
+                    </label>
+                    <button type="submit" class="plan-save" [disabled]="actingOnId() === b.id || !planDraftValid()">
+                      {{ 'common.save' | translate }}
+                    </button>
+                    <button type="button" class="plan-cancel" (click)="planEdit.set(null)">
+                      {{ 'common.cancel' | translate }}
+                    </button>
+                    <span class="plan-hint">{{ 'admin.brands.plan.hint' | translate }}</span>
+                  </form>
+                }
+              }
 
               @if (b.moderationNote) {
                 <p
@@ -219,6 +269,84 @@ interface PendingDecision {
         color: white;
         border-color: var(--color-caramel);
       }
+      .plan-pill {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        background: var(--color-surface-variant);
+        color: var(--color-text-secondary);
+      }
+      .plan-pill[data-plan='PRO'] {
+        background: var(--color-espresso);
+        color: white;
+      }
+      .plan-edit,
+      .plan-cancel {
+        padding: 2px 8px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-button);
+        background: transparent;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--color-caramel);
+        cursor: pointer;
+      }
+      .plan-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 10px;
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 12px;
+        background: var(--color-cream);
+        font-family: var(--font-sans);
+        font-size: 13px;
+      }
+      .plan-form label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        color: var(--color-text-secondary);
+      }
+      .plan-form select,
+      .plan-form input {
+        height: 34px;
+        padding: 0 8px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-input);
+        background: var(--color-foam);
+        font-family: var(--font-sans);
+        font-size: 13px;
+      }
+      .plan-form input {
+        width: 90px;
+      }
+      .plan-save {
+        height: 34px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: var(--radius-button);
+        background: var(--color-caramel);
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .plan-save:disabled {
+        opacity: 0.5;
+      }
+      .plan-cancel {
+        height: 34px;
+        padding: 0 12px;
+        color: var(--color-text-secondary);
+      }
+      .plan-hint {
+        flex-basis: 100%;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
       .status-pill[data-status='PENDING'] {
         background: var(--color-amber);
         color: white;
@@ -246,6 +374,15 @@ export class AdminBrandsPage {
   readonly actingOnId = signal<string | null>(null);
   /** The rejection or revert waiting in the dialog. */
   readonly decision = signal<PendingDecision | null>(null);
+  /** The brand whose plan is being edited, with the draft. */
+  readonly planEdit = signal<{ id: string; plan: BrandPlan; percent: string } | null>(null);
+  readonly planOptions = BRAND_PLANS;
+  readonly planDraftValid = computed(() => {
+    const edit = this.planEdit();
+    if (!edit) return false;
+    const value = Number(edit.percent);
+    return edit.percent.trim() !== '' && Number.isFinite(value) && value >= 0 && value <= 50;
+  });
 
   readonly counts = computed(() => {
     const c: Record<Tab, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0 };
@@ -261,6 +398,50 @@ export class AdminBrandsPage {
 
   setTab(t: Tab): void {
     this.tab.set(t);
+  }
+
+  percent(bps: number): string {
+    return String(bps / 100);
+  }
+
+  defaultPercent(plan: BrandPlan): number {
+    return DEFAULT_COMMISSION_BPS[plan] / 100;
+  }
+
+  editPlan(brand: AdminBrand): void {
+    this.error.set(null);
+    this.planEdit.set({ id: brand.id, plan: brand.plan, percent: this.percent(brand.commissionBps) });
+  }
+
+  /** A new plan brings its own rate; the platform admin can still type another one. */
+  setDraftPlan(value: string): void {
+    const plan = BRAND_PLANS.find((p) => p === value);
+    if (!plan) return;
+    this.planEdit.update((edit) => (edit ? { ...edit, plan, percent: String(this.defaultPercent(plan)) } : edit));
+  }
+
+  setDraftPercent(value: string): void {
+    this.planEdit.update((edit) => (edit ? { ...edit, percent: value } : edit));
+  }
+
+  savePlan(brand: AdminBrand): void {
+    const edit = this.planEdit();
+    if (!edit || !this.planDraftValid()) return;
+    this.actingOnId.set(brand.id);
+    this.error.set(null);
+    this.brands
+      .setPlan(brand.id, { plan: edit.plan, commissionBps: Math.round(Number(edit.percent) * 100) })
+      .subscribe({
+        next: (updated) => {
+          this.all.update((list) => list.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
+          this.actingOnId.set(null);
+          this.planEdit.set(null);
+        },
+        error: (err) => {
+          this.actingOnId.set(null);
+          this.error.set(this.extractMessage(err));
+        },
+      });
   }
 
   approve(brand: AdminBrand): void {

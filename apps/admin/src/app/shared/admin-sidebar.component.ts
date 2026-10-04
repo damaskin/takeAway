@@ -2,6 +2,7 @@ import { Component, DestroyRef, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import type { PlanFeature } from '@takeaway/shared-types';
 import { filter } from 'rxjs/operators';
 import { BrandLogoComponent } from '@takeaway/ui-kit';
 
@@ -11,7 +12,8 @@ import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
 import { PwaService } from '../core/pwa/pwa.service';
 
-import { ADMIN_ROLES, type AdminRole } from '../core/permissions/permissions';
+import { ADMIN_ROLES, type AdminRole, NAV_PLAN_FEATURE } from '../core/permissions/permissions';
+import { PlanAccess } from '../core/plans/plan-access.service';
 
 interface NavItem {
   icon: string;
@@ -24,6 +26,8 @@ interface NavItem {
   roles?: ReadonlyArray<AdminRole>;
   /** A live counter shown next to the label. */
   badge?: 'pendingBrands' | 'pendingOrders';
+  /** The plan feature the section needs; without it the item shows a PRO lock and opens the upgrade page. */
+  planFeature?: PlanFeature;
 }
 
 /**
@@ -68,6 +72,14 @@ interface NavItem {
               [title]="'admin.kitchen.pendingBadge' | translate: { count: count }"
               [attr.aria-label]="'admin.kitchen.pendingBadge' | translate: { count: count }"
               >{{ count }}</span
+            >
+          }
+          @if (item.planFeature && !plans.has(item.planFeature)) {
+            <span
+              class="admin-nav-lock"
+              [title]="'admin.plans.lockedHint' | translate"
+              [attr.aria-label]="'admin.plans.lockedHint' | translate"
+              >{{ 'admin.plans.proBadge' | translate }}</span
             >
           }
           @if (item.badge === 'pendingBrands' && pendingBrands(); as count) {
@@ -139,6 +151,15 @@ interface NavItem {
         line-height: 22px;
         text-align: center;
       }
+      .admin-nav-lock {
+        padding: 2px 7px;
+        border-radius: 9999px;
+        border: 1px solid var(--color-border);
+        color: var(--color-text-tertiary);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+      }
       .admin-nav-badge-live {
         background: var(--color-berry);
       }
@@ -172,6 +193,7 @@ export class AdminSidebarComponent {
   private readonly brands = inject(BrandsService);
   private readonly orderAlerts = inject(OrderAlertsService);
   readonly pwa = inject(PwaService);
+  readonly plans = inject(PlanAccess);
 
   /** Brands waiting for a platform admin's decision; zero hides the badge. */
   readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
@@ -223,10 +245,29 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.riders,
     },
     { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ADMIN_ROLES.staff },
-    { icon: '🎟', label: 'admin.nav.promo', link: '/promo', roles: ADMIN_ROLES.promo },
+    {
+      icon: '🎟',
+      label: 'admin.nav.promo',
+      link: '/promo',
+      roles: ADMIN_ROLES.promo,
+      planFeature: NAV_PLAN_FEATURE.promo,
+    },
     { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ADMIN_ROLES.giftCards },
-    { icon: '📣', label: 'admin.nav.campaigns', link: '/campaigns', roles: ADMIN_ROLES.campaigns },
+    {
+      icon: '📣',
+      label: 'admin.nav.campaigns',
+      link: '/campaigns',
+      roles: ADMIN_ROLES.campaigns,
+      planFeature: NAV_PLAN_FEATURE.campaigns,
+    },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
+    {
+      icon: '🧑‍🤝‍🧑',
+      label: 'admin.nav.customers',
+      link: '/customers',
+      roles: ADMIN_ROLES.customers,
+      planFeature: NAV_PLAN_FEATURE.customers,
+    },
     { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ADMIN_ROLES.brands, badge: 'pendingBrands' },
     { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ADMIN_ROLES.settings },
     { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ADMIN_ROLES.integrations },

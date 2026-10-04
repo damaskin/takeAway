@@ -5,3 +5,4 @@ export * from './lib/order';
 export * from './lib/loyalty';
 export * from './lib/realtime';
 export * from './lib/staff';
+export * from './lib/plan';

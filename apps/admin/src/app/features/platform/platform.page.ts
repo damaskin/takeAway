@@ -88,6 +88,7 @@ const REFRESH_MS = 60_000;
               <tr>
                 <th>{{ 'admin.platform.cols.brand' | translate }}</th>
                 <th>{{ 'admin.platform.cols.status' | translate }}</th>
+                <th>{{ 'admin.platform.cols.plan' | translate }}</th>
                 <th class="num">{{ 'admin.platform.cols.stores' | translate }}</th>
                 <th class="num">{{ 'admin.platform.cols.orders' | translate }}</th>
                 <th class="num">{{ 'admin.platform.cols.revenue' | translate }}</th>
@@ -103,6 +104,14 @@ const REFRESH_MS = 60_000;
                       'admin.brands.status.' + b.moderationStatus | translate
                     }}</span>
                   </td>
+                  <td class="plat-plan">
+                    @if (b.plan) {
+                      {{ 'admin.plans.names.' + b.plan | translate }}
+                      @if (b.commissionBps !== undefined) {
+                        <span class="plat-muted">· {{ b.commissionBps / 100 }} %</span>
+                      }
+                    }
+                  </td>
                   <td class="num">{{ b.stores }}</td>
                   <td class="num">{{ b.orders }}</td>
                   <td class="num">{{ money(b.revenueCents, b.currency) }}</td>
@@ -114,7 +123,7 @@ const REFRESH_MS = 60_000;
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="6" class="plat-muted" style="padding: 24px 0; text-align: center">
+                  <td colspan="7" class="plat-muted" style="padding: 24px 0; text-align: center">
                     {{ 'admin.platform.empty' | translate }}
                   </td>
                 </tr>
@@ -238,6 +247,9 @@ const REFRESH_MS = 60_000;
         background: var(--color-surface-variant);
         color: var(--color-text-secondary);
       }
+      .plat-plan {
+        white-space: nowrap;
+      }
       .plat-badge[data-status='APPROVED'] {
         background: #7bc4a433;
         color: #3e8868;
@@ -306,8 +318,8 @@ export class PlatformPage {
       this.tick();
       untracked(() => {
         // No brandId: a platform admin's scope is every brand.
-        this.analytics.summary(null, days).subscribe({ next: (s) => this.summary.set(s) });
-        this.analytics.orderStatuses(null, days).subscribe({ next: (s) => this.statuses.set(s) });
+        this.analytics.summary(null, { days }).subscribe({ next: (s) => this.summary.set(s) });
+        this.analytics.orderStatuses(null, { days }).subscribe({ next: (s) => this.statuses.set(s) });
         this.analytics.brandPerformance(days).subscribe({ next: (rows) => this.brands.set(rows) });
         this.brandsApi.loadPendingCount();
       });

@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
+import type { BrandPlan } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -15,6 +16,9 @@ export interface AdminBrand {
   submittedAt: string;
   moderatedAt: string | null;
   createdAt: string;
+  plan: BrandPlan;
+  /** Platform commission in basis points (1000 = 10 %). */
+  commissionBps: number;
   owner: { id: string; email: string | null; name: string | null; phone: string | null } | null;
   _count: { stores: number; products: number };
 }
@@ -23,6 +27,12 @@ export interface SetBrandModerationRequest {
   status: BrandModerationStatus;
   /** Required by the API when rejecting: it is the reason the owner is emailed. */
   note?: string;
+}
+
+export interface SetBrandPlanRequest {
+  plan: BrandPlan;
+  /** Basis points; left out, the plan's default applies. */
+  commissionBps?: number;
 }
 
 export interface CreateBrandRequest {
@@ -63,6 +73,11 @@ export class BrandsService {
 
   setModeration(id: string, body: SetBrandModerationRequest): Observable<AdminBrand> {
     return this.http.patch<AdminBrand>(`${this.api.baseUrl}/admin/brands/${id}/moderation`, body);
+  }
+
+  /** SUPER_ADMIN only: moves a brand to another plan or commission. */
+  setPlan(id: string, body: SetBrandPlanRequest): Observable<AdminBrand> {
+    return this.http.patch<AdminBrand>(`${this.api.baseUrl}/admin/brands/${id}/plan`, body);
   }
 
   /**

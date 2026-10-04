@@ -16,6 +16,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { SecretCipherModule } from './common/crypto/secret-cipher.module';
 import { httpLoggerParams } from './common/observability/http-logger';
 import { FeaturesModule } from './config/config.module';
+import { CustomersModule } from './customers/customers.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
@@ -28,6 +29,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
+import { PlansModule } from './plans/plans.module';
 import { PosModule } from './pos/pos.module';
 import { PromoModule } from './promo/promo.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -47,6 +49,7 @@ import { UsersModule } from './users/users.module';
     FeaturesModule,
     UsersModule,
     AuthModule,
+    PlansModule,
     BusinessModule,
     BrandOwnerModule,
     CatalogModule,
@@ -69,6 +72,7 @@ import { UsersModule } from './users/users.module';
     ReferralsModule,
     CampaignsModule,
     AnalyticsModule,
+    CustomersModule,
     HealthModule,
   ],
   controllers: [AppController],

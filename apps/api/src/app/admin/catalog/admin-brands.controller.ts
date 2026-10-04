@@ -10,6 +10,7 @@ import { AdminCatalogService } from './admin-catalog.service';
 import { BrandModerationService } from './brand-moderation.service';
 import { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
 import { SetBrandModerationDto } from './dto/admin-brand-moderation.dto';
+import { SetBrandPlanDto } from './dto/admin-brand-plan.dto';
 import { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
 @ApiTags('admin: brands')
@@ -70,6 +71,13 @@ export class AdminBrandsController {
   @Roles(Role.SUPER_ADMIN)
   setModeration(@Param('id') id: string, @Body() dto: SetBrandModerationDto) {
     return this.moderation.setModeration(id, dto);
+  }
+
+  /** The brand's business plan and commission — the platform admin's call alone. */
+  @Patch(':id/plan')
+  @Roles(Role.SUPER_ADMIN)
+  setPlan(@Param('id') id: string, @Body() dto: SetBrandPlanDto) {
+    return this.admin.setBrandPlan(id, dto);
   }
 
   @Get(':id/owner')

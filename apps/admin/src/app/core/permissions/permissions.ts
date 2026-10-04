@@ -8,6 +8,8 @@
  * flow but get bounced from any feature route.
  */
 
+import type { PlanFeature } from '@takeaway/shared-types';
+
 export type AdminRole = 'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'MENU_EDITOR' | 'STAFF' | 'RIDER';
 
 export type NavKey =
@@ -26,6 +28,7 @@ export type NavKey =
   | 'giftCards'
   | 'campaigns'
   | 'analytics'
+  | 'customers'
   | 'brands'
   | 'settings'
   | 'integrations'
@@ -61,6 +64,7 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   giftCards: [SA, BA],
   campaigns: [SA, BA],
   analytics: [SA, BA],
+  customers: [SA, BA],
   brands: [SA],
   settings: [SA, BA],
   integrations: [SA, BA],
@@ -100,6 +104,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   giftCards: '/gift-cards',
   campaigns: '/campaigns',
   analytics: '/analytics',
+  customers: '/customers',
   brands: '/brands',
   settings: '/settings',
   integrations: '/integrations',
@@ -109,6 +114,17 @@ const NAV_LINKS: Record<NavKey, string> = {
 export function navLink(key: NavKey): string {
   return NAV_LINKS[key];
 }
+
+/**
+ * Sections only some business plans include. The role decides whether a
+ * section is in the menu at all; the plan decides whether it opens or shows
+ * the upgrade page instead. Mirrors `@RequiresPlanFeature` on the API.
+ */
+export const NAV_PLAN_FEATURE: Partial<Record<NavKey, PlanFeature>> = {
+  promo: 'promo',
+  campaigns: 'campaigns',
+  customers: 'customers',
+};
 
 /**
  * What a role may do to stores beyond looking at them. Mirrors the

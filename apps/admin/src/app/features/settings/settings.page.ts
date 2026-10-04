@@ -2,10 +2,12 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business.service';
 import { apiErrorCode } from '../../core/http/api-error';
 import { MyBrand, SettingsService } from '../../core/settings/settings.service';
+import { PlanCardComponent } from './plan-card.component';
 
 /**
  * Brand settings — the BRAND_ADMIN manages their own brand identity
@@ -28,7 +30,7 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
 @Component({
   selector: 'app-admin-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, TranslatePipe, PlanCardComponent],
   styles: [
     `
       .status-pill[data-status='PENDING'] {
@@ -208,6 +210,9 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
             </p>
           }
         </form>
+        @if (brand()!.plan; as plan) {
+          <app-plan-card [plan]="plan" [commissionBps]="brand()!.commissionBps" [platformAdmin]="isPlatformAdmin()" />
+        }
       } @else if (error()) {
         <p style="color: var(--color-berry)">{{ error() }}</p>
       }
@@ -218,7 +223,9 @@ export class AdminSettingsPage {
   private readonly settings = inject(SettingsService);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  private readonly auth = inject(AuthStore);
 
+  readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
   readonly themeFields = THEME_FIELDS;
   readonly currencies = BRAND_CURRENCIES;
   readonly brand = signal<MyBrand | null>(null);

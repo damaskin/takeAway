@@ -1,6 +1,9 @@
+import { planHasFeature } from '@takeaway/shared-types';
+
 import {
   ADMIN_ROLES,
   type AdminRole,
+  NAV_PLAN_FEATURE,
   type NavKey,
   canAccess,
   canOnStores,
@@ -137,5 +140,21 @@ describe('canOnStores', () => {
     expect(canOnStores('STAFF', 'edit')).toBe(false);
     expect(canOnStores('STAFF', 'manageStaff')).toBe(false);
     expect(canOnStores(null, 'edit')).toBe(false);
+  });
+
+  it('gates only real sections by plan, and only PRO features', () => {
+    for (const [key, feature] of Object.entries(NAV_PLAN_FEATURE)) {
+      expect(ALL_KEYS).toContain(key);
+      expect(planHasFeature('BASIC', feature)).toBe(false);
+      expect(planHasFeature('PRO', feature)).toBe(true);
+    }
+    expect(NAV_PLAN_FEATURE.giftCards).toBeUndefined();
+    expect(NAV_PLAN_FEATURE.analytics).toBeUndefined();
+  });
+
+  it('keeps the customer base with the brand owner and the platform', () => {
+    expect(canAccess('BRAND_ADMIN', 'customers')).toBe(true);
+    expect(canAccess('STORE_MANAGER', 'customers')).toBe(false);
+    expect(canAccess('STAFF', 'customers')).toBe(false);
   });
 });

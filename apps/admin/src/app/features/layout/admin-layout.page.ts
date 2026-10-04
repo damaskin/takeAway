@@ -1,4 +1,15 @@
-import { Component, ElementRef, HostListener, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  HostListener,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
@@ -12,6 +23,7 @@ import { KitchenModeService } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
+import { PlanAccess } from '../../core/plans/plan-access.service';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
 import { BrandStatusBannerComponent } from './brand-status-banner.component';
 import { OrderAlertsComponent } from './order-alerts.component';
@@ -323,6 +335,7 @@ export class AdminLayoutPage implements OnInit {
   readonly activeBrand = inject(ActiveBrandService);
   readonly orderAlerts = inject(OrderAlertsService);
   private readonly realtime = inject(KitchenRealtimeService);
+  private readonly plans = inject(PlanAccess);
 
   /** Roles that take orders on get the chime toggle; the others hear nothing anyway. */
   readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
@@ -366,6 +379,18 @@ export class AdminLayoutPage implements OnInit {
       const path = pathOf(e.urlAfterRedirects);
       if (path !== this.lastPath) this.scroller()?.nativeElement.scrollTo({ top: 0 });
       this.lastPath = path;
+    });
+
+    // Plan-gated sections decide at navigation whether to open or show the
+    // upgrade page. When the brand in view changes plan (another brand
+    // picked, or a platform admin moved it) the current page is matched again.
+    let previousPlan: string | null = null;
+    effect(() => {
+      const plan = this.plans.plan();
+      if (previousPlan !== null && plan !== null && plan !== previousPlan) {
+        untracked(() => void this.router.navigateByUrl(this.router.url, { onSameUrlNavigation: 'reload' }));
+      }
+      if (plan !== null) previousPlan = plan;
     });
   }
 
