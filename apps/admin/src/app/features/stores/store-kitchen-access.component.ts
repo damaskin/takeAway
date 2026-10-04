@@ -13,8 +13,8 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
  * was no screen to set one, so staff could only sign in with email and
  * password on a shared tablet.
  *
- * Shown in the store editor and on the Staff page, next to the roster the
- * PINs belong to — owners looked for them there first.
+ * Shown in the store editor. The Staff page sets the same PIN per person,
+ * on that person's page.
  */
 @Component({
   selector: 'app-store-kitchen-access',
@@ -50,11 +50,9 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
       } @else if (people().length === 0) {
         <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
           {{ 'admin.stores.kitchen.empty' | translate }}
-          @if (showStaffLink()) {
-            <a routerLink="/staff" style="color: var(--color-caramel)">{{
-              'admin.stores.kitchen.toStaff' | translate
-            }}</a>
-          }
+          <a routerLink="/staff" style="color: var(--color-caramel)">{{
+            'admin.stores.kitchen.toStaff' | translate
+          }}</a>
         </p>
       } @else {
         <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
@@ -142,10 +140,6 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
 })
 export class StoreKitchenAccessComponent {
   readonly storeId = input.required<string>();
-  /** Off on the Staff page, where the invite form is right below. */
-  readonly showStaffLink = input(true);
-  /** Any change re-reads the roster — the Staff page passes its own list. */
-  readonly reloadOn = input<unknown>(null);
 
   private readonly staff = inject(StaffService);
   private readonly translate = inject(TranslateService);
@@ -167,7 +161,6 @@ export class StoreKitchenAccessComponent {
   constructor() {
     effect(() => {
       this.storeId();
-      this.reloadOn();
       untracked(() => this.load());
     });
   }

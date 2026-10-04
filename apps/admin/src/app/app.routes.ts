@@ -240,6 +240,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/staff/staff-owner.page').then((m) => m.StaffOwnerPage),
       },
       {
+        path: 'staff/:userId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'staff' satisfies NavKey },
+        loadComponent: () => import('./features/staff/staff-member.page').then((m) => m.StaffMemberPage),
+      },
+      {
         path: 'promo',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'promo' satisfies NavKey },

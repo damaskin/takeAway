@@ -4,3 +4,4 @@ export * from './lib/catalog';
 export * from './lib/order';
 export * from './lib/loyalty';
 export * from './lib/realtime';
+export * from './lib/staff';
