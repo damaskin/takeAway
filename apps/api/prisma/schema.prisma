@@ -322,12 +322,13 @@ model User {
   // referredByUserId points at the user whose code unlocked this account's
   // first-order bonus. Locked at the moment the apply endpoint fires; we
   // never overwrite it.
-  referralCode        String?    @unique
+  referralCode        String?            @unique
   referredByUserId    String?
-  referredBy          User?      @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
-  referees            User[]     @relation("ReferredBy")
-  referralsAsReferrer Referral[] @relation("ReferralsAsReferrer")
-  referralsAsReferee  Referral[] @relation("ReferralsAsReferee")
+  referredBy          User?              @relation("ReferredBy", fields: [referredByUserId], references: [id], onDelete: SetNull)
+  referees            User[]             @relation("ReferredBy")
+  referralsAsReferrer Referral[]         @relation("ReferralsAsReferrer")
+  referralsAsReferee  Referral[]         @relation("ReferralsAsReferee")
+  campaignDeliveries  CampaignDelivery[]
 
   @@index([createdAt])
   @@index([referredByUserId])
@@ -445,28 +446,40 @@ model Brand {
   @@index([ownerId])
 }
 
-/// Brand-driven outbound campaign. v1 is synchronous "send now" — admin
-/// composes copy in the dashboard and the service fans out via push /
-/// Telegram / email immediately. Counters are stamped after the fan-out
-/// so the admin can see how many users we reached vs. opted out.
+/// Brand-driven outbound campaign. The admin composes copy in the dashboard;
+/// "send" flips the row to SENDING and a background run fans it out via
+/// push (app → web → Telegram fallback) / Telegram / email. Counters are
+/// refreshed after every batch from the per-recipient CampaignDelivery rows,
+/// so a retry only reaches the people who did not get it the first time.
 model Campaign {
-  id          String           @id @default(cuid())
-  brandId     String
-  title       String
-  body        String
-  channel     CampaignChannel
-  audience    CampaignAudience @default(ALL)
-  status      CampaignStatus   @default(DRAFT)
+  id             String           @id @default(cuid())
+  brandId        String
+  title          String
+  body           String
+  channel        CampaignChannel
+  audience       CampaignAudience @default(ALL)
+  status         CampaignStatus   @default(DRAFT)
   /// Target / sent / failed counters stamped during send.
-  targetCount Int              @default(0)
-  sentCount   Int              @default(0)
-  failedCount Int              @default(0)
-  scheduledAt DateTime?
-  sentAt      DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  targetCount    Int              @default(0)
+  sentCount      Int              @default(0)
+  failedCount    Int              @default(0)
+  /// Recipients with no way to reach them (no app/web push token, no
+  /// Telegram chat, no email for the EMAIL channel).
+  noChannelCount Int              @default(0)
+  /// Recipients who turned promotions off in their profile.
+  optedOutCount  Int              @default(0)
+  /// Last delivery error or the reason the whole run failed. Diagnostic text.
+  lastError      String?
+  scheduledAt    DateTime?
+  /// When the current (or last) run started — a SENDING row whose
+  /// `updatedAt` stops moving is treated as stuck and may be retried.
+  startedAt      DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  deliveries CampaignDelivery[]
 
   @@index([brandId, status])
   @@index([brandId, createdAt])
@@ -479,7 +492,9 @@ enum CampaignChannel {
 }
 
 enum CampaignAudience {
-  /// Every customer in the brand's order history.
+  /// Every customer with any tie to the brand: an order at one of its
+  /// stores in any status, a cart there, or a gift card of the brand they
+  /// bought. Blocked users and staff accounts are excluded.
   ALL
   /// Customers who placed at least one paid order.
   HAS_ORDERED
@@ -493,6 +508,34 @@ enum CampaignStatus {
   SENDING
   SENT
   FAILED
+}
+
+/// One row per (campaign, recipient): what happened to that person on the
+/// last attempt. Makes retries idempotent — SENT rows are skipped.
+model CampaignDelivery {
+  id         String                  @id @default(cuid())
+  campaignId String
+  userId     String
+  outcome    CampaignDeliveryOutcome
+  /// Transports that accepted the message, comma-separated (fcm,webpush,telegram,email).
+  via        String?
+  error      String?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId, outcome])
+  @@index([userId])
+}
+
+enum CampaignDeliveryOutcome {
+  SENT
+  FAILED
+  NO_CHANNEL
+  OPTED_OUT
 }
 
 model Store {

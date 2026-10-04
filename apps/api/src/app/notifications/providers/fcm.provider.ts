@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { isAxiosError } from 'axios';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import type { PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
+import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
@@ -55,28 +55,45 @@ export class FcmPushProvider implements PushProvider {
     }
   }
 
+  isConfigured(): boolean {
+    return this.account !== null;
+  }
+
   async send(recipient: PushRecipient, message: PushMessage): Promise<boolean> {
-    const account = this.account;
-    if (!account) return false;
+    return (await this.attempt(recipient, message)).status === 'sent';
+  }
+
+  async attempt(recipient: PushRecipient, message: PushMessage): Promise<PushAttempt> {
     const tokens = recipient.pushTokens.filter((t) => t.deviceType === 'ANDROID' || t.deviceType === 'IOS');
-    if (tokens.length === 0) return false;
+    if (tokens.length === 0) return { status: 'skipped', reason: 'no_target' };
+    const account = this.account;
+    if (!account) return { status: 'skipped', reason: 'not_configured' };
 
     let bearer: string;
     try {
       bearer = await this.bearer(account);
     } catch (err) {
-      this.logger.warn(`FCM auth failed: ${(err as Error).message}`);
-      return false;
+      const error = `FCM auth failed: ${describeError(err)}`;
+      this.logger.warn(error);
+      return { status: 'failed', error };
     }
 
     const results = await Promise.all(tokens.map((t) => this.sendOne(account, bearer, t.token, message)));
-    const dead = tokens.filter((_, i) => results[i] === 'gone').map((t) => t.token);
+    const dead = tokens.filter((_, i) => results[i]?.status === 'gone').map((t) => t.token);
     if (dead.length > 0) {
+      this.logger.log(`Pruning ${dead.length} unregistered FCM token(s) of user ${recipient.userId}`);
       await this.prisma.device
         .deleteMany({ where: { userId: recipient.userId, pushToken: { in: dead } } })
-        .catch((err: Error) => this.logger.debug(`Could not prune dead FCM tokens: ${err.message}`));
+        .catch((err: Error) => this.logger.warn(`Could not prune dead FCM tokens: ${err.message}`));
     }
-    return results.includes('sent');
+    if (results.some((r) => r.status === 'sent')) return { status: 'sent' };
+
+    const failure = results.find((r): r is { status: 'failed'; error: string } => r.status === 'failed');
+    const error = failure
+      ? failure.error
+      : `FCM: all ${dead.length} token(s) unregistered — app uninstalled or token rotated, removed`;
+    this.logger.warn(`FCM push to user ${recipient.userId} not delivered: ${error}`);
+    return { status: 'failed', error };
   }
 
   private async sendOne(
@@ -84,7 +101,7 @@ export class FcmPushProvider implements PushProvider {
     bearer: string,
     token: string,
     message: PushMessage,
-  ): Promise<'sent' | 'gone' | 'failed'> {
+  ): Promise<{ status: 'sent' } | { status: 'gone' } | { status: 'failed'; error: string }> {
     const data: Record<string, string> = { kind: message.kind };
     if (message.orderId) data['orderId'] = message.orderId;
     try {
@@ -109,7 +126,7 @@ export class FcmPushProvider implements PushProvider {
         },
         { headers: { Authorization: `Bearer ${bearer}` }, timeout: 10_000 },
       );
-      return 'sent';
+      return { status: 'sent' };
     } catch (err) {
       if (isAxiosError(err)) {
         const status = err.response?.status;
@@ -117,14 +134,17 @@ export class FcmPushProvider implements PushProvider {
         // UNREGISTERED (404) — uninstalled or rotated; INVALID_ARGUMENT on a
         // token that was never an FCM token.
         if (status === 404 || code === 'UNREGISTERED' || (status === 400 && code === 'INVALID_ARGUMENT')) {
-          return 'gone';
+          return { status: 'gone' };
         }
         if (status === 401) this.accessToken = null;
-        this.logger.debug(`FCM send failed: ${status ?? ''} ${code ?? err.message}`);
-      } else {
-        this.logger.debug(`FCM send failed: ${(err as Error).message}`);
+        const detail = (err.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+        const error = `FCM ${status ?? 'network'} ${code ?? err.message}${detail ? `: ${detail}` : ''}`;
+        this.logger.warn(`FCM send failed: ${error}`);
+        return { status: 'failed', error };
       }
-      return 'failed';
+      const error = `FCM: ${describeError(err)}`;
+      this.logger.warn(`FCM send failed: ${error}`);
+      return { status: 'failed', error };
     }
   }
 
@@ -164,4 +184,13 @@ export class FcmPushProvider implements PushProvider {
     this.accessToken = { value, expiresAt: Date.now() + Math.max(60, ttl - 60) * 1000 };
     return value;
   }
+}
+
+function describeError(err: unknown): string {
+  if (isAxiosError(err)) {
+    const body = err.response?.data as { error?: string; error_description?: string } | undefined;
+    const reason = body?.error_description ?? body?.error;
+    return `${err.response?.status ?? 'network'} ${reason ?? err.message}`;
+  }
+  return err instanceof Error ? err.message : String(err);
 }

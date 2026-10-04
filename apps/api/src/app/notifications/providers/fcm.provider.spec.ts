@@ -109,6 +109,32 @@ describe('FcmPushProvider', () => {
     expect(post.mock.calls.filter(([url]) => String(url).includes('oauth2'))).toHaveLength(1);
   });
 
+  it('reports why a send failed instead of a bare false', async () => {
+    post.mockImplementation((url: string) => {
+      if (url.includes('oauth2')) return Promise.resolve({ data: { access_token: 't', expires_in: 3600 } });
+      const response = {
+        status: 403,
+        data: { error: { status: 'PERMISSION_DENIED', message: 'SenderId mismatch' } },
+      } as AxiosResponse;
+      return Promise.reject(new AxiosError('Forbidden', '403', undefined, undefined, response));
+    });
+    const { provider, deleteMany } = make(configured);
+    await expect(provider.attempt(recipient([{ token: 'a', deviceType: 'ANDROID' }]), message)).resolves.toEqual({
+      status: 'failed',
+      error: 'FCM 403 PERMISSION_DENIED: SenderId mismatch',
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('says when it is not configured rather than failing', async () => {
+    const { provider } = make({});
+    expect(provider.isConfigured()).toBe(false);
+    await expect(provider.attempt(recipient([{ token: 'a', deviceType: 'IOS' }]), message)).resolves.toEqual({
+      status: 'skipped',
+      reason: 'not_configured',
+    });
+  });
+
   it('prunes tokens FCM reports as unregistered', async () => {
     post.mockImplementation((url: string, body: { message?: { token: string } }) => {
       if (url.includes('oauth2')) return Promise.resolve({ data: { access_token: 't', expires_in: 3600 } });

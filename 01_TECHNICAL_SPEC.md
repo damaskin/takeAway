@@ -351,9 +351,9 @@ takeaway/
 - Статусы delivery-флоу: после `READY` → `OUT_FOR_DELIVERY` → `DELIVERED` (см. 3.11)
 - **Live-таймер ETA** на базе `currentEtaSeconds` точки + prep-time товаров
 - Real-time через WebSocket (Socket.io); fallback polling — на стороне клиента
-- **Уведомления** (web push + Telegram; SMS — резерв):
-  - `PAID` — receipt email + push + welcome (для нового customer)
-  - `READY` — push + Telegram (с order code и pickup инструкцией)
+- **Уведомления** (app push FCM + web push, Telegram-бот как запасной канал; SMS — резерв). Статусы, о которых сообщаем клиенту: `ACCEPTED`, `READY`, `OUT_FOR_DELIVERY`, `DELIVERED`, `CANCELLED`, `EXPIRED` — на языке клиента:
+  - `PAID` — receipt email + welcome (для нового customer)
+  - `READY` — push (с order code и pickup инструкцией); кому push не дошёл — Telegram
   - `RIDER_ASSIGNED` — Telegram push на rider, push на customer
   - Маркетинговые broadcast — через Campaigns (см. 3.9)
 - **Geofencing**: `POST /orders/:id/location` принимает координаты клиента → автотриггер `GEOFENCE_NEAR` (300м) и `GEOFENCE_HERE` (50м или явный «I'm here»)
@@ -384,11 +384,12 @@ takeaway/
 
 ### 3.8. Уведомления
 
-- **Push** (web/PWA/TMA): через **VAPID** (`web-push`), регистрация устройств в `Device`. FCM/APNS — для M6 Flutter.
+- **Push**: мобильное приложение — **FCM HTTP v1** (Android напрямую, iOS через APNs-ключ в Firebase; сервисный аккаунт `FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`), браузер — **VAPID** (`web-push`). Устройства — в `Device`; токены, которые FCM называет `UNREGISTERED`, и подписки браузера с ответом 404/410 удаляются при отправке.
+- **Правило доставки клиенту** (`NotificationsService.deliver`): app push и web push параллельно; если ни один не принят (нет токенов, транспорт не настроен, отказ) и у пользователя есть `telegramUserId` — сообщение от Telegram-бота. Одинаково для статусов заказа и для маркетинговых рассылок с каналом PUSH, поэтому клиент Mini App (без токенов) получает бот, а пользователь приложения — один push без дубля в Telegram. Сбои логируются на уровне warn с причиной.
 - **Email**: nodemailer/SMTP — welcome (на первом PAID), receipt (на PAID), password reset.
-- **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе, customer статусы заказов.
+- **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе; customer — статусы заказов и рассылки, когда app/web push недоступен.
 - **Per-user prefs**: `notifyOrderUpdates` + `notifyPromotions` через `PATCH /me/notifications`. Operational push (rider/brand staff) prefs не учитывает.
-- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D.
+- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D. Учитывается `notifyPromotions`.
 
 ### 3.9. Admin panel
 
@@ -399,7 +400,12 @@ takeaway/
 - **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
-- **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
+- **Marketing campaigns**: composer + send (push/Telegram/email broadcast). Работают на бренде из переключателя (SUPER_ADMIN — любой бренд, `?brandId=`).
+  - **Аудитории**: `ALL` — все клиенты (`role = CUSTOMER`, не заблокированы), у которых есть связь с брендом: заказ в его точке в любом статусе, корзина в его точке или купленная подарочная карта бренда (бот и приложение у платформы общие, поэтому вход через них с брендом не связывает); `HAS_ORDERED` — хотя бы один оплаченный заказ; `INACTIVE_30D` — платили, но не за последние 30 дней.
+  - **Предпросмотр** до отправки (`GET /admin/campaigns/preview`): сколько человек в аудитории, сколько достижимо и через что (приложение / браузер / Telegram / email), сколько без канала и сколько отписались, и какие транспорты настроены на сервере.
+  - **Тест себе** (`POST /admin/campaigns/test`): текст уходит только текущему админу по тем же правилам, без учёта его отписки.
+  - **Отправка в фоне**: `POST /admin/campaigns/:id/send` сразу переводит рассылку в `SENDING` и отвечает; рассылка идёт пачками по 50, по каждому получателю пишется `CampaignDelivery` (SENT / FAILED / NO_CHANNEL / OPTED_OUT), счётчики обновляются после каждой пачки. Итог — `SENT`, если доставлено хоть одному, иначе `FAILED` с `lastError`. Падение рассылки → `FAILED` с текстом ошибки; `SENDING` без движения дольше 10 минут крон переводит в `FAILED`.
+  - **Повтор**: можно отправить снова `FAILED`, зависшую `SENDING` и `SENT` с ошибками; получатели, которым уже доставлено, пропускаются. Пустая аудитория — 400 `CAMPAIGN_NO_RECIPIENTS`, повторный запуск во время отправки — 409 `CAMPAIGN_IN_PROGRESS`.
 - **Analytics**: summary, revenue, top-products, cohort, stores. `mv_orders_daily` materialized view (PostgreSQL) с уникальным индексом `(brandId, storeId, day)` агрегирует non-CANCELLED orders и питает summary/revenue/stores; refresh каждые 5 минут через `AnalyticsRefreshService` (`REFRESH MATERIALIZED VIEW CONCURRENTLY`). top-products и cohort пока читают live `OrderItem`/`User`.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
@@ -561,7 +567,11 @@ GiftCardRedemption (id, giftCardId, orderId unique, amountCents)
 Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
           audience[ALL|HAS_ORDERED|INACTIVE_30D],
           status[DRAFT|SCHEDULED|SENDING|SENT|FAILED],
-          targetCount, sentCount, failedCount, scheduledAt?, sentAt?)
+          targetCount, sentCount, failedCount, noChannelCount, optedOutCount,
+          lastError?, scheduledAt?, startedAt?, sentAt?)
+CampaignDelivery (id, campaignId, userId, outcome[SENT|FAILED|NO_CHANNEL|OPTED_OUT],
+                  via? ("fcm,webpush" | "telegram" | "email"), error?)
+  unique (campaignId, userId) — повтор рассылки пропускает уже доставленных
 ```
 
 ### 5.6. Analytics (materialized views)
@@ -752,9 +762,11 @@ GET                    /admin/orders                     (фильтрация �
 POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
 GET/POST/PATCH         /admin/promo[/:id/status]
 GET/POST/DELETE        /admin/gift-cards[/:id]
-GET/POST               /admin/campaigns
-POST                   /admin/campaigns/:id/send         (синхронный fan-out)
-DELETE                 /admin/campaigns/:id
+GET/POST               /admin/campaigns                  ?brandId= (SUPER_ADMIN — обязательно)
+GET                    /admin/campaigns/preview          ?brandId=&audience=&channel= → охват по каналам + настроенные транспорты
+POST                   /admin/campaigns/test             { title, body, channel } → { outcome, via[], error? } — только себе
+POST                   /admin/campaigns/:id/send         → SENDING сразу, рассылка в фоне; также «Повторить» для FAILED/зависших/с ошибками
+DELETE                 /admin/campaigns/:id              (только DRAFT)
 
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
 GET                    /admin/analytics/summary?days=7|14|30   // цифры за период + изменения к предыдущему такому же

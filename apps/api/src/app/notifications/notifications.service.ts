@@ -4,7 +4,7 @@ import type { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApnsPushProvider } from './providers/apns.provider';
 import { FcmPushProvider } from './providers/fcm.provider';
-import type { PushMessage, PushProvider, PushRecipient } from './providers/push-provider.interface';
+import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './providers/push-provider.interface';
 import { TelegramPushProvider } from './providers/telegram-push.provider';
 import { WebPushProvider } from './providers/web-push.provider';
 
@@ -27,6 +27,64 @@ export interface OrderStatusPushOptions {
   expiry?: OrderExpiryInfo;
 }
 
+/** A transport that accepted a message. */
+export type DeliveryVia = 'fcm' | 'webpush' | 'telegram';
+
+/**
+ * What happened to one message for one person across every transport.
+ * `no_channel` — nothing to deliver to (no usable device token, no Telegram
+ * chat, or the transports they have are not configured on this server).
+ */
+export interface DeliveryResult {
+  outcome: 'sent' | 'failed' | 'no_channel';
+  via: DeliveryVia[];
+  /** Why delivery failed — or, on a Telegram fallback, why device push did not land. */
+  error?: string;
+}
+
+/**
+ * `push` — app (FCM) and web push, then the Telegram bot when neither landed.
+ * `telegram` — the Telegram bot only.
+ */
+export type DeliveryMode = 'push' | 'telegram';
+
+/** Which transports have credentials on this server. */
+export interface TransportStatus {
+  fcm: boolean;
+  webpush: boolean;
+  telegram: boolean;
+}
+
+/** The user columns a {@link PushRecipient} is built from. */
+export const PUSH_RECIPIENT_SELECT = {
+  id: true,
+  locale: true,
+  telegramUserId: true,
+  devices: {
+    where: { pushToken: { not: null } },
+    select: { pushToken: true, type: true },
+  },
+} as const;
+
+interface RecipientRow {
+  id: string;
+  locale: 'EN' | 'RU';
+  telegramUserId: bigint | null;
+  devices: Array<{ pushToken: string | null; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' }>;
+}
+
+/** Builds the provider-facing recipient from a row selected with {@link PUSH_RECIPIENT_SELECT}. */
+export function toPushRecipient(user: RecipientRow): PushRecipient {
+  return {
+    userId: user.id,
+    telegramUserId: user.telegramUserId,
+    locale: user.locale,
+    pushTokens: user.devices
+      .filter((d): d is { pushToken: string; type: RecipientRow['devices'][number]['type'] } => Boolean(d.pushToken))
+      .map((d) => ({ token: d.pushToken, deviceType: d.type })),
+  };
+}
+
 /** Transitions the customer hears about; everything else they see live in the app. */
 const NOTIFIED_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
   'ACCEPTED',
@@ -42,14 +100,14 @@ const NOTIFIED_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
  * today — the call site decides which status changes warrant a push
  * (accepting every status would spam the user).
  *
- * Providers are called in parallel; each swallows its own errors and
- * returns a boolean for logging. A total failure doesn't propagate, so
- * a Telegram/APNs outage never blocks an order transition.
+ * Customer messages go through {@link NotificationsService.deliver}: app
+ * and web push first, the Telegram bot as the fallback. Providers swallow
+ * their own errors, so a Telegram/FCM outage never blocks an order
+ * transition; whatever did not land is logged at warn with the reason.
  */
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
-  private readonly providers: PushProvider[];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -57,9 +115,7 @@ export class NotificationsService {
     private readonly apns: ApnsPushProvider,
     private readonly fcm: FcmPushProvider,
     private readonly webpush: WebPushProvider,
-  ) {
-    this.providers = [this.telegram, this.apns, this.fcm, this.webpush];
-  }
+  ) {}
 
   /** Push a customer-facing notification for an order status transition. */
   async notifyOrderStatus(
@@ -77,14 +133,15 @@ export class NotificationsService {
     const message = this.buildOrderStatusMessage(order, newStatus, recipient.locale, options);
     if (!message) return;
 
-    // Parallel fan-out; log provider results for debugging but never throw.
-    const results = await Promise.allSettled(
-      this.providers.map((p) => p.send(recipient, message).then((ok) => ({ id: p.id, ok }))),
-    );
-    for (const r of results) {
-      if (r.status === 'rejected') {
-        this.logger.warn(`Push provider rejected: ${(r.reason as Error)?.message}`);
-      }
+    // App / web push first, the Telegram bot when neither landed — most
+    // customers order from the Mini App and have no device token at all.
+    const result = await this.deliver(recipient, message, 'push');
+    if (result.outcome !== 'sent') {
+      this.logger.warn(
+        `Order ${order.orderCode} ${newStatus} push not delivered to user ${order.userId}: ${
+          result.outcome === 'no_channel' ? 'no push token or Telegram chat' : result.error
+        }`,
+      );
     }
   }
 
@@ -204,51 +261,72 @@ export class NotificationsService {
   }
 
   /**
-   * Generic broadcast helper used by the marketing campaign engine. Sends
-   * a `generic`-kind PushMessage to a single user via the requested
-   * channel. Returns true when at least one transport accepted the
-   * message; the campaign service uses that to update sent/failed counters.
+   * Delivers one message to one person and says how it went.
    *
-   * Honors the user's `notifyPromotions` flag — opted-out users are
-   * silently skipped (treated as "no recipient" rather than "failure").
+   * In `push` mode the device transports run in parallel — FCM for the
+   * mobile app (Android and iOS), Web Push for the browser; the APNs stub
+   * never sends. When none of them accepted the message and the user has a
+   * Telegram chat with the bot, the bot sends it instead. So a Mini App
+   * customer (no device tokens) hears from the bot, an app user gets a
+   * single app push rather than a push *and* a bot message, and an app user
+   * whose token died still gets the message.
+   *
+   * Never throws; a provider that rejects is reported as a failure.
+   */
+  async deliver(recipient: PushRecipient, message: PushMessage, mode: DeliveryMode = 'push'): Promise<DeliveryResult> {
+    const errors: string[] = [];
+
+    if (mode === 'push') {
+      const device: Array<PushProvider & { id: DeliveryVia | 'apns' }> = [this.fcm, this.webpush, this.apns];
+      const attempts = await Promise.all(device.map((p) => this.safeAttempt(p, recipient, message)));
+      const via: DeliveryVia[] = [];
+      device.forEach((p, i) => {
+        if (attempts[i]?.status === 'sent' && p.id !== 'apns') via.push(p.id);
+      });
+      if (via.length > 0) return { outcome: 'sent', via };
+      for (const a of attempts) if (a.status === 'failed') errors.push(a.error);
+    }
+
+    const tg = await this.safeAttempt(this.telegram, recipient, message);
+    if (tg.status === 'sent') {
+      return errors.length > 0
+        ? { outcome: 'sent', via: ['telegram'], error: errors.join('; ') }
+        : { outcome: 'sent', via: ['telegram'] };
+    }
+    if (tg.status === 'failed') errors.push(tg.error);
+    if (errors.length > 0) return { outcome: 'failed', via: [], error: errors.join('; ') };
+    return { outcome: 'no_channel', via: [] };
+  }
+
+  /** Which transports this server can use — the admin shows it next to a campaign's reach. */
+  transportStatus(): TransportStatus {
+    return {
+      fcm: this.fcm.isConfigured(),
+      webpush: this.webpush.isConfigured(),
+      telegram: this.telegram.isConfigured(),
+    };
+  }
+
+  /**
+   * Sends one marketing message to one user — the admin's "send a test to
+   * me". Honors the user's `notifyPromotions` flag unless `ignoreOptOut`
+   * (the test send: the admin asked for it themselves).
    */
   async sendCampaignTo(
     userId: string,
     channel: 'PUSH' | 'TELEGRAM',
     title: string,
     body: string,
-  ): Promise<'sent' | 'opted_out' | 'failed'> {
+    options: { ignoreOptOut?: boolean } = {},
+  ): Promise<DeliveryResult | { outcome: 'opted_out'; via: DeliveryVia[] }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        locale: true,
-        telegramUserId: true,
-        notifyPromotions: true,
-        devices: { where: { pushToken: { not: null } }, select: { pushToken: true, type: true } },
-      },
+      select: { ...PUSH_RECIPIENT_SELECT, notifyPromotions: true },
     });
-    if (!user || !user.notifyPromotions) return 'opted_out';
-
-    const recipient: PushRecipient = {
-      userId: user.id,
-      telegramUserId: user.telegramUserId,
-      locale: user.locale,
-      pushTokens: user.devices
-        .filter((d): d is { pushToken: string; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' } => Boolean(d.pushToken))
-        .map((d) => ({ token: d.pushToken, deviceType: d.type })),
-    };
-    const message: PushMessage = { kind: 'generic', title, body };
-
-    if (channel === 'TELEGRAM') {
-      const ok = await this.telegram.send(recipient, message).catch(() => false);
-      return ok ? 'sent' : 'failed';
-    }
-    // PUSH — fan out across APNs / FCM / WebPush; success = any one accepted.
-    const results = await Promise.allSettled(
-      [this.apns, this.fcm, this.webpush].map((p) => p.send(recipient, message)),
-    );
-    return results.some((r) => r.status === 'fulfilled' && r.value === true) ? 'sent' : 'failed';
+    if (!user) return { outcome: 'no_channel', via: [] };
+    if (!user.notifyPromotions && !options.ignoreOptOut) return { outcome: 'opted_out', via: [] };
+    const mode: DeliveryMode = channel === 'TELEGRAM' ? 'telegram' : 'push';
+    return this.deliver(toPushRecipient(user), { kind: 'generic', title, body }, mode);
   }
 
   /**
@@ -288,27 +366,24 @@ export class NotificationsService {
   private async loadRecipient(userId: string): Promise<(PushRecipient & { notifyOrderUpdates: boolean }) | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        locale: true,
-        telegramUserId: true,
-        notifyOrderUpdates: true,
-        devices: {
-          where: { pushToken: { not: null } },
-          select: { pushToken: true, type: true },
-        },
-      },
+      select: { ...PUSH_RECIPIENT_SELECT, notifyOrderUpdates: true },
     });
     if (!user) return null;
-    return {
-      userId: user.id,
-      telegramUserId: user.telegramUserId,
-      locale: user.locale,
-      notifyOrderUpdates: user.notifyOrderUpdates,
-      pushTokens: user.devices
-        .filter((d): d is { pushToken: string; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' } => Boolean(d.pushToken))
-        .map((d) => ({ token: d.pushToken, deviceType: d.type })),
-    };
+    return { ...toPushRecipient(user), notifyOrderUpdates: user.notifyOrderUpdates };
+  }
+
+  private async safeAttempt(
+    provider: PushProvider,
+    recipient: PushRecipient,
+    message: PushMessage,
+  ): Promise<PushAttempt> {
+    try {
+      return await provider.attempt(recipient, message);
+    } catch (err) {
+      const error = `${provider.id}: ${err instanceof Error ? err.message : String(err)}`;
+      this.logger.warn(`Push provider threw — ${error}`);
+      return { status: 'failed', error };
+    }
   }
 
   /**

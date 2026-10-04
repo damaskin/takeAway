@@ -1,17 +1,26 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { API_CONFIG } from '../../core/api/api.config';
-import { extractMessage } from '../../core/http/extract-message';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { apiErrorMessage } from '../../core/http/api-error';
+import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
 import type { CampaignRow } from './campaign.types';
+
+/** How often the list re-reads itself while a campaign is going out. */
+const POLL_MS = 3000;
 
 /**
  * Brand-admin marketing campaigns. Compose a title + body, pick a
- * channel and audience, save the draft, then click Send to fan it out.
- * Send is synchronous in v1 — the row's status flips to SENDING then
- * to SENT/FAILED with counters once the broadcast finishes.
+ * channel and audience, save the draft, then click Send. Sending runs in
+ * the background: the row flips to SENDING at once and the list polls
+ * until it settles on SENT or FAILED, showing who got it, who could not
+ * be reached and the last error. A failed, stuck or partly failed
+ * campaign can be sent again — only the people it missed get it.
+ *
+ * Works on the brand picked in the top bar (SUPER_ADMIN picks any).
  */
 @Component({
   selector: 'app-admin-campaigns',
@@ -28,14 +37,22 @@ import type { CampaignRow } from './campaign.types';
             {{ 'admin.campaigns.subtitle' | translate }}
           </p>
         </div>
-        <a
-          routerLink="/campaigns/new"
-          class="flex items-center"
-          style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
-        >
-          {{ 'admin.campaigns.createTitle' | translate }}
-        </a>
+        @if (activeBrand.activeId()) {
+          <a
+            routerLink="/campaigns/new"
+            class="flex items-center"
+            style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
+          >
+            {{ 'admin.campaigns.createTitle' | translate }}
+          </a>
+        }
       </header>
+
+      @if (!activeBrand.activeId() && activeBrand.loaded()) {
+        <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
+          {{ activeBrand.loadError() ?? ('admin.campaigns.noBrand' | translate) }}
+        </p>
+      }
 
       <!-- List -->
       <div
@@ -48,7 +65,7 @@ import type { CampaignRow } from './campaign.types';
               <th style="text-align: left; padding: 10px 14px">{{ 'admin.campaigns.col.channel' | translate }}</th>
               <th style="text-align: left; padding: 10px 14px">{{ 'admin.campaigns.col.audience' | translate }}</th>
               <th style="text-align: left; padding: 10px 14px">{{ 'admin.campaigns.col.status' | translate }}</th>
-              <th style="text-align: right; padding: 10px 14px">{{ 'admin.campaigns.col.delivered' | translate }}</th>
+              <th style="text-align: left; padding: 10px 14px">{{ 'admin.campaigns.col.delivered' | translate }}</th>
               <th></th>
             </tr>
           </thead>
@@ -57,12 +74,12 @@ import type { CampaignRow } from './campaign.types';
               <tr style="border-top: 1px solid var(--color-border-light); vertical-align: top">
                 <td style="padding: 10px 14px">
                   <div
-                    style="font-weight: 600; color: var(--color-espresso); margin-bottom: 2px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                    style="font-weight: 600; color: var(--color-espresso); margin-bottom: 2px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
                   >
                     {{ c.title }}
                   </div>
                   <div
-                    style="color: var(--color-text-secondary); font-size: 12px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                    style="color: var(--color-text-secondary); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
                   >
                     {{ c.body }}
                   </div>
@@ -71,22 +88,63 @@ import type { CampaignRow } from './campaign.types';
                 <td style="padding: 10px 14px">{{ 'admin.campaigns.audiences.' + c.audience | translate }}</td>
                 <td style="padding: 10px 14px">
                   <span
-                    style="padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600"
+                    style="padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap"
                     [style.background]="statusBg(c.status)"
                     [style.color]="statusColor(c.status)"
                     >{{ 'admin.campaigns.status.' + c.status | translate }}</span
                   >
                 </td>
-                <td style="padding: 10px 14px; text-align: right">{{ c.sentCount }} / {{ c.targetCount }}</td>
-                <td style="padding: 10px 14px; text-align: right">
+                <td style="padding: 10px 14px; min-width: 200px">
                   @if (c.status === 'DRAFT') {
+                    <span style="color: var(--color-text-secondary)">—</span>
+                  } @else {
+                    <div style="font-weight: 600; color: var(--color-espresso)">
+                      {{ 'admin.campaigns.result.sent' | translate: { sent: c.sentCount, target: c.targetCount } }}
+                    </div>
+                    <div
+                      class="flex flex-wrap"
+                      style="gap: 2px 10px; font-size: 12px; color: var(--color-text-secondary)"
+                    >
+                      @if (c.failedCount > 0) {
+                        <span style="color: var(--color-berry)">{{
+                          'admin.campaigns.result.failed' | translate: { count: c.failedCount }
+                        }}</span>
+                      }
+                      @if (c.noChannelCount > 0) {
+                        <span>{{ 'admin.campaigns.result.noChannel' | translate: { count: c.noChannelCount } }}</span>
+                      }
+                      @if (c.optedOutCount > 0) {
+                        <span>{{ 'admin.campaigns.result.optedOut' | translate: { count: c.optedOutCount } }}</span>
+                      }
+                    </div>
+                    @if (c.lastError) {
+                      <div
+                        style="margin-top: 4px; font-size: 12px; color: var(--color-berry); max-width: 320px; overflow-wrap: anywhere"
+                        [attr.title]="c.lastError"
+                      >
+                        {{ 'admin.campaigns.result.lastError' | translate: { error: c.lastError } }}
+                      </div>
+                    }
+                  }
+                </td>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap">
+                  @if (c.sendable) {
                     <button
                       (click)="send(c)"
                       [disabled]="sending() === c.id"
                       style="background: var(--color-caramel); color: white; padding: 4px 12px; border-radius: 6px; font-weight: 600"
                     >
-                      {{ (sending() === c.id ? 'admin.campaigns.sending' : 'admin.campaigns.send') | translate }}
+                      {{
+                        (sending() === c.id
+                          ? 'admin.campaigns.sending'
+                          : c.status === 'DRAFT'
+                            ? 'admin.campaigns.send'
+                            : 'admin.campaigns.retry'
+                        ) | translate
+                      }}
                     </button>
+                  }
+                  @if (c.status === 'DRAFT') {
                     <button
                       (click)="remove(c)"
                       style="margin-left: 8px; background: transparent; color: var(--color-berry); padding: 4px 8px"
@@ -115,29 +173,44 @@ import type { CampaignRow } from './campaign.types';
     </section>
   `,
 })
-export class AdminCampaignsPage {
+export class AdminCampaignsPage implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
+  readonly activeBrand = inject(ActiveBrandService);
 
   readonly rows = signal<CampaignRow[]>([]);
   readonly sending = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor() {
-    this.refresh();
+    // Re-list whenever the active brand changes.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      this.rows.set([]);
+      if (brandId) this.refresh(brandId);
+    });
+    inject(DestroyRef).onDestroy(() => this.stopPolling());
+  }
+
+  ngOnInit(): void {
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
   }
 
   send(c: CampaignRow): void {
     this.sending.set(c.id);
+    this.error.set(null);
     this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/send`, {}).subscribe({
       next: (row) => {
         this.sending.set(null);
         this.rows.update((rs) => rs.map((r) => (r.id === c.id ? row : r)));
+        this.schedulePoll();
       },
       error: (err) => {
         this.sending.set(null);
-        this.error.set(extractMessage(err) ?? this.translate.instant('common.genericError'));
+        this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING));
       },
     });
   }
@@ -145,6 +218,7 @@ export class AdminCampaignsPage {
   remove(c: CampaignRow): void {
     this.http.delete(`${this.api.baseUrl}/admin/campaigns/${c.id}`).subscribe({
       next: () => this.rows.update((rs) => rs.filter((r) => r.id !== c.id)),
+      error: (err) => this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING)),
     });
   }
 
@@ -162,10 +236,31 @@ export class AdminCampaignsPage {
     return 'var(--color-text-secondary)';
   }
 
-  private refresh(): void {
-    this.http.get<CampaignRow[]>(`${this.api.baseUrl}/admin/campaigns`).subscribe({
-      next: (rs) => this.rows.set(rs),
-      error: (err) => this.error.set(extractMessage(err)),
+  private refresh(brandId: string): void {
+    this.http.get<CampaignRow[]>(`${this.api.baseUrl}/admin/campaigns`, { params: { brandId } }).subscribe({
+      next: (rs) => {
+        // The brand may have changed while the request was in flight.
+        if (this.activeBrand.activeId() !== brandId) return;
+        this.rows.set(rs);
+        this.schedulePoll();
+      },
+      error: (err) => this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING)),
     });
+  }
+
+  /** Keeps re-reading the list while anything is SENDING; stops once all settle. */
+  private schedulePoll(): void {
+    this.stopPolling();
+    if (!this.rows().some((r) => r.status === 'SENDING')) return;
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      const brandId = this.activeBrand.activeId();
+      if (brandId) this.refresh(brandId);
+    }, POLL_MS);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) clearTimeout(this.pollTimer);
+    this.pollTimer = null;
   }
 }
