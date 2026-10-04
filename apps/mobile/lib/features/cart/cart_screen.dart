@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,26 +23,39 @@ import 'cart_line.dart';
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
 
+  /// Takes the line out at once and offers to put it back. The undo offer
+  /// shows before the server answers: waiting for the round trip made it
+  /// appear late, and anything else on screen by then closed it.
   Future<void> _remove(BuildContext context, WidgetRef ref, String storeId, CartItem item) async {
     final controller = ref.read(cartProvider(storeId).notifier);
     final l10n = AppLocalizations.of(context);
+    Snack.undo(
+      context,
+      l10n.cartItemRemoved(item.productName),
+      icon: Icons.delete_outline_rounded,
+      actionLabel: l10n.undo,
+      onUndo: () => unawaited(
+        controller
+            .add(
+              productId: item.productId,
+              quantity: item.quantity,
+              variationIds: item.variationIds,
+              modifiers: item.modifiers,
+              notes: item.notes,
+            )
+            .then<void>(
+              (_) {},
+              onError: (Object error) {
+                if (context.mounted) Snack.error(context, error);
+              },
+            ),
+      ),
+    );
     try {
       await controller.remove(item.id);
-      if (!context.mounted) return;
-      Snack.show(
-        context,
-        l10n.cartItemRemoved(item.productName),
-        icon: Icons.delete_outline_rounded,
-        actionLabel: l10n.undo,
-        onAction: () => controller.add(
-          productId: item.productId,
-          quantity: item.quantity,
-          variationIds: item.variationIds,
-          modifiers: item.modifiers,
-          notes: item.notes,
-        ),
-      );
     } on Object catch (error) {
+      // The line is back (the controller resynced); nothing to undo.
+      Snack.dismissUndo();
       if (context.mounted) Snack.error(context, error);
     }
   }
@@ -175,10 +190,25 @@ class CartScreen extends ConsumerWidget {
           ? null
           : SafeArea(
               minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: PrimaryButton(
-                label: l10n.cartCheckout(context.money(cart.subtotalCents, store.currency)),
-                icon: Icons.arrow_forward_rounded,
-                onPressed: () => context.push(Routes.checkout),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!store.isOpen)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        l10n.storeClosedCheckout,
+                        textAlign: TextAlign.center,
+                        style: context.text.bodyMedium?.copyWith(color: brand.berry),
+                      ),
+                    ),
+                  PrimaryButton(
+                    label: l10n.cartCheckout(context.money(cart.subtotalCents, store.currency)),
+                    icon: Icons.arrow_forward_rounded,
+                    onPressed: store.isOpen ? () => context.push(Routes.checkout) : null,
+                  ),
+                ],
               ),
             ),
     );

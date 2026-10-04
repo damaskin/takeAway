@@ -62,13 +62,21 @@ const _signedInOnly = [
   Routes.paymentMethods,
 ];
 
+/// Where the app opens: the intro once, then the stores until the customer
+/// has picked one — where to order comes before what — then the menu.
+String initialLocation({required bool onboarded, required bool hasStore}) {
+  if (!onboarded) return Routes.welcome;
+  return hasStore ? Routes.menu : Routes.stores;
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final sessions = ref.watch(sessionManagerProvider);
-  final onboarded = ref.read(onboardingDoneProvider);
-
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
-    initialLocation: onboarded ? Routes.menu : Routes.welcome,
+    initialLocation: initialLocation(
+      onboarded: ref.read(onboardingDoneProvider),
+      hasStore: ref.read(activeStoreIdProvider) != null,
+    ),
     refreshListenable: sessions,
     redirect: (context, state) {
       final path = state.uri.path;

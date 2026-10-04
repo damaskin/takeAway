@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
+import 'package:takeaway_mobile/app/router.dart';
 import 'package:takeaway_mobile/core/format/time.dart';
 import 'package:takeaway_mobile/features/auth/sign_in_sheet.dart';
 import 'package:takeaway_mobile/features/checkout/checkout_sections.dart';
+import 'package:takeaway_mobile/features/menu/menu_widgets.dart';
 import 'package:takeaway_mobile/features/menu/product_card.dart';
+import 'package:takeaway_mobile/features/stores/stores_screen.dart';
 import 'package:takeaway_mobile/shared/widgets/chips.dart';
 
 import '../helpers/fake_api.dart';
@@ -117,31 +122,64 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('after hours the store reads as closed and checkout only takes a scheduled pickup', (tester) async {
+  testWidgets('a closed store shows no menu, and neither the cart nor checkout takes the order', (tester) async {
     final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
       ..boundCards = [FakeApi.card()]
       ..storeOpenNow = false
       ..seedCart(FakeApi.croissant());
     final h = await pumpApp(tester, api: api);
 
-    expect(find.text('Сейчас закрыто — можно оформить заказ на более позднее время.'), findsOneWidget);
+    expect(find.byType(StoreClosedState), findsOneWidget);
+    expect(find.text('Точка закрыта'), findsOneWidget);
+    expect(find.text('Латте'), findsNothing, reason: 'nothing to browse that cannot be ordered');
+    expect(find.byType(ProductCard), findsNothing);
+    expect(find.byType(CartBar), findsNothing);
     expect(find.byType(EtaChip), findsNothing, reason: 'no ETA promised for a closed store');
     expect(find.text('Закрыто'), findsOneWidget);
 
-    await tester.tap(find.textContaining('1 позиция'));
+    // A cart filled before closing time cannot go to checkout…
+    unawaited(h.container.read(routerProvider).push(Routes.cart));
     await settle(tester);
+    expect(find.textContaining('Точка сейчас закрыта'), findsOneWidget);
     await tester.tap(find.textContaining('К оформлению'));
     await settle(tester);
+    expect(find.text('Оформление'), findsNothing);
 
-    // Starts on "later", and "as soon as possible" does not respond.
-    expect(find.text('Выберите время'), findsNothing);
-    await tester.tap(find.text('Как можно скорее'));
+    // …and checkout reached anyway sends nothing.
+    unawaited(h.container.read(routerProvider).push(Routes.checkout));
     await settle(tester);
+    expect(find.text('Оформление'), findsOneWidget);
+    expect(find.textContaining('Точка сейчас закрыта'), findsOneWidget);
     await tester.tap(find.textContaining('Оплатить'));
     await settle(tester);
-    expect(h.api.created, isEmpty, reason: 'no ASAP order goes out after hours');
-    expect(find.text('Выберите время'), findsOneWidget);
+    expect(h.api.created, isEmpty, reason: 'a closed store takes no order, ASAP or later');
 
+    await h.unmount(tester);
+  });
+
+  testWidgets('the closed store points to another one', (tester) async {
+    final api = FakeApi()..storeOpenNow = false;
+    final h = await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('Выбрать другую точку'));
+    await settle(tester);
+    expect(find.byType(StoresScreen), findsOneWidget);
+    expect(find.text('Заказать здесь'), findsNothing);
+
+    await h.unmount(tester);
+  });
+
+  testWidgets('the menu opens once staff start the shift', (tester) async {
+    final api = FakeApi()..storeOpenNow = false;
+    final h = await pumpApp(tester, api: api);
+    expect(find.byType(StoreClosedState), findsOneWidget);
+
+    api.storeOpenNow = true;
+    h.realtime.handleStoreAvailability({'storeId': 'st_1', 'brandId': 'br_1', 'acceptingOrders': true});
+    await settle(tester);
+
+    expect(find.byType(StoreClosedState), findsNothing);
+    expect(find.text('Латте'), findsOneWidget);
     await h.unmount(tester);
   });
 

@@ -9,6 +9,16 @@ String formatClock(BuildContext context, DateTime time) {
   );
 }
 
+/// Minutes since local midnight as a clock time; 1440 is "24:00", the end
+/// of the day, which `TimeOfDay` cannot hold.
+String formatMinutesOfDay(BuildContext context, int minutes) {
+  if (minutes >= 24 * 60) return '24:00';
+  return MaterialLocalizations.of(context).formatTimeOfDay(
+    TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+    alwaysUse24HourFormat: MediaQuery.maybeAlwaysUse24HourFormatOf(context) ?? true,
+  );
+}
+
 /// Whole minutes, never below one — "ready in 0 min" reads like a bug.
 int minutesCeil(int seconds) => seconds <= 0 ? 1 : (seconds / 60).ceil();
 

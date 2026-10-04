@@ -118,6 +118,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final breakdown = controller.breakdown(cart, store);
     final minOrder = ref.watch(storeDetailProvider(store.id)).valueOrNull?.minOrderCents ?? 0;
     final belowMinimum = minOrder > 0 && cart.subtotalCents < minOrder;
+    // A store that closed while the customer was choosing takes no new
+    // order; one already placed (card declined) can still be paid for.
+    final closed = !store.isOpen && state.placedOrderId == null;
     final readyAt = state.mode == PickupMode.scheduled && state.slot != null
         ? state.slot!
         : DateTime.now().add(Duration(seconds: cart.etaSeconds));
@@ -219,7 +222,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             PrimaryButton(
               loading: state.submitting,
-              onPressed: belowMinimum || store.isInactive || !controller.canPay(cart, store) ? null : _submit,
+              onPressed: belowMinimum || closed || !controller.canPay(cart, store) ? null : _submit,
               label: state.placedOrderId != null && controller.needsCard(cart, store)
                   ? l10n.retryPayment
                   : controller.needsCard(cart, store)
@@ -300,10 +303,9 @@ class _WhenSection extends ConsumerWidget {
               (PickupMode.asap, l10n.pickupAsap, Icons.bolt_rounded),
               (PickupMode.scheduled, l10n.pickupLater, Icons.event_rounded),
             ],
-            disabled: {if (!store.isOpen) PickupMode.asap},
             onChanged: controller.setMode,
           ),
-          if (!store.isOpen)
+          if (!store.isOpen && state.placedOrderId == null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: Row(
@@ -314,12 +316,7 @@ class _WhenSection extends ConsumerWidget {
                     color: brand.berry,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      store.isInactive ? l10n.storeInactiveBanner : l10n.storeClosedBanner,
-                      style: context.text.bodySmall,
-                    ),
-                  ),
+                  Expanded(child: Text(l10n.storeClosedCheckout, style: context.text.bodySmall)),
                 ],
               ),
             ),

@@ -278,14 +278,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storesNoneActive => 'No store is taking orders right now. Check back a little later.';
 
   @override
-  String get storeClosedBanner => 'Closed right now — you can still schedule for later.';
-
-  @override
   String get storeBusyBanner => 'The kitchen is busy — orders take a little longer.';
-
-  @override
-  String get storeInactiveBanner =>
-      'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.';
 
   @override
   String get openingHours => 'Opening hours';
@@ -1129,4 +1122,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get copy => 'Copy';
+
+  @override
+  String get menuNoStoreTitle => 'Choose a store first';
+
+  @override
+  String get menuNoStoreBody =>
+      'Pick where you\'ll collect your order — we\'ll show its menu and how soon it can be ready.';
+
+  @override
+  String get pickStore => 'Choose a store';
+
+  @override
+  String get storeClosedTitle => 'This store is closed';
+
+  @override
+  String get storeClosedBody => 'It isn\'t taking orders right now. Choose another store or check back later.';
+
+  @override
+  String hoursToday(String hours) {
+    return 'Today: $hours';
+  }
+
+  @override
+  String hoursTomorrow(String hours) {
+    return 'Tomorrow: $hours';
+  }
+
+  @override
+  String get pickAnotherStore => 'Choose another store';
+
+  @override
+  String get storeClosedNow => 'Closed now';
+
+  @override
+  String get storeClosedNoOrders => 'This store is closed and isn\'t taking orders right now.';
+
+  @override
+  String get storeClosedCheckout =>
+      'The store is closed right now, so the order can\'t be placed. Choose another store or check back later.';
+
+  @override
+  String get orderReadyHeadline => 'Your order is ready';
+
+  @override
+  String get orderReadySlogan => 'You spent 0 minutes in the queue. Enjoy!';
+
+  @override
+  String get orderPickedUpSlogan => 'Not a minute in the queue — just as planned. Have a great day!';
+
+  @override
+  String get notificationsDenied => 'Notifications are turned off in your phone\'s settings.';
 }

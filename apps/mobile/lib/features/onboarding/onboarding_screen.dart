@@ -39,7 +39,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _finish() async {
     await ref.read(onboardingDoneProvider.notifier).complete();
-    if (mounted) context.go(Routes.menu);
+    // The first thing to choose is where to pick the order up.
+    if (mounted) context.go(Routes.stores);
   }
 
   @override
