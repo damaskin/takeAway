@@ -1472,6 +1472,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         notReady: 'The store cannot open yet. Missing: {{missing}}.',
         galleryFull: 'A gallery holds at most {{max}} photos — remove one to add another.',
         pinTaken: 'Another staff member of this store already uses this PIN — choose a different one.',
+        pinNotConfigured:
+          'Kitchen PIN sign-in is not set up on the server. Ask the administrator to set KDS_PIN_SECRET — PINs cannot be saved until then.',
         pinFormat: 'A PIN is 4 to 6 digits.',
         timezone: 'Choose a time zone from the list.',
         hoursDuplicate: 'Each weekday can have only one row of hours.',
@@ -1663,6 +1665,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       selectStore: 'Pick a store',
       storesUnavailable: 'Could not load the store list.',
       wrong: 'Wrong PIN',
+      notConfigured: 'PIN sign-in is not set up yet. Sign in with email and password.',
+      locked: 'Too many wrong attempts. Wait a few minutes or sign in with email and password.',
       delete: 'Delete',
       usePassword: 'Sign in with email and password',
     },

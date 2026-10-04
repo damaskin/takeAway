@@ -10,6 +10,7 @@ const STORE_ERRORS: ApiErrorWording = {
     STORE_SLUG_TAKEN: 'admin.stores.errors.slugTaken',
     STORE_GALLERY_FULL: 'admin.stores.errors.galleryFull',
     KDS_PIN_TAKEN: 'admin.stores.errors.pinTaken',
+    KDS_PIN_NOT_CONFIGURED: 'admin.stores.errors.pinNotConfigured',
   },
   messages: {
     'timezone must be an IANA time zone such as Europe/Chisinau': 'admin.stores.errors.timezone',
