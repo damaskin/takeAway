@@ -39,6 +39,10 @@ if [ -f .env.production ]; then
     val="$(grep -E "^${v}=" .env.production 2>/dev/null | head -1 | cut -d= -f2-)"
     if [ -z "$val" ] || [ "$val" = "CHANGE_ME" ]; then
       bad "$v is empty or still CHANGE_ME"
+      if [ "$v" = "KDS_PIN_SECRET" ]; then
+        info "kitchen PIN sign-in and PIN setup are OFF (API answers 503 KDS_PIN_NOT_CONFIGURED)"
+        info "fix: openssl rand -hex 32 -> KDS_PIN_SECRET in .env.production, redeploy, re-issue PINs on the Staff page"
+      fi
     else
       ok "$v is set (${#val} chars)"
     fi
