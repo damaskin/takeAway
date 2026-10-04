@@ -12,7 +12,8 @@ import type { OrderStatus, Payment, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AgroprombankError } from './agroprombank/agroprombank.client';
-import { AgroprombankService } from './agroprombank/agroprombank.service';
+import { isCardProvider } from './card-providers';
+import { CardPaymentsService } from './card-payments.service';
 import { OrderSettlementService } from './order-settlement.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
@@ -74,7 +75,7 @@ export class PaymentsService {
     private readonly realtime: RealtimeGateway,
     @Inject(STRIPE_CLIENT) private readonly stripe: StripeLike | null,
     // Cards charged through Agroprombank are refunded at that bank.
-    private readonly agroprombank: AgroprombankService,
+    private readonly cards: CardPaymentsService,
   ) {}
 
   async createPaymentIntent(userId: string, orderId: string): Promise<{ clientSecret: string }> {
@@ -143,7 +144,7 @@ export class PaymentsService {
     // admin's refund used to be Stripe-only, and with Stripe off in
     // production every card order refused the refund button.
     const bankPayment = order.payments.find(
-      (p) => p.provider === 'AGROPROMBANK' && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
+      (p) => isCardProvider(p.provider) && (p.status === 'SUCCEEDED' || p.status === 'PARTIALLY_REFUNDED'),
     );
     if (bankPayment) return this.refundAtAgroprombank(order, bankPayment, opts);
 
@@ -230,7 +231,7 @@ export class PaymentsService {
     };
   }
 
-  /** {@link refundOrder} for a card charged through Agroprombank. */
+  /** {@link refundOrder} for a card charged through Agroprombank, by either flow. */
   private async refundAtAgroprombank(
     order: { id: string; status: OrderStatus; userId: string },
     payment: Payment,
@@ -248,9 +249,9 @@ export class PaymentsService {
       throw new BadRequestException(`Refund amount ${amount} exceeds remaining balance ${remaining}`);
     }
 
-    let result: Awaited<ReturnType<AgroprombankService['refund']>>;
+    let refundId: string;
     try {
-      result = await this.agroprombank.refund(payment.id, amount, {
+      refundId = await this.cards.refund(payment, amount, {
         actorId: opts.actorId,
         reason: opts.reason ?? null,
         note: opts.note ?? null,
@@ -270,7 +271,7 @@ export class PaymentsService {
       order.userId,
     );
     return {
-      refundId: result.operationId ?? result.invoiceId,
+      refundId,
       refundedCents,
       remainingCents: payment.amountCents - refundedCents,
       paymentStatus: refundedCents >= payment.amountCents ? 'REFUNDED' : 'PARTIALLY_REFUNDED',

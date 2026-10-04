@@ -15,21 +15,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
-import { PaymentHoldsService } from './payment-holds.service';
+import { BANK_CURRENCY_CODES } from './constants';
 import { type XmlElement, children, num, text, toPlainObject } from './xml';
-
-/**
- * Currency codes from the ПРБ directory the bank uses. `000` is the
- * Transnistrian rouble — the only currency the «Клевер» scheme settles in
- * today; the rest are listed so a misconfigured brand fails loudly instead of
- * silently charging in the wrong currency.
- */
-const BANK_CURRENCY_CODES: Partial<Record<Currency, string>> = {
-  RUP: '000',
-  USD: '840',
-  EUR: '978',
-  MDL: '498',
-};
 
 export interface BoundCardView {
   id: string;
@@ -105,7 +92,6 @@ export class AgroprombankService {
     private readonly client: AgroprombankClient,
     private readonly cipher: SecretCipher,
     private readonly settlement: OrderSettlementService,
-    private readonly holds: PaymentHoldsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -465,22 +451,6 @@ export class AgroprombankService {
       },
     });
     return this.toChargeResult(updated);
-  }
-
-  /**
-   * Captures whatever is held against an order, called the moment the store
-   * takes the order on. Returns `null` when there is nothing held — an order
-   * paid outright, or one that will be paid at the counter — so the caller can
-   * treat "no hold" and "captured" alike.
-   *
-   * The held amount is captured as held, never the order's current total: the
-   * customer agreed to the figure they saw at checkout, and anything the store
-   * changed afterwards is a conversation, not a silent larger debit.
-   */
-  async capturePreauthorizedForOrder(orderId: string): Promise<ChargeResult | null> {
-    const hold = await this.holds.findHold(orderId);
-    if (!hold) return null;
-    return this.completePreauthorization(hold.id, hold.amountCents);
   }
 
   /**

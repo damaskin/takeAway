@@ -47,6 +47,17 @@ const RECEIPT_RESEND_STATUSES = new Set<string>([
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ]);
+/** What a cancellation reads back: everything the customer's order view needs. */
+const CANCELLED_ORDER_INCLUDE = {
+  items: true,
+  store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
+  payments: {
+    orderBy: { createdAt: 'desc' },
+    include: { cardToken: { select: { maskedPan: true } } },
+  },
+} satisfies Prisma.OrderInclude;
+
+export type CancelledOrder = Prisma.OrderGetPayload<{ include: typeof CANCELLED_ORDER_INCLUDE }>;
 /** Distance buckets for the "I'm here" geofence, in meters. */
 const NEARBY_RADIUS_M = 300;
 const HERE_RADIUS_M = 60;
@@ -702,46 +713,78 @@ export class OrdersService {
   async cancel(userId: string, orderId: string): Promise<OrderDto> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
-    if (!CANCELLABLE_STATUSES.has(order.status)) {
+
+    const { order: updated } = await this.cancelOrder(order, {
+      actorId: userId,
+      by: 'customer',
+      allowedStatuses: CANCELLABLE_STATUSES,
+    });
+
+    // No push: the customer cancelled it themselves, on the screen they are
+    // looking at. The live status above is all the confirmation they need.
+
+    return this.toOrderDto(updated);
+  }
+
+  /**
+   * Cancels an order and gives back everything it was holding, whoever
+   * called it off — the customer, or the store turning it down.
+   *
+   * The order is claimed with an update that only matches while it is still
+   * in an allowed status, so a cancel racing the kitchen's accept (or two
+   * cancels) cannot both hand back the promo, the gift-card balance and the
+   * points. The card hold is released after the commit: the bank call cannot
+   * join the transaction, and it reports rather than throws — see
+   * PaymentHoldsService.
+   */
+  async cancelOrder(
+    order: Pick<Order, 'id' | 'status'>,
+    options: {
+      actorId: string;
+      by: 'customer' | 'store';
+      allowedStatuses: ReadonlySet<string>;
+      reason?: string;
+      comment?: string;
+    },
+  ): Promise<{ order: CancelledOrder; holdReleased: boolean }> {
+    if (!options.allowedStatuses.has(order.status)) {
       throw new BadRequestException(`Cannot cancel an order in status ${order.status}`);
     }
 
-    // Give back the promo redemption and the gift-card balance in the same
-    // transaction as the cancellation. Both were taken at creation, and a
-    // cancelled order that keeps holding them costs the customer twice.
     const updated = await this.prisma.$transaction(async (tx) => {
-      await this.promo.releaseForOrder(tx, orderId);
-      await this.giftCards.releaseForOrder(tx, orderId);
-      await this.loyalty.releaseForOrder(tx, orderId);
+      const claimed = await tx.order.updateMany({
+        where: { id: order.id, status: { in: [...options.allowedStatuses] as Order['status'][] } },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      if (claimed.count === 0) throw new ConflictException('The order changed while it was being cancelled');
+
+      // Taken at creation; a cancelled order that keeps them costs the customer twice.
+      await this.promo.releaseForOrder(tx, order.id);
+      await this.giftCards.releaseForOrder(tx, order.id);
+      await this.loyalty.releaseForOrder(tx, order.id);
 
       return tx.order.update({
-        where: { id: orderId },
+        where: { id: order.id },
         data: {
-          status: 'CANCELLED',
-          cancelledAt: new Date(),
           events: {
             create: {
               type: 'CANCELLED',
-              actorId: userId,
-              payload: { from: order.status } satisfies Prisma.InputJsonValue,
+              actorId: options.actorId,
+              payload: {
+                from: order.status,
+                by: options.by,
+                ...(options.reason ? { reason: options.reason } : {}),
+                ...(options.comment ? { comment: options.comment } : {}),
+              } satisfies Prisma.InputJsonValue,
             },
           },
         },
-        include: {
-          items: true,
-          store: { select: { name: true, latitude: true, longitude: true, addressLine: true, timezone: true } },
-          payments: {
-            orderBy: { createdAt: 'desc' },
-            include: { cardToken: { select: { maskedPan: true } } },
-          },
-        },
+        include: CANCELLED_ORDER_INCLUDE,
       });
     });
 
-    // Money the customer authorized for an order that will never happen. The
-    // bank call cannot join the transaction above, so it runs after the commit
-    // and reports rather than throws — see PaymentHoldsService.
-    await this.holds.releaseForOrder(orderId, 'order-cancelled');
+    // Money the customer authorized for an order that will never happen.
+    const released = await this.holds.releaseForOrder(order.id, `order-cancelled-by-${options.by}`);
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -752,11 +795,10 @@ export class OrdersService {
       },
       updated.userId,
     );
+    // Off the kitchen board, whoever cancelled it.
+    this.realtime.emitKdsOrderChanged({ storeId: updated.storeId, kind: 'removed', orderId: updated.id, order: null });
 
-    // No push: the customer cancelled it themselves, on the screen they are
-    // looking at. The live status above is all the confirmation they need.
-
-    return this.toOrderDto(updated);
+    return { order: updated, holdReleased: released !== null };
   }
 
   /**
@@ -1008,6 +1050,7 @@ function toPaymentView(
     status: PaymentStatus;
     amountCents: number;
     updatedAt: Date;
+    rawJson?: Prisma.JsonValue;
     cardToken?: { maskedPan: string | null } | null;
   }>,
 ): OrderPaymentDto {
@@ -1033,9 +1076,19 @@ function toPaymentView(
   return {
     state,
     amountCents: latest.amountCents,
-    cardMask: latest.cardToken?.maskedPan ?? null,
+    cardMask: latest.cardToken?.maskedPan ?? webCardMask(latest.rawJson),
     paidAt: state === 'PAID' ? latest.updatedAt.toISOString() : null,
   };
+}
+
+/**
+ * A card paid on the Web-платёж page is never bound, so its mask comes from
+ * the last four digits the bank reported for the payment.
+ */
+function webCardMask(raw: Prisma.JsonValue | undefined): string | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const digits = (raw as Record<string, unknown>)['lastdgt'];
+  return typeof digits === 'string' && /^\d{4}$/.test(digits) ? `•••• ${digits}` : null;
 }
 
 /** Great-circle distance in meters between two WGS-84 coords. */

@@ -7,7 +7,6 @@ import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
 import { AgroprombankService } from './agroprombank.service';
-import { PaymentHoldsService } from './payment-holds.service';
 import { parseXml } from './xml';
 
 const CHECK_TOKEN_OK = parseXml(
@@ -24,7 +23,6 @@ describe('AgroprombankService', () => {
   let service: AgroprombankService;
   let client: { invoke: jest.Mock; invokeRaw: jest.Mock };
   let settlement: { settlePaidOrder: jest.Mock; announceHeld: jest.Mock };
-  let holds: { findHold: jest.Mock };
   let config: { holdUntilAccepted: boolean } & Partial<AgroprombankConfig>;
   let prisma: PrismaMock;
 
@@ -123,7 +121,6 @@ describe('AgroprombankService', () => {
       settlePaidOrder: jest.fn().mockResolvedValue(order),
       announceHeld: jest.fn().mockResolvedValue(undefined),
     };
-    holds = { findHold: jest.fn().mockResolvedValue(null) };
     config = {
       enabled: true,
       isConfigured: true,
@@ -152,7 +149,6 @@ describe('AgroprombankService', () => {
           },
         },
         { provide: OrderSettlementService, useValue: settlement },
-        { provide: PaymentHoldsService, useValue: holds },
       ],
     }).compile();
 
@@ -555,30 +551,6 @@ describe('AgroprombankService', () => {
       prisma.payment.findUnique.mockResolvedValue({ ...pendingPayment, status: 'REQUIRES_ACTION' });
 
       await expect(service.completePreauthorization('pay-1', 3631)).rejects.toThrow('between 1 and 3630');
-      expect(client.invoke).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('capturePreauthorizedForOrder', () => {
-    it('captures exactly what was held and settles the order', async () => {
-      const held = { ...pendingPayment, status: 'REQUIRES_ACTION' as const };
-      holds.findHold.mockResolvedValue(held);
-      prisma.payment.findUnique.mockResolvedValue(held);
-
-      const result = await service.capturePreauthorizedForOrder(order.id);
-
-      expect(client.invoke).toHaveBeenCalledWith(
-        'CompletePreAuthorizaion',
-        expect.objectContaining({ invoiceid: held.invoiceId, amount: held.amountCents }),
-      );
-      expect(settlement.settlePaidOrder).toHaveBeenCalledWith(order.id, expect.anything());
-      expect(result?.status).toBe('SUCCEEDED');
-    });
-
-    it('does nothing for an order with no hold on it', async () => {
-      holds.findHold.mockResolvedValue(null);
-
-      await expect(service.capturePreauthorizedForOrder(order.id)).resolves.toBeNull();
       expect(client.invoke).not.toHaveBeenCalled();
     });
   });

@@ -116,7 +116,7 @@ export class BrandOwnerService {
       brandProfile,
       store,
       menu,
-      cardPayments: this.flags.agroprombankEnabled,
+      cardPayments: this.flags.cardPaymentFlow !== 'none',
       complete: brandProfile && store && menu && brand.moderationStatus === BrandModerationStatus.APPROVED,
     };
   }
