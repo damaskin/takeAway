@@ -186,3 +186,111 @@ textarea.field-input {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Chart tooltip (ChartTooltipService). The card lives in <body> so that no
+ * card or table with `overflow: hidden` clips it; hence global styles.
+ */
+.chart-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity 80ms,
+    visibility 0s 80ms;
+  box-sizing: border-box;
+  min-width: 176px;
+  max-width: 290px;
+  padding: 9px 11px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-soft);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+}
+.chart-tip.is-on {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+}
+.chart-tip__title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.chart-tip__badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--chart-warning);
+  background: color-mix(in srgb, var(--chart-warning) 16%, transparent);
+}
+.chart-tip__line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  white-space: nowrap;
+}
+.chart-tip__line + .chart-tip__line {
+  margin-top: 3px;
+}
+.chart-tip__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-secondary);
+}
+.chart-tip__label i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.chart-tip__value {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tip__line--strong .chart-tip__label {
+  color: var(--color-text-primary);
+}
+.chart-tip__line--strong .chart-tip__value {
+  font-weight: 700;
+}
+.chart-tip__note {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border-light);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Visually hidden, still read by screen readers: the table behind a chart. */
+.sr-only-table {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

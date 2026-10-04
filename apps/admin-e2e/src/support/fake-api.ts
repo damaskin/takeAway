@@ -143,6 +143,117 @@ export const AVAILABILITY = {
   ingredients: [{ id: OAT_MILK.id, name: OAT_MILK.name, isAvailable: true, stop: null, productNames: [PRODUCT.name] }],
 };
 
+const PERIOD = {
+  from: '2026-09-28',
+  to: '2026-10-04',
+  days: 7,
+  timeZone: 'Europe/Chisinau',
+  previousFrom: '2026-09-21',
+  previousTo: '2026-09-27',
+};
+
+function totals(revenueCents: number, orders: number) {
+  return {
+    revenueCents,
+    orders,
+    placed: orders + 2,
+    customers: Math.round(orders * 0.8),
+    newCustomers: Math.round(orders * 0.2),
+    avgCheckCents: orders ? Math.round(revenueCents / orders) : null,
+    cancelled: 1,
+    expired: 1,
+    cancelRatePercent: orders ? Math.round((2 / (orders + 2)) * 1000) / 10 : null,
+    avgPickupSeconds: 150,
+    activeUnits: 2,
+    commissionCents: Math.round(revenueCents * 0.15),
+  };
+}
+
+const DAILY = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'].map(
+  (date, i) => ({
+    date,
+    revenueCents: 40_000 + i * 5_000,
+    orders: 8 + i,
+    customers: 6 + i,
+    newCustomers: 1,
+    cancelled: i % 3 === 0 ? 1 : 0,
+    expired: 0,
+    commissionCents: 6_000 + i * 750,
+  }),
+);
+
+function storeRow(id: string, name: string, revenueCents: number, orders: number, previousOrders: number) {
+  return {
+    id,
+    name,
+    revenueCents,
+    orders,
+    sharePercent: 0,
+    ordersSharePercent: 0,
+    detailed: true,
+    previousRevenueCents: Math.round(revenueCents * 0.9),
+    previousOrders,
+    revenueDeltaPercent: 11.1,
+    avgCheckCents: orders ? Math.round(revenueCents / orders) : null,
+    customers: Math.round(orders * 0.8),
+    cancelled: 1,
+    expired: 0,
+    cancelRatePercent: 2,
+    avgPickupSeconds: 140,
+  };
+}
+
+/** A PRO brand with three stores: Center earns most, Mall takes most orders. */
+export const BUSINESS_OVERVIEW = {
+  period: PERIOD,
+  current: totals(420_000, 77),
+  previous: totals(380_000, 70),
+  daily: DAILY,
+  statuses: { PICKED_UP: 70, PAID: 2, IN_PROGRESS: 5, CANCELLED: 1, EXPIRED: 1 },
+  byStore: [
+    storeRow(STORE.id, 'Центр', 250_000, 30, 25),
+    storeRow('store-2', 'Молл', 150_000, 40, 41),
+    storeRow('store-3', 'Аэропорт', 20_000, 7, 3),
+  ],
+  storeComparison: true,
+  byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: hour >= 7 && hour <= 21 ? 5 : 0, revenueCents: 0 })),
+  byWeekday: Array.from({ length: 7 }, (_, i) => ({ weekday: i + 1, orders: 10 + i, revenueCents: 0 })),
+};
+
+export const PLATFORM_OVERVIEW = {
+  period: PERIOD,
+  currency: 'MDL',
+  currencies: ['MDL'],
+  current: totals(12_500, 4),
+  previous: totals(10_000, 3),
+  daily: DAILY,
+  statuses: { PICKED_UP: 3, CANCELLED: 1 },
+  byBrand: [
+    {
+      ...storeRow(BRAND.id, BRAND.name, 12_500, 4, 3),
+      currency: 'MDL',
+      plan: 'PRO',
+      commissionBps: 1500,
+      commissionCents: 1_875,
+      previousCommissionCents: 1_500,
+      stores: 1,
+      moderationStatus: 'APPROVED',
+    },
+    {
+      ...storeRow('brand-2', 'Новая кофейня', 0, 0, 0),
+      currency: 'MDL',
+      plan: 'BASIC',
+      commissionBps: 1000,
+      commissionCents: 0,
+      previousCommissionCents: 0,
+      stores: 0,
+      moderationStatus: 'PENDING',
+    },
+  ],
+  byHour: BUSINESS_OVERVIEW.byHour,
+  byWeekday: BUSINESS_OVERVIEW.byWeekday,
+};
+
 /** Signs the browser in before the app boots, the way a real session is. */
 export async function signIn(context: BrowserContext): Promise<void> {
   await context.addInitScript((user) => {
@@ -208,40 +319,8 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
       return json(route, { ...OAT_MILK, ...(route.request().postDataJSON() as object) });
     }
 
-    if (path === '/admin/analytics/summary') {
-      return json(route, {
-        days: 7,
-        revenueCents: 12_500,
-        orders: 4,
-        avgPickupSeconds: 0,
-        nps: null,
-        revenueDeltaPercent: null,
-        ordersDeltaPercent: null,
-        pickupDeltaSeconds: null,
-      });
-    }
-    if (path === '/admin/analytics/brands') {
-      return json(route, [
-        {
-          brandId: BRAND.id,
-          brandName: BRAND.name,
-          currency: BRAND.currency,
-          moderationStatus: 'APPROVED',
-          stores: 1,
-          orders: 4,
-          revenueCents: 12_500,
-        },
-        {
-          brandId: 'brand-2',
-          brandName: 'Новая кофейня',
-          currency: 'MDL',
-          moderationStatus: 'PENDING',
-          stores: 0,
-          orders: 0,
-          revenueCents: 0,
-        },
-      ]);
-    }
+    if (path === '/admin/analytics/overview') return json(route, BUSINESS_OVERVIEW);
+    if (path === '/admin/platform/overview') return json(route, PLATFORM_OVERVIEW);
     if (path === '/admin/analytics/order-statuses') {
       return json(route, {
         days: 7,

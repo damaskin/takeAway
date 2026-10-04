@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import type { BusinessOverview, PlatformOverview } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -139,23 +140,6 @@ export interface WinBackStats extends AnalyticsPeriodEcho {
   customers: WinBackCustomer[];
 }
 
-/** The range's figures, each against as many days right before. */
-export interface DashboardSummary extends AnalyticsPeriodEcho {
-  days: number;
-  revenueCents: number;
-  orders: number;
-  avgCheckCents: number;
-  avgPickupSeconds: number;
-  /** Null until customer ratings are collected. */
-  nps: number | null;
-  /** Percent change; null when the period before had nothing to compare with. */
-  revenueDeltaPercent: number | null;
-  ordersDeltaPercent: number | null;
-  avgCheckDeltaPercent: number | null;
-  /** Change of the average pickup time, in seconds. */
-  pickupDeltaSeconds: number | null;
-}
-
 /** Where the orders stand: open ones right now, and how the period ended up. */
 export interface OrderStatusStats extends AnalyticsPeriodEcho {
   days: number;
@@ -173,19 +157,6 @@ export interface OrderStatusStats extends AnalyticsPeriodEcho {
   };
 }
 
-/** One brand in the platform view. Revenue is in the brand's own currency. */
-export interface BrandPerformance {
-  brandId: string;
-  brandName: string;
-  currency: string;
-  moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
-  plan?: 'BASIC' | 'PRO';
-  commissionBps?: number;
-  stores: number;
-  orders: number;
-  revenueCents: number;
-}
-
 @Injectable({ providedIn: 'root' })
 export class AnalyticsApi {
   private readonly http = inject(HttpClient);
@@ -193,8 +164,19 @@ export class AnalyticsApi {
 
   // `brandId` picks one of the caller's brands; the API never widens past them.
 
-  summary(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<DashboardSummary> {
-    return this.get('summary', brandId, period);
+  /** The dashboard in one request: KPIs, days, stores, statuses, load (PRO). */
+  overview(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<BusinessOverview> {
+    return this.get('overview', brandId, period);
+  }
+
+  /** SUPER_ADMIN only: the platform's dashboard, brands side by side, in one currency. */
+  platformOverview(period: AnalyticsPeriod, currency?: string | null): Observable<PlatformOverview> {
+    return this.http.get<PlatformOverview>(`${this.api.baseUrl}/admin/platform/overview`, {
+      params: params({
+        ...(period.from || period.to ? { from: period.from, to: period.to } : { days: period.days }),
+        currency,
+      }),
+    });
   }
 
   revenue(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<RevenueSeries> {
@@ -237,13 +219,6 @@ export class AnalyticsApi {
     take?: number,
   ): Observable<WinBackStats> {
     return this.get('winback', brandId, period, { window, take });
-  }
-
-  /** SUPER_ADMIN only: every brand side by side. */
-  brandPerformance(days = 7): Observable<BrandPerformance[]> {
-    return this.http.get<BrandPerformance[]>(`${this.api.baseUrl}/admin/analytics/brands`, {
-      params: params({ days }),
-    });
   }
 
   private get<T>(
