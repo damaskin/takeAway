@@ -2,140 +2,155 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { addDays, type DateRange } from './analytics-range';
 import type { AnalyticsScope } from './analytics-scope';
 import {
+  COUNTED,
+  PICKUP_DONE,
+  createdBetween,
+  num,
+  orderWhere,
+  scopeConditions,
+  storeWhere,
+  utc,
+  whereAll,
+} from './analytics-sql';
+import { customerLabels } from './customer-labels';
+import {
   BrandPerformanceDto,
+  ChurnDto,
   CohortStatsDto,
   DashboardSummaryDto,
   OrderStatusStatsDto,
   RevenuePointDto,
   RevenueSeriesDto,
+  StaffPerformanceDto,
   StorePerformanceDto,
   TopProductDto,
+  WinBackDto,
+  WinBackPeriodDto,
 } from './dto/analytics.dto';
+import {
+  type ChurnWindow,
+  type CustomerTotals,
+  type ReturnedCustomer,
+  type WinBackSummary,
+  churnBounds,
+  lapsedBefore,
+  percentChange,
+  summarizeChurn,
+  summarizeWinBack,
+} from './retention';
 
-/**
- * Daily roll-up shape from the `mv_orders_daily` materialized view. Bigints
- * come back as JS bigints from `$queryRaw`; we coerce to number when summing,
- * since per-day order counts and cents totals fit comfortably in Number.MAX
- * for any realistic brand.
- */
+/** Daily roll-up shape from the `mv_orders_daily` materialized view. */
 interface OrdersDailyRow {
   brandId: string;
   storeId: string;
   day: Date;
   orderCount: bigint;
   revenueCents: bigint;
-  slaHits: bigint;
-  slaTotal: bigint;
-  pickupSecSum: bigint;
-  pickupSecCount: bigint;
 }
 
 const SQL_DATE_DAY = (d: Date): string => d.toISOString().slice(0, 10);
 
 const DAY_MS = 24 * 60 * 60_000;
 
-/**
- * UTC midnight opening a period of `days` calendar days that ends today, the
- * way the dashboard counts them: "7 days" is today and the six before it.
- */
+/** UTC midnight opening a period of `days` calendar days that ends today. */
 function periodStart(days: number, now = new Date()): Date {
   const start = new Date(now);
   start.setUTCHours(0, 0, 0, 0);
   return new Date(start.getTime() - (days - 1) * DAY_MS);
 }
 
-/** Percent change, one decimal; null when there was nothing before to compare with. */
-function percentChange(before: number, after: number): number | null {
-  return before > 0 ? Math.round(((after - before) / before) * 1000) / 10 : null;
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function share(part: number, total: number): number {
+  return total > 0 ? round1((part / total) * 100) : 0;
+}
+
+function average(sum: number, count: number): number | null {
+  return count > 0 ? Math.round(sum / count) : null;
 }
 
 /**
  * M5 — analytics.
  *
- * `revenueSeries`, `dashboardSummary` and `storePerformance` read from the
- * `mv_orders_daily` materialized view (refreshed every 5 minutes by
- * AnalyticsRefreshService). `topProducts` and `cohort` still aggregate
- * over the live `OrderItem` / `User` tables — those rolls-ups need fields
- * that aren't in the MV yet (productSnapshot.name, user createdAt). They
- * stay raw for now and are the next MV candidates if they show up in
- * p95 telemetry.
+ * A brand's figures come from the `Order` table directly, between the two
+ * instants the requested calendar days open and close at in the brand's
+ * time zone (index `Order(storeId, createdAt)`). The `mv_orders_daily`
+ * materialized view buckets by UTC day, which is off by hours for a café
+ * east or west of Greenwich, so it only feeds the platform-wide brand list.
  */
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async revenueSeries(scope: AnalyticsScope, days = 14): Promise<RevenueSeriesDto> {
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60_000);
-    const prevStart = new Date(start.getTime() - days * 24 * 60 * 60_000);
+  async revenueSeries(scope: AnalyticsScope, range: DateRange): Promise<RevenueSeriesDto> {
+    const rows = await this.prisma.$queryRaw<Array<{ day: string; orders: number; revenue: bigint }>>`
+      SELECT to_char((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${range.timeZone}, 'YYYY-MM-DD') AS "day",
+             COUNT(*)::int AS "orders",
+             COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue"
+      FROM "Order" o
+      JOIN "Store" s ON s.id = o."storeId"
+      ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(range.previous.start, range.end)])}
+      GROUP BY 1
+    `;
 
-    const [current, previous] = await Promise.all([
-      this.aggregateRevenue(start, end, scope),
-      this.aggregateRevenue(prevStart, start, scope),
-    ]);
+    const byDay = new Map(rows.map((r) => [r.day, { revenue: num(r.revenue), orders: num(r.orders) }]));
+    const points: RevenuePointDto[] = [];
+    for (let day = range.from; day <= range.to; day = addDays(day, 1)) {
+      const b = byDay.get(day);
+      points.push({ date: day, revenueCents: b?.revenue ?? 0, orderCount: b?.orders ?? 0 });
+    }
+    const totalRevenueCents = points.reduce((sum, p) => sum + p.revenueCents, 0);
+    const totalOrders = points.reduce((sum, p) => sum + p.orderCount, 0);
+    const previousRevenueCents = rows.filter((r) => r.day < range.from).reduce((sum, r) => sum + num(r.revenue), 0);
 
     // Only report a "best day" if there's actual revenue to compare against.
-    // Otherwise the reducer happily picks the first zero-revenue bucket and
-    // the UI renders "Best day: <date> — $0".
-    const bestDay = current.points.reduce<RevenuePointDto | null>(
+    const bestDay = points.reduce<RevenuePointDto | null>(
       (best, p) => (p.revenueCents > 0 && (!best || p.revenueCents > best.revenueCents) ? p : best),
       null,
     );
 
-    const delta =
-      previous.totalRevenueCents > 0
-        ? ((current.totalRevenueCents - previous.totalRevenueCents) / previous.totalRevenueCents) * 100
-        : current.totalRevenueCents > 0
-          ? 100
-          : 0;
-
     return {
-      totalRevenueCents: current.totalRevenueCents,
-      totalOrders: current.totalOrders,
-      avgBasketCents: current.totalOrders ? Math.round(current.totalRevenueCents / current.totalOrders) : 0,
+      from: range.from,
+      to: range.to,
+      timeZone: range.timeZone,
+      totalRevenueCents,
+      totalOrders,
+      avgBasketCents: totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0,
       bestDay,
-      revenueDeltaPercent: Math.round(delta * 10) / 10,
-      points: current.points,
+      revenueDeltaPercent: percentChange(previousRevenueCents, totalRevenueCents) ?? (totalRevenueCents > 0 ? 100 : 0),
+      previousRevenueCents,
+      points,
     };
   }
 
-  async topProducts(scope: AnalyticsScope, take = 10): Promise<TopProductDto[]> {
-    // OrderItem.productSnapshot is a jsonb with a `name` field; we aggregate
-    // by snapshot name so renamed products still roll up under their original
-    // label for the period we're analyzing.
-    const where: Prisma.OrderWhereInput = { ...orderScope(scope), status: { not: OrderStatus.CANCELLED } };
-
-    const items = await this.prisma.orderItem.findMany({
-      where: { order: where },
-      select: { productSnapshot: true, quantity: true, totalCents: true },
-      take: 5000, // cap — a heavy brand shouldn't load everything at once
-      orderBy: { order: { createdAt: 'desc' } },
-    });
-
-    const buckets = new Map<string, { name: string; units: number; revenue: number }>();
-    for (const it of items) {
-      const snap = (it.productSnapshot as Record<string, unknown> | null) ?? null;
-      const name = snap && typeof snap['name'] === 'string' ? (snap['name'] as string) : 'Unknown';
-      const b = buckets.get(name) ?? { name, units: 0, revenue: 0 };
-      b.units += it.quantity;
-      b.revenue += it.totalCents;
-      buckets.set(name, b);
-    }
-
-    return [...buckets.values()]
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, take)
-      .map((b) => ({ name: b.name, unitsSold: b.units, revenueCents: b.revenue }));
+  async topProducts(scope: AnalyticsScope, range: DateRange, take = 10): Promise<TopProductDto[]> {
+    // Grouped by the name in the order snapshot, so a renamed product still
+    // rolls up under the label it was sold with.
+    const rows = await this.prisma.$queryRaw<Array<{ name: string; units: number; revenue: bigint }>>`
+      SELECT COALESCE(oi."productSnapshot"->>'name', 'Unknown') AS "name",
+             COALESCE(SUM(oi."quantity"), 0)::int AS "units",
+             COALESCE(SUM(oi."totalCents"), 0)::bigint AS "revenue"
+      FROM "OrderItem" oi
+      JOIN "Order" o ON o.id = oi."orderId"
+      JOIN "Store" s ON s.id = o."storeId"
+      ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(range.start, range.end)])}
+      GROUP BY 1
+      ORDER BY 3 DESC, 2 DESC
+      LIMIT ${take}
+    `;
+    return rows.map((r) => ({ name: r.name, unitsSold: num(r.units), revenueCents: num(r.revenue) }));
   }
 
-  async cohort(scope: AnalyticsScope, days = 30): Promise<CohortStatsDto> {
-    const since = new Date(Date.now() - days * 24 * 60 * 60_000);
+  async cohort(scope: AnalyticsScope, range: DateRange): Promise<CohortStatsDto> {
     const where: Prisma.OrderWhereInput = {
-      ...orderScope(scope),
-      createdAt: { gte: since },
-      status: { not: OrderStatus.CANCELLED },
+      ...orderWhere(scope),
+      createdAt: { gte: range.start, lt: range.end },
+      status: { notIn: [OrderStatus.CANCELLED, OrderStatus.EXPIRED] },
     };
 
     const orders = await this.prisma.order.findMany({
@@ -161,14 +176,17 @@ export class AnalyticsService {
     const repeatCount = userIds.filter((id) => (byUser.get(id) ?? 0) > 1).length;
     const repeatRate = userIds.length ? (repeatCount / userIds.length) * 100 : 0;
 
-    // New to *this* business: their first order here falls in the window.
-    // Counting new platform sign-ups told every brand the same number.
+    // New to *this* business: their first order here falls in the range.
     const firstOrders = await this.prisma.order.groupBy({
       by: ['userId'],
-      where: { ...orderScope(scope), userId: { in: userIds }, status: { not: OrderStatus.CANCELLED } },
+      where: {
+        ...orderWhere(scope),
+        userId: { in: userIds },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.EXPIRED] },
+      },
       _min: { createdAt: true },
     });
-    const newCustomers = firstOrders.filter((row) => row._min.createdAt && row._min.createdAt >= since).length;
+    const newCustomers = firstOrders.filter((row) => row._min.createdAt && row._min.createdAt >= range.start).length;
 
     return {
       repeatRatePercent: Math.round(repeatRate),
@@ -186,7 +204,11 @@ export class AnalyticsService {
   async brandPerformance(days = 7): Promise<BrandPerformanceDto[]> {
     const since = SQL_DATE_DAY(periodStart(days));
     const [rows, brands] = await Promise.all([
-      this.fetchOrdersDaily({ scope: { brandIds: null, storeIds: null }, sinceDay: since }),
+      this.prisma.$queryRaw<OrdersDailyRow[]>`
+        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents"
+        FROM "mv_orders_daily"
+        WHERE "day" >= ${since}::date
+      `,
       this.prisma.brand.findMany({
         select: { id: true, name: true, currency: true, moderationStatus: true, _count: { select: { stores: true } } },
       }),
@@ -213,50 +235,217 @@ export class AnalyticsService {
       .sort((a, b) => b.orders - a.orders || b.revenueCents - a.revenueCents || a.brandName.localeCompare(b.brandName));
   }
 
-  async storePerformance(scope: AnalyticsScope, days = 14): Promise<StorePerformanceDto[]> {
-    // The same calendar days as the dashboard's summary for the same `days`.
-    const since = SQL_DATE_DAY(periodStart(days));
-    const rows = await this.fetchOrdersDaily({ scope, sinceDay: since });
+  /**
+   * Every store in scope over the period, busiest first, idle ones included.
+   * Revenue and orders on every plan; `detailed` adds the comparison a PRO
+   * brand gets — shares, average check, pickup and prep times, cancellations,
+   * staff — and the change against the period before.
+   */
+  async storePerformance(scope: AnalyticsScope, range: DateRange, detailed: boolean): Promise<StorePerformanceDto[]> {
+    const current = Prisma.sql`o."createdAt" >= ${utc(range.start)}`;
+    const previous = Prisma.sql`o."createdAt" < ${utc(range.start)}`;
+    const [stores, rows, staffRows] = await Promise.all([
+      this.prisma.store.findMany({ where: storeWhere(scope), select: { id: true, name: true } }),
+      this.prisma.$queryRaw<
+        Array<{
+          storeId: string;
+          orders: number;
+          revenue: bigint;
+          previousRevenue: bigint;
+          placed: number;
+          cancelled: number;
+          expired: number;
+          pickupSecSum: number;
+          pickupCount: number;
+          prepSecSum: number;
+          prepCount: number;
+          customers: number;
+        }>
+      >`
+        SELECT o."storeId" AS "storeId",
+               COUNT(*) FILTER (WHERE ${current} AND ${COUNTED})::int AS "orders",
+               COALESCE(SUM(o."totalCents") FILTER (WHERE ${current} AND ${COUNTED}), 0)::bigint AS "revenue",
+               COALESCE(SUM(o."totalCents") FILTER (WHERE ${previous} AND ${COUNTED}), 0)::bigint AS "previousRevenue",
+               COUNT(*) FILTER (WHERE ${current})::int AS "placed",
+               COUNT(*) FILTER (WHERE ${current} AND o."status" = 'CANCELLED')::int AS "cancelled",
+               COUNT(*) FILTER (WHERE ${current} AND o."status" = 'EXPIRED')::int AS "expired",
+               COALESCE(SUM(EXTRACT(EPOCH FROM (o."pickedUpAt" - o."readyAt")))
+                 FILTER (WHERE ${current} AND ${PICKUP_DONE}), 0)::float8 AS "pickupSecSum",
+               COUNT(*) FILTER (WHERE ${current} AND ${PICKUP_DONE})::int AS "pickupCount",
+               COALESCE(SUM(EXTRACT(EPOCH FROM (o."readyAt" - COALESCE(o."acceptedAt", o."createdAt"))))
+                 FILTER (WHERE ${current} AND o."readyAt" IS NOT NULL), 0)::float8 AS "prepSecSum",
+               COUNT(*) FILTER (WHERE ${current} AND o."readyAt" IS NOT NULL)::int AS "prepCount",
+               COUNT(DISTINCT o."userId") FILTER (WHERE ${current} AND ${COUNTED})::int AS "customers"
+        FROM "Order" o
+        JOIN "Store" s ON s.id = o."storeId"
+        ${whereAll([...scopeConditions(scope), ...createdBetween(range.previous.start, range.end)])}
+        GROUP BY 1
+      `,
+      detailed
+        ? this.prisma.$queryRaw<Array<{ storeId: string; staff: number }>>`
+            SELECT o."storeId" AS "storeId", COUNT(DISTINCT e."actorId")::int AS "staff"
+            FROM "OrderEvent" e
+            JOIN "Order" o ON o.id = e."orderId"
+            JOIN "Store" s ON s.id = o."storeId"
+            JOIN "User" u ON u.id = e."actorId"
+            ${whereAll([
+              ...scopeConditions(scope),
+              Prisma.sql`e."type" = 'STATUS_CHANGED'`,
+              Prisma.sql`u."role" <> 'CUSTOMER'`,
+              ...createdBetween(range.start, range.end),
+            ])}
+            GROUP BY 1
+          `
+        : Promise.resolve([]),
+    ]);
 
-    const byStore = new Map<string, { orders: number; revenue: number }>();
-    for (const r of rows) {
-      const acc = byStore.get(r.storeId) ?? { orders: 0, revenue: 0 };
-      acc.orders += Number(r.orderCount);
-      acc.revenue += Number(r.revenueCents);
-      byStore.set(r.storeId, acc);
-    }
-    if (byStore.size === 0) return [];
+    const byStore = new Map(rows.map((r) => [r.storeId, r]));
+    const staffByStore = new Map(staffRows.map((r) => [r.storeId, num(r.staff)]));
+    const totalRevenue = rows.reduce((sum, r) => sum + num(r.revenue), 0);
+    const totalOrders = rows.reduce((sum, r) => sum + num(r.orders), 0);
 
-    const stores = await this.prisma.store.findMany({
-      where: { id: { in: [...byStore.keys()] } },
-      select: { id: true, name: true },
-    });
-    const storeName = new Map(stores.map((s) => [s.id, s.name]));
-
-    const total = [...byStore.values()].reduce((sum, b) => sum + b.revenue, 0);
-    return [...byStore.entries()]
-      .map(([storeId, b]) => ({
-        storeId,
-        storeName: storeName.get(storeId) ?? 'Unknown',
-        revenueCents: b.revenue,
-        orders: b.orders,
-        sharePercent: total ? Math.round((b.revenue / total) * 100) : 0,
-      }))
-      .sort((a, b) => b.revenueCents - a.revenueCents);
+    return stores
+      .map<StorePerformanceDto>((store) => {
+        const r = byStore.get(store.id);
+        const orders = num(r?.orders);
+        const revenue = num(r?.revenue);
+        const base = {
+          storeId: store.id,
+          storeName: store.name,
+          revenueCents: revenue,
+          orders,
+          sharePercent: share(revenue, totalRevenue),
+        };
+        if (!detailed) {
+          return {
+            ...base,
+            detailed: false,
+            ordersSharePercent: null,
+            avgCheckCents: null,
+            avgPickupSeconds: null,
+            avgPrepSeconds: null,
+            cancelled: null,
+            expired: null,
+            cancelRatePercent: null,
+            customers: null,
+            staff: null,
+            ordersPerStaff: null,
+            previousRevenueCents: null,
+            revenueDeltaPercent: null,
+          };
+        }
+        const placed = num(r?.placed);
+        const cancelled = num(r?.cancelled);
+        const expired = num(r?.expired);
+        const staff = staffByStore.get(store.id) ?? 0;
+        const previousRevenue = num(r?.previousRevenue);
+        return {
+          ...base,
+          detailed: true,
+          ordersSharePercent: share(orders, totalOrders),
+          avgCheckCents: average(revenue, orders) ?? 0,
+          avgPickupSeconds: average(num(r?.pickupSecSum), num(r?.pickupCount)),
+          avgPrepSeconds: average(num(r?.prepSecSum), num(r?.prepCount)),
+          cancelled,
+          expired,
+          cancelRatePercent: placed > 0 ? share(cancelled + expired, placed) : null,
+          customers: num(r?.customers),
+          staff,
+          ordersPerStaff: staff > 0 ? round1(orders / staff) : null,
+          previousRevenueCents: previousRevenue,
+          revenueDeltaPercent: percentChange(previousRevenue, revenue),
+        };
+      })
+      .sort((a, b) => b.revenueCents - a.revenueCents || b.orders - a.orders || a.storeName.localeCompare(b.storeName));
   }
 
   /**
-   * The dashboard's KPI cards: the last `days` calendar days, today
-   * included, each against the `days` before them.
+   * Who moved the period's orders along, from the order timeline, and the
+   * shifts they opened. A shift is the store's, opened by one person, so its
+   * hours are credited to whoever opened it — a fair proxy while there is no
+   * clock-in per employee.
    */
+  async staffPerformance(scope: AnalyticsScope, range: DateRange, now = new Date()): Promise<StaffPerformanceDto[]> {
+    const shiftEnd = Prisma.sql`COALESCE(sh."closedAt", ${utc(now)})`;
+    const [events, shifts] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{ userId: string; accepted: number; ready: number; completed: number; handled: number }>
+      >`
+        SELECT e."actorId" AS "userId",
+               COUNT(*) FILTER (WHERE e."payload"->>'to' = 'ACCEPTED')::int AS "accepted",
+               COUNT(*) FILTER (WHERE e."payload"->>'to' = 'READY')::int AS "ready",
+               COUNT(*) FILTER (WHERE e."payload"->>'to' IN ('PICKED_UP', 'DELIVERED'))::int AS "completed",
+               COUNT(DISTINCT e."orderId")::int AS "handled"
+        FROM "OrderEvent" e
+        JOIN "Order" o ON o.id = e."orderId"
+        JOIN "Store" s ON s.id = o."storeId"
+        JOIN "User" u ON u.id = e."actorId"
+        ${whereAll([
+          ...scopeConditions(scope),
+          Prisma.sql`e."type" = 'STATUS_CHANGED'`,
+          Prisma.sql`u."role" <> 'CUSTOMER'`,
+          ...createdBetween(range.start, range.end),
+        ])}
+        GROUP BY 1
+      `,
+      this.prisma.$queryRaw<Array<{ userId: string; shifts: number; seconds: number }>>`
+        SELECT sh."openedById" AS "userId",
+               COUNT(*)::int AS "shifts",
+               COALESCE(SUM(EXTRACT(EPOCH FROM (
+                 LEAST(${shiftEnd}, ${utc(range.end)}) - GREATEST(sh."openedAt", ${utc(range.start)})
+               ))), 0)::float8 AS "seconds"
+        FROM "StoreShift" sh
+        JOIN "Store" s ON s.id = sh."storeId"
+        ${whereAll([
+          ...scopeConditions(scope, Prisma.raw('sh."storeId"')),
+          Prisma.sql`sh."openedById" IS NOT NULL`,
+          Prisma.sql`sh."openedAt" < ${utc(range.end)}`,
+          Prisma.sql`${shiftEnd} > ${utc(range.start)}`,
+        ])}
+        GROUP BY 1
+      `,
+    ]);
+
+    const userIds = [...new Set([...events.map((e) => e.userId), ...shifts.map((s) => s.userId)])];
+    if (userIds.length === 0) return [];
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, role: { not: 'CUSTOMER' } },
+      select: { id: true, name: true, email: true, role: true },
+    });
+    const eventsBy = new Map(events.map((e) => [e.userId, e]));
+    const shiftsBy = new Map(shifts.map((s) => [s.userId, s]));
+
+    return users
+      .map((user) => {
+        const e = eventsBy.get(user.id);
+        const sh = shiftsBy.get(user.id);
+        const completed = num(e?.completed);
+        const hours = round1(Math.max(0, num(sh?.seconds)) / 3600);
+        return {
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          accepted: num(e?.accepted),
+          ready: num(e?.ready),
+          completed,
+          handled: num(e?.handled),
+          shifts: num(sh?.shifts),
+          shiftHours: hours,
+          ordersPerHour: hours > 0 ? round1(completed / hours) : null,
+        };
+      })
+      .sort((a, b) => b.handled - a.handled || b.shiftHours - a.shiftHours);
+  }
+
   /**
    * Where the orders stand: how many sit in each open status right now, and
    * how the orders placed in the period ended up. `live` ignores the period
    * on purpose — an order accepted yesterday and still on the board matters
    * today.
    */
-  async orderStatuses(scope: AnalyticsScope, days = 7): Promise<OrderStatusStatsDto> {
-    const base = orderScope(scope);
+  async orderStatuses(scope: AnalyticsScope, range: DateRange): Promise<OrderStatusStatsDto> {
+    const base = orderWhere(scope);
     const [live, period] = await Promise.all([
       this.prisma.order.groupBy({
         by: ['status'],
@@ -265,7 +454,7 @@ export class AnalyticsService {
       }),
       this.prisma.order.groupBy({
         by: ['status'],
-        where: { ...base, createdAt: { gte: periodStart(days) } },
+        where: { ...base, createdAt: { gte: range.start, lt: range.end } },
         _count: { _all: true },
       }),
     ]);
@@ -279,7 +468,10 @@ export class AnalyticsService {
     const settled = completed + byStatus.CANCELLED + byStatus.EXPIRED;
 
     return {
-      days,
+      from: range.from,
+      to: range.to,
+      timeZone: range.timeZone,
+      days: range.days,
       live: liveCounts,
       liveTotal: Object.values(liveCounts).reduce((sum, n) => sum + n, 0),
       period: {
@@ -293,130 +485,252 @@ export class AnalyticsService {
     };
   }
 
-  async dashboardSummary(scope: AnalyticsScope, days = 7): Promise<DashboardSummaryDto> {
-    const start = periodStart(days);
-    const previousStart = new Date(start.getTime() - days * DAY_MS);
+  /** The dashboard's KPI cards: the range against as many days right before it. */
+  async dashboardSummary(scope: AnalyticsScope, range: DateRange): Promise<DashboardSummaryDto> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        bucket: 'current' | 'previous';
+        orders: number;
+        revenue: bigint;
+        pickupSecSum: number;
+        pickupCount: number;
+      }>
+    >`
+      SELECT CASE WHEN o."createdAt" >= ${utc(range.start)} THEN 'current' ELSE 'previous' END AS "bucket",
+             COUNT(*)::int AS "orders",
+             COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue",
+             COALESCE(SUM(EXTRACT(EPOCH FROM (o."pickedUpAt" - o."readyAt"))) FILTER (WHERE ${PICKUP_DONE}), 0)::float8
+               AS "pickupSecSum",
+             COUNT(*) FILTER (WHERE ${PICKUP_DONE})::int AS "pickupCount"
+      FROM "Order" o
+      JOIN "Store" s ON s.id = o."storeId"
+      ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(range.previous.start, range.end)])}
+      GROUP BY 1
+    `;
 
-    // Single MV scan that covers both periods. We slice the rows in JS —
-    // cheaper than two roundtrips.
-    const rows = await this.fetchOrdersDaily({ scope, sinceDay: SQL_DATE_DAY(previousStart) });
-    const startKey = SQL_DATE_DAY(start);
-    const previousKey = SQL_DATE_DAY(previousStart);
-
-    const current = { revenue: 0, orders: 0, pickupSecSum: 0, pickupSecCount: 0 };
-    const previous = { ...current };
-    for (const r of rows) {
-      const dayKey = SQL_DATE_DAY(r.day);
-      if (dayKey < previousKey) continue;
-      const bucket = dayKey >= startKey ? current : previous;
-      bucket.revenue += Number(r.revenueCents);
-      bucket.orders += Number(r.orderCount);
-      bucket.pickupSecSum += Number(r.pickupSecSum);
-      bucket.pickupSecCount += Number(r.pickupSecCount);
-    }
-
-    const avgPickup = (b: typeof current) =>
-      b.pickupSecCount > 0 ? Math.round(b.pickupSecSum / b.pickupSecCount) : null;
-    const pickupNow = avgPickup(current);
-    const pickupBefore = avgPickup(previous);
+    const pick = (bucket: 'current' | 'previous') => {
+      const r = rows.find((row) => row.bucket === bucket);
+      return {
+        orders: num(r?.orders),
+        revenue: num(r?.revenue),
+        pickup: average(num(r?.pickupSecSum), num(r?.pickupCount)),
+      };
+    };
+    const current = pick('current');
+    const previous = pick('previous');
+    const avgCheck = average(current.revenue, current.orders) ?? 0;
+    const avgCheckBefore = average(previous.revenue, previous.orders) ?? 0;
 
     return {
-      days,
+      from: range.from,
+      to: range.to,
+      timeZone: range.timeZone,
+      days: range.days,
       revenueCents: current.revenue,
       orders: current.orders,
-      avgPickupSeconds: pickupNow ?? 0,
+      avgCheckCents: avgCheck,
+      avgPickupSeconds: current.pickup ?? 0,
       // No ratings are collected yet. A made-up score on a business's own
       // dashboard is worse than an honest blank.
       nps: null,
       revenueDeltaPercent: percentChange(previous.revenue, current.revenue),
       ordersDeltaPercent: percentChange(previous.orders, current.orders),
-      pickupDeltaSeconds: pickupNow !== null && pickupBefore !== null ? pickupNow - pickupBefore : null,
+      avgCheckDeltaPercent: percentChange(avgCheckBefore, avgCheck),
+      pickupDeltaSeconds: current.pickup !== null && previous.pickup !== null ? current.pickup - previous.pickup : null,
+    };
+  }
+
+  /**
+   * Customers lost during the range — see `retention.ts` for the rule — with
+   * the same for the period before. `withList` names them (PRO).
+   */
+  async churn(
+    scope: AnalyticsScope,
+    range: DateRange,
+    window: ChurnWindow,
+    withList: boolean,
+    take = 20,
+    now = new Date(),
+  ): Promise<ChurnDto> {
+    const currentBounds = churnBounds(range.start, range.end, window, now);
+    const previousBounds = churnBounds(range.previous.start, range.previous.end, window, now);
+    const [currentRows, previousRows] = await Promise.all([
+      this.lastOrders(scope, currentBounds),
+      this.lastOrders(scope, previousBounds),
+    ]);
+    const current = summarizeChurn(currentRows, currentBounds);
+    const previous = summarizeChurn(previousRows, previousBounds);
+
+    let customers: ChurnDto['customers'] = null;
+    if (withList) {
+      const listed = current.customers.slice(0, take);
+      const labels = await customerLabels(
+        this.prisma,
+        scope,
+        listed.map((c) => c.userId),
+      );
+      customers = listed.map((c) => ({
+        userId: c.userId,
+        name: labels.get(c.userId)?.name ?? null,
+        phone: labels.get(c.userId)?.phone ?? null,
+        orders: c.orders,
+        totalCents: c.totalCents,
+        avgCheckCents: c.avgCheckCents,
+        lastOrderAt: c.lastOrderAt.toISOString(),
+        daysSinceLastOrder: c.daysSinceLastOrder,
+      }));
+    }
+
+    return {
+      from: range.from,
+      to: range.to,
+      timeZone: range.timeZone,
+      window,
+      count: current.count,
+      lostRevenueCents: current.lostRevenueCents,
+      previous: { count: previous.count, lostRevenueCents: previous.lostRevenueCents },
+      countDeltaPercent: percentChange(previous.count, current.count),
+      customers,
+    };
+  }
+
+  /** Lost customers who came back during the range, against the period before. */
+  async winBack(
+    scope: AnalyticsScope,
+    range: DateRange,
+    window: ChurnWindow,
+    take = 20,
+    now = new Date(),
+  ): Promise<WinBackDto> {
+    const [current, previous] = await Promise.all([
+      this.winBackPeriod(scope, range.start, range.end, window, now),
+      this.winBackPeriod(scope, range.previous.start, range.previous.end, window, now),
+    ]);
+    const listed = current.customers.slice(0, take);
+    const labels = await customerLabels(
+      this.prisma,
+      scope,
+      listed.map((c) => c.userId),
+    );
+    const period = (s: WinBackSummary): WinBackPeriodDto => ({
+      lapsedAtStart: s.lapsedAtStart,
+      returned: s.returned,
+      returnRatePercent: s.returnRatePercent,
+      orders: s.orders,
+      revenueCents: s.revenueCents,
+    });
+    return {
+      from: range.from,
+      to: range.to,
+      timeZone: range.timeZone,
+      window,
+      current: period(current),
+      previous: period(previous),
+      returnedDeltaPercent: percentChange(previous.returned, current.returned),
+      revenueDeltaPercent: percentChange(previous.revenueCents, current.revenueCents),
+      customers: listed.map((c) => ({
+        userId: c.userId,
+        name: labels.get(c.userId)?.name ?? null,
+        phone: labels.get(c.userId)?.phone ?? null,
+        lastOrderBefore: c.lastOrderBefore.toISOString(),
+        returnedAt: c.returnedAt.toISOString(),
+        daysAway: c.daysAway,
+        orders: c.orders,
+        revenueCents: c.revenueCents,
+      })),
     };
   }
 
   // ── helpers ────────────────────────────────────────────────────────────
 
   /**
-   * Aggregates revenue + order count from `mv_orders_daily`. The MV bucket
-   * granularity is one UTC day, so we always emit one RevenuePointDto per
-   * day in [start, end) — including zero-revenue days, which the chart needs
-   * for a continuous x-axis.
+   * Each customer's last order before `asOf`, with their order count and
+   * spend, for the customers whose last order falls in the churn bounds.
+   * Deleted accounts are left out: they cannot come back.
    */
-  private async aggregateRevenue(
-    start: Date,
-    end: Date,
+  private async lastOrders(
     scope: AnalyticsScope,
-  ): Promise<{
-    totalRevenueCents: number;
-    totalOrders: number;
-    points: RevenuePointDto[];
-  }> {
-    const startDay = new Date(start);
-    startDay.setUTCHours(0, 0, 0, 0);
-    // SQL "day < untilDay" is exclusive — pass end's calendar day + 1 so an
-    // in-progress day is included (e.g. end=14:30 today, untilDay=tomorrow).
-    const endDayExclusive = new Date(end);
-    endDayExclusive.setUTCHours(0, 0, 0, 0);
-    endDayExclusive.setUTCDate(endDayExclusive.getUTCDate() + 1);
-    const rows = await this.fetchOrdersDaily({
-      scope,
-      sinceDay: SQL_DATE_DAY(startDay),
-      untilDay: SQL_DATE_DAY(endDayExclusive),
-    });
-
-    const byDay = new Map<string, { revenue: number; count: number }>();
-    for (const r of rows) {
-      const key = SQL_DATE_DAY(r.day);
-      const b = byDay.get(key) ?? { revenue: 0, count: 0 };
-      b.revenue += Number(r.revenueCents);
-      b.count += Number(r.orderCount);
-      byDay.set(key, b);
-    }
-
-    const points: RevenuePointDto[] = [];
-    let totalRevenueCents = 0;
-    let totalOrders = 0;
-    const cursor = new Date(startDay);
-    while (cursor < end) {
-      const key = SQL_DATE_DAY(cursor);
-      const b = byDay.get(key) ?? { revenue: 0, count: 0 };
-      points.push({ date: key, revenueCents: b.revenue, orderCount: b.count });
-      totalRevenueCents += b.revenue;
-      totalOrders += b.count;
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    return { totalRevenueCents, totalOrders, points };
+    bounds: { asOf: Date; lastOrderFrom: Date; lastOrderBefore: Date },
+  ): Promise<CustomerTotals[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ userId: string; lastOrderAt: Date; orders: number; totalCents: bigint }>
+    >`
+      SELECT o."userId" AS "userId",
+             MAX(o."createdAt") AS "lastOrderAt",
+             COUNT(*)::int AS "orders",
+             COALESCE(SUM(o."totalCents"), 0)::bigint AS "totalCents"
+      FROM "Order" o
+      JOIN "Store" s ON s.id = o."storeId"
+      JOIN "User" u ON u.id = o."userId"
+      ${whereAll([
+        ...scopeConditions(scope),
+        COUNTED,
+        Prisma.sql`o."createdAt" < ${utc(bounds.asOf)}`,
+        Prisma.sql`u."blockedAt" IS NULL`,
+      ])}
+      GROUP BY o."userId"
+      HAVING MAX(o."createdAt") >= ${utc(bounds.lastOrderFrom)} AND MAX(o."createdAt") < ${utc(bounds.lastOrderBefore)}
+    `;
+    return rows.map((r) => ({
+      userId: r.userId,
+      lastOrderAt: r.lastOrderAt,
+      orders: num(r.orders),
+      totalCents: num(r.totalCents),
+    }));
   }
 
-  /**
-   * Reads from the `mv_orders_daily` materialized view, narrowed to the
-   * scope's brands and stores and to the day range. Returns an empty array
-   * when nothing matches — including an empty scope.
-   */
-  private async fetchOrdersDaily(opts: {
-    scope: AnalyticsScope;
-    sinceDay?: string;
-    untilDay?: string;
-  }): Promise<OrdersDailyRow[]> {
-    const { scope, sinceDay, untilDay } = opts;
-    const conditions: Prisma.Sql[] = [];
-    if (scope.brandIds) conditions.push(Prisma.sql`"brandId" = ANY(${[...scope.brandIds]}::text[])`);
-    if (scope.storeIds) conditions.push(Prisma.sql`"storeId" = ANY(${[...scope.storeIds]}::text[])`);
-    if (sinceDay) conditions.push(Prisma.sql`"day" >= ${sinceDay}::date`);
-    if (untilDay) conditions.push(Prisma.sql`"day" < ${untilDay}::date`);
-    const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` : Prisma.empty;
-
-    return this.prisma.$queryRaw<OrdersDailyRow[]>`
-      SELECT "brandId", "storeId", "day", "orderCount", "revenueCents",
-             "slaHits", "slaTotal", "pickupSecSum", "pickupSecCount"
-      FROM "mv_orders_daily"
-      ${where}
+  private async winBackPeriod(
+    scope: AnalyticsScope,
+    start: Date,
+    end: Date,
+    window: ChurnWindow,
+    now: Date,
+  ): Promise<WinBackSummary> {
+    const asOf = new Date(Math.min(end.getTime(), now.getTime()));
+    const lapsedLine = lapsedBefore(start, window);
+    const lapsed = Prisma.sql`
+      SELECT o."userId" AS "userId", MAX(o."createdAt") AS "lastOrderBefore"
+      FROM "Order" o
+      JOIN "Store" s ON s.id = o."storeId"
+      JOIN "User" u ON u.id = o."userId"
+      ${whereAll([
+        ...scopeConditions(scope),
+        COUNTED,
+        Prisma.sql`o."createdAt" < ${utc(start)}`,
+        Prisma.sql`u."blockedAt" IS NULL`,
+      ])}
+      GROUP BY o."userId"
+      HAVING MAX(o."createdAt") < ${utc(lapsedLine)}
     `;
+    const [pool, returned] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ lapsed: number }>>`SELECT COUNT(*)::int AS "lapsed" FROM (${lapsed}) l`,
+      this.prisma.$queryRaw<
+        Array<{ userId: string; lastOrderBefore: Date; returnedAt: Date; orders: number; revenueCents: bigint }>
+      >`
+        WITH lapsed AS (${lapsed})
+        SELECT l."userId" AS "userId",
+               l."lastOrderBefore" AS "lastOrderBefore",
+               MIN(o."createdAt") AS "returnedAt",
+               COUNT(*)::int AS "orders",
+               COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenueCents"
+        FROM lapsed l
+        JOIN "Order" o ON o."userId" = l."userId"
+        JOIN "Store" s ON s.id = o."storeId"
+        ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(start, asOf)])}
+        GROUP BY l."userId", l."lastOrderBefore"
+      `,
+    ]);
+    const rows: ReturnedCustomer[] = returned.map((r) => ({
+      userId: r.userId,
+      lastOrderBefore: r.lastOrderBefore,
+      returnedAt: r.returnedAt,
+      orders: num(r.orders),
+      revenueCents: num(r.revenueCents),
+    }));
+    return summarizeWinBack(num(pool[0]?.lapsed), rows);
   }
 }
 
-/** The scope as a filter on live `Order` rows. */
 /** Statuses of an order that is still somebody's job. */
 const LIVE_STATUSES: OrderStatus[] = [
   OrderStatus.CREATED,
@@ -437,11 +751,4 @@ function countByStatus<S extends OrderStatus>(
     if ((statuses as readonly OrderStatus[]).includes(row.status)) counts[row.status as S] = row._count._all;
   }
   return counts;
-}
-
-function orderScope(scope: AnalyticsScope): Prisma.OrderWhereInput {
-  const where: Prisma.OrderWhereInput = {};
-  if (scope.storeIds) where.storeId = { in: [...scope.storeIds] };
-  if (scope.brandIds) where.store = { brandId: { in: [...scope.brandIds] } };
-  return where;
 }

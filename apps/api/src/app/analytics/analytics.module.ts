@@ -10,6 +10,6 @@ import { AnalyticsService } from './analytics.service';
   imports: [AuthModule],
   controllers: [AnalyticsController],
   providers: [AnalyticsService, AnalyticsRefreshService, AnalyticsScopeResolver],
-  exports: [AnalyticsService, AnalyticsRefreshService],
+  exports: [AnalyticsService, AnalyticsRefreshService, AnalyticsScopeResolver],
 })
 export class AnalyticsModule {}
