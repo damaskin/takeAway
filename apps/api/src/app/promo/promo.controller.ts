@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
+import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { CreatePromoDto, PromoDto, UpdatePromoStatusDto, ValidPromoResultDto, ValidatePromoDto } from './dto/promo.dto';
 import { PromoService } from './promo.service';
 
@@ -33,9 +34,11 @@ export class PromoController {
     return this.promo.validate(null, dto.code, dto.brandId, dto.subtotalCents);
   }
 
-  // Admin / brand-admin CRUD.
+  // Admin / brand-admin CRUD. Managing promo codes is a PRO feature; codes
+  // already created keep working at checkout whatever the plan.
   @ApiBearerAuth()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @RequiresPlanFeature('promo')
   @Get('admin/promo')
   @ApiOkResponse({ type: PromoDto, isArray: true })
   async list(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId?: string): Promise<PromoDto[]> {
@@ -46,6 +49,7 @@ export class PromoController {
 
   @ApiBearerAuth()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @RequiresPlanFeature('promo')
   @Post('admin/promo')
   @ApiOkResponse({ type: PromoDto })
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreatePromoDto): Promise<PromoDto> {
@@ -55,6 +59,7 @@ export class PromoController {
 
   @ApiBearerAuth()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @RequiresPlanFeature('promo')
   @Patch('admin/promo/:id/status')
   @ApiOkResponse({ type: PromoDto })
   async updateStatus(

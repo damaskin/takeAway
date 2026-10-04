@@ -16,6 +16,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { CampaignsService } from './campaigns.service';
 import { CampaignDto, CreateCampaignDto } from './dto/campaigns.dto';
@@ -23,6 +24,7 @@ import { CampaignDto, CreateCampaignDto } from './dto/campaigns.dto';
 @ApiTags('campaigns')
 @ApiBearerAuth()
 @Controller('admin/campaigns')
+@RequiresPlanFeature('campaigns')
 export class CampaignsController {
   constructor(
     private readonly service: CampaignsService,

@@ -14,6 +14,7 @@ import {
   type StoreWorkingHour,
   type VariationType,
 } from '@prisma/client';
+import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
 
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zone';
@@ -36,6 +37,7 @@ export function assertInScope(scope: BrandScope, brandId: string): void {
   }
 }
 import type { SetBrandOwnerDto } from './dto/admin-brand-owner.dto';
+import type { SetBrandPlanDto } from './dto/admin-brand-plan.dto';
 import { PasswordService } from '../../auth/services/password.service';
 import type { CreateCategoryDto, ReorderCategoriesDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import type {
@@ -124,6 +126,8 @@ export class AdminCatalogService {
         moderationStatus: true,
         moderationNote: true,
         submittedAt: true,
+        plan: true,
+        commissionBps: true,
       },
     });
   }
@@ -164,6 +168,22 @@ export class AdminCatalogService {
   async updateBrand(id: string, dto: UpdateBrandDto) {
     await this.getBrand(id);
     return this.prisma.brand.update({ where: { id }, data: dto });
+  }
+
+  /**
+   * Moves a brand to another plan. The commission follows the plan's default
+   * unless the platform admin names a rate for this brand.
+   */
+  async setBrandPlan(id: string, dto: SetBrandPlanDto) {
+    await this.getBrand(id);
+    return this.prisma.brand.update({
+      where: { id },
+      data: { plan: dto.plan, commissionBps: dto.commissionBps ?? DEFAULT_COMMISSION_BPS[dto.plan] },
+      include: {
+        owner: { select: { id: true, email: true, name: true, phone: true } },
+        _count: { select: { stores: true, products: true } },
+      },
+    });
   }
 
   async getBrandOwner(brandId: string) {

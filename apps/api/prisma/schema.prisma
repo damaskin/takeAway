@@ -218,6 +218,17 @@ enum PromoStatus {
 ///  * REJECTED — stays in the DB (with optional moderationNote) but is not
 ///               visible on the storefront and the owner can no longer add
 ///               new data.
+/// Commission tariff of a brand. What each plan includes lives in
+/// `PLAN_FEATURES` (libs/shared-types) — the admin and the API both read it.
+///  * BASIC — 10 %: dashboard, kitchen, menu, stores, plain per-store figures,
+///            churn count and money.
+///  * PRO   — 15 %: BASIC plus promo codes, push campaigns, deep analytics,
+///            store and staff comparison, customers, win-back.
+enum BrandPlan {
+  BASIC
+  PRO
+}
+
 enum BrandModerationStatus {
   PENDING
   APPROVED
@@ -428,6 +439,11 @@ model Brand {
   moderationNote   String?
   submittedAt      DateTime              @default(now())
   moderatedAt      DateTime?
+  /// New brands start on BASIC; only a SUPER_ADMIN changes it.
+  plan             BrandPlan             @default(BASIC)
+  /// Platform commission in basis points (1000 = 10 %). Follows the plan's
+  /// default unless a SUPER_ADMIN set another value for this brand.
+  commissionBps    Int                   @default(1000)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -961,6 +977,8 @@ model Order {
 
   @@index([userId, createdAt])
   @@index([storeId, status])
+  // Analytics ranges: one store's orders between two instants.
+  @@index([storeId, createdAt])
   @@index([status, pickupAt])
   @@index([riderId, status])
   // Slot occupancy counts scan one store's handovers inside a 15-minute
