@@ -363,6 +363,18 @@
   "addCardToOrder": "Orders are paid by card. Add a card to place your order.",
   "addCard": "Add a card",
   "holdHint": "We hold the amount now and charge it when the store accepts your order.",
+  "webPaymentHint": "You pay by card on the bank's secure page. The amount is held now and charged when the store accepts your order.",
+  "@webPaymentHint": {
+    "description": "Checkout, web payment flow: the card is entered on the bank's hosted page."
+  },
+  "webPaymentNotOpened": "Couldn't open the payment page. Tap \"Pay\" to try again.",
+  "@webPaymentNotOpened": {
+    "description": "Snack when no in-app browser could open the bank's payment page."
+  },
+  "webPaymentFailed": "The payment did not go through. You can try again.",
+  "@webPaymentFailed": {
+    "description": "Snack when the bank sends the customer back with a failed payment."
+  },
   "summaryTitle": "Summary",
   "placeOrderPay": "Pay {total}",
   "@placeOrderPay": {

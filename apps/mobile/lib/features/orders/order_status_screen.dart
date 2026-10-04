@@ -27,6 +27,7 @@ import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
+import '../checkout/web_payment.dart';
 import 'order_progress.dart';
 import 'orders_providers.dart';
 
@@ -49,8 +50,10 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
   bool _hereSent = false;
   bool _hereBusy = false;
   bool _reordering = false;
+  bool _paying = false;
   LatLng? _userPosition;
   OrderStatus? _lastStatus;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
@@ -62,13 +65,40 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     if (widget.justPlaced) {
       WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_offerNotifications()));
     }
+    // Back from the bank's page (or anywhere else): the order may have
+    // moved while the app was in the background.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => unawaited(ref.read(orderProvider(widget.orderId).notifier).watchPayment()),
+    );
   }
 
   @override
   void dispose() {
     _ticker?.cancel();
     _geofence?.cancel();
+    _lifecycle.dispose();
     super.dispose();
+  }
+
+  /// Sends the customer (back) to the bank's page for an order that is not
+  /// paid yet. The API resumes a payment still open there instead of
+  /// starting a second one.
+  Future<void> _payOnline(Order order) async {
+    if (_paying) return;
+    setState(() => _paying = true);
+    final controller = ref.read(orderProvider(order.id).notifier);
+    try {
+      final launch = await ref.read(webPaymentsProvider).launch(order.id);
+      if (!mounted) return;
+      if (launch == WebPaymentLaunch.notOpened) {
+        Snack.show(context, AppLocalizations.of(context).webPaymentNotOpened, icon: Icons.error_outline_rounded);
+      }
+      unawaited(controller.watchPayment());
+    } on Object catch (error) {
+      if (mounted) Snack.error(context, error);
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
   }
 
   /// Coarse location pings while the order is on its way, so the barista
@@ -266,6 +296,7 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     final l10n = AppLocalizations.of(context);
     final async = ref.watch(orderProvider(widget.orderId));
     final order = async.valueOrNull;
+    final webPayments = ref.watch(featureFlagsProvider).valueOrNull?.webPaymentsEnabled ?? false;
 
     // Haptic nudge on every status change after the first render.
     if (order != null) {
@@ -303,9 +334,12 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
           ? null
           : _ActionBar(
               order: order,
+              canPayOnline: webPayments && _awaitsWebPayment(order),
+              paying: _paying,
               hereSent: _hereSent,
               hereBusy: _hereBusy,
               reordering: _reordering,
+              onPay: () => _payOnline(order),
               onHere: () => _imHere(order),
               onReorder: () => _reorder(order),
             ),
@@ -313,23 +347,42 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
   }
 }
 
+/// A new order whose card payment never went through on the bank's page —
+/// nothing is held for it yet.
+bool _awaitsWebPayment(Order order) =>
+    order.status == OrderStatus.created &&
+    order.totalCents > 0 &&
+    switch (order.payment.state) {
+      PaymentState.none || PaymentState.pending || PaymentState.failed => true,
+      PaymentState.held || PaymentState.paid || PaymentState.refunded => false,
+    };
+
 /// The one thing to do next, pinned under the thumb rather than below the
-/// map and the receipt: "I'm here" while the order is on its way, "Order
-/// again" once it is over.
+/// map and the receipt: "Pay" while a web payment is outstanding, "I'm
+/// here" while the order is on its way, "Order again" once it is over.
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.order,
+    required this.canPayOnline,
+    required this.paying,
     required this.hereSent,
     required this.hereBusy,
     required this.reordering,
+    required this.onPay,
     required this.onHere,
     required this.onReorder,
   });
 
   final Order order;
+
+  /// The order waits for its payment on the bank's page: paying comes
+  /// before anything else.
+  final bool canPayOnline;
+  final bool paying;
   final bool hereSent;
   final bool hereBusy;
   final bool reordering;
+  final VoidCallback onPay;
   final VoidCallback onHere;
   final VoidCallback onReorder;
 
@@ -344,7 +397,15 @@ class _ActionBar extends StatelessWidget {
         status != OrderStatus.outForDelivery &&
         status != OrderStatus.unknown;
 
-    final Widget? action = status.isTerminal
+    final Widget? action = canPayOnline
+        ? PrimaryButton(
+            key: const ValueKey('pay'),
+            label: l10n.placeOrderPay(context.money(order.totalCents, order.currency)),
+            icon: Icons.lock_outline_rounded,
+            loading: paying,
+            onPressed: onPay,
+          )
+        : status.isTerminal
         ? PrimaryButton(
             key: const ValueKey('reorder'),
             label: l10n.reorder,

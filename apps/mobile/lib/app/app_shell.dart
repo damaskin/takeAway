@@ -11,6 +11,7 @@ import '../core/push/push_service.dart';
 import '../core/theme/tokens.dart';
 import '../features/cart/cart_controller.dart';
 import '../features/catalog/catalog_providers.dart';
+import '../features/checkout/web_payment.dart';
 import '../features/orders/orders_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../shared/widgets/state_views.dart';
@@ -40,7 +41,8 @@ class _AppShellState extends ConsumerState<AppShell> {
     _subscriptions
       ..add(push.opened.listen(_openFromPush))
       ..add(push.foreground.listen(_showForegroundPush))
-      ..add(ref.read(sessionManagerProvider).ended.listen(_onSessionEnded));
+      ..add(ref.read(sessionManagerProvider).ended.listen(_onSessionEnded))
+      ..add(ref.read(webPaymentPlatformProvider).links.listen(_onLink, onError: (Object _) {}));
     _lifecycle = AppLifecycleListener(onResume: _onResume);
   }
 
@@ -56,6 +58,29 @@ class _AppShellState extends ConsumerState<AppShell> {
   void _openFromPush(PushMessage message) {
     final orderId = message.orderId;
     if (orderId != null && ref.read(isSignedInProvider)) GoRouter.of(context).push(Routes.order(orderId));
+  }
+
+  /// `takeaway://pay?orderId=…&status=…`: the bank is done with the
+  /// customer. Close its page and show the order, re-read — the payment
+  /// may have settled while the app was in the background.
+  void _onLink(Uri uri) {
+    final payment = PaymentReturn.parse(uri);
+    if (payment == null || !mounted) return;
+    unawaited(ref.read(webPaymentPlatformProvider).close());
+    if (!ref.read(isSignedInProvider)) return;
+    ref.invalidate(ordersProvider);
+
+    final router = GoRouter.of(context);
+    // The top-most route, pushed ones included (`uri` only has the base).
+    final top = router.routerDelegate.currentConfiguration.lastOrNull?.matchedLocation;
+    if (top == '/order/${payment.orderId}') {
+      unawaited(ref.read(orderProvider(payment.orderId).notifier).watchPayment());
+    } else {
+      unawaited(router.push(Routes.order(payment.orderId)));
+    }
+    if (payment.status == PaymentReturnStatus.fail) {
+      Snack.show(context, AppLocalizations.of(context).webPaymentFailed, icon: Icons.error_outline_rounded);
+    }
   }
 
   void _showForegroundPush(PushMessage message) {

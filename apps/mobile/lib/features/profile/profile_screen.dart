@@ -62,7 +62,9 @@ class ProfileScreen extends ConsumerWidget {
                     title: l10n.profilePersonal,
                     onTap: () => context.push(Routes.personal),
                   ),
-                  if (flags.agroprombankEnabled)
+                  // Only bound cards are managed here; on the bank's page
+                  // the customer types the card each time.
+                  if (flags.boundCardsEnabled)
                     SettingsTile(
                       icon: Icons.credit_card_rounded,
                       title: l10n.profilePayment,
