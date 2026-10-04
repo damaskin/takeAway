@@ -35,11 +35,15 @@ class StoreAvailabilityEvent {
 
 /// Live order updates over the API's Socket.IO gateway (`/ws` namespace).
 ///
-/// The server puts every socket into its user's room, so status changes for
-/// all of the customer's orders arrive without subscribing; subscribing to a
-/// specific order additionally covers the order room. The token is supplied
-/// through an auth callback, so each reconnect presents a fresh one — the
-/// gateway checks it only at connect time.
+/// The server puts every signed-in socket into its user's room, so status
+/// changes for all of the customer's orders arrive without subscribing;
+/// subscribing to a specific order additionally covers the order room. The
+/// token is supplied through an auth callback, so each reconnect presents a
+/// fresh one — the gateway checks it only at connect time.
+///
+/// Signed out, the socket connects anonymously (no token): the gateway
+/// accepts that for storefronts, which still receive the public
+/// `store.availabilityChanged` broadcast.
 class RealtimeService {
   RealtimeService(this._sessions);
 
@@ -64,7 +68,7 @@ class RealtimeService {
   }
 
   void connect() {
-    if (_disposed || _socket != null || _sessions.current == null) return;
+    if (_disposed || _socket != null) return;
 
     final socket = io.io(
       '${Env.realtimeUrl}/ws',
@@ -89,7 +93,7 @@ class RealtimeService {
       connected.value = false;
       // A server-side kick (expired token, deploy) is not retried by the
       // client library on its own.
-      if (reason == 'io server disconnect' && !_disposed && _sessions.current != null) {
+      if (reason == 'io server disconnect' && !_disposed) {
         Future<void>.delayed(const Duration(seconds: 2), () {
           if (!_disposed && identical(_socket, socket)) socket.connect();
         });
@@ -114,7 +118,9 @@ class RealtimeService {
         // Offline — present what we have; the gateway will say no.
       }
     }
-    callback({'token': session?.accessToken ?? ''});
+    // No session: no token at all, which the gateway takes as anonymous.
+    final token = session?.accessToken;
+    callback(token == null || token.isEmpty ? <String, dynamic>{} : {'token': token});
   }
 
   /// Joins an order's room for as long as the returned callback is not called.
@@ -146,11 +152,11 @@ class RealtimeService {
   }
 }
 
-/// One socket per signed-in user; torn down on sign-out.
+/// One socket per identity: rebuilt on sign-in and sign-out, so the
+/// connection always carries the current account — or none (anonymous).
 final realtimeServiceProvider = Provider<RealtimeService>((ref) {
-  final userId = ref.watch(currentUserIdProvider);
-  final service = RealtimeService(ref.watch(sessionManagerProvider));
-  if (userId != null) service.connect();
+  ref.watch(currentUserIdProvider);
+  final service = RealtimeService(ref.watch(sessionManagerProvider))..connect();
   ref.onDispose(service.dispose);
   return service;
 });
@@ -158,8 +164,7 @@ final realtimeServiceProvider = Provider<RealtimeService>((ref) {
 /// Every `order.statusChanged` event for the signed-in customer.
 final orderEventsProvider = StreamProvider<OrderStatusEvent>((ref) => ref.watch(realtimeServiceProvider).events);
 
-/// Every `store.availabilityChanged` event (signed-in customers only — the
-/// socket needs an account).
+/// Every `store.availabilityChanged` event, signed in or not.
 final storeAvailabilityEventsProvider = StreamProvider<StoreAvailabilityEvent>(
   (ref) => ref.watch(realtimeServiceProvider).storeEvents,
 );
