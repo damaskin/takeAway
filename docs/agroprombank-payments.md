@@ -512,8 +512,8 @@ all, which is why the routes below carry none:
 | Preauthorization  | **required** — ask for `ispreauth` on this merchant         |
 
 All three routes are public and accept both methods with a query string or a
-form body (`application/x-www-form-urlencoded` is parsed for these routes
-only; everywhere else it stays a 415).
+form body (`application/x-www-form-urlencoded`, which Nest's Fastify adapter
+already parses), or JSON.
 
 The bank then issues `MerchantLogin` (`AGROPROMBANK_WEB_MERCHANT_LOGIN`) and
 `MerchantPass` (`AGROPROMBANK_WEB_MERCHANT_PASS` or `_FILE`). The pass signs
