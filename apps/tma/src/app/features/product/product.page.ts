@@ -3,7 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -379,8 +379,15 @@ export class TmaProductPage implements OnInit, OnDestroy {
         next: () => void this.router.navigate(['/checkout']),
         // Without this the request failing left the button looking inert —
         // the customer taps "add" and nothing at all happens.
+        // A coded refusal (sold out here, not sold in this store) reads in the
+        // customer's language, like on the website.
         error: (err: { error?: { message?: string }; message?: string }) =>
-          this.error.set(err.error?.message ?? err.message ?? this.translate.instant('tma.product.addFailed')),
+          this.error.set(
+            checkoutErrorText(err.error, this.translate, this.fmt) ??
+              err.error?.message ??
+              err.message ??
+              this.translate.instant('tma.product.addFailed'),
+          ),
       });
   }
 }
