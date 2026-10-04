@@ -224,6 +224,103 @@ describe('CatalogService', () => {
     expect(menu.categories[0]?.products[0]?.onStopList).toBe(true);
   });
 
+  // One brand, a burger bar and a pizzeria: each store's menu holds only
+  // what that store sells, and a category left empty there is not shown.
+  it('shows only the products the store sells, and drops categories left empty', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'pizza', slug: 'pizzeria', brandId: 'brand-1' });
+    const category = (id: string, products: Array<Record<string, unknown>>) => ({
+      id,
+      slug: id,
+      name: id,
+      description: null,
+      iconUrl: null,
+      sortOrder: 0,
+      availableFrom: null,
+      availableTo: null,
+      products,
+    });
+    prisma.category.findMany.mockResolvedValue([
+      category('burgers', []),
+      category('pizza', [
+        {
+          id: 'p-margherita',
+          categoryId: 'pizza',
+          slug: 'margherita',
+          name: 'Маргарита',
+          description: null,
+          basePriceCents: 9000,
+          prepTimeSeconds: 600,
+          caffeineLevel: null,
+          calories: null,
+          proteinsGrams: null,
+          fatsGrams: null,
+          carbsGrams: null,
+          allergens: [],
+          dietTags: [],
+          imageUrls: [],
+          sortOrder: 0,
+        },
+      ]),
+    ]);
+
+    const menu = await service.getMenu('pizzeria');
+
+    expect(menu.categories.map((c) => c.id)).toEqual(['pizza']);
+    expect(prisma.category.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          products: expect.objectContaining({
+            where: { visible: true, brandId: 'brand-1', stores: { some: { storeId: 'pizza' } } },
+          }),
+        },
+      }),
+    );
+  });
+
+  // Opened from a store: a product that store does not sell is not found, and
+  // the options it has run out of (oat milk here, not at the café) are hidden.
+  it('looks a product up as the browsed store sells it', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'pizza', brandId: 'brand-1' });
+    const milk = (id: string, isDefault: boolean, storeStops: Array<{ storeId: string }>) => ({
+      id,
+      type: 'MILK',
+      name: id,
+      priceDeltaCents: 0,
+      prepTimeDeltaSeconds: 0,
+      sortOrder: 0,
+      isDefault,
+      ingredient: { isAvailable: true, storeStops },
+    });
+    prisma.product.findFirst.mockResolvedValue({
+      id: 'p-latte',
+      categoryId: 'c-coffee',
+      brandId: 'brand-1',
+      slug: 'latte',
+      name: 'Latte',
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 60,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: [],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+      variations: [milk('oat', true, [{ storeId: 'pizza' }]), milk('whole', false, [])],
+      modifiers: [],
+    });
+
+    const product = await service.getProduct('latte', 'pizzeria');
+
+    expect(product.variations.map((v) => [v.id, v.isDefault])).toEqual([['whole', true]]);
+    const query = prisma.product.findFirst.mock.calls[0]?.[0];
+    expect(query.where).toMatchObject({ brandId: 'brand-1', stores: { some: { storeId: 'pizza' } } });
+    expect(JSON.stringify(query.include.modifiers.where)).toContain('"storeStops":{"none":{"storeId":"pizza"');
+  });
+
   // A product opened by its own URL carries no store. The cart rejects an
   // item whose brand differs from the store's, so the client has to be able
   // to pick a store that can actually make it.

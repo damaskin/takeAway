@@ -39,10 +39,13 @@ function build() {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
       aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
-      create: jest.fn(({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 'new-product', ...data })),
-      update: jest.fn((args: unknown) => Promise.resolve(args)),
+      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'new-product', ...data, stores: [] }),
+      ),
+      update: jest.fn((args: object) => Promise.resolve({ ...args, stores: [] })),
       delete: jest.fn().mockResolvedValue({}),
     },
+    store: { findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }]) },
     variation: {
       findUnique: jest.fn(),
       aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
@@ -263,7 +266,7 @@ describe('AdminCatalogService — categories', () => {
 });
 
 describe('AdminCatalogService — products', () => {
-  const product = { id: 'p1', brandId: 'b1', categoryId: 'cat-a', variations: [], modifiers: [] };
+  const product = { id: 'p1', brandId: 'b1', categoryId: 'cat-a', variations: [], modifiers: [], stores: [] };
 
   function withProduct() {
     const built = build();
@@ -278,9 +281,11 @@ describe('AdminCatalogService — products', () => {
 
     await svc.createProduct({ brandId: 'b1', categoryId: 'cat-a', name: 'Флэт уайт', basePriceCents: 4000 }, ['b1']);
 
-    expect(prisma.product.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ slug: 'flet-uayt', sortOrder: 3, basePriceCents: 4000 }),
-    });
+    expect(prisma.product.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ slug: 'flet-uayt', sortOrder: 3, basePriceCents: 4000 }),
+      }),
+    );
   });
 
   it('answers a taken product slug with 409', async () => {
@@ -305,6 +310,7 @@ describe('AdminCatalogService — products', () => {
     expect(prisma.product.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
       data: { categoryId: 'cat-b', sortOrder: 10 },
+      include: { stores: { select: { storeId: true } } },
     });
   });
 
@@ -317,6 +323,7 @@ describe('AdminCatalogService — products', () => {
     expect(prisma.product.update).toHaveBeenCalledWith({
       where: { id: 'p1' },
       data: { categoryId: 'cat-a', name: 'Латте' },
+      include: { stores: { select: { storeId: true } } },
     });
   });
 
@@ -387,6 +394,7 @@ describe('AdminCatalogService — options', () => {
       categoryId: 'c1',
       variations: [],
       modifiers: [],
+      stores: [],
     });
     built.prisma.variation.findUnique.mockResolvedValue({ productId: 'p1', type: 'SIZE', product: { brandId: 'b1' } });
     built.prisma.modifier.findUnique.mockResolvedValue({

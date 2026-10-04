@@ -26,9 +26,11 @@ describe('PosService.upsertImportedStores', () => {
       store: {
         findMany: jest.fn().mockResolvedValue(siblingZones.map((timezone) => ({ timezone }))),
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({ id: 'store-new' }),
         update: jest.fn(),
       },
+      product: { findMany: jest.fn().mockResolvedValue([{ id: 'p-latte' }]) },
+      productStore: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const module = await Test.createTestingModule({
       providers: [
@@ -61,6 +63,15 @@ describe('PosService.upsertImportedStores', () => {
       timezone: 'Europe/Chisinau',
       latitude: 0,
       longitude: 0,
+    });
+  });
+
+  it("sells the brand's whole menu in an imported store", async () => {
+    const { service, prisma } = await build(['Europe/Chisinau']);
+    await service.upsertImportedStores('int-1', [{ externalId: '7', name: 'Балка' }]);
+    expect(prisma.productStore.createMany).toHaveBeenCalledWith({
+      data: [{ productId: 'p-latte', storeId: 'store-new' }],
+      skipDuplicates: true,
     });
   });
 

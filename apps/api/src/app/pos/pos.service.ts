@@ -23,6 +23,7 @@ import { Queue } from 'bullmq';
 
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { brandStoreIds, listBrandMenuInStore } from '../catalog/product-listing';
 import { SecretCipher } from '../common/crypto/secret-cipher';
 import { canonicalTimeZone, isIanaTimeZone, prevailingTimeZone } from '../common/time/time-zone';
 import { PrismaService } from '../prisma/prisma.service';
@@ -426,7 +427,7 @@ export class PosService {
         });
         updated += 1;
       } else {
-        await this.prisma.store.create({
+        const store = await this.prisma.store.create({
           data: {
             brandId: integration.brandId,
             slug: this.posSlug(integration.provider, 'store', d.externalId),
@@ -448,6 +449,7 @@ export class PosService {
             externalId: d.externalId,
           },
         });
+        await listBrandMenuInStore(this.prisma, store.id, integration.brandId);
         created += 1;
       }
     }
@@ -510,6 +512,7 @@ export class PosService {
       }
     }
 
+    const storeIds = await brandStoreIds(this.prisma, brandId);
     for (const p of menu.products) {
       const categoryId = categoryIdByExternal.get(p.categoryExternalId);
       if (!categoryId) {
@@ -549,6 +552,9 @@ export class PosService {
             imageUrls: p.imageUrls ?? [],
             externalProvider: provider,
             externalId: p.externalId,
+            // An imported product is sold wherever the brand has a store;
+            // the owner narrows it down in the admin.
+            stores: { create: storeIds.map((storeId) => ({ storeId })) },
           },
         });
         counts.products.created += 1;

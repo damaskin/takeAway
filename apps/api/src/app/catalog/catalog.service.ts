@@ -5,7 +5,7 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
 import { PrismaService } from '../prisma/prisma.service';
-import { AVAILABLE_OPTION } from './option-availability';
+import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -195,19 +195,21 @@ export class CatalogService {
     if (!store) throw new NotFoundException('Store not found');
 
     const stopListEntries = await this.prisma.stopListEntry.findMany({
-      where: { storeId: store.id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      where: { storeId: store.id, ...activeStopWhere() },
       select: { productId: true },
     });
     const stopList = new Set(stopListEntries.map((e) => e.productId));
 
     // Equal positions (everything created before ordering existed sits at 0)
     // fall back to creation order, the same tie-break the admin editor shows.
+    // Only the products this store sells (ProductStore); a category left
+    // with none of them is not shown in this store at all.
     const categories = await this.prisma.category.findMany({
       where: { brandId: store.brandId, visible: true },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         products: {
-          where: { visible: true, brandId: store.brandId },
+          where: { visible: true, brandId: store.brandId, stores: { some: { storeId: store.id } } },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         },
       },
@@ -216,35 +218,37 @@ export class CatalogService {
     return {
       storeId: store.id,
       storeSlug: store.slug,
-      categories: categories.map((c) => ({
-        id: c.id,
-        slug: c.slug,
-        name: c.name,
-        description: c.description,
-        iconUrl: c.iconUrl,
-        sortOrder: c.sortOrder,
-        availableFrom: c.availableFrom,
-        availableTo: c.availableTo,
-        products: c.products.map((p) => ({
-          id: p.id,
-          categoryId: p.categoryId,
-          slug: p.slug,
-          name: p.name,
-          description: p.description,
-          basePriceCents: p.basePriceCents,
-          prepTimeSeconds: p.prepTimeSeconds,
-          caffeineLevel: p.caffeineLevel,
-          calories: p.calories,
-          proteinsGrams: p.proteinsGrams,
-          fatsGrams: p.fatsGrams,
-          carbsGrams: p.carbsGrams,
-          allergens: p.allergens,
-          dietTags: p.dietTags,
-          imageUrls: p.imageUrls,
-          sortOrder: p.sortOrder,
-          onStopList: stopList.has(p.id),
+      categories: categories
+        .filter((c) => c.products.length > 0)
+        .map((c) => ({
+          id: c.id,
+          slug: c.slug,
+          name: c.name,
+          description: c.description,
+          iconUrl: c.iconUrl,
+          sortOrder: c.sortOrder,
+          availableFrom: c.availableFrom,
+          availableTo: c.availableTo,
+          products: c.products.map((p) => ({
+            id: p.id,
+            categoryId: p.categoryId,
+            slug: p.slug,
+            name: p.name,
+            description: p.description,
+            basePriceCents: p.basePriceCents,
+            prepTimeSeconds: p.prepTimeSeconds,
+            caffeineLevel: p.caffeineLevel,
+            calories: p.calories,
+            proteinsGrams: p.proteinsGrams,
+            fatsGrams: p.fatsGrams,
+            carbsGrams: p.carbsGrams,
+            allergens: p.allergens,
+            dietTags: p.dietTags,
+            imageUrls: p.imageUrls,
+            sortOrder: p.sortOrder,
+            onStopList: stopList.has(p.id),
+          })),
         })),
-      })),
     };
   }
 
@@ -256,33 +260,50 @@ export class CatalogService {
    * at least resolves the same way every time.
    */
   async getProduct(idOrSlug: string, storeIdOrSlug?: string): Promise<ProductDetailDto> {
-    let brandId: string | undefined;
+    let store: { id: string; brandId: string } | undefined;
     if (storeIdOrSlug) {
-      const store = await this.prisma.store.findFirst({
+      const found = await this.prisma.store.findFirst({
         where: { OR: [{ id: storeIdOrSlug }, { slug: storeIdOrSlug }] },
-        select: { brandId: true },
+        select: { id: true, brandId: true },
       });
-      if (!store) throw new NotFoundException('Store not found');
-      brandId = store.brandId;
+      if (!found) throw new NotFoundException('Store not found');
+      store = found;
     }
+    const now = new Date();
+    // With a store: only a product that store sells, and without the
+    // options made of what that store has run out of.
     const product = await this.prisma.product.findFirst({
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         visible: true,
         brand: { moderationStatus: 'APPROVED' },
-        ...(brandId ? { brandId } : {}),
+        ...(store ? { brandId: store.brandId, stores: { some: { storeId: store.id } } } : {}),
       },
       orderBy: { createdAt: 'asc' },
       include: {
         variations: {
           orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }],
-          include: { ingredient: { select: { isAvailable: true } } },
+          include: {
+            ingredient: {
+              select: {
+                isAvailable: true,
+                ...(store
+                  ? { storeStops: { where: { storeId: store.id, ...activeStopWhere(now) }, select: { storeId: true } } }
+                  : {}),
+              },
+            },
+          },
         },
-        modifiers: { where: AVAILABLE_OPTION, orderBy: { sortOrder: 'asc' } },
+        modifiers: {
+          where: store ? availableOptionAt(store.id, now) : AVAILABLE_OPTION,
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
-    const variations = product.variations.filter((v) => v.ingredient?.isAvailable ?? true);
+    const variations = product.variations.filter(
+      (v) => !v.ingredient || (v.ingredient.isAvailable && !(v.ingredient.storeStops?.length ?? 0)),
+    );
     const defaults = defaultVariationIds(product.variations, variations);
 
     return {

@@ -22,10 +22,15 @@ describe('AdminCatalogService — brand boundaries', () => {
         findUnique: jest.fn(({ where }: { where: { id: string } }) => Promise.resolve(categories[where.id] ?? null)),
       },
       product: {
-        create: jest.fn((args: unknown) => Promise.resolve(args)),
-        update: jest.fn((args: unknown) => Promise.resolve(args)),
-        findUnique: jest.fn().mockResolvedValue({ id: 'p1', brandId: 'own', variations: [], modifiers: [] }),
+        create: jest.fn(({ data }: { data: object }) => Promise.resolve({ ...data, stores: [] })),
+        update: jest.fn(({ data }: { data: object }) => Promise.resolve({ ...data, stores: [] })),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'p1', brandId: 'own', variations: [], modifiers: [], stores: [] }),
         aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
+      },
+      store: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'own-store' }]),
       },
     };
     const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
@@ -54,6 +59,77 @@ describe('AdminCatalogService — brand boundaries', () => {
       BadRequestException,
     );
     expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+});
+
+/** A store id is guessable too; a product must only ever be listed in its own brand's stores. */
+describe('AdminCatalogService — store listing boundaries', () => {
+  function build() {
+    const prisma = {
+      category: { findUnique: jest.fn().mockResolvedValue({ brandId: 'own' }) },
+      product: {
+        create: jest.fn(({ data }: { data: object }) => Promise.resolve({ ...data, stores: [] })),
+        update: jest.fn(({ data }: { data: object }) => Promise.resolve({ ...data, stores: [] })),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'p1',
+          brandId: 'own',
+          categoryId: 'own-cat',
+          variations: [],
+          modifiers: [],
+          stores: [],
+        }),
+        aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      store: { findMany: jest.fn().mockResolvedValue([{ id: 'burgers' }, { id: 'pizza' }]) },
+    };
+    const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
+    return { svc, prisma };
+  }
+
+  const product = { brandId: 'own', categoryId: 'own-cat', name: 'Бургер', basePriceCents: 2000 };
+  const written = (mock: jest.Mock) => (mock.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+
+  it('lists a new product in every store of the brand when no stores were picked', async () => {
+    const { svc, prisma } = build();
+    await svc.createProduct(product, ['own']);
+    expect(written(prisma.product.create)['stores']).toEqual({
+      create: [{ storeId: 'burgers' }, { storeId: 'pizza' }],
+    });
+    expect(written(prisma.product.create)).not.toHaveProperty('storeIds');
+  });
+
+  it('lists it only in the stores picked', async () => {
+    const { svc, prisma } = build();
+    await svc.createProduct({ ...product, storeIds: ['burgers'] }, ['own']);
+    expect(written(prisma.product.create)['stores']).toEqual({ create: [{ storeId: 'burgers' }] });
+  });
+
+  it('refuses a store of another brand, on create and on update', async () => {
+    const { svc, prisma } = build();
+    await expect(svc.createProduct({ ...product, storeIds: ['rival-store'] }, ['own'])).rejects.toMatchObject({
+      response: { code: 'STORE_UNKNOWN' },
+    });
+    await expect(svc.updateProduct('p1', { storeIds: ['burgers', 'rival-store'] }, ['own'])).rejects.toMatchObject({
+      response: { code: 'STORE_UNKNOWN' },
+    });
+    expect(prisma.product.create).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+
+  it('replaces the listing on update with exactly the stores sent', async () => {
+    const { svc, prisma } = build();
+    await svc.updateProduct('p1', { storeIds: ['pizza'] }, ['own']);
+    expect(written(prisma.product.update)['stores']).toEqual({
+      deleteMany: { storeId: { notIn: ['pizza'] } },
+      createMany: { data: [{ storeId: 'pizza' }], skipDuplicates: true },
+    });
+  });
+
+  it('leaves the listing alone when the update does not mention stores', async () => {
+    const { svc, prisma } = build();
+    await svc.updateProduct('p1', { name: 'Чизбургер' }, ['own']);
+    expect(written(prisma.product.update)).not.toHaveProperty('stores');
   });
 });
 

@@ -137,6 +137,19 @@ export class CreateProductDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Stores of the brand that sell the product (same price everywhere). On create, omitted = every store of the ' +
+      'brand; on update, omitted = unchanged, a list replaces the listing. Empty = sold nowhere.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ArrayUnique()
+  @IsString({ each: true })
+  storeIds?: string[];
 }
 
 /** A product stays in its brand: `brandId` is not updatable. */

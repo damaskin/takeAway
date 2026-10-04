@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -10,7 +10,9 @@ import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { ImageUpload, UploadedImage, type UploadedImageFile } from '../../common/upload/uploaded-image.decorator';
 import { StorageService } from '../../storage/storage.service';
 import { AdminCatalogService } from './admin-catalog.service';
+import { StoreAvailabilityService } from './store-availability.service';
 import { AddStopListEntryDto } from './dto/admin-stop-list.dto';
+import { SetIngredientStopDto, StoreAvailabilityDto } from './dto/admin-store-availability.dto';
 import {
   CreateStoreDto,
   RemoveStoreImageQueryDto,
@@ -28,6 +30,7 @@ export class AdminStoresController {
     private readonly scope: BrandScopeService,
     private readonly stores: UserStoreScopeService,
     private readonly storage: StorageService,
+    private readonly availability: StoreAvailabilityService,
   ) {}
 
   // Brand scope keeps everyone inside their brand; the store scope keeps a
@@ -157,5 +160,47 @@ export class AdminStoresController {
     await this.stores.assertAllowed(user.id, user.role, id);
     const scope = await this.scope.resolveBrandIds(user);
     await this.admin.removeStopListEntry(id, productId, scope);
+  }
+
+  // The stop-list screen. Kitchen STAFF of the store work it: they switch
+  // products and add-ins off and on here, and nothing else — creating,
+  // editing and deleting stays on the menu endpoints, which STAFF cannot call.
+
+  @Get(':id/availability')
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
+  @ApiOkResponse({ type: StoreAvailabilityDto })
+  async getAvailability(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<StoreAvailabilityDto> {
+    await this.stores.assertAllowed(user.id, user.role, id);
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.availability.get(id, scope);
+  }
+
+  @Put(':id/ingredient-stops/:ingredientId')
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
+  async stopIngredient(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('ingredientId') ingredientId: string,
+    @Body() dto: SetIngredientStopDto,
+  ) {
+    await this.stores.assertAllowed(user.id, user.role, id);
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.availability.stopIngredient(id, ingredientId, dto, scope);
+  }
+
+  @Delete(':id/ingredient-stops/:ingredientId')
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resumeIngredient(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('ingredientId') ingredientId: string,
+  ): Promise<void> {
+    await this.stores.assertAllowed(user.id, user.role, id);
+    const scope = await this.scope.resolveBrandIds(user);
+    await this.availability.resumeIngredient(id, ingredientId, scope);
   }
 }

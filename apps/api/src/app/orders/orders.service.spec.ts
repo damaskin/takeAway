@@ -2,7 +2,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { Modifier, Variation } from '@prisma/client';
 
 import { CartChangedException } from '../cart/cart-changed.exception';
-import { CartService, type PricedProduct } from '../cart/cart.service';
+import { CartService, type StoreProduct } from '../cart/cart.service';
 import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import type { GiftCardsService } from '../gift-cards/gift-cards.service';
@@ -46,7 +46,7 @@ function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifie
   };
 }
 
-function latte(overrides: Partial<PricedProduct> = {}): PricedProduct {
+function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
   return {
     id: 'p-latte',
     brandId: 'brand-a',
@@ -72,6 +72,7 @@ function latte(overrides: Partial<PricedProduct> = {}): PricedProduct {
     externalId: null,
     createdAt: new Date('2026-09-01T00:00:00Z'),
     updatedAt: new Date('2026-09-01T00:00:00Z'),
+    stores: [{ storeId: 'store-1' }],
     variations: [
       variation({ id: 'v-m', type: 'SIZE', name: 'M', sortOrder: 1, isDefault: true }),
       variation({ id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140, sortOrder: 2 }),
@@ -84,7 +85,7 @@ function latte(overrides: Partial<PricedProduct> = {}): PricedProduct {
 }
 
 /** Two "L, oat, +2 vanilla" lattes, as the customer put them in the cart. */
-function cartWith(product: PricedProduct) {
+function cartWith(product: StoreProduct) {
   return {
     id: 'cart-1',
     userId: 'user-1',
@@ -345,6 +346,7 @@ describe('OrdersService.create', () => {
     // The admin fixed a wrong base price after the latte went in the cart.
     prisma.cart.findUnique
       .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 500 })))
+      .mockResolvedValueOnce(cartWith(latte({ basePriceCents: 500 })))
       .mockResolvedValue({ ...cartWith(latte()), items: [] });
 
     await expect(service.create('user-1', placeOrder)).rejects.toBeInstanceOf(CartChangedException);
@@ -356,11 +358,45 @@ describe('OrdersService.create', () => {
     });
   });
 
+  it("loads the cart's lines as its store sells them", async () => {
+    const { service, prisma } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+
+    await service.create('user-1', placeOrder);
+
+    const include = prisma.cart.findUnique.mock.calls[1]?.[0]?.include;
+    expect(include.items.include.product.include.stores).toEqual({
+      where: { storeId: 'store-1' },
+      select: { storeId: true },
+    });
+  });
+
+  // The owner took the burger off the pizzeria's menu while it sat in a cart.
+  it('drops a line the store no longer sells and answers 409 instead of taking the order', async () => {
+    const { service, prisma, tx } = harness();
+    prisma.cart.findUnique
+      .mockResolvedValueOnce(cartWith(latte({ stores: [] })))
+      .mockResolvedValueOnce(cartWith(latte({ stores: [] })))
+      .mockResolvedValue({ ...cartWith(latte()), items: [] });
+
+    const err = await service.create('user-1', placeOrder).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    if (!(err instanceof CartChangedException)) throw new Error(`expected a CartChangedException, got ${err}`);
+    expect(err.getResponse()).toMatchObject({
+      items: [{ cartItemId: 'ci-1', reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null }],
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
   it('answers 409 with a machine-readable code when a chosen milk was deleted', async () => {
     const { service, prisma, tx } = harness();
     const product = latte();
     product.variations = product.variations.filter((v) => v.id !== 'v-oat');
     prisma.cart.findUnique
+      .mockResolvedValueOnce(cartWith(product))
       .mockResolvedValueOnce(cartWith(product))
       .mockResolvedValue({ ...cartWith(product), items: [] });
 

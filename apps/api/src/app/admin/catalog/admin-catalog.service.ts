@@ -15,6 +15,7 @@ import {
   type VariationType,
 } from '@prisma/client';
 
+import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zone';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -269,6 +270,9 @@ export class AdminCatalogService {
     } catch (err) {
       throw storeWriteError(err);
     }
+    // A new store sells the whole menu of its brand until the owner narrows
+    // it down per product.
+    await listBrandMenuInStore(this.prisma, store.id, store.brandId);
     return this.detail(store);
   }
 
@@ -471,7 +475,11 @@ export class AdminCatalogService {
   }
 
   async addStopListEntry(storeId: string, dto: AddStopListEntryDto, scope: BrandScope = null) {
-    await this.getStore(storeId, scope);
+    const store = await this.getStore(storeId, scope);
+    // Staff can reach this; a product id of another brand must not land on
+    // this store's list (or reveal that it exists).
+    const product = await this.prisma.product.findUnique({ where: { id: dto.productId }, select: { brandId: true } });
+    if (!product || product.brandId !== store.brandId) throw new NotFoundException('Product not found');
     return this.prisma.stopListEntry.upsert({
       where: { storeId_productId: { storeId, productId: dto.productId } },
       create: { storeId, productId: dto.productId, reason: dto.reason, expiresAt: dto.expiresAt },
@@ -597,14 +605,28 @@ export class AdminCatalogService {
   }
 
   // ── Products ──────────────────────────────────────────────────────────────
-  listProducts(scope: BrandScope, brandId?: string, categoryId?: string) {
+  /** `storeId` narrows the list to what that store sells. */
+  async listProducts(scope: BrandScope, brandId?: string, categoryId?: string, storeId?: string) {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
-    return this.prisma.product.findMany({
+    const rows = await this.prisma.product.findMany({
       where: {
         ...(brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : {}),
         ...(categoryId ? { categoryId } : {}),
+        ...(storeId ? { stores: { some: { storeId } } } : {}),
       },
       orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      include: LISTING_INCLUDE,
+    });
+    return rows.map(withStoreIds);
+  }
+
+  /** The stores a product can be listed in: every store of the brand, for the product form. */
+  async listProductStores(scope: BrandScope, brandId: string) {
+    assertInScope(scope, brandId);
+    return this.prisma.store.findMany({
+      where: { brandId },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, status: true },
     });
   }
 
@@ -614,16 +636,25 @@ export class AdminCatalogService {
       include: {
         variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }], include: { ingredient: INGREDIENT_SUMMARY } },
         modifiers: { orderBy: { sortOrder: 'asc' }, include: { ingredient: INGREDIENT_SUMMARY } },
+        ...LISTING_INCLUDE,
       },
     });
     if (!product) throw new NotFoundException('Product not found');
     assertInScope(scope, product.brandId);
-    return product;
+    return withStoreIds(product);
   }
 
+  /**
+   * `storeIds` omitted lists the product in every store of the brand — the
+   * one-store café never sees the choice, and API callers that predate
+   * per-store menus keep their behaviour. An empty list is allowed: the
+   * product exists but is sold nowhere yet.
+   */
   async createProduct(dto: CreateProductDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
     await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
+    const { storeIds: requested, ...fields } = dto;
+    const storeIds = await this.storesOfBrand(dto.brandId, requested);
     const slug =
       dto.slug ??
       (await uniqueSlug(
@@ -633,14 +664,19 @@ export class AdminCatalogService {
         'product',
       ));
     const sortOrder = dto.sortOrder ?? (await nextProductSortOrder(this.prisma, dto.categoryId));
-    return this.prisma.product
-      .create({ data: { ...dto, slug, sortOrder } })
+    const created = await this.prisma.product
+      .create({
+        data: { ...fields, slug, sortOrder, stores: { create: storeIds.map((storeId) => ({ storeId })) } },
+        include: LISTING_INCLUDE,
+      })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
+    return withStoreIds(created);
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, scope: BrandScope = null) {
     const product = await this.getProduct(id, scope);
-    const data: Prisma.ProductUncheckedUpdateInput = { ...dto };
+    const { storeIds: requested, ...fields } = dto;
+    const data: Prisma.ProductUncheckedUpdateInput = { ...fields };
     if (dto.categoryId) {
       await this.assertCategoryOfBrand(dto.categoryId, product.brandId);
       // Moved to another category: it goes to the end there instead of
@@ -649,7 +685,35 @@ export class AdminCatalogService {
         data.sortOrder = await nextProductSortOrder(this.prisma, dto.categoryId);
       }
     }
-    return this.prisma.product.update({ where: { id }, data }).catch((err: unknown) => rethrowSlugTaken(err, dto.slug));
+    if (requested !== undefined) {
+      // Replace the listing with exactly the stores asked for. A cart that
+      // still holds the product in a store it left loses that line at
+      // checkout, with the usual "no longer available" notice.
+      const storeIds = await this.storesOfBrand(product.brandId, requested);
+      data.stores = {
+        deleteMany: { storeId: { notIn: storeIds } },
+        createMany: { data: storeIds.map((storeId) => ({ storeId })), skipDuplicates: true },
+      };
+    }
+    const updated = await this.prisma.product
+      .update({ where: { id }, data, include: LISTING_INCLUDE })
+      .catch((err: unknown) => rethrowSlugTaken(err, dto.slug));
+    return withStoreIds(updated);
+  }
+
+  /**
+   * The stores a product is to be listed in: every store of the brand when
+   * nothing was asked for, else the ones asked for — all of them the
+   * brand's own, or the whole write is refused.
+   */
+  private async storesOfBrand(brandId: string, requested: readonly string[] | undefined): Promise<string[]> {
+    const all = await brandStoreIds(this.prisma, brandId);
+    if (requested === undefined) return all;
+    const unique = [...new Set(requested)];
+    if (unique.some((id) => !all.includes(id))) {
+      throw menuBadRequest('STORE_UNKNOWN', 'One of the stores does not belong to this brand');
+    }
+    return unique;
   }
 
   /**
@@ -688,7 +752,12 @@ export class AdminCatalogService {
 
   async toggleProductVisibility(id: string, dto: ToggleVisibilityDto, scope: BrandScope = null) {
     await this.getProduct(id, scope);
-    return this.prisma.product.update({ where: { id }, data: { visible: dto.visible } });
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: { visible: dto.visible },
+      include: LISTING_INCLUDE,
+    });
+    return withStoreIds(updated);
   }
 
   async reorderProducts(dto: ReorderProductsDto, scope: BrandScope = null) {
