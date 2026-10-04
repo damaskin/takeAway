@@ -250,6 +250,7 @@ export async function installFakeApi(
       return json(route, {
         deliveryEnabled: false,
         agroprombankEnabled: opts.cardPayments ?? true,
+        cardPaymentFlow: (opts.cardPayments ?? true) ? 'token' : 'none',
         support: { email: null, telegram: null },
       });
     }

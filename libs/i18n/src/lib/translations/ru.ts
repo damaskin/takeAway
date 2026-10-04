@@ -250,6 +250,8 @@ export const TRANSLATIONS_RU = {
       increase: 'Больше',
       remove: 'Убрать из корзины',
       holdHint: 'Деньги забронируем сейчас, а спишем, когда точка примет заказ.',
+      bankPageHint:
+        'Оплата картой на защищённой странице банка. Деньги забронируем сейчас, а спишем, когда точка примет заказ.',
       payCta: 'Оплатить {{total}} · готово к {{time}}',
       fulfillmentPickup: 'Самовывоз',
       fulfillmentDelivery: 'Доставка',
@@ -301,6 +303,9 @@ export const TRANSLATIONS_RU = {
         refunded: 'Деньги возвращены',
         atCounter: 'Оплата на месте',
         awaiting: 'Ждём оплату',
+        heldHint: 'Спишем, когда точка примет заказ.',
+        retry: 'Оплатить картой',
+        retryHint: 'Можно попробовать оплатить ещё раз.',
       },
       codeLabel: 'код {{code}}',
       iAmHere: 'Я на месте',
@@ -1764,6 +1769,7 @@ export const TRANSLATIONS_RU = {
     },
     orderStatus: {
       orderClosed: 'Заказ закрыт',
+      goToPayment: 'Перейти к оплате',
     },
     profile: {
       loyalty: 'ЛОЯЛЬНОСТЬ',
@@ -1800,6 +1806,8 @@ export const TRANSLATIONS_RU = {
       manageCards: 'Управление картами',
       cardOnly: 'Заказы оплачиваются картой. Привяжите карту, чтобы оформить заказ.',
       cardsUnavailable: 'Оплата картой сейчас недоступна, поэтому заказ оформить нельзя. Попробуйте чуть позже.',
+      bankPageHint:
+        'Оплата картой на защищённой странице банка. Деньги забронируем сейчас, а спишем, когда точка примет заказ.',
       decrease: 'Меньше',
       increase: 'Больше',
       remove: 'Убрать из корзины',

@@ -1,18 +1,20 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { interval, type Subscription } from 'rxjs';
+import { interval, take, timer, type Subscription } from 'rxjs';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import {
   OrdersApi,
   type OrderPaymentState,
   type OrderStatusString,
   type OrderView,
 } from '../../core/orders/orders.service';
+import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 
 interface StatusStep {
@@ -31,10 +33,25 @@ const STEPS: StatusStep[] = [
 
 const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY', 'PICKED_UP'];
 
+/** What the bank said when it sent the customer back (`?payment=…`). */
+type PaymentReturn = 'success' | 'pending' | 'fail';
+
+/** Payment states where the order still waits for its money. */
+const UNSETTLED: readonly OrderPaymentState[] = ['NONE', 'PENDING', 'FAILED'];
+
+/** How often, and how many times, to re-read an order whose payment is still being confirmed. */
+const PAYMENT_POLL_MS = 3_000;
+const PAYMENT_POLL_TIMES = 10;
+
+function readPaymentReturn(value: string | null): PaymentReturn | null {
+  return value === 'success' || value === 'pending' || value === 'fail' ? value : null;
+}
+
 @Component({
   selector: 'app-order-status',
   standalone: true,
   imports: [RouterLink, TranslatePipe, LeafletMapComponent],
+  host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     @if (order(); as o) {
       <section class="max-w-3xl mx-auto px-6 py-10 flex flex-col items-center" style="gap: var(--spacing-lg)">
@@ -70,8 +87,35 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
               {{ paymentDetail() }}
             </span>
+            @if (paymentHint()) {
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
+                {{ paymentHint() | translate }}
+              </span>
+            }
           </div>
         </article>
+
+        @if (canRetryPayment()) {
+          <button
+            type="button"
+            data-testid="retry-payment"
+            (click)="retryPayment()"
+            [disabled]="retrying()"
+            class="w-full flex items-center justify-center disabled:opacity-50"
+            style="
+              background: var(--color-caramel);
+              color: var(--color-foam);
+              height: 52px;
+              border-radius: 16px;
+              font-family: var(--font-sans); font-size: 16px; font-weight: 600;
+            "
+          >
+            {{ (retrying() ? 'common.loading' : 'web.orderStatus.payment.retry') | translate }}
+          </button>
+        }
+        @if (paymentError()) {
+          <p class="text-sm text-center" style="margin: 0; color: var(--color-berry)">{{ paymentError() }}</p>
+        }
 
         <!-- Timer Ring (300×300 circle, caramel-light fill) -->
         <div
@@ -316,8 +360,18 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly authStore = inject(AuthStore);
   private readonly fmt = inject(LocaleFormatService);
   private readonly translate = inject(TranslateService);
+  private readonly router = inject(Router);
+  private readonly flags = inject(FeatureFlagsStore);
+  private readonly webPayments = inject(WebPaymentApi);
 
   readonly order = signal<OrderView | null>(null);
+  /** The bank's verdict from the return redirect; read once, then dropped from the URL. */
+  readonly paymentReturn = signal<PaymentReturn | null>(null);
+  /** Re-reading the order while the bank's confirmation is on its way. */
+  readonly polling = signal(false);
+  readonly retrying = signal(false);
+  readonly paymentError = signal<string | null>(null);
+  private pollSub: Subscription | null = null;
   readonly error = signal<string | null>(null);
   readonly now = signal(Date.now());
   readonly imHereClicked = signal(false);
@@ -373,7 +427,16 @@ export class OrderStatusPage implements OnInit, OnDestroy {
    */
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
+  /**
+   * The bank said the payment failed, but our record may still read "waiting":
+   * believe the bank until the order shows otherwise.
+   */
+  private readonly bankSaidFail = computed(
+    () => this.paymentReturn() === 'fail' && (this.paymentState() === 'NONE' || this.paymentState() === 'PENDING'),
+  );
+
   readonly paymentTitle = computed(() => {
+    if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     switch (this.paymentState()) {
       case 'PAID':
         return 'web.orderStatus.payment.paid';
@@ -402,7 +465,29 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
   });
 
+  /** A line under the numbers saying what happens next, as a translation key. */
+  readonly paymentHint = computed(() => {
+    if (this.paymentState() === 'HELD') return 'web.orderStatus.payment.heldHint';
+    if (this.canRetryPayment() && (this.bankSaidFail() || this.paymentState() === 'FAILED')) {
+      return 'web.orderStatus.payment.retryHint';
+    }
+    return '';
+  });
+
+  /**
+   * Paying again on the bank's page: only in the Web-платёж flow, only while
+   * the order is new and its money has not arrived, and not while we are
+   * still waiting for the bank to confirm a payment the customer just made.
+   */
+  readonly canRetryPayment = computed(() => {
+    const o = this.order();
+    if (!o || o.status !== 'CREATED' || !this.flags.webPaymentsEnabled()) return false;
+    if (!UNSETTLED.includes(this.paymentState())) return false;
+    return !this.polling();
+  });
+
   readonly paymentIcon = computed(() => {
+    if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
         return '✅';
@@ -418,6 +503,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentBackground = computed(() => {
+    if (this.bankSaidFail()) return 'var(--color-berry-light, var(--color-cream))';
     switch (this.paymentState()) {
       case 'PAID':
         return 'var(--color-mint-light, var(--color-cream))';
@@ -483,8 +569,24 @@ export class OrderStatusPage implements OnInit, OnDestroy {
       return;
     }
 
+    this.flags.load();
+    const returned = readPaymentReturn(this.route.snapshot.queryParamMap.get('payment'));
+    if (returned) {
+      this.paymentReturn.set(returned);
+      // A reload should not replay the bank's verdict over a newer state.
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { payment: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    }
+
     this.orders.get(id).subscribe({
-      next: (o) => this.order.set(o),
+      next: (o) => {
+        this.order.set(o);
+        if (returned === 'success' || returned === 'pending') this.pollWhileUnconfirmed(id);
+      },
       error: () => this.error.set(this.translate.instant('web.orderStatus.notFound')),
     });
 
@@ -511,6 +613,84 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.detachSocket?.();
     this.tickSub?.unsubscribe();
+    this.pollSub?.unsubscribe();
+  }
+
+  /**
+   * Back from the bank while its notification may still be on its way: re-read
+   * the order a few times until the money shows as held (or the order moves
+   * on), then give up quietly — realtime still brings later changes.
+   */
+  private pollWhileUnconfirmed(id: string): void {
+    if (!this.awaitingConfirmation()) return;
+    this.polling.set(true);
+    this.pollSub?.unsubscribe();
+    this.pollSub = timer(PAYMENT_POLL_MS, PAYMENT_POLL_MS)
+      .pipe(take(PAYMENT_POLL_TIMES))
+      .subscribe({
+        next: () =>
+          this.orders.get(id).subscribe({
+            next: (o) => {
+              this.order.set(o);
+              if (!this.awaitingConfirmation()) this.stopPolling();
+            },
+            error: () => undefined,
+          }),
+        complete: () => this.polling.set(false),
+      });
+  }
+
+  private awaitingConfirmation(): boolean {
+    const state = this.paymentState();
+    return this.order()?.status === 'CREATED' && (state === 'NONE' || state === 'PENDING');
+  }
+
+  private stopPolling(): void {
+    this.pollSub?.unsubscribe();
+    this.pollSub = null;
+    this.polling.set(false);
+  }
+
+  /**
+   * Another go on the bank's page for this same order. No page back means the
+   * money arrived in the meantime, so just show the order as it is now.
+   */
+  retryPayment(): void {
+    const o = this.order();
+    if (!o || this.retrying()) return;
+    this.retrying.set(true);
+    this.paymentError.set(null);
+    this.webPayments.start(o.id).subscribe({
+      next: (res) => {
+        if (res.page) {
+          // `retrying` stays on: the browser is on its way to the bank.
+          this.webPayments.redirectToBank(res.page);
+          return;
+        }
+        this.retrying.set(false);
+        this.paymentReturn.set(null);
+        this.orders.get(o.id).subscribe({ next: (fresh) => this.order.set(fresh), error: () => undefined });
+      },
+      error: (err) => {
+        this.retrying.set(false);
+        this.paymentError.set(this.errorText(err));
+      },
+    });
+  }
+
+  /**
+   * Coming back from the bank with the browser's Back button can restore this
+   * page from the back-forward cache with the retry button still spinning.
+   */
+  onPageShow(event: PageTransitionEvent): void {
+    if (event.persisted) this.retrying.set(false);
+  }
+
+  private errorText(err: unknown): string {
+    if ((err as { status?: unknown } | null)?.status === 0) return this.translate.instant('common.networkError');
+    const raw = ((err as { error?: unknown } | null)?.error as { message?: unknown } | null)?.message;
+    const message = Array.isArray(raw) ? raw.join(', ') : raw;
+    return typeof message === 'string' && message ? message : this.translate.instant('common.requestFailed');
   }
 
   cancel(): void {

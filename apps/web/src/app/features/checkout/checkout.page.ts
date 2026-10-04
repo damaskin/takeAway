@@ -14,6 +14,7 @@ import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { WebPaymentApi } from '../../core/payments/web-payment.service';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
@@ -28,6 +29,7 @@ interface Step {
   selector: 'app-checkout',
   standalone: true,
   imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
+  host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     <section class="min-h-screen">
       <header
@@ -595,7 +597,7 @@ interface Step {
                 >{{ 'web.checkout.paymentTitle' | translate }}</span
               >
 
-              @if (cardPaymentsEnabled()) {
+              @if (boundCardsEnabled()) {
                 @for (card of cards(); track card.id) {
                   <button
                     type="button"
@@ -618,6 +620,15 @@ interface Step {
                 >
                   {{ 'web.checkout.cardsUnavailable' | translate }}
                 </p>
+              } @else if (webPaymentsEnabled()) {
+                @if (totalCents(c.subtotalCents) > 0) {
+                  <p
+                    data-testid="web-payment-hint"
+                    style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                  >
+                    {{ 'web.checkout.bankPageHint' | translate }}
+                  </p>
+                }
               } @else if (cards().length === 0 && totalCents(c.subtotalCents) > 0) {
                 <p
                   style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
@@ -626,7 +637,7 @@ interface Step {
                 </p>
               }
 
-              @if (cardPaymentsEnabled()) {
+              @if (boundCardsEnabled()) {
                 <a
                   routerLink="/profile/payment-methods"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
@@ -696,6 +707,7 @@ export class CheckoutPage implements OnInit {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly cardsApi = inject(PaymentCardsApi);
   private readonly cardsStore = inject(PaymentCardsStore);
+  private readonly webPayments = inject(WebPaymentApi);
 
   readonly cart = signal<CartView | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
@@ -713,13 +725,17 @@ export class CheckoutPage implements OnInit {
   readonly storeInactive = signal(false);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /** Cards bound in the profile, held in one tap — the `token` flow. */
+  readonly boundCardsEnabled = this.flags.boundCardsEnabled;
+  /** The customer pays on the bank's own page — the `web` flow. */
+  readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
   /**
    * `/config/features` answers after init, so a guard that read the flag once
    * saw it off and never offered the customer's cards. Load them as soon as
-   * card payments turn out to be on.
+   * bound cards turn out to be on.
    */
   private readonly loadCardsOnceEnabled = effect(() => {
-    if (this.cardPaymentsEnabled()) untracked(() => this.loadCards());
+    if (this.boundCardsEnabled()) untracked(() => this.loadCards());
   });
   readonly cards = signal<BoundCard[]>([]);
   /** The card to hold the amount on; `null` only while the customer has none. */
@@ -836,7 +852,10 @@ export class CheckoutPage implements OnInit {
     return !!c && this.totalCents(c.subtotalCents) > 0;
   });
 
-  readonly payingByCard = computed(() => this.cardPaymentsEnabled() && this.selectedCardId() !== null);
+  /** A way to pay by card is ready: the bank's page, or a bound card picked. */
+  readonly payingByCard = computed(
+    () => this.webPaymentsEnabled() || (this.boundCardsEnabled() && this.selectedCardId() !== null),
+  );
 
   ngOnInit(): void {
     this.flags.load();
@@ -1163,7 +1182,7 @@ export class CheckoutPage implements OnInit {
    * leaves the order button off, since there is nothing to pay with.
    */
   private loadCards(): void {
-    if (!this.cardPaymentsEnabled()) return;
+    if (!this.boundCardsEnabled()) return;
     this.cardsStore.load().subscribe({
       next: (cards) => {
         this.cards.set(cards);
@@ -1274,7 +1293,8 @@ export class CheckoutPage implements OnInit {
   /**
    * Holds the amount on the chosen card and then opens the order screen,
    * which is what tells the customer where their money stands. Only an
-   * order with nothing left to pay skips the card.
+   * order with nothing left to pay skips the card. In the Web-платёж flow
+   * the amount is held on the bank's page instead.
    *
    * A decline keeps the customer on checkout with the reason, because that is
    * the only screen where they can pick a different card.
@@ -1286,7 +1306,11 @@ export class CheckoutPage implements OnInit {
       void this.router.navigate(['/orders', orderId]);
       return;
     }
-    if (!this.cardPaymentsEnabled() || !cardId) {
+    if (this.webPaymentsEnabled()) {
+      this.payOnBankPage(orderId);
+      return;
+    }
+    if (!this.boundCardsEnabled() || !cardId) {
       this.submitting.set(false);
       this.error.set(this.translate.instant('web.checkout.cardOnly'));
       return;
@@ -1302,6 +1326,40 @@ export class CheckoutPage implements OnInit {
         this.error.set(this.errorText(err));
       },
     });
+  }
+
+  /**
+   * Web-платёж: the order exists, so issue its invoice and leave for the
+   * bank's page. The bank brings the customer back to the order page with
+   * the outcome. No page means the order is already held or paid — the order
+   * page says so. A failure keeps the customer here, and the next tap retries
+   * against the same order.
+   */
+  private payOnBankPage(orderId: string): void {
+    this.webPayments.start(orderId).subscribe({
+      next: (res) => {
+        if (!res.page) {
+          this.submitting.set(false);
+          void this.router.navigate(['/orders', orderId]);
+          return;
+        }
+        // `submitting` stays on: the browser is on its way to the bank.
+        this.webPayments.redirectToBank(res.page);
+      },
+      error: (err) => {
+        this.submitting.set(false);
+        this.error.set(this.errorText(err));
+      },
+    });
+  }
+
+  /**
+   * Coming back from the bank with the browser's Back button can restore
+   * this page from the back-forward cache exactly as it was left — with the
+   * pay button still spinning. Let the customer tap it again.
+   */
+  onPageShow(event: PageTransitionEvent): void {
+    if (event.persisted) this.submitting.set(false);
   }
 
   /** The line whose quantity is on its way to the server; the steppers wait for it. */

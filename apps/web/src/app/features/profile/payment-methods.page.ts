@@ -233,7 +233,8 @@ export class PaymentMethodsPage implements OnInit {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly translate = inject(TranslateService);
 
-  readonly enabled = this.flags.cardPaymentsEnabled;
+  /** Binding cards only means anything in the bound-card flow. */
+  readonly enabled = this.flags.boundCardsEnabled;
   readonly step = signal<Step>('list');
   readonly cards = signal<BoundCard[]>([]);
   readonly institutes = signal<CardInstitute[]>([]);
