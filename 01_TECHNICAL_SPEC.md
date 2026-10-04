@@ -396,7 +396,7 @@ takeaway/
 - **Brand registration + moderation**: бизнес регистрируется в админке (`/signup` → `POST /business/register`) с валютой бренда (MDL по умолчанию) и языком писем; телефон — E.164, конфликты возвращаются кодами (`EMAIL_TAKEN`, `EMAIL_CUSTOMER_ACCOUNT`, `PHONE_TAKEN`). Бренд создаётся `PENDING`; владелец попадает на дашборд с чек-листом «Запуск бренда» (`GET /my-brand/onboarding`: логотип, точка с адресом и часами, категория и товар с фото, оплата, модерация) и видит баннер статуса на всех страницах. SUPER_ADMIN одобряет/отклоняет в модальном окне; причина отказа обязательна (и на сервере). Отклонённый бренд после правок отправляется повторно (`POST /my-brand/resubmit`). Письма владельцу («заявка получена», «одобрен», «нужны правки» — на языке бренда) и платформе (новая заявка, повторная подача — email всем SUPER_ADMIN и ops-чат в Telegram); сбой отправки не ломает запрос. Контакт поддержки — `SUPPORT_EMAIL` / `SUPPORT_TELEGRAM`.
 - **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов; цена вводится в валюте бренда, время приготовления — в минутах; до 6 фото на товар (первое — главное, JPEG/PNG/WebP/AVIF до 5 МБ, тип определяется по содержимому, SVG не принимается); слаги необязательны и генерируются из названия с транслитерацией кириллицы; порядок категорий и товаров; удаление непустой категории — 409 `CATEGORY_NOT_EMPTY` или перенос товаров (`?moveProductsTo=`); удаление товара или опции чистит корзины в транзакции; «нет в наличии» по точке — до отмены или до конца дня в часовом поясе точки; описание, КБЖУ, кофеин, диетические метки, аллергены.
 - **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
-- **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
+- **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate.
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
@@ -740,6 +740,16 @@ GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут
 POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
 PUT                    /admin/stores/:id/working-hours
 GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]
+
+# Staff (по людям; ?brandId= — активный бренд, без него вся досягаемость вызывающего)
+GET    /admin/staff                  → [{ userId, email, phone, name, role, blocked, addedAt,
+                                          stores: [{ id, name }], kdsPinStoreId, hasKdsPin, editable }]
+GET    /admin/staff/:userId          → то же для одного (404 вне досягаемости)
+POST   /admin/staff                  { email, name?, role, tempPassword, storeIds[≥1] } → 201
+                                     //   409 STAFF_ALREADY_ON_TEAM / STAFF_EMAIL_TAKEN
+PUT    /admin/staff/:userId/stores   { storeIds[] } → замена в пределах досягаемости; [] — убрать из команды
+PATCH  /admin/staff/:userId/role     { role: STORE_MANAGER | STAFF | MENU_EDITOR }
+                                     //   403 STAFF_STORE_OUT_OF_SCOPE / STAFF_ROLE_NOT_ALLOWED / STAFF_NOT_EDITABLE
 
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
