@@ -1,16 +1,18 @@
 import { Route } from '@angular/router';
 
 import { tmaSessionGuard } from './core/auth/tma-session.guard';
+import { startParamGuard } from './core/telegram/start-param.guard';
 
 /**
  * Every route carries {@link tmaSessionGuard}. It never blocks navigation —
  * it just gives the Telegram sign-in another attempt if the one at startup
- * could not reach the API.
+ * could not reach the API. {@link startParamGuard} sends the first screen to
+ * the order a launch link (`startapp=order_<id>`) points at.
  */
 export const appRoutes: Route[] = [
   {
     path: '',
-    canActivate: [tmaSessionGuard],
+    canActivate: [tmaSessionGuard, startParamGuard],
     children: [
       { path: '', loadComponent: () => import('./features/home/home.page').then((m) => m.TmaHomePage) },
       {

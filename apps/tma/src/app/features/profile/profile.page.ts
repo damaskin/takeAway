@@ -1,8 +1,9 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
 interface ProfileRow {
@@ -81,7 +82,7 @@ interface ProfileRow {
         class="flex flex-col"
         style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; overflow: hidden"
       >
-        @for (row of rows; track row.label; let last = $last) {
+        @for (row of rows(); track row.label; let last = $last) {
           <button
             type="button"
             (click)="open(row)"
@@ -119,19 +120,32 @@ interface ProfileRow {
     <app-tma-tab-bar />
   `,
 })
-export class TmaProfilePage {
+export class TmaProfilePage implements OnInit {
   private readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
+  private readonly flags = inject(FeatureFlagsStore);
 
   // Labels and value are translation keys — resolved with | translate in the template.
-  readonly rows: ProfileRow[] = [
+  private readonly allRows: ProfileRow[] = [
     { icon: '👤', label: 'web.profile.sections.personal' },
     { icon: '💳', label: 'web.profile.sections.payment', route: '/cards' },
     { icon: '🎁', label: 'web.profile.sections.gift' },
     { icon: '🔔', label: 'web.profile.sections.notifications' },
     { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
   ];
+
+  /**
+   * When checkout pays on the bank's own page there is no card to bind, so
+   * the cards row would lead nowhere useful.
+   */
+  readonly rows = computed(() =>
+    this.flags.webPaymentsEnabled() ? this.allRows.filter((r) => r.route !== '/cards') : this.allRows,
+  );
+
+  ngOnInit(): void {
+    this.flags.load();
+  }
 
   open(row: ProfileRow): void {
     if (row.route) void this.router.navigate([row.route]);

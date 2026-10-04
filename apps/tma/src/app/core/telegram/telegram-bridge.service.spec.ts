@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { TelegramBridgeService } from './telegram-bridge.service';
+import { TelegramBridgeService, orderIdFromStartParam } from './telegram-bridge.service';
 
 /** A MainButton that behaves like Telegram's: onClick adds, offClick removes. */
 function fakeMainButton() {
@@ -67,5 +67,55 @@ describe('TelegramBridgeService main button', () => {
     button.press();
 
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('orderIdFromStartParam', () => {
+  it('reads the order from an order_<id> launch parameter', () => {
+    expect(orderIdFromStartParam('order_cm1abc2def')).toBe('cm1abc2def');
+  });
+
+  it('ignores anything else', () => {
+    expect(orderIdFromStartParam('promo_summer')).toBeNull();
+    expect(orderIdFromStartParam('order_')).toBeNull();
+    expect(orderIdFromStartParam(null)).toBeNull();
+  });
+});
+
+describe('TelegramBridgeService launch parameter and links', () => {
+  const openLink = jest.fn();
+  let service: TelegramBridgeService;
+
+  beforeEach(() => {
+    openLink.mockReset();
+    window.Telegram = {
+      WebApp: {
+        initData: '',
+        initDataUnsafe: { start_param: 'order_ord-42' },
+        ready: jest.fn(),
+        expand: jest.fn(),
+        close: jest.fn(),
+        openLink,
+        MainButton: fakeMainButton(),
+        BackButton: { show: jest.fn(), hide: jest.fn(), onClick: jest.fn(), offClick: jest.fn() },
+      },
+    };
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(TelegramBridgeService);
+  });
+
+  afterEach(() => {
+    delete window.Telegram;
+  });
+
+  // The parameter stays on the launch all session; only the first screen follows it.
+  it('hands out the launch order once', () => {
+    expect(service.takeStartOrderId()).toBe('ord-42');
+    expect(service.takeStartOrderId()).toBeNull();
+  });
+
+  it('opens outside pages through Telegram', () => {
+    service.openLink('https://bank.example/pay');
+    expect(openLink).toHaveBeenCalledWith('https://bank.example/pay');
   });
 });
