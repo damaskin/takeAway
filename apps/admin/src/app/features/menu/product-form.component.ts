@@ -8,6 +8,7 @@ import {
   type DietTag,
   type ProductAdminDto,
   type ProductFieldsInput,
+  type ProductStoreOptionDto,
 } from '../../core/catalog/admin-catalog.service';
 import { describeMenuError } from './menu-errors';
 import {
@@ -191,6 +192,25 @@ type ProductControls = ProductFormComponent['form']['controls'];
           <span>{{ 'admin.menu.product.visible' | translate }}</span>
         </label>
 
+        @if (pickStores()) {
+          <fieldset class="box">
+            <legend>{{ 'admin.menu.product.stores' | translate }}</legend>
+            <div class="flex flex-wrap" style="gap: 8px 16px">
+              @for (s of storeOptions(); track s.id) {
+                <label class="check">
+                  <input type="checkbox" [checked]="sellsIn(s.id)" (change)="toggleStore(s.id, $event)" />
+                  <span>{{ s.name }}</span>
+                </label>
+              }
+            </div>
+            @if (soldNowhere()) {
+              <span class="error">{{ 'admin.menu.product.storesNone' | translate }}</span>
+            } @else {
+              <span class="hint">{{ 'admin.menu.product.storesHint' | translate }}</span>
+            }
+          </fieldset>
+        }
+
         <details>
           <summary class="hint" style="cursor: pointer; font-size: 13px; color: var(--color-text-secondary)">
             {{ 'admin.menu.slug.advanced' | translate }}
@@ -262,6 +282,13 @@ export class ProductFormComponent {
   readonly currencyLabel = computed(() => this.currency() ?? '—');
   readonly createdNotice = computed(() => this.justCreated() && !!this.product());
 
+  /** The brand's stores. With one (or none) there is nothing to choose: the product is sold there. */
+  readonly storeOptions = signal<ProductStoreOptionDto[]>([]);
+  readonly pickStores = computed(() => this.storeOptions().length > 1);
+  /** Where the product is sold; `null` = untouched default (every store for a new product). */
+  readonly storeIds = signal<string[] | null>(null);
+  readonly soldNowhere = computed(() => this.storeIds()?.length === 0);
+
   /**
    * Only a different product refills the form. The same product coming back
    * with new photos must not wipe a price someone is halfway through typing.
@@ -291,6 +318,32 @@ export class ProductFormComponent {
       const categoryId = this.categoryId();
       untracked(() => this.fill(this.product(), categoryId));
     });
+
+    effect(() => {
+      const brandId = this.brandId();
+      untracked(() => {
+        this.storeOptions.set([]);
+        this.api.listProductStores(brandId).subscribe({
+          next: (stores) => {
+            if (this.brandId() === brandId) this.storeOptions.set(stores);
+          },
+          // Without the list the picker stays hidden and the listing is left as it is.
+          error: () => this.storeOptions.set([]),
+        });
+      });
+    });
+  }
+
+  sellsIn(storeId: string): boolean {
+    const ids = this.storeIds();
+    return ids === null || ids.includes(storeId);
+  }
+
+  toggleStore(storeId: string, event: Event): void {
+    const on = (event.target as HTMLInputElement).checked;
+    const current = this.storeIds() ?? this.storeOptions().map((s) => s.id);
+    const rest = current.filter((id) => id !== storeId);
+    this.storeIds.set(on ? [...rest, storeId] : rest);
   }
 
   showError(name: keyof ProductControls): boolean {
@@ -337,10 +390,15 @@ export class ProductFormComponent {
 
     const existing = this.product();
     const slug = v.slug.trim();
+    // Only sent when there was a choice to make and it was made; otherwise a
+    // new product goes to every store and an edited one keeps its listing.
+    const storeIds = this.storeIds();
+    const listing = this.pickStores() && storeIds !== null ? { storeIds } : {};
     const request = existing
       ? this.api.updateProduct(existing.id, {
           ...fields,
           ...(v.categoryId && v.categoryId !== existing.categoryId ? { categoryId: v.categoryId } : {}),
+          ...listing,
         })
       : this.api.createProduct({
           ...withoutNulls(fields),
@@ -349,6 +407,7 @@ export class ProductFormComponent {
           name: fields.name,
           basePriceCents,
           ...(slug ? { slug } : {}),
+          ...listing,
         });
     this.saving.set(true);
     request.subscribe({
@@ -368,6 +427,7 @@ export class ProductFormComponent {
     const separator = this.translate.getCurrentLang() === 'en' ? '.' : ',';
     this.submitted.set(false);
     this.error.set(null);
+    this.storeIds.set(product?.storeIds ?? null);
     this.form.reset({
       name: product?.name ?? '',
       categoryId: product?.categoryId ?? categoryId,

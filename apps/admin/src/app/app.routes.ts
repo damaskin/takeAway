@@ -177,6 +177,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/ingredients/ingredients.page').then((m) => m.IngredientsPage),
       },
       {
+        path: 'stop-list',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'stopList' satisfies NavKey },
+        loadComponent: () => import('./features/stop-list/stop-list.page').then((m) => m.StopListPage),
+      },
+      {
         path: 'stores',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'stores' satisfies NavKey },

@@ -15,7 +15,8 @@ export type MenuErrorCode =
   | 'IMAGE_NOT_ON_PRODUCT'
   | 'IMAGES_CHANGED'
   | 'INGREDIENT_UNKNOWN'
-  | 'INGREDIENT_NAME_TAKEN';
+  | 'INGREDIENT_NAME_TAKEN'
+  | 'STORE_UNKNOWN';
 
 export function menuConflict(
   code: MenuErrorCode,

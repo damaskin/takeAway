@@ -15,8 +15,7 @@ import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 import { checkoutError } from '../common/http/checkout-error';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
-import { CartService, type CheckoutLine } from '../cart/cart.service';
-import { AVAILABLE_OPTIONS_INCLUDE } from '../catalog/option-availability';
+import { CartService, storeProductInclude, type CheckoutLine } from '../cart/cart.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -81,10 +80,14 @@ export class OrdersService {
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
+    // The store decides what is on sale (its listing, its own stops), so it
+    // is read first and the lines are loaded as that store sells them.
+    const head = await this.prisma.cart.findUnique({ where: { id: dto.cartId }, select: { storeId: true } });
+    if (!head) throw new NotFoundException('Cart not found');
     const cart = await this.prisma.cart.findUnique({
       where: { id: dto.cartId },
       include: {
-        items: { include: { product: { include: AVAILABLE_OPTIONS_INCLUDE } } },
+        items: { include: { product: { include: storeProductInclude(head.storeId) } } },
         store: true,
       },
     });

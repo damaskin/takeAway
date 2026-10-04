@@ -10,6 +10,7 @@ import {
   AdminCatalogApi,
   type CategoryAdminDto,
   type ProductAdminDto,
+  type ProductStoreOptionDto,
   type StopListEntryDto,
   type StoreAdminDto,
 } from '../../core/catalog/admin-catalog.service';
@@ -205,6 +206,17 @@ type StockUntil = 'manual' | 'endOfDay';
                     </td>
                     <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
                       {{ p.name }}
+                      @if (listing(p); as l) {
+                        <div class="flex flex-wrap" style="gap: 4px; margin-top: 4px" data-testid="product-listing">
+                          @for (label of l.labels; track label) {
+                            <span
+                              [style]="l.none ? listingNoneStyle : listingChipStyle"
+                              style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 11px; font-weight: 500"
+                              >{{ label }}</span
+                            >
+                          }
+                        </div>
+                      }
                     </td>
                     <td
                       style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right; white-space: nowrap"
@@ -226,20 +238,29 @@ type StockUntil = 'manual' | 'endOfDay';
                     </td>
                     @if (stockStore(); as store) {
                       <td style="padding: 12px; text-align: center">
-                        <div class="flex flex-col items-center" style="gap: 2px">
-                          <input
-                            type="checkbox"
-                            [checked]="inStock(p.id)"
-                            [disabled]="stockPending() === p.id"
-                            (change)="setInStock(p, $event)"
-                            [attr.aria-label]="'admin.menu.stock.toggle' | translate: { store: store.name }"
-                          />
-                          @if (soldOutUntil(p.id); as until) {
-                            <span style="font-size: 11px; color: var(--color-berry); white-space: nowrap">{{
-                              until
-                            }}</span>
-                          }
-                        </div>
+                        @if (!p.storeIds.includes(store.id)) {
+                          <span
+                            style="font-size: 12px; color: var(--color-text-tertiary)"
+                            [title]="'admin.menu.listing.notHere' | translate"
+                            [attr.aria-label]="'admin.menu.listing.notHere' | translate"
+                            >—</span
+                          >
+                        } @else {
+                          <div class="flex flex-col items-center" style="gap: 2px">
+                            <input
+                              type="checkbox"
+                              [checked]="inStock(p.id)"
+                              [disabled]="stockPending() === p.id"
+                              (change)="setInStock(p, $event)"
+                              [attr.aria-label]="'admin.menu.stock.toggle' | translate: { store: store.name }"
+                            />
+                            @if (soldOutUntil(p.id); as until) {
+                              <span style="font-size: 11px; color: var(--color-berry); white-space: nowrap">{{
+                                until
+                              }}</span>
+                            }
+                          </div>
+                        }
                       </td>
                     }
                     <td style="padding: 12px; text-align: center; white-space: nowrap">
@@ -339,6 +360,10 @@ export class MenuPage {
   readonly stopList = signal<ReadonlyMap<string, StopListEntryDto>>(new Map());
   readonly stockUntil = signal<StockUntil>('manual');
   readonly stockPending = signal<string | null>(null);
+  /** Every store of the brand, for the "sold in" chips under each product. */
+  readonly productStores = signal<ProductStoreOptionDto[]>([]);
+  readonly listingChipStyle = 'background: var(--color-cream); color: var(--color-text-secondary)';
+  readonly listingNoneStyle = 'background: #d94b5e1a; color: var(--color-berry)';
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
 
@@ -377,9 +402,11 @@ export class MenuPage {
         this.tableError.set(null);
         this.stores.set([]);
         this.stockStoreId.set(null);
+        this.productStores.set([]);
         if (!brand) return;
         this.loadCategories(brand.id);
         this.loadStores(brand.id);
+        this.loadProductStores(brand.id);
       });
     });
 
@@ -519,6 +546,22 @@ export class MenuPage {
     });
   }
 
+  /**
+   * Where a product is sold, as chips — only for a brand with more than one
+   * store, where it can differ: "In every store", the store names, or a
+   * warning that it is sold nowhere.
+   */
+  listing(product: ProductAdminDto): { labels: string[]; none: boolean } | null {
+    const stores = this.productStores();
+    if (stores.length < 2) return null;
+    const ids = product.storeIds;
+    if (ids.length === 0) return { labels: [this.translate.instant('admin.menu.listing.none')], none: true };
+    if (stores.every((s) => ids.includes(s.id))) {
+      return { labels: [this.translate.instant('admin.menu.listing.all')], none: false };
+    }
+    return { labels: stores.filter((s) => ids.includes(s.id)).map((s) => s.name), none: false };
+  }
+
   price(cents: number): string {
     return this.fmt.money(cents, this.currency());
   }
@@ -573,6 +616,16 @@ export class MenuPage {
     });
   }
 
+  private loadProductStores(brandId: string): void {
+    this.api.listProductStores(brandId).subscribe({
+      next: (list) => {
+        if (this.brand()?.id === brandId) this.productStores.set(list);
+      },
+      // Without it the chips are simply not shown.
+      error: () => this.productStores.set([]),
+    });
+  }
+
   private loadStopList(storeId: string | null): void {
     this.stopList.set(new Map());
     if (!storeId) return;
@@ -593,5 +646,6 @@ function withListDefaults(p: ProductAdminDto): ProductAdminDto {
     imageUrls: p.imageUrls ?? [],
     allergens: p.allergens ?? [],
     dietTags: p.dietTags ?? [],
+    storeIds: p.storeIds ?? [],
   };
 }

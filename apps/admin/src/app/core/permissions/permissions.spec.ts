@@ -51,6 +51,15 @@ describe('permissions map', () => {
       expect(canAccess('STAFF', 'stores')).toBe(true);
     });
 
+    it('lets STAFF run the stop-list but not edit the menu or the add-ins library', () => {
+      expect(canAccess('STAFF', 'stopList')).toBe(true);
+      expect(canAccess('STAFF', 'menu')).toBe(false);
+      expect(canAccess('STAFF', 'ingredients')).toBe(false);
+      expect(canAccess('STORE_MANAGER', 'stopList')).toBe(true);
+      expect(canAccess('BRAND_ADMIN', 'stopList')).toBe(true);
+      expect(navLink('stopList')).toBe('/stop-list');
+    });
+
     it('limits MENU_EDITOR to menu (+ telegram link is excluded)', () => {
       expect(canAccess('MENU_EDITOR', 'menu')).toBe(true);
       expect(canAccess('MENU_EDITOR', 'orders')).toBe(false);

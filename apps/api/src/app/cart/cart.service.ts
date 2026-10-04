@@ -4,7 +4,7 @@ import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVar
 import { sortVariationsForDisplay } from '@takeaway/utils';
 
 import { checkoutError } from '../common/http/checkout-error';
-import { AVAILABLE_OPTIONS_INCLUDE } from '../catalog/option-availability';
+import { activeStopWhere, availableOptionsIncludeAt } from '../catalog/option-availability';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
@@ -13,6 +13,21 @@ import type { CartDto, CartItemDto } from './dto/cart.dto';
 
 /** A product with everything that goes into its price. */
 export type PricedProduct = Product & { variations: Variation[]; modifiers: Modifier[] };
+
+/**
+ * A product as one store sells it: only the options that store has in stock,
+ * and its listing row there — `stores` is empty when the store does not sell
+ * the product at all.
+ */
+export type StoreProduct = PricedProduct & { stores: ReadonlyArray<{ storeId: string }> };
+
+/** `include` that loads a product as {@link StoreProduct} for `storeId`. */
+export function storeProductInclude(storeId: string, now: Date = new Date()) {
+  return {
+    ...availableOptionsIncludeAt(storeId, now),
+    stores: { where: { storeId }, select: { storeId: true } },
+  } satisfies Prisma.ProductInclude;
+}
 
 /** One line priced against the menu as it stands. */
 export interface PricedLine {
@@ -61,7 +76,7 @@ export class CartService {
   }
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
-    const product = await this.loadProduct(dto.productId);
+    const product = await this.loadProduct(dto.productId, dto.storeId);
     // A hidden product is off the menu — the catalog answers 404 for it, and
     // so does the cart, or checkout would only turn it away later.
     if (!product || !product.visible) throw new NotFoundException('Product not found');
@@ -69,7 +84,9 @@ export class CartService {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
+    assertSoldHere(product);
     await this.assertNotOnStopList(dto.storeId, [product.id]);
+    await this.assertOptionsInStock(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
     const priced = this.priceOrReject(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
@@ -122,15 +139,19 @@ export class CartService {
   async updateItem(userId: string, itemId: string, dto: UpdateCartItemDto): Promise<CartDto> {
     const item = await this.prisma.cartItem.findUnique({
       where: { id: itemId },
-      include: { cart: true, product: { include: AVAILABLE_OPTIONS_INCLUDE } },
+      include: { cart: true },
     });
     if (!item || item.cart.userId !== userId) throw new NotFoundException('Item not found');
+    const product = await this.loadProduct(item.productId, item.cart.storeId);
+    if (!product) throw new NotFoundException('Product not found');
 
+    assertSoldHere(product);
     await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
     const variationIds = dto.variationIds ?? item.variationIds;
     const modifiers = dto.modifiers ?? storedModifiers(item.modifiersJson);
-    const priced = this.priceOrReject(item.product, variationIds, modifiers);
+    await this.assertOptionsInStock(product, variationIds, modifiers);
+    const priced = this.priceOrReject(product, variationIds, modifiers);
 
     await this.prisma.cartItem.update({
       where: { id: itemId },
@@ -184,7 +205,7 @@ export class CartService {
    */
   async repriceForCheckout(cart: {
     id: string;
-    items: ReadonlyArray<CartItem & { product: PricedProduct }>;
+    items: ReadonlyArray<CartItem & { product: StoreProduct }>;
   }): Promise<CheckoutLine[]> {
     const lines: CheckoutLine[] = [];
     const changes: CartChangedItem[] = [];
@@ -201,7 +222,8 @@ export class CartService {
         unitPriceCents,
       });
 
-      if (!item.product.visible) {
+      // Hidden, or no longer sold in this store: either way it cannot be made here.
+      if (!item.product.visible || item.product.stores.length === 0) {
         changes.push(change('PRODUCT_UNAVAILABLE', null));
         removed.push(item.id);
         continue;
@@ -398,7 +420,7 @@ export class CartService {
       where: {
         storeId,
         productId: { in: [...productIds] },
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        ...activeStopWhere(),
       },
       select: { product: { select: { name: true } } },
     });
@@ -410,10 +432,50 @@ export class CartService {
     });
   }
 
-  private async loadProduct(productId: string) {
+  /**
+   * Refuse options the customer picked that exist on the product but are not
+   * on sale here — their ingredient ran out, brand-wide or in this store —
+   * with the same coded error as a stopped product, naming the option. Ids
+   * the product never had are left to the pricing check (a plain 400).
+   */
+  private async assertOptionsInStock(
+    product: PricedProduct,
+    variationIds: readonly string[],
+    modifiers: Record<string, unknown>,
+  ): Promise<void> {
+    const shownVariations = new Set(product.variations.map((v) => v.id));
+    const shownModifiers = new Set(product.modifiers.map((m) => m.id));
+    const missingVariations = [...new Set(variationIds)].filter((id) => !shownVariations.has(id));
+    const missingModifiers = Object.entries(modifiers)
+      .filter(([id, count]) => toCount(count) > 0 && !shownModifiers.has(id))
+      .map(([id]) => id);
+    if (missingVariations.length === 0 && missingModifiers.length === 0) return;
+
+    const [variations, extras] = await Promise.all([
+      missingVariations.length > 0
+        ? this.prisma.variation.findMany({
+            where: { productId: product.id, id: { in: missingVariations } },
+            select: { name: true },
+          })
+        : [],
+      missingModifiers.length > 0
+        ? this.prisma.modifier.findMany({
+            where: { productId: product.id, id: { in: missingModifiers } },
+            select: { name: true },
+          })
+        : [],
+    ]);
+    const names = [...variations, ...extras].map((o) => o.name);
+    if (names.length === 0) return;
+    throw checkoutError('ITEMS_UNAVAILABLE', `Currently unavailable at this store: ${names.join(', ')}`, {
+      items: names,
+    });
+  }
+
+  private async loadProduct(productId: string, storeId: string): Promise<StoreProduct | null> {
     return this.prisma.product.findUnique({
       where: { id: productId },
-      include: AVAILABLE_OPTIONS_INCLUDE,
+      include: storeProductInclude(storeId),
     });
   }
 
@@ -494,6 +556,16 @@ export class CartService {
       updatedAt: new Date().toISOString(),
     };
   }
+}
+
+/**
+ * Refuse a product the store does not sell (see `ProductStore`). The menu of
+ * that store never shows it; this catches a shared link, a product opened
+ * from another store of the brand, or a direct API call.
+ */
+function assertSoldHere(product: StoreProduct): void {
+  if (product.stores.length > 0) return;
+  throw checkoutError('ITEMS_UNAVAILABLE', `Not sold at this store: ${product.name}`, { items: [product.name] });
 }
 
 /** Menu order: the admin's sort order, then id so equal sort orders stay put. */

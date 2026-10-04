@@ -46,6 +46,19 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('a milk this store ran out of is not offered here', (tester) async {
+    final h = await pumpApp(tester);
+    h.api.soldOutAt['st_1'] = {'v_oat'};
+
+    await tester.tap(find.text('Латте'));
+    await settle(tester);
+
+    expect(h.api.productStores.last, 'st_1', reason: 'the product is fetched as the browsed store sells it');
+    expect(find.text('Овсяное'), findsNothing);
+    expect(find.text('Размер'), findsOneWidget, reason: 'the latte itself stays on the menu');
+    await h.unmount(tester);
+  });
+
   testWidgets('customising a latte updates the price and sends the chosen options to the cart', (tester) async {
     final h = await pumpApp(tester);
 

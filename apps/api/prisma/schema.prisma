@@ -596,13 +596,15 @@ model Store {
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
-  brand           Brand              @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand           Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
   workingHours    StoreWorkingHour[]
   stopListEntries StopListEntry[]
+  productListings ProductStore[]
+  ingredientStops StoreIngredientStop[]
   carts           Cart[]
   orders          Order[]
   userStores      UserStore[]
-  kdsPinUsers     User[]             @relation("KdsPinStore")
+  kdsPinUsers     User[]                @relation("KdsPinStore")
   shifts          StoreShift[]
 
   @@unique([brandId, externalProvider, externalId])
@@ -729,6 +731,7 @@ model Product {
   variations      Variation[]
   modifiers       Modifier[]
   stopListEntries StopListEntry[]
+  stores          ProductStore[]
   cartItems       CartItem[]
 
   @@unique([brandId, slug])
@@ -797,9 +800,10 @@ model Ingredient {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brand      Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brand      Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
   modifiers  Modifier[]
   variations Variation[]
+  storeStops StoreIngredientStop[]
 
   @@unique([brandId, name])
   @@index([brandId, isAvailable])
@@ -818,6 +822,43 @@ model StopListEntry {
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, productId])
+}
+
+/// The stores that sell a product. The menu belongs to the brand, but one
+/// brand's burger bar and pizzeria do not sell the same things: a product is
+/// on a store's menu, and can be ordered there, only with a row here. The
+/// price is the same in every store. A product without rows is sold nowhere.
+/// New products are listed in every store of the brand unless the editor
+/// picks some; a new store lists every product of its brand.
+model ProductStore {
+  productId String
+  storeId   String
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([productId, storeId])
+  @@index([storeId])
+}
+
+/// One store has run out of an ingredient from the brand library (oat milk
+/// at the pizzeria, not at the café). While the row is active the options
+/// made of it are hidden from that store's customers and refused by its
+/// cart, exactly as when the ingredient is switched off brand-wide; other
+/// stores are unaffected. `expiresAt` lifts it by itself (e.g. at the end of
+/// the day); null = until someone switches it back on.
+model StoreIngredientStop {
+  storeId      String
+  ingredientId String
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  store      Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, ingredientId])
+  @@index([ingredientId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

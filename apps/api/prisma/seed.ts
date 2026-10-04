@@ -216,6 +216,16 @@ async function main(): Promise<void> {
     },
   });
 
+  // Each store sells only the products listed for it; the demo stores sell everything.
+  const [seedProducts, seedStores] = await Promise.all([
+    prisma.product.findMany({ where: { brandId: brand.id }, select: { id: true } }),
+    prisma.store.findMany({ where: { brandId: brand.id }, select: { id: true } }),
+  ]);
+  await prisma.productStore.createMany({
+    data: seedProducts.flatMap((p) => seedStores.map((s) => ({ productId: p.id, storeId: s.id }))),
+    skipDuplicates: true,
+  });
+
   // ── Loyalty + promos ───────────────────────────────────────────────────
   // Seed a handful of promos matching the admin UI fixtures so the /admin/promo
   // dashboard shows live data instead of placeholders after the first boot.

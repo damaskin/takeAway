@@ -52,7 +52,9 @@ function build(opts: Options = {}) {
       delete: jest.fn().mockResolvedValue(store),
     },
     order: { findFirst: jest.fn().mockResolvedValue(opts.hasOrders ? { id: 'order-1' } : null) },
+    productStore: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
     product: {
+      findMany: jest.fn().mockResolvedValue([{ id: 'p-latte' }, { id: 'p-burger' }]),
       groupBy: jest
         .fn()
         .mockResolvedValue(
@@ -152,6 +154,21 @@ describe('AdminCatalogService — creating a store', () => {
     });
     expect(created.hasOrders).toBe(false);
     expect(created.readiness.ready).toBe(false); // no working hours yet
+  });
+
+  // Opening a second café must not leave it with an empty menu: it starts
+  // selling everything the brand has, and the owner narrows it down.
+  it("lists the brand's whole menu in the new store", async () => {
+    const { svc, prisma } = build();
+    await svc.createStore(newStore, ['brand-1']);
+    expect(prisma.product.findMany).toHaveBeenCalledWith({ where: { brandId: 'brand-1' }, select: { id: true } });
+    expect(prisma.productStore.createMany).toHaveBeenCalledWith({
+      data: [
+        { productId: 'p-latte', storeId: 'store-new' },
+        { productId: 'p-burger', storeId: 'store-new' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it('numbers the slug when the brand already has a store of that name', async () => {

@@ -12,6 +12,7 @@ import { AdminProductImagesService } from './admin-product-images.service';
 import { AdminProductsController } from './admin-products.controller';
 import { AdminStoresController } from './admin-stores.controller';
 import { BrandModerationService } from './brand-moderation.service';
+import { StoreAvailabilityService } from './store-availability.service';
 
 @Module({
   // RealtimeModule: switching a store on or off is announced to every client.
@@ -23,6 +24,12 @@ import { BrandModerationService } from './brand-moderation.service';
     AdminProductsController,
     AdminIngredientsController,
   ],
-  providers: [AdminCatalogService, AdminProductImagesService, AdminIngredientsService, BrandModerationService],
+  providers: [
+    AdminCatalogService,
+    AdminProductImagesService,
+    AdminIngredientsService,
+    BrandModerationService,
+    StoreAvailabilityService,
+  ],
 })
 export class AdminCatalogModule {}

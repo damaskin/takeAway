@@ -76,6 +76,7 @@ export const PRODUCT = {
   carbsGrams: null,
   allergens: [],
   dietTags: [],
+  storeIds: [STORE.id],
 };
 
 const STAFF = {
@@ -107,6 +108,24 @@ export const OAT_MILK = {
   name: 'Овсяное молоко',
   isAvailable: true,
   products: [{ id: PRODUCT.id, name: PRODUCT.name }],
+};
+
+/** The stop-list of the one store: the product on sale, the oat milk too. */
+export const AVAILABILITY = {
+  storeId: STORE.id,
+  storeName: STORE.name,
+  timezone: STORE.timezone,
+  products: [
+    {
+      id: PRODUCT.id,
+      name: PRODUCT.name,
+      categoryId: CATEGORY.id,
+      categoryName: CATEGORY.name,
+      imageUrl: null,
+      stop: null,
+    },
+  ],
+  ingredients: [{ id: OAT_MILK.id, name: OAT_MILK.name, isAvailable: true, stop: null, productNames: [PRODUCT.name] }],
 };
 
 /** Signs the browser in before the app boots, the way a real session is. */
@@ -150,11 +169,21 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
 
     if (path === '/admin/stores') return json(route, [STORE]);
     if (/^\/admin\/stores\/[^/]+$/.test(path)) return json(route, STORE);
+    if (/^\/admin\/stores\/[^/]+\/availability$/.test(path)) return json(route, AVAILABILITY);
+    if (/^\/admin\/stores\/[^/]+\/stop-list$/.test(path) && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { productId: string; expiresAt?: string };
+      return json(route, { id: 'stop-1', storeId: STORE.id, reason: null, expiresAt: null, ...body }, 201);
+    }
+    if (/^\/admin\/stores\/[^/]+\/(stop-list|ingredient-stops)\/[^/]+$/.test(path)) {
+      if (route.request().method() === 'DELETE') return route.fulfill({ status: 204 });
+      return json(route, { expiresAt: null });
+    }
     if (path.endsWith('/staff')) return json(route, [STAFF]);
     if (path.endsWith('/owner')) return json(route, null);
 
     if (path === '/admin/categories') return json(route, [CATEGORY]);
     if (path === '/admin/products') return json(route, [PRODUCT]);
+    if (path === '/admin/products/stores') return json(route, [{ id: STORE.id, name: STORE.name, status: 'OPEN' }]);
     if (/^\/admin\/products\/[^/]+$/.test(path)) return json(route, { ...PRODUCT, variations: [], modifiers: [] });
 
     if (path === '/admin/ingredients') return json(route, [OAT_MILK]);

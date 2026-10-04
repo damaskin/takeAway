@@ -36,13 +36,27 @@ export class AdminProductsController {
   @Get()
   @ApiQuery({ name: 'brandId', required: false })
   @ApiQuery({ name: 'categoryId', required: false })
+  @ApiQuery({ name: 'storeId', required: false, description: 'Only the products this store sells' })
   async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('brandId') brandId?: string,
     @Query('categoryId') categoryId?: string,
+    @Query('storeId') storeId?: string,
   ) {
     const scope = await this.scope.resolveBrandIds(user);
-    return this.admin.listProducts(scope, brandId, categoryId);
+    return this.admin.listProducts(scope, brandId, categoryId, storeId);
+  }
+
+  /**
+   * The brand's stores, for the product form's "sold in" picker. Separate
+   * from `/admin/stores` because a menu editor is not assigned to stores and
+   * would get an empty list there.
+   */
+  @Get('stores')
+  @ApiQuery({ name: 'brandId', required: true })
+  async listStores(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId: string) {
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.admin.listProductStores(scope, brandId);
   }
 
   @Get(':id')

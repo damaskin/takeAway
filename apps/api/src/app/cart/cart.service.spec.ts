@@ -4,7 +4,7 @@ import type { CartItem, Modifier, Variation } from '@prisma/client';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
-import { CartService, type PricedProduct } from './cart.service';
+import { CartService, type StoreProduct } from './cart.service';
 import type { AddCartItemDto } from './dto/add-cart-item.dto';
 
 describe('CartService pricing', () => {
@@ -123,7 +123,7 @@ function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifie
 }
 
 /** A latte with a default size (M), an undefaulted milk, and two extras. */
-function latte(overrides: Partial<PricedProduct> = {}): PricedProduct {
+function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
   return {
     id: 'p-latte',
     brandId: 'brand-a',
@@ -149,6 +149,8 @@ function latte(overrides: Partial<PricedProduct> = {}): PricedProduct {
     externalId: null,
     createdAt: new Date('2026-09-01T00:00:00Z'),
     updatedAt: new Date('2026-09-01T00:00:00Z'),
+    // Sold in the store the tests order from.
+    stores: [{ storeId: 'store-1' }],
     variations: [
       variation({ id: 'v-s', type: 'SIZE', name: 'S', sortOrder: 1 }),
       variation({ id: 'v-m', type: 'SIZE', name: 'M', priceDeltaCents: 70, sortOrder: 2, isDefault: true }),
@@ -205,6 +207,8 @@ describe('CartService option rules on add-to-cart', () => {
     product: { findUnique: jest.Mock };
     store: { findUnique: jest.Mock };
     stopListEntry: { findMany: jest.Mock };
+    variation: { findMany: jest.Mock };
+    modifier: { findMany: jest.Mock };
     cart: { upsert: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
     cartItem: { create: jest.Mock; findMany: jest.Mock; update: jest.Mock };
   };
@@ -218,6 +222,9 @@ describe('CartService option rules on add-to-cart', () => {
       product: { findUnique: jest.fn().mockResolvedValue(latte()) },
       store: { findUnique: jest.fn().mockResolvedValue(openStore) },
       stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
+      // Options the product does not show here: none exist unless a test says so.
+      variation: { findMany: jest.fn().mockResolvedValue([]) },
+      modifier: { findMany: jest.fn().mockResolvedValue([]) },
       cart: {
         upsert: jest.fn().mockResolvedValue({ id: 'cart-1' }),
         findUnique: jest.fn().mockResolvedValue(emptyCart()),
@@ -332,6 +339,57 @@ describe('CartService option rules on add-to-cart', () => {
 
     await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
   });
+
+  // The brand's burger is not sold in its pizzeria: the menu there never
+  // shows it, and a shared link or a direct call must not order it either.
+  it('refuses a product the store does not sell, with the coded "unavailable" error', async () => {
+    prisma.product.findUnique.mockResolvedValue(latte({ stores: [] }));
+
+    await expect(add({})).rejects.toMatchObject({
+      status: 400,
+      response: { code: 'ITEMS_UNAVAILABLE', items: ['Латте'] },
+    });
+    expect(prisma.cartItem.create).not.toHaveBeenCalled();
+  });
+
+  it('loads the product as this store sells it: its listing there and the options it has in stock', async () => {
+    await add({});
+
+    const include = prisma.product.findUnique.mock.calls[0]?.[0]?.include;
+    expect(include.stores).toEqual({ where: { storeId: 'store-1' }, select: { storeId: true } });
+    expect(JSON.stringify(include.variations.where)).toContain('"storeStops":{"none":{"storeId":"store-1"');
+    expect(JSON.stringify(include.modifiers.where)).toContain('"storeStops":{"none":{"storeId":"store-1"');
+  });
+
+  // Oat milk ran out in this store only: the store-scoped load leaves the
+  // option out, and asking for it anyway names it instead of a bare 400.
+  it('refuses an option whose ingredient this store has run out of, naming it', async () => {
+    const product = latte();
+    product.variations = product.variations.filter((v) => v.id !== 'v-oat');
+    prisma.product.findUnique.mockResolvedValue(product);
+    prisma.variation.findMany.mockResolvedValue([{ name: 'Овсяное' }]);
+
+    await expect(add({ variationIds: ['v-oat'] })).rejects.toMatchObject({
+      status: 400,
+      response: { code: 'ITEMS_UNAVAILABLE', items: ['Овсяное'] },
+    });
+    expect(prisma.variation.findMany).toHaveBeenCalledWith({
+      where: { productId: 'p-latte', id: { in: ['v-oat'] } },
+      select: { name: true },
+    });
+    expect(prisma.cartItem.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stopped extra the same way', async () => {
+    const product = latte();
+    product.modifiers = product.modifiers.filter((m) => m.id !== 'm-vanilla');
+    prisma.product.findUnique.mockResolvedValue(product);
+    prisma.modifier.findMany.mockResolvedValue([{ name: 'Ваниль' }]);
+
+    await expect(add({ modifiers: { 'm-vanilla': 1 } })).rejects.toMatchObject({
+      response: { code: 'ITEMS_UNAVAILABLE', items: ['Ваниль'] },
+    });
+  });
 });
 
 /**
@@ -363,7 +421,7 @@ describe('CartService.repriceForCheckout', () => {
   });
 
   /** A cart row for two L oat lattes with two vanillas each, priced as when it went in. */
-  function row(overrides: Partial<CartItem & { product: PricedProduct }> = {}): CartItem & { product: PricedProduct } {
+  function row(overrides: Partial<CartItem & { product: StoreProduct }> = {}): CartItem & { product: StoreProduct } {
     return {
       id: 'ci-1',
       cartId: 'cart-1',
@@ -382,7 +440,7 @@ describe('CartService.repriceForCheckout', () => {
     };
   }
 
-  const reprice = (...items: Array<CartItem & { product: PricedProduct }>) =>
+  const reprice = (...items: Array<CartItem & { product: StoreProduct }>) =>
     service.repriceForCheckout({ id: 'cart-1', items });
 
   async function conflictOf(pending: Promise<unknown>): Promise<CartChangedException> {
@@ -445,6 +503,13 @@ describe('CartService.repriceForCheckout', () => {
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
 
+  it('takes out a line whose product the store stopped selling', async () => {
+    const err = await conflictOf(reprice(row({ product: latte({ stores: [] }) })));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
+  });
+
   it('reports an extra cut down to the menu limit even when the price stays the same', async () => {
     const freeVanilla = latte();
     freeVanilla.modifiers = [modifier({ id: 'm-vanilla', name: 'Ваниль', maxCount: 1 })];
@@ -485,6 +550,7 @@ describe('CartService.addItem guards', () => {
     visible: true,
     basePriceCents: 500,
     prepTimeSeconds: 60,
+    stores: [{ storeId: 'store-1' }],
     variations: [],
     modifiers: [],
   };

@@ -92,8 +92,11 @@ abstract class TakeAwayApi {
   @GET('/stores/{idOrSlug}/pickup-slots')
   Future<List<PickupSlot>> pickupSlots(@Path('idOrSlug') String idOrSlug);
 
+  /// `store`: the store being browsed. With it the product is looked up as
+  /// that store sells it — 404 when the store does not sell it, and without
+  /// the options the store has run out of.
   @GET('/products/{idOrSlug}')
-  Future<ProductDetail> product(@Path('idOrSlug') String idOrSlug);
+  Future<ProductDetail> product(@Path('idOrSlug') String idOrSlug, {@Query('store') String? store});
 
   // ── Cart ───────────────────────────────────────────────────────────────
 
