@@ -26,6 +26,8 @@ export const STORE = {
   latitude: 25.078,
   longitude: 55.141,
   status: 'OPEN',
+  // A shift is running: without one the store is shown closed, with no menu.
+  acceptingOrders: true,
   fulfillmentTypes: ['TAKEAWAY'],
   pickupPointType: 'SHELF',
   busyMeter: 20,

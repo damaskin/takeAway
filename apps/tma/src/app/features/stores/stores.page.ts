@@ -1,12 +1,13 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { isStoreInactive } from '@takeaway/utils';
+import { sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
 import { LeafletMapComponent, StoreLogoComponent, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
 /**
@@ -17,6 +18,10 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
  *   mapFrame  (160px, aerial photo)
  *   "Nearby" section label
  *   store cards — caramel 2px stroke on selected, foam otherwise
+ *
+ * Closed stores (no shift, or switched off) come last, dimmed, and do not
+ * open: there is nothing to order there. The list refreshes itself while on
+ * screen, so a store that starts its shift lights up without a reload.
  */
 @Component({
   selector: 'app-tma-stores',
@@ -59,10 +64,14 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
       <div class="flex flex-col" style="gap: 12px">
         @for (s of stores(); track s.id; let i = $index) {
           <a
-            [routerLink]="['/stores', s.slug]"
+            [routerLink]="inactive(s) ? null : ['/stores', s.slug]"
             class="flex flex-col"
-            [style.border]="i === 0 ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'"
-            [style.opacity]="inactive(s) ? 0.6 : 1"
+            [style.border]="
+              i === 0 && !inactive(s) ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
+            "
+            [style.opacity]="inactive(s) ? 0.55 : 1"
+            [style.cursor]="inactive(s) ? 'default' : null"
+            [attr.aria-disabled]="inactive(s) || null"
             [attr.data-inactive]="inactive(s) || null"
             style="background: var(--color-foam); border-radius: 16px; padding: 16px; gap: 8px"
           >
@@ -78,7 +87,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                 [style.background]="statusBg(inactive(s) ? 'CLOSED' : s.status)"
                 [style.color]="statusColor(inactive(s) ? 'CLOSED' : s.status)"
                 style="padding: 3px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
-                >{{ (inactive(s) ? 'common.storeInactive.badge' : statusLabel(s.status)) | translate }}</span
+                >{{ badge(s) | translate }}</span
               >
             </div>
             <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
@@ -108,12 +117,22 @@ export class TmaStoresPage implements OnInit {
 
   readonly stores = signal<StoreListItem[]>([]);
 
+  constructor() {
+    refreshStoresWhileVisible(() => this.load());
+  }
+
   readonly storeMarkers = computed<MapMarker[]>(() =>
     this.stores().map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
   );
 
   ngOnInit(): void {
-    this.catalog.listStores().subscribe({ next: (s) => this.stores.set(s) });
+    this.load();
+  }
+
+  private load(): void {
+    this.catalog
+      .listStores()
+      .subscribe({ next: (s) => this.stores.set(sortStoresByAvailability(s)), error: () => undefined });
   }
 
   minutes(seconds: number): number {
@@ -124,9 +143,16 @@ export class TmaStoresPage implements OnInit {
     return this.fmt.distance(meters);
   }
 
-  /** Returns a translation key — resolved via | translate in the template. */
   inactive(store: StoreListItem): boolean {
-    return isStoreInactive(store);
+    return storeAvailability(store) === 'closed';
+  }
+
+  /** Returns a translation key — resolved via | translate in the template. */
+  badge(store: StoreListItem): string {
+    const availability = storeAvailability(store);
+    if (availability === 'closed') return 'common.storeClosed.badge';
+    if (availability === 'scheduledOnly') return 'common.storeLater.badge';
+    return this.statusLabel(store.status);
   }
 
   statusLabel(status: StoreListItem['status']): string {

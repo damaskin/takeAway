@@ -5,6 +5,7 @@ import type { Modifier, ProductDetail, StoreListItem, Variation, VariationType }
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import { isStoreInactive } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -260,7 +261,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
             <button
               type="button"
               (click)="addToCart()"
-              [disabled]="adding() || !authStore.isAuthenticated() || !resolvedStore()"
+              [disabled]="adding() || !authStore.isAuthenticated() || !resolvedStore() || storeClosed()"
               class="flex items-center justify-center disabled:opacity-60"
               style="flex: 1; height: 56px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); gap: 12px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
             >
@@ -272,7 +273,21 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               }}</span>
             </button>
           </div>
-          @if (noStoreForBrand()) {
+          @if (storeClosed()) {
+            <p
+              class="text-center"
+              role="status"
+              data-testid="store-closed"
+              style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)"
+            >
+              {{ 'common.storeClosed.cannotOrder' | translate }}
+              <a
+                routerLink="/stores"
+                style="color: var(--color-caramel); font-weight: 600; text-decoration: underline"
+                >{{ 'common.storeClosed.chooseAnother' | translate }}</a
+              >
+            </p>
+          } @else if (noStoreForBrand()) {
             <p
               class="text-center"
               style="margin-top: 4px; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)"
@@ -298,7 +313,7 @@ const VARIATION_LABELS: Record<VariationType, string> = {
               >{{ 'web.product.cta.goToCheckout' | translate: { count: cartItemCount() } }}</a
             >
           }
-          @if (addError()) {
+          @if (addError() && !storeClosed()) {
             <p
               class="text-center"
               style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin-top: 4px"
@@ -439,6 +454,15 @@ export class ProductPage implements OnInit {
     return this.catalog.cachedMenu(store.slug)?.categories.find((c) => c.id === product.categoryId) ?? null;
   });
 
+  /** Set when the cart turned the item away because the store closed meanwhile. */
+  private readonly closedOnAdd = signal(false);
+
+  /** The store this item would go to takes no orders right now: no add button. */
+  readonly storeClosed = computed(() => {
+    const store = this.resolvedStore();
+    return this.closedOnAdd() || (store !== null && isStoreInactive(store));
+  });
+
   /** True once we know the product's brand has no store taking orders. */
   readonly noStoreForBrand = computed(
     () => this.product() !== null && this.stores().length > 0 && this.resolvedStore() === null,
@@ -505,7 +529,8 @@ export class ProductPage implements OnInit {
         next: () => this.adding.set(false),
         error: (err) => {
           this.adding.set(false);
-          const body = (err as { error?: { message?: unknown } }).error;
+          const body = (err as { error?: { code?: unknown; message?: unknown } }).error;
+          if (body?.code === 'STORE_NOT_TAKING_ORDERS') this.closedOnAdd.set(true);
           this.addError.set(
             checkoutErrorText(body, this.translate, this.fmt) ??
               (typeof body?.message === 'string' ? body.message : this.translate.instant('web.product.addFailed')),

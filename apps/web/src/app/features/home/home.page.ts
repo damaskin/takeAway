@@ -2,11 +2,13 @@ import { ViewportScroller } from '@angular/common';
 import { Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
+import { isStoreInactive, sortStoresByAvailability } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { BrandLogoComponent, StoreLogoComponent } from '@takeaway/ui-kit';
 
 import { categoryIcon } from '../../core/catalog/category-icon';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { storeAddress } from '../../core/catalog/store-place';
 
 interface HomeCategory {
@@ -87,8 +89,12 @@ interface FooterLink {
       <div class="grid grid-cols-1 md:grid-cols-3" style="gap: 20px">
         @for (store of stores(); track store.id) {
           <a
-            [routerLink]="['/stores', store.slug]"
+            [routerLink]="closed(store) ? null : ['/stores', store.slug]"
             class="flex items-center"
+            [style.opacity]="closed(store) ? 0.55 : 1"
+            [style.cursor]="closed(store) ? 'default' : null"
+            [attr.aria-disabled]="closed(store) || null"
+            [attr.data-inactive]="closed(store) || null"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); padding: 20px; gap: 16px"
           >
             <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="52" />
@@ -101,12 +107,20 @@ interface FooterLink {
                 address(store) || ('common.readyIn' | translate: { min: etaMin(store) })
               }}</span>
             </div>
-            <span
-              class="flex items-center justify-center"
-              [style.background]="etaBg(store)"
-              style="color: white; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-              >{{ etaMin(store) }} {{ 'common.units.min' | translate }}</span
-            >
+            @if (closed(store)) {
+              <span
+                class="flex items-center justify-center"
+                style="background: #d94b5e22; color: #8f2f3c; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 700"
+                >{{ 'common.storeClosed.badge' | translate }}</span
+              >
+            } @else {
+              <span
+                class="flex items-center justify-center"
+                [style.background]="etaBg(store)"
+                style="color: white; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
+                >{{ etaMin(store) }} {{ 'common.units.min' | translate }}</span
+              >
+            }
           </a>
         }
       </div>
@@ -378,14 +392,32 @@ export class HomePage implements OnInit {
     },
   ];
 
+  constructor() {
+    // Closed stores light up when their shift starts, without a reload.
+    refreshStoresWhileVisible(() =>
+      this.catalog.listStores().subscribe({ next: (list) => this.showStores(list), error: () => undefined }),
+    );
+  }
+
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
       next: (list) => {
-        this.stores.set(list.slice(0, 6));
-        const first = list[0];
+        const sorted = this.showStores(list);
+        const first = sorted[0];
         if (first) this.loadCategories(first.slug);
       },
     });
+  }
+
+  closed(store: StoreListItem): boolean {
+    return isStoreInactive(store);
+  }
+
+  /** Open stores first, closed ones after them; the first six. */
+  private showStores(list: StoreListItem[]): StoreListItem[] {
+    const sorted = sortStoresByAvailability(list);
+    this.stores.set(sorted.slice(0, 6));
+    return sorted;
   }
 
   address(store: StoreListItem): string {

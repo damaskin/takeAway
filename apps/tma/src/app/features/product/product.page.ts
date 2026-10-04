@@ -1,9 +1,10 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import { isStoreInactive } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
@@ -29,12 +30,13 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
  *   infoRow — title (Fraunces 20/700) · base price (Inter 18/700 caramel)
  *   description
  *   sizeSection / milkSection / extrasSection — pill-button rows
- * MainButton (Telegram blue, 48px) handles add-to-cart action.
+ * MainButton (Telegram blue, 48px) handles add-to-cart action. It stays
+ * hidden while the serving store is closed — the cart would refuse the item.
  */
 @Component({
   selector: 'app-tma-product',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
@@ -159,7 +161,21 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
           </div>
         }
 
-        @if (error()) {
+        @if (storeClosed()) {
+          <div
+            role="status"
+            data-testid="store-closed"
+            class="flex flex-col items-center text-center"
+            style="gap: 8px; padding: 14px 16px; border-radius: 12px; background: rgba(217, 75, 94, 0.08); border: 1px solid rgba(217, 75, 94, 0.3); font-family: var(--font-sans)"
+          >
+            <span style="font-size: 14px; font-weight: 600; color: var(--color-espresso)">{{
+              'common.storeClosed.cannotOrder' | translate
+            }}</span>
+            <a routerLink="/stores" style="font-size: 13px; font-weight: 600; color: var(--color-caramel)">{{
+              'common.storeClosed.chooseAnother' | translate
+            }}</a>
+          </div>
+        } @else if (error()) {
           <p
             class="text-center"
             style="font-family: var(--font-sans); font-size: 12px; color: var(--color-danger, #c0392b)"
@@ -193,6 +209,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   readonly product = signal<ProductDetail | null>(null);
   readonly error = signal<string | null>(null);
+  /** The store this product would be added to takes no orders right now. */
+  readonly storeClosed = signal(false);
   readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
   readonly modifierCounts = signal<Record<string, number>>({});
   private storeId: string | null = null;
@@ -335,7 +353,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
   }
 
   private refreshMainButton(): void {
-    if (!this.authStore.isAuthenticated()) {
+    if (!this.authStore.isAuthenticated() || this.storeClosed()) {
       this.tg.hideMainButton();
       return;
     }
@@ -357,6 +375,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
         const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
         this.storeId = fit?.id ?? null;
         this.currency.set(fit?.currency ?? null);
+        this.storeClosed.set(!!fit && isStoreInactive(fit));
         if (!fit) this.error.set(this.translate.instant('tma.product.noStore'));
         this.refreshMainButton();
       },
@@ -379,8 +398,20 @@ export class TmaProductPage implements OnInit, OnDestroy {
         next: () => void this.router.navigate(['/checkout']),
         // Without this the request failing left the button looking inert —
         // the customer taps "add" and nothing at all happens.
-        error: (err: { error?: { message?: string }; message?: string }) =>
-          this.error.set(err.error?.message ?? err.message ?? this.translate.instant('tma.product.addFailed')),
+        error: (err: { error?: { code?: string; message?: string }; message?: string }) => {
+          // The store closed while the customer was choosing.
+          if (err.error?.code === 'STORE_NOT_TAKING_ORDERS') {
+            this.storeClosed.set(true);
+            this.refreshMainButton();
+            return;
+          }
+          this.error.set(
+            checkoutErrorText(err.error, this.translate, this.fmt) ??
+              err.error?.message ??
+              err.message ??
+              this.translate.instant('tma.product.addFailed'),
+          );
+        },
       });
   }
 }

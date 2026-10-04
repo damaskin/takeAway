@@ -1,12 +1,13 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { isStoreInactive } from '@takeaway/utils';
+import { sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
 import { LeafletMapComponent, StoreLogoComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { hasLocation, storeAddress } from '../../core/catalog/store-place';
 
 type Filter = 'ALL' | 'OPEN' | 'NEAR';
@@ -23,6 +24,10 @@ const FILTER_LABELS: Record<Filter, string> = {
  * Layout:
  *   mapArea (fill) — Leaflet/OSM map with a marker per store
  *   sidebar (480px, foam, 24px padding) — title + count, filter chips, store cards
+ *
+ * Closed stores (no shift, or switched off) come last, dimmed, and do not
+ * open — there is nothing to order there. The list refreshes itself while
+ * the tab is in view, so a store that starts its shift lights up by itself.
  */
 @Component({
   selector: 'app-stores-list',
@@ -102,13 +107,15 @@ const FILTER_LABELS: Record<Filter, string> = {
         <div class="flex flex-col" style="gap: 12px">
           @for (store of filteredStores(); track store.id) {
             <a
-              [routerLink]="['/stores', store.slug]"
-              (mouseenter)="selectedId.set(store.id)"
+              [routerLink]="inactive(store) ? null : ['/stores', store.slug]"
+              (mouseenter)="inactive(store) || selectedId.set(store.id)"
               class="flex flex-col"
               [style.border]="
                 selectedId() === store.id ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
               "
-              [style.opacity]="inactive(store) ? 0.6 : 1"
+              [style.opacity]="inactive(store) ? 0.55 : 1"
+              [style.cursor]="inactive(store) ? 'default' : null"
+              [attr.aria-disabled]="inactive(store) || null"
               [attr.data-inactive]="inactive(store) || null"
               style="background: var(--color-cream); border-radius: 16px; padding: 16px; gap: 10px"
             >
@@ -124,7 +131,7 @@ const FILTER_LABELS: Record<Filter, string> = {
                   [style.background]="statusBg(inactive(store) ? 'CLOSED' : store.status)"
                   [style.color]="statusColor(inactive(store) ? 'CLOSED' : store.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600"
-                  >{{ (inactive(store) ? 'common.storeInactive.badge' : statusLabel(store.status)) | translate }}</span
+                  >{{ badge(store) | translate }}</span
                 >
               </div>
               @if (address(store); as a) {
@@ -201,22 +208,24 @@ export class StoresListPage implements OnInit {
   readonly locating = signal(false);
 
   readonly filteredStores = computed(() => {
-    const words = this.query().toLowerCase().split(/s+/).filter(Boolean);
+    const words = this.query().toLowerCase().split(/\s+/).filter(Boolean);
     const list = this.stores().filter((s) => {
       const text = `${s.name} ${storeAddress(s)}`.toLowerCase();
       return words.every((w) => text.includes(w));
     });
     const f = this.filter();
-    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && !isStoreInactive(s));
+    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && storeAvailability(s) !== 'closed');
     if (f === 'NEAR') {
       // By distance once the customer has shared where they are, by wait until then.
-      return [...list].sort(
-        (a, b) =>
-          (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) ||
-          (a.currentEtaSeconds ?? 0) - (b.currentEtaSeconds ?? 0),
+      return sortStoresByAvailability(
+        [...list].sort(
+          (a, b) =>
+            (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) ||
+            (a.currentEtaSeconds ?? 0) - (b.currentEtaSeconds ?? 0),
+        ),
       );
     }
-    return list;
+    return sortStoresByAvailability(list);
   });
 
   /** Stores without a pin yet stay in the list but off the map. */
@@ -226,13 +235,25 @@ export class StoresListPage implements OnInit {
       .map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
   );
 
+  constructor() {
+    refreshStoresWhileVisible(() => this.load());
+  }
+
   ngOnInit(): void {
-    this.catalog.listStores().subscribe({
+    this.load();
+  }
+
+  /** The list, from where the customer is once they have shared it. */
+  private load(): void {
+    this.catalog.listStores(this.userPosition() ?? {}).subscribe({
       next: (list) => {
         this.stores.set(list);
-        const first = list[0];
-        if (first) this.selectedId.set(first.id);
+        const selected = list.find((s) => s.id === this.selectedId());
+        if (!selected || this.inactive(selected)) {
+          this.selectedId.set(sortStoresByAvailability(list).find((s) => !this.inactive(s))?.id ?? null);
+        }
       },
+      error: () => undefined,
     });
   }
 
@@ -278,9 +299,16 @@ export class StoresListPage implements OnInit {
     return this.fmt.distance(meters);
   }
 
-  /** Returns a translation key; the template runs it through the translate pipe. */
   inactive(store: StoreListItem): boolean {
-    return isStoreInactive(store);
+    return storeAvailability(store) === 'closed';
+  }
+
+  /** Returns a translation key; the template runs it through the translate pipe. */
+  badge(store: StoreListItem): string {
+    const availability = storeAvailability(store);
+    if (availability === 'closed') return 'common.storeClosed.badge';
+    if (availability === 'scheduledOnly') return 'common.storeLater.badge';
+    return this.statusLabel(store.status);
   }
 
   statusLabel(status: StoreListItem['status']): string {

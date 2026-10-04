@@ -16,12 +16,13 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
-import { isStoreInactive } from '@takeaway/utils';
+import { formatMinutesOfDay, isStoreInactive, sortStoresByAvailability, todaysOpeningHours } from '@takeaway/utils';
 import { Subscription, catchError, map, of } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { storeAddress } from '../../core/catalog/store-place';
 import { prefersReducedMotion, stickyTopInset } from '../../core/layout/sticky-inset';
 import { categoryIcon } from '../../core/catalog/category-icon';
@@ -43,6 +44,12 @@ import { categoryIcon } from '../../core/catalog/category-icon';
  *
  * The category being read is highlighted in the rail and the chips as the
  * page scrolls; clicking one scrolls to it.
+ *
+ * A store that takes no orders (no shift, or switched off) shows "Точка
+ * закрыта" with today's hours and a way to another store instead of its
+ * menu. A store open for orders later only (after hours, shift running)
+ * keeps its menu; checkout then offers a pickup time. The store is
+ * re-fetched while the tab is in view, so the page flips by itself.
  */
 @Component({
   selector: 'app-web-menu',
@@ -77,7 +84,7 @@ import { categoryIcon } from '../../core/catalog/category-icon';
         </div>
         @if (inactive(s)) {
           <span class="store-eta is-closed" data-testid="store-inactive">{{
-            'common.storeInactive.title' | translate
+            'common.storeClosed.title' | translate
           }}</span>
         } @else if (s.openNow) {
           <span class="store-eta">
@@ -107,7 +114,7 @@ import { categoryIcon } from '../../core/catalog/category-icon';
       }
     </div>
 
-    @if (categories().length > 0) {
+    @if (categories().length > 0 && !closed()) {
       <nav class="menu-chips" #chips data-sticky-top [attr.aria-label]="'web.menu.categoriesLabel' | translate">
         @for (cat of categories(); track cat.id) {
           <button
@@ -125,7 +132,46 @@ import { categoryIcon } from '../../core/catalog/category-icon';
       </nav>
     }
 
-    <div class="menu-body">
+    @if (store(); as s) {
+      @if (closed()) {
+        <section
+          role="status"
+          data-testid="store-closed"
+          class="flex flex-col items-center text-center"
+          style="gap: 12px; max-width: 520px; margin: clamp(32px, 8vw, 80px) auto; padding: 40px clamp(20px, 4vw, 40px); border-radius: var(--radius-card); background: var(--color-foam); border: 1px solid var(--color-border-light); font-family: var(--font-sans)"
+        >
+          <span
+            aria-hidden="true"
+            class="grid place-items-center"
+            style="width: 72px; height: 72px; border-radius: 9999px; background: var(--color-caramel-light); font-size: 34px"
+            >🌙</span
+          >
+          <h1 style="font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-espresso)">
+            {{ 'common.storeClosed.title' | translate }}
+          </h1>
+          @if (openingHours(s); as h) {
+            <p data-testid="store-hours" style="font-size: 16px; font-weight: 600; color: var(--color-espresso)">
+              {{
+                h === 'dayOff'
+                  ? ('common.storeClosed.dayOff' | translate)
+                  : ('common.storeClosed.hoursToday' | translate: h)
+              }}
+            </p>
+          }
+          <p style="font-size: 15px; line-height: 1.5; color: var(--color-text-secondary)">
+            {{ 'common.storeClosed.hint' | translate }}
+          </p>
+          <a
+            routerLink="/stores"
+            class="inline-flex items-center"
+            style="height: 48px; margin-top: 8px; padding: 0 24px; border-radius: var(--radius-button); background: var(--color-caramel); color: #fff; font-size: 15px; font-weight: 600"
+            >{{ 'common.storeClosed.chooseAnother' | translate }}</a
+          >
+        </section>
+      }
+    }
+
+    <div class="menu-body" [hidden]="closed()">
       <aside class="menu-sidebar">
         <nav class="menu-rail" #rail [attr.aria-label]="'web.menu.categoriesLabel' | translate">
           <span
@@ -333,6 +379,9 @@ import { categoryIcon } from '../../core/catalog/category-icon';
       .menu-chips {
         display: none;
       }
+      .menu-body[hidden] {
+        display: none;
+      }
       .menu-body {
         display: flex;
         min-height: calc(100vh - 128px);
@@ -537,6 +586,19 @@ export class MenuPage {
   inactive(store: StoreDetail): boolean {
     return isStoreInactive(store);
   }
+
+  /** The store takes no orders at all: its menu gives way to the closed state. */
+  readonly closed = computed(() => {
+    const store = this.store();
+    return store !== null && isStoreInactive(store);
+  });
+
+  /** Today's hours on the store's clock, for the closed state; null when none are on file. */
+  openingHours(store: StoreDetail): { from: string; to: string } | 'dayOff' | null {
+    const today = todaysOpeningHours(store.workingHours, store.timezone);
+    if (today === null || today === 'dayOff') return today;
+    return { from: formatMinutesOfDay(today.opensAt), to: formatMinutesOfDay(today.closesAt) };
+  }
   readonly menu = signal<StoreMenu | null>(null);
   readonly error = signal<string | null>(null);
   readonly activeCategoryId = signal<string | null>(null);
@@ -575,6 +637,21 @@ export class MenuPage {
       )
       .subscribe((slug) => this.open(slug));
     this.destroyRef.onDestroy(() => this.loads.unsubscribe());
+
+    // A shift starting or ending flips the page between the menu and the
+    // closed state without a reload.
+    refreshStoresWhileVisible((event) => {
+      const store = this.store();
+      if (!store || (event && event.storeId !== store.id)) return;
+      this.loads.add(
+        this.catalog.getStore(store.slug).subscribe({
+          next: (fresh) => {
+            if (fresh.id === this.store()?.id) this.store.set(fresh);
+          },
+          error: () => undefined,
+        }),
+      );
+    });
 
     // The cart of the store on screen, for a signed-in customer.
     effect(() => {
@@ -637,7 +714,8 @@ export class MenuPage {
     this.loads = new Subscription();
     this.error.set(null);
     this.fragmentPending = this.route.snapshot.fragment?.match(/^cat-(.+)$/)?.[1] ?? null;
-    const known = slug ?? this.catalog.cachedStores()?.[0]?.slug ?? null;
+    // `/menu` opens the first store taking orders, not a closed one.
+    const known = slug ?? firstOpen(this.catalog.cachedStores() ?? [])?.slug ?? null;
     if (known) {
       this.load(known);
       return;
@@ -649,7 +727,7 @@ export class MenuPage {
         .listStores()
         .pipe(catchError(() => of([])))
         .subscribe((list) => {
-          const first = list[0];
+          const first = firstOpen(list);
           if (first) this.load(first.slug);
           else this.error.set(this.translate.instant('web.menu.storeNotFound'));
         }),
@@ -743,4 +821,11 @@ export class MenuPage {
       else if (below > 0) rail.scrollBy({ top: below + 8, behavior });
     }
   }
+}
+
+/** The first store of the list taking orders, or the first one at all when none is. */
+function firstOpen<T extends { status: string; acceptingOrders?: boolean; openNow?: boolean }>(
+  list: readonly T[],
+): T | undefined {
+  return sortStoresByAvailability(list)[0];
 }

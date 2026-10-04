@@ -648,11 +648,14 @@ interface Step {
                 style="max-width: 500px; gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
               >
                 <strong style="font-size: 14px; color: var(--color-espresso)">{{
-                  'common.storeInactive.title' | translate
+                  'common.storeClosed.title' | translate
                 }}</strong>
                 <span style="font-size: 13px; color: var(--color-text-secondary)">{{
-                  'common.storeInactive.hint' | translate
+                  'common.storeClosed.hint' | translate
                 }}</span>
+                <a routerLink="/stores" style="font-size: 13px; font-weight: 600; color: var(--color-caramel)">{{
+                  'common.storeClosed.chooseAnother' | translate
+                }}</a>
               </div>
             }
 
@@ -1365,6 +1368,9 @@ export class CheckoutPage implements OnInit {
    */
   private errorText(err: unknown): string {
     const body = (err as { error?: unknown } | null)?.error;
+    // The store closed while the customer was checking out: the closed
+    // banner explains it and offers another store; the order button goes.
+    if ((body as { code?: unknown } | null)?.code === 'STORE_NOT_TAKING_ORDERS') this.storeInactive.set(true);
     const coded = checkoutErrorText(body, this.translate, this.fmt);
     if (coded) return coded;
     if ((err as { status?: unknown } | null)?.status === 0) return this.translate.instant('common.networkError');
