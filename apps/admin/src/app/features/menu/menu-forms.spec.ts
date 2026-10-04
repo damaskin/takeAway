@@ -27,7 +27,16 @@ const LATTE: ProductAdminDto = {
   carbsGrams: null,
   allergens: [],
   dietTags: [],
+  storeIds: ['s1'],
 };
+
+const TWO_STORES = [
+  { id: 's1', name: 'Бургерная', status: 'OPEN' },
+  { id: 's2', name: 'Пиццерия', status: 'OPEN' },
+];
+
+/** What a checkbox change event looks like to the component. */
+const tick = (checked: boolean) => ({ target: { checked } }) as unknown as Event;
 
 function setup<T>(component: new (...args: never[]) => T, api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>) {
   TestBed.configureTestingModule({
@@ -35,7 +44,14 @@ function setup<T>(component: new (...args: never[]) => T, api: Partial<Record<ke
     providers: [
       provideTranslateService(),
       provideRouter([]),
-      { provide: AdminCatalogApi, useValue: { listIngredients: jest.fn().mockReturnValue(of([])), ...api } },
+      {
+        provide: AdminCatalogApi,
+        useValue: {
+          listIngredients: jest.fn().mockReturnValue(of([])),
+          listProductStores: jest.fn().mockReturnValue(of([])),
+          ...api,
+        },
+      },
     ],
   });
   const translate = TestBed.inject(TranslateService);
@@ -98,6 +114,62 @@ describe('ProductFormComponent', () => {
 
     expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ calories: null, caffeineLevel: null }));
     expect(updateProduct.mock.calls[0][1]).not.toHaveProperty('categoryId');
+  });
+
+  // A burger bar and a pizzeria of one brand: the burger is sold only in one.
+  it('offers the stores of a brand with several, and sends only the ones left ticked', () => {
+    const createProduct = jest.fn().mockReturnValue(of(LATTE));
+    const listProductStores = jest.fn().mockReturnValue(of(TWO_STORES));
+    const component = form(null, { createProduct, listProductStores });
+
+    expect(component.pickStores()).toBe(true);
+    // A new product starts ticked everywhere.
+    expect(component.sellsIn('s1') && component.sellsIn('s2')).toBe(true);
+
+    component.toggleStore('s2', tick(false));
+    component.form.patchValue({ name: 'Чизбургер', price: '90' });
+    component.submit();
+
+    expect(listProductStores).toHaveBeenCalledWith('b1');
+    expect(createProduct).toHaveBeenCalledWith(expect.objectContaining({ storeIds: ['s1'] }));
+  });
+
+  it('leaves the choice to the server when nothing was unticked', () => {
+    const createProduct = jest.fn().mockReturnValue(of(LATTE));
+    const component = form(null, { createProduct, listProductStores: jest.fn().mockReturnValue(of(TWO_STORES)) });
+
+    component.form.patchValue({ name: 'Чизбургер', price: '90' });
+    component.submit();
+
+    expect(createProduct.mock.calls[0][0]).not.toHaveProperty('storeIds');
+  });
+
+  it('shows where an existing product is sold, and warns when nothing is ticked', () => {
+    const updateProduct = jest.fn().mockReturnValue(of(LATTE));
+    const component = form(LATTE, { updateProduct, listProductStores: jest.fn().mockReturnValue(of(TWO_STORES)) });
+
+    expect(component.sellsIn('s1')).toBe(true);
+    expect(component.sellsIn('s2')).toBe(false);
+
+    component.toggleStore('s1', tick(false));
+    expect(component.soldNowhere()).toBe(true);
+    component.toggleStore('s2', tick(true));
+    component.submit();
+
+    expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ storeIds: ['s2'] }));
+  });
+
+  it('hides the picker for a one-store brand and never sends a listing', () => {
+    const updateProduct = jest.fn().mockReturnValue(of(LATTE));
+    const component = form(LATTE, {
+      updateProduct,
+      listProductStores: jest.fn().mockReturnValue(of([TWO_STORES[0]])),
+    });
+
+    expect(component.pickStores()).toBe(false);
+    component.submit();
+
+    expect(updateProduct.mock.calls[0][1]).not.toHaveProperty('storeIds');
   });
 });
 

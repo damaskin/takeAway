@@ -1,6 +1,6 @@
 import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 import type { OrderItemSnapshot } from '@takeaway/shared-types';
@@ -52,7 +52,7 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
 @Component({
   selector: 'app-kitchen',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [RouterLink, TranslatePipe],
   template: `
     <section class="kitchen" [class.kitchen-dark]="mode.tablet()">
       <header class="kitchen-head">
@@ -77,6 +77,13 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
             <strong>{{ orders().length }}</strong> {{ 'kds.topbar.inQueue' | translate }}
           </span>
           <span class="kitchen-clock">{{ clock() }}</span>
+          <a
+            class="kitchen-tool kitchen-link"
+            routerLink="/stop-list"
+            [queryParams]="storeId() ? { store: storeId() } : {}"
+            data-testid="kitchen-stop-list"
+            >{{ 'admin.kitchen.stopList' | translate }}</a
+          >
           @if (mode.tablet()) {
             <button
               type="button"
@@ -274,6 +281,11 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         font-size: 13px;
         font-weight: 600;
         color: var(--color-text-primary);
+      }
+      .kitchen-link {
+        display: inline-flex;
+        align-items: center;
+        text-decoration: none;
       }
       .kitchen-head {
         display: flex;

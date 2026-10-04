@@ -14,6 +14,7 @@ const MENU_CODES = [
   'IMAGES_CHANGED',
   'INGREDIENT_UNKNOWN',
   'INGREDIENT_NAME_TAKEN',
+  'STORE_UNKNOWN',
 ] as const;
 
 /** Request properties the menu forms send, for "check the field …" when validation fails. */

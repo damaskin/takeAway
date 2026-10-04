@@ -232,6 +232,15 @@ export interface ProductAdminDto {
   carbsGrams: number | null;
   allergens: string[];
   dietTags: DietTag[];
+  /** Stores that sell it (same price everywhere); empty = sold nowhere. */
+  storeIds: string[];
+}
+
+/** A store a product can be listed in, for the product form's picker. */
+export interface ProductStoreOptionDto {
+  id: string;
+  name: string;
+  status: StoreStatus;
 }
 
 export interface CreateCategoryInput {
@@ -274,11 +283,15 @@ export interface CreateProductInput extends Partial<Omit<ProductFieldsInput, 'na
   slug?: string;
   name: string;
   basePriceCents: number;
+  /** Omitted = every store of the brand. */
+  storeIds?: string[];
 }
 
 export interface UpdateProductInput extends Partial<ProductFieldsInput> {
   sortOrder?: number;
   categoryId?: string;
+  /** Replaces the listing; omitted = unchanged. */
+  storeIds?: string[];
 }
 
 export interface ProductImagesDto {
@@ -299,6 +312,38 @@ export interface AddStopListEntryInput {
   productId: string;
   reason?: string;
   expiresAt?: string;
+}
+
+/** A stop that still holds in the store; `expiresAt` null = until switched back by hand. */
+export interface AvailabilityStopDto {
+  expiresAt: string | null;
+}
+
+export interface AvailabilityProductDto {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  imageUrl: string | null;
+  stop: AvailabilityStopDto | null;
+}
+
+export interface AvailabilityIngredientDto {
+  id: string;
+  name: string;
+  /** False = switched off for the whole brand in the ingredient library. */
+  isAvailable: boolean;
+  stop: AvailabilityStopDto | null;
+  productNames: string[];
+}
+
+/** One store's stop-list: what it sells and which add-ins it has run out of. */
+export interface StoreAvailabilityDto {
+  storeId: string;
+  storeName: string;
+  timezone: string;
+  products: AvailabilityProductDto[];
+  ingredients: AvailabilityIngredientDto[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -456,6 +501,28 @@ export class AdminCatalogApi {
     if (brandId) params['brandId'] = brandId;
     if (categoryId) params['categoryId'] = categoryId;
     return this.http.get<ProductAdminDto[]>(`${this.api.baseUrl}/admin/products`, { params });
+  }
+
+  /** Every store of the brand — open to menu editors, unlike `listStores`. */
+  listProductStores(brandId: string): Observable<ProductStoreOptionDto[]> {
+    return this.http.get<ProductStoreOptionDto[]>(`${this.api.baseUrl}/admin/products/stores`, {
+      params: { brandId },
+    });
+  }
+
+  getStoreAvailability(storeId: string): Observable<StoreAvailabilityDto> {
+    return this.http.get<StoreAvailabilityDto>(`${this.api.baseUrl}/admin/stores/${storeId}/availability`);
+  }
+
+  stopIngredientInStore(storeId: string, ingredientId: string, expiresAt?: string): Observable<AvailabilityStopDto> {
+    return this.http.put<AvailabilityStopDto>(
+      `${this.api.baseUrl}/admin/stores/${storeId}/ingredient-stops/${ingredientId}`,
+      expiresAt ? { expiresAt } : {},
+    );
+  }
+
+  resumeIngredientInStore(storeId: string, ingredientId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/ingredient-stops/${ingredientId}`);
   }
 
   createProduct(input: CreateProductInput): Observable<ProductAdminDto> {
