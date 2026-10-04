@@ -61,7 +61,8 @@ export class AdminStaffService {
       addedAt: r.createdAt.toISOString(),
       // A PIN belongs to one store; one set at another store doesn't open
       // this store's kitchen tablet. The hash itself never leaves the API.
-      hasKdsPin: r.user.kdsPinHash !== null && r.user.kdsPinStoreId === storeId,
+      // A placeholder left by a build without KDS_PIN_SECRET is no PIN.
+      hasKdsPin: this.kdsPins.isUsableHash(r.user.kdsPinHash) && r.user.kdsPinStoreId === storeId,
     }));
   }
 
@@ -148,6 +149,9 @@ export class AdminStaffService {
    */
   async setKdsPin(storeId: string, userId: string, pin: string, user: AuthenticatedUser): Promise<void> {
     await this.assertStore(storeId, user);
+    // Without KDS_PIN_SECRET there is nothing to hash with — 503
+    // KDS_PIN_NOT_CONFIGURED rather than storing a PIN nobody can check.
+    this.kdsPins.assertConfigured();
     if (!this.kdsPins.isValidFormat(pin)) {
       throw new ConflictException('PIN must be 4 to 6 digits');
     }

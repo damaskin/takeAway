@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import type { BrandScopeService } from '../../auth/services/brand-scope.service';
@@ -12,7 +12,7 @@ describe('AdminStaffService — kitchen PINs', () => {
   const manager = { id: 'manager-1', role: Role.STORE_MANAGER } as AuthenticatedUser;
   const owner = { id: 'owner-1', role: Role.BRAND_ADMIN } as AuthenticatedUser;
 
-  function build(managerStores: string[] = ['store-1']) {
+  function build(managerStores: string[] = ['store-1'], configured = true) {
     const prisma = {
       store: { findUnique: jest.fn().mockResolvedValue({ id: 'store-1', brandId: 'brand-1' }) },
       userStore: {
@@ -54,7 +54,16 @@ describe('AdminStaffService — kitchen PINs', () => {
       },
     };
     const scope = { resolveBrandIds: jest.fn().mockResolvedValue(['brand-1']) };
-    const pins = { isValidFormat: () => true, hash: () => 'hash' };
+    const pins = {
+      isValidFormat: () => true,
+      hash: () => 'hash',
+      isUsableHash: (h: string | null) => !!h && !h.startsWith('unset:'),
+      assertConfigured: () => {
+        if (!configured) {
+          throw new ServiceUnavailableException({ code: 'KDS_PIN_NOT_CONFIGURED' });
+        }
+      },
+    };
     const svc = new AdminStaffService(
       prisma as unknown as PrismaService,
       {} as PasswordService,
@@ -85,5 +94,22 @@ describe('AdminStaffService — kitchen PINs', () => {
     const error = await svc.setKdsPin('store-1', 'barista-1', '4821', manager).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_TAKEN' });
+  });
+
+  it('does not count a placeholder left by a build without KDS_PIN_SECRET as a PIN', async () => {
+    const { svc, prisma } = build();
+    const rows = await prisma.userStore.findMany();
+    rows[0].user.kdsPinHash = 'unset:c3RvcmUtMQ';
+    prisma.userStore.findMany.mockResolvedValueOnce(rows);
+    const roster = await svc.list('store-1', owner);
+    expect(roster.find((r) => r.userId === 'barista-1')?.hasKdsPin).toBe(false);
+  });
+
+  it('refuses to set a PIN with 503 KDS_PIN_NOT_CONFIGURED when the server has no secret', async () => {
+    const { svc, prisma } = build(['store-1'], false);
+    const error = await svc.setKdsPin('store-1', 'barista-1', '4821', manager).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_NOT_CONFIGURED' });
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

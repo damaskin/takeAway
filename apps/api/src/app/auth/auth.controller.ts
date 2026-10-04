@@ -93,7 +93,9 @@ export class AuthController {
    * KDS lockscreen PIN login. Rate-limited per-IP — production allows
    * 8 attempts per minute, which is plenty for a real barista mistyping
    * once or twice and a brute-forcer can't enumerate 10⁴–10⁶ PINs through
-   * it before the per-IP limiter trips.
+   * it before the per-IP limiter trips. On top of that, a store's PIN login
+   * pauses for 10 minutes after 10 wrong PINs (429 KDS_PIN_LOCKED), and
+   * without KDS_PIN_SECRET it answers 503 KDS_PIN_NOT_CONFIGURED.
    */
   @Public()
   @Post('kds/pin')

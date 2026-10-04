@@ -6,7 +6,7 @@ import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
-import { KdsPinService } from './services/kds-pin.service';
+import { KDS_PIN_LEGACY_SENTINEL_PREFIX, KdsPinService } from './services/kds-pin.service';
 import {
   OAuthIdentityService,
   type OAuthIdentity,
@@ -82,17 +82,31 @@ export class AuthService {
    */
   async loginWithKdsPin(storeId: string, pin: string): Promise<AuthSessionDto> {
     const generic = new UnauthorizedException('Invalid PIN');
+    // No secret, no PIN sign-in: 503 KDS_PIN_NOT_CONFIGURED before anything
+    // touches the database.
+    this.kdsPins.assertConfigured();
     if (!this.kdsPins.isValidFormat(pin)) throw generic;
+    await this.kdsPins.assertNotLocked(storeId);
 
     const expected = this.kdsPins.hash(storeId, pin);
     const user = await this.prisma.user.findFirst({
-      where: { kdsPinStoreId: storeId, kdsPinHash: expected },
+      where: {
+        kdsPinStoreId: storeId,
+        kdsPinHash: expected,
+        // Placeholders written by an older build without a secret matched
+        // any PIN. They can't equal an HMAC, but never let one through.
+        NOT: { kdsPinHash: { startsWith: KDS_PIN_LEGACY_SENTINEL_PREFIX } },
+      },
     });
-    if (!user) throw generic;
+    if (!user || !this.kdsPins.isUsableHash(user.kdsPinHash)) {
+      await this.kdsPins.recordFailure(storeId);
+      throw generic;
+    }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
     if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
+    await this.kdsPins.clearFailures(storeId);
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
