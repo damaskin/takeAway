@@ -88,41 +88,36 @@ void main() {
 
     await shot(tester, '01_welcome');
 
-    // Intro → skip. With several stores the menu asks for one first.
+    // Intro → skip. A first launch lands on the stores: map and list.
     await tapWhenVisible(tester, find.byType(TextButton));
-    await pumpFor(tester, const Duration(seconds: 2));
-    if (find.byType(ProductCard).evaluate().isEmpty && find.text(_storeName).evaluate().isNotEmpty) {
-      await tapWhenVisible(tester, find.text(_storeName));
-    }
+    await waitFor(tester, find.text(_storeName));
+    await shot(tester, '02_stores');
+
+    // Pick the store, then "Order here" opens its menu. The store has to be
+    // open (a shift running) — a closed store shows no menu.
+    await tapWhenVisible(tester, find.text(_storeName));
+    await tapWhenVisible(tester, find.textContaining(RegExp('Order here|Заказать здесь')));
+    if (find.byType(ProductCard).evaluate().isEmpty) container.read(routerProvider).go(Routes.menu);
     await waitFor(tester, find.byType(ProductCard));
     await pumpFor(tester, const Duration(seconds: 2));
     await tester.drag(find.byType(Scrollable).first, Offset(0, -_menuScroll.toDouble()));
-    await shot(tester, '02_menu');
+    await shot(tester, '03_menu');
 
     // Another category, further down the menu.
     final category = find.text(_category);
     if (category.evaluate().isNotEmpty) {
       await tapWhenVisible(tester, category);
-      await shot(tester, '03_category');
+      await shot(tester, '04_category');
     }
 
     // A product with its options, from the category on screen.
     await tapWhenVisible(tester, find.text(_product));
     await waitFor(tester, find.byIcon(Icons.close_rounded));
-    await shot(tester, '04_product');
+    await shot(tester, '05_product');
 
     // Adding as a guest asks to sign in: Telegram, Google, Apple.
     await tapWhenVisible(tester, find.textContaining(RegExp('Add to cart|В корзину')));
     await waitFor(tester, find.textContaining(RegExp('Sign in to order|Войдите, чтобы заказать')));
-    await shot(tester, '05_sign_in');
-
-    // The stores tab.
-    await tester.binding.handlePopRoute();
-    await pumpFor(tester, const Duration(milliseconds: 800));
-    await tester.binding.handlePopRoute();
-    await pumpFor(tester, const Duration(milliseconds: 800));
-    container.read(routerProvider).go(Routes.stores);
-    await waitFor(tester, find.text(_storeName));
-    await shot(tester, '06_stores');
+    await shot(tester, '06_sign_in');
   });
 }
