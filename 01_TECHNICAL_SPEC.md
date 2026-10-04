@@ -398,9 +398,10 @@ takeaway/
 - **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
 - **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
+- **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: `/promo`, `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список ушедших, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет.
 - **Promo / Gift cards**: CRUD + статусы.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
-- **Analytics**: summary, revenue, top-products, cohort, stores. `mv_orders_daily` materialized view (PostgreSQL) с уникальным индексом `(brandId, storeId, day)` агрегирует non-CANCELLED orders и питает summary/revenue/stores; refresh каждые 5 минут через `AnalyticsRefreshService` (`REFRESH MATERIALIZED VIEW CONCURRENTLY`). top-products и cohort пока читают live `OrderItem`/`User`.
+- **Analytics**: summary, order-statuses, revenue, top-products, cohort, stores, staff, churn, winback и `/admin/customers`. Период — `from`/`to` (календарные дни в часовом поясе точки или преобладающем поясе бренда; `days` по-прежнему принимается), сравнение — с таким же отрезком до него; `storeId` сужает до точки в скоупе. Цифры бренда читаются из `Order` между локальными полуночами (индекс `Order(storeId, createdAt)`), выручка — без `CANCELLED` и `EXPIRED`. `mv_orders_daily` (UTC-дни, refresh каждые 5 минут через `AnalyticsRefreshService`) питает только экран «Весь проект». Отток: клиент потерян, когда после его последнего заказа прошло 7/14 дней без нового; «потерян в периоде» — этот порог пришёлся на период и клиент не вернулся к его концу; деньги — сумма их средних чеков. Возврат: клиенты, потерянные к началу периода, заказавшие в нём. Удалённые аккаунты (`User.blockedAt`) в оттоке и списке клиентов не участвуют, их заказы остаются в выручке.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
 - **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд) и `UserStoreScopeService`: SUPER_ADMIN — все точки, BRAND_ADMIN — точки своих брендов, STORE_MANAGER и STAFF — назначенные. Скоуп проверяется во всех per-store маршрутах, в KDS-сокете, у курьеров и в аналитике.
@@ -483,7 +484,8 @@ Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardO
 
 ```
 Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
-       moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?)
+       moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?,
+       plan[BASIC|PRO] = BASIC, commissionBps = 1000)   // тариф и комиссия платформы, меняет SUPER_ADMIN
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
        busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
@@ -573,7 +575,7 @@ mv_orders_daily (brandId, storeId, day, orderCount, revenueCents,
   refreshed every 5 min via REFRESH MATERIALIZED VIEW CONCURRENTLY
 ```
 
-Источник: `Order` join `Store` для не-`CANCELLED` заказов, агрегация по UTC-дню. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает endpoints `/admin/analytics/{summary,revenue,stores}`.
+Источник: `Order` join `Store` для заказов кроме `CANCELLED` и `EXPIRED`, агрегация по UTC-дню. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает только `/admin/analytics/brands` (платформа); аналитика бренда считается по `Order` в его часовом поясе.
 
 ### 5.7. POS integrations
 
@@ -727,6 +729,7 @@ POST   /my-brand/resubmit[?brandId=]    REJECTED → PENDING, уведомляе
 # Каталог (scope to brand для BRAND_ADMIN)
 GET/POST/PATCH                       /admin/brands[, /:id, /:id/moderation]   // REJECTED требует note
 GET                                  /admin/brands/pending-count              // бейдж «Бренды» у SUPER_ADMIN
+PATCH                                /admin/brands/:id/plan                   // SUPER_ADMIN: { plan, commissionBps? } — без ставки берётся ставка тарифа
 #   POST /admin/brands (SUPER_ADMIN) создаёт бренд сразу APPROVED — модератор здесь
 #   сам автор; это единственный способ завести первый бренд на свежей установке.
 GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder, DELETE ?moveProductsTo=
@@ -750,20 +753,26 @@ GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
 GET    /admin/orders/:id             → состав, платежи, возвраты, лента событий (scope как у списка; 404 вне scope)
 GET                    /admin/orders                     (фильтрация по store/brand/status)
 POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
-GET/POST/PATCH         /admin/promo[/:id/status]
+GET/POST/PATCH         /admin/promo[/:id/status]         // PRO (promo)
 GET/POST/DELETE        /admin/gift-cards[/:id]
-GET/POST               /admin/campaigns
+GET/POST               /admin/campaigns                  // PRO (campaigns) — весь контроллер
 POST                   /admin/campaigns/:id/send         (синхронный fan-out)
 DELETE                 /admin/campaigns/:id
 
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
-GET                    /admin/analytics/summary?days=7|14|30   // цифры за период + изменения к предыдущему такому же
-GET                    /admin/analytics/order-statuses?days=  // открытые заказы по статусам сейчас + итог заказов периода (выданы / отменены / истекли)
-GET                    /admin/analytics/brands?days=         // SUPER_ADMIN: все бренды рядом (точки, заказы, выручка в своей валюте) — экран «Весь проект»
-GET                    /admin/analytics/revenue
-GET                    /admin/analytics/top-products
-GET                    /admin/analytics/cohort
-GET                    /admin/analytics/stores?days=
+# Период у всех: ?from=YYYY-MM-DD&to=YYYY-MM-DD (дни в поясе бренда/точки) или ?days=N; ?storeId= — одна точка
+GET                    /admin/analytics/summary            // выручка, заказы, средний чек, время выдачи + изменения к предыдущему отрезку
+GET                    /admin/analytics/order-statuses     // открытые заказы по статусам сейчас + итог заказов периода (выданы / отменены / истекли)
+GET                    /admin/analytics/brands?days=       // SUPER_ADMIN: все бренды рядом (тариф, комиссия, точки, заказы, выручка) — «Весь проект»
+GET                    /admin/analytics/revenue            // по дням периода
+GET                    /admin/analytics/top-products?take= // PRO (deepAnalytics)
+GET                    /admin/analytics/cohort             // PRO (deepAnalytics)
+GET                    /admin/analytics/stores             // все точки скоупа; BASIC: выручка/заказы/доля, PRO: + доли заказов, чек, выдача, готовка, отмены, сотрудники, дельта (detailed=true)
+GET                    /admin/analytics/staff              // PRO: по сотруднику — принял/приготовил/выдал/заказов, смены и часы (часы — тому, кто открыл смену)
+GET                    /admin/analytics/churn?window=7|14&take=   // все: count, lostRevenueCents (сумма средних чеков), previous; PRO: customers[]
+GET                    /admin/analytics/winback?window=7|14&take= // PRO: потерянные к началу периода → вернулись (кол-во, заказы, выручка, доля) против прошлого
+GET                    /admin/customers?search=&sort=lastOrderAt|firstOrderAt|orders|totalCents|avgCheckCents|frequency&dir=&page=&pageSize=  // PRO
+GET                    /admin/customers/:id                // PRO: итоги, точки, последние 100 заказов; 404 для удалённых и чужих
 
 # POS
 GET                    /admin/pos/status
