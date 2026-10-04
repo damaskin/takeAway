@@ -11,9 +11,15 @@ export function isStoreInactive(store: { status: string; acceptingOrders?: boole
 /**
  * How a customer can order from a store right now:
  * - `open` — order for now;
- * - `scheduledOnly` — a shift is running but an order placed now would be
- *   ready after hours, so only a pickup time later on works;
+ * - `scheduledOnly` — a shift is running but the API says an order placed
+ *   now would not be accepted, so only a pickup time later on works;
  * - `closed` — nothing: see {@link isStoreInactive}.
+ *
+ * Since 2026-10-04 the API decides `openNow` by the shift alone
+ * (`openNow === acceptingOrders`: shift open and status not CLOSED), so a
+ * current API never yields `scheduledOnly` — working hours no longer veto
+ * "open now". The state stays as a harmless fallback should the two fields
+ * ever diverge again.
  */
 export type StoreAvailability = 'open' | 'scheduledOnly' | 'closed';
 

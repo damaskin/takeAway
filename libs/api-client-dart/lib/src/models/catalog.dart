@@ -75,8 +75,9 @@ class Store {
   final int busyMeter;
   final int currentEtaSeconds;
 
-  /// Whether an ASAP order placed now would be accepted — the manual switch
-  /// plus working hours, computed by the API in the store's timezone. Null
+  /// Whether an ASAP order placed now would be accepted. Since 2026-10-04 the
+  /// API decides it by the shift alone, so it equals [acceptingOrders]
+  /// (shift open and not switched off); working hours no longer veto it. Null
   /// from API versions that predate it.
   final bool? openNow;
 
@@ -109,8 +110,8 @@ class Store {
   /// Shown as "not working"; checkout is refused.
   bool get isInactive => status == StoreStatus.closed || acceptingOrders == false;
 
-  /// [status] with working hours applied: a store switched on but outside its
-  /// hours reads as closed.
+  /// [status] as customers see it: a store that does not take ASAP orders
+  /// right now (see [isOpen]) reads as closed.
   StoreStatus get effectiveStatus => isOpen ? status : StoreStatus.closed;
   bool get supportsDelivery => fulfillmentTypes.contains('DELIVERY');
   String get fullAddress => [addressLine, city].where((p) => p.trim().isNotEmpty).join(', ');
