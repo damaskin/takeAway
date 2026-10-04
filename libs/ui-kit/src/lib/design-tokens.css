@@ -47,6 +47,20 @@
   --color-text-secondary: #6b5e54;
   --color-text-tertiary: #9b8e84;
 
+  /* Data viz. Each hue keeps its job across charts: money, orders,
+     customers; good/bad for deltas; a status set for order outcomes.
+     Validated for contrast and colour-blind separation against the card
+     surface of each theme. */
+  --chart-money: #c77d3b;
+  --chart-orders: #2a78d6;
+  --chart-customers: #1a9a6c;
+  --chart-negative: #d94b5e;
+  --chart-warning: #b97a00;
+  --chart-track: #f0e8dc;
+  --chart-grid: #e8ddcb;
+  --color-positive: #2f7a5b;
+  --color-negative: #c23a4e;
+
   /* Typography */
   --text-display: 48px;
   --text-h1: 36px;
@@ -103,4 +117,13 @@
   --color-text-primary: #f8f3eb;
   --color-text-secondary: #a89b91;
   --color-text-tertiary: #7a6e64;
+  --chart-money: #c98040;
+  --chart-orders: #3987e5;
+  --chart-customers: #199e70;
+  --chart-negative: #d95870;
+  --chart-warning: #c98500;
+  --chart-track: #3a3430;
+  --chart-grid: #3a3430;
+  --color-positive: #7bc4a4;
+  --color-negative: #f08a99;
 }
