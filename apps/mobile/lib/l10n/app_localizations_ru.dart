@@ -285,14 +285,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storesNoneActive => 'Сейчас ни одна точка не принимает заказы. Загляните чуть позже.';
 
   @override
-  String get storeClosedBanner => 'Сейчас закрыто — можно оформить заказ на более позднее время.';
-
-  @override
   String get storeBusyBanner => 'Кухня загружена — заказы готовятся чуть дольше.';
-
-  @override
-  String get storeInactiveBanner =>
-      'Точка сейчас не принимает заказы: смена не началась или уже закончилась. Выберите другую точку или загляните позже.';
 
   @override
   String get openingHours => 'Часы работы';
@@ -1150,4 +1143,54 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get copy => 'Копировать';
+
+  @override
+  String get menuNoStoreTitle => 'Сначала выберите точку';
+
+  @override
+  String get menuNoStoreBody => 'Где заберёте заказ? Покажем меню этой точки и через сколько всё будет готово.';
+
+  @override
+  String get pickStore => 'Выбрать точку';
+
+  @override
+  String get storeClosedTitle => 'Точка закрыта';
+
+  @override
+  String get storeClosedBody => 'Сейчас она не принимает заказы. Выберите другую точку или загляните позже.';
+
+  @override
+  String hoursToday(String hours) {
+    return 'Сегодня: $hours';
+  }
+
+  @override
+  String hoursTomorrow(String hours) {
+    return 'Завтра: $hours';
+  }
+
+  @override
+  String get pickAnotherStore => 'Выбрать другую точку';
+
+  @override
+  String get storeClosedNow => 'Сейчас закрыто';
+
+  @override
+  String get storeClosedNoOrders => 'Точка сейчас закрыта и не принимает заказы.';
+
+  @override
+  String get storeClosedCheckout =>
+      'Точка сейчас закрыта — заказ оформить нельзя. Выберите другую точку или загляните позже.';
+
+  @override
+  String get orderReadyHeadline => 'Ваш заказ готов';
+
+  @override
+  String get orderReadySlogan => 'Вы простояли в очереди 0 минут. Наслаждайтесь!';
+
+  @override
+  String get orderPickedUpSlogan => 'Ни минуты в очереди — так и задумано. Хорошего дня!';
+
+  @override
+  String get notificationsDenied => 'Уведомления выключены в настройках телефона.';
 }

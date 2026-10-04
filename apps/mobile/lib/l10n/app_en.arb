@@ -156,9 +156,7 @@
   "changeStore": "Change store",
   "storesInactiveTitle": "Not taking orders right now",
   "storesNoneActive": "No store is taking orders right now. Check back a little later.",
-  "storeClosedBanner": "Closed right now — you can still schedule for later.",
   "storeBusyBanner": "The kitchen is busy — orders take a little longer.",
-  "storeInactiveBanner": "This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.",
   "openingHours": "Opening hours",
   "closedAllDay": "Closed",
   "buildRoute": "Build route",
@@ -680,5 +678,34 @@
   },
   "liveOrder": "Live order",
   "categoriesAll": "All",
-  "copy": "Copy"
+  "copy": "Copy",
+  "menuNoStoreTitle": "Choose a store first",
+  "menuNoStoreBody": "Pick where you'll collect your order — we'll show its menu and how soon it can be ready.",
+  "pickStore": "Choose a store",
+  "storeClosedTitle": "This store is closed",
+  "storeClosedBody": "It isn't taking orders right now. Choose another store or check back later.",
+  "hoursToday": "Today: {hours}",
+  "@hoursToday": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "hoursTomorrow": "Tomorrow: {hours}",
+  "@hoursTomorrow": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "pickAnotherStore": "Choose another store",
+  "storeClosedNow": "Closed now",
+  "storeClosedNoOrders": "This store is closed and isn't taking orders right now.",
+  "storeClosedCheckout": "The store is closed right now, so the order can't be placed. Choose another store or check back later.",
+  "orderReadyHeadline": "Your order is ready",
+  "orderReadySlogan": "You spent 0 minutes in the queue. Enjoy!",
+  "orderPickedUpSlogan": "Not a minute in the queue — just as planned. Have a great day!",
+  "notificationsDenied": "Notifications are turned off in your phone's settings."
 }

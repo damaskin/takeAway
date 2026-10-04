@@ -39,8 +39,12 @@ class _ProductCardState extends ConsumerState<ProductCard> {
   /// Adds straight from the menu when there is nothing to choose; items with
   /// sizes or milks open the product screen instead, so nobody orders a
   /// latte without saying which one.
+  /// Whether the store takes orders now, from the live list: the card may
+  /// have been built (in search, say) before the store closed.
+  bool get _storeOpen => (ref.read(liveStoreProvider(widget.store.id)) ?? widget.store).isOpen;
+
   Future<void> _quickAdd() async {
-    if (_adding) return;
+    if (_adding || !_storeOpen) return;
     if (!await ensureSignedIn(context, ref)) return;
     setState(() => _adding = true);
     try {
@@ -79,6 +83,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
     final l10n = AppLocalizations.of(context);
     final product = widget.product;
     final soldOut = product.onStopList;
+    final storeOpen = (ref.watch(liveStoreProvider(widget.store.id)) ?? widget.store).isOpen;
 
     Widget image = Hero(
       tag: productHeroTag(product.id),
@@ -147,7 +152,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
                             ),
                           ),
                         ),
-                        if (!soldOut) _AddButton(busy: _adding, onTap: _quickAdd, label: l10n.quickAdd),
+                        if (!soldOut && storeOpen) _AddButton(busy: _adding, onTap: _quickAdd, label: l10n.quickAdd),
                       ],
                     ),
                   ],

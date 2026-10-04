@@ -584,23 +584,11 @@ abstract class AppLocalizations {
   /// **'No store is taking orders right now. Check back a little later.'**
   String get storesNoneActive;
 
-  /// No description provided for @storeClosedBanner.
-  ///
-  /// In en, this message translates to:
-  /// **'Closed right now — you can still schedule for later.'**
-  String get storeClosedBanner;
-
   /// No description provided for @storeBusyBanner.
   ///
   /// In en, this message translates to:
   /// **'The kitchen is busy — orders take a little longer.'**
   String get storeBusyBanner;
-
-  /// No description provided for @storeInactiveBanner.
-  ///
-  /// In en, this message translates to:
-  /// **'This store is not taking orders right now: the shift has not started or is already over. Pick another store or check back later.'**
-  String get storeInactiveBanner;
 
   /// No description provided for @openingHours.
   ///
@@ -2137,6 +2125,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Copy'**
   String get copy;
+
+  /// No description provided for @menuNoStoreTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a store first'**
+  String get menuNoStoreTitle;
+
+  /// No description provided for @menuNoStoreBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick where you\'ll collect your order — we\'ll show its menu and how soon it can be ready.'**
+  String get menuNoStoreBody;
+
+  /// No description provided for @pickStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a store'**
+  String get pickStore;
+
+  /// No description provided for @storeClosedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This store is closed'**
+  String get storeClosedTitle;
+
+  /// No description provided for @storeClosedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It isn\'t taking orders right now. Choose another store or check back later.'**
+  String get storeClosedBody;
+
+  /// No description provided for @hoursToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Today: {hours}'**
+  String hoursToday(String hours);
+
+  /// No description provided for @hoursTomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow: {hours}'**
+  String hoursTomorrow(String hours);
+
+  /// No description provided for @pickAnotherStore.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose another store'**
+  String get pickAnotherStore;
+
+  /// No description provided for @storeClosedNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now'**
+  String get storeClosedNow;
+
+  /// No description provided for @storeClosedNoOrders.
+  ///
+  /// In en, this message translates to:
+  /// **'This store is closed and isn\'t taking orders right now.'**
+  String get storeClosedNoOrders;
+
+  /// No description provided for @storeClosedCheckout.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closed right now, so the order can\'t be placed. Choose another store or check back later.'**
+  String get storeClosedCheckout;
+
+  /// No description provided for @orderReadyHeadline.
+  ///
+  /// In en, this message translates to:
+  /// **'Your order is ready'**
+  String get orderReadyHeadline;
+
+  /// No description provided for @orderReadySlogan.
+  ///
+  /// In en, this message translates to:
+  /// **'You spent 0 minutes in the queue. Enjoy!'**
+  String get orderReadySlogan;
+
+  /// No description provided for @orderPickedUpSlogan.
+  ///
+  /// In en, this message translates to:
+  /// **'Not a minute in the queue — just as planned. Have a great day!'**
+  String get orderPickedUpSlogan;
+
+  /// No description provided for @notificationsDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are turned off in your phone\'s settings.'**
+  String get notificationsDenied;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

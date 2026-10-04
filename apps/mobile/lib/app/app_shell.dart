@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../core/auth/session_manager.dart';
 import '../core/providers.dart';
 import '../core/push/push_service.dart';
+import '../core/realtime/realtime_service.dart';
+import '../core/storage/app_prefs.dart';
 import '../core/theme/tokens.dart';
 import '../features/cart/cart_controller.dart';
 import '../features/catalog/catalog_providers.dart';
@@ -33,6 +35,14 @@ class _AppShellState extends ConsumerState<AppShell> {
   final _subscriptions = <StreamSubscription<Object?>>[];
   late final AppLifecycleListener _lifecycle;
 
+  /// Re-reads the stores while a screen that shows whether they are open is
+  /// up: a shift started at the counter shows here within a minute even
+  /// without the socket (guests have none).
+  Timer? _storesPoll;
+  static const storesPollInterval = Duration(seconds: 60);
+
+  static const _storeTabs = {0, 1};
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +52,31 @@ class _AppShellState extends ConsumerState<AppShell> {
       ..add(push.foreground.listen(_showForegroundPush))
       ..add(ref.read(sessionManagerProvider).ended.listen(_onSessionEnded));
     _lifecycle = AppLifecycleListener(onResume: _onResume);
+    _storesPoll = Timer.periodic(storesPollInterval, (_) => _pollStores());
+  }
+
+  bool get _showsStores {
+    if (!mounted || !_storeTabs.contains(widget.shell.currentIndex)) return false;
+    // Only while the tab itself is on top, not the cart or an order over it.
+    final location = GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+    return location == Routes.stores || location == Routes.menu;
+  }
+
+  void _pollStores() {
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return;
+    if (_showsStores) ref.invalidate(storesProvider);
+  }
+
+  /// Staff opened or closed a store: re-read the stores, and the menu and
+  /// details of that store if the customer is on it.
+  void _onStoreAvailability(StoreAvailabilityEvent event) {
+    ref.invalidate(storesProvider);
+    if (ref.read(activeStoreIdProvider) == event.storeId) {
+      ref
+        ..invalidate(menuProvider(event.storeId))
+        ..invalidate(storeDetailProvider(event.storeId));
+    }
   }
 
   @override
@@ -50,6 +85,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       unawaited(sub.cancel());
     }
     _lifecycle.dispose();
+    _storesPoll?.cancel();
     super.dispose();
   }
 
@@ -86,10 +122,15 @@ class _AppShellState extends ConsumerState<AppShell> {
       ..invalidate(storesProvider);
     final storeId = ref.read(activeStoreProvider)?.id;
     if (storeId != null) unawaited(ref.read(cartProvider(storeId).notifier).reload());
+    // A token iOS could not hand out at the first try is asked for again.
+    unawaited(ref.read(pushServiceProvider).syncTokenIfMissing());
   }
 
   void _onTab(int index) {
     HapticFeedback.selectionClick();
+    // Coming to the stores or the menu, show whether stores are open now,
+    // not as they were when the app started.
+    if (_storeTabs.contains(index) && index != widget.shell.currentIndex) ref.invalidate(storesProvider);
     widget.shell.goBranch(index, initialLocation: index == widget.shell.currentIndex);
   }
 
@@ -98,6 +139,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final activeOrders = ref.watch(activeOrdersProvider).length;
+    ref.listen(storeAvailabilityEventsProvider, (_, next) {
+      final event = next.valueOrNull;
+      if (event != null) _onStoreAvailability(event);
+    });
 
     return Scaffold(
       body: widget.shell,

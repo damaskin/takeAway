@@ -152,7 +152,7 @@ class CheckoutValidation implements Exception {
   final CheckoutProblem reason;
 }
 
-enum CheckoutProblem { deliveryAddress, pickSlot, outsideDeliveryArea, cardNeeded }
+enum CheckoutProblem { deliveryAddress, pickSlot, outsideDeliveryArea, cardNeeded, storeClosed }
 
 /// All of checkout's moving parts. Discounts are always the server's
 /// numbers (validated against the cart), and the total is computed with the
@@ -166,9 +166,6 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     // the same store (the app re-reads stores on resume) must not wipe the
     // codes and slot they already chose.
     ref.watch(activeStoreProvider.select((s) => s?.id));
-    final store = ref.read(activeStoreProvider);
-    // Outside working hours only a scheduled pickup is accepted.
-    final mode = store != null && !store.isOpen ? PickupMode.scheduled : PickupMode.asap;
 
     // Cards and the feature flag load independently; whichever lands last
     // decides the default, unless the customer already chose.
@@ -178,14 +175,10 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
     ref
       ..listen(cardsProvider, (_, _) => repick())
-      ..listen(featureFlagsProvider, (_, _) => repick())
-      // Closing time can pass while the customer sits on this screen.
-      ..listen(activeStoreProvider.select((s) => s?.isOpen ?? true), (_, open) {
-        if (!open && state.mode == PickupMode.asap) {
-          state = state.copyWith(mode: PickupMode.scheduled, error: () => null);
-        }
-      });
-    return CheckoutState(mode: mode, cardId: _defaultCardId());
+      ..listen(featureFlagsProvider, (_, _) => repick());
+    // A closed store takes no orders at all, ASAP or scheduled: the screen
+    // says so and keeps the button off (see [placeOrder]).
+    return CheckoutState(cardId: _defaultCardId());
   }
 
   Store? get _store => ref.read(activeStoreProvider);
@@ -380,6 +373,9 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     if (cart == null || store == null || state.submitting) return null;
 
     final s = state;
+    // An order already created (its card was declined) may still be paid
+    // for; a new one goes only to a store taking orders.
+    if (!store.isOpen && s.placedOrderId == null) throw const CheckoutValidation(CheckoutProblem.storeClosed);
     final delivery = s.fulfillment == FulfillmentType.delivery;
     if (s.mode == PickupMode.scheduled && s.slot == null) throw const CheckoutValidation(CheckoutProblem.pickSlot);
     if (delivery && (form.address.trim().isEmpty || form.city.trim().isEmpty)) {

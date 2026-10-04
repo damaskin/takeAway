@@ -9,6 +9,30 @@ import '../auth/session_manager.dart';
 import '../config/env.dart';
 import '../providers.dart';
 
+/// A store started or ended taking orders (staff opened or closed the
+/// shift, or switched it off). Broadcast to every connected socket.
+class StoreAvailabilityEvent {
+  const StoreAvailabilityEvent({required this.storeId, this.brandId, this.acceptingOrders});
+
+  /// Null when the payload is not one: no store id.
+  static StoreAvailabilityEvent? tryParse(Object? data) {
+    if (data is! Map) return null;
+    final storeId = data['storeId'];
+    if (storeId is! String || storeId.isEmpty) return null;
+    final brandId = data['brandId'];
+    final accepting = data['acceptingOrders'];
+    return StoreAvailabilityEvent(
+      storeId: storeId,
+      brandId: brandId is String ? brandId : null,
+      acceptingOrders: accepting is bool ? accepting : null,
+    );
+  }
+
+  final String storeId;
+  final String? brandId;
+  final bool? acceptingOrders;
+}
+
 /// Live order updates over the API's Socket.IO gateway (`/ws` namespace).
 ///
 /// The server puts every socket into its user's room, so status changes for
@@ -22,11 +46,22 @@ class RealtimeService {
   final SessionManager _sessions;
   io.Socket? _socket;
   final _events = StreamController<OrderStatusEvent>.broadcast();
+  final _storeEvents = StreamController<StoreAvailabilityEvent>.broadcast();
   final _orderRooms = <String>{};
   final connected = ValueNotifier<bool>(false);
   bool _disposed = false;
 
   Stream<OrderStatusEvent> get events => _events.stream;
+
+  /// Stores opening and closing, as staff start and end shifts.
+  Stream<StoreAvailabilityEvent> get storeEvents => _storeEvents.stream;
+
+  /// Feeds a raw `store.availabilityChanged` payload in; malformed ones are
+  /// dropped. Public so tests can play the server.
+  void handleStoreAvailability(Object? data) {
+    final event = StoreAvailabilityEvent.tryParse(data);
+    if (event != null && !_storeEvents.isClosed) _storeEvents.add(event);
+  }
 
   void connect() {
     if (_disposed || _socket != null || _sessions.current == null) return;
@@ -60,9 +95,11 @@ class RealtimeService {
         });
       }
     });
-    socket.on('order.statusChanged', (data) {
-      if (data is Map) _events.add(OrderStatusEvent.fromJson(Map<String, dynamic>.from(data)));
-    });
+    socket
+      ..on('order.statusChanged', (data) {
+        if (data is Map) _events.add(OrderStatusEvent.fromJson(Map<String, dynamic>.from(data)));
+      })
+      ..on('store.availabilityChanged', handleStoreAvailability);
 
     _socket = socket;
     socket.connect();
@@ -104,6 +141,7 @@ class RealtimeService {
     _disposed = true;
     disconnect();
     unawaited(_events.close());
+    unawaited(_storeEvents.close());
     connected.dispose();
   }
 }
@@ -119,3 +157,9 @@ final realtimeServiceProvider = Provider<RealtimeService>((ref) {
 
 /// Every `order.statusChanged` event for the signed-in customer.
 final orderEventsProvider = StreamProvider<OrderStatusEvent>((ref) => ref.watch(realtimeServiceProvider).events);
+
+/// Every `store.availabilityChanged` event (signed-in customers only — the
+/// socket needs an account).
+final storeAvailabilityEventsProvider = StreamProvider<StoreAvailabilityEvent>(
+  (ref) => ref.watch(realtimeServiceProvider).storeEvents,
+);

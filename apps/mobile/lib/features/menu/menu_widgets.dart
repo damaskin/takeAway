@@ -13,7 +13,9 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/pressable.dart';
+import '../../shared/widgets/state_views.dart';
 import '../cart/cart_controller.dart';
+import '../catalog/catalog_providers.dart';
 import '../orders/orders_providers.dart';
 import '../stores/store_widgets.dart';
 
@@ -24,7 +26,9 @@ class MenuHeader extends ConsumerWidget {
   const MenuHeader({required this.store, required this.onSearch, super.key});
 
   final Store store;
-  final VoidCallback onSearch;
+
+  /// Null hides the search button — there is no menu to search.
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,12 +57,13 @@ class MenuHeader extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              IconButton.filledTonal(
-                onPressed: onSearch,
-                tooltip: l10n.menuSearchHint,
-                style: IconButton.styleFrom(backgroundColor: brand.foam),
-                icon: const Icon(Icons.search_rounded),
-              ),
+              if (onSearch != null)
+                IconButton.filledTonal(
+                  onPressed: onSearch,
+                  tooltip: l10n.menuSearchHint,
+                  style: IconButton.styleFrom(backgroundColor: brand.foam),
+                  icon: const Icon(Icons.search_rounded),
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -162,7 +167,118 @@ class BusinessPlate extends StatelessWidget {
   }
 }
 
-/// Closed / busy / offline notice under the header.
+/// The menu tab before a store is chosen: picking happens on the Stores
+/// tab, with the map, so this only points there.
+class NoStoreState extends StatelessWidget {
+  const NoStoreState({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return EmptyState(
+      icon: Icons.storefront_outlined,
+      title: l10n.menuNoStoreTitle,
+      message: l10n.menuNoStoreBody,
+      actionLabel: l10n.pickStore,
+      onAction: () => context.go(Routes.stores),
+    );
+  }
+}
+
+/// The menu tab for a store that is not taking orders right now: who it
+/// is, that it is closed, when it works, and the way to another store —
+/// but no menu, so nothing can be put in a cart for it.
+class StoreClosedState extends ConsumerWidget {
+  const StoreClosedState({required this.store, super.key});
+
+  final Store store;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    final hours = ref.watch(storeDetailProvider(store.id)).valueOrNull?.workingHours ?? const [];
+    final now = DateTime.now();
+    final today = _hoursOn(hours, now);
+    final tomorrow = _hoursOn(hours, now.add(const Duration(days: 1)));
+
+    return RefreshIndicator(
+      color: brand.caramel,
+      // Staff may have just started the shift: a pull asks again.
+      onRefresh: () async {
+        ref
+          ..invalidate(storesProvider)
+          ..invalidate(storeDetailProvider(store.id));
+        await ref.read(storesProvider.future);
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        padding: const EdgeInsets.only(bottom: 32),
+        children: [
+          MenuHeader(store: store, onSearch: null),
+          const ActiveOrderCard(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(32, 40, 32, 0),
+            child: Column(
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(color: brand.berry.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: Icon(
+                    store.isInactive ? Icons.do_not_disturb_on_rounded : Icons.nightlight_round,
+                    size: 40,
+                    color: brand.berry,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(l10n.storeClosedTitle, style: context.text.headlineSmall, textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.storeClosedBody,
+                  style: context.text.bodyMedium?.copyWith(color: brand.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+                if (today != null || tomorrow != null) ...[
+                  const SizedBox(height: 16),
+                  Text(l10n.openingHours, style: context.text.titleSmall),
+                  const SizedBox(height: 4),
+                  if (today != null) Text(l10n.hoursToday(_label(context, today)), style: context.text.bodyMedium),
+                  if (tomorrow != null)
+                    Text(l10n.hoursTomorrow(_label(context, tomorrow)), style: context.text.bodyMedium),
+                ],
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: () => context.go(Routes.stores),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                  icon: const Icon(Icons.storefront_rounded),
+                  label: Text(l10n.pickAnotherStore),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Working hours for [day], by its weekday (the API counts 0 = Sunday).
+  static StoreWorkingHour? _hoursOn(List<StoreWorkingHour> hours, DateTime day) {
+    final weekday = day.weekday % 7;
+    for (final h in hours) {
+      if (h.weekday == weekday) return h;
+    }
+    return null;
+  }
+
+  static String _label(BuildContext context, StoreWorkingHour hours) {
+    if (hours.isClosed) return AppLocalizations.of(context).closedAllDay;
+    return '${formatMinutesOfDay(context, hours.opensAt)}–${formatMinutesOfDay(context, hours.closesAt)}';
+  }
+}
+
+/// Busy / offline notice under the header. A closed store never gets here:
+/// it shows [StoreClosedState] instead of the menu.
 class StoreNotice extends StatelessWidget {
   const StoreNotice({required this.store, required this.offline, super.key});
 
@@ -175,10 +291,6 @@ class StoreNotice extends StatelessWidget {
     final brand = context.brand;
     final (String? text, Color color, IconData icon) = offline
         ? (l10n.offlineMenu, brand.textSecondary, Icons.cloud_off_rounded)
-        : store.isInactive
-        ? (l10n.storeInactiveBanner, brand.berry, Icons.do_not_disturb_on_rounded)
-        : store.effectiveStatus == StoreStatus.closed
-        ? (l10n.storeClosedBanner, brand.berry, Icons.nightlight_round)
         : store.effectiveStatus == StoreStatus.overloaded
         ? (l10n.storeBusyBanner, brand.amber, Icons.local_fire_department_rounded)
         : (null, brand.textSecondary, Icons.info_outline);

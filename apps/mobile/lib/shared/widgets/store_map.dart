@@ -4,15 +4,55 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../core/config/env.dart';
 import '../../core/theme/tokens.dart';
 
-/// OpenStreetMap tiles — the same free map the web apps use (Leaflet + OSM),
-/// no API key. The tile policy asks for a real user agent.
-TileLayer osmTiles(BuildContext context) => TileLayer(
-  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  userAgentPackageName: 'md.takeaway.app',
-  tileBuilder: Theme.of(context).brightness == Brightness.dark ? darkModeTileBuilder : null,
-);
+/// Map tiles — OpenStreetMap unless the build names another server (see
+/// [Env.mapTileUrl]). The OSM tile policy asks for a real user agent.
+///
+/// One tile layer per theme for the whole app, sharing one tile provider:
+/// building them inside `build` made a new provider, with its own HTTP
+/// client, on every rebuild of the map — every pin tap and every keystroke
+/// in the store search.
+TileLayer mapTiles(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark ? _MapTiles.dark : _MapTiles.light;
+
+abstract final class _MapTiles {
+  static final _provider = _SharedTileProvider();
+  static final light = _layer(dark: false);
+  static final dark = _layer(dark: true);
+
+  static TileLayer _layer({required bool dark}) => TileLayer(
+    urlTemplate: Env.mapTileUrl,
+    userAgentPackageName: 'md.takeaway.app',
+    tileProvider: _provider,
+    tileBuilder: dark ? darkModeTileBuilder : null,
+    // A tile that failed (flaky mobile data) is dropped once off screen, so
+    // coming back to it asks the server again instead of keeping the gap.
+    evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
+    errorTileCallback: _logTileError,
+  );
+
+  static int _tileErrors = 0;
+
+  /// Failed tiles go to the log — a blank map was otherwise silent. Only the
+  /// first few: offline, every tile on screen fails at once.
+  static void _logTileError(TileImage tile, Object error, StackTrace? stack) {
+    if (++_tileErrors > 5) return;
+    debugPrint('Map tile ${tile.coordinates} failed to load: $error');
+  }
+}
+
+/// A [NetworkTileProvider] that outlives the maps using it. A tile layer
+/// disposes its provider when its map goes away, which closes the HTTP
+/// client; this one is shared app-wide, so it keeps its client open.
+class _SharedTileProvider extends NetworkTileProvider {
+  @override
+  Future<void> dispose() async {}
+}
+
+/// Who serves the tiles, as their terms require.
+Widget mapAttribution() => SimpleAttributionWidget(source: Text(Env.mapTileAttribution));
 
 /// Pin in brand colours; [highlighted] grows it for the selected store.
 class StorePin extends StatelessWidget {
@@ -116,7 +156,7 @@ class StaticStoreMap extends StatelessWidget {
             interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
           ),
           children: [
-            osmTiles(context),
+            mapTiles(context),
             MarkerLayer(
               markers: [
                 if (fitBoth) Marker(point: user!, width: 24, height: 24, child: const UserDot()),

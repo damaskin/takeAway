@@ -10,7 +10,6 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../catalog/catalog_providers.dart';
-import '../stores/store_widgets.dart';
 import 'menu_search_screen.dart';
 import 'menu_widgets.dart';
 import 'product_card.dart';
@@ -25,13 +24,24 @@ class MenuScreen extends ConsumerWidget {
     final store = ref.watch(activeStoreProvider);
 
     return Scaffold(
+      // Stores are re-read in the background (tab switches, a poll, the
+      // socket): a failed re-read keeps what is on screen.
       body: stores.when(
+        skipError: true,
         loading: () => const _MenuSkeleton(),
         error: (error, _) => SafeArea(
           child: ErrorState(error: error, onRetry: () => ref.invalidate(storesProvider)),
         ),
+        // No store yet: the Stores tab is where one is chosen. A store that
+        // is not taking orders shows no menu at all — browsing what cannot
+        // be ordered only ends in a refused checkout.
         data: (_) => store == null
-            ? const SafeArea(bottom: false, child: StorePickerList())
+            ? const SafeArea(bottom: false, child: NoStoreState())
+            : !store.isOpen
+            ? SafeArea(
+                bottom: false,
+                child: StoreClosedState(key: ValueKey('closed-${store.id}'), store: store),
+              )
             : _MenuView(key: ValueKey(store.id), store: store),
       ),
     );

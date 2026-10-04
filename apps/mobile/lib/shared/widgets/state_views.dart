@@ -92,7 +92,21 @@ class ErrorState extends StatelessWidget {
 }
 
 /// Floating snack helpers with consistent styling.
+///
+/// An undo offer outranks everything else: while one is on screen, other
+/// snacks wait in the messenger's queue instead of closing it — a foreground
+/// push or an unrelated error used to take the "Undo" away before the
+/// customer could reach it.
 abstract final class Snack {
+  static const _short = Duration(seconds: 3);
+  static const _withAction = Duration(seconds: 5);
+
+  static ScaffoldMessengerState? _undoMessenger;
+  static ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _undo;
+
+  static bool _undoShowing(ScaffoldMessengerState messenger) =>
+      _undo != null && identical(_undoMessenger, messenger) && messenger.mounted;
+
   static void show(
     BuildContext context,
     String message, {
@@ -102,22 +116,76 @@ abstract final class Snack {
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              if (icon != null) ...[Icon(icon, color: context.brand.caramel, size: 20), const SizedBox(width: 10)],
-              Expanded(child: Text(message)),
-            ],
-          ),
-          action: actionLabel == null ? null : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+    if (!_undoShowing(messenger)) messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      _bar(
+        context,
+        message,
+        icon: icon,
+        actionLabel: actionLabel,
+        onAction: onAction,
+        duration: actionLabel == null ? _short : _withAction,
+      ),
+    );
+  }
+
+  /// Offers to take back what was just done. Shown at once (not after the
+  /// server agrees), for five seconds, with a close button; nothing but the
+  /// next undo offer replaces it.
+  static void undo(
+    BuildContext context,
+    String message, {
+    required String actionLabel,
+    required VoidCallback onUndo,
+    IconData? icon,
+  }) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    final controller = messenger.showSnackBar(
+      _bar(context, message, icon: icon, actionLabel: actionLabel, onAction: onUndo, duration: _withAction),
+    );
+    _undo = controller;
+    _undoMessenger = messenger;
+    controller.closed.whenComplete(() {
+      if (identical(_undo, controller)) {
+        _undo = null;
+        _undoMessenger = null;
+      }
+    });
+  }
+
+  /// Closes the undo offer, e.g. when the change it would undo failed.
+  static void dismissUndo() {
+    final controller = _undo;
+    final messenger = _undoMessenger;
+    _undo = null;
+    _undoMessenger = null;
+    if (controller != null && messenger != null && messenger.mounted) controller.close();
   }
 
   static void error(BuildContext context, Object error) =>
       show(context, errorMessage(context, error), icon: Icons.error_outline_rounded);
+
+  static SnackBar _bar(
+    BuildContext context,
+    String message, {
+    required Duration duration,
+    IconData? icon,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) => SnackBar(
+    content: Row(
+      children: [
+        if (icon != null) ...[Icon(icon, color: context.brand.caramel, size: 20), const SizedBox(width: 10)],
+        Expanded(child: Text(message)),
+      ],
+    ),
+    action: actionLabel == null ? null : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
+    // A snack with an action would otherwise stay until something replaces
+    // it; these all time out, and the close button dismisses one sooner.
+    persist: false,
+    showCloseIcon: actionLabel != null,
+    duration: duration,
+  );
 }

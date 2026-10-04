@@ -124,7 +124,8 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
   }
 
   Future<void> _add(ProductDetail product, Store store) async {
-    if (_adding) return;
+    // A closed store takes nothing into its cart; the bar says why.
+    if (_adding || !store.isOpen) return;
     if (!await ensureSignedIn(context, ref)) return;
     setState(() => _adding = true);
     try {
@@ -224,7 +225,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
               unitPrice: _unitPrice(product),
               adding: _adding,
               onQuantity: (q) => setState(() => _quantity = q),
-              onAdd: store == null || product.onStopList ? null : () => _add(product, store),
+              onAdd: store == null || product.onStopList || !store.isOpen ? null : () => _add(product, store),
             ),
     );
   }
@@ -626,6 +627,12 @@ class _BottomBar extends StatelessWidget {
       ),
       child: store == null
           ? Text(l10n.productNoStore, textAlign: TextAlign.center, style: context.text.bodyMedium)
+          : !store!.isOpen
+          ? Text(
+              l10n.storeClosedNoOrders,
+              textAlign: TextAlign.center,
+              style: context.text.bodyMedium?.copyWith(color: brand.berry),
+            )
           : Row(
               children: [
                 QuantityStepper(value: quantity, min: 1, max: 20, onChanged: onQuantity),

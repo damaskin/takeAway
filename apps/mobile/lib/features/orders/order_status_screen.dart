@@ -463,12 +463,7 @@ class _OrderBody extends ConsumerWidget {
               const SizedBox(height: 4),
               AnimatedSwitcher(
                 duration: Motion.medium,
-                child: Text(
-                  orderStatusLabel(context, status, delivery: order.isDelivery),
-                  key: ValueKey(status),
-                  textAlign: TextAlign.center,
-                  style: context.text.headlineLarge,
-                ),
+                child: _Headline(key: ValueKey(status), order: order),
               ),
               const SizedBox(height: 4),
               Text(
@@ -502,6 +497,40 @@ class _OrderBody extends ConsumerWidget {
               label: Text(l10n.emailReceipt),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// The status in words. At the counter it is the product's whole promise:
+/// the order is ready and the customer did not queue for it.
+class _Headline extends StatelessWidget {
+  const _Headline({required this.order, super.key});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    final pickup = !order.isDelivery;
+    final (String title, String? line) = switch (order.status) {
+      OrderStatus.ready when pickup => (l10n.orderReadyHeadline, l10n.orderReadySlogan),
+      OrderStatus.pickedUp when pickup => (l10n.statusPickedUp, l10n.orderPickedUpSlogan),
+      final status => (orderStatusLabel(context, status, delivery: order.isDelivery), null),
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, textAlign: TextAlign.center, style: context.text.headlineLarge),
+        if (line != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            line,
+            textAlign: TextAlign.center,
+            style: context.text.titleMedium?.copyWith(color: brand.caramel, fontWeight: FontWeight.w700),
+          ),
+        ],
       ],
     );
   }
