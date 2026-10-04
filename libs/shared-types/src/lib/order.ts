@@ -29,7 +29,53 @@ export type OrderEventTypeEnum =
   | 'CANCELLED'
   | 'NOTE';
 
-export type PaymentProviderEnum = 'STRIPE' | 'TELEGRAM' | 'APPLE_PAY' | 'GOOGLE_PAY';
+export type PaymentProviderEnum =
+  | 'STRIPE'
+  | 'TELEGRAM'
+  | 'APPLE_PAY'
+  | 'GOOGLE_PAY'
+  /** Agroprombank («Клевер») — a card bound in the profile, charged by token. */
+  | 'AGROPROMBANK'
+  /** Agroprombank «Web-платёж» — the bank's hosted payment page. */
+  | 'AGROPROMBANK_WEB';
+
+/**
+ * Which card checkout the clients run, from `GET /config/features`:
+ * `token` — a card bound in the profile, held in one tap; `web` — the bank's
+ * own payment page; `none` — card payments are off.
+ */
+export type CardPaymentFlow = 'token' | 'web' | 'none';
+
+/** The client a customer pays from — decides where the bank sends them back. */
+export type PaymentReturnTarget = 'web' | 'tma' | 'mobile';
+
+/** `POST /payments/agroprombank-web/start` body. */
+export interface AgroprombankWebStartRequest {
+  orderId: string;
+  returnTo: PaymentReturnTarget;
+}
+
+/** The bank page to send the customer to: POST `fields` to `action` unchanged. */
+export interface PaymentPage {
+  method: 'POST';
+  action: string;
+  /** Signed form fields; any change breaks the bank's signature check. */
+  fields: Record<string, string>;
+  /** The same request as a GET link — for in-app browsers that cannot POST. */
+  url: string;
+}
+
+/** `POST /payments/agroprombank-web/start` response. */
+export interface AgroprombankWebStartResponse {
+  paymentId: string;
+  /** Our invoice id at the bank. */
+  invoiceId: string;
+  status: string;
+  /** `null` when the order is already held or paid — there is nothing to pay. */
+  page: PaymentPage | null;
+  /** When the bank page stops taking this invoice. */
+  expiresAt: string | null;
+}
 
 export type PaymentStatusEnum =
   | 'PENDING'
