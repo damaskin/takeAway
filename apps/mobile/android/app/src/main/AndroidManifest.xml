@@ -59,6 +59,16 @@
                     android:host="app3004048938-login.tg.dev"
                     android:pathPrefix="/tglogin" />
             </intent-filter>
+            <!-- Back from the bank's payment page (Agroprombank Web-платёж):
+                 the API redirects to takeaway://pay?orderId=…&status=…
+                 (MOBILE_PAYMENT_RETURN_URL). singleTask drops the Custom Tab
+                 on the way; lib/features/checkout/web_payment.dart. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="takeaway" android:host="pay" />
+            </intent-filter>
             <!-- Links are read by app_links, not pushed onto the router. -->
             <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
         </activity>

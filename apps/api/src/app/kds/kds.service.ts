@@ -1,13 +1,22 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Order, OrderStatus, Prisma } from '@prisma/client';
 
-import { NotificationsService } from '../notifications/notifications.service';
-import { AgroprombankService } from '../payments/agroprombank/agroprombank.service';
+import {
+  NotificationsService,
+  type StoreRejectionInfo,
+  type StoreRejectReason,
+} from '../notifications/notifications.service';
+import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
+import { CARD_PROVIDERS, isCardProvider } from '../payments/card-providers';
+import { CardPaymentsService } from '../payments/card-payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 const OPEN_STATUSES: OrderStatus[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY'];
+
+/** The kitchen can turn an order down until it has accepted it. */
+const REJECTABLE_STATUSES: ReadonlySet<string> = new Set<OrderStatus>(['CREATED', 'PAID']);
 
 const ALLOWED_TRANSITIONS: Record<string, OrderStatus[]> = {
   accept: ['CREATED', 'PAID'],
@@ -64,12 +73,15 @@ function toBoardRow(o: BoardOrder) {
 
 @Injectable()
 export class KdsService {
+  private readonly logger = new Logger(KdsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
-    private readonly payments: AgroprombankService,
+    private readonly cards: CardPaymentsService,
     private readonly holds: PaymentHoldsService,
+    private readonly orders: OrdersService,
   ) {}
 
   async listOpen(storeId: string) {
@@ -79,7 +91,7 @@ export class KdsService {
       include: {
         ...BOARD_INCLUDE,
         payments: {
-          where: { provider: 'AGROPROMBANK', status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
+          where: { provider: { in: [...CARD_PROVIDERS] }, status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
           select: { id: true },
         },
       },
@@ -131,11 +143,78 @@ export class KdsService {
     }
 
     try {
-      await this.payments.capturePreauthorizedForOrder(orderId);
+      await this.cards.captureHoldForOrder(orderId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new BadRequestException(`The card could not be charged: ${message}`);
     }
+  }
+
+  /**
+   * The kitchen turns an order down before taking it on: out of something,
+   * swamped, closing. The order is cancelled with everything it held handed
+   * back — promo, gift-card balance, points — and the money with it: a hold
+   * is released, and a charge already taken (holds switched off) is refunded
+   * in full. The customer gets a push saying why.
+   */
+  async reject(
+    storeId: string,
+    orderId: string,
+    staffUserId: string,
+    input: { reason: StoreRejectReason; comment?: string },
+  ): Promise<{ id: string; status: OrderStatus; orderCode: string; money: StoreRejectionInfo['money'] }> {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
+
+    const comment = input.comment?.trim() || undefined;
+    const { order: cancelled, holdReleased } = await this.orders.cancelOrder(order, {
+      actorId: staffUserId,
+      by: 'store',
+      allowedStatuses: REJECTABLE_STATUSES,
+      reason: input.reason,
+      comment,
+    });
+
+    let money: StoreRejectionInfo['money'] = holdReleased ? 'released' : 'none';
+    if (!holdReleased) {
+      const held = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'REQUIRES_ACTION');
+      const captured = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'SUCCEEDED');
+      if (held) {
+        // The bank did not answer; the reconciliation cron keeps trying.
+        money = 'pending';
+      } else if (captured) {
+        try {
+          await this.cards.refund(captured, captured.amountCents - captured.refundedCents, {
+            actorId: staffUserId,
+            reason: 'store-rejected',
+            note: comment ?? null,
+            source: 'kds',
+          });
+          money = 'refunded';
+        } catch (err) {
+          this.logger.error(
+            `REFUND NEEDED: order=${orderId} was rejected by the store but the refund failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+          money = 'pending';
+        }
+      }
+    }
+
+    void this.notifications.notifyOrderStatus(
+      {
+        id: cancelled.id,
+        userId: cancelled.userId,
+        orderCode: cancelled.orderCode,
+        storeId: cancelled.storeId,
+        fulfillmentType: cancelled.fulfillmentType,
+      },
+      'CANCELLED',
+      { rejection: { reason: input.reason, comment, money } },
+    );
+
+    return { id: cancelled.id, status: cancelled.status, orderCode: cancelled.orderCode, money };
   }
 
   start(storeId: string, orderId: string, staffUserId: string) {

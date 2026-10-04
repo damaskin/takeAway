@@ -17,7 +17,7 @@ type TelegramEvent =
 
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe?: { user?: { first_name?: string; last_name?: string } };
+  initDataUnsafe?: { user?: { first_name?: string; last_name?: string }; start_param?: string };
   colorScheme?: 'light' | 'dark';
   themeParams?: Record<string, string>;
   // Bot API 8.0+ — undefined on older Telegram clients.
@@ -27,6 +27,8 @@ interface TelegramWebApp {
   ready: () => void;
   expand: () => void;
   close: () => void;
+  /** Bot API 6.1+: opens the link in the browser; the Mini App stays open. */
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
   onEvent?: (event: TelegramEvent, cb: () => void) => void;
   offEvent?: (event: TelegramEvent, cb: () => void) => void;
   MainButton: {
@@ -71,6 +73,12 @@ const THEME_MAPPING: Record<string, string[]> = {
   link_color: ['--tg-link-color'],
 };
 
+/** `order_<id>` launch parameter → the order id, or null for anything else. */
+export function orderIdFromStartParam(param: string | null | undefined): string | null {
+  const match = /^order_(.+)$/.exec(param ?? '');
+  return match?.[1] ?? null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TelegramBridgeService {
   readonly isAvailable = signal<boolean>(typeof window !== 'undefined' && !!window.Telegram?.WebApp);
@@ -98,6 +106,47 @@ export class TelegramBridgeService {
 
   get initData(): string | null {
     return window.Telegram?.WebApp?.initData || null;
+  }
+
+  /**
+   * The `startapp` parameter the Mini App was launched with
+   * (`t.me/<bot>/<app>?startapp=…`). Telegram puts it in `initDataUnsafe`
+   * and, on some clients, only in the launch URL as `tgWebAppStartParam`.
+   */
+  get startParam(): string | null {
+    const fromInitData = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+    if (fromInitData) return fromInitData;
+    if (typeof location === 'undefined') return null;
+    const fromQuery = new URLSearchParams(location.search).get('tgWebAppStartParam');
+    if (fromQuery) return fromQuery;
+    return new URLSearchParams(location.hash.replace(/^#/, '')).get('tgWebAppStartParam');
+  }
+
+  private startParamTaken = false;
+
+  /**
+   * The order a launch link points at (`startapp=order_<id>` — where the bank
+   * sends a customer back after paying), handed out once: the parameter stays
+   * on the launch for the whole session, and only the first screen should
+   * follow it.
+   */
+  takeStartOrderId(): string | null {
+    if (this.startParamTaken) return null;
+    this.startParamTaken = true;
+    return orderIdFromStartParam(this.startParam);
+  }
+
+  /**
+   * Opens an outside page — the bank's payment page — in the browser, leaving
+   * the Mini App open underneath. Outside Telegram it is a new tab.
+   */
+  openLink(url: string): void {
+    const tg = window.Telegram?.WebApp;
+    if (tg?.openLink) {
+      tg.openLink(url);
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
   }
 
   ready(): void {

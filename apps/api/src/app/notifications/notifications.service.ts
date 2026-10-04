@@ -23,8 +23,21 @@ export interface OrderExpiryInfo {
   holdReleased: boolean;
 }
 
+/** Why a store turned an order down — picked on the kitchen board. */
+export type StoreRejectReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER';
+
+/** The store turned the order down, so the push can say why and where the money went. */
+export interface StoreRejectionInfo {
+  reason: StoreRejectReason;
+  /** Free text from the kitchen, shown as is. */
+  comment?: string | null;
+  /** released — the hold came off; refunded — a captured charge went back; pending — the bank still owes the release. */
+  money: 'released' | 'refunded' | 'pending' | 'none';
+}
+
 export interface OrderStatusPushOptions {
   expiry?: OrderExpiryInfo;
+  rejection?: StoreRejectionInfo;
 }
 
 /** A transport that accepted a message. */
@@ -432,6 +445,7 @@ export class NotificationsService {
           ? message('order_delivered', `Заказ ${code} доставлен`, 'Приятного аппетита!')
           : message('order_delivered', `Order ${code} delivered`, 'Enjoy!');
       case 'CANCELLED':
+        if (options.rejection) return this.buildRejectedMessage(code, ru, options.rejection, message);
         return ru
           ? message('order_status', `Заказ ${code} отменён`, 'Если это неожиданно, свяжитесь с заведением.')
           : message('order_status', `Order ${code} cancelled`, 'Please contact the store if this is unexpected.');
@@ -442,6 +456,37 @@ export class NotificationsService {
         // it live anyway); PICKED_UP — the cup is already in their hand.
         return null;
     }
+  }
+
+  /** The store said no: why, in a sentence, and what happened to the money. */
+  private buildRejectedMessage(
+    code: string,
+    ru: boolean,
+    rejection: StoreRejectionInfo,
+    message: (kind: PushMessage['kind'], title: string, body: string) => PushMessage,
+  ): PushMessage {
+    const reasons: Record<StoreRejectReason, [string, string]> = {
+      OUT_OF_STOCK: ['Части позиций сейчас нет в наличии.', 'Some items are out of stock.'],
+      TOO_BUSY: ['Заведение сейчас перегружено заказами.', 'The store is too busy right now.'],
+      CLOSING: ['Заведение закрывается.', 'The store is closing.'],
+      OTHER: ['Заведение не может принять заказ.', 'The store cannot take the order.'],
+    };
+    const money: Record<StoreRejectionInfo['money'], [string, string]> = {
+      released: [
+        'Деньги не списаны, блокировка на карте снята.',
+        'You were not charged and the card hold is released.',
+      ],
+      refunded: ['Деньги вернутся на карту.', 'The money is on its way back to your card.'],
+      pending: ['Блокировка на карте будет снята автоматически.', 'The card hold will be released automatically.'],
+      none: ['', ''],
+    };
+    const comment = rejection.comment?.trim();
+    const [reasonRu, reasonEn] = reasons[rejection.reason];
+    const [moneyRu, moneyEn] = money[rejection.money];
+    const body = [ru ? reasonRu : reasonEn, comment, ru ? moneyRu : moneyEn].filter(Boolean).join(' ');
+    return ru
+      ? message('order_status', `Заказ ${code} отклонён`, body)
+      : message('order_status', `Order ${code} was declined`, body);
   }
 
   private buildExpiredMessage(

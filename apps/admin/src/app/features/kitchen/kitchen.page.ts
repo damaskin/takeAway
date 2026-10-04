@@ -12,17 +12,32 @@ import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
 import { apiErrorMessage } from '../../core/http/api-error';
 import {
   KITCHEN_COLUMNS,
+  KITCHEN_REJECT_REASONS,
   type KitchenColumn,
   applyKitchenEvent,
+  canReject,
   inColumn,
   nextAction,
+  rejectOutcomeKey,
 } from '../../core/kitchen/kitchen-board';
-import { KitchenApi, type KitchenAction, type KitchenOrder, type StoreShift } from '../../core/kitchen/kitchen.api';
+import {
+  KITCHEN_REJECT_COMMENT_MAX,
+  KitchenApi,
+  type KitchenAction,
+  type KitchenOrder,
+  type KitchenRejectBody,
+  type KitchenRejectReason,
+  type StoreShift,
+} from '../../core/kitchen/kitchen.api';
 import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AuthService } from '../../core/auth/auth.service';
 import type { KitchenStore } from '../../core/kitchen/order-alerts.service';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
+
+/** How long the "order rejected" notice stays on screen. */
+const TOAST_MS = 5000;
 
 /** One line of a ticket: how many, and exactly what goes in the cup. */
 type TicketLine = OrderItemSnapshot & { quantity: number };
@@ -48,11 +63,15 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
  * "Accept" goes through `POST /kds/orders/:id/accept`, the same call the
  * tablet made, so a card that was only held at checkout is charged there
  * and a refusal leaves the ticket where it was, with the bank's reason on it.
+ *
+ * A ticket nobody has accepted can instead be rejected with a reason
+ * (`POST /kds/orders/:id/reject`); the API gives the money back and tells
+ * the customer why.
  */
 @Component({
   selector: 'app-kitchen',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, ConfirmDialogComponent],
   template: `
     <section class="kitchen" [class.kitchen-dark]="mode.tablet()">
       <header class="kitchen-head">
@@ -231,15 +250,28 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
                       <p class="kitchen-card-error" role="alert">{{ reason }}</p>
                     }
                     @if (actionOf(order); as action) {
-                      <button
-                        type="button"
-                        class="kitchen-action"
-                        [style.background]="actionMeta(action).color"
-                        [disabled]="busy().has(order.id)"
-                        (click)="run(action, order)"
-                      >
-                        {{ (busy().has(order.id) ? 'admin.kitchen.working' : actionMeta(action).label) | translate }}
-                      </button>
+                      <div class="kitchen-actions">
+                        @if (canReject(order)) {
+                          <button
+                            type="button"
+                            class="kitchen-reject"
+                            data-testid="reject-order"
+                            [disabled]="busy().has(order.id)"
+                            (click)="openReject(order)"
+                          >
+                            {{ 'admin.kitchen.reject.button' | translate }}
+                          </button>
+                        }
+                        <button
+                          type="button"
+                          class="kitchen-action"
+                          [style.background]="actionMeta(action).color"
+                          [disabled]="busy().has(order.id)"
+                          (click)="run(action, order)"
+                        >
+                          {{ (busy().has(order.id) ? 'admin.kitchen.working' : actionMeta(action).label) | translate }}
+                        </button>
+                      </div>
                     }
                   </article>
                 } @empty {
@@ -251,6 +283,64 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         </div>
       }
     </section>
+
+    <!-- Outside the board, so the dialog keeps the light palette in tablet mode. -->
+    @if (rejecting(); as target) {
+      <app-confirm-dialog
+        tone="danger"
+        [title]="'admin.kitchen.reject.title' | translate: { code: target.orderCode }"
+        [body]="'admin.kitchen.reject.body' | translate"
+        [confirmLabel]="(rejectBusy() ? 'admin.kitchen.working' : 'admin.kitchen.reject.confirm') | translate"
+        [cancelLabel]="'common.cancel' | translate"
+        [busy]="rejectBusy() || !rejectReason()"
+        (confirmed)="confirmReject()"
+        (cancelled)="closeReject()"
+      >
+        <fieldset class="reject-reasons" [disabled]="rejectBusy()">
+          <legend class="reject-label">{{ 'admin.kitchen.reject.reasonLabel' | translate }}</legend>
+          @for (reason of rejectReasons; track reason) {
+            <label class="reject-reason" [class.reject-reason-on]="rejectReason() === reason">
+              <input
+                type="radio"
+                name="kitchen-reject-reason"
+                [value]="reason"
+                [checked]="rejectReason() === reason"
+                (change)="pickRejectReason(reason)"
+              />
+              <span>{{ 'admin.kitchen.reject.reasons.' + reason | translate }}</span>
+            </label>
+          }
+        </fieldset>
+        <label class="flex flex-col" style="gap: 6px">
+          <span class="reject-label">
+            {{
+              (rejectReason() === 'OTHER'
+                ? 'admin.kitchen.reject.commentLabelOther'
+                : 'admin.kitchen.reject.commentLabel'
+              ) | translate
+            }}
+          </span>
+          <textarea
+            #rejectBox
+            rows="3"
+            class="reject-comment"
+            [attr.maxlength]="commentMax"
+            [placeholder]="'admin.kitchen.reject.commentPlaceholder' | translate"
+            [value]="rejectComment()"
+            [disabled]="rejectBusy()"
+            (input)="rejectComment.set(rejectBox.value)"
+          ></textarea>
+          <span class="reject-count">{{ rejectComment().length }}/{{ commentMax }}</span>
+        </label>
+        @if (rejectError()) {
+          <p class="reject-error" role="alert">{{ rejectError() }}</p>
+        }
+      </app-confirm-dialog>
+    }
+
+    @if (toast(); as message) {
+      <div class="kitchen-toast" role="status" aria-live="polite">{{ message }}</div>
+    }
   `,
   styles: [
     `
@@ -490,9 +580,103 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         font-size: 14px;
         font-weight: 700;
       }
-      .kitchen-action:disabled {
+      .kitchen-action:disabled,
+      .kitchen-reject:disabled {
         opacity: 0.6;
         cursor: progress;
+      }
+      .kitchen-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .kitchen-actions .kitchen-action {
+        flex: 1 1 auto;
+      }
+      .kitchen-reject {
+        flex: 0 0 auto;
+        height: 42px;
+        padding: 0 16px;
+        border-radius: 10px;
+        border: 1px solid var(--color-berry);
+        background: transparent;
+        color: var(--color-berry);
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .reject-reasons {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .reject-label {
+        margin-bottom: 6px;
+        padding: 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+      }
+      .reject-reason {
+        min-height: 48px;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        background: var(--color-cream);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        cursor: pointer;
+      }
+      .reject-reason input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--color-berry);
+      }
+      .reject-reason-on {
+        border-color: var(--color-berry);
+        box-shadow: 0 0 0 1px var(--color-berry);
+      }
+      .reject-comment {
+        padding: 10px 12px;
+        resize: vertical;
+        background: var(--color-cream);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-input);
+        font-family: var(--font-sans);
+        font-size: 15px;
+        outline: none;
+      }
+      .reject-count {
+        align-self: flex-end;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
+      .reject-error {
+        margin: 0;
+        font-size: 13px;
+        color: var(--color-berry);
+      }
+      .kitchen-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translateX(-50%);
+        z-index: 45;
+        width: max-content;
+        max-width: calc(100vw - 32px);
+        padding: 14px 20px;
+        border-radius: 12px;
+        background: #1c1817;
+        color: #f8f3eb;
+        font-family: var(--font-sans);
+        font-size: 15px;
+        font-weight: 600;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
       }
       .kitchen-shift {
         display: flex;
@@ -602,6 +786,19 @@ export class KitchenPage {
   readonly shiftBusy = signal(false);
   readonly shiftError = signal<string | null>(null);
 
+  readonly rejectReasons = KITCHEN_REJECT_REASONS;
+  readonly commentMax = KITCHEN_REJECT_COMMENT_MAX;
+  /** The ticket the "reject" dialog is open for; null when it is closed. */
+  readonly rejecting = signal<KitchenOrder | null>(null);
+  /** Nothing is picked up front, so a stray tap cannot reject with a wrong reason. */
+  readonly rejectReason = signal<KitchenRejectReason | null>(null);
+  readonly rejectComment = signal('');
+  readonly rejectBusy = signal(false);
+  readonly rejectError = signal<string | null>(null);
+  /** A short notice at the bottom of the screen, e.g. "order rejected". */
+  readonly toast = signal<string | null>(null);
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
   readonly store = computed(() => this.stores().find((s) => s.id === this.storeId()) ?? null);
   readonly clock = computed(() => this.fmt.time(this.now(), this.store()?.timezone));
 
@@ -637,7 +834,10 @@ export class KitchenPage {
       const storeId = this.storeId();
       untracked(() => this.follow(storeId));
     });
-    this.destroyRef.onDestroy(() => this.detach?.());
+    this.destroyRef.onDestroy(() => {
+      this.detach?.();
+      if (this.toastTimer) clearTimeout(this.toastTimer);
+    });
   }
 
   /** A tablet signs out back to the PIN screen, not the email form. */
@@ -678,21 +878,16 @@ export class KitchenPage {
     return ACTION_META[action];
   }
 
+  canReject(order: KitchenOrder): boolean {
+    return canReject(order);
+  }
+
   run(action: KitchenAction, order: KitchenOrder): void {
     const storeId = this.storeId();
     if (!storeId || this.busy().has(order.id)) return;
-    this.busy.update((set) => new Set(set).add(order.id));
-    this.failures.update((map) => {
-      const next = { ...map };
-      delete next[order.id];
-      return next;
-    });
-    const done = () =>
-      this.busy.update((set) => {
-        const next = new Set(set);
-        next.delete(order.id);
-        return next;
-      });
+    this.setBusy(order.id, true);
+    this.clearFailure(order.id);
+    const done = () => this.setBusy(order.id, false);
     this.api.run(action, storeId, order.id).subscribe({
       next: () => {
         done();
@@ -707,6 +902,65 @@ export class KitchenPage {
             statuses: { 403: 'common.forbidden', 404: 'admin.kitchen.errors.gone' },
           }),
         }));
+        this.refresh();
+      },
+    });
+  }
+
+  /** Opens the "reject" dialog for a ticket nobody has accepted yet. */
+  openReject(order: KitchenOrder): void {
+    if (!canReject(order) || this.busy().has(order.id)) return;
+    this.rejectReason.set(null);
+    this.rejectComment.set('');
+    this.rejectError.set(null);
+    this.rejecting.set(order);
+  }
+
+  pickRejectReason(reason: KitchenRejectReason): void {
+    this.rejectReason.set(reason);
+    this.rejectError.set(null);
+  }
+
+  /** Cancel, Escape or the backdrop; ignored while the request is in flight. */
+  closeReject(): void {
+    if (this.rejectBusy()) return;
+    this.rejecting.set(null);
+  }
+
+  /**
+   * Turns the order down. The API gives the money back and tells the
+   * customer; the board drops the ticket right away instead of waiting for
+   * the realtime "removed" event.
+   */
+  confirmReject(): void {
+    const order = this.rejecting();
+    const storeId = this.storeId();
+    const reason = this.rejectReason();
+    if (!order || !storeId || !reason || this.rejectBusy()) return;
+    const comment = this.rejectComment().trim().slice(0, KITCHEN_REJECT_COMMENT_MAX);
+    const body: KitchenRejectBody = comment ? { reason, comment } : { reason };
+    this.rejectBusy.set(true);
+    this.rejectError.set(null);
+    this.setBusy(order.id, true);
+    this.clearFailure(order.id);
+    this.api.reject(storeId, order.id, body).subscribe({
+      next: (result) => {
+        this.rejectBusy.set(false);
+        this.setBusy(order.id, false);
+        this.rejecting.set(null);
+        this.orders.update((list) => list.filter((o) => o.id !== order.id));
+        this.alerts.dismiss(order.id);
+        this.showToast(this.translate.instant(rejectOutcomeKey(result.money)));
+      },
+      error: (err) => {
+        this.rejectBusy.set(false);
+        this.setBusy(order.id, false);
+        this.rejectError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            statuses: { 403: 'common.forbidden', 404: 'admin.kitchen.errors.gone' },
+          }),
+        );
         this.refresh();
       },
     });
@@ -774,6 +1028,33 @@ export class KitchenPage {
     return '1px solid var(--color-border-light)';
   }
 
+  private setBusy(orderId: string, on: boolean): void {
+    this.busy.update((set) => {
+      const next = new Set(set);
+      if (on) next.add(orderId);
+      else next.delete(orderId);
+      return next;
+    });
+  }
+
+  private clearFailure(orderId: string): void {
+    if (!(orderId in this.failures())) return;
+    this.failures.update((map) => {
+      const next = { ...map };
+      delete next[orderId];
+      return next;
+    });
+  }
+
+  private showToast(message: string): void {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toast.set(message);
+    this.toastTimer = setTimeout(() => {
+      this.toastTimer = null;
+      this.toast.set(null);
+    }, TOAST_MS);
+  }
+
   private loadStores(brandId: string): void {
     this.catalog.listStores(brandId).subscribe({
       next: (rows) => {
@@ -797,6 +1078,7 @@ export class KitchenPage {
     this.detach = null;
     this.orders.set([]);
     this.failures.set({});
+    this.rejecting.set(null);
     this.shift.set(null);
     this.shiftError.set(null);
     if (!storeId) return;

@@ -31,7 +31,8 @@
 	<array>
 		<!-- Telegram Login returns here from the Telegram app with a code.
 		     Must match TELEGRAM_REDIRECT_URI and the redirect URI registered
-		     in @BotFather. -->
+		     in @BotFather. The bank's payment page comes back through the
+		     same scheme: takeaway://pay?orderId=…&status=… -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>

@@ -39,6 +39,13 @@ final activeOrdersProvider = Provider<List<OrderSummary>>((ref) {
 class OrderController extends AutoDisposeFamilyAsyncNotifier<Order, String> {
   Timer? _poll;
 
+  /// How long to keep checking a payment the bank has not settled yet.
+  static const paymentWatch = Duration(minutes: 2);
+
+  /// Until when a PENDING payment on a new order is re-read on every tick:
+  /// the customer is on, or just back from, the bank's page.
+  DateTime _paymentWatchUntil = DateTime.now().add(paymentWatch);
+
   TakeAwayApi get _api => ref.read(apiProvider);
 
   @override
@@ -81,10 +88,25 @@ class OrderController extends AutoDisposeFamilyAsyncNotifier<Order, String> {
         timer.cancel();
         return;
       }
-      // Every 5 s while the socket is down, every 30 s as a safety net.
-      final every = realtime.connected.value ? 6 : 1;
+      // Every 5 s while the socket is down or a payment is being settled,
+      // every 30 s as a safety net.
+      final every = realtime.connected.value && !_awaitingPayment(order) ? 6 : 1;
       if (timer.tick % every == 0) unawaited(refresh());
     });
+  }
+
+  /// A payment the bank has not settled on an order nobody accepted yet.
+  /// Its verdict does not always arrive over the socket.
+  bool _awaitingPayment(Order order) =>
+      order.status == OrderStatus.created &&
+      order.payment.state == PaymentState.pending &&
+      DateTime.now().isBefore(_paymentWatchUntil);
+
+  /// Re-reads the order now and watches its payment closely for a while —
+  /// on coming back from the bank's page or to the foreground.
+  Future<void> watchPayment() {
+    _paymentWatchUntil = DateTime.now().add(paymentWatch);
+    return refresh();
   }
 
   Future<void> refresh() async {

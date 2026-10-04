@@ -12,6 +12,7 @@ import 'package:takeaway_mobile/core/providers.dart';
 import 'package:takeaway_mobile/core/realtime/realtime_service.dart';
 import 'package:takeaway_mobile/core/storage/json_cache.dart';
 import 'package:takeaway_mobile/core/theme/app_theme.dart';
+import 'package:takeaway_mobile/features/checkout/web_payment.dart';
 
 import 'fake_api.dart';
 
@@ -39,12 +40,38 @@ class FakeRealtime extends RealtimeService {
   }
 }
 
+/// The bank's page without a browser: records what was opened and closed,
+/// and lets tests deliver the return link by hand.
+class FakeWebPaymentPlatform implements WebPaymentPlatform {
+  final opened = <Uri>[];
+  var closed = 0;
+
+  /// False = no browser takes the page.
+  bool opens = true;
+  final _links = StreamController<Uri>.broadcast();
+
+  @override
+  Future<bool> open(Uri url) async {
+    opened.add(url);
+    return opens;
+  }
+
+  @override
+  Future<void> close() async => closed++;
+
+  @override
+  Stream<Uri> get links => _links.stream;
+
+  void deliver(Uri link) => _links.add(link);
+}
+
 class Harness {
-  Harness({required this.api, required this.container, required this.realtime});
+  Harness({required this.api, required this.container, required this.realtime, required this.webPayments});
 
   final FakeApi api;
   final ProviderContainer container;
   final FakeRealtime realtime;
+  final FakeWebPaymentPlatform webPayments;
   bool _disposed = false;
 
   /// Unmounts the app and disposes the providers, so periodic timers (order
@@ -90,6 +117,7 @@ Future<Harness> pumpApp(
   final prefs = await SharedPreferences.getInstance();
   final fakeApi = api ?? FakeApi();
   final sessions = SessionManager(storage: MemorySessionStorage(), initial: signedIn ? testSession() : null);
+  final webPayments = FakeWebPaymentPlatform();
   late FakeRealtime realtime;
 
   final container = ProviderContainer(
@@ -98,6 +126,7 @@ Future<Harness> pumpApp(
       sessionManagerProvider.overrideWithValue(sessions),
       jsonCacheProvider.overrideWithValue(MemoryJsonCache()),
       apiProvider.overrideWithValue(fakeApi),
+      webPaymentPlatformProvider.overrideWithValue(webPayments),
       realtimeServiceProvider.overrideWith((ref) {
         ref.watch(currentUserIdProvider);
         realtime = FakeRealtime(sessions);
@@ -114,7 +143,7 @@ Future<Harness> pumpApp(
   await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const TakeAwayApp()));
   await settle(tester);
   container.read(realtimeServiceProvider);
-  final harness = Harness(api: fakeApi, container: container, realtime: realtime);
+  final harness = Harness(api: fakeApi, container: container, realtime: realtime, webPayments: webPayments);
   addTearDown(() {
     if (!harness._disposed) container.dispose();
   });

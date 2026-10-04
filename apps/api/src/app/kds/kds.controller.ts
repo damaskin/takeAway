@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { RejectOrderDto } from './dto/reject-order.dto';
 import { KdsService } from './kds.service';
 import { StoreShiftService } from './store-shift.service';
 
@@ -55,6 +56,23 @@ export class KdsController {
   async accept(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string, @Param('id') id: string) {
     await this.assertInScope(user, storeId);
     return this.kds.accept(storeId, id, user.id);
+  }
+
+  /**
+   * The kitchen turns the order down before accepting it. The customer's money
+   * comes back — a hold is released, a captured charge refunded — and they get
+   * a push with the reason.
+   */
+  @Post('orders/:id/reject')
+  @HttpCode(HttpStatus.OK)
+  async reject(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('storeId') storeId: string,
+    @Param('id') id: string,
+    @Body() dto: RejectOrderDto,
+  ) {
+    await this.assertInScope(user, storeId);
+    return this.kds.reject(storeId, id, user.id, dto);
   }
 
   @Post('orders/:id/start')

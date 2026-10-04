@@ -87,3 +87,59 @@ class BindCardRequest {
 
   Map<String, dynamic> toJson() => _$BindCardRequestToJson(this);
 }
+
+/// Starts (or resumes) paying for an order on the bank's hosted page
+/// (Agroprombank «Web-платёж»).
+@JsonSerializable(createFactory: false)
+class StartWebPaymentRequest {
+  const StartWebPaymentRequest({required this.orderId, this.returnTo = 'mobile'});
+
+  final String orderId;
+
+  /// Client the customer pays from (`mobile`, `web`, `tma`): where the API
+  /// sends them back after the bank.
+  final String returnTo;
+
+  Map<String, dynamic> toJson() => _$StartWebPaymentRequestToJson(this);
+}
+
+/// The bank's payment page: a signed form to POST unchanged, or the same
+/// request as a GET link ([url]) for in-app browsers.
+@JsonSerializable(createToJson: false)
+class WebPaymentPage {
+  const WebPaymentPage({required this.method, required this.action, required this.url, this.fields = const {}});
+
+  factory WebPaymentPage.fromJson(Map<String, dynamic> json) => _$WebPaymentPageFromJson(json);
+
+  final String method;
+  final String action;
+  final Map<String, String> fields;
+  final String url;
+}
+
+@JsonSerializable(createToJson: false)
+class StartWebPaymentResult {
+  const StartWebPaymentResult({
+    required this.paymentId,
+    required this.invoiceId,
+    required this.status,
+    this.page,
+    this.expiresAt,
+  });
+
+  factory StartWebPaymentResult.fromJson(Map<String, dynamic> json) => _$StartWebPaymentResultFromJson(json);
+
+  final String paymentId;
+
+  /// Our invoice id at the bank.
+  final String invoiceId;
+  final String status;
+
+  /// Where to send the customer; null when the order is already held or paid.
+  final WebPaymentPage? page;
+
+  /// When the bank's page stops accepting this invoice.
+  final DateTime? expiresAt;
+
+  bool get alreadySettled => page == null;
+}

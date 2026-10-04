@@ -19,6 +19,8 @@ let nextId = 0;
  * and treats Cancel as "go ahead without one".
  *
  * Texts arrive translated. Escape, the backdrop and Cancel all cancel.
+ * Anything projected into the element (extra fields of the question) sits
+ * between the texts and the buttons.
  */
 @Component({
   selector: 'app-confirm-dialog',
@@ -33,6 +35,7 @@ let nextId = 0;
       @if (warning()) {
         <p class="dialog-warning">{{ warning() }}</p>
       }
+      <ng-content />
       @if (reasonLabel()) {
         <label class="flex flex-col" style="gap: 6px">
           <span class="dialog-label">{{ reasonLabel() }}</span>

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import type { LoyaltyAccount } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -6,6 +6,7 @@ import { LanguageSwitcherComponent } from '@takeaway/i18n';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
 interface ProfileSection {
@@ -94,7 +95,7 @@ interface ProfileSection {
 
         <!-- Section list -->
         <div class="flex flex-col" style="gap: 4px">
-          @for (sec of sections; track sec.label) {
+          @for (sec of sections(); track sec.label) {
             @if (sec.link) {
               <a
                 [routerLink]="sec.link"
@@ -173,14 +174,16 @@ export class ProfilePage implements OnInit {
   private readonly router = inject(Router);
   private readonly loyaltyApi = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
+  private readonly flags = inject(FeatureFlagsStore);
 
   readonly loyalty = signal<LoyaltyAccount | null>(null);
 
   ngOnInit(): void {
+    this.flags.load();
     this.loyaltyApi.me().subscribe({ next: (acc) => this.loyalty.set(acc) });
   }
 
-  readonly sections: ProfileSection[] = [
+  private readonly allSections: ProfileSection[] = [
     { icon: '🧾', label: 'web.profile.sections.myOrders', link: '/orders' },
     { icon: '👤', label: 'web.profile.sections.personal', link: '/profile/personal' },
     { icon: '💳', label: 'web.profile.sections.payment', link: '/profile/payment-methods' },
@@ -190,6 +193,16 @@ export class ProfilePage implements OnInit {
     { icon: '🔔', label: 'web.profile.sections.notifications', link: '/profile/notifications' },
     { icon: '⭐', label: 'web.profile.sections.loyalty', link: '/profile/loyalty' },
   ];
+
+  /**
+   * When checkout pays on the bank's own page there is no card to bind, so
+   * the payment-methods row would lead nowhere useful.
+   */
+  readonly sections = computed(() =>
+    this.flags.webPaymentsEnabled()
+      ? this.allSections.filter((s) => s.link !== '/profile/payment-methods')
+      : this.allSections,
+  );
 
   initials(name?: string | null): string {
     if (!name) return 'TA';

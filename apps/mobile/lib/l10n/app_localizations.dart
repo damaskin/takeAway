@@ -1082,6 +1082,24 @@ abstract class AppLocalizations {
   /// **'We hold the amount now and charge it when the store accepts your order.'**
   String get holdHint;
 
+  /// Checkout, web payment flow: the card is entered on the bank's hosted page.
+  ///
+  /// In en, this message translates to:
+  /// **'You pay by card on the bank\'s secure page. The amount is held now and charged when the store accepts your order.'**
+  String get webPaymentHint;
+
+  /// Snack when no in-app browser could open the bank's payment page.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the payment page. Tap \"Pay\" to try again.'**
+  String get webPaymentNotOpened;
+
+  /// Snack when the bank sends the customer back with a failed payment.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment did not go through. You can try again.'**
+  String get webPaymentFailed;
+
   /// No description provided for @summaryTitle.
   ///
   /// In en, this message translates to:

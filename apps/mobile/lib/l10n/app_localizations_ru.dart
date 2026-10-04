@@ -567,6 +567,17 @@ class AppLocalizationsRu extends AppLocalizations {
   String get holdHint => 'Сумму забронируем сейчас, а спишем, когда точка примет заказ.';
 
   @override
+  String get webPaymentHint =>
+      'Оплата картой на защищённой странице банка. Сумма будет заблокирована сейчас и списана, когда точка примет заказ.';
+
+  @override
+  String get webPaymentNotOpened =>
+      'Не удалось открыть страницу оплаты. Нажмите «Оплатить», чтобы попробовать ещё раз.';
+
+  @override
+  String get webPaymentFailed => 'Оплата не прошла. Можно попробовать ещё раз.';
+
+  @override
   String get summaryTitle => 'Итог';
 
   @override

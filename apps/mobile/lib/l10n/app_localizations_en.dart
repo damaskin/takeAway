@@ -560,6 +560,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get holdHint => 'We hold the amount now and charge it when the store accepts your order.';
 
   @override
+  String get webPaymentHint =>
+      'You pay by card on the bank\'s secure page. The amount is held now and charged when the store accepts your order.';
+
+  @override
+  String get webPaymentNotOpened => 'Couldn\'t open the payment page. Tap \"Pay\" to try again.';
+
+  @override
+  String get webPaymentFailed => 'The payment did not go through. You can try again.';
+
+  @override
   String get summaryTitle => 'Summary';
 
   @override

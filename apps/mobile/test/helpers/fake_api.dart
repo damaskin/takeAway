@@ -13,6 +13,12 @@ class FakeApi extends Fake implements TakeAwayApi {
   final added = <AddCartItemRequest>[];
   final created = <CreateOrderRequest>[];
   final paid = <Map<String, dynamic>>[];
+
+  /// Every web payment the app started, with its body.
+  final webPayments = <StartWebPaymentRequest>[];
+
+  /// True = the order is already held, so starting a web payment returns no page.
+  bool webPaymentSettled = false;
   final cancelled = <String>[];
   Order? currentOrder;
   List<BoundCard> boundCards = const [];
@@ -494,6 +500,26 @@ class FakeApi extends Fake implements TakeAwayApi {
       );
     }
     return const ChargeResult(paymentId: 'pay_1', status: 'REQUIRES_ACTION', amountCents: 2000);
+  }
+
+  static const webPaymentUrl = 'https://bank.example/pay?nivid=inv_1&sign=abc';
+
+  @override
+  Future<StartWebPaymentResult> startWebPayment(StartWebPaymentRequest body) async {
+    webPayments.add(body);
+    return StartWebPaymentResult(
+      paymentId: 'pay_web_1',
+      invoiceId: 'inv_1',
+      status: webPaymentSettled ? 'SUCCEEDED' : 'REQUIRES_ACTION',
+      page: webPaymentSettled
+          ? null
+          : const WebPaymentPage(
+              method: 'POST',
+              action: 'https://bank.example/pay',
+              fields: {'nivid': 'inv_1', 'sign': 'abc'},
+              url: webPaymentUrl,
+            ),
+    );
   }
 
   static BoundCard card({String id = 'card_1', bool isDefault = true}) => BoundCard.fromJson({

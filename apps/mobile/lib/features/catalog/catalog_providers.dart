@@ -213,11 +213,13 @@ final featureFlagsProvider = FutureProvider<FeatureFlags>((ref) async {
     final flags = await ref.watch(apiProvider).features();
     unawaited(prefs.setBool('flags.delivery', flags.deliveryEnabled));
     unawaited(prefs.setBool('flags.cards', flags.agroprombankEnabled));
+    unawaited(prefs.setString('flags.cardFlow', flags.cardPaymentFlow.name));
     return flags;
   } on Object {
     return FeatureFlags(
       deliveryEnabled: prefs.getBool('flags.delivery') ?? false,
       agroprombankEnabled: prefs.getBool('flags.cards') ?? false,
+      cardPaymentFlow: CardPaymentFlow.tryParse(prefs.getString('flags.cardFlow')),
     );
   }
 });

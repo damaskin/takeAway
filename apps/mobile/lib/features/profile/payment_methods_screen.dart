@@ -22,7 +22,7 @@ class PaymentMethodsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
-    final enabled = ref.watch(featureFlagsProvider).valueOrNull?.agroprombankEnabled ?? false;
+    final enabled = ref.watch(featureFlagsProvider).valueOrNull?.boundCardsEnabled ?? false;
     final async = ref.watch(cardsProvider);
 
     return Scaffold(

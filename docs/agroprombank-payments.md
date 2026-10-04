@@ -11,6 +11,10 @@ Telegram mini app possible.
 Card details never reach our servers, and the token, although it carries no PAN,
 authorises charges on its own — so it is stored encrypted at rest.
 
+A second flow, the bank's hosted payment page «Web-платёж», is described in
+[section 11](#11-web-платёж-the-banks-payment-page). `CARD_PAYMENT_FLOW`
+chooses which one the clients run.
+
 ---
 
 ## 1. What the bank gives you
@@ -458,3 +462,190 @@ left behind.
       holds on, walk the whole path: place the order, see it held, accept it on
       the KDS, see it captured, then place a second one and cancel it to confirm
       the hold is released.
+
+---
+
+## 11. Web-платёж: the bank's payment page
+
+Implemented against _«Техническое описание настройки Интернет-магазина» v2.0_
+(ЗАО «Агропромбанк», 2025). The customer types the card into the bank's own
+page at `https://epay.apb.online/PaymentStart`; the bank tells us the result.
+Nothing is bound, no key pair is needed, and card data never touches us.
+
+The goal is the same as with bound cards: **money is taken only when the
+kitchen accepts the order.** At checkout the page runs with `ispreauth=1`, so
+the amount is only blocked; accepting the order on the KDS captures it
+(`ComplitionOperation`); a cancel by the customer, a rejection by the kitchen,
+or nobody accepting in time releases it (`CancelOperation`).
+
+### 11.1 Choosing the flow
+
+| Env                        | Effect                                                                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CARD_PAYMENT_FLOW`        | `token` (default) — bound cards; `web` — the bank's page. Served to the clients as `cardPaymentFlow` in `GET /config/features` (`token` / `web` / `none`).                         |
+| `AGROPROMBANK_WEB_ENABLED` | `web` takes effect only once this is on, so the switch can be set ahead of the bank's credentials. With it off the clients keep the bound-card flow (or none, if that is off too). |
+
+`agroprombankEnabled` in the feature flags keeps meaning "bound cards work",
+so app builds that predate `cardPaymentFlow` carry on with the bound-card flow.
+Both flows can stay enabled at once: Web-платёж routes work regardless of
+which one the clients are told to use, and a hold of either kind is captured,
+released and refunded by the right bank call (`Payment.provider` is
+`AGROPROMBANK` or `AGROPROMBANK_WEB`).
+
+### 11.2 What to register at the bank
+
+The bank registers fixed addresses — ResultURL may carry no query string at
+all, which is why the routes below carry none:
+
+| Item              | Value                                                       |
+| ----------------- | ----------------------------------------------------------- |
+| Resource name     | takeAway                                                    |
+| ResultURL         | `https://takeaway.md/api/payments/agroprombank-web/result`  |
+| ResultURL method  | POST (GET also works)                                       |
+| SuccessURL        | `https://takeaway.md/api/payments/agroprombank-web/success` |
+| SuccessURL method | GET (POST also works)                                       |
+| FailURL           | `https://takeaway.md/api/payments/agroprombank-web/fail`    |
+| FailURL method    | GET (POST also works)                                       |
+| Support email     | help@takeaway.md                                            |
+| Invoice lifetime  | 15 minutes                                                  |
+| Logo, description | brand assets, ≤100 KB / ≤500 characters                     |
+| Preauthorization  | **required** — ask for `ispreauth` on this merchant         |
+
+All three routes are public and accept both methods with a query string or a
+form body (`application/x-www-form-urlencoded`, which Nest's Fastify adapter
+already parses), or JSON.
+
+The bank then issues `MerchantLogin` (`AGROPROMBANK_WEB_MERCHANT_LOGIN`) and
+`MerchantPass` (`AGROPROMBANK_WEB_MERCHANT_PASS` or `_FILE`). The pass signs
+everything in both directions — treat it like a private key. The admin web
+service's answers are signed with the bank's site certificate
+(`AGROPROMBANK_WEB_BANK_CERT_FILE`).
+
+### 11.3 Flow
+
+```
+POST /api/payments/agroprombank-web/start   { orderId, returnTo: web | tma | mobile }
+  → { paymentId, invoiceId, status, page: { method: POST, action, fields, url } | null, expiresAt }
+```
+
+1. **Start.** Idempotent per order: an order already held or paid gets
+   `page: null`; an earlier invoice still `PENDING` is checked with GetState
+   first (if the customer paid it in another tab, that is the payment). Each
+   start that needs a page issues a new `nivid` — from the same
+   `agroprombank_invoice_seq` and `AGROPROMBANK_INVOICE_PREFIX` as the
+   bound-card flow — signed
+   `MD5(MerchantLogin:nivid:IsTest:RequestSum:RequestCurrCode:Desc:MerchantPass)`.
+   `Desc` is ASCII (`takeAway order 4242`) on purpose, see the questions below.
+   The web posts `fields` to `action` from a form; the TMA opens `url` with
+   Telegram's `openLink`; the app opens `url` in an in-app browser.
+2. **ResultURL.** The notification's MD5 is checked (paid:
+   `invoiceid:status:paymentsum:paymentcurrency:date:pass`; fail:
+   `invoiceid:status:date:pass`); a bad one gets HTTP 400 and changes nothing.
+   Then — as the bank's scheme requires — the outcome is taken from **GetState**
+   and only from there: `state=1` with `usepreauth=1` → `REQUIRES_ACTION`
+   (HELD) and the order appears on the kitchen board; `usepreauth=0` →
+   `SUCCEEDED` and the order is settled as paid. The answer is `200 OK`.
+3. **SuccessURL / FailURL.** The customer's redirect reconciles the payment
+   with GetState again (never trusting its parameters) and sends them, with a
+   302, to their order: `PUBLIC_WEB_URL/orders/:id?payment=success|pending|fail`,
+   `PUBLIC_TMA_URL/orders/:id?…` (or, when `PUBLIC_TMA_URL` is a
+   `t.me/<bot>/<app>` link, `?startapp=order_<id>` so the mini app reopens in
+   Telegram), or `MOBILE_PAYMENT_RETURN_URL?orderId=…&status=…`
+   (`takeaway://pay`, the app's deep link). Only configured bases and our own
+   ids go into the URL — it cannot be turned into an open redirect.
+4. **Accept** on the KDS → `ComplitionOperation` for exactly the held amount
+   → `SUCCEEDED`, order `PAID` → `ACCEPTED`. A refusal fails the accept.
+5. **Release** → `CancelOperation`: customer cancel, kitchen rejection
+   (`POST /kds/orders/:id/reject`), or expiry. Expiry: a held order waits
+   `ORDER_ACCEPT_TTL_MINUTES` (30) for the kitchen, and a scheduled one at
+   least until its pickup time plus `ORDER_ACCEPT_GRACE_MINUTES` (15).
+
+Money-safety rules on top of section 6:
+
+- A state change is claimed with a conditional update, so a notification and
+  a redirect arriving in the same second settle the order once.
+- Money that arrives for an order that cannot use it — cancelled, expired,
+  already paid by another invoice, or an amount the bank changed — is given
+  back straight away (hold: `CancelOperation`, retried by the cron; capture:
+  `CancelOperation`, and a loud `REFUND NEEDED` log if the bank refuses).
+- The reconciliation cron (`agroprombank-reconcile`, 5 min) asks GetState about
+  every `PENDING` invoice older than two minutes — a lost notification is
+  found there — and fails it once the page has stopped taking it (lifetime +
+  5 minutes). The unpaid-order expiry spares an order whose latest payment
+  attempt is younger than `ORDER_PAYMENT_TTL_MINUTES`, so nobody is expired
+  while on the bank's page; keep `AGROPROMBANK_WEB_LIFETIME_MINUTES` at or
+  below it.
+- The same cron retries hold releases that failed (either flow): a hold on a
+  cancelled or expired order, or one flagged for release, is retried up to 20
+  times, then left with an error in the log.
+
+Refunds from the admin (`POST /admin/orders/:id/refund`, and
+`/admin/payments/agroprombank/:paymentId/{refund,reverse,complete}`) go to
+the provider that took the payment. A full refund on the day of payment is
+sent as `CancelOperation` (the charge disappears from the statement), falling
+back to `RefundOperation`.
+
+### 11.4 The bank's signature
+
+The documentation says the admin web service answers with a base64 string
+holding `<envelope><response>base64 XML</response><signature>base64</signature></envelope>`,
+that the signature covers the response, and that the site certificate checks
+it — not the algorithm. The verifier accepts RSA-SHA256 or RSA-SHA1, over the
+decoded document or over its base64 text, and logs which variant matched
+(debug level), so the first live call pins it down. Each variant is still a
+signature only the bank's key can make. `AGROPROMBANK_WEB_VERIFY_RESPONSES=false`
+switches the check off for the integration window; every call then logs a
+warning. A bare response without the signing envelope is accepted only with
+verification off.
+
+### 11.5 Questions for the bank
+
+1. What should the ResultURL response body be? We answer `200 OK` with text
+   `OK`; is a specific body or status expected, and does the bank retry?
+2. Is `InvoiceId` in the admin web service our `nivid`?
+3. `complitionAmount` (and `refundAmount`) — kopecks, like `RequestSum`?
+4. Does `CancelOperation` release a **preauthorization**? And after the day of
+   payment — how is a hold released then (the documentation limits cancel to
+   the same day; a scheduled order accepted tomorrow may need it)?
+5. The algorithm and certificate of the response signature (11.4).
+6. Encoding of `Desc` in the MD5 (UTF-8? CP1251?). We send ASCII until told.
+7. Is `ispreauth=1` allowed for our Web-платёж merchant? (The bound-card
+   terminal E1043280 refuses preauthorization.)
+8. The WSDL namespace / SOAPAction of `APB.SV.WebPayment.AgentService.asmx`
+   (we default to `http://services.agroprombank.com`,
+   `AGROPROMBANK_WEB_NAMESPACE`), and the exact `GetState` answer for an
+   invoice that was never opened.
+9. Can a `nivid` be presented to `PaymentStart` again after the customer left
+   the page? (We never do — every retry gets a new one.)
+
+### 11.6 Sandbox
+
+`pnpm agro:mock` serves a sandbox Web-платёж on `:8898` next to the bound-card
+gateway: the page (`/PaymentStart`, with «Оплатить» / «Отказаться»), the
+notification to `AGRO_WEB_MOCK_API_BASE/payments/agroprombank-web/result`,
+and the admin web service, signing its answers as described above. `pnpm
+agro:dev-keys` prints the environment for the API. Test affordances:
+`POST /__sandbox/web/pay/:nivid`, `POST /__sandbox/web/decline/:nivid`,
+`GET /__sandbox/web/state`; an amount of exactly `66600` is declined.
+
+The same sandbox backs `agroprombank-web.e2e.spec.ts` (client and service end
+to end, including capture, cancel, expiry, a lost notification and a forged
+one) and the sandbox compose stack, where `tools/agroprombank-mock/smoke.mjs`
+now walks the Web-платёж path too: page → pay → held → KDS accept
+(ComplitionOperation) → customer cancel → kitchen reject → expiry.
+
+### 11.7 Going live
+
+- [ ] Registration at the bank with the addresses in 11.2; preauthorization
+      enabled for the merchant.
+- [ ] `AGROPROMBANK_WEB_MERCHANT_LOGIN`, pass in
+      `/opt/takeaway/secrets/agroprombank-web-merchant-pass` (chown 10001,
+      chmod 400), bank certificate in `agroprombank-web-bank-certificate.pem`.
+- [ ] `PUBLIC_WEB_URL`, `PUBLIC_TMA_URL`, `MOBILE_PAYMENT_RETURN_URL` set.
+- [ ] Migration `20261004120000_agroprombank_web_provider` applied.
+- [ ] `AGROPROMBANK_WEB_ENABLED=true` with `AGROPROMBANK_WEB_IS_TEST=true`
+      first: one order paid in test mode end to end, the log line
+      "bank signature verified (…)" checked.
+- [ ] `CARD_PAYMENT_FLOW=web`, `AGROPROMBANK_WEB_IS_TEST=false`; one live
+      low-value order held, accepted (captured) and refunded from the admin;
+      a second one cancelled to see the hold released.

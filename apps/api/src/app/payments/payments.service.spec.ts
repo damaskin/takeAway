@@ -8,7 +8,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsService } from './payments.service';
 import { AgroprombankError } from './agroprombank/agroprombank.client';
-import { AgroprombankService } from './agroprombank/agroprombank.service';
+import { CardPaymentsService } from './card-payments.service';
 import { STRIPE_CLIENT, StripeConfig } from './stripe.config';
 
 /**
@@ -138,7 +138,7 @@ describe('PaymentsService.handleWebhook', () => {
           },
         },
         { provide: STRIPE_CLIENT, useValue: stripe },
-        { provide: AgroprombankService, useValue: { refund: jest.fn() } },
+        { provide: CardPaymentsService, useValue: { refund: jest.fn() } },
       ],
     }).compile();
 
@@ -212,7 +212,7 @@ describe('PaymentsService.refundOrder', () => {
 
     const refundsCreate = jest.fn(async () => ({ id: 're_test_1', amount: 0, status: 'succeeded' }));
     const agroprombank = {
-      refund: jest.fn(async (paymentId: string) => ({ paymentId, operationId: '13350644', invoiceId: '1100001' })),
+      refund: jest.fn(async () => '13350644'),
     };
     const stripe = {
       webhooks: { constructEvent: jest.fn() },
@@ -232,7 +232,7 @@ describe('PaymentsService.refundOrder', () => {
         { provide: NotificationsService, useValue: {} },
         { provide: PosService, useValue: {} },
         { provide: STRIPE_CLIENT, useValue: stripe },
-        { provide: AgroprombankService, useValue: agroprombank },
+        { provide: CardPaymentsService, useValue: agroprombank },
       ],
     }).compile();
 
@@ -264,7 +264,7 @@ describe('PaymentsService.refundOrder', () => {
     const result = await service.refundOrder('order-r', { actorId: 'admin-x', note: 'store turned it down' });
 
     expect(agroprombank.refund).toHaveBeenCalledWith(
-      'pay-a',
+      expect.objectContaining({ id: 'pay-a' }),
       100,
       expect.objectContaining({ actorId: 'admin-x', note: 'store turned it down', source: 'admin' }),
     );

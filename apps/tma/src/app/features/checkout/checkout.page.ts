@@ -14,6 +14,7 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
@@ -368,6 +369,21 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         >
           {{ 'tma.checkout.cardsUnavailable' | translate }}
         </p>
+      } @else if (webPaymentsEnabled()) {
+        <div class="flex flex-col" style="gap: 10px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.paymentMethod' | translate }}</span
+          >
+          @if (needsCard()) {
+            <p
+              data-testid="web-payment-hint"
+              style="margin: 0; padding: 12px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+            >
+              {{ 'tma.checkout.bankPageHint' | translate }}
+            </p>
+          }
+        </div>
       } @else {
         <div class="flex flex-col" style="gap: 10px">
           <span
@@ -473,6 +489,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly cardsApi = inject(PaymentCardsApi);
   private readonly cardsStore = inject(PaymentCardsStore);
+  private readonly webPayments = inject(WebPaymentApi);
 
   readonly cart = signal<CartView | null>(null);
   readonly error = signal<string | null>(null);
@@ -517,13 +534,19 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   /** Card payments are only offered where ops enabled the bank integration. */
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
+  /** Cards bound in the profile, held in one tap — the `token` flow. */
+  readonly boundCardsEnabled = this.flags.boundCardsEnabled;
+  /** The customer pays on the bank's own page — the `web` flow. */
+  readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
   /**
    * `/config/features` answers after init, so a guard that read the flag once
    * saw it off and never offered the customer's cards. Load them as soon as
-   * card payments turn out to be on.
+   * bound cards turn out to be on; in the bank-page flow there is nothing to
+   * load, only the main button to show.
    */
   private readonly loadCardsOnceEnabled = effect(() => {
-    if (this.cardPaymentsEnabled()) untracked(() => this.loadCards());
+    const flow = this.flags.cardPaymentFlow();
+    untracked(() => (flow === 'token' ? this.loadCards() : this.refreshMainButton()));
   });
   readonly cards = signal<BoundCard[]>([]);
   readonly selectedCardId = signal<string | null>(null);
@@ -543,7 +566,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return !!c && this.totalCents(c.subtotalCents) > 0;
   });
 
-  readonly payingByCard = computed(() => this.cardPaymentsEnabled() && this.selectedCardId() !== null);
+  /** A way to pay by card is ready: the bank's page, or a bound card picked. */
+  readonly payingByCard = computed(
+    () => this.webPaymentsEnabled() || (this.boundCardsEnabled() && this.selectedCardId() !== null),
+  );
 
   private detachBack: (() => void) | null = null;
 
@@ -604,7 +630,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   private loadCards(): void {
-    if (!this.cardPaymentsEnabled()) return;
+    if (!this.boundCardsEnabled()) return;
     this.cardsStore.load().subscribe({
       next: (cards) => {
         this.cards.set(cards);
@@ -889,7 +915,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   /**
    * Holds the amount on the selected card and opens the order screen. Only an
-   * order with nothing left to pay goes there without a card.
+   * order with nothing left to pay goes there without a card. In the
+   * Web-платёж flow the amount is held on the bank's page instead.
    */
   private payFor(orderId: string): void {
     const cardId = this.selectedCardId();
@@ -897,7 +924,11 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       void this.router.navigate(['/orders', orderId]);
       return;
     }
-    if (!this.cardPaymentsEnabled() || !cardId) {
+    if (this.webPaymentsEnabled()) {
+      this.payOnBankPage(orderId);
+      return;
+    }
+    if (!this.boundCardsEnabled() || !cardId) {
       this.error.set(this.translate.instant('tma.checkout.cardOnly'));
       return;
     }
@@ -913,6 +944,28 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       error: (err) => {
         this.paying.set(false);
         this.showError(err, 'tma.checkout.payFailed');
+      },
+    });
+  }
+
+  /**
+   * Web-платёж: issue the order's invoice, open the bank's page in the
+   * browser and show the order, which follows the payment as it lands. No
+   * page means the order is already held or paid. A failure keeps the
+   * customer here, and the next tap retries against the same order.
+   */
+  private payOnBankPage(orderId: string): void {
+    this.paying.set(true);
+    this.error.set(null);
+    this.webPayments.start(orderId).subscribe({
+      next: (res) => {
+        this.paying.set(false);
+        if (res.page) this.tg.openLink(res.page.url);
+        void this.router.navigate(['/orders', orderId]);
+      },
+      error: (err) => {
+        this.paying.set(false);
+        this.showError(err, 'common.requestFailed');
       },
     });
   }

@@ -268,6 +268,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       increase: 'More',
       remove: 'Remove from cart',
       holdHint: 'We hold the money now and take it when the store accepts your order.',
+      bankPageHint:
+        "You pay by card on the bank's secure page. We hold the money now and take it when the store accepts your order.",
       payCta: 'Pay {{total}} · ready by {{time}}',
       fulfillmentPickup: 'Pickup',
       fulfillmentDelivery: 'Delivery',
@@ -319,6 +321,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
         awaiting: 'Awaiting payment',
+        heldHint: 'We take it when the store accepts your order.',
+        retry: 'Pay by card',
+        retryHint: 'You can try paying again.',
       },
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -919,6 +924,28 @@ export const TRANSLATIONS_EN: TranslationTree = {
       stopList: 'Stop list',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
+      },
+      reject: {
+        button: 'Reject',
+        title: 'Reject order {{code}}?',
+        body: 'The customer is notified with the reason and gets their money back automatically.',
+        reasonLabel: 'Reason',
+        reasons: {
+          OUT_OF_STOCK: 'Out of stock',
+          TOO_BUSY: 'Too many orders',
+          CLOSING: 'Closing',
+          OTHER: 'Other',
+        },
+        commentLabel: 'Comment for the customer (optional)',
+        commentLabelOther: 'Comment for the customer — best to explain what happened',
+        commentPlaceholder: 'For example: we ran out of oat milk',
+        confirm: 'Reject order',
+        done: {
+          released: 'Order rejected, the hold on the card is released',
+          refunded: 'Order rejected, the money is refunded to the card',
+          pending: 'Order rejected, the money will be returned automatically',
+          none: 'Order rejected',
+        },
       },
       shift: {
         closedTitle: 'Shift not started',
@@ -1888,6 +1915,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     orderStatus: {
       orderClosed: 'Order closed',
+      goToPayment: 'Go to payment',
     },
     profile: {
       loyalty: 'LOYALTY',
@@ -1925,6 +1953,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       cardOnly: 'Orders are paid by card. Add a card to place your order.',
       cardsUnavailable:
         "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
+      bankPageHint:
+        "You pay by card on the bank's secure page. We hold the money now and take it when the store accepts your order.",
       decrease: 'Fewer',
       increase: 'More',
       remove: 'Remove from cart',

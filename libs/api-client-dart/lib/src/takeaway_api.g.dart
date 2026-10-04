@@ -1373,6 +1373,36 @@ class _TakeAwayApi implements TakeAwayApi {
   }
 
   @override
+  Future<StartWebPaymentResult> startWebPayment(
+    StartWebPaymentRequest body,
+  ) async {
+    final _extra = <String, dynamic>{};
+    final queryParameters = <String, dynamic>{};
+    final _headers = <String, dynamic>{};
+    final _data = <String, dynamic>{};
+    _data.addAll(body.toJson());
+    final _options = _setStreamType<StartWebPaymentResult>(
+      Options(method: 'POST', headers: _headers, extra: _extra)
+          .compose(
+            _dio.options,
+            '/payments/agroprombank-web/start',
+            queryParameters: queryParameters,
+            data: _data,
+          )
+          .copyWith(baseUrl: _combineBaseUrls(_dio.options.baseUrl, baseUrl)),
+    );
+    final _result = await _dio.fetch<Map<String, dynamic>>(_options);
+    late StartWebPaymentResult _value;
+    try {
+      _value = StartWebPaymentResult.fromJson(_result.data!);
+    } on Object catch (e, s) {
+      errorLogger?.logError(e, s, _options, response: _result);
+      rethrow;
+    }
+    return _value;
+  }
+
+  @override
   Future<void> registerDevice(DeviceRegistration body) async {
     final _extra = <String, dynamic>{};
     final queryParameters = <String, dynamic>{};

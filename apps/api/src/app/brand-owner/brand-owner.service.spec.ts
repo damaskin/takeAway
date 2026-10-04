@@ -34,7 +34,7 @@ describe('BrandOwnerService', () => {
     product: { count: jest.Mock };
   };
   let notifier: { brandResubmitted: jest.Mock };
-  let flags: { agroprombankEnabled: boolean };
+  let flags: { cardPaymentFlow: 'token' | 'web' | 'none' };
   let service: BrandOwnerService;
 
   beforeEach(() => {
@@ -52,7 +52,7 @@ describe('BrandOwnerService', () => {
       product: { count: jest.fn().mockResolvedValue(0) },
     };
     notifier = { brandResubmitted: jest.fn().mockResolvedValue(undefined) };
-    flags = { agroprombankEnabled: false };
+    flags = { cardPaymentFlow: 'none' };
     service = new BrandOwnerService(
       prisma as unknown as PrismaService,
       {} as StorageService,
@@ -215,7 +215,7 @@ describe('BrandOwnerService', () => {
       prisma.store.count.mockResolvedValue(1);
       prisma.category.count.mockResolvedValue(1);
       prisma.product.count.mockResolvedValue(1);
-      flags.agroprombankEnabled = true;
+      flags.cardPaymentFlow = 'web';
 
       await expect(service.onboarding(owner)).resolves.toEqual(
         expect.objectContaining({ cardPayments: true, complete: true }),

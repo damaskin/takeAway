@@ -12,7 +12,8 @@
 # Bring up:  docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox up -d --build
 # Tear down: docker compose -f docker-compose.sandbox.yml --env-file .env.sandbox down -v
 #
-# Published to the host: the API on ${SANDBOX_API_PORT} only.
+# Published to the host, loopback only: the API on ${SANDBOX_API_PORT} and the
+# sandbox Web-платёж page on ${SANDBOX_WEB_BANK_PORT}.
 
 name: takeaway-agrotest
 
@@ -50,9 +51,19 @@ services:
     environment:
       AGRO_MOCK_PORT: 8899
       AGRO_MOCK_KEY_DIR: /secrets
+      # Web-платёж sandbox: notifications go to the API inside the network,
+      # the customer's redirects to wherever the tester reaches the API.
+      AGRO_WEB_MOCK_PORT: 8898
+      AGRO_WEB_MOCK_API_BASE: http://api:3000/api
+      AGRO_WEB_MOCK_PUBLIC_API_BASE: http://127.0.0.1:${SANDBOX_API_PORT:-3100}/api
       # The API container runs as a different user; these are throwaway
       # sandbox keys, so relaxing the mode is fine here and only here.
       AGRO_MOCK_KEY_MODE: shared
+    ports:
+      # The sandbox Web-платёж page, for a tester clicking through in a
+      # browser over the same SSH tunnel as the API. Loopback only, like the
+      # API below:  ssh -L 3100:127.0.0.1:3100 -L 3101:127.0.0.1:3101 <host>
+      - '127.0.0.1:${SANDBOX_WEB_BANK_PORT:-3101}:8898'
     volumes:
       # Shared with the API: the mock generates the sandbox key pair here on
       # first boot, the API signs with the merchant half and verifies replies
@@ -94,7 +105,20 @@ services:
       AGROPROMBANK_PRIVATE_KEY_FILE: /secrets/merchant-private-key.pem
       AGROPROMBANK_BANK_CERTIFICATE_FILE: /secrets/bank-public-key.pem
       AGROPROMBANK_VERIFY_RESPONSES: 'true'
-      AGROPROMBANK_INVOICE_PREFIX: sbx
+      # The sandbox has no merchant certificate and does not read <KeyInfo>.
+      AGROPROMBANK_INCLUDE_KEYINFO: 'false'
+      # Digits only — the bank reads invoiceid as a number.
+      AGROPROMBANK_INVOICE_PREFIX: '9'
+      # Web-платёж, pointed at the fake page and web service.
+      AGROPROMBANK_WEB_ENABLED: 'true'
+      CARD_PAYMENT_FLOW: ${SANDBOX_CARD_PAYMENT_FLOW:-token}
+      AGROPROMBANK_WEB_MERCHANT_LOGIN: sandbox
+      AGROPROMBANK_WEB_MERCHANT_PASS: sandbox-pass
+      AGROPROMBANK_WEB_PAYMENT_URL: http://127.0.0.1:${SANDBOX_WEB_BANK_PORT:-3101}/PaymentStart
+      AGROPROMBANK_WEB_SERVICE_URL: http://agro-mock:8898/merchant/APB.SV.WebPayment.AgentService.asmx
+      AGROPROMBANK_WEB_BANK_CERT_FILE: /secrets/bank-public-key.pem
+      AGROPROMBANK_WEB_IS_TEST: 'true'
+      PUBLIC_WEB_URL: http://127.0.0.1:${SANDBOX_API_PORT:-3100}
       DELIVERY_ENABLED: 'true'
     volumes:
       - sandbox_secrets:/secrets:ro

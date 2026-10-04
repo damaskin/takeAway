@@ -2,8 +2,8 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, Router } from '@angular/router';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
-import { interval, type Subscription } from 'rxjs';
-import { TranslatePipe } from '@ngx-translate/core';
+import { interval, take, timer, type Subscription } from 'rxjs';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
   OrdersApi,
@@ -12,8 +12,27 @@ import {
   type OrderView,
 } from '../../core/orders/orders.service';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
+import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+
+/** What the bank said when it sent the customer back (`?payment=…`). */
+type PaymentReturn = 'success' | 'pending' | 'fail';
+
+/** Payment states where the order still waits for its money. */
+const UNSETTLED: readonly OrderPaymentState[] = ['NONE', 'PENDING', 'FAILED'];
+
+/**
+ * While the customer pays in the browser the order is re-read this often, for
+ * at most five minutes; coming back to the Mini App starts the clock again.
+ */
+const PAYMENT_POLL_MS = 4_000;
+const PAYMENT_POLL_TIMES = 75;
+
+function readPaymentReturn(value: string | null): PaymentReturn | null {
+  return value === 'success' || value === 'pending' || value === 'fail' ? value : null;
+}
 
 /**
  * TMA Order Status — pencil e48T5.
@@ -28,6 +47,10 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
   selector: 'app-tma-order-status',
   standalone: true,
   imports: [TranslatePipe, LeafletMapComponent],
+  host: {
+    '(document:visibilitychange)': 'onAppVisible()',
+    '(window:focus)': 'onAppVisible()',
+  },
   template: `
     @if (order(); as o) {
       <section
@@ -73,6 +96,32 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
             </span>
           }
         </div>
+        @if (paymentHint()) {
+          <p
+            style="margin: -12px 0 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); text-align: center"
+          >
+            {{ paymentHint() | translate }}
+          </p>
+        }
+        @if (canRetryPayment()) {
+          <button
+            type="button"
+            data-testid="retry-payment"
+            (click)="retryPayment()"
+            [disabled]="retrying()"
+            class="w-full flex items-center justify-center disabled:opacity-50"
+            style="background: var(--color-caramel); color: var(--color-foam); height: 52px; border-radius: 14px; font-family: var(--font-sans); font-size: 15px; font-weight: 600"
+          >
+            {{ (retrying() ? 'common.loading' : retryLabel()) | translate }}
+          </button>
+        }
+        @if (paymentError()) {
+          <p
+            style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); text-align: center"
+          >
+            {{ paymentError() }}
+          </p>
+        }
 
         <!-- Timer + code -->
         <div class="flex items-center" style="gap: 12px">
@@ -210,9 +259,19 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly realtime = inject(RealtimeService);
   private readonly tg = inject(TelegramBridgeService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
+  private readonly flags = inject(FeatureFlagsStore);
+  private readonly webPayments = inject(WebPaymentApi);
 
   readonly order = signal<OrderView | null>(null);
   readonly now = signal(Date.now());
+  /** The bank's verdict from the return redirect; read once, then dropped from the URL. */
+  readonly paymentReturn = signal<PaymentReturn | null>(null);
+  readonly retrying = signal(false);
+  readonly paymentError = signal<string | null>(null);
+  private orderId: string | null = null;
+  private pollSub: Subscription | null = null;
+  private lastRefreshAt = 0;
 
   /** The order's lines with their size, milk and extras spelled out. */
   readonly lines = computed(() =>
@@ -256,7 +315,19 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
+  /**
+   * The bank said the payment failed, but our record may still read "waiting":
+   * believe the bank until the order shows otherwise.
+   */
+  private readonly bankSaidFail = computed(
+    () => this.paymentReturn() === 'fail' && (this.paymentState() === 'NONE' || this.paymentState() === 'PENDING'),
+  );
+
+  /** The last attempt is over and did not go through. */
+  private readonly paymentFailed = computed(() => this.bankSaidFail() || this.paymentState() === 'FAILED');
+
   readonly paymentTitle = computed(() => {
+    if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     switch (this.paymentState()) {
       case 'PAID':
         return 'web.orderStatus.payment.paid';
@@ -284,7 +355,25 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     return payment.cardMask ? `${amount} · ${payment.cardMask}` : amount;
   });
 
+  /** A line under the payment chip saying what happens next, as a translation key. */
+  readonly paymentHint = computed(() => {
+    if (this.paymentState() === 'HELD') return 'web.orderStatus.payment.heldHint';
+    if (this.canRetryPayment() && this.paymentFailed()) return 'web.orderStatus.payment.retryHint';
+    return '';
+  });
+
+  /**
+   * Paying (again) on the bank's page: only in the Web-платёж flow, and only
+   * while the order is new and its money has not arrived.
+   */
+  readonly canRetryPayment = computed(() => {
+    const o = this.order();
+    if (!o || o.status !== 'CREATED' || !this.flags.webPaymentsEnabled()) return false;
+    return UNSETTLED.includes(this.paymentState());
+  });
+
   readonly paymentIcon = computed(() => {
+    if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
         return '✅';
@@ -315,8 +404,31 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) return;
+    this.orderId = id;
 
-    this.orders.get(id).subscribe({ next: (o) => this.order.set(o) });
+    this.flags.load();
+    const returned = readPaymentReturn(this.route.snapshot.queryParamMap.get('payment'));
+    if (returned) {
+      this.paymentReturn.set(returned);
+      // A reload should not replay the bank's verdict over a newer state.
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { payment: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    }
+
+    this.orders.get(id).subscribe({
+      next: (o) => {
+        this.order.set(o);
+        // Straight from checkout the customer is on the bank's page by now;
+        // back from it, the bank's notification may still be on its way.
+        if (returned !== 'fail' && (returned !== null || this.paymentState() === 'PENDING')) {
+          this.pollWhileUnconfirmed(id);
+        }
+      },
+    });
 
     this.detachSocket = this.realtime.subscribeToOrder(id, (event) => {
       this.order.update((current) => (current ? { ...current, status: event.status } : current));
@@ -350,6 +462,107 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.tickSub?.unsubscribe();
     this.detachSocket?.();
     this.detachBack?.();
+    this.pollSub?.unsubscribe();
+  }
+
+  /**
+   * The customer is back from the browser (or from another app): the payment
+   * may have landed meanwhile, so re-read the order, and keep watching it if
+   * it is still waiting for the bank.
+   */
+  onAppVisible(): void {
+    const id = this.orderId;
+    if (!id || (typeof document !== 'undefined' && document.visibilityState !== 'visible')) return;
+    // `focus` and `visibilitychange` usually arrive together.
+    if (Date.now() - this.lastRefreshAt < 1_000) return;
+    this.lastRefreshAt = Date.now();
+    this.orders.get(id).subscribe({
+      next: (o) => {
+        this.order.set(o);
+        if (this.awaitingConfirmation()) this.pollWhileUnconfirmed(id);
+      },
+      error: () => undefined,
+    });
+  }
+
+  /** Re-reads the order every few seconds until its money lands, for a bounded time. */
+  private pollWhileUnconfirmed(id: string): void {
+    if (!this.awaitingConfirmation()) return;
+    this.pollSub?.unsubscribe();
+    this.pollSub = timer(PAYMENT_POLL_MS, PAYMENT_POLL_MS)
+      .pipe(take(PAYMENT_POLL_TIMES))
+      .subscribe(() =>
+        this.orders.get(id).subscribe({
+          next: (o) => {
+            this.order.set(o);
+            if (this.awaitingConfirmation()) return;
+            this.pollSub?.unsubscribe();
+            this.pollSub = null;
+            if (this.paymentState() === 'HELD' || this.paymentState() === 'PAID') {
+              this.webPayments.forget(id);
+              this.tg.haptic('medium');
+            }
+          },
+          error: () => undefined,
+        }),
+      );
+  }
+
+  private awaitingConfirmation(): boolean {
+    const state = this.paymentState();
+    return this.order()?.status === 'CREATED' && (state === 'NONE' || state === 'PENDING');
+  }
+
+  /** "Go to payment" while the issued bank page still works; "pay" after a failure. */
+  retryLabel(): string {
+    const o = this.order();
+    if (o && !this.paymentFailed() && this.webPayments.issuedPageUrl(o.id)) return 'tma.orderStatus.goToPayment';
+    return 'web.orderStatus.payment.retry';
+  }
+
+  /**
+   * Opens the bank's page for this order. Telegram opens outside links only
+   * straight from a tap, so a page issued at checkout is reopened as is; a new
+   * one is requested only when there is none or the last attempt failed.
+   */
+  retryPayment(): void {
+    const o = this.order();
+    if (!o || this.retrying()) return;
+    this.tg.haptic('light');
+    this.paymentError.set(null);
+    if (this.paymentFailed()) this.webPayments.forget(o.id);
+    const issued = this.webPayments.issuedPageUrl(o.id);
+    if (issued) {
+      this.tg.openLink(issued);
+      this.pollWhileUnconfirmed(o.id);
+      return;
+    }
+    this.retrying.set(true);
+    this.webPayments.start(o.id).subscribe({
+      next: (res) => {
+        this.retrying.set(false);
+        this.paymentReturn.set(null);
+        if (res.page) this.tg.openLink(res.page.url);
+        this.orders.get(o.id).subscribe({
+          next: (fresh) => {
+            this.order.set(fresh);
+            this.pollWhileUnconfirmed(o.id);
+          },
+          error: () => undefined,
+        });
+      },
+      error: (err) => {
+        this.retrying.set(false);
+        this.paymentError.set(this.errorText(err));
+      },
+    });
+  }
+
+  private errorText(err: unknown): string {
+    if ((err as { status?: unknown } | null)?.status === 0) return this.translate.instant('common.networkError');
+    const raw = ((err as { error?: unknown } | null)?.error as { message?: unknown } | null)?.message;
+    const message = Array.isArray(raw) ? raw.join(', ') : raw;
+    return typeof message === 'string' && message ? message : this.translate.instant('common.requestFailed');
   }
 
   /** Returns a translation key — resolved via | translate in the template. */

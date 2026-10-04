@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { type CardPaymentFlow, resolveCardPaymentFlow } from '../payments/agroprombank-web/constants';
+
 /** Where a business owner writes when moderation stalls or a rejection is unclear. */
 export interface SupportContact {
   email: string | null;
@@ -11,6 +13,7 @@ export interface SupportContact {
 export interface FeatureFlagsSnapshot {
   deliveryEnabled: boolean;
   agroprombankEnabled: boolean;
+  cardPaymentFlow: CardPaymentFlow;
   support: SupportContact;
 }
 
@@ -48,6 +51,23 @@ export class FeatureFlagsService {
   }
 
   /**
+   * Which card checkout the clients run (`CARD_PAYMENT_FLOW`): `token` — a
+   * card bound in the profile, charged in one tap; `web` — the bank's
+   * Web-платёж page; `none` — card payments are off. `web` counts only
+   * once `AGROPROMBANK_WEB_ENABLED` is on.
+   *
+   * `agroprombankEnabled` keeps meaning "bound cards work here", so app
+   * builds that predate this flag carry on with the bound-card flow.
+   */
+  get cardPaymentFlow(): CardPaymentFlow {
+    return resolveCardPaymentFlow({
+      wanted: this.config.get<string>('CARD_PAYMENT_FLOW'),
+      tokenEnabled: this.agroprombankEnabled,
+      webEnabled: this.parseBool(this.config.get<string>('AGROPROMBANK_WEB_ENABLED')),
+    });
+  }
+
+  /**
    * The platform's support contact (`SUPPORT_EMAIL`, `SUPPORT_TELEGRAM`).
    * Not a flag, but it rides the same public snapshot: the admin shows it
    * next to a moderation verdict before anyone has signed in anywhere else.
@@ -64,6 +84,7 @@ export class FeatureFlagsService {
     return {
       deliveryEnabled: this.deliveryEnabled,
       agroprombankEnabled: this.agroprombankEnabled,
+      cardPaymentFlow: this.cardPaymentFlow,
       support: this.support,
     };
   }

@@ -6,11 +6,14 @@ import { OrdersModule } from '../orders/orders.module';
 import { PosModule } from '../pos/pos.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { AdminPaymentsController } from './admin-payments.controller';
+import { AgroprombankWebController } from './agroprombank-web/agroprombank-web.controller';
+import { AgroprombankWebService } from './agroprombank-web/agroprombank-web.service';
 import { AgroprombankAdminController } from './agroprombank/agroprombank-admin.controller';
 import { AgroprombankController } from './agroprombank/agroprombank.controller';
 import { AgroprombankCronService } from './agroprombank/agroprombank-cron.service';
 import { AgroprombankService } from './agroprombank/agroprombank.service';
 import { PaymentHoldsModule } from './agroprombank/payment-holds.module';
+import { CardPaymentsService } from './card-payments.service';
 import { OrderSettlementService } from './order-settlement.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -31,15 +34,23 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
  */
 @Module({
   imports: [AuthModule, RealtimeModule, OrdersModule, NotificationsModule, PosModule, PaymentHoldsModule],
-  controllers: [PaymentsController, AdminPaymentsController, AgroprombankController, AgroprombankAdminController],
+  controllers: [
+    PaymentsController,
+    AdminPaymentsController,
+    AgroprombankController,
+    AgroprombankAdminController,
+    AgroprombankWebController,
+  ],
   providers: [
     OrderSettlementService,
     PaymentsService,
     StripeConfig,
     stripeClientProvider,
     AgroprombankService,
+    AgroprombankWebService,
+    CardPaymentsService,
     AgroprombankCronService,
   ],
-  exports: [PaymentsService, AgroprombankService, OrderSettlementService],
+  exports: [PaymentsService, AgroprombankService, AgroprombankWebService, CardPaymentsService, OrderSettlementService],
 })
 export class PaymentsModule {}

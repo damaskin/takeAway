@@ -23,6 +23,7 @@ import '../profile/profile_providers.dart';
 import '../stores/store_widgets.dart';
 import 'checkout_controller.dart';
 import 'checkout_sections.dart';
+import 'web_payment.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({super.key});
@@ -83,6 +84,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         return;
       }
       unawaited(HapticFeedback.heavyImpact());
+      // Web flow: the bank's page is already over the app; the order screen
+      // waits underneath and offers to pay again if the page never opened.
+      if (mounted && ref.read(checkoutProvider).webLaunch == WebPaymentLaunch.notOpened) {
+        Snack.show(context, AppLocalizations.of(context).webPaymentNotOpened, icon: Icons.error_outline_rounded);
+      }
       router.go(Routes.menu);
       unawaited(router.push(Routes.order(orderId, placed: true)));
     } on CheckoutValidation catch (problem) {
@@ -526,9 +532,8 @@ class _PaymentSection extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final controller = ref.read(checkoutProvider.notifier);
-    final cards = flags.agroprombankEnabled
-        ? (ref.watch(cardsProvider).valueOrNull ?? const <BoundCard>[])
-        : const <BoundCard>[];
+    final boundCards = flags.boundCardsEnabled;
+    final cards = boundCards ? (ref.watch(cardsProvider).valueOrNull ?? const <BoundCard>[]) : const <BoundCard>[];
     final locked = state.placedOrderId != null;
 
     Widget option({
@@ -605,11 +610,13 @@ class _PaymentSection extends ConsumerWidget {
               enabled: !card.isInactive,
             ),
           // Orders are paid by card only; there is no paying at the counter.
-          if (!flags.agroprombankEnabled)
+          if (flags.webPaymentsEnabled) ...[
+            if (needsCard) _PaymentNotice(text: l10n.webPaymentHint, icon: Icons.lock_outline_rounded),
+          ] else if (!boundCards)
             _PaymentNotice(text: l10n.cardPaymentsUnavailable)
           else if (needsCard && !cards.any((c) => !c.isInactive))
             _PaymentNotice(text: l10n.addCardToOrder),
-          if (flags.agroprombankEnabled && !locked)
+          if (boundCards && !locked)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
@@ -618,7 +625,7 @@ class _PaymentSection extends ConsumerWidget {
                 label: Text(l10n.addCard),
               ),
             ),
-          if (flags.agroprombankEnabled && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
+          if (boundCards && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
         ],
       ),
     );
@@ -626,9 +633,10 @@ class _PaymentSection extends ConsumerWidget {
 }
 
 class _PaymentNotice extends StatelessWidget {
-  const _PaymentNotice({required this.text});
+  const _PaymentNotice({required this.text, this.icon = Icons.credit_card_rounded});
 
   final String text;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -639,7 +647,7 @@ class _PaymentNotice extends StatelessWidget {
       decoration: BoxDecoration(color: brand.cream, borderRadius: BorderRadius.circular(Radii.button)),
       child: Row(
         children: [
-          Icon(Icons.credit_card_rounded, color: brand.caramel),
+          Icon(icon, color: brand.caramel),
           const SizedBox(width: 12),
           Expanded(child: Text(text, style: context.text.bodyMedium)),
         ],

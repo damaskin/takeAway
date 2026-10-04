@@ -12,6 +12,7 @@ import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
 import '../orders/orders_providers.dart';
 import '../profile/profile_providers.dart';
+import 'web_payment.dart';
 
 /// A code the customer typed and what the server made of it.
 class AppliedCode {
@@ -71,6 +72,7 @@ class CheckoutState {
     this.submitting = false,
     this.error,
     this.placedOrderId,
+    this.webLaunch,
   });
 
   final FulfillmentType fulfillment;
@@ -96,6 +98,9 @@ class CheckoutState {
   /// instead of placing a second order.
   final String? placedOrderId;
 
+  /// What became of the bank's page in the web flow (null in the others).
+  final WebPaymentLaunch? webLaunch;
+
   CheckoutState copyWith({
     FulfillmentType? fulfillment,
     PickupMode? mode,
@@ -110,6 +115,7 @@ class CheckoutState {
     bool? submitting,
     Object? Function()? error,
     String? placedOrderId,
+    WebPaymentLaunch? webLaunch,
   }) => CheckoutState(
     fulfillment: fulfillment ?? this.fulfillment,
     mode: mode ?? this.mode,
@@ -124,6 +130,7 @@ class CheckoutState {
     submitting: submitting ?? this.submitting,
     error: error == null ? this.error : error(),
     placedOrderId: placedOrderId ?? this.placedOrderId,
+    webLaunch: webLaunch ?? this.webLaunch,
   );
 }
 
@@ -184,9 +191,10 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
   Store? get _store => ref.read(activeStoreProvider);
   Cart? get _cart => ref.read(activeCartProvider).valueOrNull;
 
+  FeatureFlags get _flags => ref.read(featureFlagsProvider).valueOrNull ?? FeatureFlags.off;
+
   String? _defaultCardId() {
-    final enabled = ref.read(featureFlagsProvider).valueOrNull?.agroprombankEnabled ?? false;
-    if (!enabled) return null;
+    if (!_flags.boundCardsEnabled) return null;
     final usable = (ref.read(cardsProvider).valueOrNull ?? const <BoundCard>[]).where((c) => !c.isInactive).toList();
     return (usable.where((c) => c.isDefault).firstOrNull ?? usable.firstOrNull)?.id;
   }
@@ -351,9 +359,12 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     );
   }
 
+  /// Whether a card payment can go ahead: on the bank's page any card will
+  /// do; with bound cards one must be picked.
   bool get payingByCard {
-    final cardsOn = ref.read(featureFlagsProvider).valueOrNull?.agroprombankEnabled ?? false;
-    return cardsOn && state.cardId != null;
+    final flags = _flags;
+    if (flags.webPaymentsEnabled) return true;
+    return flags.boundCardsEnabled && state.cardId != null;
   }
 
   /// Every order that costs anything is paid by card — the amount is held at
@@ -365,8 +376,9 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
   // ── Place order ────────────────────────────────────────────────────────
 
-  /// Creates the order (once) and charges the chosen card. Returns the
-  /// order id when the customer can move on to the order screen.
+  /// Creates the order (once) and charges the chosen card, or, in the web
+  /// flow, opens the bank's page for it. Returns the order id when the
+  /// customer can move on to the order screen.
   Future<String?> placeOrder(CheckoutForm form) async {
     final cart = _cart;
     final store = _store;
@@ -413,7 +425,11 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 
-      if (byCard) {
+      if (byCard && _flags.webPaymentsEnabled) {
+        // The amount is held on the bank's page; the order screen picks up
+        // the verdict when the customer comes back.
+        state = state.copyWith(webLaunch: await ref.read(webPaymentsProvider).launch(orderId));
+      } else if (byCard) {
         await _api.payWithCard({'orderId': orderId, 'cardId': state.cardId});
         ref.invalidate(cardsProvider);
       }
