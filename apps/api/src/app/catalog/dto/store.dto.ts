@@ -77,8 +77,9 @@ export class StoreListItemDto {
 
   @ApiProperty({
     description:
-      'True when an ASAP order placed now would be accepted: the store is not closed and is still within ' +
-      'its working hours (store timezone) once the current ETA has passed. False means scheduled pickup only.',
+      'True when an ASAP order placed now would be accepted. The shift is the source of truth: same as ' +
+      'acceptingOrders (not closed and a shift is open), whatever the working hours say. Working hours only ' +
+      'decide which pickup slots are offered for scheduled (later) orders.',
   })
   openNow!: boolean;
 

@@ -1,11 +1,16 @@
-import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
-
 /**
  * When a store counts as "open" for customers — the one place that decides.
  *
+ * The shift is the source of truth (owner decision, 2026-10-04): staff
+ * pressed "Start work" → the store is open now and takes ASAP orders;
+ * the shift is closed or the store is switched off (status CLOSED) → it is
+ * closed. Working hours are only displayed and used to offer pre-order
+ * slots for later (KitchenLoadService.pickupSlots / assertOpenAt on
+ * scheduled orders); they no longer veto "open now".
+ *
  * The catalog, the realtime `store.availabilityChanged` broadcast and the
- * admin all read these two functions, so changing what "open" means (shift
- * only, hours only, both) is a change here and nowhere else.
+ * admin all read these functions, so changing what "open" means is a
+ * change here and nowhere else.
  */
 
 /** What {@link acceptingOrders} needs: the status and the open shift, if any. */
@@ -24,16 +29,12 @@ export function acceptingOrders(store: AvailabilityFacts): boolean {
 }
 
 /**
- * Whether an ASAP order placed now would be accepted: the store takes orders
- * (see acceptingOrders), and it is still open when that order would be ready —
- * the same working-hours check order creation enforces. Without this the
- * clients offered ASAP after hours and the customer met a bare 400 at checkout.
+ * Whether an ASAP order placed now would be accepted. Since the shift is
+ * the source of truth this is exactly {@link acceptingOrders}: a shift
+ * running at 23:00 takes orders even if the posted hours end at 22:00.
+ * Kept as its own function (and on the DTO) so the clients' "open now"
+ * badge has one definition to follow if the rule changes again.
  */
-export function openNow(
-  store: AvailabilityFacts & { timezone: string; workingHours: readonly WorkingHour[] },
-  now: Date,
-  etaSeconds: number,
-): boolean {
-  if (!acceptingOrders(store)) return false;
-  return isOpenAt(store.workingHours, new Date(now.getTime() + etaSeconds * 1000), store.timezone);
+export function openNow(store: AvailabilityFacts): boolean {
+  return acceptingOrders(store);
 }

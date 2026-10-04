@@ -133,18 +133,33 @@ describe('CatalogService', () => {
       expect(store?.openNow).toBe(true);
     });
 
-    it('is false after hours even though the store is switched on', async () => {
+    // The shift is the source of truth (owner decision 2026-10-04): hours no
+    // longer veto "open now" while staff have a shift running.
+    it('is true after hours while a shift is running', async () => {
       jest.useFakeTimers({ now: new Date('2026-09-22T19:46:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 23:46 local
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
       const [store] = await service.listStores({});
       expect(store?.status).toBe('OPEN');
+      expect(store?.openNow).toBe(true);
+    });
+
+    it('is true when an ASAP order would only be ready after closing', async () => {
+      // 21:57 local; the 6-minute base ETA lands at 22:03.
+      jest.useFakeTimers({ now: new Date('2026-09-22T17:57:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store?.openNow).toBe(true);
+    });
+
+    it('is false inside working hours when no shift is open', async () => {
+      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 12:00 local
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift, shifts: [] })]);
+      const [store] = await service.listStores({});
       expect(store?.openNow).toBe(false);
     });
 
-    it('is false when an ASAP order would only be ready after closing', async () => {
-      // 21:57 local; the 6-minute base ETA lands at 22:03, which order creation refuses.
-      jest.useFakeTimers({ now: new Date('2026-09-22T17:57:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
-      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+    it('is false when the store is switched off, shift or not', async () => {
+      prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'CLOSED', workingHours: dayShift })]);
       const [store] = await service.listStores({});
       expect(store?.openNow).toBe(false);
     });
@@ -169,9 +184,9 @@ describe('CatalogService', () => {
     });
 
     it('is reported on the store page too', async () => {
-      jest.useFakeTimers({ now: new Date('2026-09-22T19:46:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
       prisma.store.findFirst.mockResolvedValue({
-        ...storeFixture({ workingHours: dayShift }),
+        ...storeFixture({ workingHours: dayShift, shifts: [] }),
         brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway', logoUrl: null, themeOverrides: null },
       });
       const store = await service.getStore('store-1');

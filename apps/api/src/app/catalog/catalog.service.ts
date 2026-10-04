@@ -58,8 +58,6 @@ export class CatalogService {
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
     const radius = query.radius ?? 5000;
 
-    const now = new Date();
-
     return stores
       .map((s) => {
         const currentEtaSeconds = s.baseEtaSeconds + (waits.get(s.id) ?? 0);
@@ -81,7 +79,7 @@ export class CatalogService {
           busyMeter: s.busyMeter,
           currentEtaSeconds,
           acceptingOrders: acceptingOrders(s),
-          openNow: openNow(s, now, currentEtaSeconds),
+          openNow: openNow(s),
           taxRateBps: s.taxRateBps,
           taxIncludedInPrice: s.taxIncludedInPrice,
           currency: s.currency,
@@ -157,7 +155,7 @@ export class CatalogService {
       busyMeter: store.busyMeter,
       currentEtaSeconds,
       acceptingOrders: acceptingOrders(store),
-      openNow: openNow(store, new Date(), currentEtaSeconds),
+      openNow: openNow(store),
       taxRateBps: store.taxRateBps,
       taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,
