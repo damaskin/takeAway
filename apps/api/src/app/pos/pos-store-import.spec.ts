@@ -64,13 +64,21 @@ describe('PosService.upsertImportedStores', () => {
     });
   });
 
-  it('keeps a zone the POS reports, and falls back to the UTC placeholder with nothing to go on', async () => {
+  it('keeps a zone the POS reports, and never falls back to UTC with nothing to go on', async () => {
     const reported = await build(['Europe/Chisinau']);
     await reported.service.upsertImportedStores('int-1', [{ externalId: '7', name: 'Балка', timezone: 'Europe/Kiev' }]);
     expect(createdData(reported.prisma)['timezone']).toBe('Europe/Kiev');
 
     const nothing = await build([]);
     await nothing.service.upsertImportedStores('int-1', [{ externalId: '7', name: 'Балка', timezone: 'nonsense' }]);
-    expect(createdData(nothing.prisma)['timezone']).toBe('UTC');
+    expect(createdData(nothing.prisma)['timezone']).toBe('Europe/Chisinau');
+  });
+
+  it("derives the zone from the spot's city before the brand's other stores", async () => {
+    const { service, prisma } = await build(['Europe/London']);
+    await service.upsertImportedStores('int-1', [
+      { externalId: '7', name: 'Балка', city: 'Тирасполь', timezone: 'UTC' },
+    ]);
+    expect(createdData(prisma)['timezone']).toBe('Europe/Chisinau');
   });
 });

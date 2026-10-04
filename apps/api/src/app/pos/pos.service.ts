@@ -24,7 +24,7 @@ import { Queue } from 'bullmq';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { SecretCipher } from '../common/crypto/secret-cipher';
-import { canonicalTimeZone, isIanaTimeZone, prevailingTimeZone } from '../common/time/time-zone';
+import { canonicalTimeZone, isLocalTimeZone, newStoreTimeZone } from '../common/time/time-zone';
 import { PrismaService } from '../prisma/prisma.service';
 import { POS_SYNC_QUEUE, PosSyncJobPayload } from './pos-sync.queue';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
@@ -398,14 +398,14 @@ export class PosService {
     });
     if (!integration) throw new NotFoundException('Integration not found');
 
-    // POS providers rarely report a zone; the brand's existing stores are
-    // the next best source. Without either the store stays on the UTC
-    // placeholder, which the readiness checks flag.
+    // POS providers rarely report a zone; the spot's city, country or pin
+    // come next, then the brand's existing stores, then the launch market's
+    // zone — never the UTC placeholder (see newStoreTimeZone).
     const siblings = await this.prisma.store.findMany({
       where: { brandId: integration.brandId },
       select: { timezone: true },
     });
-    const brandTimeZone = prevailingTimeZone(siblings.map((s) => s.timezone));
+    const siblingZones = siblings.map((s) => s.timezone);
 
     let created = 0;
     let updated = 0;
@@ -436,7 +436,10 @@ export class PosService {
             country: d.country ?? '—',
             latitude: d.latitude ?? 0,
             longitude: d.longitude ?? 0,
-            timezone: isIanaTimeZone(d.timezone) ? canonicalTimeZone(d.timezone) : (brandTimeZone ?? 'UTC'),
+            timezone:
+              d.timezone && isLocalTimeZone(d.timezone)
+                ? canonicalTimeZone(d.timezone)
+                : newStoreTimeZone(d, siblingZones),
             currency: integration.brand.currency,
             status: StoreStatus.CLOSED,
             // POS providers don't model fulfillment, so seed the one mode
