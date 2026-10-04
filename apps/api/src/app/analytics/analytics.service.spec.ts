@@ -70,9 +70,33 @@ describe('AnalyticsService.brandPerformance', () => {
       ]),
       brand: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 'b1', name: 'Alpha', currency: 'MDL', moderationStatus: 'APPROVED', _count: { stores: 1 } },
-          { id: 'b2', name: 'Beta', currency: 'MDL', moderationStatus: 'APPROVED', _count: { stores: 2 } },
-          { id: 'b3', name: 'Idle', currency: 'RUB', moderationStatus: 'PENDING', _count: { stores: 0 } },
+          {
+            id: 'b1',
+            name: 'Alpha',
+            currency: 'MDL',
+            moderationStatus: 'APPROVED',
+            plan: 'PRO',
+            commissionBps: 1500,
+            _count: { stores: 1 },
+          },
+          {
+            id: 'b2',
+            name: 'Beta',
+            currency: 'MDL',
+            moderationStatus: 'APPROVED',
+            plan: 'PRO',
+            commissionBps: 1500,
+            _count: { stores: 2 },
+          },
+          {
+            id: 'b3',
+            name: 'Idle',
+            currency: 'RUB',
+            moderationStatus: 'PENDING',
+            plan: 'BASIC',
+            commissionBps: 1000,
+            _count: { stores: 0 },
+          },
         ]),
       },
     } as unknown as PrismaService;

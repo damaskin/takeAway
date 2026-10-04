@@ -210,7 +210,15 @@ export class AnalyticsService {
         WHERE "day" >= ${since}::date
       `,
       this.prisma.brand.findMany({
-        select: { id: true, name: true, currency: true, moderationStatus: true, _count: { select: { stores: true } } },
+        select: {
+          id: true,
+          name: true,
+          currency: true,
+          moderationStatus: true,
+          plan: true,
+          commissionBps: true,
+          _count: { select: { stores: true } },
+        },
       }),
     ]);
 
@@ -228,6 +236,8 @@ export class AnalyticsService {
         brandName: b.name,
         currency: b.currency,
         moderationStatus: b.moderationStatus,
+        plan: b.plan,
+        commissionBps: b.commissionBps,
         stores: b._count.stores,
         orders: byBrand.get(b.id)?.orders ?? 0,
         revenueCents: byBrand.get(b.id)?.revenue ?? 0,

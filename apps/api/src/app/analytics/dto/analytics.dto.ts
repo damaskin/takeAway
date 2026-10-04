@@ -207,6 +207,9 @@ export class BrandPerformanceDto {
   /** Revenue is in the brand's own currency; brands are not summed across currencies. */
   @ApiProperty() currency!: string;
   @ApiProperty() moderationStatus!: string;
+  @ApiProperty({ enum: ['BASIC', 'PRO'] }) plan!: string;
+  /** Platform commission in basis points. */
+  @ApiProperty() commissionBps!: number;
   @ApiProperty() stores!: number;
   @ApiProperty() orders!: number;
   @ApiProperty() revenueCents!: number;
