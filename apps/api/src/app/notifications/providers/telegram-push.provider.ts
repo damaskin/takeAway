@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import type { PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
+import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
 
 /**
  * Telegram Bot push provider. Sends messages via the Bot API to users who
@@ -22,18 +22,26 @@ export class TelegramPushProvider implements PushProvider {
 
   constructor(private readonly config: ConfigService) {}
 
+  isConfigured(): boolean {
+    return Boolean(this.config.get<string>('TELEGRAM_BOT_TOKEN'));
+  }
+
   async send(recipient: PushRecipient, message: PushMessage): Promise<boolean> {
+    return (await this.attempt(recipient, message)).status === 'sent';
+  }
+
+  async attempt(recipient: PushRecipient, message: PushMessage): Promise<PushAttempt> {
     const chatId = recipient.telegramUserId;
-    if (!chatId) return false;
+    if (!chatId) return { status: 'skipped', reason: 'no_target' };
 
     const botToken = this.config.get<string>('TELEGRAM_BOT_TOKEN');
     if (!botToken) {
-      // In dev it's normal to run without a real bot — log once per message
-      // instead of failing so the rest of the order flow still works.
+      // In dev it's normal to run without a real bot — log instead of failing
+      // so the rest of the order flow still works.
       this.logger.debug(
         `TELEGRAM_BOT_TOKEN is not set — skipping Telegram push to ${chatId} (${message.kind}): ${message.title}`,
       );
-      return false;
+      return { status: 'skipped', reason: 'not_configured' };
     }
 
     const text = `*${escapeMarkdown(message.title)}*\n${escapeMarkdown(message.body)}`;
@@ -47,17 +55,31 @@ export class TelegramPushProvider implements PushProvider {
           parse_mode: 'MarkdownV2',
           disable_web_page_preview: true,
         }),
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
-        this.logger.warn(`Telegram push failed (${res.status}) to ${chatId}: ${await res.text()}`);
-        return false;
+        const error = `Telegram ${res.status}: ${describeBotError(await res.text())}`;
+        this.logger.warn(`Telegram push to ${chatId} failed — ${error}`);
+        return { status: 'failed', error };
       }
-      return true;
+      return { status: 'sent' };
     } catch (err) {
-      this.logger.warn(`Telegram push threw for ${chatId}: ${(err as Error).message}`);
-      return false;
+      const error = `Telegram: ${(err as Error).message}`;
+      this.logger.warn(`Telegram push to ${chatId} threw — ${error}`);
+      return { status: 'failed', error };
     }
   }
+}
+
+/** The Bot API's `description` ("Forbidden: bot was blocked by the user"), or the raw body. */
+function describeBotError(raw: string): string {
+  try {
+    const description = (JSON.parse(raw) as { description?: unknown }).description;
+    if (typeof description === 'string') return description;
+  } catch {
+    // Not JSON — fall through to the raw body.
+  }
+  return raw.slice(0, 200);
 }
 
 /**

@@ -17,8 +17,16 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
-import { CampaignsService } from './campaigns.service';
-import { CampaignDto, CreateCampaignDto } from './dto/campaigns.dto';
+import { CampaignsService, isSendable } from './campaigns.service';
+import {
+  CAMPAIGN_AUDIENCES,
+  CAMPAIGN_CHANNELS,
+  CampaignDto,
+  CampaignPreviewDto,
+  CampaignTestResultDto,
+  CreateCampaignDto,
+  TestCampaignDto,
+} from './dto/campaigns.dto';
 
 @ApiTags('campaigns')
 @ApiBearerAuth()
@@ -38,6 +46,35 @@ export class CampaignsController {
     const resolved = await this.resolveBrandId(user, brandId);
     const rows = await this.service.list(resolved);
     return rows.map(toCampaignDto);
+  }
+
+  /** How many people an audience reaches through a channel — the form shows it before saving. */
+  @Get('preview')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiQuery({ name: 'brandId', required: false, type: String })
+  @ApiQuery({ name: 'audience', required: false, enum: CAMPAIGN_AUDIENCES })
+  @ApiQuery({ name: 'channel', required: false, enum: CAMPAIGN_CHANNELS })
+  @ApiOkResponse({ type: CampaignPreviewDto })
+  async preview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('brandId') brandId?: string,
+    @Query('audience') audience?: string,
+    @Query('channel') channel?: string,
+  ): Promise<CampaignPreviewDto> {
+    const resolved = await this.resolveBrandId(user, brandId);
+    const a = audience ?? 'ALL';
+    const c = channel ?? 'PUSH';
+    if (!(CAMPAIGN_AUDIENCES as readonly string[]).includes(a)) throw new BadRequestException('Unknown audience');
+    if (!(CAMPAIGN_CHANNELS as readonly string[]).includes(c)) throw new BadRequestException('Unknown channel');
+    return this.service.preview(resolved, a as CampaignAudience, c as CampaignChannel);
+  }
+
+  /** Sends the copy to the signed-in admin only — their app, browser or Telegram. */
+  @Post('test')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiOkResponse({ type: CampaignTestResultDto })
+  test(@CurrentUser() user: AuthenticatedUser, @Body() dto: TestCampaignDto): Promise<CampaignTestResultDto> {
+    return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel });
   }
 
   @Post()
@@ -60,6 +97,10 @@ export class CampaignsController {
     return toCampaignDto(row);
   }
 
+  /**
+   * Starts the send — or retries a failed / stuck one — and answers at once
+   * with the row in SENDING. Poll the list for the counters.
+   */
   @Post(':id/send')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   @ApiOkResponse({ type: CampaignDto })
@@ -111,6 +152,11 @@ function toCampaignDto(c: Campaign): CampaignDto {
     targetCount: c.targetCount,
     sentCount: c.sentCount,
     failedCount: c.failedCount,
+    noChannelCount: c.noChannelCount,
+    optedOutCount: c.optedOutCount,
+    lastError: c.lastError,
+    sendable: isSendable(c),
+    startedAt: c.startedAt ? c.startedAt.toISOString() : null,
     sentAt: c.sentAt ? c.sentAt.toISOString() : null,
     createdAt: c.createdAt.toISOString(),
   };

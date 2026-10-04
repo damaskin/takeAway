@@ -16,9 +16,26 @@ export interface PushMessage {
   kind: 'order_status' | 'order_ready' | 'order_out_for_delivery' | 'order_delivered' | 'generic';
 }
 
+/**
+ * What one provider did with one message for one recipient.
+ *
+ * `skipped` is not a failure: the provider is not configured on this server
+ * (`not_configured`) or the recipient has nothing it can deliver to
+ * (`no_target` — no token of its kind, no Telegram chat). The caller uses
+ * the difference to tell "nobody could be reached" from "delivery broke".
+ */
+export type PushAttempt =
+  | { status: 'sent' }
+  | { status: 'failed'; error: string }
+  | { status: 'skipped'; reason: 'not_configured' | 'no_target' };
+
 export interface PushProvider {
   /** Human-readable provider id for logging. */
   readonly id: 'telegram' | 'apns' | 'fcm' | 'webpush';
-  /** Non-fatal: providers should swallow their own errors and return false. */
+  /** Whether the server has the credentials this provider needs. */
+  isConfigured(): boolean;
+  /** Non-fatal: providers swallow their own errors and report them in the result. */
+  attempt(recipient: PushRecipient, message: PushMessage): Promise<PushAttempt>;
+  /** Shorthand for `attempt(...).status === 'sent'`. */
   send(recipient: PushRecipient, message: PushMessage): Promise<boolean>;
 }

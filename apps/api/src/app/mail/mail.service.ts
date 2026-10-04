@@ -45,6 +45,11 @@ export class MailService implements OnModuleInit {
     this.logger.log(`SMTP ready: ${host}:${port} secure=${secure}`);
   }
 
+  /** False when SMTP_HOST is missing and {@link send} only logs the message. */
+  isConfigured(): boolean {
+    return this.transporter !== null;
+  }
+
   async sendPasswordReset(email: string, resetUrl: string): Promise<void> {
     const subject = 'Сброс пароля / Reset your takeAway password';
     const text =
