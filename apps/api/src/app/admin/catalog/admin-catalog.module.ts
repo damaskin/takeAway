@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../../auth/auth.module';
 import { OnboardingModule } from '../../onboarding/onboarding.module';
+import { RealtimeModule } from '../../realtime/realtime.module';
 import { AdminBrandsController } from './admin-brands.controller';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminCategoriesController } from './admin-categories.controller';
@@ -13,7 +14,8 @@ import { AdminStoresController } from './admin-stores.controller';
 import { BrandModerationService } from './brand-moderation.service';
 
 @Module({
-  imports: [AuthModule, OnboardingModule],
+  // RealtimeModule: switching a store on or off is announced to every client.
+  imports: [AuthModule, OnboardingModule, RealtimeModule],
   controllers: [
     AdminBrandsController,
     AdminStoresController,

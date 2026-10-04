@@ -76,9 +76,11 @@ export class KdsController {
   }
 
   /**
-   * Narrow the raw `storeId` query param to the caller's UserStore scope.
-   * BRAND_ADMIN / SUPER_ADMIN pass through; STORE_MANAGER / STAFF can only
-   * act on their assigned stores.
+   * Narrow the raw `storeId` query param to the caller's store scope (see
+   * UserStoreScopeService): SUPER_ADMIN passes through, BRAND_ADMIN reaches
+   * the stores of the brands it owns, STORE_MANAGER / STAFF their assigned
+   * stores. The same rule covers the shift buttons on the Stores page and
+   * the kitchen board.
    */
   private async assertInScope(user: AuthenticatedUser, storeId: string): Promise<void> {
     const scope = await this.scope.getScope(user.id, user.role);

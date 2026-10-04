@@ -3,9 +3,9 @@ import type { StoreFulfillment } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
-import { isOpenAt, type WorkingHour } from '../kitchen/opening-hours';
 import { PrismaService } from '../prisma/prisma.service';
 import { AVAILABLE_OPTION } from './option-availability';
+import { acceptingOrders, openNow } from './store-availability';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -343,29 +343,6 @@ function defaultVariationIds(
     if (pick) ids.add(pick.id);
   }
   return ids;
-}
-
-/**
- * The store takes orders at all right now: it is not switched off and staff
- * have started a shift. False means the clients show it as inactive.
- */
-function acceptingOrders(store: { status: string; shifts: readonly unknown[] }): boolean {
-  return store.status !== 'CLOSED' && store.shifts.length > 0;
-}
-
-/**
- * Whether an ASAP order placed now would be accepted: the store takes orders
- * (see acceptingOrders), and it is still open when that order would be ready —
- * the same working-hours check order creation enforces. Without this the
- * clients offered ASAP after hours and the customer met a bare 400 at checkout.
- */
-function openNow(
-  store: { status: string; shifts: readonly unknown[]; timezone: string; workingHours: readonly WorkingHour[] },
-  now: Date,
-  etaSeconds: number,
-): boolean {
-  if (!acceptingOrders(store)) return false;
-  return isOpenAt(store.workingHours, new Date(now.getTime() + etaSeconds * 1000), store.timezone);
 }
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
