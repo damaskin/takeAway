@@ -53,18 +53,18 @@ under `config/`:
 | `config/prod.example.json` | yes       | Template for release builds                                   |
 | `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
 
-| Define                                                                                                                      | Default                                      | Meaning                                                    |
-| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------- |
-| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`                | REST base including `/api`                                 |
-| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                     | Socket.IO origin (namespace `/ws`)                         |
-| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                        | Public site, for links the app shares                      |
-| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                         | Telegram Login redirect; must match @BotFather             |
-| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | `https://app3004048938-login.tg.dev/tglogin` | Android: where Telegram's page returns; see below          |
-| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button                     | The **web** OAuth client id, the audience the API checks   |
-| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                        | iOS OAuth client id                                        |
-| `APPLE_SIGN_IN`                                                                                                             | `false`                                      | Offer Sign in with Apple on iOS                            |
-| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off                             | Firebase Cloud Messaging                                   |
-| `DEV_SIGN_IN`                                                                                                               | `false`                                      | Debug builds only: a "Developer sign-in" button, see below |
+| Define                                                                                                                      | Default                               | Meaning                                                    |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------- |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`         | REST base including `/api`                                 |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`              | Socket.IO origin (namespace `/ws`)                         |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                 | Public site, for links the app shares                      |
+| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                  | Telegram Login redirect; must match @BotFather             |
+| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per build type (release / debug host) | Android: where Telegram's page returns; see below          |
+| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button              | The **web** OAuth client id, the audience the API checks   |
+| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                 | iOS OAuth client id                                        |
+| `APPLE_SIGN_IN`                                                                                                             | `false`                               | Offer Sign in with Apple on iOS                            |
+| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off                      | Firebase Cloud Messaging                                   |
+| `DEV_SIGN_IN`                                                                                                               | `false`                               | Debug builds only: a "Developer sign-in" button, see below |
 
 A missing integration hides its UI instead of failing: no Google id, no
 Google button; no Firebase ids, no push prompt.
@@ -105,15 +105,30 @@ once:
    numeric id) from `GET /auth/telegram/config`.
 2. In the @BotFather mini app → the bot → **Login Widget** (switched to
    OpenID Connect): `takeaway://tglogin` under **Redirect URIs**, and the apps
-   under **Native Login** — Android: package `md.takeaway.app` + the SHA-256
-   of every key that signs a build (`./gradlew signingReport`); iOS: bundle
-   `md.takeaway.ios` + the Apple team id `FGN8R2D6QW`. For @takaway_tgbot the redirect URI
-   and the Android debug key are registered; the release / Play App Signing
-   key and the iOS app are not yet.
+   under **Native Login** — Android: package `md.takeaway.app` + a SHA-256
+   (`./gradlew signingReport`); iOS: bundle `md.takeaway.ios` + the Apple
+   team id `FGN8R2D6QW`. An Android entry takes **one** fingerprint, and
+   BotFather derives the entry's App URL host from it, so every signing key
+   gets its own entry and host. @takaway_tgbot has (since 2026-10-01):
+
+   | Entry   | Key                                       | App URL host                 |
+   | ------- | ----------------------------------------- | ---------------------------- |
+   | Android | Play App Signing, original (`41:F8:F8:…`) | `app3387643188-login.tg.dev` |
+   | Android | debug keystore (`B0:EB:0B:…`)             | `app3004048938-login.tg.dev` |
+   | iOS     | `FGN8R2D6QW.md.takeaway.ios`              | `app2815347853-login.tg.dev` |
+
+   The Play entry uses the original app-signing key even though Play has since
+   upgraded it to a quantum-ready one: Android checks App Links against the
+   whole signing lineage, and the original key is what Play Console's Digital
+   Asset Links snippet lists. Telegram publishes each entry at
+   `https://<host>/.well-known/assetlinks.json`, which shows what is
+   registered.
+
 3. On Android, Telegram's page (no Telegram app on the device) comes back
-   through the App Link BotFather gave the Android app,
-   `https://app3004048938-login.tg.dev/tglogin` (`TELEGRAM_ANDROID_APP_LINK`,
-   the autoVerify intent filter in `AndroidManifest.xml`). The page leaves for
+   through the App Link of the build's signing key: the release host in
+   release builds, the debug host otherwise (`TELEGRAM_ANDROID_APP_LINK`
+   overrides it; `build.gradle.kts` puts the same host into the autoVerify
+   intent filter in `AndroidManifest.xml`). The page leaves for
    its redirect on its own once the login is confirmed in Telegram, and
    Chrome opens an app from a page only on a tap — with the custom scheme the
    customer stayed on "Continue with Telegram" for good. The App Link loads
@@ -179,6 +194,45 @@ flutter build appbundle --release --dart-define-from-file=config/prod.json
 
 Without `key.properties` the release build is signed with the debug key —
 fine for testers, rejected by Google Play.
+
+**Android → Google Play.** App `md.takeaway.app` in the Play Console of
+developer account 5193596306797096194. Play re-signs every build with its own
+key (Play App Signing), so a device sees Google's key, not the upload key:
+
+| Key                                                | SHA-1                                                         | SHA-256                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Upload (`~/.takeaway/android/upload-keystore.jks`) | `BB:BA:A1:38:32:E9:81:7C:CB:5A:AC:65:01:EA:C3:57:CA:B7:82:F8` | `76:7E:37:F2:A1:04:49:0C:E4:AD:F9:9A:D7:D0:1C:14:2E:75:60:8C:BE:5E:52:F3:64:F5:8E:76:F5:47:D7:EB` |
+| Play App Signing, current                          | `80:2E:C9:4F:FF:7A:54:C0:31:4B:1B:27:FE:6B:6E:F6:5B:72:2C:5E` | `11:3C:6A:21:42:79:92:76:CC:FF:C7:6B:71:6E:CD:86:93:5F:17:F0:97:CF:05:78:2F:06:97:3B:6D:69:32:D5` |
+| Play App Signing, first (28.09)                    | `8C:53:FE:40:D7:72:67:17:FC:5B:65:1A:24:65:D3:BF:9C:BE:C6:4A` | `41:F8:F8:8D:B3:D4:29:FA:CB:91:58:F6:7E:9E:CA:1C:AD:80:FD:C8:CC:E9:F6:D3:86:46:78:D4:61:29:F7:4D` |
+
+Any service that checks the signature needs the Play keys: all of them are
+in the Firebase Android app (Firebase creates an Android OAuth client for
+each SHA-1, which Google Sign-In needs), and the SHA-256 values are what
+BotFather's Native Login needs. Play Console shows the app-signing values
+under Test and release → App integrity → App signing, only as copy buttons.
+
+Store listing texts and graphics live in `android/play/` (Russian only). A
+release:
+
+```bash
+# versionCode must grow: Play keeps every one it has seen (1.1.0 was 1)
+flutter build appbundle --release --build-number=<n> --dart-define-from-file=config/prod.json
+bash scripts/play-store-screenshots.sh        # only when screens changed; needs a booted emulator
+python scripts/play-store-compose.py
+PYTHONIOENCODING=utf-8 python scripts/play-store-publish.py
+```
+
+`play-store-publish.py` writes the listing, graphics and the AAB into one edit
+and commits it. By default the release is a draft: open Publishing overview
+in Play Console and click "Send for review". Run it with `--status completed`
+to roll out as soon as review passes. It authenticates with a service account
+that is invited in Play Console, using the key in
+`~/.takeaway/play/play-publisher.json`.
+
+Review needs a Google account to sign in with. Reviewers may not create
+accounts or use their own. Play Console → App content → Sign-in details holds
+`takeaway.testreview@gmail.com` and English instructions. The customer
+profile appears on the account's first sign-in.
 
 **iOS → TestFlight** runs on the Mac mini (`ssh macmini`), through fastlane
 (`ios/fastlane/Fastfile`) and `scripts/ios-testflight.sh`. It signs with an App
