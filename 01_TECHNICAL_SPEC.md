@@ -23,12 +23,12 @@
 
 ### 0.1a. Что осталось до пилота
 
-| Блок                           | Статус | Комментарий                                                                                                                                                                                   |
-| ------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Приём платежей**             | 🟡     | Эквайринг Агропромбанка написан и работает в TMA и в вебе (привязка карты, оплата, статус платежа у клиента). Ждёт включения на проде: `AGROPROMBANK_ENABLED`. Stripe остаётся запасным путём |
-| Гейт «не готовим неоплаченное» | ✅     | `CREATED` остаётся на KDS намеренно: принять заказ и есть момент списания брони. Отказ банка не даёт принять, так что неоплаченный тикет в работу не уходит                                   |
-| Нагрузочный прогон часа пик    | ❌     | 60 заказов в час на точку                                                                                                                                                                     |
-| Пилот в одной локации          | ❌     | Две недели с ручным откатом                                                                                                                                                                   |
+| Блок                           | Статус | Комментарий                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Приём платежей**             | 🟡     | Эквайринг Агропромбанка написан и работает в TMA и в вебе (привязка карты, оплата, статус платежа у клиента). Ждёт включения на проде: `AGROPROMBANK_ENABLED`. Вторая схема — Web-платёж (страница банка, бронь до принятия кухней) — написана и ждёт регистрации у банка: `AGROPROMBANK_WEB_ENABLED` + `CARD_PAYMENT_FLOW=web`. Stripe остаётся запасным путём |
+| Гейт «не готовим неоплаченное» | ✅     | `CREATED` остаётся на KDS намеренно: принять заказ и есть момент списания брони. Отказ банка не даёт принять, так что неоплаченный тикет в работу не уходит                                                                                                                                                                                                     |
+| Нагрузочный прогон часа пик    | ❌     | 60 заказов в час на точку                                                                                                                                                                                                                                                                                                                                       |
+| Пилот в одной локации          | ❌     | Две недели с ручным откатом                                                                                                                                                                                                                                                                                                                                     |
 
 ### 0.2. Треки за пределами оригинального ТЗ
 
@@ -340,10 +340,12 @@ takeaway/
   Подарочная карта вычитается после налога — это способ оплаты, а не скидка
 
 - **VAT по точке**: `Store.taxRateBps` (500 = 5%, 2000 = 20%) и `Store.taxIncludedInPrice`. Второй флаг меняет сумму к оплате, а не только строку в чеке: в ОАЭ / Великобритании / ЕС цена налог уже содержит, в США он добавляется на кассе
-- **Холд вместо списания** (`AGROPROMBANK_HOLD_UNTIL_ACCEPTED`, по умолчанию on): на чекауте сумма бронируется на карте (`ProcessCardAutoPayment` с `preauth=1`), а списывается в момент, когда точка принимает заказ на KDS (`CompletePreAuthorizaion`). Отказ банка при списании не даёт принять заказ. Отмена заказа клиентом снимает бронь (`ReverseOperation`) сразу после коммита отмены, best-effort
+- **Холд вместо списания** (`AGROPROMBANK_HOLD_UNTIL_ACCEPTED`, по умолчанию on): на чекауте сумма бронируется на карте (`ProcessCardAutoPayment` с `preauth=1`), а списывается в момент, когда точка принимает заказ на KDS (`CompletePreAuthorizaion`). Отказ банка при списании не даёт принять заказ. Отмена заказа клиентом, отказ кухни (`POST /kds/orders/:id/reject`) и истечение снимают бронь (`ReverseOperation`) сразу после коммита, best-effort; не снятую бронь раз в 5 минут повторяет cron `agroprombank-reconcile` (до 20 попыток)
+- **Web-платёж** (`PaymentProvider.AGROPROMBANK_WEB`, `AGROPROMBANK_WEB_ENABLED`): вторая схема — клиент вводит карту на странице банка `epay.apb.online/PaymentStart` (MD5-подпись, `ispreauth=1`). Итог берётся только из подписанного банком `GetState` (ResultURL и редиректы SuccessURL/FailURL — лишь повод спросить банк). Списание при принятии — `ComplitionOperation`, снятие брони — `CancelOperation`, возврат — `CancelOperation` в день оплаты или `RefundOperation`. Какую схему запускают клиенты, задаёт `CARD_PAYMENT_FLOW=token|web` (`cardPaymentFlow` в `/config/features`). Подробно — `docs/agroprombank-payments.md`, раздел 11
 - **Состояние платежа для клиента**: `GET /orders/:id` возвращает поле `payment` — `{ state: NONE | PENDING | HELD | PAID | FAILED | REFUNDED, amountCents, cardMask, paidAt }`. Считается по последней строке `Payment` заказа; `REQUIRES_ACTION` у преавторизации читается как `HELD`. Клиенты показывают его первым блоком на экране заказа
 - После оплаты: генерация **order code** (4-значный) и **QR-кода** для получения
-- **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом
+- **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15, считается и от последней попытки оплаты): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом и при отказе кухни
+- **TTL принятия оплаченного заказа**: заказ с бронью ждёт кухню `ORDER_ACCEPT_TTL_MINUTES` (30) от момента брони, а заказ ко времени — не меньше, чем до времени выдачи плюс `ORDER_ACCEPT_GRACE_MINUTES` (15); затем `EXPIRED` и бронь снимается
 
 ### 3.5. Заказы и live-статус
 
@@ -675,6 +677,9 @@ POST   /payments/agroprombank/cards/:cardId/default
 POST   /payments/agroprombank/cards/:cardId/refresh
 DELETE /payments/agroprombank/cards/:cardId
 POST   /payments/agroprombank/pay                            { orderId, cardId, tipCents? } → списание или бронь, по политике мерчанта
+POST   /payments/agroprombank-web/start                      { orderId, returnTo: web|tma|mobile } → { paymentId, invoiceId, status, page: { method, action, fields, url } | null, expiresAt }
+GET|POST /payments/agroprombank-web/result                   (public) ResultURL банка: MD5-проверка → GetState → 200 OK
+GET|POST /payments/agroprombank-web/success|fail             (public) SuccessURL/FailURL: сверка с банком → 302 на заказ в web / TMA / takeaway://pay
 ```
 
 ### 6.5. Promo / Gift cards / Loyalty
@@ -783,6 +788,7 @@ GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closed
 POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
 POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно
 POST   /kds/orders/:id/accept
+POST   /kds/orders/:id/reject         { reason: OUT_OF_STOCK|TOO_BUSY|CLOSING|OTHER, comment? } → отмена до принятия, бронь снимается / списанное возвращается, пуш клиенту с причиной
 POST   /kds/orders/:id/start
 POST   /kds/orders/:id/ready
 POST   /kds/orders/:id/picked-up
@@ -800,7 +806,7 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ```
 GET    /health                       // liveness + build triple (version/commit/builtAt)
 GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
-GET    /config/features              → { deliveryEnabled, agroprombankEnabled, support: { email, telegram } }
+GET    /config/features              → { deliveryEnabled, agroprombankEnabled, cardPaymentFlow: token|web|none, support: { email, telegram } }
 ```
 
 ### 6.13. WebSocket
