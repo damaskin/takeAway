@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { apiErrorCode } from '../../core/http/api-error';
 import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenApi } from '../../core/kitchen/kitchen.api';
 
@@ -211,10 +212,19 @@ export class PinLoginPage {
       error: (err: { status?: number; error?: { message?: unknown } }) => {
         this.loading.set(false);
         this.pin.set('');
-        // 401 is "wrong PIN" — say that, not however the server phrased it.
-        const message = err.status !== 401 && typeof err.error?.message === 'string' ? err.error.message : null;
-        this.error.set(message ?? this.translate.instant('kds.pin.wrong'));
+        this.error.set(this.pinErrorMessage(err));
       },
     });
+  }
+
+  private pinErrorMessage(err: { status?: number; error?: { message?: unknown } }): string {
+    // The server has no KDS_PIN_SECRET: no PIN can work, so don't say "wrong PIN".
+    const code = apiErrorCode(err);
+    if (code === 'KDS_PIN_NOT_CONFIGURED') return this.translate.instant('kds.pin.notConfigured');
+    // Per-store lockout (KDS_PIN_LOCKED) or the per-IP throttle.
+    if (code === 'KDS_PIN_LOCKED' || err.status === 429) return this.translate.instant('kds.pin.locked');
+    // 401 is "wrong PIN" — say that, not however the server phrased it.
+    const message = err.status !== 401 && typeof err.error?.message === 'string' ? err.error.message : null;
+    return message ?? this.translate.instant('kds.pin.wrong');
   }
 }
