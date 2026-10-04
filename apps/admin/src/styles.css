@@ -115,3 +115,74 @@ textarea.field-input {
   padding: 10px 12px;
   resize: vertical;
 }
+
+/* Analytics tables and stat tiles: the analytics page and its tabs share them. */
+.an-row-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.an-row-note {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.an-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.an-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--color-cream);
+}
+.an-tile span {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.an-tile strong {
+  font-family: var(--font-display);
+  font-size: 24px;
+  color: var(--color-espresso);
+}
+.an-tile em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.an-table-wrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+.an-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.an-table th {
+  padding: 8px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid var(--color-border-light);
+  white-space: nowrap;
+}
+.an-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text-primary);
+  vertical-align: top;
+}
+.an-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

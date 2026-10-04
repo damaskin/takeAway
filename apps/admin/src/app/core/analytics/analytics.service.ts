@@ -4,18 +4,38 @@ import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
 
+/**
+ * The days a request covers: `days` ending today, or `from`/`to` calendar
+ * days (both included). The API reads them in the brand's time zone and
+ * compares with as many days right before. `storeId` narrows to one store.
+ */
+export interface AnalyticsPeriod {
+  days?: number;
+  from?: string;
+  to?: string;
+  storeId?: string | null;
+}
+
+/** The days a figure covers, as the API read them. */
+export interface AnalyticsPeriodEcho {
+  from: string;
+  to: string;
+  timeZone: string;
+}
+
 export interface RevenuePoint {
   date: string;
   revenueCents: number;
   orderCount: number;
 }
 
-export interface RevenueSeries {
+export interface RevenueSeries extends AnalyticsPeriodEcho {
   totalRevenueCents: number;
   totalOrders: number;
   avgBasketCents: number;
   bestDay: RevenuePoint | null;
   revenueDeltaPercent: number;
+  previousRevenueCents: number;
   points: RevenuePoint[];
 }
 
@@ -32,31 +52,112 @@ export interface CohortStats {
   pickupSlaPercent: number;
 }
 
+/** One store; the fields after `detailed` are the PRO comparison, null on BASIC. */
 export interface StorePerformance {
   storeId: string;
   storeName: string;
   revenueCents: number;
   orders: number;
   sharePercent: number;
+  detailed: boolean;
+  ordersSharePercent: number | null;
+  avgCheckCents: number | null;
+  avgPickupSeconds: number | null;
+  avgPrepSeconds: number | null;
+  cancelled: number | null;
+  expired: number | null;
+  cancelRatePercent: number | null;
+  customers: number | null;
+  staff: number | null;
+  ordersPerStaff: number | null;
+  previousRevenueCents: number | null;
+  revenueDeltaPercent: number | null;
 }
 
-/** The last `days` calendar days, each figure against the `days` before them. */
-export interface DashboardSummary {
+export interface StaffPerformance {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  role: string;
+  accepted: number;
+  ready: number;
+  completed: number;
+  handled: number;
+  shifts: number;
+  shiftHours: number;
+  ordersPerHour: number | null;
+}
+
+export type ChurnWindow = 7 | 14;
+
+export interface RetentionCustomer {
+  userId: string;
+  name: string | null;
+  phone: string | null;
+  orders: number;
+  totalCents: number;
+  avgCheckCents: number;
+  lastOrderAt: string;
+  daysSinceLastOrder: number;
+}
+
+export interface ChurnStats extends AnalyticsPeriodEcho {
+  window: ChurnWindow;
+  count: number;
+  lostRevenueCents: number;
+  previous: { count: number; lostRevenueCents: number };
+  countDeltaPercent: number | null;
+  /** Null on a plan without the list. */
+  customers: RetentionCustomer[] | null;
+}
+
+export interface WinBackPeriod {
+  lapsedAtStart: number;
+  returned: number;
+  returnRatePercent: number | null;
+  orders: number;
+  revenueCents: number;
+}
+
+export interface WinBackCustomer {
+  userId: string;
+  name: string | null;
+  phone: string | null;
+  lastOrderBefore: string;
+  returnedAt: string;
+  daysAway: number;
+  orders: number;
+  revenueCents: number;
+}
+
+export interface WinBackStats extends AnalyticsPeriodEcho {
+  window: ChurnWindow;
+  current: WinBackPeriod;
+  previous: WinBackPeriod;
+  returnedDeltaPercent: number | null;
+  revenueDeltaPercent: number | null;
+  customers: WinBackCustomer[];
+}
+
+/** The range's figures, each against as many days right before. */
+export interface DashboardSummary extends AnalyticsPeriodEcho {
   days: number;
   revenueCents: number;
   orders: number;
+  avgCheckCents: number;
   avgPickupSeconds: number;
   /** Null until customer ratings are collected. */
   nps: number | null;
   /** Percent change; null when the period before had nothing to compare with. */
   revenueDeltaPercent: number | null;
   ordersDeltaPercent: number | null;
+  avgCheckDeltaPercent: number | null;
   /** Change of the average pickup time, in seconds. */
   pickupDeltaSeconds: number | null;
 }
 
 /** Where the orders stand: open ones right now, and how the period ended up. */
-export interface OrderStatusStats {
+export interface OrderStatusStats extends AnalyticsPeriodEcho {
   days: number;
   /** Open statuses only, each present, regardless of the period. */
   live: Record<'CREATED' | 'PAID' | 'ACCEPTED' | 'IN_PROGRESS' | 'READY' | 'OUT_FOR_DELIVERY', number>;
@@ -78,6 +179,8 @@ export interface BrandPerformance {
   brandName: string;
   currency: string;
   moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  plan?: 'BASIC' | 'PRO';
+  commissionBps?: number;
   stores: number;
   orders: number;
   revenueCents: number;
@@ -90,34 +193,50 @@ export class AnalyticsApi {
 
   // `brandId` picks one of the caller's brands; the API never widens past them.
 
-  summary(brandId?: string | null, days = 7): Observable<DashboardSummary> {
-    return this.http.get<DashboardSummary>(`${this.api.baseUrl}/admin/analytics/summary`, {
-      params: params({ brandId, days }),
-    });
+  summary(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<DashboardSummary> {
+    return this.get('summary', brandId, period);
   }
 
-  revenue(days = 14, brandId?: string | null): Observable<RevenueSeries> {
-    return this.http.get<RevenueSeries>(`${this.api.baseUrl}/admin/analytics/revenue`, {
-      params: params({ days, brandId }),
-    });
+  revenue(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<RevenueSeries> {
+    return this.get('revenue', brandId, period);
   }
 
-  topProducts(take = 5, brandId?: string | null): Observable<TopProduct[]> {
-    return this.http.get<TopProduct[]>(`${this.api.baseUrl}/admin/analytics/top-products`, {
-      params: params({ take, brandId }),
-    });
+  topProducts(brandId: string | null | undefined, period: AnalyticsPeriod, take = 5): Observable<TopProduct[]> {
+    return this.get('top-products', brandId, period, { take });
   }
 
-  cohort(days = 30, brandId?: string | null): Observable<CohortStats> {
-    return this.http.get<CohortStats>(`${this.api.baseUrl}/admin/analytics/cohort`, {
-      params: params({ days, brandId }),
-    });
+  cohort(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<CohortStats> {
+    return this.get('cohort', brandId, period);
   }
 
-  orderStatuses(brandId?: string | null, days = 7): Observable<OrderStatusStats> {
-    return this.http.get<OrderStatusStats>(`${this.api.baseUrl}/admin/analytics/order-statuses`, {
-      params: params({ brandId, days }),
-    });
+  orderStatuses(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<OrderStatusStats> {
+    return this.get('order-statuses', brandId, period);
+  }
+
+  storePerformance(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<StorePerformance[]> {
+    return this.get('stores', brandId, period);
+  }
+
+  staff(brandId: string | null | undefined, period: AnalyticsPeriod): Observable<StaffPerformance[]> {
+    return this.get('staff', brandId, period);
+  }
+
+  churn(
+    brandId: string | null | undefined,
+    period: AnalyticsPeriod,
+    window: ChurnWindow,
+    take?: number,
+  ): Observable<ChurnStats> {
+    return this.get('churn', brandId, period, { window, take });
+  }
+
+  winBack(
+    brandId: string | null | undefined,
+    period: AnalyticsPeriod,
+    window: ChurnWindow,
+    take?: number,
+  ): Observable<WinBackStats> {
+    return this.get('winback', brandId, period, { window, take });
   }
 
   /** SUPER_ADMIN only: every brand side by side. */
@@ -127,9 +246,20 @@ export class AnalyticsApi {
     });
   }
 
-  storePerformance(days = 14, brandId?: string | null): Observable<StorePerformance[]> {
-    return this.http.get<StorePerformance[]>(`${this.api.baseUrl}/admin/analytics/stores`, {
-      params: params({ days, brandId }),
+  private get<T>(
+    path: string,
+    brandId: string | null | undefined,
+    period: AnalyticsPeriod,
+    extra: Record<string, string | number | null | undefined> = {},
+  ): Observable<T> {
+    return this.http.get<T>(`${this.api.baseUrl}/admin/analytics/${path}`, {
+      params: params({
+        brandId,
+        storeId: period.storeId,
+        // A custom range wins over a preset; never send both.
+        ...(period.from || period.to ? { from: period.from, to: period.to } : { days: period.days }),
+        ...extra,
+      }),
     });
   }
 }

@@ -5,6 +5,7 @@ import { LocaleFormatService } from '@takeaway/i18n';
 
 import {
   AnalyticsApi,
+  type AnalyticsPeriod,
   type DashboardSummary,
   type OrderStatusStats,
   type StorePerformance,
@@ -13,9 +14,15 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
-import { type AdminRole, canAccess } from '../../core/permissions/permissions';
+import { type AdminRole, canAccess, canOnStores } from '../../core/permissions/permissions';
+import { PlanAccess } from '../../core/plans/plan-access.service';
+import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
+import { DateRangeComponent, type DateRangeValue } from '../../shared/date-range.component';
 import { OrderStatusPanelComponent } from '../../shared/order-status-panel.component';
+import { ChurnWidgetComponent } from './churn-widget.component';
+import { MenuSummaryWidgetComponent } from './menu-summary-widget.component';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
+import { StoreShiftsWidgetComponent } from './store-shifts-widget.component';
 
 interface KpiCard {
   label: string;
@@ -26,10 +33,6 @@ interface KpiCard {
   accent: string;
 }
 
-/** The periods the dashboard can show, in days. */
-const PERIODS = [7, 14, 30] as const;
-type Period = (typeof PERIODS)[number];
-
 interface DashboardOrder {
   code: string;
   product: string;
@@ -39,16 +42,27 @@ interface DashboardOrder {
 }
 
 /**
- * Admin Dashboard — pencil C1 (P0R5u).
+ * Admin Dashboard — pencil C1 (P0R5u), on every plan.
  *
- * content (padding 32, gap 24):
- *   KPI row (4 cards) — revenue, orders today, avg pickup time, NPS
- *   Live orders panel + store performance list
+ *   Period picker (presets or a calendar range) driving every figure
+ *   KPI row — revenue, orders, average check, active orders, pickup time
+ *   Kitchen window — orders by status now and in the period, live orders
+ *   Revenue share per store
+ *   Store management (shifts), customers lost, menu at a glance
  */
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent, OrderStatusPanelComponent],
+  imports: [
+    RouterLink,
+    TranslatePipe,
+    OnboardingChecklistComponent,
+    OrderStatusPanelComponent,
+    DateRangeComponent,
+    StoreShiftsWidgetComponent,
+    ChurnWidgetComponent,
+    MenuSummaryWidgetComponent,
+  ],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -62,25 +76,17 @@ interface DashboardOrder {
             {{ 'admin.dashboard.subtitle' | translate }}
           </p>
         </div>
-        <div class="flex items-center" style="gap: 8px">
-          <select
-            [attr.aria-label]="'admin.dashboard.period' | translate"
-            (change)="setDays($any($event.target).value)"
-            style="height: 36px; padding: 0 10px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); cursor: pointer"
-          >
-            @for (d of periods; track d) {
-              <option [value]="d" [selected]="d === days()">
-                {{ 'admin.dashboard.range' | translate: { days: d } }}
-              </option>
-            }
-          </select>
-          <a
-            routerLink="/promo/new"
-            class="flex items-center"
-            style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
-          >
-            {{ 'admin.dashboard.newPromo' | translate }}
-          </a>
+        <div class="flex items-end flex-wrap justify-end" style="gap: 8px">
+          <app-date-range [(value)]="range" />
+          @if (plans.has('promo')) {
+            <a
+              routerLink="/promo/new"
+              class="flex items-center"
+              style="height: 32px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
+            >
+              {{ 'admin.dashboard.newPromo' | translate }}
+            </a>
+          }
         </div>
       </header>
 
@@ -88,7 +94,7 @@ interface DashboardOrder {
       <app-onboarding-checklist />
 
       <!-- KPI grid -->
-      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px">
         @for (kpi of kpis(); track kpi.label) {
           <article
             class="flex flex-col"
@@ -114,27 +120,18 @@ interface DashboardOrder {
         }
       </div>
 
-      <!-- Where the orders stand: open ones now, and how the period ended up -->
-      <app-order-status-panel [stats]="statuses()" [days]="days()" [kitchenLink]="canSeeKitchen()" />
+      <!-- Kitchen window: open orders now, and how the period ended up -->
+      <app-order-status-panel [stats]="statuses()" [days]="summary()?.days ?? 7" [kitchenLink]="canSeeKitchen()" />
 
       <!-- Two-column body -->
       <div class="dashboard-body grid" style="grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px">
         <!-- Live orders -->
-        <article
-          class="flex flex-col"
-          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px"
-        >
-          <header class="flex items-center justify-between">
-            <h2
-              style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
-            >
-              {{ 'admin.dashboard.liveOrders' | translate }}
-            </h2>
-            <a
-              routerLink="/orders"
-              style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-caramel)"
-              >{{ 'admin.dashboard.viewAll' | translate }}</a
-            >
+        <article class="dash-card">
+          <header class="dash-card-head">
+            <h2>{{ 'admin.dashboard.liveOrders' | translate }}</h2>
+            <a [routerLink]="canSeeKitchen() ? '/kitchen' : '/orders'">{{
+              (canSeeKitchen() ? 'admin.dashboard.openKitchen' : 'admin.dashboard.viewAll') | translate
+            }}</a>
           </header>
           <div class="flex flex-col" style="gap: 8px">
             @for (o of liveOrders(); track o.code) {
@@ -142,13 +139,13 @@ interface DashboardOrder {
                 class="flex items-center justify-between"
                 style="padding: 12px 14px; border: 1px solid var(--color-border-light); border-radius: 14px; gap: 16px"
               >
-                <div class="flex items-center" style="gap: 14px">
+                <div class="flex items-center" style="gap: 14px; min-width: 0">
                   <span
                     class="flex items-center justify-center"
-                    style="width: 44px; height: 44px; border-radius: 10px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-mono); font-size: 14px; font-weight: 700"
+                    style="flex: none; width: 44px; height: 44px; border-radius: 10px; background: var(--color-caramel-light); color: var(--color-caramel); font-family: var(--font-mono); font-size: 14px; font-weight: 700"
                     >{{ o.code }}</span
                   >
-                  <div class="flex flex-col" style="gap: 2px">
+                  <div class="flex flex-col" style="gap: 2px; min-width: 0">
                     <span
                       style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
                       >{{ o.product }}</span
@@ -158,7 +155,7 @@ interface DashboardOrder {
                     }}</span>
                   </div>
                 </div>
-                <div class="flex items-center" style="gap: 16px">
+                <div class="flex items-center flex-wrap justify-end" style="gap: 8px 16px">
                   <span
                     [style.background]="statusBg(o.status)"
                     [style.color]="statusColor(o.status)"
@@ -171,30 +168,32 @@ interface DashboardOrder {
                   >
                 </div>
               </div>
+            } @empty {
+              <p class="dash-muted">{{ 'admin.dashboard.noLiveOrders' | translate }}</p>
             }
           </div>
         </article>
 
         <!-- Store performance -->
-        <article
-          class="flex flex-col"
-          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px"
-        >
-          <h2
-            style="font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--color-espresso); margin: 0"
-          >
-            {{ 'admin.dashboard.storePerf' | translate }}
-          </h2>
+        <article class="dash-card">
+          <header class="dash-card-head">
+            <h2>{{ 'admin.dashboard.storePerf' | translate }}</h2>
+            @if (canSeeAnalytics()) {
+              <a routerLink="/analytics" [queryParams]="{ tab: 'stores' }">{{
+                'admin.dashboard.compareStores' | translate
+              }}</a>
+            }
+          </header>
           <div class="flex flex-col" style="gap: 12px">
-            @for (s of storePerf(); track s.name) {
+            @for (s of storePerf(); track s.id) {
               <div class="flex flex-col" style="gap: 6px">
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" style="gap: 8px">
                   <span
                     style="font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--color-text-primary)"
                     >{{ s.name }}</span
                   >
                   <span
-                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: var(--color-caramel)"
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 700; color: var(--color-caramel); white-space: nowrap"
                     >{{ s.value }}</span
                   >
                 </div>
@@ -206,15 +205,34 @@ interface DashboardOrder {
                     style="height: 100%; background: var(--color-caramel); border-radius: 9999px"
                   ></div>
                 </div>
+                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                  'admin.dashboard.storeLine' | translate: { orders: s.orders, share: s.share }
+                }}</span>
               </div>
+            } @empty {
+              <p class="dash-muted">{{ 'admin.analytics.noOrders' | translate }}</p>
             }
           </div>
         </article>
       </div>
+
+      @if (activeBrand.activeId(); as brandId) {
+        <div class="dashboard-widgets grid" style="gap: 16px">
+          <app-store-shifts-widget [brandId]="brandId" [canToggle]="canToggleShifts()" />
+          <app-churn-widget [brandId]="brandId" [period]="period()" [currency]="activeBrand.active()?.currency" />
+          @if (canSeeMenu()) {
+            <app-menu-summary-widget [brandId]="brandId" />
+          }
+        </div>
+      }
     </section>
   `,
   styles: [
+    DASH_CARD_STYLES,
     `
+      .dashboard-widgets {
+        grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+      }
       @media (max-width: 768px) {
         .dashboard-body {
           grid-template-columns: 1fr !important;
@@ -225,15 +243,16 @@ interface DashboardOrder {
 })
 export class DashboardPage {
   private readonly store = inject(AuthStore);
-  private readonly activeBrand = inject(ActiveBrandService);
+  readonly activeBrand = inject(ActiveBrandService);
+  readonly plans = inject(PlanAccess);
   private readonly analytics = inject(AnalyticsApi);
   private readonly orders = inject(AdminOrdersApi);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
 
-  readonly periods = PERIODS;
-  /** The period every figure on the page covers; the store list follows it too. */
-  readonly days = signal<Period>(7);
+  /** The period every figure on the page covers. */
+  readonly range = signal<DateRangeValue>({ days: 7 });
+  readonly period = computed<AnalyticsPeriod>(() => ({ ...this.range() }));
 
   readonly summary = signal<DashboardSummary | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
@@ -241,13 +260,18 @@ export class DashboardPage {
   readonly statuses = signal<OrderStatusStats | null>(null);
 
   private readonly alerts = inject(OrderAlertsService);
-  readonly canSeeKitchen = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
+  private readonly role = computed(() => this.store.user()?.role as AdminRole | undefined);
+  readonly canSeeKitchen = computed(() => canAccess(this.role(), 'kitchen'));
+  readonly canSeeMenu = computed(() => canAccess(this.role(), 'menu'));
+  readonly canSeeAnalytics = computed(() => canAccess(this.role(), 'analytics'));
+  readonly canToggleShifts = computed(() => canOnStores(this.role(), 'edit'));
 
   readonly kpis = computed<KpiCard[]>(() => {
     const s = this.summary();
-    const days = s?.days ?? this.days();
+    const days = s?.days ?? 7;
     const revenue = this.change(s?.revenueDeltaPercent, days, (v) => this.fmt.percent(v));
     const orders = this.change(s?.ordersDeltaPercent, days, (v) => this.fmt.percent(v));
+    const check = this.change(s?.avgCheckDeltaPercent, days, (v) => this.fmt.percent(v));
     // A shorter wait is the good direction.
     const pickup = this.change(s?.pickupDeltaSeconds, days, (v) => this.duration(v), true);
     return [
@@ -264,17 +288,23 @@ export class DashboardPage {
         accent: 'var(--color-mint)',
       },
       {
+        label: 'admin.dashboard.kpi.avgCheck',
+        value: s?.avgCheckCents ? this.price(s.avgCheckCents) : '—',
+        ...check,
+        accent: 'var(--color-latte)',
+      },
+      {
+        label: 'admin.dashboard.kpi.activeOrders',
+        value: String(this.statuses()?.liveTotal ?? 0),
+        delta: this.translate.instant('admin.dashboard.kpi.activeNow'),
+        tone: 'neutral',
+        accent: 'var(--color-berry)',
+      },
+      {
         label: 'admin.dashboard.kpi.pickupTime',
         value: s?.avgPickupSeconds ? this.duration(s.avgPickupSeconds) : '—',
         ...pickup,
         accent: 'var(--color-amber)',
-      },
-      {
-        label: 'admin.dashboard.kpi.nps',
-        value: s?.nps == null ? '—' : String(s.nps),
-        delta: '',
-        tone: 'neutral',
-        accent: 'var(--color-cat-signature)',
       },
     ];
   });
@@ -297,8 +327,11 @@ export class DashboardPage {
     const rows = this.storePerfRaw();
     const max = Math.max(1, ...rows.map((r) => r.revenueCents));
     return rows.slice(0, 6).map((r) => ({
+      id: r.storeId,
       name: r.storeName,
       value: this.price(r.revenueCents),
+      orders: r.orders,
+      share: this.fmt.percent(r.sharePercent),
       percent: Math.round((r.revenueCents / max) * 100),
     }));
   });
@@ -310,7 +343,7 @@ export class DashboardPage {
     // brand's stores re-reads them, so the page never needs a refresh.
     effect(() => {
       const brandId = this.activeBrand.activeId();
-      const days = this.days();
+      const period = this.period();
       this.alerts.revision();
       if (!brandId) return;
       untracked(() => {
@@ -318,22 +351,19 @@ export class DashboardPage {
           next: (list) =>
             this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
         });
-        this.analytics.orderStatuses(brandId, days).subscribe({ next: (stats) => this.statuses.set(stats) });
+        this.analytics.orderStatuses(brandId, period).subscribe({ next: (stats) => this.statuses.set(stats) });
       });
     });
     // The KPI cards and the store list cover the period picked in the header.
     effect(() => {
       const brandId = this.activeBrand.activeId();
-      const days = this.days();
+      const period = this.period();
       if (!brandId) return;
-      this.analytics.summary(brandId, days).subscribe({ next: (s) => this.summary.set(s) });
-      this.analytics.storePerformance(days, brandId).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
+      untracked(() => {
+        this.analytics.summary(brandId, period).subscribe({ next: (s) => this.summary.set(s) });
+        this.analytics.storePerformance(brandId, period).subscribe({ next: (rows) => this.storePerfRaw.set(rows) });
+      });
     });
-  }
-
-  setDays(value: string): void {
-    const days = Number(value);
-    if (PERIODS.includes(days as Period)) this.days.set(days as Period);
   }
 
   name(): string {

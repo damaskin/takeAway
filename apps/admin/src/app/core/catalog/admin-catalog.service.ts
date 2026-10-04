@@ -1,6 +1,7 @@
 import { HttpClient, type HttpEvent } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import type { BrandPlan } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -18,6 +19,10 @@ export interface BrandDto {
   moderationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   moderationNote?: string | null;
   submittedAt?: string;
+  /** Business plan; decides which sections the cabinet opens. */
+  plan?: BrandPlan;
+  /** Platform commission in basis points (1000 = 10 %). */
+  commissionBps?: number;
 }
 
 export interface StoreWorkingHourDto {

@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import type { BrandPlan } from '@takeaway/shared-types';
 
 import { ActiveBrandService } from '../brand-context/active-brand.service';
 import { API_CONFIG } from '../api/api.config';
@@ -17,6 +18,9 @@ export interface MyBrand {
   moderationNote: string | null;
   /** True once the brand has an order: the API then refuses a new currency. */
   currencyLocked?: boolean;
+  /** Business plan and platform commission (basis points); read-only here. */
+  plan?: BrandPlan;
+  commissionBps?: number;
   _count?: { stores: number; products: number };
 }
 

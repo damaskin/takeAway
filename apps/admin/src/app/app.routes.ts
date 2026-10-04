@@ -5,6 +5,7 @@ import { anonymousGuard, authGuard } from './core/auth/auth.guard';
 import { AuthStore } from './core/auth/auth.store';
 import { FeatureFlagsStore } from './core/config/feature-flags.store';
 import { type AdminRole, type NavKey, canAccess, defaultLandingFor } from './core/permissions/permissions';
+import { planGated } from './core/plans/plan-routes';
 
 /**
  * If the signed-in user was invited with a temp password, force them to
@@ -239,18 +240,19 @@ export const appRoutes: Route[] = [
         data: { navKey: 'staff' satisfies NavKey },
         loadComponent: () => import('./features/staff/staff-owner.page').then((m) => m.StaffOwnerPage),
       },
-      {
+      // PRO sections: a plan without them gets the upgrade page on the same path.
+      ...planGated('promo', {
         path: 'promo',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'promo' satisfies NavKey },
         loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
-      },
-      {
+      }),
+      ...planGated('promo', {
         path: 'promo/new',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'promo' satisfies NavKey },
         loadComponent: () => import('./features/promo/promo-form.page').then((m) => m.PromoFormPage),
-      },
+      }),
       {
         path: 'gift-cards',
         canActivate: [adminPermissionGuard],
@@ -263,24 +265,36 @@ export const appRoutes: Route[] = [
         data: { navKey: 'giftCards' satisfies NavKey },
         loadComponent: () => import('./features/gift-cards/gift-card-form.page').then((m) => m.GiftCardFormPage),
       },
-      {
+      ...planGated('campaigns', {
         path: 'campaigns',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'campaigns' satisfies NavKey },
         loadComponent: () => import('./features/campaigns/campaigns.page').then((m) => m.AdminCampaignsPage),
-      },
-      {
+      }),
+      ...planGated('campaigns', {
         path: 'campaigns/new',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'campaigns' satisfies NavKey },
         loadComponent: () => import('./features/campaigns/campaign-form.page').then((m) => m.CampaignFormPage),
-      },
+      }),
       {
         path: 'analytics',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'analytics' satisfies NavKey },
         loadComponent: () => import('./features/analytics/analytics.page').then((m) => m.AdminAnalyticsPage),
       },
+      ...planGated('customers', {
+        path: 'customers',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'customers' satisfies NavKey },
+        loadComponent: () => import('./features/customers/customers.page').then((m) => m.CustomersPage),
+      }),
+      ...planGated('customers', {
+        path: 'customers/:userId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'customers' satisfies NavKey },
+        loadComponent: () => import('./features/customers/customer-detail.page').then((m) => m.CustomerDetailPage),
+      }),
       {
         path: 'brands',
         canActivate: [adminPermissionGuard],
