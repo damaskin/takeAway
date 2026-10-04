@@ -275,7 +275,8 @@ takeaway/
   - Базовая цена + диапазон цен с модификаторами
 - **Вариации** (size, temperature, milk, cup): влияют на цену, могут быть связаны
 - **Модификаторы** (shots, syrups, toppings): add-on с плюсом к цене, min/max count
-- **Стоп-лист**: скрываем товар на конкретной точке в реальном времени
+- **Меню по точкам**: меню общее для бренда, но каждый товар продаётся только в отмеченных точках (`ProductStore`) — бургерная и пиццерия одного бренда показывают разное; цена везде одна. Категория без товаров этой точки в её меню не показывается
+- **Стоп-лист**: скрываем товар или добавку на конкретной точке в реальном времени (до отмены или до конца дня в часовом поясе точки); ведут сотрудники кухни
 - **Сезонные спецпозиции** с датой начала/окончания
 - **Доступность по времени**: завтраки до 12:00, например
 - Фильтры: vegan, gluten-free, decaf, без сахара
@@ -397,6 +398,7 @@ takeaway/
 - **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов; цена вводится в валюте бренда, время приготовления — в минутах; до 6 фото на товар (первое — главное, JPEG/PNG/WebP/AVIF до 5 МБ, тип определяется по содержимому, SVG не принимается); слаги необязательны и генерируются из названия с транслитерацией кириллицы; порядок категорий и товаров; удаление непустой категории — 409 `CATEGORY_NOT_EMPTY` или перенос товаров (`?moveProductsTo=`); удаление товара или опции чистит корзины в транзакции; «нет в наличии» по точке — до отмены или до конца дня в часовом поясе точки; описание, КБЖУ, кофеин, диетические метки, аллергены.
 - **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
 - **Staff roster**: `/admin/stores/:id/staff` (managers + kitchen) и `/admin/stores/:id/riders` — invite через временный пароль с force-rotate.
+- **Меню по точкам и стоп-лист**: в форме товара — «Продаётся в точках» (галочки, по умолчанию все; у бренда с одной точкой блок скрыт и точка назначается сама), в таблице меню — чипы точек и «—» в колонке наличия для точки, где товар не продаётся. Страница «Стоп-лист» (`/stop-list`, роли SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER / STAFF, ссылка в меню и в шапке «Кухни»): выбор из своих точек, блюда и напитки точки и добавки, которыми пользуются её товары, переключатель «В наличии / В стопе» (до отмены или до конца дня), поиск и фильтр «только в стопе». STAFF только переключает — создавать, менять и удалять товары и добавки он не может (API-роли).
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Promo / Gift cards**: CRUD + статусы.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), счётчики target/sent/failed.
@@ -509,10 +511,14 @@ Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
           minCount, maxCount, externalProvider?, externalId?, ingredientId?)
 Ingredient (id, brandId, name, isAvailable)   -- библиотека добавок бренда, (brandId, name) уникально
+ProductStore (productId, storeId)              -- точки, где товар продаётся; PK (productId, storeId)
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
+StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка закончилась в одной точке; PK (storeId, ingredientId)
 ```
 
-**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Наличие общее для бренда, не для отдельной точки.
+**Меню по точкам.** Товар есть в меню точки и заказывается в ней, только если для пары (товар, точка) есть строка `ProductStore`; без строк товар не продаётся нигде. Миграция `20261004000000_store_menu_availability` заполнила каждую пару «товар × точка его бренда», так что после выкатки ничего не пропало. Новый товар без `storeIds` получает все точки бренда (так же — импорт из POS); новая точка (кабинет или импорт из POS) получает все товары бренда. `GET /stores/:id/menu` отдаёт только товары точки и пропускает категории, где их нет; `GET /products/:idOrSlug?store=` отвечает 404 для товара, который эта точка не продаёт. Корзина отвечает 400 `ITEMS_UNAVAILABLE` (с названием) на товар не этой точки, оформление снимает такую строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`).
+
+**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
 
 ### 5.4. Cart / Order / Payment
 
@@ -639,7 +645,8 @@ POST   /me/referrals/apply           { code }
 GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (статус + часы работы в её часовом поясе)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
-GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде
+GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
+                                     //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
@@ -731,6 +738,9 @@ GET                                  /admin/brands/pending-count              //
 #   сам автор; это единственный способ завести первый бренд на свежей установке.
 GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder, DELETE ?moveProductsTo=
 GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility, PATCH /admin/products/reorder
+                                                    + storeIds[] в create/update (create без него — все точки бренда; update — заменяет список;
+                                                      400 STORE_UNKNOWN для чужой точки), ответы несут storeIds, GET ?storeId= — товары точки
+GET                    /admin/products/stores?brandId=   точки бренда для выбора в форме товара (доступно MENU_EDITOR)
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
@@ -739,7 +749,9 @@ GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
 POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
 PUT                    /admin/stores/:id/working-hours
-GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]
+GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]     // + STAFF своей точки; товар должен быть из бренда точки
+GET                    /admin/stores/:id/availability                // стоп-лист точки: её товары и добавки с остановками (+ STAFF)
+PUT/DELETE             /admin/stores/:id/ingredient-stops/:ingredientId   // { expiresAt? } — добавка закончилась в этой точке (+ STAFF)
 
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
