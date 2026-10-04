@@ -45,8 +45,16 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         <h1
           style="font-family: var(--font-display); font-size: 28px; font-weight: 700; line-height: 1.2; color: var(--color-espresso); text-align: center; white-space: pre-line; margin: 0"
         >
-          {{ statusLabel(o.status) | translate }}
+          {{ headline(o.status) | translate }}
         </h1>
+        @if (slogan(o.status); as line) {
+          <p
+            data-testid="order-slogan"
+            style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-secondary); text-align: center; margin: -12px 0 0 0"
+          >
+            {{ line | translate }}
+          </p>
+        }
 
         <!-- Where the money stands: the first thing a customer looks for
              after paying, before any of the order's own progress. -->
@@ -347,6 +355,23 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /** Returns a translation key — resolved via | translate in the template. */
   statusLabel(status: OrderStatusString): string {
     return `web.orderStatus.status.${status}`;
+  }
+
+  /**
+   * The big line under the illustration. A ready order gets the product's
+   * promise kept — «Ваш заказ готов» with the zero-minute queue under it —
+   * instead of a dry status.
+   */
+  headline(status: OrderStatusString): string {
+    if (status === 'READY') return 'common.orderDone.readyTitle';
+    if (status === 'PICKED_UP') return 'common.orderDone.pickedUpTitle';
+    return this.statusLabel(status);
+  }
+
+  slogan(status: OrderStatusString): string | null {
+    if (status === 'READY') return 'common.orderDone.readySlogan';
+    if (status === 'PICKED_UP') return 'common.orderDone.pickedUpSlogan';
+    return null;
   }
 
   isReady(): boolean {

@@ -166,7 +166,12 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
   };
 }
 
-const openStore = { brandId: 'brand-a', status: 'OPEN', brand: { moderationStatus: 'APPROVED' } };
+const openStore = {
+  brandId: 'brand-a',
+  status: 'OPEN',
+  brand: { moderationStatus: 'APPROVED' },
+  shifts: [{ id: 'shift-1' }],
+};
 
 function emptyCart() {
   return {
@@ -593,9 +598,7 @@ describe('CartService.addItem guards', () => {
     const service = await build({
       product: { findUnique: jest.fn().mockResolvedValue(product) },
       store: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ brandId: 'brand-b', status: 'OPEN', brand: { moderationStatus: 'APPROVED' } }),
+        findUnique: jest.fn().mockResolvedValue({ ...openStore, brandId: 'brand-b' }),
       },
     });
 
@@ -619,6 +622,21 @@ describe('CartService.addItem guards', () => {
       status: 400,
       message: 'This store is not taking orders right now',
     });
+  });
+
+  it('refuses a store with no shift running, before anything goes into a cart', async () => {
+    const upsert = jest.fn();
+    const service = await build({
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
+      store: { findUnique: jest.fn().mockResolvedValue({ ...openStore, shifts: [] }) },
+      cart: { upsert },
+    });
+
+    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
+      status: 400,
+      response: { code: 'STORE_NOT_TAKING_ORDERS' },
+    });
+    expect(upsert).not.toHaveBeenCalled();
   });
 
   it('treats a store of a brand still in moderation as not there', async () => {

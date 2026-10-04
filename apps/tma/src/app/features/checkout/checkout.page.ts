@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
 import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
@@ -32,7 +32,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
-  imports: [FormsModule, TranslatePipe],
+  imports: [FormsModule, RouterLink, TranslatePipe],
   template: `
     <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
       <h1
@@ -123,11 +123,14 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             style="gap: 4px; padding: 12px 16px; border-radius: 12px; background: rgba(233, 168, 75, 0.16); border: 1px solid var(--color-amber); font-family: var(--font-sans)"
           >
             <strong style="font-size: 14px; color: var(--color-espresso)">{{
-              'common.storeInactive.title' | translate
+              'common.storeClosed.title' | translate
             }}</strong>
             <span style="font-size: 13px; color: var(--color-text-secondary)">{{
-              'common.storeInactive.hint' | translate
+              'common.storeClosed.hint' | translate
             }}</span>
+            <a routerLink="/stores" style="font-size: 13px; font-weight: 600; color: var(--color-caramel)">{{
+              'common.storeClosed.chooseAnother' | translate
+            }}</a>
           </div>
         } @else if (!storeOpen()) {
           <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
@@ -921,6 +924,12 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
    */
   private showError(err: unknown, fallbackKey: string): void {
     const body = (err as { error?: unknown } | null)?.error;
+    // The store closed while the customer was checking out: the closed
+    // banner explains it and offers another store; the pay button goes.
+    if ((body as { code?: unknown } | null)?.code === 'STORE_NOT_TAKING_ORDERS') {
+      this.storeInactive.set(true);
+      this.refreshMainButton();
+    }
     const coded = checkoutErrorText(body, this.translate, this.fmt);
     if (coded) {
       this.error.set(coded);

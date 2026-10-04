@@ -40,16 +40,36 @@ const STEP_ORDER: OrderStatusString[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROG
       <section class="max-w-3xl mx-auto px-6 py-10 flex flex-col items-center" style="gap: var(--spacing-lg)">
         <!-- Greeting -->
         <header class="text-center" style="margin-top: var(--spacing-sm)">
-          <h1 class="text-4xl" style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 600">
-            {{
-              firstName()
-                ? ('web.orderStatus.greeting' | translate: { name: firstName() })
-                : ('web.orderStatus.greetingNoName' | translate)
-            }}
-          </h1>
-          <p class="mt-2" style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)">
-            {{ heroSubtitle() | translate }}
-          </p>
+          @if (doneLines(); as done) {
+            <!-- The product's promise kept: picked up without a queue. -->
+            <h1
+              class="text-4xl"
+              style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 600"
+            >
+              {{ done.title | translate }}
+            </h1>
+            <p
+              class="mt-2"
+              data-testid="order-slogan"
+              style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)"
+            >
+              {{ done.slogan | translate }}
+            </p>
+          } @else {
+            <h1
+              class="text-4xl"
+              style="font-family: var(--font-display); color: var(--color-espresso); font-weight: 600"
+            >
+              {{
+                firstName()
+                  ? ('web.orderStatus.greeting' | translate: { name: firstName() })
+                  : ('web.orderStatus.greetingNoName' | translate)
+              }}
+            </h1>
+            <p class="mt-2" style="font-family: var(--font-sans); font-size: 20px; color: var(--color-caramel)">
+              {{ heroSubtitle() | translate }}
+            </p>
+          }
         </header>
 
         <!-- Where the money stands. The first thing a customer wants after
@@ -340,6 +360,20 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   readonly firstName = computed(() => {
     const name = this.authStore.user()?.name ?? '';
     return name.split(/\s+/)[0] ?? '';
+  });
+
+  /**
+   * Headline and slogan once the order is ready or picked up — «Ваш заказ
+   * готов. Вы простояли в очереди 0 минут» — in place of the greeting.
+   * Translation keys.
+   */
+  readonly doneLines = computed(() => {
+    const status = this.order()?.status;
+    if (status === 'READY') return { title: 'common.orderDone.readyTitle', slogan: 'common.orderDone.readySlogan' };
+    if (status === 'PICKED_UP') {
+      return { title: 'common.orderDone.pickedUpTitle', slogan: 'common.orderDone.pickedUpSlogan' };
+    }
+    return null;
   });
 
   /** Returns a translation KEY — resolved with the `translate` pipe in the template. */

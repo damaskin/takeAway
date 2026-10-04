@@ -1,10 +1,15 @@
-import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
 
 /**
- * Square logo tile for a store card: the business's own logo filling the
- * whole rounded square when it has uploaded one, otherwise a quiet
+ * Square logo tile for a store card: the business's own logo, whole and
+ * centred on a light tile, when it has uploaded one; otherwise a quiet
  * storefront icon. A logo that fails to load falls back to the icon too, so
  * a card never shows a broken image.
+ *
+ * The logo is fitted (`contain`), not cropped: wide wordmarks used to lose
+ * their ends to `cover`. The tile stays light in every theme — logos are
+ * drawn for a light background, and a transparent PNG with dark ink would
+ * vanish on a dark Telegram theme.
  */
 @Component({
   selector: 'lib-store-logo',
@@ -13,9 +18,10 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
   host: {
     class: 'lib-store-logo',
     '[style.--lib-store-logo-size.px]': 'size()',
+    '[class.lib-store-logo--image]': 'showsImage()',
   },
   template: `
-    @if (url() && !failed()) {
+    @if (showsImage()) {
       <img [src]="url()" [alt]="name()" loading="lazy" (error)="failed.set(true)" />
     } @else {
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -39,10 +45,17 @@ import { ChangeDetectionStrategy, Component, input, signal } from '@angular/core
         color: var(--color-caramel);
         overflow: hidden;
       }
+      :host(.lib-store-logo--image) {
+        /* Fixed light tile, not a theme token: see the class comment. */
+        background: #ffffff;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+        padding: calc(var(--lib-store-logo-size) * 0.1);
+        box-sizing: border-box;
+      }
       img {
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
         display: block;
       }
       svg {
@@ -57,5 +70,7 @@ export class StoreLogoComponent {
   /** Business name, used as the image's alt text. */
   readonly name = input('');
   readonly size = input(44);
-  protected readonly failed = signal(false);
+  /** Reset when the url changes, so a new logo gets its own chance to load. */
+  protected readonly failed = linkedSignal({ source: this.url, computation: () => false });
+  protected readonly showsImage = computed(() => !!this.url() && !this.failed());
 }

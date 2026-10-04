@@ -26,6 +26,8 @@ export const STORE = {
   latitude: 25.078,
   longitude: 55.141,
   status: 'OPEN',
+  // A shift is running: without one the store is shown closed, with no menu.
+  acceptingOrders: true,
   fulfillmentTypes: ['TAKEAWAY'],
   pickupPointType: 'SHELF',
   busyMeter: 20,
@@ -138,13 +140,20 @@ export async function installFakeApi(
     pointsBalance?: number;
     /** False = switched on but outside working hours, as the API reports it. */
     storeOpenNow?: boolean;
+    /** False = no shift running: the store is shown closed, with no menu. */
+    storeAcceptingOrders?: boolean;
     /** Card payments on the deployment; on unless a test switches them off. */
     cardPayments?: boolean;
     /** The customer's bound cards; one by default. */
     cards?: Array<typeof CARD>;
   } = {},
 ): Promise<FakeApi> {
-  const store = { ...STORE, openNow: opts.storeOpenNow ?? STORE.openNow };
+  const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
+  const store = {
+    ...STORE,
+    acceptingOrders,
+    openNow: acceptingOrders ? (opts.storeOpenNow ?? STORE.openNow) : false,
+  };
   const items: CartItem[] = [];
   const orders: Array<Record<string, unknown>> = [];
   const payments: Array<Record<string, unknown>> = [];

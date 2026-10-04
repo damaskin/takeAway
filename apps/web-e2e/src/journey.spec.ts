@@ -191,6 +191,29 @@ test.describe('customer journey', () => {
     expect(typeof sent['pickupAt']).toBe('string');
   });
 
+  test('a closed store shows its hours and a way out instead of the menu', async ({ page }) => {
+    // No shift running: the store takes no orders at all.
+    await installFakeApi(page, { storeAcceptingOrders: false });
+    await signIn(page);
+
+    await page.goto('/stores/dubai-marina');
+    await expect(page.getByTestId('store-closed')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /this store is closed/i })).toBeVisible();
+    await expect(page.getByText(PRODUCT.name).first()).toBeHidden();
+
+    // A product link from before cannot fill a cart either.
+    await page.goto('/products/flat-white?store=dubai-marina');
+    await expect(page.getByRole('button', { name: /add to cart/i })).toBeDisabled();
+    await expect(page.getByTestId('store-closed')).toBeVisible();
+
+    // The list keeps the store, dimmed and not a link.
+    await page.goto('/stores');
+    const card = page.locator('[data-inactive]').filter({ hasText: 'takeAway Marina' });
+    await expect(card).toBeVisible();
+    await expect(card).not.toHaveAttribute('href');
+    await expect(card.getByText(/^\s*closed\s*$/i)).toBeVisible();
+  });
+
   test('a customer with points can spend them, and the total falls', async ({ page }) => {
     const api = await installFakeApi(page, { pointsBalance: 500 });
     await signIn(page);

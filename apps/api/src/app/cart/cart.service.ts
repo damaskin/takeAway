@@ -80,7 +80,10 @@ export class CartService {
     // A hidden product is off the menu — the catalog answers 404 for it, and
     // so does the cart, or checkout would only turn it away later.
     if (!product || !product.visible) throw new NotFoundException('Product not found');
-    if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId))) {
+    // A store with no shift running takes no orders, so it takes nothing into
+    // a basket either: the clients show it as closed, and an old tab, a QR
+    // code or a direct link must not fill a cart nobody can send.
+    if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId, { requireShift: true }))) {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
@@ -481,10 +484,11 @@ export class CartService {
 
   /**
    * The store exists, is not switched off, its brand passed moderation and,
-   * when `requireShift` is set, staff have started a shift there. The shift is
-   * checked on the order path only: a customer may still fill a basket at an
-   * inactive store, but cannot send an order nobody is there to take.
-   * The catalog only hides the rest; a direct link, a QR code or an old cart
+   * when `requireShift` is set, staff have started a shift there. Adding to
+   * the cart and placing the order both require the shift: a store nobody is
+   * working at is shown to customers as closed. Working hours are not checked
+   * here — a store inside its shift but outside its hours still takes orders
+   * scheduled for later. The catalog only hides the rest; a direct link, a QR code or an old cart
    * could still order from a closed store or an unapproved brand. Returns
    * the store's brand id.
    */
