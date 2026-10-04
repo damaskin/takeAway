@@ -88,7 +88,11 @@ describe('AdminCatalogService — store listing boundaries', () => {
       },
       store: { findMany: jest.fn().mockResolvedValue([{ id: 'burgers' }, { id: 'pizza' }]) },
     };
-    const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
+    const svc = new AdminCatalogService(
+      prisma as unknown as PrismaService,
+      {} as PasswordService,
+      {} as StoreAvailabilityNotifier,
+    );
     return { svc, prisma };
   }
 
