@@ -269,9 +269,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose a store that is taking orders now and we will show its menu and how soon your order can be ready.';
 
   @override
-  String get changeStore => 'Change';
-
-  @override
   String get storesInactiveTitle => 'Not taking orders right now';
 
   @override
@@ -305,6 +302,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Could not load the menu.';
+
+  @override
+  String get changeStore => 'Change';
 
   @override
   String addedToCart(String name) {

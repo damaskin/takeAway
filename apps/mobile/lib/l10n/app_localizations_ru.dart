@@ -276,9 +276,6 @@ class AppLocalizationsRu extends AppLocalizations {
       'Выберите точку, которая сейчас принимает заказы, — покажем её меню и через сколько будет готово.';
 
   @override
-  String get changeStore => 'Сменить';
-
-  @override
   String get storesInactiveTitle => 'Сейчас не принимают заказы';
 
   @override
@@ -312,6 +309,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get menuLoadFailed => 'Не удалось загрузить меню.';
+
+  @override
+  String get changeStore => 'Сменить';
 
   @override
   String addedToCart(String name) {
