@@ -15,6 +15,7 @@ import { KitchenApi } from '../../core/kitchen/kitchen.api';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { type EditorTab } from './store-editor.component';
 import { storeErrorMessage } from './store-errors';
+import { storeNeedsTimeZone } from './store-options';
 import { StoreReadinessComponent } from './store-readiness.component';
 
 /** A failed action on one store, shown on that store's card. */
@@ -133,6 +134,65 @@ interface CardError {
                 >/stores/{{ s.slug }}</span
               >
             </div>
+
+            @if (timezoneMissing(s)) {
+              <div
+                role="alert"
+                [attr.data-testid]="'store-timezone-missing-' + s.id"
+                class="flex flex-col"
+                style="gap: 6px; padding: 10px 12px; background: #D94B5E1A; border: 1px solid var(--color-berry); border-radius: 12px; font-family: var(--font-sans)"
+              >
+                <strong style="font-size: 13px; color: #8F2F3C">{{
+                  'admin.stores.timezoneMissing.title' | translate
+                }}</strong>
+                <span style="font-size: 12px; color: var(--color-text-secondary)">{{
+                  'admin.stores.timezoneMissing.body' | translate
+                }}</span>
+                @if (canEdit()) {
+                  <a
+                    [routerLink]="['/stores', s.id]"
+                    [queryParams]="{ tab: 'details' }"
+                    style="align-self: flex-start; font-size: 13px; font-weight: 600; color: var(--color-berry)"
+                    >{{ 'admin.stores.timezoneMissing.fix' | translate }}</a
+                  >
+                } @else {
+                  <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
+                    'admin.stores.timezoneMissing.ask' | translate
+                  }}</span>
+                }
+              </div>
+            }
+
+            @if (s.status === 'CLOSED' && s.shiftOpen !== undefined) {
+              <!-- A closed store takes no orders whatever the shift says; say so instead of hiding the button. -->
+              <div
+                class="flex items-center flex-wrap"
+                [attr.data-testid]="'store-shift-blocked-' + s.id"
+                style="gap: 8px 12px; padding: 10px 12px; border-radius: 12px; background: var(--color-cream); border: 1px solid var(--color-border-light)"
+              >
+                <span
+                  style="flex: 1 1 200px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                  >{{
+                    (s.shiftOpen
+                      ? 'admin.stores.shift.storeClosedShiftOpen'
+                      : canEdit()
+                        ? 'admin.stores.shift.storeClosedCanOpen'
+                        : 'admin.stores.shift.storeClosed'
+                    ) | translate
+                  }}</span
+                >
+                @if (s.shiftOpen) {
+                  <button
+                    type="button"
+                    (click)="setShift(s, false)"
+                    [disabled]="busyId() === s.id"
+                    style="height: 34px; padding: 0 14px; background: transparent; color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; cursor: pointer"
+                  >
+                    {{ (busyId() === s.id ? 'common.loading' : 'admin.kitchen.shift.finish') | translate }}
+                  </button>
+                }
+              </div>
+            }
 
             @if (s.status !== 'CLOSED' && s.shiftOpen !== undefined) {
               <div
@@ -312,6 +372,11 @@ export class StoresPage implements OnInit {
   fixReadiness(id: string, check: ReadinessCheck): void {
     const tab: EditorTab = check === 'hours' ? 'hours' : 'details';
     this.router.navigate(['/stores', id], { queryParams: { tab } });
+  }
+
+  /** An open store still on the UTC placeholder: its hours are read hours off. */
+  timezoneMissing(s: StoreAdminDto): boolean {
+    return storeNeedsTimeZone(s);
   }
 
   showReadiness(s: StoreAdminDto): boolean {

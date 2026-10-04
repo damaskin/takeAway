@@ -127,9 +127,16 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
               <strong class="kitchen-shift-title">{{ 'admin.kitchen.shift.closedTitle' | translate }}</strong>
               <span class="kitchen-shift-text">{{ 'admin.kitchen.shift.closedHint' | translate }}</span>
             </div>
-            <button type="button" class="kitchen-shift-start" [disabled]="shiftBusy()" (click)="setShift(true)">
-              {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.start') | translate }}
-            </button>
+            @if (store()?.status === 'CLOSED') {
+              <!-- The store is switched off: a shift would not make it take orders, so say why instead. -->
+              <span class="kitchen-shift-text" data-testid="shift-store-closed">{{
+                'admin.kitchen.shift.storeClosed' | translate
+              }}</span>
+            } @else {
+              <button type="button" class="kitchen-shift-start" [disabled]="shiftBusy()" (click)="setShift(true)">
+                {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.start') | translate }}
+              </button>
+            }
           </div>
         }
         @if (shiftError()) {
@@ -758,7 +765,7 @@ export class KitchenPage {
   private loadStores(brandId: string): void {
     this.catalog.listStores(brandId).subscribe({
       next: (rows) => {
-        const stores = rows.map((s) => ({ id: s.id, name: s.name, timezone: s.timezone ?? null }));
+        const stores = rows.map((s) => ({ id: s.id, name: s.name, timezone: s.timezone ?? null, status: s.status }));
         this.stores.set(stores);
         this.loaded.set(true);
         this.error.set(null);
