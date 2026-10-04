@@ -11,6 +11,7 @@ import {
 } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { DEFAULT_STORE_TIME_ZONE, isUnsetTimeZone, suggestStoreTimeZone } from '@takeaway/utils';
 import { firstValueFrom, merge } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -216,6 +217,16 @@ function toCents(units: number | null): number | null {
                   <span class="hint" [class.warn]="timezoneUnset()">{{
                     (timezoneUnset() ? 'admin.stores.hints.timezoneUnset' : 'admin.stores.hints.timezone') | translate
                   }}</span>
+                  @if (timezoneUnset() && canEdit()) {
+                    <button
+                      type="button"
+                      data-testid="timezone-suggest"
+                      (click)="useSuggestedZone()"
+                      style="align-self: flex-start; padding: 0; background: none; border: 0; font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel); text-decoration: underline; cursor: pointer"
+                    >
+                      {{ 'admin.stores.timezone.suggest' | translate: { zone: suggestedZone() } }}
+                    </button>
+                  }
                 </div>
               </fieldset>
 
@@ -753,10 +764,9 @@ export class StoreEditorComponent implements OnInit {
   readonly currency = signal('MDL');
   readonly zoneName = signal('');
 
-  readonly timezoneUnset = computed(() => {
-    const zone = this.zoneName();
-    return !zone || zone === 'UTC' || zone === 'Etc/UTC';
-  });
+  readonly timezoneUnset = computed(() => isUnsetTimeZone(this.zoneName()));
+  /** What the address and the map pin imply, for the one-click fix of an unset zone. */
+  readonly suggestedZone = signal(DEFAULT_STORE_TIME_ZONE);
 
   readonly openingBlocked = computed(() => {
     const s = this.store();
@@ -771,6 +781,9 @@ export class StoreEditorComponent implements OnInit {
       .subscribe(() => this.syncMarker());
     c.currency.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.currency.set(v));
     c.timezone.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.zoneName.set(v));
+    merge(c.city.valueChanges, c.country.valueChanges, c.latitude.valueChanges, c.longitude.valueChanges)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.refreshSuggestedZone());
     this.load();
   }
 
@@ -857,6 +870,18 @@ export class StoreEditorComponent implements OnInit {
       if (weekday !== 1) this.day(weekday).setValue({ ...monday });
     }
     this.hoursForm.markAsDirty();
+  }
+
+  /** Puts the zone the address implies into the form; saving stores it. */
+  useSuggestedZone(): void {
+    const zone = this.detailsForm.controls.timezone;
+    zone.setValue(this.suggestedZone());
+    zone.markAsDirty();
+  }
+
+  private refreshSuggestedZone(): void {
+    const v = this.detailsForm.getRawValue();
+    this.suggestedZone.set(suggestStoreTimeZone(v) ?? DEFAULT_STORE_TIME_ZONE);
   }
 
   onPickerMoved(p: LatLng): void {
@@ -1041,6 +1066,7 @@ export class StoreEditorComponent implements OnInit {
     }
     this.currency.set(s.currency);
     this.zoneName.set(s.timezone ?? '');
+    this.refreshSuggestedZone();
 
     const rows = s.workingHours ?? [];
     const mode = hoursModeOf(rows);

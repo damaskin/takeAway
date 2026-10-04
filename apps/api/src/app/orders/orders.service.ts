@@ -130,9 +130,12 @@ export class OrdersService {
     const lines = await this.cart.repriceForCheckout(cart);
 
     const pickupAt = await this.resolvePickupAt(cart.storeId, lines, dto);
-    // Working hours are edited in admin and were enforced nowhere: a 3am
-    // handover used to land straight on the kitchen board.
-    await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
+    // The shift is the source of truth for "open now": while staff have a
+    // shift running (checked above), an ASAP order is taken even outside
+    // the posted hours. A scheduled pickup is for later, when nobody may be
+    // there, so it must still fall inside the working hours — a 3am
+    // pre-order used to land straight on the kitchen board.
+    if (dto.pickupMode !== 'ASAP') await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
     // Capacity applies to ASAP too. Without it a rush simply pushes every
     // quoted ETA out, which is the failure this whole model exists to stop.
     await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);

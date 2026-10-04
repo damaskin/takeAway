@@ -16,6 +16,7 @@ import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { OrderStatusPanelComponent } from '../../shared/order-status-panel.component';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
+import { StoreTimezoneAlertComponent } from './store-timezone-alert.component';
 
 interface KpiCard {
   label: string;
@@ -48,7 +49,13 @@ interface DashboardOrder {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, OnboardingChecklistComponent, OrderStatusPanelComponent],
+  imports: [
+    RouterLink,
+    TranslatePipe,
+    OnboardingChecklistComponent,
+    OrderStatusPanelComponent,
+    StoreTimezoneAlertComponent,
+  ],
   template: `
     <section style="padding: clamp(16px, 4vw, 32px); display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-end justify-between flex-wrap" style="gap: 16px">
@@ -83,6 +90,9 @@ interface DashboardOrder {
           </a>
         </div>
       </header>
+
+      <!-- Open stores still on UTC: their hours are read hours off; hides itself when none -->
+      <app-store-timezone-alert />
 
       <!-- Launch checklist: a new brand owner's next steps; hides itself once done -->
       <app-onboarding-checklist />

@@ -880,6 +880,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
         openSince: 'Shift running since {{time}}, the store takes orders',
         openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
+        storeClosed:
+          'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
       },
       arrival: {
         here: 'Customer is here',
@@ -924,6 +926,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       empty: 'No businesses yet.',
     },
     dashboard: {
+      timezoneAlert: {
+        title: 'No time zone set — working hours are read as UTC',
+        body: 'Customers see shifted working hours, and the store may look closed even during a shift.',
+        fix: 'Set the zone: {{name}}',
+      },
       title: 'Welcome back{{name}}',
       subtitle: "Here's what's happening across your takeAway network today.",
       range: 'Last {{days}} days',
@@ -1265,6 +1272,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
       shift: {
         open: 'Shift running — the store takes orders',
         closed: 'Shift not started — customers see the store as inactive',
+        storeClosed:
+          'The store is closed in its settings, so a shift cannot start. The owner or a manager can open it.',
+        storeClosedCanOpen:
+          'The store is closed in its settings, so a shift cannot start. Open the store first with "Open store".',
+        storeClosedShiftOpen: 'The store is closed in its settings but a shift is still running — you can finish it.',
+      },
+      timezoneMissing: {
+        title: 'No time zone set — working hours are read as UTC',
+        body: 'Customers see shifted working hours, and the store may look closed even during a shift.',
+        fix: 'Set the time zone',
+        ask: "Ask the owner or a manager to set the store's time zone.",
       },
       closeConfirm: 'Close "{{name}}"? It stops taking new orders; orders already accepted stay in the kitchen.',
       delete: 'Delete',
@@ -1432,6 +1450,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         search: 'Search a city or zone',
         choose: 'Choose a time zone',
         noMatch: 'Nothing found',
+        derived: "Taken from the store's address — change it if the store is in another zone.",
+        suggest: 'Use {{zone}}',
       },
       photos: {
         hero: 'Cover photo',

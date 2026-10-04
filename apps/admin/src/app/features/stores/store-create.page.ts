@@ -3,6 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { suggestStoreTimeZone } from '@takeaway/utils';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CreateStoreInput } from '../../core/catalog/admin-catalog.service';
@@ -97,7 +98,7 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
             <span class="field-label">{{ 'admin.stores.fields.timezone' | translate }}</span>
             <app-timezone-select formControlName="timezone" />
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
-              'admin.stores.hints.timezone' | translate
+              (zoneDerived() ? 'admin.stores.timezone.derived' : 'admin.stores.hints.timezone') | translate
             }}</span>
           </div>
           <label class="field">
@@ -214,6 +215,8 @@ export class StoreCreatePage {
 
   /** Marker for the map picker — mirrors the lat/lng controls. */
   readonly pickerMarkers = signal<MapMarker[]>([]);
+  /** The zone shown was derived from the address, not picked by hand. */
+  readonly zoneDerived = signal(false);
 
   /** The brand's own currency, once it is known, is the better default. */
   private readonly brandCurrency = computed(() => this.activeBrand.active()?.currency ?? 'MDL');
@@ -228,7 +231,27 @@ export class StoreCreatePage {
           ? [{ id: 'new', lat: latitude, lng: longitude, kind: 'store' }]
           : [],
       );
+      this.deriveZone();
     });
+  }
+
+  /**
+   * Follows the address and the map pin with the zone they imply (Tiraspol →
+   * Europe/Chisinau) until the owner picks a zone by hand — that choice is
+   * never overwritten. Nobody types a zone unprompted, and a wrong one moves
+   * every working hour.
+   */
+  private deriveZone(): void {
+    const zone = this.form.controls.timezone;
+    if (zone.dirty) {
+      this.zoneDerived.set(false);
+      return;
+    }
+    const v = this.form.getRawValue();
+    const suggested = suggestStoreTimeZone(v);
+    if (!suggested) return;
+    if (suggested !== zone.value) zone.setValue(suggested, { emitEvent: false });
+    this.zoneDerived.set(true);
   }
 
   onPickerMoved(p: LatLng): void {
@@ -304,6 +327,7 @@ export class StoreCreatePage {
       longitude: null,
       slug: '',
     });
+    this.deriveZone();
   }
 }
 

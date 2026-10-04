@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { CreateStoreDto, ReplaceWorkingHoursDto, UpdateStoreDto } from './dto/admin-store.dto';
 
@@ -59,8 +60,13 @@ function build(opts: Options = {}) {
         ),
     },
   };
-  const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
-  return { svc, prisma, store };
+  const availability = { announce: jest.fn().mockResolvedValue(undefined), announceGone: jest.fn() };
+  const svc = new AdminCatalogService(
+    prisma as unknown as PrismaService,
+    {} as PasswordService,
+    availability as unknown as StoreAvailabilityNotifier,
+  );
+  return { svc, prisma, store, availability };
 }
 
 /** The `data` a Prisma write mock received on its n-th call. */
@@ -160,9 +166,25 @@ describe('AdminCatalogService — creating a store', () => {
     expect(written(prisma.store.create)['slug']).toBe('noname-coffee-balka');
   });
 
-  it("takes the zone of the brand's other stores when none is given", async () => {
-    const { svc, prisma } = build({ siblingZones: ['Europe/Chisinau', 'UTC'] });
+  it('derives the zone from the address when none is given', async () => {
+    const { svc, prisma } = build({ siblingZones: ['Europe/London'] });
     await svc.createStore(newStore, ['brand-1']);
+    expect(written(prisma.store.create)['timezone']).toBe('Europe/Chisinau');
+  });
+
+  it("takes the zone of the brand's other stores when the address says nothing", async () => {
+    const { svc, prisma } = build({ siblingZones: ['Europe/London', 'Europe/London', 'UTC'] });
+    await svc.createStore({ ...newStore, city: 'Springfield', country: 'US', latitude: 39.8, longitude: -89.6 }, [
+      'brand-1',
+    ]);
+    expect(written(prisma.store.create)['timezone']).toBe('Europe/London');
+  });
+
+  it('falls back to Chisinau, never UTC, with nothing to go on', async () => {
+    const { svc, prisma } = build({ siblingZones: ['UTC'] });
+    await svc.createStore({ ...newStore, city: 'Springfield', country: 'US', latitude: 39.8, longitude: -89.6 }, [
+      'brand-1',
+    ]);
     expect(written(prisma.store.create)['timezone']).toBe('Europe/Chisinau');
   });
 
@@ -219,6 +241,19 @@ describe('AdminCatalogService — changing a store', () => {
     expect(prisma.store.update).toHaveBeenCalled();
   });
 
+  it('tells every client when the store is switched on or off', async () => {
+    const { svc, availability } = build({ store: { status: 'OPEN' } });
+    await svc.updateStore('store-1', { status: 'CLOSED' }, ['brand-1']);
+    expect(availability.announce).toHaveBeenCalledWith('store-1');
+  });
+
+  it('stays quiet when the status is not touched or resent unchanged', async () => {
+    const { svc, availability } = build({ store: { status: 'OPEN' } });
+    await svc.updateStore('store-1', { phone: '+373 533 12345' }, ['brand-1']);
+    await svc.updateStore('store-1', { status: 'OPEN' }, ['brand-1']);
+    expect(availability.announce).not.toHaveBeenCalled();
+  });
+
   it('also gates a closed store going straight to busy', async () => {
     const { svc } = build({ visibleProducts: 0 });
     const body = await conflictBody(svc.updateStore('store-1', { status: 'OVERLOADED' }, ['brand-1']));
@@ -235,9 +270,12 @@ describe('AdminCatalogService — deleting a store', () => {
   });
 
   it('deletes a store nobody ordered from', async () => {
-    const { svc, prisma } = build();
+    const { svc, prisma, availability } = build();
     await svc.deleteStore('store-1', ['brand-1']);
     expect(prisma.store.delete).toHaveBeenCalledWith({ where: { id: 'store-1' } });
+    expect(availability.announceGone).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'store-1', brandId: 'brand-1' }),
+    );
   });
 
   it('answers the same 409 when an order lands between the check and the delete', async () => {

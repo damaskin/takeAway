@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { StoreAvailabilityNotifier } from '../realtime/store-availability.notifier';
 import { customerArrival } from './kds.service';
 import { StoreShiftService } from './store-shift.service';
 
@@ -27,8 +28,13 @@ function harness(openShift: { id: string } | null = null) {
     },
   };
   const realtime = { emitKdsShiftChanged: jest.fn() };
-  const service = new StoreShiftService(prisma as unknown as PrismaService, realtime as unknown as RealtimeGateway);
-  return { service, prisma, realtime };
+  const availability = { announce: jest.fn().mockResolvedValue(undefined) };
+  const service = new StoreShiftService(
+    prisma as unknown as PrismaService,
+    realtime as unknown as RealtimeGateway,
+    availability as unknown as StoreAvailabilityNotifier,
+  );
+  return { service, prisma, realtime, availability };
 }
 
 describe('StoreShiftService', () => {
@@ -75,6 +81,15 @@ describe('StoreShiftService', () => {
       data: { closedAt: expect.any(Date), closedById: 'staff-1' },
     });
   });
+
+  it.each(['open', 'close'] as const)(
+    'announces to every client whether the store takes orders after %s',
+    async (action) => {
+      const { service, availability } = harness(action === 'close' ? { id: 'shift-1' } : null);
+      await service[action]('store-1', 'staff-1');
+      expect(availability.announce).toHaveBeenCalledWith('store-1');
+    },
+  );
 
   it('answers 404 for a store that does not exist', async () => {
     const { service, prisma } = harness();

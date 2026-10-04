@@ -9,6 +9,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { OrderStatus } from '@prisma/client';
+import type { StoreAvailabilityChangedEvent, StoreAvailabilityChangedEventName } from '@takeaway/shared-types';
 import type { Server, Socket } from 'socket.io';
 
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
@@ -67,10 +68,25 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly stores: UserStoreScopeService,
   ) {}
 
+  /**
+   * Two kinds of socket connect here:
+   *
+   *  - Signed in: a valid access token. The socket joins its user room and
+   *    may subscribe to order, kitchen and dispatch rooms (each subscribe
+   *    handler checks the account again).
+   *  - Anonymous: no token at all — a storefront opened without an account.
+   *    It joins no room and every subscribe answers `{ok:false}`, so all it
+   *    receives are the public broadcasts (`store.loadChanged`,
+   *    `store.availabilityChanged`).
+   *
+   * A token that is present but invalid, expired or belongs to a blocked
+   * account is still turned away rather than downgraded to anonymous: the
+   * clients read the kick as "refresh the token and reconnect".
+   */
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
     if (!token) {
-      client.disconnect(true);
+      this.logger.debug(`WS connected: ${client.id} (anonymous)`);
       return;
     }
     try {
@@ -134,6 +150,22 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   /** Emit store-level busy/ETA updates (public channel). */
   emitStoreLoad(payload: StoreLoadPayload): void {
     this.server.emit('store.loadChanged', payload);
+  }
+
+  /**
+   * A store started or stopped taking orders. Public: every socket of the
+   * namespace gets it, anonymous storefronts included, so a menu left open
+   * flips to "closed" (or back) without a reload. The payload is a fixed
+   * contract the web, TMA and mobile clients rely on — exactly
+   * `{storeId, brandId, acceptingOrders}`, nothing else.
+   */
+  emitStoreAvailabilityChanged(payload: StoreAvailabilityChangedEvent): void {
+    const event: StoreAvailabilityChangedEventName = 'store.availabilityChanged';
+    this.server.emit(event, {
+      storeId: payload.storeId,
+      brandId: payload.brandId,
+      acceptingOrders: payload.acceptingOrders,
+    });
   }
 
   /**

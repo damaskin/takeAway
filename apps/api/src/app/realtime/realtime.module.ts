@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import { RealtimeGateway } from './realtime.gateway';
+import { StoreAvailabilityNotifier } from './store-availability.notifier';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { RealtimeGateway } from './realtime.gateway';
       }),
     }),
   ],
-  providers: [RealtimeGateway, UserStoreScopeService],
-  exports: [RealtimeGateway],
+  providers: [RealtimeGateway, UserStoreScopeService, StoreAvailabilityNotifier],
+  exports: [RealtimeGateway, StoreAvailabilityNotifier],
 })
 export class RealtimeModule {}

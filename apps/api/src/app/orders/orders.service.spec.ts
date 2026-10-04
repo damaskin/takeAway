@@ -234,7 +234,7 @@ function harness() {
     holds as unknown as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail, realtime, holds };
+  return { service, prisma, tx, mail, realtime, holds, kitchen };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -275,6 +275,32 @@ describe('OrdersService.create', () => {
       status: 400,
       response: expect.objectContaining({ code: 'STORE_NOT_TAKING_ORDERS' }),
     });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  // The shift is the source of truth for "open now": staff at work take an
+  // ASAP order even after the posted closing time.
+  it('takes an ASAP order during a shift even outside the working hours', async () => {
+    const { service, prisma, tx, kitchen } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    kitchen.assertOpenAt.mockRejectedValue(new Error('closed at that time'));
+
+    await service.create('user-1', placeOrder);
+
+    expect(kitchen.assertOpenAt).not.toHaveBeenCalled();
+    expect(tx.order.create).toHaveBeenCalled();
+  });
+
+  it('still holds a scheduled pickup to the working hours', async () => {
+    const { service, prisma, tx, kitchen } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    kitchen.assertOpenAt.mockRejectedValue(new Error('closed at that time'));
+    const pickupAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+
+    await expect(service.create('user-1', { cartId: 'cart-1', pickupMode: 'SCHEDULED', pickupAt })).rejects.toThrow(
+      'closed at that time',
+    );
+    expect(kitchen.assertOpenAt).toHaveBeenCalledWith('store-1', pickupAt);
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 

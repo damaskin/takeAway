@@ -67,3 +67,70 @@ describe('RealtimeGateway handshake', () => {
     expect(client.data['userId']).toBeUndefined();
   });
 });
+
+describe('RealtimeGateway anonymous sockets', () => {
+  function anonymous() {
+    const verifyAsync = jest.fn();
+    const prisma = { user: { findUnique: jest.fn() }, order: { findUnique: jest.fn() } } as unknown as PrismaService;
+    const scope = { getScope: jest.fn() } as unknown as UserStoreScopeService;
+    const config = { get: jest.fn() } as unknown as ConfigService;
+    const gw = new RealtimeGateway({ verifyAsync } as unknown as JwtService, config, prisma, scope);
+    const client = {
+      id: 'sock-1',
+      handshake: { auth: {} as Record<string, unknown>, headers: {}, query: {} },
+      data: {} as Record<string, unknown>,
+      join: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    return { gw, client, socket: client as unknown as Socket, verifyAsync };
+  }
+
+  it('lets a storefront without an account connect, into no room at all', async () => {
+    const { gw, client, socket, verifyAsync } = anonymous();
+    await gw.handleConnection(socket);
+    expect(client.disconnect).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
+    expect(client.data['userId']).toBeUndefined();
+    expect(verifyAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps every private room closed to it', async () => {
+    const { gw, client, socket } = anonymous();
+    await gw.handleConnection(socket);
+    await expect(gw.subscribeToOrder(socket, { orderId: 'o1' })).resolves.toEqual({ ok: false });
+    await expect(gw.subscribeToKds(socket, { storeId: 's1' })).resolves.toEqual({ ok: false });
+    await expect(gw.subscribeToDispatch(socket, { storeId: 's1' })).resolves.toEqual({ ok: false });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
+  it('still turns away a token that does not verify', async () => {
+    const { gw, client, socket, verifyAsync } = anonymous();
+    client.handshake.auth = { token: 'expired' };
+    verifyAsync.mockRejectedValue(new Error('jwt expired'));
+    await gw.handleConnection(socket);
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('RealtimeGateway store.availabilityChanged', () => {
+  it('broadcasts exactly {storeId, brandId, acceptingOrders} to the whole namespace', () => {
+    const gw = new RealtimeGateway(
+      {} as JwtService,
+      {} as ConfigService,
+      {} as PrismaService,
+      {} as UserStoreScopeService,
+    );
+    const emit = jest.fn();
+    const to = jest.fn();
+    (gw as unknown as { server: unknown }).server = { emit, to };
+    // A caller passing a richer object must not leak the extra fields.
+    const richer = { storeId: 'store-1', brandId: 'brand-1', acceptingOrders: true, status: 'OPEN' };
+    gw.emitStoreAvailabilityChanged(richer);
+    expect(to).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith('store.availabilityChanged', {
+      storeId: 'store-1',
+      brandId: 'brand-1',
+      acceptingOrders: true,
+    });
+  });
+});

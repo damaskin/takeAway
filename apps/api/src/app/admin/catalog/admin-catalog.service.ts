@@ -16,8 +16,9 @@ import {
 } from '@prisma/client';
 
 import { slugify, uniqueSlug } from '../../common/text/slug';
-import { canonicalTimeZone, prevailingTimeZone } from '../../common/time/time-zone';
+import { canonicalTimeZone, newStoreTimeZone } from '../../common/time/time-zone';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
 import { ingredientIdFor } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
@@ -91,6 +92,7 @@ export class AdminCatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
+    private readonly availability: StoreAvailabilityNotifier,
   ) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
@@ -256,7 +258,7 @@ export class AdminCatalogService {
           ...rest,
           slug: slug ?? (await this.generateStoreSlug(brand.slug, dto.name)),
           currency: currency ?? brand.currency,
-          timezone: timezone ? canonicalTimeZone(timezone) : ((await this.brandTimeZone(brand.id)) ?? 'UTC'),
+          timezone: timezone ? canonicalTimeZone(timezone) : newStoreTimeZone(dto, await this.brandZones(brand.id)),
           status: StoreStatus.CLOSED,
           // Default to pure pickup when the caller doesn't specify — covers
           // the simple "add store" UI flow. `pickupPointType` has a Prisma
@@ -321,6 +323,9 @@ export class AdminCatalogService {
     } catch (err) {
       throw storeWriteError(err);
     }
+    // Switching the store on or off changes whether it takes orders; open
+    // storefronts hear it at once instead of on their next reload.
+    if (status != null && status !== store.status) await this.availability.announce(id);
     return this.detail(updated);
   }
 
@@ -330,7 +335,7 @@ export class AdminCatalogService {
    * the history and stops new orders, which is what the owner wants.
    */
   async deleteStore(id: string, scope: BrandScope = null) {
-    await this.getStore(id, scope);
+    const store = await this.getStore(id, scope);
     const hasOrders = () => conflict('STORE_HAS_ORDERS', 'The store has orders — close it instead of deleting it');
     if (await this.storeHasOrders(id)) throw hasOrders();
     try {
@@ -340,6 +345,7 @@ export class AdminCatalogService {
       if (isPrismaError(err, 'P2003')) throw hasOrders();
       throw err;
     }
+    this.availability.announceGone(store);
   }
 
   /** Stores the uploaded photo's URL as the cover or appends it to the gallery. */
@@ -437,10 +443,10 @@ export class AdminCatalogService {
     );
   }
 
-  /** The zone the brand's other stores keep — the best guess for one nobody set. */
-  private async brandTimeZone(brandId: string): Promise<string | null> {
+  /** The zones the brand's other stores keep — a guess for one nobody set. */
+  private async brandZones(brandId: string): Promise<string[]> {
     const stores = await this.prisma.store.findMany({ where: { brandId }, select: { timezone: true } });
-    return prevailingTimeZone(stores.map((s) => s.timezone));
+    return stores.map((s) => s.timezone);
   }
 
   async replaceWorkingHours(storeId: string, dto: ReplaceWorkingHoursDto, scope: BrandScope = null) {

@@ -1,3 +1,4 @@
+import { DEFAULT_STORE_TIME_ZONE, suggestStoreTimeZone, type StoreLocationHint } from '@takeaway/utils';
 import { buildMessage, ValidateBy, type ValidationOptions } from 'class-validator';
 
 /**
@@ -60,6 +61,18 @@ export function prevailingTimeZone(zones: readonly string[]): string | null {
     }
   }
   return best;
+}
+
+/**
+ * The zone a new store gets when nobody picked one: derived from its
+ * address or map pin, else the zone its brand's other stores keep, else the
+ * launch market's. Never UTC — a café on UTC wall-clock time does not exist,
+ * and the placeholder made the Tiraspol store look closed for hours after
+ * staff opened a shift.
+ */
+export function newStoreTimeZone(location: StoreLocationHint, siblingZones: readonly string[]): string {
+  const zone = suggestStoreTimeZone(location) ?? prevailingTimeZone(siblingZones) ?? DEFAULT_STORE_TIME_ZONE;
+  return isIanaTimeZone(zone) ? canonicalTimeZone(zone) : DEFAULT_STORE_TIME_ZONE;
 }
 
 /** Validates {@link isIanaTimeZone}. */

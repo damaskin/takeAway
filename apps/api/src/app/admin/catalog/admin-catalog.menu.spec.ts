@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { CreateCategoryDto } from './dto/admin-category.dto';
 import { CreateModifierDto, CreateProductDto } from './dto/admin-product.dto';
@@ -79,7 +80,11 @@ function build() {
       ? (arg as (tx: typeof prisma) => Promise<unknown>)(prisma)
       : Promise.all(arg as unknown[]),
   );
-  const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
+  const svc = new AdminCatalogService(
+    prisma as unknown as PrismaService,
+    {} as PasswordService,
+    {} as StoreAvailabilityNotifier,
+  );
   return { svc, prisma };
 }
 

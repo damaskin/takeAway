@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { StoreAvailabilityNotifier } from '../realtime/store-availability.notifier';
 
 /** A store's shift as the cabinet and the kitchen board show it. */
 export interface StoreShiftDto {
@@ -33,6 +34,7 @@ export class StoreShiftService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly availability: StoreAvailabilityNotifier,
   ) {}
 
   async current(storeId: string): Promise<StoreShiftDto> {
@@ -69,9 +71,14 @@ export class StoreShiftService {
     return this.announce(storeId);
   }
 
+  /**
+   * Kitchen screens of the store get the shift itself; every client — the
+   * storefronts included — learns whether the store now takes orders.
+   */
   private async announce(storeId: string): Promise<StoreShiftDto> {
     const shift = await this.current(storeId);
     this.realtime.emitKdsShiftChanged({ storeId, shift });
+    await this.availability.announce(storeId);
     return shift;
   }
 

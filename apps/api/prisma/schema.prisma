@@ -570,9 +570,10 @@ model Store {
 
 /// Pivot table scoping a staff user to one or more stores. Used by the
 /// StoreScopeGuard so STORE_MANAGER, STAFF and RIDER users only see orders
-/// and dispatch queues for stores they're assigned to. Global roles
-/// (BRAND_ADMIN, SUPER_ADMIN) don't need rows — the scope service treats
-/// them as "all stores".
+/// and dispatch queues for stores they're assigned to. BRAND_ADMIN and
+/// SUPER_ADMIN don't need rows: a brand admin reaches the stores of the
+/// brands it owns (`Brand.ownerId`), the platform admin every store — see
+/// UserStoreScopeService.
 model UserStore {
   userId    String
   storeId   String

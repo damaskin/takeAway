@@ -4,6 +4,7 @@ import { validate } from 'class-validator';
 
 import type { PasswordService } from '../../auth/services/password.service';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { UpdateCategoryDto } from './dto/admin-category.dto';
 import { UpdateProductDto } from './dto/admin-product.dto';
@@ -28,7 +29,11 @@ describe('AdminCatalogService — brand boundaries', () => {
         aggregate: jest.fn().mockResolvedValue({ _max: { sortOrder: null } }),
       },
     };
-    const svc = new AdminCatalogService(prisma as unknown as PrismaService, {} as PasswordService);
+    const svc = new AdminCatalogService(
+      prisma as unknown as PrismaService,
+      {} as PasswordService,
+      {} as StoreAvailabilityNotifier,
+    );
     return { svc, prisma };
   }
 

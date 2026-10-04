@@ -37,9 +37,10 @@ export interface StoreListItem {
    */
   acceptingOrders?: boolean;
   /**
-   * An ASAP order placed now would be accepted: not closed, and within the
-   * store's working hours once the current ETA has passed. When false only
-   * scheduled pickup works.
+   * An ASAP order placed now would be accepted. The shift is the source of
+   * truth: same as `acceptingOrders` — not closed and a shift is open —
+   * whatever the working hours say. Hours only decide which slots are
+   * offered for scheduled (later) pickup.
    */
   openNow: boolean;
   /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */

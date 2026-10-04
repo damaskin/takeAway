@@ -15,6 +15,8 @@ export interface KitchenStore {
   id: string;
   name: string;
   timezone: string | null;
+  /** The store's own switch; CLOSED means no orders whatever the shift says. Absent where nobody needs it. */
+  status?: string;
 }
 
 /** An order nobody has taken on yet, with the store it came to. */
