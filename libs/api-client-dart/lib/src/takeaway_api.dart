@@ -186,6 +186,13 @@ abstract class TakeAwayApi {
   @POST('/payments/agroprombank/pay')
   Future<ChargeResult> payWithCard(@Body() Map<String, dynamic> body);
 
+  // ── Payments: Agroprombank Web-платёж (the bank's hosted page) ─────────
+
+  /// Page to send the customer to; `page` is null once the order is held
+  /// or paid.
+  @POST('/payments/agroprombank-web/start')
+  Future<StartWebPaymentResult> startWebPayment(@Body() StartWebPaymentRequest body);
+
   // ── Devices (push tokens) ──────────────────────────────────────────────
 
   @POST('/devices')

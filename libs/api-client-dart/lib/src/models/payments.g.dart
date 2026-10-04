@@ -41,3 +41,23 @@ Map<String, dynamic> _$BindCardRequestToJson(BindCardRequest instance) => <Strin
   'institute': instance.institute,
   'label': ?instance.label,
 };
+
+Map<String, dynamic> _$StartWebPaymentRequestToJson(StartWebPaymentRequest instance) => <String, dynamic>{
+  'orderId': instance.orderId,
+  'returnTo': instance.returnTo,
+};
+
+WebPaymentPage _$WebPaymentPageFromJson(Map<String, dynamic> json) => WebPaymentPage(
+  method: json['method'] as String,
+  action: json['action'] as String,
+  url: json['url'] as String,
+  fields: (json['fields'] as Map<String, dynamic>?)?.map((k, e) => MapEntry(k, e as String)) ?? const {},
+);
+
+StartWebPaymentResult _$StartWebPaymentResultFromJson(Map<String, dynamic> json) => StartWebPaymentResult(
+  paymentId: json['paymentId'] as String,
+  invoiceId: json['invoiceId'] as String,
+  status: json['status'] as String,
+  page: json['page'] == null ? null : WebPaymentPage.fromJson(json['page'] as Map<String, dynamic>),
+  expiresAt: json['expiresAt'] == null ? null : DateTime.parse(json['expiresAt'] as String),
+);

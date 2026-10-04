@@ -6,16 +6,6 @@ part of 'misc.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-FeatureFlags _$FeatureFlagsFromJson(Map<String, dynamic> json) => FeatureFlags(
-  deliveryEnabled: json['deliveryEnabled'] as bool? ?? false,
-  agroprombankEnabled: json['agroprombankEnabled'] as bool? ?? false,
-);
-
-Map<String, dynamic> _$FeatureFlagsToJson(FeatureFlags instance) => <String, dynamic>{
-  'deliveryEnabled': instance.deliveryEnabled,
-  'agroprombankEnabled': instance.agroprombankEnabled,
-};
-
 DeliveryQuote _$DeliveryQuoteFromJson(Map<String, dynamic> json) => DeliveryQuote(
   feeCents: (json['feeCents'] as num).toInt(),
   deliverable: json['deliverable'] as bool,

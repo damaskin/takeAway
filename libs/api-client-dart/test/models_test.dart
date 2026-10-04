@@ -281,8 +281,61 @@ void main() {
     });
 
     test('feature flags default to off', () {
-      expect(FeatureFlags.fromJson({}).agroprombankEnabled, isFalse);
+      final flags = FeatureFlags.fromJson({});
+      expect(flags.agroprombankEnabled, isFalse);
+      expect(flags.cardPaymentFlow, CardPaymentFlow.none);
+      expect(flags.cardPaymentsEnabled, isFalse);
       expect(FeatureFlags.fromJson({'deliveryEnabled': true}).deliveryEnabled, isTrue);
+    });
+
+    test('reads the card payment flow, deriving it from agroprombankEnabled on an older API', () {
+      final web = FeatureFlags.fromJson({'agroprombankEnabled': true, 'cardPaymentFlow': 'web'});
+      expect(web.cardPaymentFlow, CardPaymentFlow.web);
+      expect(web.webPaymentsEnabled, isTrue);
+      expect(web.boundCardsEnabled, isFalse, reason: 'the server chose the bank page over bound cards');
+      expect(web.cardPaymentsEnabled, isTrue);
+
+      final older = FeatureFlags.fromJson({'agroprombankEnabled': true});
+      expect(older.cardPaymentFlow, CardPaymentFlow.token);
+      expect(older.boundCardsEnabled, isTrue);
+
+      expect(FeatureFlags.fromJson({'cardPaymentFlow': 'none'}).cardPaymentsEnabled, isFalse);
+      expect(
+        FeatureFlags.fromJson({'agroprombankEnabled': true, 'cardPaymentFlow': 'something-new'}).cardPaymentFlow,
+        CardPaymentFlow.token,
+      );
+      expect(const FeatureFlags(agroprombankEnabled: true).boundCardsEnabled, isTrue);
+    });
+
+    test('parses a web payment start, with and without a page to open', () {
+      final started = StartWebPaymentResult.fromJson({
+        'paymentId': 'pay_1',
+        'invoiceId': 'inv_1',
+        'status': 'REQUIRES_ACTION',
+        'page': {
+          'method': 'POST',
+          'action': 'https://bank.example/pay',
+          'fields': {'nivid': 'inv_1', 'sign': 'abc'},
+          'url': 'https://bank.example/pay?nivid=inv_1&sign=abc',
+        },
+        'expiresAt': '2026-10-04T12:20:00.000Z',
+      });
+      expect(started.alreadySettled, isFalse);
+      expect(started.page!.fields['nivid'], 'inv_1');
+      expect(started.page!.url, startsWith('https://bank.example/pay?'));
+      expect(started.expiresAt!.isUtc, isTrue);
+
+      final held = StartWebPaymentResult.fromJson({
+        'paymentId': 'pay_1',
+        'invoiceId': 'inv_1',
+        'status': 'SUCCEEDED',
+        'page': null,
+        'expiresAt': null,
+      });
+      expect(held.alreadySettled, isTrue);
+      expect(held.expiresAt, isNull);
+
+      expect(const StartWebPaymentRequest(orderId: 'o1').toJson(), {'orderId': 'o1', 'returnTo': 'mobile'});
     });
   });
 }
