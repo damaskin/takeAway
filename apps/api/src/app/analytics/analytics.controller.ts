@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { AnalyticsScopeResolver } from './analytics-scope';
 import { AnalyticsService } from './analytics.service';
+import { OverviewService } from './overview.service';
 import { AnalyticsQueryDto, RetentionQueryDto, TopProductsQueryDto } from './dto/analytics-query.dto';
 import {
   BrandPerformanceDto,
@@ -20,6 +21,7 @@ import {
   TopProductDto,
   WinBackDto,
 } from './dto/analytics.dto';
+import { BusinessOverviewDto } from './dto/overview.dto';
 
 /**
  * Every endpoint narrows to the caller's own brands and stores; `brandId`
@@ -37,7 +39,28 @@ export class AnalyticsController {
   constructor(
     private readonly analytics: AnalyticsService,
     private readonly scopes: AnalyticsScopeResolver,
+    private readonly overviews: OverviewService,
   ) {}
+
+  /**
+   * The dashboard in one request: KPIs against the period before, the days,
+   * stores side by side, statuses. Every plan gets revenue, orders and
+   * shares per store; PRO adds the per-store comparison (`storeComparison`)
+   * and the load by hour and weekday (`deepAnalytics`), which stay null
+   * otherwise.
+   */
+  @Get('overview')
+  @ApiOkResponse({ type: BusinessOverviewDto })
+  async overview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AnalyticsQueryDto,
+  ): Promise<BusinessOverviewDto> {
+    const { scope, range, features } = await this.scopes.context(user, query, 30);
+    return this.overviews.business(scope, range, {
+      storeComparison: features.has('storeComparison'),
+      deep: features.has('deepAnalytics'),
+    });
+  }
 
   @Get('summary')
   @ApiOkResponse({ type: DashboardSummaryDto })
