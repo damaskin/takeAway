@@ -5,3 +5,4 @@ export * from './lib/date-time';
 export * from './lib/tax';
 export * from './lib/order-item';
 export * from './lib/store';
+export * from './lib/store-time-zone';
