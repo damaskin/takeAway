@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/push/push_service.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/app_settings.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import 'profile_providers.dart';
@@ -19,7 +20,22 @@ class NotificationsScreen extends ConsumerWidget {
     try {
       await ref.read(notificationPrefsProvider.notifier).set(orderUpdates: orders, promotions: promos);
       // Turning updates on is the moment to ask the OS for permission.
-      if ((orders ?? false) || (promos ?? false)) await ref.read(pushServiceProvider).requestPermission();
+      if ((orders ?? false) || (promos ?? false)) {
+        final push = ref.read(pushServiceProvider);
+        final granted = await push.requestPermission();
+        // Said no before: the OS will not ask again, only its settings can
+        // turn notifications back on.
+        if (!granted && await push.isDenied() && context.mounted) {
+          final l10n = AppLocalizations.of(context);
+          Snack.show(
+            context,
+            l10n.notificationsDenied,
+            icon: Icons.notifications_off_outlined,
+            actionLabel: l10n.openSettings,
+            onAction: () => unawaited(openAppSettings()),
+          );
+        }
+      }
     } on Object catch (error) {
       if (context.mounted) Snack.error(context, error);
     }

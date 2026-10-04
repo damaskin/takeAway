@@ -58,7 +58,11 @@ class PushService {
         ),
       );
       final messaging = FirebaseMessaging.instance;
-      await messaging.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
+      // In the foreground the app shows its own in-app notice (see
+      // [foreground]), which knows to stay quiet about the order already on
+      // screen. Letting iOS show its banner as well put the same news up
+      // twice; Android shows none for a foreground push anyway.
+      await messaging.setForegroundNotificationPresentationOptions(badge: true, sound: true);
       FirebaseMessaging.onMessage.listen((m) => _foreground.add(_toMessage(m)));
       FirebaseMessaging.onMessageOpenedApp.listen((m) => _opened.add(_toMessage(m)));
       messaging.onTokenRefresh.listen((token) => unawaited(_register(token)));
@@ -88,6 +92,14 @@ class PushService {
     return settings.authorizationStatus == AuthorizationStatus.notDetermined;
   }
 
+  /// Whether the user said no — asking again shows nothing; only the
+  /// system settings can turn notifications back on.
+  Future<bool> isDenied() async {
+    if (!_initialized) return false;
+    final settings = await FirebaseMessaging.instance.getNotificationSettings();
+    return settings.authorizationStatus == AuthorizationStatus.denied;
+  }
+
   /// Asks for permission (no-op if already decided) and registers the token.
   Future<bool> requestPermission() async {
     if (!_initialized) return false;
@@ -103,10 +115,55 @@ class PushService {
   Future<void> syncToken() async {
     if (!_initialized) return;
     try {
-      final token = await FirebaseMessaging.instance.getToken();
+      final token = await _fetchToken();
       if (token != null) await _register(token);
     } on Object catch (error) {
       debugPrint('Push token sync failed: $error');
+    }
+  }
+
+  /// [syncToken] for when the last attempt came back empty — called on
+  /// every return to the foreground, so a failed first try is not final.
+  Future<void> syncTokenIfMissing() async {
+    if (!_initialized || _token != null || _syncing) return;
+    if (!await isAuthorized()) return;
+    _syncing = true;
+    try {
+      await syncToken();
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  bool _syncing = false;
+
+  /// The FCM token, waiting for APNs on iOS first.
+  ///
+  /// Right after the permission prompt iOS has not handed the app its APNs
+  /// token yet, and `getToken()` then fails with "APNs token has not been
+  /// set yet" — the device used to stay unregistered for good. Waits for
+  /// the APNs token (up to about half a minute), then retries the FCM one.
+  Future<String?> _fetchToken() async {
+    final messaging = FirebaseMessaging.instance;
+    if (Platform.isIOS) {
+      String? apns;
+      for (var attempt = 0; attempt < 8; attempt++) {
+        apns = await messaging.getAPNSToken();
+        if (apns != null) break;
+        await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+      }
+      if (apns == null) {
+        debugPrint('Push: no APNs token yet; will retry on next resume');
+        return null;
+      }
+    }
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await messaging.getToken();
+      } on Object {
+        if (attempt >= 2) rethrow;
+        await Future<void>.delayed(Duration(seconds: 2 * (attempt + 1)));
+      }
     }
   }
 
