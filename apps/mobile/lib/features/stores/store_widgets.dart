@@ -22,11 +22,20 @@ String? displayAddress(Store store) {
   return text.isEmpty ? null : text;
 }
 
-/// The business's logo filling the whole rounded square, or — when the
-/// business has not uploaded one, or it fails to load — the quiet storefront
+/// The business's logo, whole, on a light rounded tile — or, when the
+/// business has not uploaded one or it fails to load, the quiet storefront
 /// tile store cards had before logos.
+///
+/// Logos come in every shape: wide wordmarks, square marks, transparent
+/// PNGs drawn in black. Filling the square cropped the wordmarks, and a
+/// transparent logo vanished on the dark theme; fitted inside a white tile
+/// with a margin every one of them stays whole and legible, and the tile
+/// looks the same in both themes, as a printed sticker would.
 class StoreLogo extends StatelessWidget {
   const StoreLogo({required this.store, this.size = 48, super.key});
+
+  /// The tile behind a logo, whatever the theme.
+  static const tileColor = Color(0xFFFFFFFF);
 
   final Store store;
   final double size;
@@ -35,25 +44,40 @@ class StoreLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final brand = context.brand;
     final url = store.logoUrl;
+    final radius = BorderRadius.circular(size * 0.29);
     final placeholder = ColoredBox(
       color: brand.caramelSoft,
       child: Center(
         child: Icon(Icons.storefront_rounded, color: brand.caramel, size: size * 0.5),
       ),
     );
+    if (!ProductImage.isUsable(url)) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: SizedBox.square(dimension: size, child: placeholder),
+      );
+    }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.29),
+      borderRadius: radius,
       child: SizedBox.square(
         dimension: size,
-        child: ProductImage.isUsable(url)
-            ? CachedNetworkImage(
-                imageUrl: url!,
-                fit: BoxFit.cover,
-                fadeInDuration: Motion.fast,
-                placeholder: (_, _) => ColoredBox(color: brand.caramelSoft),
-                errorWidget: (_, _, _) => placeholder,
-              )
-            : placeholder,
+        child: CachedNetworkImage(
+          imageUrl: url!,
+          fadeInDuration: Motion.fast,
+          imageBuilder: (_, image) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: tileColor,
+              borderRadius: radius,
+              border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(size * 0.12),
+              child: Image(image: image, fit: BoxFit.contain),
+            ),
+          ),
+          placeholder: (_, _) => const ColoredBox(color: tileColor),
+          errorWidget: (_, _, _) => placeholder,
+        ),
       ),
     );
   }
@@ -66,17 +90,21 @@ class StoreTile extends StatelessWidget {
     required this.onTap,
     this.selected = false,
     this.enabled = true,
+    bool? dimmed,
     this.trailing,
     super.key,
-  });
+  }) : dimmed = dimmed ?? !enabled;
 
   final StoreWithDistance item;
   final VoidCallback onTap;
   final bool selected;
 
-  /// False greys the row out and ignores taps — a store that is not taking
-  /// orders cannot be picked.
+  /// False ignores taps — a store that is not taking orders cannot be picked.
   final bool enabled;
+
+  /// Greys the row out. Follows [enabled] unless set: the Stores tab greys
+  /// a closed store but still lets it be tapped, to find it on the map.
+  final bool dimmed;
   final Widget? trailing;
 
   @override
@@ -135,7 +163,7 @@ class StoreTile extends StatelessWidget {
         ),
       ),
     );
-    return enabled ? tile : Opacity(opacity: 0.5, child: tile);
+    return dimmed ? Opacity(opacity: 0.5, child: tile) : tile;
   }
 }
 
@@ -190,6 +218,7 @@ class StorePickerList extends ConsumerWidget {
             ),
           ),
         stores.when(
+          skipError: true,
           loading: () => SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList.separated(

@@ -38,6 +38,15 @@ abstract final class Env {
     defaultValue: 'https://app3004048938-login.tg.dev/tglogin',
   );
 
+  /// Map tiles, as a `{z}/{x}/{y}` URL template. OpenStreetMap by default —
+  /// free and keyless, the same tiles the web apps use; a keyed provider
+  /// (MapTiler, Stadia…) can be swapped in at build time without a release
+  /// of code. [mapTileAttribution] names whoever serves them.
+  static const _mapTileUrl = String.fromEnvironment('MAP_TILE_URL');
+  static const _mapTileAttribution = String.fromEnvironment('MAP_TILE_ATTRIBUTION');
+  static String get mapTileUrl => _mapTileUrl.isEmpty ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' : _mapTileUrl;
+  static String get mapTileAttribution => _mapTileAttribution.isEmpty ? 'OpenStreetMap' : _mapTileAttribution;
+
   /// Google Sign-In. The server client id is the *web* OAuth client — ID
   /// tokens minted for it are what `/auth/google` already accepts.
   static const googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
