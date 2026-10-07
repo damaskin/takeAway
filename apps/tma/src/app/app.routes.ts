@@ -47,6 +47,10 @@ export const appRoutes: Route[] = [
         path: 'profile',
         loadComponent: () => import('./features/profile/profile.page').then((m) => m.TmaProfilePage),
       },
+      {
+        path: 'feedback',
+        loadComponent: () => import('./features/feedback/feedback.page').then((m) => m.TmaFeedbackPage),
+      },
       { path: '**', redirectTo: '' },
     ],
   },
