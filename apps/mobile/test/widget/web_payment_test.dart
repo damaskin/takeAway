@@ -61,7 +61,7 @@ void main() {
       findsOneWidget,
       reason: 'the order already on screen is refreshed, not pushed again',
     );
-    expect(find.text('Сумма забронирована'), findsOneWidget);
+    expect(find.text('Спишем при принятии заказа'), findsOneWidget);
     expect(find.byKey(const ValueKey('pay')), findsNothing, reason: 'nothing left to pay');
     expect(find.text('Я на месте'), findsOneWidget);
     await h.unmount(tester);

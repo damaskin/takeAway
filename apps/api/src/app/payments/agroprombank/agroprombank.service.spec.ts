@@ -23,12 +23,22 @@ describe('AgroprombankService', () => {
   let service: AgroprombankService;
   let client: { invoke: jest.Mock; invokeRaw: jest.Mock };
   let settlement: { settlePaidOrder: jest.Mock; announceHeld: jest.Mock };
-  let config: { holdUntilAccepted: boolean } & Partial<AgroprombankConfig>;
+  let config: {
+    holdUntilAccepted: boolean;
+    chargeMoment: AgroprombankConfig['chargeMoment'];
+  } & Partial<AgroprombankConfig>;
   let prisma: PrismaMock;
 
   interface PrismaMock {
     order: { findUnique: jest.Mock };
-    payment: { findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; findMany: jest.Mock };
+    payment: {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+      findMany: jest.Mock;
+    };
     cardToken: {
       findUnique: jest.Mock;
       findFirst: jest.Mock;
@@ -93,6 +103,7 @@ describe('AgroprombankService', () => {
         findUnique: jest.fn().mockResolvedValue({ ...pendingPayment, status: 'SUCCEEDED' }),
         create: jest.fn().mockResolvedValue(pendingPayment),
         update: jest.fn(({ data }) => Promise.resolve({ ...pendingPayment, ...data })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       cardToken: {
@@ -130,9 +141,10 @@ describe('AgroprombankService', () => {
       invoicePrefix: '',
       bindingTtlMinutes: 10,
       bindingMaxAttempts: 3,
-      // The tests that care about the hold policy set it themselves; the rest
-      // read as "charge the card now", which is the simpler story.
+      // The tests that care about the charge moment set it themselves; the
+      // rest read as "charge the card now", which is the simpler story.
       holdUntilAccepted: false,
+      chargeMoment: 'checkout',
     };
 
     const module = await Test.createTestingModule({
@@ -153,6 +165,74 @@ describe('AgroprombankService', () => {
     }).compile();
 
     service = module.get(AgroprombankService);
+  });
+
+  describe('captureDeferred', () => {
+    const deferred = {
+      ...pendingPayment,
+      id: 'pay-d',
+      status: 'REQUIRES_ACTION',
+      invoiceId: null,
+      cardTokenId: card.id,
+      rawJson: { deferred: true, requestedPreauth: false },
+    };
+
+    beforeEach(() => {
+      config.chargeMoment = 'accept';
+      prisma.payment.findUnique.mockResolvedValue(deferred);
+    });
+
+    it('charges the card outright for the amount agreed at checkout and settles quietly', async () => {
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
+
+      const result = await service.captureDeferred('pay-d');
+
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+        where: { id: 'pay-d', status: 'REQUIRES_ACTION', invoiceId: null },
+        data: { status: 'PENDING', invoiceId: '100042', rawJson: { deferred: true, requestedPreauth: false } },
+      });
+      expect(client.invoke).toHaveBeenNthCalledWith(
+        2,
+        'ProcessCardAutoPayment',
+        expect.objectContaining({ invoiceid: '100042', token: 'E6B2C8', amount: 3300, preauth: 0 }),
+      );
+      expect(result.status).toBe('SUCCEEDED');
+      // Staff heard about the order when it was placed; the capture must not page them again.
+      expect(settlement.settlePaidOrder).toHaveBeenCalledWith(order.id, expect.objectContaining({ announced: true }));
+    });
+
+    it('fails the payment and the accept when the bank declines the card', async () => {
+      client.invoke
+        .mockResolvedValueOnce(CHECK_TOKEN_OK)
+        .mockRejectedValueOnce(new AgroprombankError('ProcessCardAutoPayment', -1, 'Insufficient funds'));
+
+      await expect(service.captureDeferred('pay-d')).rejects.toThrow(BadRequestException);
+
+      expect(prisma.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'pay-d' }, data: expect.objectContaining({ status: 'FAILED' }) }),
+      );
+      expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
+    });
+
+    it('does not charge twice when two accepts race for the same order', async () => {
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK);
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+
+      await expect(service.captureDeferred('pay-d')).rejects.toThrow('already being charged');
+
+      expect(client.invoke).not.toHaveBeenCalledWith('ProcessCardAutoPayment', expect.anything());
+    });
+
+    it('refuses a payment that is a real hold', async () => {
+      prisma.payment.findUnique.mockResolvedValueOnce({
+        ...deferred,
+        invoiceId: '1100001',
+        rawJson: { requestedPreauth: true },
+      });
+
+      await expect(service.captureDeferred('pay-d')).rejects.toThrow('hold');
+      expect(client.invoke).not.toHaveBeenCalled();
+    });
   });
 
   describe('charge', () => {
@@ -302,7 +382,7 @@ describe('AgroprombankService', () => {
      * taken on yet.
      */
     it('holds the funds by default when the merchant holds until accepted', async () => {
-      config.holdUntilAccepted = true;
+      config.chargeMoment = 'hold';
       client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
 
       const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
@@ -319,7 +399,7 @@ describe('AgroprombankService', () => {
     });
 
     it('records what it asked the bank for, so a timed-out hold is not reconciled as paid', async () => {
-      config.holdUntilAccepted = true;
+      config.chargeMoment = 'hold';
       client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK).mockResolvedValueOnce(PAYMENT_OK);
 
       await service.charge('user-1', { orderId: order.id, cardId: card.id });
@@ -327,6 +407,36 @@ describe('AgroprombankService', () => {
       expect(prisma.payment.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ rawJson: { requestedPreauth: true } }) }),
       );
+    });
+
+    /**
+     * Production's terminal can neither hold money nor refund it, so the card
+     * is left alone until the store accepts: the token is checked and the
+     * order goes to the kitchen board, but the bank hears nothing about money.
+     */
+    it('puts the charge off until the accept when the terminal cannot hold', async () => {
+      config.chargeMoment = 'accept';
+      client.invoke.mockResolvedValueOnce(CHECK_TOKEN_OK);
+      prisma.payment.create.mockImplementationOnce(({ data }) =>
+        Promise.resolve({ id: 'pay-d', invoiceId: null, ...data }),
+      );
+
+      const result = await service.charge('user-1', { orderId: order.id, cardId: card.id });
+
+      expect(client.invoke).toHaveBeenCalledTimes(1);
+      expect(client.invoke).toHaveBeenCalledWith('CheckToken', { token: 'E6B2C8' });
+      expect(prisma.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          status: 'REQUIRES_ACTION',
+          amountCents: 3300,
+          cardTokenId: card.id,
+          rawJson: { deferred: true, requestedPreauth: false },
+        }),
+      });
+      expect(prisma.payment.create.mock.calls[0][0].data.invoiceId).toBeUndefined();
+      expect(result.status).toBe('REQUIRES_ACTION');
+      expect(settlement.announceHeld).toHaveBeenCalledWith(order.id);
+      expect(settlement.settlePaidOrder).not.toHaveBeenCalled();
     });
 
     it('retires a card the bank reports as inactive instead of charging it', async () => {

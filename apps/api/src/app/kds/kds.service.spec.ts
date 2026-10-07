@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
 import { NotificationsService } from '../notifications/notifications.service';
@@ -32,7 +32,9 @@ describe('KdsService.accept', () => {
 
   let prisma: { order: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock } };
   let payments: { captureHoldForOrder: jest.Mock };
-  let holds: { cardPaymentRequired: jest.Mock; hasCardPayment: jest.Mock };
+  let holds: { cardPaymentRequired: jest.Mock; hasCardPayment: jest.Mock; findHold: jest.Mock };
+  let orders: { cancelOrder: jest.Mock };
+  let notifications: { notifyOrderStatus: jest.Mock };
   let service: KdsService;
 
   beforeEach(async () => {
@@ -45,7 +47,18 @@ describe('KdsService.accept', () => {
       },
     };
     payments = { captureHoldForOrder: jest.fn().mockResolvedValue(null) };
-    holds = { cardPaymentRequired: jest.fn().mockReturnValue(true), hasCardPayment: jest.fn().mockResolvedValue(true) };
+    orders = {
+      cancelOrder: jest.fn().mockResolvedValue({
+        order: { ...order, status: 'CANCELLED', payments: [] },
+        holdReleased: false,
+        chargeVoided: false,
+      }),
+    };
+    holds = {
+      cardPaymentRequired: jest.fn().mockReturnValue(true),
+      hasCardPayment: jest.fn().mockResolvedValue(true),
+      findHold: jest.fn().mockResolvedValue(null),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -57,12 +70,13 @@ describe('KdsService.accept', () => {
         },
         { provide: NotificationsService, useValue: { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) } },
         { provide: CardPaymentsService, useValue: payments },
-        { provide: OrdersService, useValue: {} },
+        { provide: OrdersService, useValue: orders },
         { provide: PaymentHoldsService, useValue: holds },
       ],
     }).compile();
 
     service = module.get(KdsService);
+    notifications = module.get(NotificationsService);
   });
 
   it('captures the hold before putting the order on the board', async () => {
@@ -84,6 +98,40 @@ describe('KdsService.accept', () => {
     await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toThrow(BadRequestException);
 
     expect(prisma.order.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * With the charge put off until the accept, the customer has left the
+   * checkout long ago and cannot pay that order again — so a declined card
+   * calls the order off and tells them, instead of leaving it stuck.
+   */
+  it('cancels the order and tells the customer when the card is declined on accept', async () => {
+    holds.findHold.mockResolvedValue({ id: 'pay-d', rawJson: { deferred: true } });
+    payments.captureHoldForOrder.mockRejectedValue(new BadRequestException('Insufficient funds'));
+
+    await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'CARD_DECLINED' }),
+    });
+
+    expect(orders.cancelOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ id: order.id }),
+      expect.objectContaining({ by: 'store', reason: 'CARD_DECLINED' }),
+    );
+    expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ id: order.id }),
+      'CANCELLED',
+      { cardDeclined: true },
+    );
+    expect(prisma.order.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the order when the bank did not answer about a deferred charge', async () => {
+    holds.findHold.mockResolvedValue({ id: 'pay-d', rawJson: { deferred: true } });
+    payments.captureHoldForOrder.mockRejectedValue(new BadGatewayException('The bank did not answer in time'));
+
+    await expect(service.accept('store-1', order.id, 'staff-1')).rejects.toThrow(BadRequestException);
+
+    expect(orders.cancelOrder).not.toHaveBeenCalled();
   });
 
   it('does not reach for the bank on an order that cannot be accepted anyway', async () => {

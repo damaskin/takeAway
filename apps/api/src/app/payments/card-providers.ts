@@ -1,4 +1,4 @@
-import type { PaymentProvider } from '@prisma/client';
+import type { Payment, PaymentProvider } from '@prisma/client';
 
 /**
  * Providers that take a card through Agroprombank: the tokenized
@@ -15,4 +15,17 @@ export type CardProvider = (typeof CARD_PROVIDERS)[number];
 
 export function isCardProvider(provider: PaymentProvider): provider is CardProvider {
   return (CARD_PROVIDERS as readonly PaymentProvider[]).includes(provider);
+}
+
+/**
+ * A bound-card charge put off until the store accepts the order
+ * (`AGROPROMBANK_HOLD_UNTIL_ACCEPTED=false`): the row sits in `REQUIRES_ACTION`
+ * like a hold, but nothing was sent to the bank and it has no `invoiceId`
+ * until the accept charges the card. Calling one off is bookkeeping only.
+ */
+export function isDeferredCharge(payment: Pick<Payment, 'rawJson'>): boolean {
+  const raw = payment.rawJson;
+  return (
+    !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>)['deferred'] === true
+  );
 }

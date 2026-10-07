@@ -4,7 +4,7 @@ import type { Payment, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgroprombankWebClient, AgroprombankWebError } from '../agroprombank-web/agroprombank-web.client';
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
-import { CARD_PROVIDERS } from '../card-providers';
+import { CARD_PROVIDERS, isDeferredCharge } from '../card-providers';
 import { AgroprombankClient } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
 
@@ -90,6 +90,7 @@ export class PaymentHoldsService {
 
   /** Releases one hold; `null` when the bank could not be reached or refused. */
   async release(hold: Payment, reason: string): Promise<Payment | null> {
+    if (isDeferredCharge(hold)) return this.voidDeferred(hold, reason);
     if (!hold.invoiceId) return null;
     const web = hold.provider === 'AGROPROMBANK_WEB';
     if (web ? !this.webConfig.isConfigured : !this.config.isConfigured) return null;
@@ -136,6 +137,22 @@ export class PaymentHoldsService {
     });
     this.logger.log(`Released the hold on order=${hold.orderId} (${reason})`);
     return updated;
+  }
+
+  /**
+   * Calls off a charge that was waiting for the accept. Nothing reached the
+   * bank, so there is nothing to give back: the row is closed as FAILED and
+   * marked `voided`, which the customer's order view reads as "not charged".
+   * Claimed conditionally, so an accept that got to it first wins.
+   */
+  private async voidDeferred(hold: Payment, reason: string): Promise<Payment | null> {
+    const voided = await this.prisma.payment.updateMany({
+      where: { id: hold.id, status: 'REQUIRES_ACTION', invoiceId: null },
+      data: { status: 'FAILED', rawJson: { ...rawOf(hold), voided: true, voidReason: reason } },
+    });
+    if (voided.count === 0) return null;
+    this.logger.log(`Called off the deferred charge on order=${hold.orderId} (${reason}); the card was not charged`);
+    return this.prisma.payment.findUnique({ where: { id: hold.id } });
   }
 
   /**

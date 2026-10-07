@@ -56,7 +56,7 @@ export interface KitchenRejectBody {
  * captured one `refunded`, a refund the bank has yet to confirm is `pending`,
  * and `none` when nothing had been paid.
  */
-export type KitchenRejectMoney = 'released' | 'refunded' | 'pending' | 'none';
+export type KitchenRejectMoney = 'not_charged' | 'released' | 'refunded' | 'pending' | 'none';
 
 /** `POST /kds/orders/:id/reject` */
 export interface KitchenRejectResult {

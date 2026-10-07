@@ -8,7 +8,7 @@ import {
 } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
-import { CARD_PROVIDERS, isCardProvider } from '../payments/card-providers';
+import { CARD_PROVIDERS, isCardProvider, isDeferredCharge } from '../payments/card-providers';
 import { CardPaymentsService } from '../payments/card-payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -115,7 +115,7 @@ export class KdsService {
    * way through, and this then moves it on to ACCEPTED.
    */
   async accept(storeId: string, orderId: string, staffUserId: string) {
-    await this.captureHold(storeId, orderId);
+    await this.captureHold(storeId, orderId, staffUserId);
     return this.transition(storeId, orderId, staffUserId, 'accept', {
       status: 'ACCEPTED',
       acceptedAt: new Date(),
@@ -126,8 +126,15 @@ export class KdsService {
    * Captures whatever is held against the order. A bank refusal surfaces to the
    * staff member as a failed accept — the customer can pay with another
    * card — so the failure is deliberately not swallowed.
+   *
+   * A charge that was put off until now is different: the customer has long
+   * left the checkout and has no way to pay that order again, so a card the
+   * bank turns down calls the order off — nothing was taken, and everything it
+   * held (promo, gift-card balance, points) goes back — and the customer is
+   * told to order again with another card. Only a definitive refusal does
+   * that; a bank that did not answer leaves the payment to reconciliation.
    */
-  private async captureHold(storeId: string, orderId: string): Promise<void> {
+  private async captureHold(storeId: string, orderId: string, staffUserId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
     if (!(ALLOWED_TRANSITIONS['accept'] ?? []).includes(order.status)) return;
@@ -142,20 +149,52 @@ export class KdsService {
       throw new BadRequestException('The customer has not paid for this order yet');
     }
 
+    const hold = await this.holds.findHold(orderId);
     try {
       await this.cards.captureHoldForOrder(orderId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const declined = err instanceof BadRequestException || err instanceof NotFoundException;
+      if (hold && isDeferredCharge(hold) && declined) {
+        await this.cancelForDeclinedCard(order, staffUserId, message);
+        throw new BadRequestException({
+          code: 'CARD_DECLINED',
+          message: `The customer's card was declined (${message}); the order is cancelled`,
+        });
+      }
       throw new BadRequestException(`The card could not be charged: ${message}`);
     }
+  }
+
+  private async cancelForDeclinedCard(order: Order, staffUserId: string, bankMessage: string): Promise<void> {
+    this.logger.warn(`Card declined on accept for order=${order.id}: ${bankMessage} — cancelling the order`);
+    const { order: cancelled } = await this.orders.cancelOrder(order, {
+      actorId: staffUserId,
+      by: 'store',
+      allowedStatuses: REJECTABLE_STATUSES,
+      reason: 'CARD_DECLINED',
+      comment: bankMessage,
+    });
+    void this.notifications.notifyOrderStatus(
+      {
+        id: cancelled.id,
+        userId: cancelled.userId,
+        orderCode: cancelled.orderCode,
+        storeId: cancelled.storeId,
+        fulfillmentType: cancelled.fulfillmentType,
+      },
+      'CANCELLED',
+      { cardDeclined: true },
+    );
   }
 
   /**
    * The kitchen turns an order down before taking it on: out of something,
    * swamped, closing. The order is cancelled with everything it held handed
-   * back — promo, gift-card balance, points — and the money with it: a hold
-   * is released, and a charge already taken (holds switched off) is refunded
-   * in full. The customer gets a push saying why.
+   * back — promo, gift-card balance, points — and the money with it: a charge
+   * waiting for the accept is called off without touching the card, a hold is
+   * released, and a charge already taken is refunded in full. The customer
+   * gets a push saying why.
    */
   async reject(
     storeId: string,
@@ -167,7 +206,11 @@ export class KdsService {
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
 
     const comment = input.comment?.trim() || undefined;
-    const { order: cancelled, holdReleased } = await this.orders.cancelOrder(order, {
+    const {
+      order: cancelled,
+      holdReleased,
+      chargeVoided,
+    } = await this.orders.cancelOrder(order, {
       actorId: staffUserId,
       by: 'store',
       allowedStatuses: REJECTABLE_STATUSES,
@@ -175,8 +218,8 @@ export class KdsService {
       comment,
     });
 
-    let money: StoreRejectionInfo['money'] = holdReleased ? 'released' : 'none';
-    if (!holdReleased) {
+    let money: StoreRejectionInfo['money'] = chargeVoided ? 'not_charged' : holdReleased ? 'released' : 'none';
+    if (!holdReleased && !chargeVoided) {
       const held = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'REQUIRES_ACTION');
       const captured = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'SUCCEEDED');
       if (held) {

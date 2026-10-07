@@ -85,9 +85,9 @@ void main() {
       final h = await pumpApp(tester, api: api);
       await openOrder(tester, h);
 
-      expect(find.text('Сумма забронирована'), findsOneWidget);
+      expect(find.text('Спишем при принятии заказа'), findsOneWidget);
       expect(find.textContaining('9104 **** 1234'), findsOneWidget);
-      expect(find.text('Спишем, когда точка примет заказ.'), findsOneWidget);
+      expect(find.text('Если точка не примет заказ, деньги с карты не спишутся.'), findsOneWidget);
       await h.unmount(tester);
     });
   });

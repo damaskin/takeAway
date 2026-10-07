@@ -4,6 +4,7 @@ import type { Payment } from '@prisma/client';
 import { AgroprombankWebService } from './agroprombank-web/agroprombank-web.service';
 import { AgroprombankService } from './agroprombank/agroprombank.service';
 import { PaymentHoldsService } from './agroprombank/payment-holds.service';
+import { isDeferredCharge } from './card-providers';
 
 export interface RefundAudit {
   actorId?: string;
@@ -33,12 +34,16 @@ export class CardPaymentsService {
    *
    * The held amount is captured as held, never the order's current total: the
    * customer agreed to the figure they saw at checkout, and anything the store
-   * changed afterwards is a conversation, not a silent larger debit.
+   * changed afterwards is a conversation, not a silent larger debit. A charge
+   * that was put off until now (no preauthorization on the terminal) is made
+   * here for that same amount.
    */
   async captureHoldForOrder(orderId: string): Promise<Payment | null> {
     const hold = await this.holds.findHold(orderId);
     if (!hold) return null;
-    if (hold.provider === 'AGROPROMBANK_WEB') {
+    if (isDeferredCharge(hold)) {
+      await this.token.captureDeferred(hold.id);
+    } else if (hold.provider === 'AGROPROMBANK_WEB') {
       await this.web.complete(hold.id, hold.amountCents);
     } else {
       await this.token.completePreauthorization(hold.id, hold.amountCents);

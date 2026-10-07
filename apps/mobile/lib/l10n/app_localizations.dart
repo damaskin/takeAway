@@ -1079,7 +1079,7 @@ abstract class AppLocalizations {
   /// No description provided for @holdHint.
   ///
   /// In en, this message translates to:
-  /// **'We hold the amount now and charge it when the store accepts your order.'**
+  /// **'Your card is charged only once the store accepts your order.'**
   String get holdHint;
 
   /// Checkout, web payment flow: the card is entered on the bank's hosted page.
@@ -1253,13 +1253,13 @@ abstract class AppLocalizations {
   /// No description provided for @paymentStateHeld.
   ///
   /// In en, this message translates to:
-  /// **'Amount on hold'**
+  /// **'Charged when the store accepts'**
   String get paymentStateHeld;
 
   /// No description provided for @paymentStateHeldHint.
   ///
   /// In en, this message translates to:
-  /// **'It is charged when the store accepts your order.'**
+  /// **'If the store does not accept the order, your card is not charged.'**
   String get paymentStateHeldHint;
 
   /// No description provided for @paymentStatePending.

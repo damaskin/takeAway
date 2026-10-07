@@ -104,6 +104,25 @@ export class AgroprombankConfig {
     return this.bool('AGROPROMBANK_HOLD_UNTIL_ACCEPTED');
   }
 
+  /**
+   * When a bound card is actually debited for an order:
+   *
+   * - `hold` — authorized at checkout (`preauth=1`), captured on accept. The
+   *   default, see {@link holdUntilAccepted}.
+   * - `accept` — nothing reaches the bank at checkout but a token check; the
+   *   card is charged outright the moment the store accepts the order. What a
+   *   terminal without preauthorization gets when `AGROPROMBANK_HOLD_UNTIL_ACCEPTED`
+   *   is off: production's terminal refuses both preauthorizations and refunds,
+   *   so a charge taken at checkout for an order the store then turned down
+   *   could not be given back.
+   * - `checkout` — charged outright at checkout, the old behaviour. Only with
+   *   `AGROPROMBANK_CHARGE_AT_CHECKOUT=true`.
+   */
+  get chargeMoment(): 'hold' | 'accept' | 'checkout' {
+    if (this.bool('AGROPROMBANK_CHARGE_AT_CHECKOUT')) return 'checkout';
+    return this.holdUntilAccepted ? 'hold' : 'accept';
+  }
+
   /** `istest` flag echoed into payment requests. The bank ignores it for now. */
   get isTest(): boolean {
     return this.bool('AGROPROMBANK_IS_TEST');

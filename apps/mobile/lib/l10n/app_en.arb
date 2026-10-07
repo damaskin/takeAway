@@ -359,7 +359,7 @@
   "cardPaymentsUnavailable": "Card payments are unavailable right now, so the order can't be placed. Please try again a bit later.",
   "addCardToOrder": "Orders are paid by card. Add a card to place your order.",
   "addCard": "Add a card",
-  "holdHint": "We hold the amount now and charge it when the store accepts your order.",
+  "holdHint": "Your card is charged only once the store accepts your order.",
   "webPaymentHint": "You pay by card on the bank's secure page. The amount is held now and charged when the store accepts your order.",
   "@webPaymentHint": {
     "description": "Checkout, web payment flow: the card is entered on the bank's hosted page."
@@ -425,8 +425,8 @@
   "stepOnTheWay": "On the way",
   "stepDelivered": "Delivered",
   "paymentStatePaid": "Payment went through",
-  "paymentStateHeld": "Amount on hold",
-  "paymentStateHeldHint": "It is charged when the store accepts your order.",
+  "paymentStateHeld": "Charged when the store accepts",
+  "paymentStateHeldHint": "If the store does not accept the order, your card is not charged.",
   "paymentStatePending": "Checking your payment",
   "paymentStateFailed": "Payment did not go through",
   "paymentStateRefunded": "Money returned",

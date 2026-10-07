@@ -296,6 +296,7 @@ export class AgroprombankWebService {
             preauthCompleted: true,
           } satisfies Prisma.InputJsonValue,
         },
+        announced: true,
       });
     }
     return this.toView(await this.requirePayment(paymentId));

@@ -27,6 +27,8 @@ describe('PaymentHoldsService', () => {
       payment: {
         findFirst: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
           ...hold('AGROPROMBANK_WEB'),
           ...data,
@@ -71,6 +73,28 @@ describe('PaymentHoldsService', () => {
 
     expect(client.invoke).toHaveBeenCalledWith('ReverseOperation', { invoiceid: '1100042', amount: 3300 });
     expect(webClient.cancel).not.toHaveBeenCalled();
+  });
+
+  /** A charge that was waiting for the accept never reached the bank — there is nothing to give back. */
+  it('calls off a deferred charge without asking the bank', async () => {
+    const { service, prisma, client, webClient } = build('token');
+    const deferred = { ...hold('AGROPROMBANK', { deferred: true }), invoiceId: null };
+    prisma.payment.findFirst.mockResolvedValue(deferred);
+    prisma.payment.findUnique.mockResolvedValue({ ...deferred, status: 'FAILED' });
+
+    const released = await service.releaseForOrder('order-1', 'order-cancelled-by-store');
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: deferred.id, status: 'REQUIRES_ACTION', invoiceId: null },
+      data: {
+        status: 'FAILED',
+        rawJson: { deferred: true, voided: true, voidReason: 'order-cancelled-by-store' },
+      },
+    });
+    expect(client.invoke).not.toHaveBeenCalled();
+    expect(webClient.cancel).not.toHaveBeenCalled();
+    expect(prisma.orderEvent.create).not.toHaveBeenCalled();
+    expect(released?.status).toBe('FAILED');
   });
 
   it('counts a failed release on the payment instead of throwing', async () => {

@@ -564,7 +564,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get addCard => 'Привязать карту';
 
   @override
-  String get holdHint => 'Сумму забронируем сейчас, а спишем, когда точка примет заказ.';
+  String get holdHint => 'Спишем с карты, только когда точка примет заказ.';
 
   @override
   String get webPaymentHint =>
@@ -661,10 +661,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentStatePaid => 'Оплата прошла';
 
   @override
-  String get paymentStateHeld => 'Сумма забронирована';
+  String get paymentStateHeld => 'Спишем при принятии заказа';
 
   @override
-  String get paymentStateHeldHint => 'Спишем, когда точка примет заказ.';
+  String get paymentStateHeldHint => 'Если точка не примет заказ, деньги с карты не спишутся.';
 
   @override
   String get paymentStatePending => 'Проверяем оплату';

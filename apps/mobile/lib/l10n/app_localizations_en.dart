@@ -557,7 +557,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addCard => 'Add a card';
 
   @override
-  String get holdHint => 'We hold the amount now and charge it when the store accepts your order.';
+  String get holdHint => 'Your card is charged only once the store accepts your order.';
 
   @override
   String get webPaymentHint =>
@@ -653,10 +653,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStatePaid => 'Payment went through';
 
   @override
-  String get paymentStateHeld => 'Amount on hold';
+  String get paymentStateHeld => 'Charged when the store accepts';
 
   @override
-  String get paymentStateHeldHint => 'It is charged when the store accepts your order.';
+  String get paymentStateHeldHint => 'If the store does not accept the order, your card is not charged.';
 
   @override
   String get paymentStatePending => 'Checking your payment';

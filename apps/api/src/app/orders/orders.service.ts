@@ -24,6 +24,7 @@ import { ReceiptPdfService } from '../mail/receipt-pdf.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
+import { isDeferredCharge } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -752,7 +753,7 @@ export class OrdersService {
       reason?: string;
       comment?: string;
     },
-  ): Promise<{ order: CancelledOrder; holdReleased: boolean }> {
+  ): Promise<{ order: CancelledOrder; holdReleased: boolean; chargeVoided: boolean }> {
     if (!options.allowedStatuses.has(order.status)) {
       throw new BadRequestException(`Cannot cancel an order in status ${order.status}`);
     }
@@ -804,7 +805,9 @@ export class OrdersService {
     // Off the kitchen board, whoever cancelled it.
     this.realtime.emitKdsOrderChanged({ storeId: updated.storeId, kind: 'removed', orderId: updated.id, order: null });
 
-    return { order: updated, holdReleased: released !== null };
+    // A charge that was waiting for the accept never touched the card.
+    const voided = released !== null && isDeferredCharge(released);
+    return { order: updated, holdReleased: released !== null && !voided, chargeVoided: voided };
   }
 
   /**
@@ -1062,6 +1065,10 @@ function toPaymentView(
 ): OrderPaymentDto {
   const latest = payments[0];
   if (!latest) return { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null };
+  // A charge called off before the accept: the card was never touched.
+  if (latest.status === 'FAILED' && isVoided(latest.rawJson)) {
+    return { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null };
+  }
 
   const state: OrderPaymentState = (() => {
     switch (latest.status) {
@@ -1091,6 +1098,11 @@ function toPaymentView(
  * A card paid on the Web-платёж page is never bound, so its mask comes from
  * the last four digits the bank reported for the payment.
  */
+/** A deferred charge called off before the store accepted the order — see PaymentHoldsService. */
+function isVoided(raw: Prisma.JsonValue | undefined): boolean {
+  return !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>)['voided'] === true;
+}
+
 function webCardMask(raw: Prisma.JsonValue | undefined): string | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const digits = (raw as Record<string, unknown>)['lastdgt'];

@@ -7,6 +7,7 @@ import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
+import { isDeferredCharge } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -223,7 +224,11 @@ export class OrderExpiryService {
       order: null,
     });
     void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, {
-      expiry: { reason, holdReleased: released !== null },
+      expiry: {
+        reason,
+        holdReleased: released !== null && !isDeferredCharge(released),
+        notCharged: released !== null && isDeferredCharge(released),
+      },
     });
 
     return true;

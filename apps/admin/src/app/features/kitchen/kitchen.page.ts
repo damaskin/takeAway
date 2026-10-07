@@ -9,7 +9,7 @@ import { interval } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
-import { apiErrorMessage } from '../../core/http/api-error';
+import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 import {
   KITCHEN_COLUMNS,
   KITCHEN_REJECT_REASONS,
@@ -895,6 +895,14 @@ export class KitchenPage {
       },
       error: (err) => {
         done();
+        if (apiErrorCode(err) === 'CARD_DECLINED') {
+          // The API called the order off — its ticket is leaving the board, so say it in a toast.
+          this.orders.update((list) => list.filter((o) => o.id !== order.id));
+          this.alerts.dismiss(order.id);
+          this.showToast(this.translate.instant('admin.kitchen.errors.cardDeclined'));
+          this.refresh();
+          return;
+        }
         this.failures.update((map) => ({
           ...map,
           [order.id]: apiErrorMessage(err, this.translate, {

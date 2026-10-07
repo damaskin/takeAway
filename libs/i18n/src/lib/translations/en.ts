@@ -267,7 +267,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       decrease: 'Fewer',
       increase: 'More',
       remove: 'Remove from cart',
-      holdHint: 'We hold the money now and take it when the store accepts your order.',
+      holdHint: 'Your card is charged only once the store accepts your order.',
       bankPageHint:
         "You pay by card on the bank's secure page. We hold the money now and take it when the store accepts your order.",
       payCta: 'Pay {{total}} · ready by {{time}}',
@@ -315,13 +315,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       payment: {
         paid: 'Payment went through',
-        held: 'Money is on hold',
+        held: 'Charged when the store accepts',
         pending: 'Checking your payment',
         failed: 'Payment did not go through',
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
         awaiting: 'Awaiting payment',
-        heldHint: 'We take it when the store accepts your order.',
+        heldHint: 'If the store does not accept the order, your card is not charged.',
         retry: 'Pay by card',
         retryHint: 'You can try paying again.',
       },
@@ -931,11 +931,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       stopList: 'Stop list',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
+        cardDeclined: 'The bank declined the customer’s card — the order is cancelled and the customer is notified.',
       },
       reject: {
         button: 'Reject',
         title: 'Reject order {{code}}?',
-        body: 'The customer is notified with the reason and gets their money back automatically.',
+        body: 'The customer is notified with the reason. Their card is not charged.',
         reasonLabel: 'Reason',
         reasons: {
           OUT_OF_STOCK: 'Out of stock',
@@ -948,6 +949,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         commentPlaceholder: 'For example: we ran out of oat milk',
         confirm: 'Reject order',
         done: {
+          not_charged: 'Order rejected, the card was not charged',
           released: 'Order rejected, the hold on the card is released',
           refunded: 'Order rejected, the money is refunded to the card',
           pending: 'Order rejected, the money will be returned automatically',

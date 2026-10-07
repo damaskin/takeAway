@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 
 import { SecretCipher } from '../../common/crypto/secret-cipher';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isDeferredCharge } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
@@ -319,7 +320,8 @@ export class AgroprombankService {
    */
   async charge(userId: string, options: ChargeOptions): Promise<ChargeResult> {
     this.assertEnabled();
-    const preauth = options.preauth ?? this.config.holdUntilAccepted;
+    const moment = options.preauth === undefined ? this.config.chargeMoment : options.preauth ? 'hold' : 'checkout';
+    const preauth = moment === 'hold';
 
     const order = await this.prisma.order.findUnique({ where: { id: options.orderId } });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
@@ -334,9 +336,10 @@ export class AgroprombankService {
       orderBy: { createdAt: 'desc' },
     });
     if (stale?.status === 'REQUIRES_ACTION') {
-      // Funds are already held against this order. Reconciling would read the
-      // hold as a completed payment and settle the order for money that has
-      // not been captured yet — capture it explicitly instead.
+      // Funds are already held against this order (or its charge is already
+      // waiting for the accept). Reconciling would read the hold as a
+      // completed payment and settle the order for money that has not been
+      // captured yet — capture it explicitly instead.
       return this.toChargeResult(stale);
     }
     if (stale) {
@@ -373,6 +376,27 @@ export class AgroprombankService {
     }
 
     const tipCents = Math.max(0, Math.trunc(options.tipCents ?? 0));
+
+    if (moment === 'accept') {
+      // The card is good; the money moves only when the store takes the order
+      // on (captureDeferred). Until then the order waits on the kitchen board
+      // like a held one, and turning it down costs the customer nothing.
+      const deferred = await this.prisma.payment.create({
+        data: {
+          orderId: order.id,
+          provider: 'AGROPROMBANK',
+          status: 'REQUIRES_ACTION',
+          amountCents: order.totalCents,
+          tipCents,
+          currency: order.currency,
+          cardTokenId: card.id,
+          rawJson: { deferred: true, requestedPreauth: false } satisfies Prisma.InputJsonValue,
+        },
+      });
+      await this.settlement.announceHeld(order.id);
+      return this.toChargeResult(deferred);
+    }
+
     const payment = await this.createPendingPayment(order.id, {
       amountCents: order.totalCents,
       tipCents,
@@ -449,8 +473,94 @@ export class AgroprombankService {
           preauthCompleted: true,
         } satisfies Prisma.InputJsonValue,
       },
+      announced: true,
     });
     return this.toChargeResult(updated);
+  }
+
+  /**
+   * Charges the card behind a deferred payment: the store has just accepted
+   * the order (charge moment `accept`, see {@link AgroprombankConfig.chargeMoment}).
+   *
+   * The amount is the one the customer agreed to at checkout, never the
+   * order's current total. The row is claimed — `REQUIRES_ACTION` to
+   * `PENDING` with a fresh invoice id — before the bank hears of it, so two
+   * accepts racing each other cannot charge twice. From there it is an
+   * ordinary charge: a refusal fails the payment and the accept (the order
+   * stays where it was and the customer can pay with another card), and a
+   * transport failure leaves it `PENDING` for reconciliation.
+   */
+  async captureDeferred(paymentId: string): Promise<ChargeResult> {
+    this.assertEnabled();
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment || payment.provider !== 'AGROPROMBANK' || payment.status !== 'REQUIRES_ACTION') {
+      throw new BadRequestException('There is no charge waiting for this order');
+    }
+    if (!isDeferredCharge(payment)) throw new BadRequestException('This payment is a hold — complete it instead');
+
+    const order = await this.prisma.order.findUnique({ where: { id: payment.orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    const currencyCode = BANK_CURRENCY_CODES[payment.currency];
+    if (!currencyCode) throw new BadRequestException(`Agroprombank does not settle in ${payment.currency}`);
+
+    if (!payment.cardTokenId) throw new BadRequestException('The customer has unbound the card they paid with');
+    const card = await this.requireCard(order.userId, payment.cardTokenId);
+    const token = this.revealToken(card);
+
+    // The customer may have revoked the token in their banking app since checkout.
+    const checked = await this.applyCheckTokenResponse(card, await this.client.invoke('CheckToken', { token }));
+    if (checked.status !== 'ACTIVE') throw new BadRequestException('The customer’s card is no longer active');
+
+    const claimed = await this.claimDeferred(payment);
+    let response: XmlElement;
+    try {
+      response = await this.client.invoke('ProcessCardAutoPayment', {
+        invoiceid: claimed.invoiceId,
+        token,
+        amount: claimed.amountCents,
+        tipamount: claimed.tipCents,
+        currencycode: currencyCode,
+        istest: this.config.isTest ? '1' : '0',
+        description: truncate(`Оплата заказа №${order.orderCode}`, 128),
+        recipienttoken: null,
+        recipient: null,
+        terminalid: this.config.terminalId,
+        preauth: 0,
+      });
+    } catch (err) {
+      if (err instanceof AgroprombankError) {
+        await this.markPaymentFailed(claimed, err);
+        throw new BadRequestException(err.description || 'The bank declined the payment');
+      }
+      this.logger.error(`ProcessCardAutoPayment did not complete for payment=${claimed.id}: ${messageOf(err)}`);
+      throw new BadGatewayException('The bank did not answer in time — the payment is being verified');
+    }
+
+    const applied = await this.applyPaymentResponse(claimed, response, { preauth: false });
+    await this.prisma.cardToken.update({ where: { id: card.id }, data: { lastUsedAt: new Date() } });
+    return this.toChargeResult(applied);
+  }
+
+  /** Gives a deferred payment its invoice id and takes it out of `REQUIRES_ACTION`, exactly once. */
+  private async claimDeferred(payment: Payment): Promise<Payment & { invoiceId: string }> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const invoiceId = `${this.config.invoicePrefix}${await this.nextInvoiceNumber()}`;
+      try {
+        const claimed = await this.prisma.payment.updateMany({
+          where: { id: payment.id, status: 'REQUIRES_ACTION', invoiceId: null },
+          data: {
+            status: 'PENDING',
+            invoiceId,
+            rawJson: { deferred: true, requestedPreauth: false } satisfies Prisma.InputJsonValue,
+          },
+        });
+        if (claimed.count === 0) throw new ConflictException('This order is already being charged');
+        return { ...payment, status: 'PENDING', invoiceId };
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err;
+      }
+    }
+    throw new ConflictException('Could not allocate a unique invoice id');
   }
 
   /**
@@ -674,6 +784,8 @@ export class AgroprombankService {
             authCode: primary ? text(primary, 'authcode') : null,
           } satisfies Prisma.InputJsonValue,
         },
+        // A charge taken on accept: staff heard about the order at checkout.
+        announced: isDeferredCharge(payment),
       });
     }
 

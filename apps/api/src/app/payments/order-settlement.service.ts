@@ -15,6 +15,12 @@ export interface SettlePaidOrderOptions {
    * crash can never leave a SUCCEEDED payment against an unpaid order.
    */
   paymentUpdate?: Prisma.PaymentUpdateManyArgs;
+  /**
+   * The order already reached the board and staff when its hold (or its
+   * deferred charge) was placed — see {@link OrderSettlementService.announceHeld}
+   * — so the capture on accept must not page them about a "new" order again.
+   */
+  announced?: boolean;
 }
 
 /**
@@ -70,7 +76,7 @@ export class OrderSettlementService {
     this.broadcastStatus(updatedOrder);
     if (updatedOrder.status === 'PAID') {
       await this.pushToKds(updatedOrder);
-      this.notifyAndFulfil(updatedOrder);
+      this.notifyAndFulfil(updatedOrder, { notifyStaff: !options.announced });
       await this.creditLoyalty(updatedOrder);
       // MailService swallows transport errors, so fire-and-forget is safe.
       void this.orders.sendPaymentMail(updatedOrder.id);
@@ -97,17 +103,19 @@ export class OrderSettlementService {
   }
 
   /**
-   * A card hold is in place: the order is now the kitchen's to accept.
+   * A card hold — or a charge put off until the accept — is in place: the
+   * order is now the kitchen's to accept.
    *
-   * Under `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` an order never passes through
-   * PAID before the kitchen takes it, and it is not announced when it is
-   * created either, because nobody has paid for it at that point. This is
-   * the moment the board and the order alerts should hear about it.
+   * Such an order never passes through PAID before the kitchen takes it, and
+   * it is not announced when it is created either, because nobody has paid
+   * for it at that point. This is the moment the board and the staff alerts
+   * should hear about it; the capture on accept then stays quiet.
    */
   async announceHeld(orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.status !== 'CREATED') return;
     await this.pushToKds(order);
+    void this.notifications.notifyBrandStaffNewOrder(orderLike(order), { paid: false });
   }
 
   /**
@@ -135,17 +143,10 @@ export class OrderSettlementService {
     });
   }
 
-  private notifyAndFulfil(order: Order): void {
-    const orderLike = {
-      id: order.id,
-      userId: order.userId,
-      orderCode: order.orderCode,
-      storeId: order.storeId,
-      fulfillmentType: order.fulfillmentType,
-    };
+  private notifyAndFulfil(order: Order, options: { notifyStaff: boolean }): void {
     // Brand-staff push — BRAND_ADMIN + STORE_MANAGER/STAFF assigned to the
     // store, so they aren't waiting on the polling dashboard.
-    void this.notifications.notifyBrandStaffNewOrder(orderLike);
+    if (options.notifyStaff) void this.notifications.notifyBrandStaffNewOrder(orderLike(order), { paid: true });
     // Push the order downstream to the connected POS (iiko / Poster).
     // Best-effort: the queue handles retries internally and the brand admin
     // gets a Telegram alert if the push exhausts its retry budget. Never
@@ -163,6 +164,16 @@ export class OrderSettlementService {
       this.logger.error(`[loyalty] failed to credit points for order=${order.id}: ${messageOf(err)}`);
     }
   }
+}
+
+function orderLike(order: Order) {
+  return {
+    id: order.id,
+    userId: order.userId,
+    orderCode: order.orderCode,
+    storeId: order.storeId,
+    fulfillmentType: order.fulfillmentType,
+  };
 }
 
 function messageOf(err: unknown): string {

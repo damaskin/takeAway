@@ -21,6 +21,8 @@ export interface OrderExpiryInfo {
   reason: 'payment_timeout' | 'not_accepted';
   /** A card hold was reversed — the customer paid and the store never accepted. */
   holdReleased: boolean;
+  /** The charge was waiting for the accept and was called off — the card was never touched. */
+  notCharged?: boolean;
 }
 
 /** Why a store turned an order down — picked on the kitchen board. */
@@ -31,13 +33,19 @@ export interface StoreRejectionInfo {
   reason: StoreRejectReason;
   /** Free text from the kitchen, shown as is. */
   comment?: string | null;
-  /** released — the hold came off; refunded — a captured charge went back; pending — the bank still owes the release. */
-  money: 'released' | 'refunded' | 'pending' | 'none';
+  /**
+   * not_charged — the charge was waiting for the accept and never happened;
+   * released — the hold came off; refunded — a captured charge went back;
+   * pending — the bank still owes the release.
+   */
+  money: 'not_charged' | 'released' | 'refunded' | 'pending' | 'none';
 }
 
 export interface OrderStatusPushOptions {
   expiry?: OrderExpiryInfo;
   rejection?: StoreRejectionInfo;
+  /** The bank declined the card when the store accepted the order, so the order was called off. */
+  cardDeclined?: boolean;
 }
 
 /** A transport that accepted a message. */
@@ -192,7 +200,7 @@ export class NotificationsService {
    * Only users with a linked `telegramUserId` actually receive a push —
    * the rest are silently skipped (they rely on the in-app realtime UI).
    */
-  async notifyBrandStaffNewOrder(order: OrderLike): Promise<void> {
+  async notifyBrandStaffNewOrder(order: OrderLike, payment: { paid: boolean } = { paid: true }): Promise<void> {
     const store = await this.prisma.store.findUnique({
       where: { id: order.storeId },
       select: { brandId: true, name: true },
@@ -215,7 +223,10 @@ export class NotificationsService {
     const message: PushMessage = {
       kind: 'order_status',
       title: `Новый заказ #${order.orderCode} · ${store.name}`,
-      body: `Оплачено, ждёт принятия на кухне. / New paid order awaiting the kitchen.`,
+      // Unpaid means the card is charged when the kitchen accepts the order.
+      body: payment.paid
+        ? `Оплачено, ждёт принятия на кухне. / New paid order awaiting the kitchen.`
+        : `Ждёт принятия на кухне, оплата спишется при принятии. / Awaiting the kitchen; the card is charged on accept.`,
       orderId: order.id,
     };
 
@@ -446,6 +457,19 @@ export class NotificationsService {
           : message('order_delivered', `Order ${code} delivered`, 'Enjoy!');
       case 'CANCELLED':
         if (options.rejection) return this.buildRejectedMessage(code, ru, options.rejection, message);
+        if (options.cardDeclined) {
+          return ru
+            ? message(
+                'order_status',
+                `Заказ ${code} отменён`,
+                'Банк отклонил оплату картой, деньги не списаны. Оформите заказ ещё раз с другой картой.',
+              )
+            : message(
+                'order_status',
+                `Order ${code} cancelled`,
+                'The bank declined your card, so you were not charged. Please order again with another card.',
+              );
+        }
         return ru
           ? message('order_status', `Заказ ${code} отменён`, 'Если это неожиданно, свяжитесь с заведением.')
           : message('order_status', `Order ${code} cancelled`, 'Please contact the store if this is unexpected.');
@@ -472,6 +496,7 @@ export class NotificationsService {
       OTHER: ['Заведение не может принять заказ.', 'The store cannot take the order.'],
     };
     const money: Record<StoreRejectionInfo['money'], [string, string]> = {
+      not_charged: ['Деньги с карты не списывались.', 'Your card was not charged.'],
       released: [
         'Деньги не списаны, блокировка на карте снята.',
         'You were not charged and the card hold is released.',
@@ -495,8 +520,22 @@ export class NotificationsService {
     expiry: OrderExpiryInfo | undefined,
     message: (kind: PushMessage['kind'], title: string, body: string) => PushMessage,
   ): PushMessage {
-    // A released card hold means the payment went through and the store never
-    // took the order; without one, the payment itself was never completed.
+    // A released card hold (or a called-off deferred charge) means the customer
+    // paid and the store never took the order; without one, the payment itself
+    // was never completed.
+    if (expiry?.notCharged) {
+      return ru
+        ? message(
+            'order_status',
+            `Заказ ${code} не принят`,
+            'Заведение не подтвердило заказ вовремя. Деньги с карты не списывались.',
+          )
+        : message(
+            'order_status',
+            `Order ${code} was not accepted`,
+            'The store did not confirm it in time. Your card was not charged.',
+          );
+    }
     if (expiry?.holdReleased) {
       return ru
         ? message(

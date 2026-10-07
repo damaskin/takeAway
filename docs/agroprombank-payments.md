@@ -192,8 +192,12 @@ checkout and only debited when the store accepts the order — see «Hold at
 checkout, capture on accept». Turn it off for a merchant whose acquiring
 contract has no preauthorization. Production runs with it off: terminal
 `E1043280` answers every preauthorization with `Invalid operation type
-"Preauthorization" for terminal "E1043280"`, so the card is charged at
-checkout, and an order the store turns down is refunded from the admin.
+"Preauthorization" for terminal "E1043280"`, and every refund with `Invalid
+operation type "Refund"`. With holds off the card is therefore charged only
+when the store accepts the order — see «Charge on accept» below — so an order
+the store turns down never needs money back. `AGROPROMBANK_CHARGE_AT_CHECKOUT=true`
+restores the old charge at checkout (a rejected order then needs a manual
+refund through the bank).
 
 `AGROPROMBANK_INVOICE_PREFIX` must differ per environment. The `invoiceid` we
 send has to stay unique for the entire life of the merchant contract, and a
@@ -304,6 +308,28 @@ the bank is written onto the `Payment` row (`rawJson.requestedPreauth`) before
 the call, so reconciliation after a timeout does not mistake a hold for a
 capture: `CheckOperation` reports that an operation exists, not that it was
 captured.
+
+### Charge on accept (no hold)
+
+With `AGROPROMBANK_HOLD_UNTIL_ACCEPTED=false` (and `AGROPROMBANK_CHARGE_AT_CHECKOUT`
+unset) nothing about money reaches the bank at checkout:
+
+1. `/pay` checks the token (`CheckToken`) and writes a `Payment` in
+   `REQUIRES_ACTION` with no `invoiceId` and `rawJson.deferred = true`. The
+   order stays `CREATED`, goes onto the kitchen board and staff are notified,
+   exactly like a held order. The customer's order screen shows `HELD`
+   ("charged when the store accepts").
+2. Accepting on the KDS claims the row (`REQUIRES_ACTION` → `PENDING` with a
+   fresh `invoiceId`, conditional update, so two accepts cannot both charge)
+   and sends `ProcessCardAutoPayment` with `preauth=0` for the checkout amount.
+   Success settles the order to `PAID` and the accept moves it to `ACCEPTED`.
+   A transport failure leaves the row `PENDING` for the reconciliation cron.
+3. A definitive refusal (declined card, revoked token, card unbound) fails the
+   payment and cancels the order (`reason=CARD_DECLINED`): promo, gift card and
+   points go back, the customer gets a push to order again with another card,
+   and the KDS gets `400 {code: "CARD_DECLINED"}`.
+4. Rejecting or expiring the order closes the row as `FAILED` with
+   `rawJson.voided = true` — no bank call — and the customer sees no payment.
 
 Ops can still capture by hand with
 `POST /api/admin/payments/agroprombank/:paymentId/complete`, for up to 110% of
