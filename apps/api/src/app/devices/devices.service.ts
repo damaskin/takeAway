@@ -11,13 +11,32 @@ export class DevicesService {
    * Upsert the caller's device row keyed by the resolved push token. WEB
    * callers send `{ endpoint, keys }`; we serialize the subscription into
    * the same `pushToken` column the WebPushProvider parses back. Native
-   * callers send `pushToken` directly.
+   * callers send `pushToken` (FCM) directly, iOS also its raw `apnsToken`.
+   *
+   * A token belongs to one app install, and an install to whoever is
+   * signed in on it now: rows another account left behind (its session
+   * expired instead of signing out) are removed, or that account's pushes
+   * would keep arriving on this phone. So are older rows of the same iOS
+   * install whose FCM token has since rotated — they share the APNs token
+   * and would get every push twice.
    */
   async register(userId: string, dto: RegisterDeviceDto): Promise<{ id: string }> {
     const token = this.resolveToken(dto);
+    const apns =
+      dto.type === 'IOS' && dto.apnsToken
+        ? { apnsToken: dto.apnsToken.toLowerCase(), apnsEnvironment: dto.apnsEnvironment ?? 'PRODUCTION' }
+        : null;
+
+    await this.prisma.device.deleteMany({ where: { pushToken: token, userId: { not: userId } } });
+    if (apns) {
+      await this.prisma.device.deleteMany({
+        where: { apnsToken: apns.apnsToken, NOT: { userId, pushToken: token } },
+      });
+    }
 
     // Same token already on file — bump lastSeenAt so we can prune stale
-    // rows later. Don't create a duplicate.
+    // rows later. Don't create a duplicate. A missing apnsToken leaves the
+    // stored one alone: iOS may not have handed it out yet this launch.
     const existing = await this.prisma.device.findFirst({
       where: { userId, pushToken: token },
       select: { id: true },
@@ -25,7 +44,7 @@ export class DevicesService {
     if (existing) {
       await this.prisma.device.update({
         where: { id: existing.id },
-        data: { lastSeenAt: new Date(), locale: dto.locale ?? undefined, type: dto.type },
+        data: { lastSeenAt: new Date(), locale: dto.locale ?? undefined, type: dto.type, ...(apns ?? {}) },
       });
       return { id: existing.id };
     }
@@ -36,6 +55,7 @@ export class DevicesService {
         type: dto.type,
         pushToken: token,
         locale: dto.locale ?? 'EN',
+        ...(apns ?? {}),
       },
       select: { id: true },
     });

@@ -377,18 +377,32 @@ enum ReferralStatus {
 }
 
 model Device {
-  id         String     @id @default(cuid())
-  userId     String
-  type       DeviceType
-  pushToken  String?
-  locale     Locale     @default(EN)
-  lastSeenAt DateTime   @default(now())
-  createdAt  DateTime   @default(now())
+  id              String           @id @default(cuid())
+  userId          String
+  type            DeviceType
+  /// FCM token (IOS / ANDROID) or a JSON-encoded web push subscription (WEB).
+  pushToken       String?
+  /// Raw APNs device token (hex) the iOS app registers next to its FCM
+  /// token. With APNs configured the API pushes to it directly and skips
+  /// the FCM token of the same row; null for older app versions.
+  apnsToken       String?
+  /// The APNs gateway that token belongs to: development builds get
+  /// sandbox tokens. Corrected by the API when Apple says otherwise.
+  apnsEnvironment ApnsEnvironment?
+  locale          Locale           @default(EN)
+  lastSeenAt      DateTime         @default(now())
+  createdAt       DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([pushToken])
+  @@index([apnsToken])
+}
+
+enum ApnsEnvironment {
+  PRODUCTION
+  SANDBOX
 }
 
 model OAuthAccount {
