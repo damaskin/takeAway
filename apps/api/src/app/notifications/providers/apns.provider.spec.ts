@@ -301,6 +301,7 @@ describe('Http2ApnsTransport', () => {
   let server: Http2Server;
   let origin: string;
   const sessions: ServerHttp2Session[] = [];
+  const unanswered: Array<{ close(): void }> = [];
   let handler: (path: string, headers: Record<string, string>, body: string) => { status: number; body: string } | null;
 
   beforeAll(async () => {
@@ -315,7 +316,11 @@ describe('Http2ApnsTransport', () => {
           headers as unknown as Record<string, string>,
           Buffer.concat(chunks).toString(),
         );
-        if (!answer) return; // never answer: the client times out
+        if (!answer) {
+          // Never answer: the client times out. Closed after the test.
+          unanswered.push(stream);
+          return;
+        }
         stream.respond({ ':status': answer.status, 'content-type': 'application/json' });
         stream.end(answer.body);
       });
@@ -325,6 +330,7 @@ describe('Http2ApnsTransport', () => {
   });
 
   afterAll(async () => {
+    for (const s of unanswered) s.close();
     for (const s of sessions) s.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
