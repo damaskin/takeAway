@@ -1,10 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { OrderStatus } from '@prisma/client';
+import type { PushTransport } from '@takeaway/shared-types';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { ApnsPushProvider } from './providers/apns.provider';
+import { type ApnsDelivery, ApnsPushProvider, apnsTargets, hasApnsToken } from './providers/apns.provider';
 import { FcmPushProvider } from './providers/fcm.provider';
-import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './providers/push-provider.interface';
+import type {
+  PushAttempt,
+  PushMessage,
+  PushProvider,
+  PushRecipient,
+  PushTarget,
+} from './providers/push-provider.interface';
 import { TelegramPushProvider } from './providers/telegram-push.provider';
 import { WebPushProvider } from './providers/web-push.provider';
 
@@ -40,8 +47,12 @@ export interface OrderStatusPushOptions {
   rejection?: StoreRejectionInfo;
 }
 
-/** A transport that accepted a message. */
-export type DeliveryVia = 'fcm' | 'webpush' | 'telegram';
+/**
+ * A transport that accepted a message: `apns` — the iOS app straight
+ * through Apple, `fcm` — the app through Firebase (Android, and iOS devices
+ * without a raw APNs token), `webpush` — the browser, `telegram` — the bot.
+ */
+export type DeliveryVia = PushTransport;
 
 /**
  * What happened to one message for one person across every transport.
@@ -51,18 +62,23 @@ export type DeliveryVia = 'fcm' | 'webpush' | 'telegram';
 export interface DeliveryResult {
   outcome: 'sent' | 'failed' | 'no_channel';
   via: DeliveryVia[];
-  /** Why delivery failed — or, on a Telegram fallback, why device push did not land. */
+  /**
+   * Why delivery failed — or, when it was sent, what failed along the way
+   * (an app push that did not land before the Telegram fallback, one of two
+   * devices, APNs before its FCM fallback).
+   */
   error?: string;
 }
 
 /**
- * `push` — app (FCM) and web push, then the Telegram bot when neither landed.
+ * `push` — app (APNs / FCM) and web push, then the Telegram bot when none landed.
  * `telegram` — the Telegram bot only.
  */
 export type DeliveryMode = 'push' | 'telegram';
 
 /** Which transports have credentials on this server. */
 export interface TransportStatus {
+  apns: boolean;
   fcm: boolean;
   webpush: boolean;
   telegram: boolean;
@@ -75,7 +91,7 @@ export const PUSH_RECIPIENT_SELECT = {
   telegramUserId: true,
   devices: {
     where: { pushToken: { not: null } },
-    select: { pushToken: true, type: true },
+    select: { pushToken: true, type: true, apnsToken: true, apnsEnvironment: true },
   },
 } as const;
 
@@ -83,22 +99,35 @@ interface RecipientRow {
   id: string;
   locale: 'EN' | 'RU';
   telegramUserId: bigint | null;
-  devices: Array<{ pushToken: string | null; type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' }>;
+  devices: Array<{
+    pushToken: string | null;
+    type: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM';
+    apnsToken?: string | null;
+    apnsEnvironment?: 'PRODUCTION' | 'SANDBOX' | null;
+  }>;
 }
 
 /** Builds the provider-facing recipient from a row selected with {@link PUSH_RECIPIENT_SELECT}. */
 export function toPushRecipient(user: RecipientRow): PushRecipient {
-  return {
-    userId: user.id,
-    telegramUserId: user.telegramUserId,
-    locale: user.locale,
-    pushTokens: user.devices
-      .filter((d): d is { pushToken: string; type: RecipientRow['devices'][number]['type'] } => Boolean(d.pushToken))
-      .map((d) => ({ token: d.pushToken, deviceType: d.type })),
-  };
+  const pushTokens: PushTarget[] = [];
+  for (const d of user.devices) {
+    if (!d.pushToken) continue;
+    const target: PushTarget = { token: d.pushToken, deviceType: d.type };
+    if (d.type === 'IOS' && d.apnsToken) {
+      target.apnsToken = d.apnsToken;
+      target.apnsEnvironment = d.apnsEnvironment ?? null;
+    }
+    pushTokens.push(target);
+  }
+  return { userId: user.id, telegramUserId: user.telegramUserId, locale: user.locale, pushTokens };
 }
 
 /** Transitions the customer hears about; everything else they see live in the app. */
+/** Each reason once — two devices failing the same way say it once. */
+function joinErrors(errors: string[]): string {
+  return [...new Set(errors)].join('; ');
+}
+
 const NOTIFIED_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
   'ACCEPTED',
   'READY',
@@ -276,13 +305,19 @@ export class NotificationsService {
   /**
    * Delivers one message to one person and says how it went.
    *
-   * In `push` mode the device transports run in parallel — FCM for the
-   * mobile app (Android and iOS), Web Push for the browser; the APNs stub
-   * never sends. When none of them accepted the message and the user has a
+   * In `push` mode the device transports run in parallel: APNs for iOS
+   * devices that registered a raw APNs token (when APNs is configured),
+   * FCM for the other app devices (Android, iOS on older app versions),
+   * Web Push for the browser. An iOS device pushed through APNs is left out
+   * of FCM, so nobody gets the same push twice; only when Apple did not
+   * take it is the device's FCM token tried as well.
+   *
+   * When no device transport accepted the message and the user has a
    * Telegram chat with the bot, the bot sends it instead. So a Mini App
    * customer (no device tokens) hears from the bot, an app user gets a
    * single app push rather than a push *and* a bot message, and an app user
-   * whose token died still gets the message.
+   * whose token died still gets the message. Whatever failed on the way is
+   * kept in `error`, also on a result that was sent.
    *
    * Never throws; a provider that rejects is reported as a failure.
    */
@@ -290,30 +325,53 @@ export class NotificationsService {
     const errors: string[] = [];
 
     if (mode === 'push') {
-      const device: Array<PushProvider & { id: DeliveryVia | 'apns' }> = [this.fcm, this.webpush, this.apns];
-      const attempts = await Promise.all(device.map((p) => this.safeAttempt(p, recipient, message)));
-      const via: DeliveryVia[] = [];
-      device.forEach((p, i) => {
-        if (attempts[i]?.status === 'sent' && p.id !== 'apns') via.push(p.id);
-      });
-      if (via.length > 0) return { outcome: 'sent', via };
-      for (const a of attempts) if (a.status === 'failed') errors.push(a.error);
+      const via = new Set<DeliveryVia>();
+      const note = (id: DeliveryVia, attempt: PushAttempt): void => {
+        if (attempt.status === 'sent') via.add(id);
+        else if (attempt.status === 'failed') errors.push(attempt.error);
+      };
+
+      const direct = this.apns.isConfigured();
+      const fcmRecipient: PushRecipient = direct
+        ? { ...recipient, pushTokens: recipient.pushTokens.filter((t) => !hasApnsToken(t)) }
+        : recipient;
+      const [apns, fcm, webpush] = await Promise.all([
+        direct ? this.safeApns(recipient, message) : null,
+        this.safeAttempt(this.fcm, fcmRecipient, message),
+        this.safeAttempt(this.webpush, recipient, message),
+      ]);
+      if (apns) note('apns', apns.attempt);
+      note('fcm', fcm);
+      // iOS devices Apple did not take the push for get it through FCM instead.
+      if (apns && apns.unreached.length > 0) {
+        note('fcm', await this.safeAttempt(this.fcm, { ...recipient, pushTokens: apns.unreached }, message));
+      }
+      note('webpush', webpush);
+
+      if (via.size > 0) {
+        const order: DeliveryVia[] = ['apns', 'fcm', 'webpush'];
+        const sent = order.filter((id) => via.has(id));
+        return errors.length > 0
+          ? { outcome: 'sent', via: sent, error: joinErrors(errors) }
+          : { outcome: 'sent', via: sent };
+      }
     }
 
     const tg = await this.safeAttempt(this.telegram, recipient, message);
     if (tg.status === 'sent') {
       return errors.length > 0
-        ? { outcome: 'sent', via: ['telegram'], error: errors.join('; ') }
+        ? { outcome: 'sent', via: ['telegram'], error: joinErrors(errors) }
         : { outcome: 'sent', via: ['telegram'] };
     }
     if (tg.status === 'failed') errors.push(tg.error);
-    if (errors.length > 0) return { outcome: 'failed', via: [], error: errors.join('; ') };
+    if (errors.length > 0) return { outcome: 'failed', via: [], error: joinErrors(errors) };
     return { outcome: 'no_channel', via: [] };
   }
 
   /** Which transports this server can use — the admin shows it next to a campaign's reach. */
   transportStatus(): TransportStatus {
     return {
+      apns: this.apns.isConfigured(),
       fcm: this.fcm.isConfigured(),
       webpush: this.webpush.isConfigured(),
       telegram: this.telegram.isConfigured(),
@@ -396,6 +454,17 @@ export class NotificationsService {
       const error = `${provider.id}: ${err instanceof Error ? err.message : String(err)}`;
       this.logger.warn(`Push provider threw — ${error}`);
       return { status: 'failed', error };
+    }
+  }
+
+  /** {@link safeAttempt} for APNs, which also says which devices it did not reach. */
+  private async safeApns(recipient: PushRecipient, message: PushMessage): Promise<ApnsDelivery> {
+    try {
+      return await this.apns.deliver(recipient, message);
+    } catch (err) {
+      const error = `apns: ${err instanceof Error ? err.message : String(err)}`;
+      this.logger.warn(`Push provider threw — ${error}`);
+      return { attempt: { status: 'failed', error }, unreached: apnsTargets(recipient.pushTokens) };
     }
   }
 
