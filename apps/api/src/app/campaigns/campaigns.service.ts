@@ -8,14 +8,10 @@ import type {
   OrderStatus,
   Prisma,
 } from '@prisma/client';
+import type { CampaignTransport } from '@takeaway/shared-types';
 
 import { MailService } from '../mail/mail.service';
-import {
-  type DeliveryVia,
-  NotificationsService,
-  PUSH_RECIPIENT_SELECT,
-  toPushRecipient,
-} from '../notifications/notifications.service';
+import { NotificationsService, PUSH_RECIPIENT_SELECT, toPushRecipient } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SEND_BATCH_SIZE = 50;
@@ -49,10 +45,32 @@ export type AudienceUser = Prisma.UserGetPayload<{ select: typeof AUDIENCE_USER_
 
 /** Which transports the server has credentials for. */
 export interface Transports {
+  apns: boolean;
   fcm: boolean;
   webpush: boolean;
   telegram: boolean;
   email: boolean;
+}
+
+/** A transport a campaign delivery went through. */
+export type CampaignVia = CampaignTransport;
+
+/** What the campaign list shows next to the counters: how people were reached, and what went wrong. */
+export interface CampaignStats {
+  /** People each transport reached; someone reached on two transports counts in both. */
+  via: Record<CampaignVia, number>;
+  /**
+   * The most common delivery errors, most frequent first (up to three):
+   * failed deliveries, and app pushes that failed on the way to a delivery
+   * that still landed (another device, the Telegram fallback).
+   */
+  errors: Array<{ error: string; count: number }>;
+}
+
+const MAX_LISTED_ERRORS = 3;
+
+export function emptyCampaignStats(): CampaignStats {
+  return { via: { apns: 0, fcm: 0, webpush: 0, telegram: 0, email: 0 }, errors: [] };
 }
 
 /** How a campaign would reach one person, given what is configured. */
@@ -74,7 +92,7 @@ export interface CampaignPreview {
 
 export interface TestSendResult {
   outcome: 'sent' | 'failed' | 'no_channel';
-  via: Array<DeliveryVia | 'email'>;
+  via: CampaignVia[];
   error?: string;
 }
 
@@ -88,9 +106,11 @@ interface DeliveryRecord {
  * Works out how one person would be reached — the same rules the run uses,
  * so the count the admin sees before sending matches what happens.
  *
- * PUSH: app push when they have a mobile token and FCM is configured, web
- * push when they have a browser subscription and VAPID is configured, the
- * Telegram bot when neither applies but they have a chat with it.
+ * PUSH: app push when they have a mobile device the server can push to —
+ * an iOS device with an APNs token while APNs is configured, or any app
+ * device while FCM is — web push when they have a browser subscription and
+ * VAPID is configured, the Telegram bot when neither applies but they have
+ * a chat with it.
  */
 export function reachOf(user: AudienceUser, channel: CampaignChannel, transports: Transports): Reach {
   if (!user.notifyPromotions) return { kind: 'opted_out' };
@@ -107,7 +127,11 @@ export function reachOf(user: AudienceUser, channel: CampaignChannel, transports
       ? { kind: 'reachable', appPush: false, webPush: false, telegram: true, email: false }
       : { kind: 'no_channel' };
   }
-  const appPush = transports.fcm && tokens.some((d) => d.type === 'IOS' || d.type === 'ANDROID');
+  const appPush = tokens.some(
+    (d) =>
+      (transports.apns && d.type === 'IOS' && Boolean(d.apnsToken)) ||
+      (transports.fcm && (d.type === 'IOS' || d.type === 'ANDROID')),
+  );
   const webPush = transports.webpush && tokens.some((d) => d.type === 'WEB');
   if (appPush || webPush) return { kind: 'reachable', appPush, webPush, telegram: false, email: false };
   if (telegram) return { kind: 'reachable', appPush: false, webPush: false, telegram: true, email: false };
@@ -166,6 +190,39 @@ export class CampaignsService {
 
   list(brandId: string): Promise<Campaign[]> {
     return this.prisma.campaign.findMany({ where: { brandId }, orderBy: { createdAt: 'desc' }, take: 50 });
+  }
+
+  /** How each campaign's deliveries went, from the per-recipient rows: transports used and top errors. */
+  async stats(ids: string[]): Promise<Map<string, CampaignStats>> {
+    const out = new Map<string, CampaignStats>(ids.map((id) => [id, emptyCampaignStats()]));
+    if (ids.length === 0) return out;
+    const [byVia, byError] = await Promise.all([
+      this.prisma.campaignDelivery.groupBy({
+        by: ['campaignId', 'via'],
+        where: { campaignId: { in: ids }, outcome: 'SENT' },
+        _count: { _all: true },
+      }),
+      this.prisma.campaignDelivery.groupBy({
+        by: ['campaignId', 'error'],
+        where: { campaignId: { in: ids }, error: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+    for (const row of byVia) {
+      const stats = out.get(row.campaignId);
+      if (!stats || !row.via) continue;
+      for (const v of row.via.split(',')) {
+        if (v in stats.via) stats.via[v as CampaignVia] += row._count._all;
+      }
+    }
+    for (const row of byError) {
+      const stats = out.get(row.campaignId);
+      if (stats && row.error) stats.errors.push({ error: row.error, count: row._count._all });
+    }
+    for (const stats of out.values()) {
+      stats.errors = stats.errors.sort((a, b) => b.count - a.count).slice(0, MAX_LISTED_ERRORS);
+    }
+    return out;
   }
 
   create(input: {
@@ -399,7 +456,9 @@ export class CampaignsService {
         { kind: 'generic', title: campaign.title, body: campaign.body },
         campaign.channel === 'TELEGRAM' ? 'telegram' : 'push',
       );
-      if (result.outcome === 'sent') return record('SENT', result.via);
+      // A delivery that landed may still carry what failed on the way (an
+      // app push before the Telegram fallback) — kept, so the admin sees it.
+      if (result.outcome === 'sent') return record('SENT', result.via, result.error);
       if (result.outcome === 'failed') return record('FAILED', [], result.error);
       return record('NO_CHANNEL');
     } catch (err) {

@@ -13,17 +13,23 @@ import {
   reachOf,
 } from './campaigns.service';
 
-const allOn: Transports = { fcm: true, webpush: true, telegram: true, email: true };
+const allOn: Transports = { apns: true, fcm: true, webpush: true, telegram: true, email: true };
 
-function user(over: Partial<AudienceUser> = {}): AudienceUser {
+type DeviceRow = AudienceUser['devices'][number];
+
+function user(
+  over: Omit<Partial<AudienceUser>, 'devices'> & {
+    devices?: Array<Pick<DeviceRow, 'pushToken' | 'type'> & Partial<DeviceRow>>;
+  } = {},
+): AudienceUser {
   return {
     id: 'u1',
     locale: 'RU',
     telegramUserId: null,
     email: null,
     notifyPromotions: true,
-    devices: [],
     ...over,
+    devices: (over.devices ?? []).map((d) => ({ apnsToken: null, apnsEnvironment: null, ...d })),
   } as AudienceUser;
 }
 
@@ -73,6 +79,17 @@ describe('reachOf', () => {
   it('falls back to Telegram when the server cannot send app push', () => {
     const u = user({ devices: [{ pushToken: 'fcm', type: 'IOS' }], telegramUserId: 7n });
     expect(reachOf(u, 'PUSH', { ...allOn, fcm: false })).toMatchObject({ appPush: false, telegram: true });
+  });
+
+  it('reaches an iPhone with an APNs token through Apple even without FCM', () => {
+    const iphone = { pushToken: 'fcm', type: 'IOS', apnsToken: 'ab'.repeat(32), apnsEnvironment: null } as const;
+    expect(reachOf(user({ devices: [iphone] }), 'PUSH', { ...allOn, fcm: false })).toMatchObject({
+      kind: 'reachable',
+      appPush: true,
+    });
+    expect(reachOf(user({ devices: [iphone] }), 'PUSH', { ...allOn, fcm: false, apns: false })).toEqual({
+      kind: 'no_channel',
+    });
   });
 
   it('counts opted-out and unreachable people apart', () => {
@@ -178,16 +195,18 @@ describe('CampaignsService', () => {
       Promise.resolve(
         r.userId === 'tg'
           ? { outcome: 'sent', via: ['telegram'] }
-          : r.userId === 'broken'
-            ? { outcome: 'failed', via: [], error: 'FCM 403 PERMISSION_DENIED' }
-            : r.userId === 'nobody'
-              ? { outcome: 'no_channel', via: [] }
-              : { outcome: 'sent', via: ['fcm'] },
+          : r.userId === 'fallback'
+            ? { outcome: 'sent', via: ['telegram'], error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.' }
+            : r.userId === 'broken'
+              ? { outcome: 'failed', via: [], error: 'FCM 403 PERMISSION_DENIED' }
+              : r.userId === 'nobody'
+                ? { outcome: 'no_channel', via: [] }
+                : { outcome: 'sent', via: ['fcm'] },
       ),
     );
     const notifications = {
       deliver,
-      transportStatus: () => ({ fcm: true, webpush: true, telegram: true }),
+      transportStatus: () => ({ apns: true, fcm: true, webpush: true, telegram: true }),
     } as unknown as NotificationsService;
     const mail = { isConfigured: () => true, send: jest.fn() } as unknown as MailService;
     const service = new CampaignsService(prisma as unknown as PrismaService, notifications, mail);
@@ -286,8 +305,68 @@ describe('CampaignsService', () => {
       optedOut: 1,
       noChannel: 1,
       byChannel: { appPush: 1, webPush: 1, telegram: 1, email: 0 },
-      transports: { fcm: true, webpush: true, telegram: true, email: true },
+      transports: { apns: true, fcm: true, webpush: true, telegram: true, email: true },
     });
     expect(h.deliver).not.toHaveBeenCalled();
+  });
+
+  it('keeps why the app push failed when the Telegram fallback still delivered', async () => {
+    const h = setup({ users: [user({ id: 'fallback', telegramUserId: 7n })], campaign: { status: 'SENDING' } });
+    await h.service.run('c1');
+    expect(h.deliveries.get('fallback')).toEqual({
+      outcome: 'SENT',
+      error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.',
+    });
+    expect(h.current()).toMatchObject({
+      status: 'SENT',
+      sentCount: 1,
+      failedCount: 0,
+      lastError: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.',
+    });
+  });
+});
+
+describe('CampaignsService.stats', () => {
+  it('counts people per transport and lists the most common errors first', async () => {
+    const groupBy = jest.fn(({ by }: { by: string[] }) =>
+      Promise.resolve(
+        by.includes('via')
+          ? [
+              { campaignId: 'c1', via: 'apns', _count: { _all: 3 } },
+              { campaignId: 'c1', via: 'apns,webpush', _count: { _all: 1 } },
+              { campaignId: 'c1', via: 'telegram', _count: { _all: 2 } },
+              { campaignId: 'c2', via: 'email', _count: { _all: 5 } },
+            ]
+          : [
+              { campaignId: 'c1', error: 'Telegram 403: bot was blocked by the user', _count: { _all: 1 } },
+              { campaignId: 'c1', error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.', _count: { _all: 4 } },
+              { campaignId: 'c1', error: 'APNs 500 InternalServerError', _count: { _all: 2 } },
+              { campaignId: 'c1', error: 'WebPush 500: oops', _count: { _all: 1 } },
+            ],
+      ),
+    );
+    const prisma = { campaignDelivery: { groupBy } } as unknown as PrismaService;
+    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService);
+
+    const stats = await service.stats(['c1', 'c2', 'c3']);
+
+    expect(stats.get('c1')).toEqual({
+      via: { apns: 4, fcm: 0, webpush: 1, telegram: 2, email: 0 },
+      errors: [
+        { error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.', count: 4 },
+        { error: 'APNs 500 InternalServerError', count: 2 },
+        { error: 'Telegram 403: bot was blocked by the user', count: 1 },
+      ],
+    });
+    expect(stats.get('c2')?.via.email).toBe(5);
+    expect(stats.get('c3')).toEqual({ via: { apns: 0, fcm: 0, webpush: 0, telegram: 0, email: 0 }, errors: [] });
+  });
+
+  it('does not query for an empty list', async () => {
+    const groupBy = jest.fn();
+    const prisma = { campaignDelivery: { groupBy } } as unknown as PrismaService;
+    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService);
+    await expect(service.stats([])).resolves.toEqual(new Map());
+    expect(groupBy).not.toHaveBeenCalled();
   });
 });

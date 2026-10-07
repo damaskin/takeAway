@@ -18,7 +18,7 @@ import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { CampaignsService, isSendable } from './campaigns.service';
+import { type CampaignStats, CampaignsService, emptyCampaignStats, isSendable } from './campaigns.service';
 import {
   CAMPAIGN_AUDIENCES,
   CAMPAIGN_CHANNELS,
@@ -47,7 +47,8 @@ export class CampaignsController {
   async list(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId?: string): Promise<CampaignDto[]> {
     const resolved = await this.resolveBrandId(user, brandId);
     const rows = await this.service.list(resolved);
-    return rows.map(toCampaignDto);
+    const stats = await this.service.stats(rows.map((r) => r.id));
+    return rows.map((r) => toCampaignDto(r, stats.get(r.id)));
   }
 
   /** How many people an audience reaches through a channel — the form shows it before saving. */
@@ -109,7 +110,8 @@ export class CampaignsController {
   async send(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
     const brandId = await this.resolveBrandIdForCampaign(user, id);
     const row = await this.service.send(brandId, id);
-    return toCampaignDto(row);
+    const stats = await this.service.stats([row.id]);
+    return toCampaignDto(row, stats.get(row.id));
   }
 
   @Delete(':id')
@@ -142,7 +144,7 @@ export class CampaignsController {
   }
 }
 
-function toCampaignDto(c: Campaign): CampaignDto {
+function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats()): CampaignDto {
   return {
     id: c.id,
     brandId: c.brandId,
@@ -157,6 +159,8 @@ function toCampaignDto(c: Campaign): CampaignDto {
     noChannelCount: c.noChannelCount,
     optedOutCount: c.optedOutCount,
     lastError: c.lastError,
+    via: stats.via,
+    errors: stats.errors,
     sendable: isSendable(c),
     startedAt: c.startedAt ? c.startedAt.toISOString() : null,
     sentAt: c.sentAt ? c.sentAt.toISOString() : null,
