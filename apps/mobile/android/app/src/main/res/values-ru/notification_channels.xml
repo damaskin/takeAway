@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Названия каналов уведомлений в настройках системы (MainActivity.kt). -->
+<resources>
+    <string name="notification_channel_orders">Статусы заказов</string>
+    <string name="notification_channel_orders_description">Когда заказ принят, готов или в пути.</string>
+    <string name="notification_channel_promotions">Акции и новости</string>
+    <string name="notification_channel_promotions_description">Предложения кофеен, в которых вы заказываете.</string>
+</resources>
