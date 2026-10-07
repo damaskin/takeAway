@@ -202,7 +202,7 @@ takeaway/
 - **Realtime**: `socket_io_client` к `/ws` на API-хосте; без сокета — опрос раз в 5 с
 - **Storage**: `shared_preferences` для настроек, JSON-файлы в кеше для меню и точек (офлайн-открытие)
 - **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`
-- **Maps**: `flutter_map` + OpenStreetMap, маршрут — deep link в Apple/Google Maps
+- **Maps**: `flutter_map` + OpenStreetMap через наш кеширующий прокси `takeaway.md/tiles` (nginx + Cloudflare, запасной путь — сам OSM; см. `docs/map-tiles.md`), маршрут — deep link в Apple/Google Maps
 - **Payments**: привязанные карты Агропромбанка через API (как web/TMA); Stripe в регионе не работает
 - **Тесты**: unit + widget (`flutter test`, stateful fake API), интеграционный прогон на устройстве против живого API с KDS-переходами (`integration_test/`)
 
