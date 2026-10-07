@@ -824,6 +824,58 @@ class AppLocalizationsRu extends AppLocalizations {
   String get profileAbout => 'О приложении';
 
   @override
+  String get profileFeedback => 'Обратная связь';
+
+  @override
+  String get feedbackIntro =>
+      'Расскажите, что понравилось, что улучшить или что пошло не так. Каждое сообщение читает команда takeAway.';
+
+  @override
+  String get feedbackKindReview => 'Отзыв';
+
+  @override
+  String get feedbackKindSuggestion => 'Предложение';
+
+  @override
+  String get feedbackKindProblem => 'Проблема';
+
+  @override
+  String get feedbackMessageLabel => 'Сообщение';
+
+  @override
+  String get feedbackHintReview => 'Что понравилось, а что не очень?';
+
+  @override
+  String get feedbackHintSuggestion => 'Что добавить или улучшить?';
+
+  @override
+  String get feedbackHintProblem => 'Что случилось? Если это про заказ — укажите его номер.';
+
+  @override
+  String get feedbackMessageRequired => 'Напишите пару слов';
+
+  @override
+  String get feedbackContactLabel => 'Как с вами связаться (необязательно)';
+
+  @override
+  String get feedbackContactHint => 'Telegram, телефон или email';
+
+  @override
+  String get feedbackSend => 'Отправить';
+
+  @override
+  String get feedbackSentTitle => 'Спасибо!';
+
+  @override
+  String get feedbackSentBody => 'Сообщение у команды takeAway. Если вы оставили контакт, мы ответим.';
+
+  @override
+  String get feedbackDone => 'Готово';
+
+  @override
+  String get feedbackTooMany => 'Слишком много сообщений подряд. Попробуйте через час.';
+
+  @override
   String get signOut => 'Выйти';
 
   @override

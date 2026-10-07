@@ -816,6 +816,59 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileAbout => 'About the app';
 
   @override
+  String get profileFeedback => 'Feedback';
+
+  @override
+  String get feedbackIntro =>
+      'Tell us what you liked, what we should improve or what went wrong. The takeAway team reads every message.';
+
+  @override
+  String get feedbackKindReview => 'Review';
+
+  @override
+  String get feedbackKindSuggestion => 'Suggestion';
+
+  @override
+  String get feedbackKindProblem => 'Problem';
+
+  @override
+  String get feedbackMessageLabel => 'Message';
+
+  @override
+  String get feedbackHintReview => 'What did you like, and what not so much?';
+
+  @override
+  String get feedbackHintSuggestion => 'What should we add or improve?';
+
+  @override
+  String get feedbackHintProblem => 'What happened? If it\'s about an order, add its number.';
+
+  @override
+  String get feedbackMessageRequired => 'Write a few words';
+
+  @override
+  String get feedbackContactLabel => 'How to reach you (optional)';
+
+  @override
+  String get feedbackContactHint => 'Telegram, phone or email';
+
+  @override
+  String get feedbackSend => 'Send';
+
+  @override
+  String get feedbackSentTitle => 'Thank you!';
+
+  @override
+  String get feedbackSentBody =>
+      'Your message is with the takeAway team. If you left a contact, we\'ll get back to you.';
+
+  @override
+  String get feedbackDone => 'Done';
+
+  @override
+  String get feedbackTooMany => 'That\'s a lot of messages in a row. Please try again in an hour.';
+
+  @override
   String get signOut => 'Sign out';
 
   @override

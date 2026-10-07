@@ -1556,6 +1556,108 @@ abstract class AppLocalizations {
   /// **'About the app'**
   String get profileAbout;
 
+  /// No description provided for @profileFeedback.
+  ///
+  /// In en, this message translates to:
+  /// **'Feedback'**
+  String get profileFeedback;
+
+  /// No description provided for @feedbackIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us what you liked, what we should improve or what went wrong. The takeAway team reads every message.'**
+  String get feedbackIntro;
+
+  /// No description provided for @feedbackKindReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review'**
+  String get feedbackKindReview;
+
+  /// No description provided for @feedbackKindSuggestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggestion'**
+  String get feedbackKindSuggestion;
+
+  /// No description provided for @feedbackKindProblem.
+  ///
+  /// In en, this message translates to:
+  /// **'Problem'**
+  String get feedbackKindProblem;
+
+  /// No description provided for @feedbackMessageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get feedbackMessageLabel;
+
+  /// No description provided for @feedbackHintReview.
+  ///
+  /// In en, this message translates to:
+  /// **'What did you like, and what not so much?'**
+  String get feedbackHintReview;
+
+  /// No description provided for @feedbackHintSuggestion.
+  ///
+  /// In en, this message translates to:
+  /// **'What should we add or improve?'**
+  String get feedbackHintSuggestion;
+
+  /// No description provided for @feedbackHintProblem.
+  ///
+  /// In en, this message translates to:
+  /// **'What happened? If it\'s about an order, add its number.'**
+  String get feedbackHintProblem;
+
+  /// No description provided for @feedbackMessageRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a few words'**
+  String get feedbackMessageRequired;
+
+  /// No description provided for @feedbackContactLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'How to reach you (optional)'**
+  String get feedbackContactLabel;
+
+  /// No description provided for @feedbackContactHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Telegram, phone or email'**
+  String get feedbackContactHint;
+
+  /// No description provided for @feedbackSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get feedbackSend;
+
+  /// No description provided for @feedbackSentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you!'**
+  String get feedbackSentTitle;
+
+  /// No description provided for @feedbackSentBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your message is with the takeAway team. If you left a contact, we\'ll get back to you.'**
+  String get feedbackSentBody;
+
+  /// No description provided for @feedbackDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get feedbackDone;
+
+  /// No description provided for @feedbackTooMany.
+  ///
+  /// In en, this message translates to:
+  /// **'That\'s a lot of messages in a row. Please try again in an hour.'**
+  String get feedbackTooMany;
+
   /// No description provided for @signOut.
   ///
   /// In en, this message translates to:
