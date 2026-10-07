@@ -320,6 +320,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/brands/brand-form.page').then((m) => m.BrandFormPage),
       },
       {
+        path: 'feedback',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'feedback' satisfies NavKey },
+        loadComponent: () => import('./features/feedback/feedback.page').then((m) => m.CustomerFeedbackPage),
+      },
+      {
         path: 'settings',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'settings' satisfies NavKey },

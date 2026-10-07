@@ -30,6 +30,7 @@ export type NavKey =
   | 'analytics'
   | 'customers'
   | 'brands'
+  | 'feedback'
   | 'settings'
   | 'integrations'
   | 'telegramLink';
@@ -66,6 +67,8 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   analytics: [SA, BA],
   customers: [SA, BA],
   brands: [SA],
+  // What customers write from their profile — read by the platform team.
+  feedback: [SA],
   settings: [SA, BA],
   integrations: [SA, BA],
   // Telegram account-link drives order push notifications — MENU_EDITOR
@@ -106,6 +109,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   analytics: '/analytics',
   customers: '/customers',
   brands: '/brands',
+  feedback: '/feedback',
   settings: '/settings',
   integrations: '/integrations',
   telegramLink: '/telegram-link',

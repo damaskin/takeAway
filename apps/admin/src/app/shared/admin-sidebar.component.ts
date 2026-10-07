@@ -8,6 +8,7 @@ import { BrandLogoComponent } from '@takeaway/ui-kit';
 
 import { AuthStore } from '../core/auth/auth.store';
 import { BrandsService } from '../core/brands/brands.service';
+import { FeedbackApi } from '../core/feedback/feedback.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
 import { PwaService } from '../core/pwa/pwa.service';
@@ -25,7 +26,7 @@ interface NavItem {
   /** Role gate — item is hidden for users whose role is not in this list. */
   roles?: ReadonlyArray<AdminRole>;
   /** A live counter shown next to the label. */
-  badge?: 'pendingBrands' | 'pendingOrders';
+  badge?: 'pendingBrands' | 'pendingOrders' | 'newFeedback';
   /** The plan feature the section needs; without it the item shows a PRO lock and opens the upgrade page. */
   planFeature?: PlanFeature;
 }
@@ -87,6 +88,14 @@ interface NavItem {
               class="admin-nav-badge"
               [title]="'admin.brands.pendingBadge' | translate: { count: count }"
               [attr.aria-label]="'admin.brands.pendingBadge' | translate: { count: count }"
+              >{{ count }}</span
+            >
+          }
+          @if (item.badge === 'newFeedback' && newFeedback(); as count) {
+            <span
+              class="admin-nav-badge"
+              [title]="'admin.feedback.newBadge' | translate: { count: count }"
+              [attr.aria-label]="'admin.feedback.newBadge' | translate: { count: count }"
               >{{ count }}</span
             >
           }
@@ -192,6 +201,7 @@ export class AdminSidebarComponent {
   private readonly authStore = inject(AuthStore);
   private readonly brands = inject(BrandsService);
   private readonly orderAlerts = inject(OrderAlertsService);
+  private readonly feedback = inject(FeedbackApi);
   readonly pwa = inject(PwaService);
   readonly plans = inject(PlanAccess);
 
@@ -199,12 +209,16 @@ export class AdminSidebarComponent {
   readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
   /** Orders nobody has accepted yet, across the brand's stores; zero hides it. */
   readonly pendingOrders = computed(() => this.orderAlerts.pendingCount());
+  /** Customer feedback nobody has read yet; zero hides it. */
+  readonly newFeedback = computed(() => this.feedback.newCount() ?? 0);
 
   constructor() {
     // New applications arrive while the platform admin works, so the count
     // is re-read on every page change rather than once.
     const refresh = () => {
-      if (this.authStore.user()?.role === 'SUPER_ADMIN') this.brands.loadPendingCount();
+      if (this.authStore.user()?.role !== 'SUPER_ADMIN') return;
+      this.brands.loadPendingCount();
+      this.feedback.loadNewCount();
     };
     refresh();
     inject(Router)
@@ -269,6 +283,13 @@ export class AdminSidebarComponent {
       planFeature: NAV_PLAN_FEATURE.customers,
     },
     { icon: '🏷', label: 'admin.nav.brands', link: '/brands', roles: ADMIN_ROLES.brands, badge: 'pendingBrands' },
+    {
+      icon: '💬',
+      label: 'admin.nav.feedback',
+      link: '/feedback',
+      roles: ADMIN_ROLES.feedback,
+      badge: 'newFeedback',
+    },
     { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ADMIN_ROLES.settings },
     { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ADMIN_ROLES.integrations },
     {
