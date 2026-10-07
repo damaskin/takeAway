@@ -4,6 +4,7 @@ import 'package:retrofit/retrofit.dart';
 import 'models/auth.dart';
 import 'models/cart.dart';
 import 'models/catalog.dart';
+import 'models/feedback.dart';
 import 'models/loyalty.dart';
 import 'models/misc.dart';
 import 'models/order.dart';
@@ -157,6 +158,13 @@ abstract class TakeAwayApi {
 
   @POST('/me/referrals/apply')
   Future<ReferralSummary> applyReferral(@Body() Map<String, dynamic> body);
+
+  // ── Feedback ───────────────────────────────────────────────────────────
+
+  /// «Обратная связь» from the profile. 429 `FEEDBACK_TOO_MANY` past five
+  /// messages an hour.
+  @POST('/feedback')
+  Future<FeedbackReceipt> sendFeedback(@Body() CreateFeedbackRequest body);
 
   // ── Delivery ───────────────────────────────────────────────────────────
 

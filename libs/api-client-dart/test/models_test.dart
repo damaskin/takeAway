@@ -338,4 +338,36 @@ void main() {
       expect(const StartWebPaymentRequest(orderId: 'o1').toJson(), {'orderId': 'o1', 'returnTo': 'mobile'});
     });
   });
+
+  group('feedback', () {
+    test('sends the kind and source as the API names them and leaves out what is not given', () {
+      const bare = CreateFeedbackRequest(
+        kind: FeedbackKind.problem,
+        message: 'Cold coffee',
+        source: FeedbackSource.ios,
+      );
+      expect(bare.toJson(), {'kind': 'PROBLEM', 'message': 'Cold coffee', 'source': 'IOS'});
+
+      const full = CreateFeedbackRequest(
+        kind: FeedbackKind.suggestion,
+        message: 'Oat milk, please',
+        source: FeedbackSource.android,
+        contact: '@ana',
+        appVersion: '1.2.0 (3)',
+      );
+      expect(full.toJson(), {
+        'kind': 'SUGGESTION',
+        'message': 'Oat milk, please',
+        'source': 'ANDROID',
+        'contact': '@ana',
+        'appVersion': '1.2.0 (3)',
+      });
+    });
+
+    test('parses the receipt', () {
+      final receipt = FeedbackReceipt.fromJson({'id': 'fb_1', 'createdAt': '2026-10-07T10:00:00.000Z'});
+      expect(receipt.id, 'fb_1');
+      expect(receipt.createdAt.isUtc, isTrue);
+    });
+  });
 }
