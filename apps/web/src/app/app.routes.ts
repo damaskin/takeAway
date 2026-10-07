@@ -104,6 +104,11 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/profile/gift-cards.page').then((m) => m.ProfileGiftCardsPage),
       },
+      {
+        path: 'profile/feedback',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/profile/feedback.page').then((m) => m.ProfileFeedbackPage),
+      },
     ],
   },
   { path: '**', redirectTo: '' },
