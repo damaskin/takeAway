@@ -11,6 +11,8 @@ import {
 } from '@angular/core';
 import * as L from 'leaflet';
 
+import { MAP_TILES, tileLayerWithFallback } from './map-tiles';
+
 export interface MapMarker {
   id: string;
   lat: number;
@@ -28,7 +30,8 @@ export interface LatLng {
 const FALLBACK_CENTER: LatLng = { lat: 47.0105, lng: 28.8638 };
 
 /**
- * Shared Leaflet + OpenStreetMap map.
+ * Shared Leaflet + OpenStreetMap map. Tiles come through our caching proxy
+ * (see `MAP_TILES`), with OpenStreetMap itself as the fallback.
  *
  * Two modes on one component:
  *  - default (`pickable=false`) — renders `markers` + an optional
@@ -57,6 +60,7 @@ export class LeafletMapComponent {
 
   private readonly hostRef = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private readonly elementRef = inject(ElementRef);
+  private readonly tiles = inject(MAP_TILES);
 
   private map?: L.Map;
   private markerLayer?: L.LayerGroup;
@@ -99,10 +103,7 @@ export class LeafletMapComponent {
       attributionControl: true,
     });
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap',
-    }).addTo(map);
+    tileLayerWithFallback(this.tiles).addTo(map);
 
     this.markerLayer = L.layerGroup().addTo(map);
     this.map = map;
