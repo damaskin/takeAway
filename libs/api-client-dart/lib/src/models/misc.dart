@@ -88,11 +88,27 @@ class DeliveryQuote {
 
 @JsonSerializable(createFactory: false, includeIfNull: false)
 class DeviceRegistration {
-  const DeviceRegistration({required this.type, required this.pushToken, this.locale});
+  const DeviceRegistration({
+    required this.type,
+    required this.pushToken,
+    this.apnsToken,
+    this.apnsEnvironment,
+    this.locale,
+  });
 
   /// IOS / ANDROID.
   final String type;
+
+  /// The Firebase Cloud Messaging token.
   final String pushToken;
+
+  /// iOS only: the raw APNs device token (hex). The API pushes to it
+  /// directly and leaves the FCM token of this device out.
+  final String? apnsToken;
+
+  /// iOS only: PRODUCTION (store / TestFlight builds) or SANDBOX (debug
+  /// builds) — the APNs gateway [apnsToken] belongs to.
+  final String? apnsEnvironment;
   final String? locale;
 
   Map<String, dynamic> toJson() => _$DeviceRegistrationToJson(this);

@@ -17,5 +17,7 @@ DeliveryQuote _$DeliveryQuoteFromJson(Map<String, dynamic> json) => DeliveryQuot
 Map<String, dynamic> _$DeviceRegistrationToJson(DeviceRegistration instance) => <String, dynamic>{
   'type': instance.type,
   'pushToken': instance.pushToken,
+  'apnsToken': ?instance.apnsToken,
+  'apnsEnvironment': ?instance.apnsEnvironment,
   'locale': ?instance.locale,
 };
