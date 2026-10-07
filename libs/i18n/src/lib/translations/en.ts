@@ -1818,7 +1818,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         optedOut: 'Turned promotions off: {{count}}',
         empty: 'Nobody is in this audience yet.',
         none: 'Right now this campaign would reach nobody.',
-        pushHint: 'Push goes to the app and the browser; people without either get a Telegram bot message.',
+        pushHint:
+          'Push goes to the app (people who allowed notifications) and the browser; when there is nowhere to push or the push fails, the Telegram bot sends it.',
         fcmOff:
           'App push is not configured on the server — app users get the message in Telegram if they have it linked.',
         telegramOff: 'The Telegram bot is not configured on the server.',
@@ -1828,11 +1829,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         button: 'Send a test to me',
         sending: 'Sending the test…',
         sent: 'Test sent: {{via}}',
+        sentWithError: 'Test sent: {{via}} — but something failed on the way: {{error}}',
         failed: 'The test did not arrive: {{error}}',
         noChannel:
-          'Nowhere to send it: sign in to the takeAway app with this account or open the bot in Telegram (for email, add an address to your profile).',
+          'Nowhere to send it: sign in to the takeAway app with this account and allow notifications, or open the bot in Telegram (for email, add an address to your profile).',
         via: {
-          fcm: 'app',
+          apns: 'iPhone app (Apple)',
+          fcm: 'app (Firebase)',
           webpush: 'browser',
           telegram: 'Telegram',
           email: 'email',
@@ -1844,6 +1847,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noChannel: 'unreachable: {{count}}',
         optedOut: 'opted out: {{count}}',
         lastError: 'Last error: {{error}}',
+        via: 'Via: {{list}}',
+        errorsTitle: 'Delivery errors:',
+        errorItem: '{{error}} — {{count}}',
       },
       errors: {
         noRecipients: 'Nobody is in this audience yet — there is no one to send to.',

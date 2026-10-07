@@ -1,3 +1,5 @@
+import type { CampaignTransport } from '@takeaway/shared-types';
+
 /** One marketing campaign, as `/admin/campaigns` returns it. */
 export interface CampaignRow {
   id: string;
@@ -16,6 +18,13 @@ export interface CampaignRow {
   optedOutCount: number;
   /** Last delivery error or why the run failed — diagnostic text from the server. */
   lastError: string | null;
+  /** People each transport reached; someone reached on two transports counts in both. */
+  via: Record<CampaignTransport, number>;
+  /**
+   * Most common delivery errors, most frequent first (up to three) — also
+   * app pushes that failed before a Telegram fallback landed.
+   */
+  errors: Array<{ error: string; count: number }>;
   /** Send may be pressed again: a draft, a failed or stuck run, or a run with failures. */
   sendable: boolean;
   startedAt: string | null;
@@ -30,13 +39,14 @@ export interface CampaignPreview {
   optedOut: number;
   noChannel: number;
   byChannel: { appPush: number; webPush: number; telegram: number; email: number };
-  transports: { fcm: boolean; webpush: boolean; telegram: boolean; email: boolean };
+  transports: { apns: boolean; fcm: boolean; webpush: boolean; telegram: boolean; email: boolean };
 }
 
 /** `/admin/campaigns/test` — what happened to the copy sent to the admin. */
 export interface CampaignTestResult {
   outcome: 'sent' | 'failed' | 'no_channel';
-  via: Array<'fcm' | 'webpush' | 'telegram' | 'email'>;
+  via: CampaignTransport[];
+  /** What failed — also on a test that was sent (the app push before the Telegram fallback). */
   error?: string;
 }
 

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
+import '../../core/push/push_prompt.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/error_message.dart';
@@ -17,7 +18,8 @@ import 'auth_service.dart';
 
 /// Opens the sign-in sheet; completes with true once the customer is in.
 /// Call sites resume what the customer was doing (adding to cart,
-/// checking out) instead of dropping them on a login page.
+/// checking out) instead of dropping them on a login page — after a
+/// one-time offer of order notifications on a phone that was never asked.
 Future<bool> ensureSignedIn(BuildContext context, WidgetRef ref) async {
   if (ref.read(isSignedInProvider)) return true;
   final result = await showModalBottomSheet<bool>(
@@ -26,7 +28,9 @@ Future<bool> ensureSignedIn(BuildContext context, WidgetRef ref) async {
     useSafeArea: true,
     builder: (_) => const SignInSheet(),
   );
-  return result ?? ref.read(isSignedInProvider);
+  final bool signedIn = result ?? ref.read(isSignedInProvider);
+  if (signedIn && context.mounted) await offerNotificationsAfterSignIn(context, ref);
+  return signedIn;
 }
 
 enum _Provider { telegram, google, apple, dev }

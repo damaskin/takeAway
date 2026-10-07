@@ -1,7 +1,18 @@
+/** One registered device of a recipient, as the providers see it. */
+export interface PushTarget {
+  /** FCM token (IOS / ANDROID) or a JSON-encoded web push subscription (WEB). */
+  token: string;
+  deviceType: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM';
+  /** Raw APNs device token (hex) an iOS app registered next to its FCM token. */
+  apnsToken?: string | null;
+  /** The APNs gateway the token belongs to; production when unknown. */
+  apnsEnvironment?: 'PRODUCTION' | 'SANDBOX' | null;
+}
+
 export interface PushRecipient {
   userId: string;
   telegramUserId?: bigint | null;
-  pushTokens: Array<{ token: string; deviceType: 'IOS' | 'ANDROID' | 'WEB' | 'TELEGRAM' }>;
+  pushTokens: PushTarget[];
   locale: 'EN' | 'RU';
 }
 

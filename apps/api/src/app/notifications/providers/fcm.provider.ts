@@ -17,9 +17,20 @@ interface ServiceAccount {
 }
 
 /**
+ * Android notification channels the app creates (MainActivity.kt): order
+ * news pops up, marketing lands quietly in the shade. An app version
+ * without them falls back to its default channel.
+ */
+const ANDROID_CHANNEL_ORDERS = 'orders';
+const ANDROID_CHANNEL_PROMOTIONS = 'promotions';
+
+/**
  * Firebase Cloud Messaging (HTTP v1) for the mobile app — Android directly,
  * iOS through the APNs key uploaded to the Firebase project. The Flutter app
- * registers FCM tokens for both platforms, so both device types go here.
+ * registers FCM tokens for both platforms; iOS devices that also registered
+ * a raw APNs token are pushed by `ApnsPushProvider` instead whenever
+ * that is configured, and only reach this provider when Apple did not take
+ * the push (the caller filters them — see `NotificationsService.deliver`).
  *
  * Authenticates as the project's service account (`FIREBASE_PROJECT_ID`,
  * `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`): a self-signed JWT is
@@ -114,9 +125,12 @@ export class FcmPushProvider implements PushProvider {
             data,
             android: {
               priority: 'HIGH',
-              // One notification per order on the device: a newer status
-              // replaces the older one instead of stacking.
-              notification: message.orderId ? { tag: `order-${message.orderId}` } : undefined,
+              notification: {
+                channel_id: message.kind === 'generic' ? ANDROID_CHANNEL_PROMOTIONS : ANDROID_CHANNEL_ORDERS,
+                // One notification per order on the device: a newer status
+                // replaces the older one instead of stacking.
+                ...(message.orderId ? { tag: `order-${message.orderId}` } : {}),
+              },
             },
             apns: {
               headers: message.orderId ? { 'apns-collapse-id': `order-${message.orderId}` } : undefined,

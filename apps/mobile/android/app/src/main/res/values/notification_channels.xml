@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification channel names shown in the system settings (MainActivity.kt). -->
+<resources>
+    <string name="notification_channel_orders">Order updates</string>
+    <string name="notification_channel_orders_description">When your order is accepted, ready or on its way.</string>
+    <string name="notification_channel_promotions">Offers and news</string>
+    <string name="notification_channel_promotions_description">Promotions from the coffee shops you order from.</string>
+</resources>

@@ -247,6 +247,28 @@ void main() {
     });
   });
 
+  group('devices', () {
+    test('sends the raw APNs token of an iPhone next to the FCM token', () {
+      expect(
+        const DeviceRegistration(
+          type: 'IOS',
+          pushToken: 'fcm-1',
+          apnsToken: 'ab12',
+          apnsEnvironment: 'PRODUCTION',
+          locale: 'RU',
+        ).toJson(),
+        {'type': 'IOS', 'pushToken': 'fcm-1', 'apnsToken': 'ab12', 'apnsEnvironment': 'PRODUCTION', 'locale': 'RU'},
+      );
+    });
+
+    test('leaves the APNs fields out on Android', () {
+      expect(const DeviceRegistration(type: 'ANDROID', pushToken: 'fcm-2').toJson(), {
+        'type': 'ANDROID',
+        'pushToken': 'fcm-2',
+      });
+    });
+  });
+
   group('payments and loyalty', () {
     test('parses the issuer list', () {
       final list = (fixture('institutes.json')! as List).map((e) => CardInstitute.fromJson(e as Map<String, dynamic>));

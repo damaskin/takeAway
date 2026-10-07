@@ -12,7 +12,7 @@ import '../../app/router.dart';
 import '../../core/format/time.dart';
 import '../../core/location/location_service.dart';
 import '../../core/providers.dart';
-import '../../core/push/push_service.dart';
+import '../../core/push/push_prompt.dart';
 import '../../core/realtime/realtime_service.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../core/theme/app_theme.dart';
@@ -126,30 +126,7 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
   }
 
   Future<void> _offerNotifications() async {
-    final push = ref.read(pushServiceProvider);
-    if (!await push.canPrompt() || !mounted) return;
-    final l10n = AppLocalizations.of(context);
-    final allow = await showModalBottomSheet<bool>(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Icon(Icons.notifications_active_rounded, size: 48, color: context.brand.caramel),
-            const SizedBox(height: 12),
-            Text(l10n.notifOrderUpdates, style: context.text.headlineSmall, textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(l10n.notifOrderUpdatesHint, textAlign: TextAlign.center, style: context.text.bodyMedium),
-            const SizedBox(height: 20),
-            PrimaryButton(label: l10n.continueLabel, onPressed: () => Navigator.pop(context, true)),
-            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.close)),
-          ],
-        ),
-      ),
-    );
-    if (allow ?? false) await push.requestPermission();
+    if (mounted) await offerNotifications(context, ref);
   }
 
   Future<void> _imHere(Order order) async {

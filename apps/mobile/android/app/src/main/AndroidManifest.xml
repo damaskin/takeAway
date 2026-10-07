@@ -5,7 +5,8 @@
          context, never at launch. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Order-ready pushes on Android 13+. Asked after the first order. -->
+    <!-- Order-ready pushes on Android 13+. Asked once after sign-in or
+         after the first order (lib/core/push/push_prompt.dart). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -82,6 +83,11 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/brand_caramel" />
+        <!-- Pushes that name no channel go to order updates (created in
+             MainActivity.kt; the API sends campaigns to "promotions"). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="orders" />
 
         <!-- Used by the Flutter tool to generate GeneratedPluginRegistrant.java. -->
         <meta-data

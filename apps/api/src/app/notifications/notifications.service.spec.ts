@@ -1,8 +1,8 @@
 import type { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from './notifications.service';
-import type { ApnsPushProvider } from './providers/apns.provider';
+import { NotificationsService, toPushRecipient } from './notifications.service';
+import type { ApnsDelivery, ApnsPushProvider } from './providers/apns.provider';
 import type { FcmPushProvider } from './providers/fcm.provider';
-import type { PushMessage, PushRecipient } from './providers/push-provider.interface';
+import type { PushMessage, PushRecipient, PushTarget } from './providers/push-provider.interface';
 import type { TelegramPushProvider } from './providers/telegram-push.provider';
 import type { WebPushProvider } from './providers/web-push.provider';
 
@@ -24,7 +24,7 @@ function setup(
     telegramUserId?: bigint | null;
     devices?: Array<{ pushToken: string; type: 'IOS' | 'ANDROID' | 'WEB' }>;
   } = {},
-  results: { fcm?: Attempt; webpush?: Attempt; telegram?: Attempt } = {},
+  results: { fcm?: Attempt; webpush?: Attempt; telegram?: Attempt; apns?: ApnsDelivery | false } = {},
 ) {
   const findUnique = jest.fn().mockResolvedValue({
     id: 'user-1',
@@ -42,7 +42,16 @@ function setup(
     isConfigured: jest.fn().mockReturnValue(true),
   });
   const telegram = provider('telegram', results.telegram ?? { status: 'sent' });
-  const apns = provider('apns', { status: 'skipped', reason: 'not_configured' });
+  // `apns: false` (the default) — no APNs key on the server; otherwise what Apple did.
+  const apnsResult: ApnsDelivery = results.apns || {
+    attempt: { status: 'skipped', reason: 'not_configured' },
+    unreached: [],
+  };
+  const apns = {
+    ...provider('apns', apnsResult.attempt),
+    isConfigured: jest.fn().mockReturnValue(Boolean(results.apns)),
+    deliver: jest.fn().mockResolvedValue(apnsResult),
+  };
   const fcm = provider('fcm', results.fcm ?? { status: 'sent' });
   const webpush = provider('webpush', results.webpush ?? { status: 'skipped', reason: 'no_target' });
   const service = new NotificationsService(
@@ -56,8 +65,136 @@ function setup(
     const call = fcm.attempt.mock.calls[0] as [PushRecipient, PushMessage] | undefined;
     return call && { recipient: call[0], message: call[1] };
   };
-  return { service, findUnique, fcm, webpush, telegram, sent };
+  return { service, findUnique, fcm, webpush, telegram, apns, sent };
 }
+
+describe('toPushRecipient', () => {
+  it('carries the APNs token of iOS devices only', () => {
+    expect(
+      toPushRecipient({
+        id: 'u1',
+        locale: 'RU',
+        telegramUserId: null,
+        devices: [
+          { pushToken: 'fcm-ios', type: 'IOS', apnsToken: 'ab'.repeat(32), apnsEnvironment: 'SANDBOX' },
+          { pushToken: 'fcm-old-ios', type: 'IOS', apnsToken: null, apnsEnvironment: null },
+          { pushToken: 'fcm-android', type: 'ANDROID', apnsToken: 'cd'.repeat(32), apnsEnvironment: null },
+          { pushToken: null, type: 'IOS', apnsToken: 'ef'.repeat(32), apnsEnvironment: null },
+        ],
+      }).pushTokens,
+    ).toEqual([
+      { token: 'fcm-ios', deviceType: 'IOS', apnsToken: 'ab'.repeat(32), apnsEnvironment: 'SANDBOX' },
+      { token: 'fcm-old-ios', deviceType: 'IOS' },
+      { token: 'fcm-android', deviceType: 'ANDROID' },
+    ]);
+  });
+});
+
+describe('NotificationsService.deliver with direct APNs', () => {
+  const message: PushMessage = { kind: 'generic', title: 'Hi', body: 'There' };
+  const iphone: PushTarget = { token: 'fcm-iphone', deviceType: 'IOS', apnsToken: 'ab'.repeat(32) };
+  const oldIphone: PushTarget = { token: 'fcm-old-iphone', deviceType: 'IOS' };
+  const android: PushTarget = { token: 'fcm-android', deviceType: 'ANDROID' };
+  const recipient = (...pushTokens: PushTarget[]): PushRecipient => ({
+    userId: 'user-1',
+    locale: 'RU',
+    telegramUserId: 42n,
+    pushTokens,
+  });
+  const fcmTokens = (h: ReturnType<typeof setup>, call = 0): string[] =>
+    (h.fcm.attempt.mock.calls[call] as [PushRecipient] | undefined)?.[0].pushTokens.map((t) => t.token) ?? [];
+
+  it('pushes an iPhone with an APNs token through Apple only — its FCM token sits out', async () => {
+    const h = setup({}, { apns: { attempt: { status: 'sent' }, unreached: [] } });
+    await expect(h.service.deliver(recipient(iphone, oldIphone, android), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['apns', 'fcm'],
+    });
+    expect(h.apns.deliver).toHaveBeenCalledTimes(1);
+    expect(h.fcm.attempt).toHaveBeenCalledTimes(1);
+    expect(fcmTokens(h)).toEqual(['fcm-old-iphone', 'fcm-android']);
+    expect(h.telegram.attempt).not.toHaveBeenCalled();
+  });
+
+  it('leaves everything to FCM while APNs is not configured', async () => {
+    const h = setup();
+    await expect(h.service.deliver(recipient(iphone, android), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['fcm'],
+    });
+    expect(h.apns.deliver).not.toHaveBeenCalled();
+    expect(fcmTokens(h)).toEqual(['fcm-iphone', 'fcm-android']);
+  });
+
+  it('tries the FCM token of an iPhone Apple did not take, and says why', async () => {
+    const h = setup(
+      {},
+      {
+        apns: { attempt: { status: 'failed', error: 'APNs 403 InvalidProviderToken' }, unreached: [iphone] },
+        fcm: { status: 'sent' },
+      },
+    );
+    h.fcm.attempt.mockResolvedValueOnce({ status: 'skipped', reason: 'no_target' });
+    await expect(h.service.deliver(recipient(iphone), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['fcm'],
+      error: 'APNs 403 InvalidProviderToken',
+    });
+    expect(h.fcm.attempt).toHaveBeenCalledTimes(2);
+    expect(fcmTokens(h, 0)).toEqual([]);
+    expect(fcmTokens(h, 1)).toEqual(['fcm-iphone']);
+  });
+
+  it('keeps the error of a device that failed while another one got the push', async () => {
+    const h = setup(
+      {},
+      {
+        apns: { attempt: { status: 'sent' }, unreached: [] },
+        fcm: { status: 'failed', error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.' },
+      },
+    );
+    await expect(h.service.deliver(recipient(iphone, oldIphone), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['apns'],
+      error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.',
+    });
+    expect(h.telegram.attempt).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the bot when neither Apple nor FCM delivered, with each reason once', async () => {
+    const h = setup(
+      {},
+      {
+        apns: { attempt: { status: 'failed', error: 'APNs 500 InternalServerError' }, unreached: [iphone] },
+        fcm: { status: 'failed', error: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.' },
+      },
+    );
+    // The old iPhone fails through FCM, then the new one's FCM fallback fails the same way.
+    await expect(h.service.deliver(recipient(iphone, oldIphone), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['telegram'],
+      error: 'APNs 500 InternalServerError; FCM 401 UNAUTHENTICATED: Invalid APNs credential.',
+    });
+    expect(h.fcm.attempt).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats an APNs provider that throws as a failure and still tries FCM', async () => {
+    const h = setup({}, { apns: { attempt: { status: 'sent' }, unreached: [] } });
+    h.apns.deliver.mockRejectedValueOnce(new Error('boom'));
+    h.fcm.attempt.mockResolvedValueOnce({ status: 'skipped', reason: 'no_target' });
+    await expect(h.service.deliver(recipient(iphone), message)).resolves.toEqual({
+      outcome: 'sent',
+      via: ['fcm'],
+      error: 'apns: boom',
+    });
+    expect(fcmTokens(h, 1)).toEqual(['fcm-iphone']);
+  });
+
+  it('reports APNs as a configured transport', () => {
+    const h = setup({}, { apns: { attempt: { status: 'sent' }, unreached: [] } });
+    expect(h.service.transportStatus()).toEqual({ apns: true, fcm: true, webpush: true, telegram: true });
+  });
+});
 
 describe('NotificationsService.deliver', () => {
   const message: PushMessage = { kind: 'generic', title: 'Hi', body: 'There' };
