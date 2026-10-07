@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_mobile/app/router.dart';
 import 'package:takeaway_mobile/core/storage/app_prefs.dart';
+import 'package:takeaway_mobile/features/menu/menu_screen.dart';
 import 'package:takeaway_mobile/features/menu/menu_widgets.dart';
 import 'package:takeaway_mobile/features/stores/store_widgets.dart';
 import 'package:takeaway_mobile/features/stores/stores_screen.dart';
@@ -102,11 +103,18 @@ void main() {
     await h.unmount(tester);
   });
 
-  test('the app opens on the intro, then the stores, then the menu', () {
-    expect(initialLocation(onboarded: false, hasStore: false), Routes.welcome);
-    expect(initialLocation(onboarded: false, hasStore: true), Routes.welcome);
-    expect(initialLocation(onboarded: true, hasStore: false), Routes.stores);
-    expect(initialLocation(onboarded: true, hasStore: true), Routes.menu);
+  testWidgets('a launch with a store picked last time still opens on the stores', (tester) async {
+    final h = await pumpApp(tester, startOnMenu: false);
+
+    expect(find.byType(StoresScreen), findsOneWidget);
+    expect(find.byType(MenuScreen), findsNothing);
+
+    await h.unmount(tester);
+  });
+
+  test('the app opens on the intro once, then always on the stores', () {
+    expect(initialLocation(onboarded: false), Routes.welcome);
+    expect(initialLocation(onboarded: true), Routes.stores);
   });
 
   testWidgets('tapping a pin raises the list with that store on top', (tester) async {

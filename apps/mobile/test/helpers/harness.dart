@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/app/app.dart';
+import 'package:takeaway_mobile/app/router.dart';
 import 'package:takeaway_mobile/core/auth/session.dart';
 import 'package:takeaway_mobile/core/auth/session_manager.dart';
 import 'package:takeaway_mobile/core/providers.dart';
@@ -105,6 +106,11 @@ Future<Harness> pumpApp(
   Locale locale = const Locale('ru'),
   String? activeStoreId = 'st_1',
 
+  /// The app always opens on the stores list; most tests are about ordering
+  /// from the store picked last time, so with one they start on its menu,
+  /// as if the customer had tapped the menu tab.
+  bool? startOnMenu,
+
   /// Extra provider overrides, e.g. a stand-in for a platform sheet.
   List<Override> overrides = const [],
 }) async {
@@ -142,6 +148,10 @@ Future<Harness> pumpApp(
 
   await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const TakeAwayApp()));
   await settle(tester);
+  if (startOnMenu ?? (onboarded && activeStoreId != null)) {
+    container.read(routerProvider).go(Routes.menu);
+    await settle(tester);
+  }
   container.read(realtimeServiceProvider);
   final harness = Harness(api: fakeApi, container: container, realtime: realtime, webPayments: webPayments);
   addTearDown(() {

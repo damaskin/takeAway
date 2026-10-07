@@ -43,9 +43,9 @@ class OnboardingController extends Notifier<bool> {
 
 final onboardingDoneProvider = NotifierProvider<OnboardingController, bool>(OnboardingController.new);
 
-/// The store the customer is ordering from. Persisted, because re-picking a
-/// store on every launch is exactly the friction pre-ordering is meant to
-/// remove.
+/// The store the customer is ordering from. Persisted for the menu tab and
+/// checkout; the app itself still opens on the stores list (see
+/// `initialLocation`), so a launch starts from where to order.
 class ActiveStoreController extends Notifier<String?> {
   static const _key = 'app.activeStoreId';
 
