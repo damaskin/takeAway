@@ -38,10 +38,12 @@ dependencies:
   sign_in_with_apple: ^7.0.1
   flutter_web_auth_2: ^5.1.0
 
-  # Location + maps (OpenStreetMap tiles, same as the web apps)
+  # Location + maps (OpenStreetMap tiles through our cache, same as the web
+  # apps); http is flutter_map's client, wrapped for mobile data
   geolocator: ^14.0.3
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
+  http: ^1.6.0
 
   # UI
   cached_network_image: ^3.4.1

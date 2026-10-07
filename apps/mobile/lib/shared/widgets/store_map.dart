@@ -1,45 +1,125 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import '../../core/config/env.dart';
+import '../../core/network/tile_client.dart';
 import '../../core/theme/tokens.dart';
 
-/// Map tiles — OpenStreetMap unless the build names another server (see
-/// [Env.mapTileUrl]). The OSM tile policy asks for a real user agent.
+/// Map tiles — our caching proxy for OpenStreetMap unless the build names
+/// another server (see [Env.mapTileUrl]).
 ///
-/// One tile layer per theme for the whole app, sharing one tile provider:
-/// building them inside `build` made a new provider, with its own HTTP
-/// client, on every rebuild of the map — every pin tap and every keystroke
-/// in the store search.
-TileLayer mapTiles(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark ? _MapTiles.dark : _MapTiles.light;
+/// One tile layer per theme and kind of map for the whole app, over one tile
+/// provider: building them inside `build` made a new provider, with its own
+/// HTTP client, on every rebuild of the map — every pin tap, every keystroke
+/// in the store search, every tick of the order status clock.
+///
+/// Most customers are on mobile data, so:
+///  * tiles come through [TileClient] — time limits, retries, OpenStreetMap
+///    as the fallback, and no silent blank squares after a dropped
+///    connection;
+///  * a tile on the phone is used for [_MapTiles.freshFor] without asking
+///    the network: OSM's headers often call a tile stale the moment it
+///    arrives, so every visit waited on the network for tiles already on
+///    disk — and, offline, lost them;
+///  * failed tiles are asked for again by themselves once the network is
+///    back ([_MapTiles.recover]); a map used to stay grey until dragged, and
+///    the order status map cannot be dragged.
+///
+/// [interactive] false is for small maps that cannot be moved: no tiles are
+/// fetched beyond their edges.
+TileLayer mapTiles(BuildContext context, {bool interactive = true}) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  return switch ((dark, interactive)) {
+    (false, true) => _MapTiles.light,
+    (true, true) => _MapTiles.dark,
+    (false, false) => _MapTiles.staticLight,
+    (true, false) => _MapTiles.staticDark,
+  };
+}
 
 abstract final class _MapTiles {
-  static final _provider = _SharedTileProvider();
-  static final light = _layer(dark: false);
-  static final dark = _layer(dark: true);
+  /// How long a downloaded tile is shown without asking the network again.
+  static const freshFor = Duration(days: 30);
 
-  static TileLayer _layer({required bool dark}) => TileLayer(
+  static final _client = TileClient(
+    fallback: switch (Env.mapTileFallbackUrl) {
+      final to? when to != Env.mapTileUrl => TileUrlFallback(from: Env.mapTileUrl, to: to),
+      _ => null,
+    },
+  );
+
+  static final _provider = _SharedTileProvider(
+    httpClient: _client,
+    cachingProvider: BuiltInMapCachingProvider.getOrCreateInstance(
+      maxCacheSize: 200 * 1024 * 1024,
+      overrideFreshAge: freshFor,
+    ),
+  );
+
+  /// Tells every map to drop its tiles and ask again — failed ones included.
+  static final _reset = StreamController<void>.broadcast();
+
+  static final light = _layer(dark: false, panBuffer: 1);
+  static final dark = _layer(dark: true, panBuffer: 1);
+  static final staticLight = _layer(dark: false, panBuffer: 0);
+  static final staticDark = _layer(dark: true, panBuffer: 0);
+
+  static TileLayer _layer({required bool dark, required int panBuffer}) => TileLayer(
     urlTemplate: Env.mapTileUrl,
+    // Identifies the app to OpenStreetMap, as its tile policy asks, when the
+    // fallback goes there.
     userAgentPackageName: 'md.takeaway.app',
     tileProvider: _provider,
     tileBuilder: dark ? darkModeTileBuilder : null,
-    // A tile that failed (flaky mobile data) is dropped once off screen, so
-    // coming back to it asks the server again instead of keeping the gap.
+    panBuffer: panBuffer,
+    reset: _reset.stream,
+    // A failed tile is also dropped once off screen, so coming back to it
+    // asks again instead of keeping the gap.
     evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
-    errorTileCallback: _logTileError,
+    errorTileCallback: _onTileError,
   );
 
-  static int _tileErrors = 0;
+  static int _logged = 0;
+  static bool _recovering = false;
 
-  /// Failed tiles go to the log — a blank map was otherwise silent. Only the
-  /// first few: offline, every tile on screen fails at once.
-  static void _logTileError(TileImage tile, Object error, StackTrace? stack) {
-    if (++_tileErrors > 5) return;
-    debugPrint('Map tile ${tile.coordinates} failed to load: $error');
+  static void _onTileError(TileImage tile, Object error, StackTrace? stack) {
+    // Only the first few: offline, every tile on screen fails at once.
+    if (++_logged <= 5) debugPrint('Map tile ${tile.coordinates} failed to load: $error');
+    unawaited(recover(_provider.getTileUrl(tile.coordinates, light)));
+  }
+
+  /// Asks for one failed tile every so often; once it comes back, every map
+  /// asks again for what it is missing. Gives up after a few minutes —
+  /// dragging the map still asks again for what comes into view.
+  static Future<void> recover(String url) async {
+    if (_recovering) return;
+    _recovering = true;
+    try {
+      for (final wait in const [3, 6, 12, 24, 30, 30, 30, 30]) {
+        await Future<void>.delayed(Duration(seconds: wait));
+        try {
+          final probe = await _client.get(Uri.parse(url), headers: _provider.headers);
+          if (probe.statusCode >= 400) continue;
+        } on Object {
+          continue;
+        }
+        // Let tiles still on the wire land first: a reset aborts them, and a
+        // tile aborted under a new request for the same URL comes back blank.
+        for (var i = 0; i < 20 && _client.inFlight > 0; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+        _logged = 0;
+        _reset.add(null);
+        return;
+      }
+    } finally {
+      _recovering = false;
+    }
   }
 }
 
@@ -47,6 +127,8 @@ abstract final class _MapTiles {
 /// disposes its provider when its map goes away, which closes the HTTP
 /// client; this one is shared app-wide, so it keeps its client open.
 class _SharedTileProvider extends NetworkTileProvider {
+  _SharedTileProvider({required http.Client super.httpClient, required super.cachingProvider});
+
   @override
   Future<void> dispose() async {}
 }
@@ -156,7 +238,7 @@ class StaticStoreMap extends StatelessWidget {
             interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
           ),
           children: [
-            mapTiles(context),
+            mapTiles(context, interactive: false),
             MarkerLayer(
               markers: [
                 if (fitBoth) Marker(point: user!, width: 24, height: 24, child: const UserDot()),

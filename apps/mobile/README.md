@@ -53,18 +53,21 @@ under `config/`:
 | `config/prod.example.json` | yes       | Template for release builds                                   |
 | `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
 
-| Define                                                                                                                      | Default                               | Meaning                                                    |
-| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------- |
-| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`         | REST base including `/api`                                 |
-| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`              | Socket.IO origin (namespace `/ws`)                         |
-| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                 | Public site, for links the app shares                      |
-| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                  | Telegram Login redirect; must match @BotFather             |
-| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per build type (release / debug host) | Android: where Telegram's page returns; see below          |
-| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button              | The **web** OAuth client id, the audience the API checks   |
-| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                 | iOS OAuth client id                                        |
-| `APPLE_SIGN_IN`                                                                                                             | `false`                               | Offer Sign in with Apple on iOS                            |
-| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off                      | Firebase Cloud Messaging                                   |
-| `DEV_SIGN_IN`                                                                                                               | `false`                               | Debug builds only: a "Developer sign-in" button, see below |
+| Define                                                                                                                      | Default                                     | Meaning                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`               | REST base including `/api`                                                           |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                    | Socket.IO origin (namespace `/ws`)                                                   |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                       | Public site, for links the app shares                                                |
+| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                        | Telegram Login redirect; must match @BotFather                                       |
+| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per build type (release / debug host)       | Android: where Telegram's page returns; see below                                    |
+| `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button                    | The **web** OAuth client id, the audience the API checks                             |
+| `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                       | iOS OAuth client id                                                                  |
+| `APPLE_SIGN_IN`                                                                                                             | `false`                                     | Offer Sign in with Apple on iOS                                                      |
+| `FIREBASE_API_KEY`, `FIREBASE_PROJECT_ID`, `FIREBASE_MESSAGING_SENDER_ID`, `FIREBASE_ANDROID_APP_ID`, `FIREBASE_IOS_APP_ID` | empty = push off                            | Firebase Cloud Messaging                                                             |
+| `MAP_TILE_URL`                                                                                                              | `https://takeaway.md/tiles/{z}/{x}/{y}.png` | Map tiles: our OpenStreetMap cache, see [docs/map-tiles.md](../../docs/map-tiles.md) |
+| `MAP_TILE_FALLBACK_URL`                                                                                                     | OpenStreetMap                               | Asked when `MAP_TILE_URL` fails; `none` turns it off                                 |
+| `MAP_TILE_ATTRIBUTION`                                                                                                      | `OpenStreetMap`                             | Credit line on the maps                                                              |
+| `DEV_SIGN_IN`                                                                                                               | `false`                                     | Debug builds only: a "Developer sign-in" button, see below                           |
 
 A missing integration hides its UI instead of failing: no Google id, no
 Google button; no Firebase ids, no push prompt.
@@ -332,6 +335,7 @@ of ASAP.
   the iOS icon set and launch image, the Android launcher icons (legacy,
   adaptive, monochrome), splash mark and notification icon, in the brand
   colours. A new logo: replace that file and run it again.
-- **Map tiles** — OpenStreetMap's public tile servers are fine for a pilot but
-  not for a large audience; switch `osmTiles` in `lib/shared/widgets/store_map.dart`
-  to a commercial provider before a wide launch.
+- **Map tiles** — OpenStreetMap through our cache at `takeaway.md/tiles`, with
+  retries, a fallback to OSM and a 30-day disk cache on the phone; see
+  [docs/map-tiles.md](../../docs/map-tiles.md). A commercial source, if ever
+  needed, goes behind the same URL on the server — no app release.
