@@ -63,6 +63,7 @@ interface Tables {
   referrals: Row[];
   promoRedemptions: Row[];
   giftCards: Row[];
+  feedback: Row[];
 }
 
 function user(id: string, extra: Partial<FakeUser> = {}): FakeUser {
@@ -217,6 +218,10 @@ function seed(): Tables {
     ],
     promoRedemptions: [{ id: 'pr-1', userId: 'ana', orderId: 'order-1', discountCents: 500 }],
     giftCards: [{ id: 'gc-1', purchaserUserId: 'ana', code: 'GIFT1', balanceCents: 1000 }],
+    feedback: [
+      { id: 'fb-1', userId: 'ana', kind: 'SUGGESTION', message: 'Add oat milk', contact: '@ana_tg' },
+      { id: 'fb-2', userId: 'bob', kind: 'REVIEW', message: 'Great coffee', contact: 'bob@example.com' },
+    ],
   };
 }
 
@@ -362,6 +367,13 @@ function fakeDb(t: Tables) {
         return { count: mine.length };
       }),
     },
+    feedback: {
+      updateMany: jest.fn(async ({ where, data }: { where: { userId: string }; data: Row }) => {
+        const mine = t.feedback.filter((f) => f['userId'] === where.userId);
+        for (const f of mine) Object.assign(f, data);
+        return { count: mine.length };
+      }),
+    },
     orderEvent: {
       findMany: jest.fn(async ({ where }: { where: { order: { userId: string }; type: { in: string[] } } }) => {
         const orderIds = new Set(t.orders.filter((o) => o['userId'] === where.order.userId).map((o) => o['id']));
@@ -496,6 +508,14 @@ describe('AccountDeletionService', () => {
     expect(t.giftCards).toEqual(before.giftCards);
     // The payment stays whole; only the link to the deleted card is cut.
     expect(t.payments).toEqual([{ ...before.payments[0], cardTokenId: null }, before.payments[1]]);
+  });
+
+  it('keeps the customer’s feedback but clears the contact typed into it', async () => {
+    const { svc, t } = setup();
+    const before = snapshot(t);
+    await svc.deleteOwnAccount('ana');
+
+    expect(t.feedback).toEqual([{ ...before.feedback[0], contact: null }, before.feedback[1]]);
   });
 
   it('keeps the loyalty ledger and forfeits the balance with a matching ledger row', async () => {

@@ -19,6 +19,7 @@ import { FeaturesModule } from './config/config.module';
 import { CustomersModule } from './customers/customers.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
+import { FeedbackModule } from './feedback/feedback.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
@@ -73,6 +74,7 @@ import { UsersModule } from './users/users.module';
     CampaignsModule,
     AnalyticsModule,
     CustomersModule,
+    FeedbackModule,
     HealthModule,
   ],
   controllers: [AppController],

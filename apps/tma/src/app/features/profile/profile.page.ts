@@ -133,6 +133,7 @@ export class TmaProfilePage implements OnInit {
     { icon: '🎁', label: 'web.profile.sections.gift' },
     { icon: '🔔', label: 'web.profile.sections.notifications' },
     { icon: '🌐', label: 'web.profile.sections.language', value: 'web.profile.languageValue' },
+    { icon: '💬', label: 'web.profile.sections.feedback', route: '/feedback' },
   ];
 
   /**

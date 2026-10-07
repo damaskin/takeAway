@@ -105,6 +105,13 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   onTap: () => showLanguagePicker(context, ref),
                 ),
+                // Needs an account: the team may want to write back.
+                if (user != null)
+                  SettingsTile(
+                    icon: Icons.rate_review_outlined,
+                    title: l10n.profileFeedback,
+                    onTap: () => context.push(Routes.feedback),
+                  ),
                 SettingsTile(
                   icon: Icons.info_outline_rounded,
                   title: l10n.profileAbout,

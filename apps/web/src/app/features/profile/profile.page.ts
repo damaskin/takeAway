@@ -192,6 +192,7 @@ export class ProfilePage implements OnInit {
     { icon: '🔑', label: 'web.profile.sections.signInMethods', link: '/profile/sign-in' },
     { icon: '🔔', label: 'web.profile.sections.notifications', link: '/profile/notifications' },
     { icon: '⭐', label: 'web.profile.sections.loyalty', link: '/profile/loyalty' },
+    { icon: '💬', label: 'web.profile.sections.feedback', link: '/profile/feedback' },
   ];
 
   /**

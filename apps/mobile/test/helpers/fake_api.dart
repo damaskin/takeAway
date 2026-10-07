@@ -537,4 +537,29 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<void> registerDevice(DeviceRegistration body) async {}
+
+  /// Every feedback the app sent.
+  final feedback = <CreateFeedbackRequest>[];
+
+  /// Status the next feedback fails with, e.g. 429; null means it goes through.
+  int? feedbackStatus;
+
+  @override
+  Future<FeedbackReceipt> sendFeedback(CreateFeedbackRequest body) async {
+    feedback.add(body);
+    final status = feedbackStatus;
+    if (status != null) {
+      final request = RequestOptions(path: '/feedback', method: 'POST');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(
+          requestOptions: request,
+          statusCode: status,
+          data: {'statusCode': status, 'code': 'FEEDBACK_TOO_MANY', 'message': 'Too many messages in an hour'},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    return FeedbackReceipt(id: 'fb_${feedback.length}', createdAt: DateTime.utc(2026, 10, 7, 10));
+  }
 }

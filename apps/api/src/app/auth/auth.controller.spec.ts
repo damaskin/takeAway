@@ -67,6 +67,7 @@ describe('DELETE /auth/me', () => {
     passwordResetToken: { deleteMany: jest.fn() },
     userStore: { deleteMany: jest.fn() },
     order: { updateMany: jest.fn() },
+    feedback: { updateMany: jest.fn() },
     orderEvent: { findMany: jest.fn(async () => []), update: jest.fn() },
     loyaltyAccount: { findUnique: jest.fn(async () => null) },
   };

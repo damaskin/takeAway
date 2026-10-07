@@ -392,6 +392,7 @@ takeaway/
 - **Правило доставки клиенту** (`NotificationsService.deliver`): app push и web push параллельно; если ни один не принят (нет токенов, транспорт не настроен, отказ) и у пользователя есть `telegramUserId` — сообщение от Telegram-бота. Одинаково для статусов заказа и для маркетинговых рассылок с каналом PUSH, поэтому клиент Mini App (без токенов) получает бот, а пользователь приложения — один push без дубля в Telegram. Сбои логируются на уровне warn с причиной.
 - **Email**: nodemailer/SMTP — welcome (на первом PAID), receipt (на PAID), password reset.
 - **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе; customer — статусы заказов и рассылки, когда app/web push недоступен.
+- **Обратная связь → платформа** (`FeedbackNotifier`): о каждом новом `Feedback` — сообщение в ops-чат (`OPS_ALERT_TELEGRAM_CHAT_ID`); если чата нет или Telegram его не принял — каждому SUPER_ADMIN с привязанным Telegram от бота; плюс email всем SUPER_ADMIN, только если настроен SMTP. Язык — `PLATFORM_LOCALE` (ru по умолчанию), ссылка — `ADMIN_APP_URL/feedback`. Best-effort: сбой доставки только логируется.
 - **Per-user prefs**: `notifyOrderUpdates` + `notifyPromotions` через `PATCH /me/notifications`. Operational push (rider/brand staff) prefs не учитывает.
 - **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D. Учитывается `notifyPromotions`.
 
@@ -414,6 +415,7 @@ takeaway/
   - **Повтор**: можно отправить снова `FAILED`, зависшую `SENDING` и `SENT` с ошибками; получатели, которым уже доставлено, пропускаются. Пустая аудитория — 400 `CAMPAIGN_NO_RECIPIENTS`, повторный запуск во время отправки — 409 `CAMPAIGN_IN_PROGRESS`.
 - **Analytics**: summary, order-statuses, revenue, top-products, cohort, stores, staff, churn, winback и `/admin/customers`. Период — `from`/`to` (календарные дни в часовом поясе точки или преобладающем поясе бренда; `days` по-прежнему принимается), сравнение — с таким же отрезком до него; `storeId` сужает до точки в скоупе. Цифры бренда читаются из `Order` между локальными полуночами (индекс `Order(storeId, createdAt)`), выручка — без `CANCELLED` и `EXPIRED`. `mv_orders_daily` (UTC-дни, refresh каждые 5 минут через `AnalyticsRefreshService`) питает только экран «Весь проект». Отток: клиент потерян, когда после его последнего заказа прошло 7/14 дней без нового; «потерян в периоде» — этот порог пришёлся на период и клиент не вернулся к его концу; деньги — сумма их средних чеков. Возврат: клиенты, потерянные к началу периода, заказавшие в нём. Удалённые аккаунты (`User.blockedAt`) в оттоке и списке клиентов не участвуют, их заказы остаются в выручке.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
+- **Обратная связь** (`/feedback`, только SUPER_ADMIN, пункт меню с бейджем непрочитанных): отзывы, предложения и проблемы, которые клиенты пишут из профиля в приложении, на сайте и в Mini App. Новые сверху; вкладки «Входящие» (всё, кроме архива) / «Непрочитанные» / «Архив», фильтр по типу; у карточки — тип, текст, клиент (имя, email, телефон, Telegram ID; «аккаунт удалён»), оставленный контакт, платформа и версия приложения, дата. «Прочитано» / «Непрочитано», «В архив» / «Вернуть из архива».
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
 - **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд) и `UserStoreScopeService`: SUPER_ADMIN — все точки, BRAND_ADMIN — точки своих брендов, STORE_MANAGER и STAFF — назначенные. Скоуп проверяется во всех per-store маршрутах, в KDS-сокете, у курьеров и в аналитике.
 
@@ -489,6 +491,9 @@ OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
 PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
 Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardOrderId?,
           referrerPointsCredited, refereePointsCredited)
+Feedback (id, userId? [SET NULL], kind[REVIEW|SUGGESTION|PROBLEM], message (1–2000, trimmed),
+          contact? (≤200), source[IOS|ANDROID|WEB|TMA], appVersion?,
+          status[NEW|READ|ARCHIVED], readAt?, createdAt)        // «Обратная связь» из профиля клиента
 ```
 
 ### 5.2. Tenancy / Stores
@@ -640,7 +645,7 @@ GET    /auth/me
 DELETE /auth/me                      { appleAuthorizationCode? } → 204   (удаление аккаунта; только CUSTOMER, staff и владелец бренда → 403)
 ```
 
-`DELETE /auth/me` (App Store 5.1.1(v)) не удаляет строку `User`, а превращает её в обезличенную заглушку в одной транзакции: имя, email, телефон, аватар, дата рождения, `telegramUserId`, `passwordHash`, `referralCode` → null, notify-флаги → false, `blockedAt = now()`. Удаляются `OAuthAccount`, `Device`, `Cart`, `CardToken`, `CardBindingRequest`, `PasswordResetToken`; баланс `LoyaltyAccount` обнуляется записью `EXPIRE` в ledger. Заказы, платежи, ledger, промо-погашения, рефералы и подарочные карты остаются и ссылаются на ту же строку, но заказы — только в обезличенном виде: у всех заказов пользователя (и у ещё не выполненных тоже) обнуляются `customerName`, `customerPhone`, адрес доставки (`deliveryAddressLine`, `deliveryCity`), `deliveryNotes`, `deliveryLatitude`/`deliveryLongitude`; позиции с опциями и комментариями, комментарий к заказу, суммы, статусы, точка, время, стоимость доставки и расстояние сохраняются. У событий прихода клиента (`CUSTOMER_NEARBY` / `CUSTOMER_HERE`) из payload удаляются координаты, тип и `distanceM` остаются. Координаты клиента не отдаёт и `GET /admin/orders/:id`: в событиях заказа админ видит только расстояние. Все refresh-токены пользователя удаляются из Redis, ротация и WebSocket-рукопожатие отказывают заблокированному аккаунту. Повторный вход тем же Telegram / Google / Apple создаёт новый пустой профиль. Тело необязательное: iOS-приложение перед удалением заново проходит Sign in with Apple и присылает свежий `appleAuthorizationCode` — до транзакции (и только после проверки прав) API меняет его на токены в `appleid.apple.com/auth/token` и отзывает refresh-токен (или access) через `/auth/revoke`. `client_secret` — ES256 JWT, подписанный ключом Sign in with Apple (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`), client id — `APPLE_REVOKE_CLIENT_ID` или первый из `APPLE_OAUTH_CLIENT_IDS`, не равный `APPLE_OAUTH_SERVICES_ID`. Отзыв best-effort: сбой Apple или отсутствие ключа логируются и удаление не блокируют. Логика и решения по каждой связи — `AccountDeletionService`, отзыв Apple — `AppleTokenRevocationService`.
+`DELETE /auth/me` (App Store 5.1.1(v)) не удаляет строку `User`, а превращает её в обезличенную заглушку в одной транзакции: имя, email, телефон, аватар, дата рождения, `telegramUserId`, `passwordHash`, `referralCode` → null, notify-флаги → false, `blockedAt = now()`. Удаляются `OAuthAccount`, `Device`, `Cart`, `CardToken`, `CardBindingRequest`, `PasswordResetToken`; баланс `LoyaltyAccount` обнуляется записью `EXPIRE` в ledger. Заказы, платежи, ledger, промо-погашения, рефералы, подарочные карты и обратная связь (`Feedback`, у неё обнуляется только `contact`) остаются и ссылаются на ту же строку, но заказы — только в обезличенном виде: у всех заказов пользователя (и у ещё не выполненных тоже) обнуляются `customerName`, `customerPhone`, адрес доставки (`deliveryAddressLine`, `deliveryCity`), `deliveryNotes`, `deliveryLatitude`/`deliveryLongitude`; позиции с опциями и комментариями, комментарий к заказу, суммы, статусы, точка, время, стоимость доставки и расстояние сохраняются. У событий прихода клиента (`CUSTOMER_NEARBY` / `CUSTOMER_HERE`) из payload удаляются координаты, тип и `distanceM` остаются. Координаты клиента не отдаёт и `GET /admin/orders/:id`: в событиях заказа админ видит только расстояние. Все refresh-токены пользователя удаляются из Redis, ротация и WebSocket-рукопожатие отказывают заблокированному аккаунту. Повторный вход тем же Telegram / Google / Apple создаёт новый пустой профиль. Тело необязательное: iOS-приложение перед удалением заново проходит Sign in with Apple и присылает свежий `appleAuthorizationCode` — до транзакции (и только после проверки прав) API меняет его на токены в `appleid.apple.com/auth/token` и отзывает refresh-токен (или access) через `/auth/revoke`. `client_secret` — ES256 JWT, подписанный ключом Sign in with Apple (`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`), client id — `APPLE_REVOKE_CLIENT_ID` или первый из `APPLE_OAUTH_CLIENT_IDS`, не равный `APPLE_OAUTH_SERVICES_ID`. Отзыв best-effort: сбой Apple или отсутствие ключа логируются и удаление не блокируют. Логика и решения по каждой связи — `AccountDeletionService`, отзыв Apple — `AppleTokenRevocationService`.
 
 ### 6.2. Профиль и уведомления
 
@@ -654,6 +659,10 @@ POST   /me/orders/:id/resend-receipt   → { ok: true }       (PAID-and-later on
 GET    /me/gift-cards
 GET    /me/referrals                 → { code, stats }
 POST   /me/referrals/apply           { code }
+POST   /feedback                     { kind: REVIEW|SUGGESTION|PROBLEM, message (1–2000), contact? (≤200),
+                                       source: IOS|ANDROID|WEB|TMA, appVersion? } → 201 { id, createdAt }
+                                     // любой вошедший аккаунт; 429 FEEDBACK_TOO_MANY — больше 5 за час на аккаунт
+                                     //   (плюс 5/мин на IP); платформа узнаёт в Telegram, см. 3.8
 ```
 
 ### 6.3. Catalog
@@ -817,6 +826,12 @@ GET                    /admin/analytics/churn?window=7|14&take=   // все: cou
 GET                    /admin/analytics/winback?window=7|14&take= // PRO: потерянные к началу периода → вернулись (кол-во, заказы, выручка, доля) против прошлого
 GET                    /admin/customers?search=&sort=lastOrderAt|firstOrderAt|orders|totalCents|avgCheckCents|frequency&dir=&page=&pageSize=  // PRO
 GET                    /admin/customers/:id                // PRO: итоги, точки, последние 100 заказов; 404 для удалённых и чужих
+
+# Обратная связь клиентов (только SUPER_ADMIN)
+GET                    /admin/feedback?status=NEW|READ|ARCHIVED&kind=&page=&pageSize=   // новые сверху; без status — всё, кроме ARCHIVED
+                                                           //   → { items[{ …, author: { name, email, phone, telegramUserId, deleted } | null }], total, page, pageSize, newCount }
+GET                    /admin/feedback/new-count           // { count } — бейдж «Обратная связь»
+PATCH                  /admin/feedback/:id                 { status } — readAt ставится при первом прочтении, сохраняется в архиве, NEW его сбрасывает
 
 # POS
 GET                    /admin/pos/status

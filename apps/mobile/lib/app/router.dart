@@ -14,6 +14,7 @@ import '../features/orders/order_status_screen.dart';
 import '../features/orders/orders_screen.dart';
 import '../features/product/product_screen.dart';
 import '../features/profile/about_screen.dart';
+import '../features/profile/feedback_screen.dart';
 import '../features/profile/gift_cards_screen.dart';
 import '../features/profile/loyalty_screen.dart';
 import '../features/profile/notifications_screen.dart';
@@ -46,6 +47,7 @@ abstract final class Routes {
   static const giftCards = '/profile/gift-cards';
   static const paymentMethods = '/profile/payment-methods';
   static const about = '/profile/about';
+  static const feedback = '/profile/feedback';
 }
 
 /// Screens that only make sense with an account; signing out on one of
@@ -60,6 +62,7 @@ const _signedInOnly = [
   Routes.referrals,
   Routes.giftCards,
   Routes.paymentMethods,
+  Routes.feedback,
 ];
 
 /// Where the app opens: the intro once, then always the stores — where to
@@ -108,6 +111,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(path: 'gift-cards', builder: (context, state) => const GiftCardsScreen()),
                   GoRoute(path: 'payment-methods', builder: (context, state) => const PaymentMethodsScreen()),
                   GoRoute(path: 'about', builder: (context, state) => const AboutScreen()),
+                  GoRoute(path: 'feedback', builder: (context, state) => const FeedbackScreen()),
                 ],
               ),
             ],
