@@ -147,8 +147,10 @@ class _AppShellState extends ConsumerState<AppShell> {
       ..invalidate(storesProvider);
     final storeId = ref.read(activeStoreProvider)?.id;
     if (storeId != null) unawaited(ref.read(cartProvider(storeId).notifier).reload());
-    // A token iOS could not hand out at the first try is asked for again.
-    unawaited(ref.read(pushServiceProvider).syncTokenIfMissing());
+    // A token iOS could not hand out at the first try is asked for again;
+    // notifications turned on or off in the phone's settings register or
+    // detach the device.
+    unawaited(ref.read(pushServiceProvider).refresh());
   }
 
   void _onTab(int index) {
