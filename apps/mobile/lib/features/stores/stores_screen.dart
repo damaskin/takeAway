@@ -14,6 +14,7 @@ import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../catalog/catalog_providers.dart';
+import 'map_focus.dart';
 import 'store_widgets.dart';
 
 /// Map of stores with a draggable list over it — search, "open now", and
@@ -126,11 +127,10 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
 
   void _fitAll(List<StoreWithDistance> list, LatLng? me) {
     if (!_mapReady) return;
-    final points = [
+    final points = mapFocus([
       for (final item in list)
         if (item.store.hasLocation) LatLng(item.store.latitude, item.store.longitude),
-      ?me,
-    ];
+    ], me);
     if (points.isEmpty) return;
     _fitted = true;
     if (points.length == 1) {
