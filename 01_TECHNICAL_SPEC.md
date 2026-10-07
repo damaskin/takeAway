@@ -188,7 +188,7 @@ takeaway/
 - **Payments**: **Stripe SDK 22** (Payment Intents + webhook)
 - **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.md`. Cloudflare R2 — потенциальная замена.
 - **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset). Mailgun/Postmark — резерв.
-- **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**; **FCM HTTP v1** для iOS/Android (APNs — через Firebase), сервис-аккаунт в `FIREBASE_*`, без SDK — JWT подписывается сам.
+- **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**; **APNs напрямую** для iOS (встроенный `node:http2`, ES256-токен через `node:crypto`, ключ `APNS_*` или `APPLE_*`); **FCM HTTP v1** для Android и iOS старых версий приложения, сервис-аккаунт в `FIREBASE_*`. Без SDK — JWT подписываются сами.
 - **Telegram**: бот через прямые вызовы Telegram Bot API (push на rider, brand staff, customer)
 - **Logs**: Pino 10 structured logs
 - **Monitoring**: Sentry/Prometheus/Grafana — плановое M7
@@ -201,7 +201,7 @@ takeaway/
 - **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
 - **Realtime**: `socket_io_client` к `/ws` на API-хосте; без сокета — опрос раз в 5 с
 - **Storage**: `shared_preferences` для настроек, JSON-файлы в кеше для меню и точек (офлайн-открытие)
-- **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`
+- **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`: FCM-токен, на iOS ещё сырой APNs-токен и шлюз (release-сборка — `PRODUCTION`, debug — `SANDBOX`). Устройство регистрируется только при разрешённых уведомлениях и снимается, когда их выключили в настройках телефона (проверка при возврате в приложение). Разрешение спрашивается один раз сразу после входа, после первого заказа или с экрана уведомлений — не при запуске. Android-каналы: `orders` (баннер, по умолчанию) и `promotions` (тихо)
 - **Maps**: `flutter_map` + OpenStreetMap, маршрут — deep link в Apple/Google Maps
 - **Payments**: привязанные карты Агропромбанка через API (как web/TMA); Stripe в регионе не работает
 - **Тесты**: unit + widget (`flutter test`, stateful fake API), интеграционный прогон на устройстве против живого API с KDS-переходами (`integration_test/`)
@@ -218,20 +218,21 @@ takeaway/
 
 ### 2.5. Third-party — фактическое состояние
 
-| Сервис            | Назначение                 | Статус                                                       |
-| ----------------- | -------------------------- | ------------------------------------------------------------ |
-| Stripe            | Платежи                    | ✅ Payment Intents + webhook                                 |
-| SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset                          |
-| Web Push (VAPID)  | Push для web/PWA + TMA     | ✅ через `web-push`                                          |
-| Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login (OIDC)       |
-| MinIO + CDN       | Object storage             | ✅ brand logo, product images через `@aws-sdk/client-s3`     |
-| iiko Cloud        | POS меню/stop-list/orders  | ✅ menu + stop-list (cron) + outgoing orders                 |
-| Poster            | POS + outgoing orders      | ✅ menu/stop-list/orders/webhooks                            |
-| Twilio (SMS OTP)  | SMS OTP                    | ❌ не подключено (customer auth идёт через Telegram)         |
-| Firebase FCM      | Mobile push                | 🟡 провайдер готов (HTTP v1), ждёт ключей `FIREBASE_*`       |
-| Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока) |
-| Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия              |
-| Mixpanel          | Product analytics          | ❌ запланировано на M7                                       |
+| Сервис            | Назначение                 | Статус                                                           |
+| ----------------- | -------------------------- | ---------------------------------------------------------------- |
+| Stripe            | Платежи                    | ✅ Payment Intents + webhook                                     |
+| SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset                              |
+| Web Push (VAPID)  | Push для web/PWA + TMA     | ✅ через `web-push`                                              |
+| Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login (OIDC)           |
+| MinIO + CDN       | Object storage             | ✅ brand logo, product images через `@aws-sdk/client-s3`         |
+| iiko Cloud        | POS меню/stop-list/orders  | ✅ menu + stop-list (cron) + outgoing orders                     |
+| Poster            | POS + outgoing orders      | ✅ menu/stop-list/orders/webhooks                                |
+| Twilio (SMS OTP)  | SMS OTP                    | ❌ не подключено (customer auth идёт через Telegram)             |
+| Firebase FCM      | Mobile push                | ✅ HTTP v1, `FIREBASE_*`; Android и iOS старых версий приложения |
+| Apple APNs        | iOS push                   | ✅ напрямую по HTTP/2, ключ `APNS_*` (или `APPLE_*`)             |
+| Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока)     |
+| Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия                  |
+| Mixpanel          | Product analytics          | ❌ запланировано на M7                                           |
 
 ## 3. Функциональные требования
 
@@ -249,7 +250,7 @@ takeaway/
 - **JWT + refresh tokens**, logout invalidates refresh.
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
-- Мультидевайсность через таблицу `Device` (push token, locale, lastSeenAt)
+- Мультидевайсность через таблицу `Device` (push token, APNs-токен для iOS, locale, lastSeenAt)
 - **OTP / SMS**: не реализовано. Раньше это был единственный запасной путь для рынков без Telegram — Google и Apple его закрывают.
 
 ### 3.1a. PWA (web)
@@ -387,12 +388,13 @@ takeaway/
 
 ### 3.8. Уведомления
 
-- **Push**: мобильное приложение — **FCM HTTP v1** (Android напрямую, iOS через APNs-ключ в Firebase; сервисный аккаунт `FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`), браузер — **VAPID** (`web-push`). Устройства — в `Device`; токены, которые FCM называет `UNREGISTERED`, и подписки браузера с ответом 404/410 удаляются при отправке.
-- **Правило доставки клиенту** (`NotificationsService.deliver`): app push и web push параллельно; если ни один не принят (нет токенов, транспорт не настроен, отказ) и у пользователя есть `telegramUserId` — сообщение от Telegram-бота. Одинаково для статусов заказа и для маркетинговых рассылок с каналом PUSH, поэтому клиент Mini App (без токенов) получает бот, а пользователь приложения — один push без дубля в Telegram. Сбои логируются на уровне warn с причиной.
+- **Push**: мобильное приложение — iOS **напрямую через APNs** (`ApnsPushProvider`: HTTP/2 на `api.push.apple.com` / `api.sandbox.push.apple.com`, одно долгое соединение на шлюз с переподключением после GOAWAY/ошибки/таймаута 10 с/10 мин простоя; ES256-токен провайдера на 50 мин; ключ `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_PRIVATE_KEY`, при пустом `APNS_PRIVATE_KEY` — ключ Sign in with Apple `APPLE_*` с включённым APNs; `APNS_TOPIC` = `md.takeaway.ios`, `APNS_ENABLED=false` выключает), Android и iOS старых версий приложения — **FCM HTTP v1** (сервисный аккаунт `FIREBASE_PROJECT_ID` / `FIREBASE_CLIENT_EMAIL` / `FIREBASE_PRIVATE_KEY`; iOS там идёт через APNs-ключ, загруженный в Firebase), браузер — **VAPID** (`web-push`). Устройства — в `Device`; токены, которые FCM называет `UNREGISTERED`, и подписки браузера с ответом 404/410 удаляются при отправке. APNs: `BadDeviceToken` повторяется на другом шлюзе (и он запоминается в `apnsEnvironment`); токен, который отвергли оба шлюза или APNs назвал `Unregistered`, стирается из `apnsToken` (строка и FCM-токен остаются); ошибки настройки (`InvalidProviderToken`, чужой topic) ничего не стирают. В payload есть `gcm.message_id`, чтобы `firebase_messaging` показывал такой push в приложении и открывал заказ по тапу.
+- **Правило доставки клиенту** (`NotificationsService.deliver`): APNs, FCM и web push параллельно. iOS-устройство с `apnsToken` при настроенном APNs получает push только через Apple, его FCM-токен пропускается (без дублей, когда починят и Firebase); если Apple push не принял — пробуется FCM-токен этого устройства. Если ни один транспорт не принял (нет токенов, транспорт не настроен, отказ) и у пользователя есть `telegramUserId` — сообщение от Telegram-бота. Одинаково для статусов заказа и для маркетинговых рассылок с каналом PUSH, поэтому клиент Mini App (без токенов) получает бот, а пользователь приложения — один push без дубля в Telegram. Сбои логируются на уровне warn с причиной; в результате доставки причина сохраняется и тогда, когда сообщение всё же дошло (другим устройством или через бота).
+- **Регистрация устройства**: `POST /devices` (см. 6.6) убирает строки с тем же токеном у других аккаунтов (сессия истекла без выхода — пуши прежнего аккаунта иначе приходили бы на этот телефон) и строки того же iOS-устройства с прежним FCM-токеном (тот же `apnsToken`). Приложение держит устройство зарегистрированным только при разрешённых уведомлениях — иначе FCM/APNs принимают push, который телефон не покажет, и рассылка считала бы его доставленным.
 - **Email**: nodemailer/SMTP — welcome (на первом PAID), receipt (на PAID), password reset.
 - **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе; customer — статусы заказов и рассылки, когда app/web push недоступен.
 - **Per-user prefs**: `notifyOrderUpdates` + `notifyPromotions` через `PATCH /me/notifications`. Operational push (rider/brand staff) prefs не учитывает.
-- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D. Учитывается `notifyPromotions`.
+- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D. Учитывается `notifyPromotions`. Список рассылок (`GET /admin/campaigns`) отдаёт по каждой `via` — сколько людей дошло через каждый транспорт (`apns`, `fcm`, `webpush`, `telegram`, `email`) — и `errors` — до трёх самых частых ошибок доставки с числом получателей (в том числе app push, который не дошёл перед Telegram-фолбэком).
 
 ### 3.9. Admin panel
 
@@ -483,7 +485,8 @@ User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, curr
       telegramUserId?, role[CUSTOMER|RIDER|STAFF|STORE_MANAGER|BRAND_ADMIN|SUPER_ADMIN],
       notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?,
       kdsPinHash?, kdsPinStoreId?)                            // KDS lockscreen PIN, scoped to one store
-Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, locale, lastSeenAt)
+Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, apnsToken?,   // apnsToken — сырой APNs-токен iOS (hex)
+        apnsEnvironment?[PRODUCTION|SANDBOX], locale, lastSeenAt)
 OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
 PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
 Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardOrderId?,
@@ -580,7 +583,8 @@ Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
           targetCount, sentCount, failedCount, noChannelCount, optedOutCount,
           lastError?, scheduledAt?, startedAt?, sentAt?)
 CampaignDelivery (id, campaignId, userId, outcome[SENT|FAILED|NO_CHANNEL|OPTED_OUT],
-                  via? ("fcm,webpush" | "telegram" | "email"), error?)
+                  via? ("apns,fcm,webpush" | "telegram" | "email"),
+                  error?)   // также у SENT: что не сработало по дороге (app push перед Telegram)
   unique (campaignId, userId) — повтор рассылки пропускает уже доставленных
 ```
 
@@ -716,8 +720,11 @@ GET    /loyalty                      → { balance, tier, lifetimePoints, recent
 
 ```
 GET    /devices/vapid-public-key
-POST   /devices                      { type, pushToken, locale }     (type: WEB | TMA | IOS | ANDROID; для IOS/ANDROID — FCM-токен)
-DELETE /devices                      { pushToken }
+POST   /devices                      { type, pushToken, apnsToken?, apnsEnvironment?, locale }
+                                     (type: WEB | IOS | ANDROID; для IOS/ANDROID pushToken — FCM-токен;
+                                      apnsToken — сырой APNs-токен iOS, hex; apnsEnvironment — PRODUCTION | SANDBOX,
+                                      по умолчанию PRODUCTION; WEB вместо pushToken шлёт endpoint + keys)
+DELETE /devices                      { type, pushToken }
 ```
 
 ### 6.7. Delivery (riders + dispatch)

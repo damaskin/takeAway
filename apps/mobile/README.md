@@ -172,9 +172,22 @@ The whole setup, server side included, is in `docs/social-sign-in.md`.
    `google-services.json` / `GoogleService-Info.plist` is needed.
 3. API: a service account with the "Firebase Cloud Messaging API Admin" role →
    `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`.
+4. iOS straight through Apple: an APNs auth key on the API (`APNS_KEY_ID`,
+   `APNS_TEAM_ID`, `APNS_PRIVATE_KEY`, or the Sign in with Apple key
+   `APPLE_*` when it has APNs enabled). The app registers its raw APNs token
+   next to the FCM one — release builds as `PRODUCTION`, debug builds as
+   `SANDBOX` — and the API pushes iPhones directly, using FCM only when Apple
+   does not take a push. So iOS does not depend on the key uploaded to
+   Firebase; keep that one right anyway for app versions before this change.
 
-Tokens are registered through `POST /devices` after sign-in and removed on
-sign-out; tokens Firebase reports as dead are pruned by the API.
+The device is registered through `POST /devices` for the signed-in user while
+notifications are allowed (at launch, after sign-in, after the permission
+prompt, and on return to the app when that changed) and removed on sign-out
+or when notifications are turned off. Permission is offered once right after
+sign-in, after the first order and from the notifications screen — never at
+launch. Android posts order news to the `orders` channel (heads-up) and
+campaigns to `promotions` (MainActivity.kt). Tokens Firebase or Apple report
+as dead are pruned by the API.
 
 ## Building releases
 
