@@ -107,6 +107,9 @@ export class AccountDeletionService {
    *                       fires; a referrer bonus would land on the zeroed,
    *                       blocked account and can never be spent.
    *   shiftsOpened/Closed kept — staff audit trail; a customer has none.
+   *   feedback            kept — it is about the service, like an order
+   *                       comment — with the "how to reach me" contact the
+   *                       customer may have typed into it nulled.
    *   ownedBrands         must be empty, see above.
    *
    * After the commit: every refresh token of the user is deleted from Redis
@@ -172,6 +175,7 @@ export class AccountDeletionService {
           deliveryLongitude: null,
         },
       });
+      await tx.feedback.updateMany({ where: { userId }, data: { contact: null } });
       const arrivals = await tx.orderEvent.findMany({
         where: { order: { userId }, type: { in: [...CUSTOMER_ARRIVAL_EVENTS] } },
         select: { id: true, payload: true },
