@@ -141,6 +141,9 @@ services:
       # Let's Encrypt material
       - /opt/takeaway/letsencrypt:/etc/letsencrypt:ro
       - /opt/takeaway/certbot-webroot:/var/www/certbot:ro
+      # Map tile cache (nginx/snippets/tiles.conf). A named volume, so a
+      # recreated container keeps its tiles instead of asking OSM again.
+      - tile_cache:/var/cache/nginx/tiles
 
   certbot:
     image: certbot/certbot:latest
@@ -154,3 +157,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  tile_cache:

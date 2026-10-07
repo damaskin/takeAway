@@ -86,8 +86,8 @@ deploy/
   .env.production.example   Copy to .env.production and fill in
   nginx/
     nginx.conf              Top-level config (gzip, WS upgrade map, include conf.d)
-    snippets/               Shared location blocks
-    conf.d/                 HTTPS vhosts, one per subdomain
+    snippets/               Shared location blocks (api proxy, SPA, map tile cache)
+    conf.d/                 HTTPS vhosts, one per subdomain; 05-tile-cache.conf is the tile cache zone
   scripts/
     deploy.sh               Full deploy: build + extract SPAs + migrate + reload
     extract-spa.sh          Build and atomically swap SPA assets into /opt/takeaway/www
@@ -209,6 +209,10 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
   ```
 - **Health:** `https://api.takeaway.md/api/health` reports the build version;
   `/api/health/ready` is the deploy gate and checks Postgres and Redis.
+- **Map tiles:** `https://takeaway.md/tiles/{z}/{x}/{y}.png` is our cache of
+  OpenStreetMap (nginx `proxy_cache` in the `tile_cache` volume, Cloudflare in
+  front). `X-Cache-Status` shows HIT/MISS; size, purge and the OSM policy are
+  in [docs/map-tiles.md](../docs/map-tiles.md).
 
 - **Backup (nightly, automated):** `scripts/backup-to-github.sh`, driven by
   cron. It dumps, compresses and encrypts in one pipe — the plaintext never
