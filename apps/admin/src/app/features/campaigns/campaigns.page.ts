@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { CAMPAIGN_TRANSPORTS } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -16,8 +17,9 @@ const POLL_MS = 3000;
  * Brand-admin marketing campaigns. Compose a title + body, pick a
  * channel and audience, save the draft, then click Send. Sending runs in
  * the background: the row flips to SENDING at once and the list polls
- * until it settles on SENT or FAILED, showing who got it, who could not
- * be reached and the last error. A failed, stuck or partly failed
+ * until it settles on SENT or FAILED, showing who got it and through what
+ * (iPhone app, app via Firebase, browser, Telegram), who could not be
+ * reached and the most common errors. A failed, stuck or partly failed
  * campaign can be sent again — only the people it missed get it.
  *
  * Works on the brand picked in the top bar (SUPER_ADMIN picks any).
@@ -117,7 +119,25 @@ const POLL_MS = 3000;
                         <span>{{ 'admin.campaigns.result.optedOut' | translate: { count: c.optedOutCount } }}</span>
                       }
                     </div>
-                    @if (c.lastError) {
+                    @if (viaSummary(c); as via) {
+                      <div style="font-size: 12px; color: var(--color-text-secondary)">
+                        {{ 'admin.campaigns.result.via' | translate: { list: via } }}
+                      </div>
+                    }
+                    @if (c.errors.length > 0) {
+                      <div
+                        style="margin-top: 4px; font-size: 12px; color: var(--color-berry); max-width: 360px; overflow-wrap: anywhere"
+                      >
+                        <div style="font-weight: 600">{{ 'admin.campaigns.result.errorsTitle' | translate }}</div>
+                        <ul style="margin: 2px 0 0; padding-left: 16px">
+                          @for (e of c.errors; track e.error) {
+                            <li [attr.title]="e.error">
+                              {{ 'admin.campaigns.result.errorItem' | translate: { error: e.error, count: e.count } }}
+                            </li>
+                          }
+                        </ul>
+                      </div>
+                    } @else if (c.lastError) {
                       <div
                         style="margin-top: 4px; font-size: 12px; color: var(--color-berry); max-width: 320px; overflow-wrap: anywhere"
                         [attr.title]="c.lastError"
@@ -220,6 +240,14 @@ export class AdminCampaignsPage implements OnInit {
       next: () => this.rows.update((rs) => rs.filter((r) => r.id !== c.id)),
       error: (err) => this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING)),
     });
+  }
+
+  /** "iPhone app (Apple) 3 · Telegram 1" — the transports that reached people, or null before anything went out. */
+  viaSummary(c: CampaignRow): string | null {
+    const parts = CAMPAIGN_TRANSPORTS.filter((t) => c.via[t] > 0).map(
+      (t) => `${this.translate.instant(`admin.campaigns.test.via.${t}`)} ${c.via[t]}`,
+    );
+    return parts.length > 0 ? parts.join(' · ') : null;
   }
 
   statusBg(status: CampaignRow['status']): string {

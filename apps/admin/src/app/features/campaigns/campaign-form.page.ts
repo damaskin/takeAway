@@ -192,7 +192,7 @@ export class CampaignFormPage implements OnInit {
     const channel = this.channel();
     if (channel === 'EMAIL') return t.email ? [] : ['admin.campaigns.reach.emailOff'];
     const warnings: string[] = [];
-    if (channel === 'PUSH' && !t.fcm) warnings.push('admin.campaigns.reach.fcmOff');
+    if (channel === 'PUSH' && !t.fcm && !t.apns) warnings.push('admin.campaigns.reach.fcmOff');
     if (!t.telegram) warnings.push('admin.campaigns.reach.telegramOff');
     return warnings;
   });
@@ -250,6 +250,14 @@ export class CampaignFormPage implements OnInit {
   private describeTest(r: CampaignTestResult): { ok: boolean; text: string } {
     if (r.outcome === 'sent') {
       const via = r.via.map((v) => this.translate.instant(`admin.campaigns.test.via.${v}`)).join(', ');
+      // It arrived, but not everywhere it should have (e.g. the app push
+      // failed and the Telegram bot stepped in) — say what broke.
+      if (r.error) {
+        return {
+          ok: false,
+          text: this.translate.instant('admin.campaigns.test.sentWithError', { via, error: r.error }),
+        };
+      }
       return { ok: true, text: this.translate.instant('admin.campaigns.test.sent', { via }) };
     }
     if (r.outcome === 'failed') {
