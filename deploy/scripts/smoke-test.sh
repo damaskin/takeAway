@@ -99,4 +99,17 @@ done
   exit 1
 }
 
+# --- 4. the map tile cache must answer with a picture ------------------------
+# A 404 or a page instead of a PNG is our nginx config, and every map in the
+# apps goes grey: fail. A 5xx is OpenStreetMap unreachable with nothing cached
+# yet — not this deploy's fault, so only say so. The world tile is cached
+# after the first deploy, so this costs OSM nothing.
+tile="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' --max-time 20 \
+  --resolve takeaway.md:443:127.0.0.1 https://takeaway.md/tiles/0/0/0.png 2>/dev/null || echo 000)"
+case "$tile" in
+  "200 image/png"*) echo "tiles: $tile" ;;
+  5*|000*) echo "WARN: tile cache answered '$tile' — OpenStreetMap unreachable from the server?" >&2 ;;
+  *) echo "FAIL: tile cache answered '$tile' instead of a PNG — check nginx/snippets/tiles.conf" >&2; exit 1 ;;
+esac
+
 echo "smoke test passed"

@@ -1,0 +1,95 @@
+name: nginx config
+
+# The production nginx config is bind-mounted from this repo. deploy.sh
+# reloads it with `|| true`, and a container recreated with a broken config
+# does not start at all — every takeaway.md domain goes down. This runs the
+# config in the image production uses (read from docker-compose.prod.yml),
+# before it gets there, and checks that the map tile cache answers.
+on:
+  push:
+    paths:
+      - 'deploy/nginx/**'
+      - 'deploy/docker-compose.prod.yml'
+      - '.github/workflows/nginx.yml'
+  pull_request:
+    paths:
+      - 'deploy/nginx/**'
+      - 'deploy/docker-compose.prod.yml'
+      - '.github/workflows/nginx.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: nginx -t · tile cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-signed certificate in place of Let's Encrypt
+        run: |
+          dir="$RUNNER_TEMP/letsencrypt/live/takeaway.md"
+          mkdir -p "$dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=takeaway.md' \
+            -keyout "$dir/privkey.pem" -out "$dir/fullchain.pem" 2>/dev/null
+
+      - name: Start nginx with the production config
+        run: |
+          image="$(sed -n 's/^ *image: *\(nginx:[^ ]*\).*/\1/p' deploy/docker-compose.prod.yml | head -1)"
+          echo "image: $image"
+          # A user-defined network, as under compose: it brings Docker's DNS
+          # at 127.0.0.11, which the tile cache resolves OSM through. api and
+          # minio only have to resolve for the config to load.
+          docker network create takeaway
+          docker run -d --name nginx --network takeaway \
+            --add-host api:127.0.0.1 --add-host minio:127.0.0.1 \
+            -p 8443:443 \
+            -v "$PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/deploy/nginx/conf.d:/etc/nginx/conf.d:ro" \
+            -v "$PWD/deploy/nginx/snippets:/etc/nginx/snippets:ro" \
+            -v "$RUNNER_TEMP/letsencrypt:/etc/letsencrypt:ro" \
+            -v tile_cache:/var/cache/nginx/tiles \
+            "$image"
+          sleep 2
+          docker exec nginx nginx -t || { docker logs nginx; exit 1; }
+
+      - name: Tile cache
+        run: |
+          get() {
+            curl -sk --max-time 30 --resolve takeaway.md:8443:127.0.0.1 -o /tmp/body -D /tmp/headers \
+              -w '%{http_code} %{content_type}' "$@"
+          }
+          header() { grep -i "^$1:" /tmp/headers | tr -d '\r' | cut -d' ' -f2-; }
+
+          first="$(get https://takeaway.md:8443/tiles/0/0/0.png)"
+          echo "first:  $first, X-Cache-Status $(header X-Cache-Status)"
+          cat /tmp/headers
+          case "$first" in
+            "200 image/png"*) ;;
+            5*) echo "::warning::OpenStreetMap did not answer the runner ($first) — config loads, tiles unverified"; exit 0 ;;
+            *) echo "::error::expected a PNG, got $first"; docker logs nginx; exit 1 ;;
+          esac
+          [ -z "$(header Age)" ] || { echo "::error::OSM's Age header leaks through"; exit 1; }
+          header Cache-Control | grep -q 'max-age=604800' || { echo "::error::Cache-Control not set"; exit 1; }
+
+          second="$(get https://takeaway.md:8443/tiles/0/0/0.png)"
+          echo "second: $second, X-Cache-Status $(header X-Cache-Status)"
+          [ "$(header X-Cache-Status)" = HIT ] || { echo "::error::second request was not a cache hit"; exit 1; }
+
+          for path in tiles/20/1/1.png tiles/1/1/x.png tiles/1/1/1.jpg tiles/; do
+            code="$(get "https://takeaway.md:8443/$path" | cut -d' ' -f1)"
+            echo "/$path -> $code"
+            [ "$code" = 404 ] || { echo "::error::/$path should be 404, got $code"; exit 1; }
+          done
+          code="$(get -X POST https://takeaway.md:8443/tiles/0/0/0.png | cut -d' ' -f1)"
+          echo "POST -> $code"
+          [ "$code" = 403 ] || { echo "::error::POST should be refused, got $code"; exit 1; }
+
+      - name: nginx log
+        if: always()
+        run: docker logs nginx 2>&1 | tail -50
