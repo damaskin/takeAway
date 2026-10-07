@@ -9,7 +9,7 @@ import { PwaService } from './core/pwa/pwa.service';
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, VersionBadgeComponent],
-  template: `<router-outlet /><lib-version-badge />`,
+  template: `<router-outlet /><lib-version-badge optIn />`,
 })
 export class App implements OnInit {
   private readonly flags = inject(FeatureFlagsStore);
