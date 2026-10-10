@@ -2,18 +2,24 @@
  * Churn and win-back arithmetic, kept apart from SQL so it can be tested as
  * plain numbers.
  *
- * A customer is *lost* once `window` days (7 or 14) pass after an order with
- * no next one. The moment that happens — the last order plus the window —
- * is when the business lost them. "Lost in a period" counts the customers
- * whose moment falls inside it and who have not come back by its end.
+ * A customer is *inactive* («неактивный», once called lost) when they have
+ * ordered at least {@link INACTIVE_MIN_ORDERS} times and `window` days (3,
+ * 7 or 14) pass after their last order with no next one. The moment that
+ * happens — the last order plus the window — is when the business lost
+ * them. "Lost in a period" counts the customers whose moment falls inside
+ * it and who have not come back by its end. Somebody who ordered once or
+ * twice is not a regular yet, so their silence is not counted as a loss.
  *
- * A customer is *won back* in a period when they were already lost at its
- * start (their last order before it is more than `window` days older than
- * the start) and ordered again inside it.
+ * A customer is *won back* in a period when they were already inactive at
+ * its start (their last order before it is more than `window` days older
+ * than the start) and ordered again inside it.
  */
 
-export const CHURN_WINDOWS = [7, 14] as const;
+export const CHURN_WINDOWS = [3, 7, 14] as const;
 export type ChurnWindow = (typeof CHURN_WINDOWS)[number];
+
+/** Orders a customer needs before going quiet makes them inactive. */
+export const INACTIVE_MIN_ORDERS = 3;
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -78,7 +84,7 @@ export function summarizeChurn(
   const lost = rows
     .filter(
       (r) =>
-        r.orders > 0 &&
+        r.orders >= INACTIVE_MIN_ORDERS &&
         r.lastOrderAt.getTime() >= bounds.lastOrderFrom.getTime() &&
         r.lastOrderAt.getTime() < bounds.lastOrderBefore.getTime(),
     )

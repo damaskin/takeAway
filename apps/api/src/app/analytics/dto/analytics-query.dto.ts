@@ -49,7 +49,10 @@ export class TopProductsQueryDto extends AnalyticsQueryDto {
 }
 
 export class RetentionQueryDto extends AnalyticsQueryDto {
-  @ApiPropertyOptional({ enum: CHURN_WINDOWS, description: 'Days without an order after which a customer is lost.' })
+  @ApiPropertyOptional({
+    enum: CHURN_WINDOWS,
+    description: 'Days without an order after which a regular (3+ orders) is inactive.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsIn([...CHURN_WINDOWS])
