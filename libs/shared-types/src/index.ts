@@ -9,3 +9,4 @@ export * from './lib/plan';
 export * from './lib/analytics-overview';
 export * from './lib/feedback';
 export * from './lib/push';
+export * from './lib/settlements';
