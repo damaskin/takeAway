@@ -1175,7 +1175,7 @@ abstract class AppLocalizations {
   /// No description provided for @statusPickedUp.
   ///
   /// In en, this message translates to:
-  /// **'Enjoy!'**
+  /// **'Order picked up'**
   String get statusPickedUp;
 
   /// No description provided for @statusOutForDelivery.

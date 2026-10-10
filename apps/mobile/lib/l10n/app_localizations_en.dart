@@ -614,7 +614,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusReadyDelivery => 'Ready — waiting for the rider';
 
   @override
-  String get statusPickedUp => 'Enjoy!';
+  String get statusPickedUp => 'Order picked up';
 
   @override
   String get statusOutForDelivery => 'On the way';

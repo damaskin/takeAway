@@ -180,7 +180,7 @@
   "statusInProgress": "Готовим ваш заказ",
   "statusReady": "Готов к выдаче",
   "statusReadyDelivery": "Готов — ждём курьера",
-  "statusPickedUp": "Приятного аппетита!",
+  "statusPickedUp": "Заказ выдан",
   "statusOutForDelivery": "Курьер в пути",
   "statusDelivered": "Доставлен",
   "statusCancelled": "Отменён",

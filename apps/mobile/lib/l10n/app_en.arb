@@ -412,7 +412,7 @@
   "statusInProgress": "Preparing your order",
   "statusReady": "Ready for pickup",
   "statusReadyDelivery": "Ready — waiting for the rider",
-  "statusPickedUp": "Enjoy!",
+  "statusPickedUp": "Order picked up",
   "statusOutForDelivery": "On the way",
   "statusDelivered": "Delivered",
   "statusCancelled": "Cancelled",

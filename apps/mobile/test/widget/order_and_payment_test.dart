@@ -72,8 +72,10 @@ void main() {
       api.currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP');
       h.realtime.emit(const OrderStatusEvent(orderId: 'ord_1', status: OrderStatus.pickedUp, etaSeconds: 0));
       await settle(tester);
-      expect(find.text('Приятного аппетита!'), findsOneWidget);
+      // Neutral: the app does not know whether it was a coffee or a meal.
+      expect(find.text('Заказ выдан'), findsOneWidget);
       expect(find.text('Ни минуты в очереди — так и задумано. Хорошего дня!'), findsOneWidget);
+      expect(find.textContaining('аппетит'), findsNothing);
       await h.unmount(tester);
     });
 

@@ -622,7 +622,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get statusReadyDelivery => 'Готов — ждём курьера';
 
   @override
-  String get statusPickedUp => 'Приятного аппетита!';
+  String get statusPickedUp => 'Заказ выдан';
 
   @override
   String get statusOutForDelivery => 'Курьер в пути';

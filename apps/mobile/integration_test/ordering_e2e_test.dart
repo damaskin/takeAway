@@ -177,7 +177,7 @@ void main() {
     await waitFor(tester, find.textContaining(RegExp('Ready for pickup|Готов к выдаче')));
     debugPrint('E2E: ready');
     await kds('picked-up');
-    await waitFor(tester, find.textContaining(RegExp('Enjoy!|Приятного аппетита!')));
+    await waitFor(tester, find.textContaining(RegExp('Order picked up|Заказ выдан')));
     debugPrint('E2E: picked up');
     final again = find.textContaining(RegExp('Order again|Повторить заказ'));
     debugPrint('E2E: order-again buttons: ${again.evaluate().length}');
