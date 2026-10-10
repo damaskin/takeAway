@@ -1,6 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
+import { BrandScopeService } from '../../auth/services/brand-scope.service';
+import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -8,17 +11,22 @@ import { PrismaService } from '../../prisma/prisma.service';
  * `role = RIDER`. Used by admin to rostera couriers per store without SQL.
  *
  * Role transitions on add:
- *   - No user with this phone   → create one with role=RIDER
- *   - Existing CUSTOMER          → promote to RIDER (safe: no scope to lose)
- *   - Existing RIDER             → leave role alone
- *   - Existing STAFF/MANAGER/…   → refuse (downgrade would strip other scope)
+ *   - No user with this phone               → create one with role=RIDER
+ *   - Existing RIDER of the caller's brands → leave role alone
+ *   - Any other existing account            → refuse with the same neutral 409
+ *     (RIDER_PHONE_TAKEN): a customer is never turned into a rider behind
+ *     their back, a courier of another brand is not taken over, and the
+ *     answer names neither the account's role nor its name.
  *
  * Removing the pivot doesn't revoke the RIDER role — a rider can be
  * rostered at multiple stores and removed from just one.
  */
 @Injectable()
 export class AdminRidersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scope: BrandScopeService,
+  ) {}
 
   async list(storeId: string) {
     await this.assertStore(storeId);
@@ -36,12 +44,12 @@ export class AdminRidersService {
     }));
   }
 
-  async add(storeId: string, phone: string, name?: string) {
+  async add(storeId: string, phone: string, name: string | undefined, user: AuthenticatedUser) {
     await this.assertStore(storeId);
 
     const existing = await this.prisma.user.findUnique({
       where: { phone },
-      select: { id: true, role: true, name: true },
+      select: { id: true, role: true },
     });
 
     let userId: string;
@@ -51,20 +59,13 @@ export class AdminRidersService {
         select: { id: true },
       });
       userId = created.id;
-    } else if (existing.role === Role.RIDER) {
-      userId = existing.id;
-    } else if (existing.role === Role.CUSTOMER) {
-      await this.prisma.user.update({
-        where: { id: existing.id },
-        data: {
-          role: Role.RIDER,
-          ...(name && !existing.name ? { name } : {}),
-        },
-      });
+    } else if (existing.role === Role.RIDER && (await this.scope.managesUser(user, existing.id))) {
       userId = existing.id;
     } else {
-      throw new ConflictException(
-        `User ${phone} already has role ${existing.role}; change their role before adding as rider`,
+      throw codedConflict(
+        'RIDER_PHONE_TAKEN',
+        'This phone number is already in use. Ask the courier to use a different number.',
+        'phone',
       );
     }
 

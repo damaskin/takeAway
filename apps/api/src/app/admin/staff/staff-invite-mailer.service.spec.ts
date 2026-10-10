@@ -21,7 +21,7 @@ function build(opts: { smtp: boolean; env?: Record<string, string>; delivered?: 
   };
   const mail = {
     isConfigured: jest.fn(() => opts.smtp),
-    deliver: jest.fn(async (_to: string, _mail: OutgoingMail) => opts.delivered ?? true),
+    sendStaffInvite: jest.fn(async (_to: string, _mail: OutgoingMail) => opts.delivered ?? true),
   };
   const passwords = new PasswordService();
   const mailer = new StaffInviteMailer(
@@ -56,7 +56,7 @@ describe('StaffInviteMailer', () => {
     const ttlHours = (data.expiresAt.getTime() - before) / 3_600_000;
     expect(Math.round(ttlHours)).toBe(STAFF_INVITE_LINK_TTL_HOURS);
 
-    const [to, message] = mail.deliver.mock.calls[0] as [string, OutgoingMail];
+    const [to, message] = mail.sendStaffInvite.mock.calls[0] as [string, OutgoingMail];
     expect(to).toBe('barista@cafe.md');
     const link = /https:\/\/admin\.takeaway\.md\/reset-password\?token=([A-Za-z0-9_-]+)&invite=1/.exec(message.text);
     expect(link).not.toBeNull();
@@ -70,7 +70,7 @@ describe('StaffInviteMailer', () => {
     const { mailer, prisma, mail } = build({ smtp: true });
     await expect(mailer.send(barista({ newAccount: false }))).resolves.toBe('SENT');
     expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
-    const [, message] = mail.deliver.mock.calls[0] as [string, OutgoingMail];
+    const [, message] = mail.sendStaffInvite.mock.calls[0] as [string, OutgoingMail];
     expect(message.text).toContain('https://admin.takeaway.md/forgot-password');
     expect(message.text).not.toContain('reset-password?token');
   });
@@ -79,13 +79,13 @@ describe('StaffInviteMailer', () => {
     const { mailer, prisma, mail } = build({ smtp: false });
     await expect(mailer.send(barista())).resolves.toBe('NOT_CONFIGURED');
     expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
-    expect(mail.deliver).not.toHaveBeenCalled();
+    expect(mail.sendStaffInvite).not.toHaveBeenCalled();
   });
 
   it('is NOT_CONFIGURED in production without ADMIN_APP_URL — no localhost links', async () => {
     const { mailer, mail } = build({ smtp: true, env: { NODE_ENV: 'production' } });
     await expect(mailer.send(barista())).resolves.toBe('NOT_CONFIGURED');
-    expect(mail.deliver).not.toHaveBeenCalled();
+    expect(mail.sendStaffInvite).not.toHaveBeenCalled();
   });
 
   it('says FAILED when the mail server refuses', async () => {

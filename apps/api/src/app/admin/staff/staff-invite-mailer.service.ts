@@ -73,7 +73,7 @@ export class StaffInviteMailer {
       setPasswordUrl = `${base}/reset-password?token=${raw}&invite=1`;
     }
 
-    const sent = await this.mail.deliver(
+    const sent = await this.mail.sendStaffInvite(
       recipient.email,
       staffInviteMail({
         to: recipient.email,

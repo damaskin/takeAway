@@ -3,44 +3,96 @@ import type { ConfigService } from '@nestjs/config';
 
 import { MailService } from './mail.service';
 
-/** A MailService whose transport is a spy (or absent, like a server without SMTP_HOST). */
-function build(transport: { sendMail: jest.Mock } | null) {
-  const config = { get: (key: string) => (key === 'SMTP_FROM' ? 'takeAway <no-reply@takeaway.md>' : undefined) };
-  const mail = new MailService(config as unknown as ConfigService);
-  (mail as unknown as { transporter: unknown }).transporter = transport;
-  return mail;
-}
+describe('MailService logs', () => {
+  const resetUrl = 'https://admin.takeaway.md/reset-password?token=0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  let warn: jest.SpyInstance;
+  let log: jest.SpyInstance;
+  let error: jest.SpyInstance;
 
-const message = {
-  subject: 'Invite',
-  text: 'Set your password: https://admin.takeaway.md/reset-password?token=secret-token',
-  html: '<p>secret-token</p>',
-};
-
-describe('MailService.deliver', () => {
+  beforeEach(() => {
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
   afterEach(() => jest.restoreAllMocks());
 
-  it('answers false without SMTP and keeps the body — and its one-time link — out of the log', async () => {
-    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    await expect(build(null).deliver('a@b.md', message)).resolves.toBe(false);
-    expect(warn).toHaveBeenCalled();
-    expect(warn.mock.calls.flat().join(' ')).not.toContain('secret-token');
+  /** Without SMTP_HOST the service only logs; with `sendMail` it sends through that transport. */
+  function build(sendMail?: jest.Mock): MailService {
+    const svc = new MailService({ get: () => undefined } as unknown as ConfigService);
+    if (sendMail) (svc as unknown as { transporter: { sendMail: jest.Mock } }).transporter = { sendMail };
+    return svc;
+  }
+
+  const lines = (spy: jest.SpyInstance) => spy.mock.calls.map(([line]) => String(line)).join('\n');
+
+  it('never writes a password-reset link into the log when SMTP is not configured', async () => {
+    await build().sendPasswordReset('ion.popescu@noname.md', resetUrl);
+
+    const logged = lines(warn);
+    expect(logged).toContain('template=password-reset');
+    expect(logged).toContain('to=*@noname.md');
+    expect(logged).toContain('Reset your takeAway password');
+    expect(logged).not.toContain('token=');
+    expect(logged).not.toContain('0f1e2d3c4b5a69788796a5b4c3d2e1f0');
+    expect(logged).not.toContain('reset-password');
+    expect(logged).not.toContain('ion.popescu');
   });
 
-  it('answers true once the server took it, false when it refused', async () => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    const sendMail = jest.fn().mockResolvedValue({});
-    await expect(build({ sendMail }).deliver('a@b.md', message)).resolves.toBe(true);
-    expect(sendMail).toHaveBeenCalledWith({
-      from: 'takeAway <no-reply@takeaway.md>',
-      to: 'a@b.md',
-      subject: 'Invite',
-      text: message.text,
-      html: message.html,
+  it('logs no body for other messages either', async () => {
+    await build().send('owner@cafe.md', 'Hello', 'secret body with a link https://x.test/?code=42');
+
+    const logged = lines(warn);
+    expect(logged).toContain('template=custom');
+    expect(logged).not.toContain('secret body');
+    expect(logged).not.toContain('code=42');
+  });
+
+  it('keeps the recipient to its domain when the message is sent, and when delivery fails', async () => {
+    const sendMail = jest.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('relay down'));
+    const svc = build(sendMail);
+
+    await svc.sendPasswordReset('ion.popescu@noname.md', resetUrl);
+    await svc.sendPasswordReset('ion.popescu@noname.md', resetUrl);
+
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'ion.popescu@noname.md' }));
+    const logged = `${lines(log)}\n${lines(error)}`;
+    expect(logged).toContain('[mail] sent template=password-reset to=*@noname.md');
+    expect(logged).toContain('relay down');
+    expect(logged).not.toContain('ion.popescu');
+    expect(logged).not.toContain('token=');
+  });
+
+  describe('sendStaffInvite', () => {
+    const invite = {
+      subject: 'Приглашение в команду NoName',
+      text: 'Задайте пароль: https://admin.takeaway.md/reset-password?token=secret-invite-token&invite=1',
+      html: '<p>secret-invite-token</p>',
+    };
+
+    it('says false without SMTP and logs only the template, domain and subject', async () => {
+      await expect(build().sendStaffInvite('anna@noname.md', invite)).resolves.toBe(false);
+      const logged = lines(warn);
+      expect(logged).toContain('template=staff-invite');
+      expect(logged).toContain('to=*@noname.md');
+      expect(logged).not.toContain('secret-invite-token');
+      expect(logged).not.toContain('anna');
     });
 
-    sendMail.mockRejectedValue(new Error('550 relay denied'));
-    await expect(build({ sendMail }).deliver('a@b.md', message)).resolves.toBe(false);
+    it('says true once the server took it and false when it refused', async () => {
+      const sendMail = jest.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('550 relay denied'));
+      const svc = build(sendMail);
+
+      await expect(svc.sendStaffInvite('anna@noname.md', invite)).resolves.toBe(true);
+      expect(sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'anna@noname.md',
+          subject: invite.subject,
+          text: invite.text,
+          html: invite.html,
+        }),
+      );
+      await expect(svc.sendStaffInvite('anna@noname.md', invite)).resolves.toBe(false);
+      expect(`${lines(log)}\n${lines(error)}`).not.toContain('secret-invite-token');
+    });
   });
 });
