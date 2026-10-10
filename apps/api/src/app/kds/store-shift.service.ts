@@ -1,6 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ConflictException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma, StoreStatus } from '@prisma/client';
 
+import { busyMeterOf, isBusy } from '../catalog/store-availability';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StoreAvailabilityNotifier } from '../realtime/store-availability.notifier';
@@ -16,6 +18,11 @@ export interface StoreShiftDto {
   /** When the last shift ended. Null while open or if there never was one. */
   closedAt: string | null;
   closedByName: string | null;
+  /**
+   * The kitchen marked the store «Загружены» (status OVERLOADED): customers
+   * see it as busy, orders still come in. See {@link StoreShiftService.setBusy}.
+   */
+  busy: boolean;
 }
 
 const WITH_NAMES = {
@@ -28,27 +35,33 @@ const WITH_NAMES = {
  * while a shift is open; the catalog reports it as `acceptingOrders` and
  * order creation refuses otherwise. Both actions are idempotent, so two
  * tablets tapping the same button do not fight.
+ *
+ * Also the kitchen's «Загружены» switch, which travels with the shift on
+ * the same realtime event so every tablet of the store shows it at once.
  */
 @Injectable()
 export class StoreShiftService {
+  private readonly logger = new Logger(StoreShiftService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly availability: StoreAvailabilityNotifier,
+    private readonly kitchen: KitchenLoadService,
   ) {}
 
   async current(storeId: string): Promise<StoreShiftDto> {
-    await this.assertStore(storeId);
+    const store = await this.findStore(storeId);
     const last = await this.prisma.storeShift.findFirst({
       where: { storeId },
       orderBy: { openedAt: 'desc' },
       include: WITH_NAMES,
     });
-    return toDto(storeId, last);
+    return toDto(storeId, last, isBusy(store));
   }
 
   async open(storeId: string, userId: string): Promise<StoreShiftDto> {
-    await this.assertStore(storeId);
+    await this.findStore(storeId);
     const existing = await this.prisma.storeShift.findFirst({ where: { storeId, closedAt: null } });
     if (!existing) {
       try {
@@ -62,12 +75,54 @@ export class StoreShiftService {
     return this.announce(storeId);
   }
 
+  /**
+   * "Finish work". A store left marked busy is switched back to normal: the
+   * marker is about the rush in front of the counter now, and tomorrow's
+   * customers should not see yesterday's.
+   */
   async close(storeId: string, userId: string): Promise<StoreShiftDto> {
-    await this.assertStore(storeId);
+    const store = await this.findStore(storeId);
     await this.prisma.storeShift.updateMany({
       where: { storeId, closedAt: null },
       data: { closedAt: new Date(), closedById: userId },
     });
+    if (isBusy(store)) {
+      await this.prisma.store.updateMany({
+        where: { id: storeId, status: StoreStatus.OVERLOADED },
+        data: { status: StoreStatus.OPEN },
+      });
+      await this.announceLoad(storeId);
+    }
+    return this.announce(storeId);
+  }
+
+  /**
+   * The kitchen's «Загружены» switch: on sets the store's status to
+   * OVERLOADED, off back to OPEN. That is the status the owner sees in
+   * «Точки» and can also set in the store editor, and the storefronts show
+   * as «Загружена» with a full (red) load meter. Orders keep coming; the
+   * ETA stays the queue-based one. A store switched off (CLOSED) is not
+   * touched — 409 `STORE_SWITCHED_OFF`. Idempotent.
+   */
+  async setBusy(storeId: string, busy: boolean): Promise<StoreShiftDto> {
+    const store = await this.findStore(storeId);
+    if (store.status === StoreStatus.CLOSED) {
+      throw new ConflictException({
+        statusCode: HttpStatus.CONFLICT,
+        error: 'Conflict',
+        code: 'STORE_SWITCHED_OFF',
+        message: 'The store is switched off; turn it on before marking it busy',
+      });
+    }
+    if (isBusy(store) !== busy) {
+      // Conditional on the status read above, so a store switched off in the
+      // meantime stays off.
+      await this.prisma.store.updateMany({
+        where: { id: storeId, status: busy ? StoreStatus.OPEN : StoreStatus.OVERLOADED },
+        data: { status: busy ? StoreStatus.OVERLOADED : StoreStatus.OPEN },
+      });
+      await this.announceLoad(storeId);
+    }
     return this.announce(storeId);
   }
 
@@ -82,9 +137,35 @@ export class StoreShiftService {
     return shift;
   }
 
-  private async assertStore(storeId: string): Promise<void> {
-    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true } });
+  /**
+   * `store.loadChanged` for every connected client, with the load meter and
+   * the current ETA. Storefronts also refetch the store on the
+   * `store.availabilityChanged` that {@link announce} sends right after.
+   * Best effort, like the availability broadcast.
+   */
+  private async announceLoad(storeId: string): Promise<void> {
+    try {
+      const store = await this.prisma.store.findUnique({
+        where: { id: storeId },
+        select: { status: true, busyMeter: true, baseEtaSeconds: true, kitchenParallelism: true },
+      });
+      if (!store) return;
+      const queue = await this.kitchen.queueWaitSeconds(storeId, store.kitchenParallelism);
+      this.realtime.emitStoreLoad({
+        storeId,
+        busy: isBusy(store),
+        busyMeter: busyMeterOf(store),
+        currentEtaSeconds: store.baseEtaSeconds + queue,
+      });
+    } catch (err) {
+      this.logger.warn(`store.loadChanged for ${storeId} not sent: ${(err as Error).message}`);
+    }
+  }
+
+  private async findStore(storeId: string): Promise<{ id: string; status: StoreStatus }> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, status: true } });
     if (!store) throw new NotFoundException('Store not found');
+    return store;
   }
 }
 
@@ -94,7 +175,7 @@ function personName(user: { name: string | null; email: string | null } | null):
   return user?.name?.trim() || user?.email || null;
 }
 
-export function toDto(storeId: string, shift: ShiftRow | null): StoreShiftDto {
+export function toDto(storeId: string, shift: ShiftRow | null, busy = false): StoreShiftDto {
   return {
     storeId,
     open: shift != null && shift.closedAt == null,
@@ -102,5 +183,6 @@ export function toDto(storeId: string, shift: ShiftRow | null): StoreShiftDto {
     openedByName: personName(shift?.openedBy ?? null),
     closedAt: shift?.closedAt?.toISOString() ?? null,
     closedByName: personName(shift?.closedBy ?? null),
+    busy,
   };
 }

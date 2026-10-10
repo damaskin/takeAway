@@ -26,6 +26,12 @@ export class BrandScopeService {
    * Returns the brand-id set the user can see. `null` = no filter (super-admin).
    */
   async resolveBrandIds(user: AuthenticatedUser): Promise<string[] | null> {
+    // A kitchen PIN session works one store: its brand and nothing else,
+    // even for someone who also works for another brand.
+    if (user.kdsStoreId) {
+      const store = await this.prisma.store.findUnique({ where: { id: user.kdsStoreId }, select: { brandId: true } });
+      return store ? [store.brandId] : [];
+    }
     if (user.role === Role.SUPER_ADMIN) return null;
     if (user.role === Role.BRAND_ADMIN) {
       const brands = await this.prisma.brand.findMany({

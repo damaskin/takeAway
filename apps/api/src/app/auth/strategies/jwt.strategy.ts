@@ -9,6 +9,8 @@ import { UsersService } from '../../users/users.service';
 interface JwtPayload {
   sub: string;
   jti: string;
+  /** Present on a kitchen PIN session: the one store it works. See TokensService.SessionScope. */
+  kds?: string;
 }
 
 export interface AuthenticatedUser {
@@ -17,6 +19,12 @@ export interface AuthenticatedUser {
   email: string | null;
   name: string | null;
   role: Role;
+  /**
+   * Set when the session was opened with a kitchen PIN: it reaches only the
+   * endpoints marked `@KdsSessionAllowed()` and only this store
+   * (KdsSessionGuard). Absent on an email + password session.
+   */
+  kdsStoreId?: string;
 }
 
 @Injectable()
@@ -37,6 +45,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user || user.blockedAt) {
       throw new UnauthorizedException('User not found or blocked');
     }
-    return { id: user.id, phone: user.phone, email: user.email, name: user.name, role: user.role };
+    const authenticated: AuthenticatedUser = {
+      id: user.id,
+      phone: user.phone,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+    if (typeof payload.kds === 'string' && payload.kds) authenticated.kdsStoreId = payload.kds;
+    return authenticated;
   }
 }

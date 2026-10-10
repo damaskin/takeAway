@@ -24,6 +24,8 @@ interface OrderStatusPayload {
 
 interface StoreLoadPayload {
   storeId: string;
+  /** The kitchen marked the store «Загружены» (status OVERLOADED). */
+  busy: boolean;
   busyMeter: number;
   currentEtaSeconds: number;
 }
@@ -91,7 +93,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
     try {
       const secret = this.config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access';
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token, { secret });
+      const payload = await this.jwt.verifyAsync<{ sub: string; kds?: string }>(token, { secret });
       // Same rule as the HTTP JWT strategy: a blocked or deleted account's
       // access token is still signed and unexpired for a few minutes, and
       // must not open a socket in that window.
@@ -101,6 +103,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         return;
       }
       client.data['userId'] = payload.sub;
+      // A kitchen PIN session follows its own store's kitchen and nothing else.
+      if (typeof payload.kds === 'string' && payload.kds) client.data['kdsStoreId'] = payload.kds;
       client.join(this.userRoom(payload.sub));
       this.logger.debug(`WS connected: ${client.id} (user ${payload.sub})`);
     } catch {
@@ -178,6 +182,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   async subscribeToKds(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
     const userId = client.data['userId'] as string | undefined;
     if (!userId || !body?.storeId) return { ok: false };
+    const kdsStoreId = client.data['kdsStoreId'] as string | undefined;
+    if (kdsStoreId && kdsStoreId !== body.storeId) return { ok: false };
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -223,6 +229,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   async subscribeToDispatch(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
     const userId = client.data['userId'] as string | undefined;
     if (!userId || !body?.storeId) return { ok: false };
+    // The delivery queue is not the kitchen board; a PIN session does not follow it.
+    if (client.data['kdsStoreId']) return { ok: false };
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

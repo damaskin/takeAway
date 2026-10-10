@@ -12,14 +12,17 @@ function userWith(role: Role, id = 'u1'): AuthenticatedUser {
 describe('BrandScopeService', () => {
   let brandFindMany: jest.Mock;
   let userStoreFindMany: jest.Mock;
+  let storeFindUnique: jest.Mock;
   let service: BrandScopeService;
 
   beforeEach(() => {
     brandFindMany = jest.fn();
     userStoreFindMany = jest.fn();
+    storeFindUnique = jest.fn();
     const prisma = {
       brand: { findMany: brandFindMany },
       userStore: { findMany: userStoreFindMany },
+      store: { findUnique: storeFindUnique },
     } as unknown as PrismaService;
     service = new BrandScopeService(prisma);
   });
@@ -29,6 +32,20 @@ describe('BrandScopeService', () => {
       const scope = await service.resolveBrandIds(userWith(Role.SUPER_ADMIN));
       expect(scope).toBeNull();
       expect(brandFindMany).not.toHaveBeenCalled();
+    });
+
+    it('narrows a kitchen PIN session to the brand of its store, whatever else the person works for', async () => {
+      storeFindUnique.mockResolvedValue({ brandId: 'b2' });
+      userStoreFindMany.mockResolvedValue([{ store: { brandId: 'b1' } }, { store: { brandId: 'b2' } }]);
+      const scope = await service.resolveBrandIds({ ...userWith(Role.STORE_MANAGER), kdsStoreId: 'store-2' });
+      expect(scope).toEqual(['b2']);
+      expect(storeFindUnique).toHaveBeenCalledWith({ where: { id: 'store-2' }, select: { brandId: true } });
+      expect(userStoreFindMany).not.toHaveBeenCalled();
+    });
+
+    it('gives a PIN session of a store that no longer exists nothing at all', async () => {
+      storeFindUnique.mockResolvedValue(null);
+      await expect(service.resolveBrandIds({ ...userWith(Role.STAFF), kdsStoreId: 'gone' })).resolves.toEqual([]);
     });
 
     it('resolves BRAND_ADMIN to the brands they own', async () => {

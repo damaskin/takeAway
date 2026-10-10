@@ -1,12 +1,21 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Locale, OAuthProvider, Role, type User } from '@prisma/client';
 
+import { adminAppUrl } from '../common/config/admin-app-url';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
 import { KDS_PIN_LEGACY_SENTINEL_PREFIX, KdsPinService } from './services/kds-pin.service';
+import { KitchenDeviceService, unknownDevice } from './services/kitchen-device.service';
 import {
   OAuthIdentityService,
   type OAuthIdentity,
@@ -45,6 +54,7 @@ export class AuthService {
     private readonly kdsPins: KdsPinService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly kitchenDevices: KitchenDeviceService,
   ) {}
 
   /**
@@ -75,18 +85,39 @@ export class AuthService {
   }
 
   /**
-   * KDS PIN login. Issued from the kitchen tablet's lockscreen — short
-   * numeric PIN scoped to one store. Returns the same shape as the password
-   * login so the KDS app can reuse the same JWT/refresh wiring; the device
-   * is tagged `WEB` for now (KDS web runs in a browser).
+   * KDS PIN login, from the kitchen tablet's lockscreen: a short numeric PIN
+   * scoped to one store, accepted only from a tablet bound to that store's
+   * brand (see KitchenDeviceService). Returns the same shape as the password
+   * login so the admin reuses its JWT/refresh wiring, but the session is
+   * narrowed to the store: it opens that store's kitchen board and
+   * stop-list and nothing else (KdsSessionGuard).
+   *
+   * Order matters: the tablet is checked before any PIN is counted, so
+   * nobody outside the brand's tablets can run up a store's failures, and
+   * failures are counted per store *and* tablet (KdsPinService).
    */
-  async loginWithKdsPin(storeId: string, pin: string): Promise<AuthSessionDto> {
+  async loginWithKdsPin(storeId: string, pin: string, deviceToken?: string): Promise<AuthSessionDto> {
     const generic = new UnauthorizedException('Invalid PIN');
     // No secret, no PIN sign-in: 503 KDS_PIN_NOT_CONFIGURED before anything
     // touches the database.
     this.kdsPins.assertConfigured();
+    if (!deviceToken) {
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        error: 'Unauthorized',
+        code: 'KDS_DEVICE_REQUIRED',
+        message: 'This tablet is not bound to a business yet',
+      });
+    }
+    const tablet = await this.kitchenDevices.resolve(deviceToken);
+    if (!tablet) throw unknownDevice();
     if (!this.kdsPins.isValidFormat(pin)) throw generic;
-    await this.kdsPins.assertNotLocked(storeId);
+
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
+    // A store of another brand is not on this tablet's picker; refuse it
+    // without counting a failure against anyone.
+    if (!store || store.brandId !== tablet.brandId) throw generic;
+    await this.kdsPins.assertNotLocked(storeId, tablet.id);
 
     const expected = this.kdsPins.hash(storeId, pin);
     const user = await this.prisma.user.findFirst({
@@ -99,20 +130,21 @@ export class AuthService {
       },
     });
     if (!user || !this.kdsPins.isUsableHash(user.kdsPinHash)) {
-      await this.kdsPins.recordFailure(storeId);
+      await this.kdsPins.recordFailure(storeId, tablet.id);
       throw generic;
     }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
     if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
-    await this.kdsPins.clearFailures(storeId);
+    await this.kdsPins.clearFailures(storeId, tablet.id);
+    await this.kitchenDevices.touch(tablet.id);
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
     });
-    const tokens = await this.tokens.issue(user.id, device.id);
-    return { ...tokens, user: this.toAuthUser(user) };
+    const tokens = await this.tokens.issue(user.id, device.id, { kdsStoreId: storeId });
+    return { ...tokens, user: this.toAuthUser(user), kdsStoreId: storeId };
   }
 
   /**
@@ -139,8 +171,27 @@ export class AuthService {
    * Issues a reset token for the given email. Always returns the same shape
    * even if the email is unknown — clients show a generic "if the address
    * exists we emailed a link" so attackers can't enumerate accounts.
+   *
+   * Except when no email can leave this server at all: without SMTP, or in
+   * production without ADMIN_APP_URL for the link, the request used to
+   * answer 204 and the page said "check your inbox" for a letter that was
+   * never sent. Now it answers 503 `PASSWORD_RESET_UNAVAILABLE` up front —
+   * the same for every address, so it tells nothing about accounts.
    */
   async requestPasswordReset(email: string): Promise<void> {
+    const base = adminAppUrl(this.config);
+    const mailReady = this.mail.isConfigured();
+    if (!mailReady || !base) {
+      const missing = [mailReady ? null : 'SMTP_HOST', base ? null : 'ADMIN_APP_URL'].filter(Boolean).join(', ');
+      this.logger.error(`Password reset requested, but no reset email can be sent: ${missing} not set`);
+      throw new ServiceUnavailableException({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        error: 'Service Unavailable',
+        code: 'PASSWORD_RESET_UNAVAILABLE',
+        message: 'Password reset by email is not available on this server',
+      });
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user || !PASSWORD_LOGIN_ROLES.has(user.role)) {
       this.logger.debug(`Password reset requested for unknown/non-staff email: ${email}`);
@@ -156,8 +207,7 @@ export class AuthService {
       },
     });
 
-    const base = this.config.get<string>('ADMIN_APP_URL') ?? 'http://localhost:4202';
-    const resetUrl = `${base.replace(/\/$/, '')}/reset-password?token=${raw}`;
+    const resetUrl = `${base}/reset-password?token=${raw}`;
     await this.mail.sendPasswordReset(user.email ?? email, resetUrl);
   }
 

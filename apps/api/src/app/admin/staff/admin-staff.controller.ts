@@ -5,13 +5,19 @@ import { IsString, Matches } from 'class-validator';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { KdsPinService } from '../../auth/services/kds-pin.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminStaffService } from './admin-staff.service';
 import { AddStaffDto, ChangeStaffRoleDto } from './dto/admin-staff.dto';
 
+/**
+ * A new PIN is exactly 6 digits — PINs set earlier with 4 or 5 keep working
+ * on the tablet, but none are handed out any more. The digits-only shape is
+ * checked here; the "not 123456" rule in the handler, with its own code.
+ */
 class SetKdsPinDto {
   @IsString()
-  @Matches(/^[0-9]{4,6}$/)
+  @Matches(/^[0-9]{6}$/, { message: 'pin must be exactly 6 digits' })
   pin!: string;
 }
 
@@ -20,7 +26,10 @@ class SetKdsPinDto {
 @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER)
 @Controller('admin/stores/:storeId/staff')
 export class AdminStaffController {
-  constructor(private readonly staff: AdminStaffService) {}
+  constructor(
+    private readonly staff: AdminStaffService,
+    private readonly kdsPins: KdsPinService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Param('storeId') storeId: string) {
@@ -65,6 +74,8 @@ export class AdminStaffController {
     @Param('userId') userId: string,
     @Body() dto: SetKdsPinDto,
   ): Promise<void> {
+    // 400 KDS_PIN_FORMAT / KDS_PIN_TOO_SIMPLE before anything is looked up.
+    this.kdsPins.assertNewPinAllowed(dto.pin);
     await this.staff.setKdsPin(storeId, userId, dto.pin, user);
   }
 
