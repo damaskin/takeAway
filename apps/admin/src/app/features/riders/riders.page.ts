@@ -11,8 +11,8 @@ import { AdminRidersApi, type RiderRosterEntryDto } from '../../core/riders/admi
  *
  * Lets a BRAND_ADMIN / SUPER_ADMIN pick a store from the dropdown and
  * manage the `UserStore` pivot for users with `role = RIDER`:
- *   - Add by phone (E.164). Creates a RIDER user if none exists; promotes
- *     an existing CUSTOMER. Refuses to downgrade other staff roles.
+ *   - Add by phone (E.164). Creates a RIDER user if none exists; any other
+ *     existing account but a rider of the same brand is refused.
  *   - Remove from the store's roster (doesn't revoke the RIDER role).
  */
 @Component({

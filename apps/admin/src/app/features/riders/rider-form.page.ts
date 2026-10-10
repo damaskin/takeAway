@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import { apiErrorCode } from '../../core/http/api-error';
 import { extractMessage } from '../../core/http/extract-message';
 import { AdminRidersApi } from '../../core/riders/admin-riders.service';
 import { FormPageComponent } from '../../shared/form-page.component';
@@ -111,7 +112,11 @@ export class RiderFormPage {
       next: () => this.router.navigate(['/riders'], { queryParams: { store: v.storeId } }),
       error: (err) => {
         this.saving.set(false);
-        this.error.set(extractMessage(err) ?? this.translate.instant('admin.riders.addFailed'));
+        this.error.set(
+          apiErrorCode(err) === 'RIDER_PHONE_TAKEN'
+            ? this.translate.instant('admin.riders.phoneTaken')
+            : (extractMessage(err) ?? this.translate.instant('admin.riders.addFailed')),
+        );
       },
     });
   }
