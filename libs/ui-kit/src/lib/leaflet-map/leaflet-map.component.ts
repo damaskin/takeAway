@@ -12,6 +12,7 @@ import {
 import * as L from 'leaflet';
 
 import { MAP_TILES, tileLayerWithFallback } from './map-tiles';
+import { storePinIcon, storePinKind, type StorePinSells } from './store-pin';
 
 export interface MapMarker {
   id: string;
@@ -19,6 +20,11 @@ export interface MapMarker {
   lng: number;
   label?: string;
   kind?: 'store' | 'user';
+  /**
+   * What the store sells: the pin then shows a cup, a fork and knife, or
+   * both. Left out (order mini-map, admin picker) it is a plain pin.
+   */
+  sells?: readonly StorePinSells[];
 }
 
 export interface LatLng {
@@ -66,6 +72,8 @@ export class LeafletMapComponent {
   private markerLayer?: L.LayerGroup;
   private pickMarker?: L.Marker;
   private resizeObserver?: ResizeObserver;
+  /** The view has been fitted to markers once; a filter emptying them later leaves it there. */
+  private framed = false;
 
   /** First marker / explicit center / user position / fallback. */
   private readonly resolvedCenter = computed<LatLng>(() => {
@@ -139,7 +147,8 @@ export class LeafletMapComponent {
     const points: L.LatLngExpression[] = [];
 
     for (const m of this.markers()) {
-      const marker = L.marker([m.lat, m.lng], { icon: storeIcon(), title: m.label ?? '' });
+      const icon = m.sells ? storePinIcon(storePinKind(m.sells)) : storeIcon();
+      const marker = L.marker([m.lat, m.lng], { icon, title: m.label ?? '' });
       marker.on('click', () => this.markerClicked.emit(m.id));
       marker.addTo(layer);
       points.push([m.lat, m.lng]);
@@ -156,10 +165,11 @@ export class LeafletMapComponent {
       map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 16 });
     } else if (only) {
       map.setView(only, this.zoom());
-    } else {
+    } else if (this.center() || !this.framed) {
       const c = this.resolvedCenter();
       map.setView([c.lat, c.lng], this.zoom());
     }
+    if (points.length > 0) this.framed = true;
   }
 
   private placePickMarker(lat: number, lng: number, emit: boolean): void {
