@@ -253,30 +253,53 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/staff/staff-member.page').then((m) => m.StaffMemberPage),
       },
       // PRO sections: a plan without them gets the upgrade page on the same path.
+      // «Акции» — promo codes (PRO) and gift cards (every plan) as tabs. The
+      // forms come first and stand alone: the tabbed section below would
+      // otherwise take `promotions/promo` and leave `/new` unmatched.
       ...planGated('promo', {
-        path: 'promo',
+        path: 'promotions/promo/new',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'promo' satisfies NavKey },
-        loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
+        loadComponent: () => import('./features/promo/promo-form.page').then((m) => m.PromoFormPage),
       }),
       ...planGated('promo', {
-        path: 'promo/new',
+        path: 'promotions/promo/:promoId',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'promo' satisfies NavKey },
         loadComponent: () => import('./features/promo/promo-form.page').then((m) => m.PromoFormPage),
       }),
       {
-        path: 'gift-cards',
-        canActivate: [adminPermissionGuard],
-        data: { navKey: 'giftCards' satisfies NavKey },
-        loadComponent: () => import('./features/gift-cards/gift-cards.page').then((m) => m.AdminGiftCardsPage),
-      },
-      {
-        path: 'gift-cards/new',
+        path: 'promotions/gift-cards/new',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'giftCards' satisfies NavKey },
         loadComponent: () => import('./features/gift-cards/gift-card-form.page').then((m) => m.GiftCardFormPage),
       },
+      {
+        path: 'promotions',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'promotions' satisfies NavKey },
+        loadComponent: () => import('./features/promotions/promotions.page').then((m) => m.PromotionsPage),
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'promo' },
+          ...planGated('promo', {
+            path: 'promo',
+            canActivate: [adminPermissionGuard],
+            data: { navKey: 'promo' satisfies NavKey },
+            loadComponent: () => import('./features/promo/promo.page').then((m) => m.AdminPromoPage),
+          }),
+          {
+            path: 'gift-cards',
+            canActivate: [adminPermissionGuard],
+            data: { navKey: 'giftCards' satisfies NavKey },
+            loadComponent: () => import('./features/gift-cards/gift-cards.page').then((m) => m.AdminGiftCardsPage),
+          },
+        ],
+      },
+      // The addresses from before «Акции» — bookmarks, links already sent.
+      { path: 'promo', pathMatch: 'full', redirectTo: 'promotions/promo' },
+      { path: 'promo/new', pathMatch: 'full', redirectTo: 'promotions/promo/new' },
+      { path: 'gift-cards', pathMatch: 'full', redirectTo: 'promotions/gift-cards' },
+      { path: 'gift-cards/new', pathMatch: 'full', redirectTo: 'promotions/gift-cards/new' },
       ...planGated('campaigns', {
         path: 'campaigns',
         canActivate: [adminPermissionGuard],

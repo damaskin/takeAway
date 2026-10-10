@@ -259,14 +259,9 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.riders,
     },
     { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ADMIN_ROLES.staff },
-    {
-      icon: '🎟',
-      label: 'admin.nav.promo',
-      link: '/promo',
-      roles: ADMIN_ROLES.promo,
-      planFeature: NAV_PLAN_FEATURE.promo,
-    },
-    { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ADMIN_ROLES.giftCards },
+    // Promo codes (PRO) and gift cards (every plan) as tabs of one section;
+    // the promo tab carries the PRO lock, so the item itself has none.
+    { icon: '🎟', label: 'admin.nav.promotions', link: '/promotions', roles: ADMIN_ROLES.promotions },
     {
       icon: '📣',
       label: 'admin.nav.campaigns',

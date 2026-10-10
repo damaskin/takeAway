@@ -26,6 +26,7 @@ export type NavKey =
   | 'staff'
   | 'promo'
   | 'giftCards'
+  | 'promotions'
   | 'campaigns'
   | 'analytics'
   | 'customers'
@@ -63,6 +64,9 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   staff: [SA, BA, SM],
   promo: [SA, BA],
   giftCards: [SA, BA],
+  // «Акции»: promo codes and gift cards under one menu item, each tab still
+  // guarded by its own key. Whoever may open either tab sees the section.
+  promotions: [SA, BA],
   campaigns: [SA, BA],
   analytics: [SA, BA],
   customers: [SA, BA],
@@ -103,8 +107,9 @@ const NAV_LINKS: Record<NavKey, string> = {
   dispatch: '/dispatch',
   riders: '/riders',
   staff: '/staff',
-  promo: '/promo',
-  giftCards: '/gift-cards',
+  promo: '/promotions/promo',
+  giftCards: '/promotions/gift-cards',
+  promotions: '/promotions',
   campaigns: '/campaigns',
   analytics: '/analytics',
   customers: '/customers',
