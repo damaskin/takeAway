@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/config/env.dart';
 import '../../core/network/tile_client.dart';
 import '../../core/theme/tokens.dart';
+import '../store_kinds.dart';
 
 /// Map tiles — our caching proxy for OpenStreetMap unless the build names
 /// another server (see [Env.mapTileUrl]).
@@ -136,18 +137,21 @@ class _SharedTileProvider extends NetworkTileProvider {
 /// Who serves the tiles, as their terms require.
 Widget mapAttribution() => SimpleAttributionWidget(source: Text(Env.mapTileAttribution));
 
-/// Pin in brand colours; [highlighted] grows it for the selected store.
+/// Pin in brand colours, showing what the store sells (see
+/// [storePinIcons]); [highlighted] grows it for the selected store.
 class StorePin extends StatelessWidget {
-  const StorePin({this.color, this.highlighted = false, this.icon = Icons.local_cafe_rounded, super.key});
+  const StorePin({this.color, this.highlighted = false, this.kinds = const {StoreKind.coffee}, super.key});
 
   final Color? color;
   final bool highlighted;
-  final IconData icon;
+  final Set<StoreKind> kinds;
 
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
     final fill = color ?? brand.caramel;
+    final icons = storePinIcons(kinds);
+    final badge = icons.badge;
     return AnimatedScale(
       scale: highlighted ? 1.25 : 1,
       duration: Motion.medium,
@@ -156,16 +160,42 @@ class StorePin extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: fill,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: brand.softShadow,
+          SizedBox.square(
+            dimension: 38,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: fill,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: brand.softShadow,
+                  ),
+                  child: Icon(icons.icon, color: Colors.white, size: 19),
+                ),
+                // A store selling food as well: the fork and knife on a white
+                // disc over the pin's edge, in the pin's own colour, so a
+                // closed store's badge greys out with it.
+                if (badge != null)
+                  Positioned(
+                    right: -4,
+                    bottom: -2,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: fill, width: 1.5),
+                      ),
+                      child: Icon(badge, color: fill, size: 11),
+                    ),
+                  ),
+              ],
             ),
-            child: Icon(icon, color: Colors.white, size: 19),
           ),
           CustomPaint(size: const Size(12, 7), painter: _TailPainter(fill)),
         ],

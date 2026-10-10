@@ -67,7 +67,7 @@
   "storesSearchHint": "Название или адрес",
   "storesFilterAll": "Все",
   "storesFilterOpen": "Открыты",
-  "storesNearMe": "Рядом",
+  "storesNearMe": "Рядом со мной",
   "storesEmpty": "Точек по запросу не нашлось.",
   "storesLoadFailed": "Не удалось загрузить точки.",
   "storeStatusOpen": "Открыто",
@@ -373,5 +373,15 @@
   "orderReadyHeadline": "Ваш заказ готов",
   "orderReadySlogan": "Вы простояли в очереди 0 минут. Наслаждайтесь!",
   "orderPickedUpSlogan": "Ни минуты в очереди — так и задумано. Хорошего дня!",
-  "notificationsDenied": "Уведомления выключены в настройках телефона."
+  "notificationsDenied": "Уведомления выключены в настройках телефона.",
+  "storesRadius500": "500 м",
+  "storesRadius1km": "1 км",
+  "storesRadiusAll": "Все",
+  "storesKindAll": "Все",
+  "storesKindCoffee": "Кофе",
+  "storesKindFood": "Еда",
+  "storesNearbyEmpty": "В радиусе {radius} ничего нет",
+  "storesShowRadius": "Показать {radius}",
+  "storesShowAll": "Показать все точки",
+  "locationUnavailable": "Не получилось определить, где вы. Попробуйте ещё раз чуть позже."
 }

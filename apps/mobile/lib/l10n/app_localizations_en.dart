@@ -1236,4 +1236,38 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notificationsDenied => 'Notifications are turned off in your phone\'s settings.';
+
+  @override
+  String get storesRadius500 => '500 m';
+
+  @override
+  String get storesRadius1km => '1 km';
+
+  @override
+  String get storesRadiusAll => 'All';
+
+  @override
+  String get storesKindAll => 'All';
+
+  @override
+  String get storesKindCoffee => 'Coffee';
+
+  @override
+  String get storesKindFood => 'Food';
+
+  @override
+  String storesNearbyEmpty(String radius) {
+    return 'Nothing within $radius';
+  }
+
+  @override
+  String storesShowRadius(String radius) {
+    return 'Show $radius';
+  }
+
+  @override
+  String get storesShowAll => 'Show all stores';
+
+  @override
+  String get locationUnavailable => 'Couldn\'t tell where you are. Try again in a moment.';
 }

@@ -8,7 +8,9 @@ NestJS API as the web app and the Telegram Mini App.
 
 - **Onboarding** — three screens, skippable, shown once.
 - **Stores** — map (OpenStreetMap) and list, nearest first when location is
-  allowed, "open now" filter, route to the store in Apple / Google Maps.
+  allowed; "near me" with a 500 m / 1 km radius (remembered on the device),
+  "coffee / food" and "open now" filters, pins that show what a store sells,
+  route to the store in Apple / Google Maps.
 - **Menu** — categories with a scroll-spy bar, search, quick add for items
   without options, product screen with sizes, milks and extras, allergens and
   nutrition. Prices are always in the store's currency.

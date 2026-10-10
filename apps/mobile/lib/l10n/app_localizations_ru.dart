@@ -235,7 +235,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storesFilterOpen => 'Открыты';
 
   @override
-  String get storesNearMe => 'Рядом';
+  String get storesNearMe => 'Рядом со мной';
 
   @override
   String get storesEmpty => 'Точек по запросу не нашлось.';
@@ -1256,4 +1256,38 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get notificationsDenied => 'Уведомления выключены в настройках телефона.';
+
+  @override
+  String get storesRadius500 => '500 м';
+
+  @override
+  String get storesRadius1km => '1 км';
+
+  @override
+  String get storesRadiusAll => 'Все';
+
+  @override
+  String get storesKindAll => 'Все';
+
+  @override
+  String get storesKindCoffee => 'Кофе';
+
+  @override
+  String get storesKindFood => 'Еда';
+
+  @override
+  String storesNearbyEmpty(String radius) {
+    return 'В радиусе $radius ничего нет';
+  }
+
+  @override
+  String storesShowRadius(String radius) {
+    return 'Показать $radius';
+  }
+
+  @override
+  String get storesShowAll => 'Показать все точки';
+
+  @override
+  String get locationUnavailable => 'Не получилось определить, где вы. Попробуйте ещё раз чуть позже.';
 }

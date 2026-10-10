@@ -735,5 +735,29 @@
   "orderReadyHeadline": "Your order is ready",
   "orderReadySlogan": "You spent 0 minutes in the queue. Enjoy!",
   "orderPickedUpSlogan": "Not a minute in the queue — just as planned. Have a great day!",
-  "notificationsDenied": "Notifications are turned off in your phone's settings."
+  "notificationsDenied": "Notifications are turned off in your phone's settings.",
+  "storesRadius500": "500 m",
+  "storesRadius1km": "1 km",
+  "storesRadiusAll": "All",
+  "storesKindAll": "All",
+  "storesKindCoffee": "Coffee",
+  "storesKindFood": "Food",
+  "storesNearbyEmpty": "Nothing within {radius}",
+  "@storesNearbyEmpty": {
+    "placeholders": {
+      "radius": {
+        "type": "String"
+      }
+    }
+  },
+  "storesShowRadius": "Show {radius}",
+  "@storesShowRadius": {
+    "placeholders": {
+      "radius": {
+        "type": "String"
+      }
+    }
+  },
+  "storesShowAll": "Show all stores",
+  "locationUnavailable": "Couldn't tell where you are. Try again in a moment."
 }

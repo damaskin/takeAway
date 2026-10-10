@@ -10,16 +10,18 @@ import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/directions.dart';
+import '../../shared/store_kinds.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../catalog/catalog_providers.dart';
 import 'map_focus.dart';
+import 'nearby.dart';
 import 'store_widgets.dart';
 
-/// Map of stores with a draggable list over it — search, "open now", and
-/// "near me"; picking a store switches the menu to it. The first screen a
-/// new customer sees after the intro.
+/// Map of stores with a draggable list over it — search, "near me" with a
+/// radius, what the store sells, and "open now"; picking a store switches
+/// the menu to it. The first screen a new customer sees after the intro.
 class StoresScreen extends ConsumerStatefulWidget {
   const StoresScreen({super.key});
 
@@ -34,9 +36,17 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
   final _map = MapController();
   final _sheet = DraggableScrollableController();
   final _search = TextEditingController();
+
+  /// The search bar and filters over the map, which the camera keeps pins
+  /// clear of.
+  final _overlay = GlobalKey();
   ScrollController? _list;
   bool _openOnly = false;
+  KindFilter _kind = KindFilter.all;
   bool _mapReady = false;
+
+  /// Asking the phone where the customer is.
+  bool _locating = false;
 
   /// Whether the camera has been fitted to the stores yet. The list may land
   /// after the map is ready (a cold start always does), so the first fit
@@ -58,25 +68,32 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
     super.dispose();
   }
 
-  List<StoreWithDistance> _filter(List<StoreWithDistance> all) {
+  /// The radius in force: the one chosen, once the customer's location is
+  /// known — until then the map works as it always has.
+  NearbyRadius _radius(NearbyRadius chosen, LatLng? me) => me == null ? NearbyRadius.all : chosen;
+
+  List<StoreWithDistance> _filter(List<StoreWithDistance> all, NearbyRadius radius) {
     final q = _search.text.trim().toLowerCase();
     final list = all.where((item) {
       final s = item.store;
       if (_openOnly && !s.isOpen) return false;
+      if (!_kind.matches(s)) return false;
+      if (!isWithin(item, radius.meters)) return false;
       if (q.isEmpty) return true;
       return '${s.name} ${s.addressLine} ${s.city}'.toLowerCase().contains(q);
     }).toList();
-    // Stores taking orders first, each group in the provider's order
-    // (nearest, or shortest wait); then the pin the customer just tapped.
-    final open = [
-      for (final i in list)
-        if (i.store.isOpen) i,
-    ];
-    final closed = [
-      for (final i in list)
-        if (!i.store.isOpen) i,
-    ];
-    final ordered = [...open, ...closed];
+    // Near me: nearest first, as the provider sorts them, open or not — the
+    // closed ones are greyed out where they are. Otherwise stores taking
+    // orders first, each group in the provider's order (nearest, or shortest
+    // wait). Then the pin the customer just tapped.
+    final ordered = radius.meters != null
+        ? list
+        : [
+            for (final i in list)
+              if (i.store.isOpen) i,
+            for (final i in list)
+              if (!i.store.isOpen) i,
+          ];
     final lifted = ordered.indexWhere((i) => i.store.id == _lifted);
     if (lifted > 0) ordered.insert(0, ordered.removeAt(lifted));
     return ordered;
@@ -125,8 +142,35 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
     context.go(Routes.menu);
   }
 
+  /// Keeps every pin clear of the search bar and filters on top and the
+  /// sheet below, where a pin can neither be seen nor tapped. A pin stands
+  /// above its point, so the top keeps its height free as well.
+  EdgeInsets _cameraPadding() {
+    final screen = MediaQuery.sizeOf(context);
+    final overlay = _overlay.currentContext?.findRenderObject();
+    final overlayBottom = overlay is RenderBox && overlay.hasSize
+        ? overlay.localToGlobal(Offset(0, overlay.size.height)).dy
+        : MediaQuery.paddingOf(context).top + 144;
+    return EdgeInsets.fromLTRB(48, overlayBottom + 64, 48, screen.height * StoresScreen.focusSheetSize + 24);
+  }
+
+  /// Points the camera at what the customer asked to see: the circle around
+  /// them in "near me", otherwise the stores around them (see [mapFocus]).
+  void _fitCamera() {
+    if (!_mapReady || !mounted) return;
+    final me = ref.read(userLocationProvider);
+    final meters = _radius(ref.read(nearbyRadiusProvider), me).meters;
+    if (me != null && meters != null) {
+      _fitted = true;
+      _map.fitCamera(CameraFit.bounds(bounds: radiusBounds(me, meters), padding: _cameraPadding(), maxZoom: 17));
+      return;
+    }
+    final stores = ref.read(sortedStoresProvider).valueOrNull;
+    if (stores == null) return;
+    _fitAll(_filter(stores, NearbyRadius.all), me);
+  }
+
   void _fitAll(List<StoreWithDistance> list, LatLng? me) {
-    if (!_mapReady) return;
     final points = mapFocus([
       for (final item in list)
         if (item.store.hasLocation) LatLng(item.store.latitude, item.store.longitude),
@@ -137,25 +181,50 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
       _map.move(points.first, 15);
       return;
     }
-    // Keep every pin clear of the search bar on top and the sheet below,
-    // where a pin can neither be seen nor tapped.
-    final screen = MediaQuery.sizeOf(context);
-    final top = MediaQuery.paddingOf(context).top;
-    _map.fitCamera(
-      CameraFit.coordinates(
-        coordinates: points,
-        padding: EdgeInsets.fromLTRB(48, top + 96, 48, screen.height * StoresScreen.focusSheetSize + 24),
-        maxZoom: 16,
-      ),
-    );
+    _map.fitCamera(CameraFit.coordinates(coordinates: points, padding: _cameraPadding(), maxZoom: 16));
   }
 
   /// Fits the camera once both the map and the stores are there.
   void _initialFit() {
-    if (_fitted || !_mapReady || !mounted) return;
-    final stores = ref.read(sortedStoresProvider).valueOrNull;
-    if (stores == null) return;
-    _fitAll(stores, ref.read(userLocationProvider));
+    if (!_fitted) _fitCamera();
+  }
+
+  /// Asks where the customer is, prompting for access if needed. Null when
+  /// it cannot tell; a snack then says why and how to turn location on.
+  Future<LatLng?> _locate() async {
+    setState(() => _locating = true);
+    final result = await ref.read(userLocationProvider.notifier).request();
+    if (!mounted) return null;
+    setState(() => _locating = false);
+    if (!result.ok) showLocationProblem(context, ref, result.status);
+    return result.position;
+  }
+
+  /// "Near me": the circle around the customer at the radius they chose
+  /// last (1 km the first time). Without location the map stays as it was.
+  Future<void> _nearMe() async {
+    if (_locating) return;
+    if (await _locate() == null || !mounted) return;
+    final radius = ref.read(nearbyRadiusProvider.notifier);
+    radius.select(radius.nearby);
+    _fitCamera();
+  }
+
+  /// A radius chip. There is no circle without the customer's location, so
+  /// it asks for it first; when that fails the map stays as it was.
+  Future<void> _pickRadius(NearbyRadius radius) async {
+    if (radius.meters != null && ref.read(userLocationProvider) == null) {
+      if (_locating) return;
+      if (await _locate() == null || !mounted) return;
+    }
+    ref.read(nearbyRadiusProvider.notifier).select(radius);
+    _fitCamera();
+  }
+
+  void _pickKind(KindFilter kind) {
+    if (kind == _kind) return;
+    setState(() => _kind = kind);
+    _fitCamera();
   }
 
   Future<void> _refresh() async {
@@ -179,13 +248,15 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
     final brand = context.brand;
     final async = ref.watch(sortedStoresProvider);
     final me = ref.watch(userLocationProvider);
+    final radius = _radius(ref.watch(nearbyRadiusProvider), me);
+    final meters = radius.meters;
     final activeId = ref.watch(activeStoreProvider)?.id;
-    final list = _filter(async.valueOrNull ?? const []);
+    final list = _filter(async.valueOrNull ?? const [], radius);
     final located = list.where((i) => i.store.hasLocation).toList();
 
     ref
       ..listen(userLocationProvider, (_, next) {
-        if (next != null) _fitAll(list, next);
+        if (next != null) _fitCamera();
       })
       // On a cold start the map is ready long before the stores arrive; the
       // fit in onMapReady then had nothing to fit and the camera stayed on
@@ -201,7 +272,9 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
             child: FlutterMap(
               mapController: _map,
               options: MapOptions(
-                initialCenter: located.isNotEmpty
+                initialCenter: me != null && meters != null
+                    ? me
+                    : located.isNotEmpty
                     ? LatLng(located.first.store.latitude, located.first.store.longitude)
                     : me ?? const LatLng(46.84, 29.63),
                 onMapReady: () {
@@ -212,6 +285,19 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
               ),
               children: [
                 mapTiles(context),
+                if (me != null && meters != null)
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: me,
+                        radius: meters,
+                        useRadiusInMeter: true,
+                        color: brand.caramel.withValues(alpha: 0.08),
+                        borderColor: brand.caramel.withValues(alpha: 0.6),
+                        borderStrokeWidth: 1.5,
+                      ),
+                    ],
+                  ),
                 MarkerLayer(
                   markers: [
                     if (me != null) Marker(point: me, width: 24, height: 24, child: const UserDot()),
@@ -231,6 +317,7 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
                           child: StorePin(
                             color: _pinColor(brand, item.store),
                             highlighted: item.store.id == _focused || item.store.id == activeId,
+                            kinds: storeKinds(item.store),
                           ),
                         ),
                       ),
@@ -242,42 +329,37 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
           ),
           SafeArea(
             child: Padding(
+              key: _overlay,
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Material(
-                      color: Colors.transparent,
-                      child: TextField(
-                        controller: _search,
-                        onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(
-                          hintText: l10n.storesSearchHint,
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: _search.text.isEmpty
-                              ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.close_rounded),
-                                  onPressed: () => setState(_search.clear),
-                                ),
-                        ),
+                  Material(
+                    color: Colors.transparent,
+                    child: TextField(
+                      controller: _search,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: l10n.storesSearchHint,
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _search.text.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () => setState(_search.clear),
+                              ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    style: IconButton.styleFrom(backgroundColor: brand.foam, foregroundColor: brand.caramel),
-                    tooltip: l10n.storesNearMe,
-                    onPressed: () async {
-                      final result = await ref.read(userLocationProvider.notifier).request();
-                      if (!context.mounted) return;
-                      if (!result.ok) {
-                        showLocationProblem(context, ref, result.status);
-                      } else {
-                        _fitAll(list, result.position);
-                      }
-                    },
-                    icon: const Icon(Icons.my_location_rounded),
+                  const SizedBox(height: 8),
+                  _FilterBar(
+                    radius: radius,
+                    kind: _kind,
+                    locating: _locating,
+                    onNearMe: _nearMe,
+                    onRadius: _pickRadius,
+                    onKind: _pickKind,
                   ),
                 ],
               ),
@@ -353,11 +435,23 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
                         ),
                         data: (_) => list.isEmpty
                             ? SliverToBoxAdapter(
-                                child: EmptyState(
-                                  icon: Icons.search_off_rounded,
-                                  title: l10n.storesEmpty,
-                                  compact: true,
-                                ),
+                                child: meters != null
+                                    // Nothing in the circle: one tap widens it,
+                                    // instead of pinching the map out.
+                                    ? EmptyState(
+                                        icon: Icons.travel_explore_rounded,
+                                        title: l10n.storesNearbyEmpty(_radiusLabel(l10n, radius)),
+                                        actionLabel: radius.wider == NearbyRadius.all
+                                            ? l10n.storesShowAll
+                                            : l10n.storesShowRadius(_radiusLabel(l10n, radius.wider)),
+                                        onAction: () => _pickRadius(radius.wider),
+                                        compact: true,
+                                      )
+                                    : EmptyState(
+                                        icon: Icons.search_off_rounded,
+                                        title: l10n.storesEmpty,
+                                        compact: true,
+                                      ),
                               )
                             : SliverPadding(
                                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -383,6 +477,120 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+String _radiusLabel(AppLocalizations l10n, NearbyRadius radius) => switch (radius) {
+  NearbyRadius.m500 => l10n.storesRadius500,
+  NearbyRadius.km1 => l10n.storesRadius1km,
+  NearbyRadius.all => l10n.storesRadiusAll,
+};
+
+/// The chips over the map: "near me" with its radius, then what the store
+/// sells. Each group keeps together; on a phone the second one wraps under
+/// the first.
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.radius,
+    required this.kind,
+    required this.locating,
+    required this.onNearMe,
+    required this.onRadius,
+    required this.onKind,
+  });
+
+  final NearbyRadius radius;
+  final KindFilter kind;
+  final bool locating;
+  final VoidCallback onNearMe;
+  final ValueChanged<NearbyRadius> onRadius;
+  final ValueChanged<KindFilter> onKind;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    final nearby = radius != NearbyRadius.all;
+
+    Widget chip({
+      required Key key,
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+      Widget? avatar,
+    }) => ChoiceChip(
+      key: key,
+      label: Text(label),
+      avatar: avatar,
+      selected: selected,
+      onSelected: (_) => onTap(),
+      labelStyle: context.text.labelMedium?.copyWith(color: selected ? Colors.white : brand.textPrimary),
+      side: BorderSide(color: selected ? brand.caramel : brand.borderLight),
+      // Over map tiles a flat chip melts into the streets.
+      elevation: 1.5,
+      pressElevation: 3,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+
+    Icon icon(IconData data, {required bool selected}) =>
+        Icon(data, size: 16, color: selected ? Colors.white : brand.caramel);
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      children: [
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            chip(
+              key: const ValueKey('near-me'),
+              label: l10n.storesNearMe,
+              selected: nearby,
+              onTap: onNearMe,
+              avatar: locating
+                  ? SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: nearby ? Colors.white : brand.caramel),
+                    )
+                  : icon(nearby ? Icons.near_me_rounded : Icons.near_me_outlined, selected: nearby),
+            ),
+            for (final r in NearbyRadius.values)
+              chip(
+                key: ValueKey('radius-${r.key}'),
+                label: _radiusLabel(l10n, r),
+                selected: radius == r,
+                onTap: () => onRadius(r),
+              ),
+          ],
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final k in KindFilter.values)
+              chip(
+                key: ValueKey('kind-${k.name}'),
+                label: switch (k) {
+                  KindFilter.all => l10n.storesKindAll,
+                  KindFilter.coffee => l10n.storesKindCoffee,
+                  KindFilter.food => l10n.storesKindFood,
+                },
+                selected: kind == k,
+                onTap: () => onKind(k),
+                avatar: switch (k.kind) {
+                  final shown? => icon(shown.icon, selected: kind == k),
+                  null => null,
+                },
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -441,7 +649,7 @@ class _StoreRow extends StatelessWidget {
                             ? FilledButton.icon(
                                 onPressed: () => onOrder(store),
                                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-                                icon: const Icon(Icons.local_cafe_rounded),
+                                icon: Icon(storePinIcons(storeKinds(store)).icon),
                                 label: Text(l10n.orderHere),
                               )
                             : FilledButton.icon(

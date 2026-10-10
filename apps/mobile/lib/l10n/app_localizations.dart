@@ -2335,6 +2335,66 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Notifications are turned off in your phone\'s settings.'**
   String get notificationsDenied;
+
+  /// No description provided for @storesRadius500.
+  ///
+  /// In en, this message translates to:
+  /// **'500 m'**
+  String get storesRadius500;
+
+  /// No description provided for @storesRadius1km.
+  ///
+  /// In en, this message translates to:
+  /// **'1 km'**
+  String get storesRadius1km;
+
+  /// No description provided for @storesRadiusAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get storesRadiusAll;
+
+  /// No description provided for @storesKindAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get storesKindAll;
+
+  /// No description provided for @storesKindCoffee.
+  ///
+  /// In en, this message translates to:
+  /// **'Coffee'**
+  String get storesKindCoffee;
+
+  /// No description provided for @storesKindFood.
+  ///
+  /// In en, this message translates to:
+  /// **'Food'**
+  String get storesKindFood;
+
+  /// No description provided for @storesNearbyEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing within {radius}'**
+  String storesNearbyEmpty(String radius);
+
+  /// No description provided for @storesShowRadius.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {radius}'**
+  String storesShowRadius(String radius);
+
+  /// No description provided for @storesShowAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Show all stores'**
+  String get storesShowAll;
+
+  /// No description provided for @locationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t tell where you are. Try again in a moment.'**
+  String get locationUnavailable;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
