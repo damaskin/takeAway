@@ -26,7 +26,7 @@ export const TRANSLATIONS_RU = {
     orderDone: {
       readyTitle: 'Ваш заказ готов.',
       readySlogan: 'Вы простояли в очереди 0 минут. Наслаждайтесь!',
-      pickedUpTitle: 'Приятного аппетита!',
+      pickedUpTitle: 'Заказ выдан. Хорошего дня!',
       pickedUpSlogan: 'Ноль минут в очереди — как и обещали. До встречи!',
     },
     brand: 'takeAway',
@@ -109,6 +109,13 @@ export const TRANSLATIONS_RU = {
       yourLocation: 'Вы здесь',
       locationDenied: 'Местоположение недоступно',
     },
+    /** What a place sells: the chips over the stores map. */
+    storeKinds: {
+      label: 'Что продают',
+      all: 'Все',
+      coffee: 'Кофе',
+      food: 'Еда',
+    },
   },
   nav: {
     menu: 'Меню',
@@ -135,7 +142,7 @@ export const TRANSLATIONS_RU = {
       },
       menu: {
         title: 'Из меню',
-        subtitle: 'Готовим каждый заказ для вас',
+        subtitle: 'Подборка из заведений, которые сейчас принимают заказы',
         cta: 'Посмотреть меню →',
         categories: {
           coffee: 'Кофе',
@@ -149,11 +156,11 @@ export const TRANSLATIONS_RU = {
       howItWorks: {
         title: 'Как это работает',
         step1Title: '1. Выбирайте',
-        step1Body: 'Кофе, блюдо или десерт в приложении.',
+        step1Body: 'Заведение рядом и что хочется: напиток, блюдо или десерт.',
         step2Title: '2. Оплатите',
-        step2Body: 'Картой онлайн или на кассе при получении.',
+        step2Body: 'Картой онлайн — на сайте, в приложении или в Telegram.',
         step3Title: '3. Забирайте',
-        step3Body: 'Минуя очередь, по номеру или QR-коду.',
+        step3Body: 'Сообщим, когда заказ будет готов, — назовите код и заберите без очереди.',
       },
       loyalty: {
         badge: 'Баллы',
@@ -182,7 +189,7 @@ export const TRANSLATIONS_RU = {
       },
       closing: {
         title: 'Предзаказ. Ноль очередей.',
-        subtitle: 'Откройте для себя кофе без ожидания.',
+        subtitle: 'Любимые напитки и еда — без ожидания.',
         ctaGet: 'Установить приложение',
         ctaMenu: 'Посмотреть меню',
       },
@@ -217,7 +224,7 @@ export const TRANSLATIONS_RU = {
         kcal: '{{calories}} ккал',
       },
       placeholders: {
-        notes: 'Есть пожелания? Например, погорячее, меньше пены…',
+        notes: 'Есть пожелания? Например, погорячее или без сахара…',
       },
       cta: {
         add: 'Добавить в корзину — {{total}}',
@@ -244,7 +251,7 @@ export const TRANSLATIONS_RU = {
       slotFull: 'Это окно уже занято',
       prepHint: 'Начнём готовить в {{time}}, чтобы всё было свежим.',
       name: 'Имя на заказе',
-      notes: 'Пожелания для бариста (необязательно)',
+      notes: 'Пожелания к заказу (необязательно)',
       emptyCart: 'Корзина пуста.',
       browseMenu: 'Открыть меню',
       pointsLabel: 'Оплатить баллами',
@@ -368,7 +375,7 @@ export const TRANSLATIONS_RU = {
     },
     business: {
       title: 'Разместите бизнес на takeAway',
-      subtitle: 'Предзаказ для вашей кофейни: гости заказывают заранее и забирают без очереди.',
+      subtitle: 'Предзаказ для вашей кофейни, кафе или пекарни: гости заказывают заранее и забирают без очереди.',
       stepsTitle: 'Как подключиться',
       step1: 'Зарегистрируйте бренд — это займёт пару минут.',
       step2: 'Добавьте точку с часами работы и меню с фото.',
@@ -380,6 +387,10 @@ export const TRANSLATIONS_RU = {
     },
     stores: {
       title: 'Точки рядом',
+      /** Heading of the same page opened from «Меню»: the customer is choosing where to order. */
+      chooseTitle: 'Выберите заведение',
+      continueIn: 'Продолжить в «{{store}}»',
+      continueHint: 'Вы смотрели это меню в прошлый раз',
       found: '{{count}} найдено',
       filters: {
         all: 'Все',

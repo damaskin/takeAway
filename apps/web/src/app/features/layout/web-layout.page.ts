@@ -12,10 +12,13 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { stickyTopInset } from '../../core/layout/sticky-inset';
 
 /**
- * Web shell — sticky top nav. On desktop the four-link nav lives in the
- * header; on mobile (≤768px) the nav collapses to a hamburger that toggles
- * a sheet under the header. Side gutter uses `clamp(16px, 5vw, 80px)` so
- * the desktop look is preserved while phones don't bleed off-screen.
+ * Web shell — sticky top nav. On desktop the five-link nav lives in the
+ * header; on narrow screens (≤900px) the nav collapses to a hamburger that
+ * toggles a sheet under the header. Side gutter uses `clamp(16px, 5vw, 80px)`
+ * so the desktop look is preserved while phones don't bleed off-screen.
+ *
+ * «Меню» and «Заказать» open the store chooser (`/menu`), not one café's
+ * menu: the site is a marketplace of places.
  */
 @Component({
   selector: 'app-web-layout',
@@ -50,7 +53,7 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
           </div>
 
           <!-- Desktop primary nav -->
-          <nav class="web-nav-desktop items-center" style="gap: 32px">
+          <nav class="web-nav-desktop items-center" style="gap: clamp(16px, 2.2vw, 32px)">
             <a routerLink="/menu" class="web-nav-link" [class.is-active]="section() === 'menu'">{{
               'nav.menu' | translate
             }}</a>
@@ -59,6 +62,9 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
             }}</a>
             <a routerLink="/" fragment="how-it-works" class="web-nav-link">{{ 'nav.about' | translate }}</a>
             <a routerLink="/" fragment="loyalty" class="web-nav-link">{{ 'nav.loyalty' | translate }}</a>
+            <a routerLink="/business/signup" class="web-nav-link" [class.is-active]="section() === 'business'">{{
+              'web.business.footerLink' | translate
+            }}</a>
           </nav>
 
           <!-- Right cluster: language + auth + order. Wraps to icons on mobile. -->
@@ -105,6 +111,12 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
               (click)="closeMobileNav()"
               style="padding: 12px 8px; font-family: var(--font-sans); font-size: 16px; font-weight: 500; color: var(--color-text-primary); border-radius: 10px"
               >{{ 'nav.stores' | translate }}</a
+            >
+            <a
+              routerLink="/business/signup"
+              (click)="closeMobileNav()"
+              style="padding: 12px 8px; font-family: var(--font-sans); font-size: 16px; font-weight: 500; color: var(--color-text-primary); border-radius: 10px"
+              >{{ 'web.business.footerLink' | translate }}</a
             >
             @if (isAuthed()) {
               <a
@@ -153,6 +165,7 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
         font-weight: 500;
         color: var(--color-text-primary);
         opacity: 0.7;
+        white-space: nowrap;
         transition: opacity 0.15s;
       }
       .web-nav-link:hover,
@@ -218,12 +231,14 @@ export class WebLayoutPage {
 
   /**
    * Which header link the page belongs to. A store's own page is its menu,
-   * so it lights up "Меню" rather than "Точки", and so does a product.
+   * so it lights up "Меню" rather than "Точки", and so does a product; so
+   * does the store chooser «Меню» opens.
    */
-  readonly section = computed<'menu' | 'stores' | null>(() => {
+  readonly section = computed<'menu' | 'stores' | 'business' | null>(() => {
     const path = this.url().split(/[?#]/)[0] ?? '';
     if (/^\/(menu|products\/|stores\/[^/]+)/.test(path)) return 'menu';
     if (/^\/stores\/?$/.test(path)) return 'stores';
+    if (/^\/business\//.test(path)) return 'business';
     return null;
   });
 

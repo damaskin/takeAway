@@ -27,7 +27,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     orderDone: {
       readyTitle: 'Your order is ready.',
       readySlogan: 'You spent 0 minutes in a queue. Enjoy!',
-      pickedUpTitle: 'Enjoy your order!',
+      pickedUpTitle: 'Order picked up. Have a great day!',
       pickedUpSlogan: 'Zero minutes in a queue, as promised. See you soon!',
     },
     brand: 'takeAway',
@@ -109,6 +109,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       yourLocation: 'You are here',
       locationDenied: 'Location unavailable',
     },
+    storeKinds: {
+      label: 'What they sell',
+      all: 'All',
+      coffee: 'Coffee',
+      food: 'Food',
+    },
   },
   nav: {
     menu: 'Menu',
@@ -135,7 +141,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       menu: {
         title: 'From the menu',
-        subtitle: 'Freshly prepared, just for you',
+        subtitle: 'Picks from places taking orders right now',
         cta: 'View menu →',
         categories: {
           coffee: 'Coffee',
@@ -149,11 +155,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       howItWorks: {
         title: 'How it works',
         step1Title: '1. Choose',
-        step1Body: 'Pick a coffee, meal or dessert in the app.',
+        step1Body: 'A place nearby and what you fancy: a drink, a meal or a dessert.',
         step2Title: '2. Pay',
-        step2Body: 'By card online, or at the counter when you collect.',
+        step2Body: 'By card online — on the site, in the app or in Telegram.',
         step3Title: '3. Pick up',
-        step3Body: 'Skip the queue — by code or QR.',
+        step3Body: "We'll tell you when it's ready — give your code and skip the queue.",
       },
       loyalty: {
         badge: 'Rewards',
@@ -181,7 +187,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       closing: {
         title: 'Pre-order. Zero queue.',
-        subtitle: 'Discover coffee without the wait.',
+        subtitle: 'Your favourite drinks and food — without the wait.',
         ctaGet: 'Get the app',
         ctaMenu: 'View menu',
       },
@@ -216,7 +222,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         kcal: '{{calories}} kcal',
       },
       placeholders: {
-        notes: 'Any preferences? E.g. extra hot, light foam…',
+        notes: 'Any preferences? E.g. extra hot, no sugar…',
       },
       cta: {
         add: 'Add to cart — {{total}}',
@@ -243,7 +249,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       slotFull: 'This window is fully booked',
       prepHint: "We'll start preparing at {{time}} so it's fresh when you arrive.",
       name: 'Name on the order',
-      notes: 'Notes for the barista (optional)',
+      notes: 'Notes for the order (optional)',
       emptyCart: 'Your cart is empty.',
       browseMenu: 'Browse the menu',
       pointsLabel: 'Pay with points',
@@ -380,6 +386,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     stores: {
       title: 'Nearby stores',
+      chooseTitle: 'Choose a place',
+      continueIn: 'Continue at {{store}}',
+      continueHint: 'The menu you looked at last time',
       found: '{{count}} found',
       filters: {
         all: 'All',

@@ -1,12 +1,25 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
-import { LeafletMapComponent, StoreLogoComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import {
+  sortStoresByAvailability,
+  storeAvailability,
+  storeKinds,
+  storeMatchesKind,
+  type StoreKindFilter,
+} from '@takeaway/utils';
+import {
+  LeafletMapComponent,
+  STORE_KIND_GLYPHS,
+  StoreLogoComponent,
+  type LatLng,
+  type MapMarker,
+} from '@takeaway/ui-kit';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { LastStoreService } from '../../core/catalog/last-store.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { hasLocation, storeAddress } from '../../core/catalog/store-place';
 
@@ -16,6 +29,12 @@ const FILTER_LABELS: Record<Filter, string> = {
   ALL: 'web.stores.filters.all',
   OPEN: 'web.stores.filters.open',
   NEAR: 'web.stores.filters.near',
+};
+
+const KIND_LABELS: Record<StoreKindFilter, string> = {
+  ALL: 'common.storeKinds.all',
+  COFFEE: 'common.storeKinds.coffee',
+  FOOD: 'common.storeKinds.food',
 };
 
 /**
@@ -28,6 +47,14 @@ const FILTER_LABELS: Record<Filter, string> = {
  * Closed stores (no shift, or switched off) come last, dimmed, and do not
  * open — there is nothing to order there. The list refreshes itself while
  * the tab is in view, so a store that starts its shift lights up by itself.
+ *
+ * Also the page behind «Меню» (`/menu`, `intent: 'menu'`): the site is a
+ * marketplace, so the menu starts with choosing a place. The store whose
+ * menu the customer opened last is offered on top — «Продолжить в …» — with
+ * the whole choice still below it.
+ *
+ * The pins show what each place sells (cup, fork and knife, or both), and
+ * the «Все / Кофе / Еда» chips over the map narrow the map and the list.
  */
 @Component({
   selector: 'app-stores-list',
@@ -42,6 +69,34 @@ const FILTER_LABELS: Record<Filter, string> = {
           [userPosition]="userPosition()"
           (markerClicked)="selectedId.set($event)"
         />
+
+        <!-- What the places sell: the map's legend and filter in one -->
+        <div
+          class="stores-kinds absolute flex"
+          role="group"
+          [attr.aria-label]="'common.storeKinds.label' | translate"
+          style="top: 88px; left: 20px; gap: 8px; z-index: 400; flex-wrap: wrap"
+        >
+          @for (k of kinds; track k) {
+            <button
+              type="button"
+              (click)="kind.set(k)"
+              [attr.aria-pressed]="kind() === k"
+              [attr.data-kind]="k"
+              class="flex items-center"
+              [style.background]="kind() === k ? 'var(--color-caramel)' : 'var(--color-foam)'"
+              [style.color]="kind() === k ? 'white' : 'var(--color-text-primary)'"
+              style="gap: 6px; height: 34px; padding: 0 14px; border: 1px solid var(--color-border-light); border-radius: 9999px; box-shadow: var(--shadow-soft); font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+            >
+              @if (glyph(k); as d) {
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" style="fill: currentColor">
+                  <path [attr.d]="d" />
+                </svg>
+              }
+              {{ kindLabel(k) | translate }}
+            </button>
+          }
+        </div>
 
         <!-- Map top bar (overlay) -->
         <div
@@ -75,12 +130,38 @@ const FILTER_LABELS: Record<Filter, string> = {
         class="stores-sidebar flex flex-col"
         style="width: 480px; background: var(--color-foam); border-left: 1px solid var(--color-border-light); padding: 24px; gap: 20px; overflow-y: auto"
       >
+        <!-- The place the customer was at last time, one tap away -->
+        @if (lastStore(); as last) {
+          <a
+            [routerLink]="['/stores', last.slug]"
+            data-testid="continue-store"
+            class="flex items-center"
+            style="gap: 12px; padding: 14px 16px; background: var(--color-caramel); color: white; border-radius: 16px"
+          >
+            <lib-store-logo
+              [photo]="last.heroImageUrl"
+              [url]="last.logoUrl"
+              [name]="last.brandName ?? last.name"
+              [size]="40"
+            />
+            <span class="flex flex-col flex-1" style="gap: 2px; min-width: 0">
+              <span class="truncate" style="font-family: var(--font-sans); font-size: 15px; font-weight: 600">{{
+                'web.stores.continueIn' | translate: { store: last.name }
+              }}</span>
+              <span style="font-family: var(--font-sans); font-size: 12px; opacity: 0.85">{{
+                'web.stores.continueHint' | translate
+              }}</span>
+            </span>
+            <span aria-hidden="true" style="font-size: 18px">→</span>
+          </a>
+        }
+
         <!-- Head -->
         <header class="flex items-center justify-between">
           <h1
             style="font-family: var(--font-display); font-size: 24px; font-weight: 600; color: var(--color-espresso); margin: 0"
           >
-            {{ 'web.stores.title' | translate }}
+            {{ (intent() === 'menu' ? 'web.stores.chooseTitle' : 'web.stores.title') | translate }}
           </h1>
           <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary)">{{
             'web.stores.found' | translate: { count: filteredStores().length }
@@ -121,7 +202,12 @@ const FILTER_LABELS: Record<Filter, string> = {
             >
               <div class="flex items-center justify-between" style="gap: 12px">
                 <span class="flex items-center" style="gap: 12px; min-width: 0">
-                  <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="44" />
+                  <lib-store-logo
+                    [photo]="store.heroImageUrl"
+                    [url]="store.logoUrl"
+                    [name]="store.brandName ?? store.name"
+                    [size]="44"
+                  />
                   <span
                     style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
                     >{{ store.name }}</span
@@ -185,6 +271,12 @@ const FILTER_LABELS: Record<Filter, string> = {
           flex: 0 0 240px !important;
           min-height: 240px;
         }
+        /* The map is short on a phone: the chips sit at its foot, clear of the search bar. */
+        .stores-kinds {
+          top: auto !important;
+          bottom: 12px;
+          left: 16px !important;
+        }
         .stores-sidebar {
           width: 100% !important;
           border-left: none !important;
@@ -198,20 +290,34 @@ const FILTER_LABELS: Record<Filter, string> = {
 export class StoresListPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly lastStoreSlug = inject(LastStoreService).slug;
+
+  /** `menu` when opened from «Меню» (route data): the heading asks the customer to choose a place. */
+  readonly intent = input<'menu' | 'stores'>('stores');
 
   readonly stores = signal<StoreListItem[]>([]);
   readonly filter = signal<Filter>('ALL');
+  readonly kind = signal<StoreKindFilter>('ALL');
   readonly selectedId = signal<string | null>(null);
   readonly filters: Filter[] = ['ALL', 'OPEN', 'NEAR'];
+  readonly kinds: StoreKindFilter[] = ['ALL', 'COFFEE', 'FOOD'];
   readonly query = signal('');
   readonly userPosition = signal<LatLng | null>(null);
   readonly locating = signal(false);
 
+  /** The store whose menu the customer opened last, while it takes orders. */
+  readonly lastStore = computed(() => {
+    const slug = this.lastStoreSlug();
+    const store = slug ? this.stores().find((s) => s.slug === slug) : undefined;
+    return store && !this.inactive(store) ? store : null;
+  });
+
   readonly filteredStores = computed(() => {
     const words = this.query().toLowerCase().split(/\s+/).filter(Boolean);
+    const kind = this.kind();
     const list = this.stores().filter((s) => {
       const text = `${s.name} ${storeAddress(s)}`.toLowerCase();
-      return words.every((w) => text.includes(w));
+      return words.every((w) => text.includes(w)) && storeMatchesKind(s, kind);
     });
     const f = this.filter();
     if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && storeAvailability(s) !== 'closed');
@@ -232,7 +338,14 @@ export class StoresListPage implements OnInit {
   readonly storeMarkers = computed<MapMarker[]>(() =>
     this.filteredStores()
       .filter(hasLocation)
-      .map((s) => ({ id: s.id, lat: s.latitude, lng: s.longitude, label: s.name, kind: 'store' })),
+      .map((s) => ({
+        id: s.id,
+        lat: s.latitude,
+        lng: s.longitude,
+        label: s.name,
+        kind: 'store',
+        sells: storeKinds(s),
+      })),
   );
 
   constructor() {
@@ -289,6 +402,15 @@ export class StoresListPage implements OnInit {
 
   filterLabel(f: Filter): string {
     return FILTER_LABELS[f];
+  }
+
+  kindLabel(k: StoreKindFilter): string {
+    return KIND_LABELS[k];
+  }
+
+  /** The chip's glyph — the same one the pins draw; none for «Все». */
+  glyph(k: StoreKindFilter): string | null {
+    return k === 'ALL' ? null : STORE_KIND_GLYPHS[k];
   }
 
   etaMinutes(store: StoreListItem): number {
