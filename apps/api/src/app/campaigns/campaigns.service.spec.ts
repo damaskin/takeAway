@@ -1,4 +1,4 @@
-import type { Campaign, CampaignDeliveryOutcome } from '@prisma/client';
+import { type Campaign, type CampaignDeliveryOutcome, Prisma } from '@prisma/client';
 
 import type { MailService } from '../mail/mail.service';
 import type { DeliveryResult, NotificationsService } from '../notifications/notifications.service';
@@ -132,6 +132,8 @@ describe('CampaignsService', () => {
     body: '−20% на капучино',
     channel: 'PUSH',
     audience: 'ALL',
+    inactiveDays: null,
+    segmentStoreId: null,
     status: 'DRAFT',
     targetCount: 0,
     sentCount: 0,
@@ -146,8 +148,14 @@ describe('CampaignsService', () => {
     updatedAt: new Date(),
   };
 
-  function setup(opts: { users: AudienceUser[]; campaign?: Partial<Campaign>; delivered?: string[] }) {
+  function setup(opts: {
+    users: AudienceUser[];
+    campaign?: Partial<Campaign>;
+    delivered?: string[];
+    inactive?: string[];
+  }) {
     let campaign: Campaign = { ...baseCampaign, ...opts.campaign };
+    const queries: Prisma.Sql[] = [];
     const deliveries = new Map<string, { outcome: CampaignDeliveryOutcome; error: string | null }>(
       (opts.delivered ?? []).map((id) => [id, { outcome: 'SENT', error: null }]),
     );
@@ -190,6 +198,11 @@ describe('CampaignsService', () => {
         }),
       },
       $transaction: jest.fn((ops: Array<Promise<unknown>>) => Promise.all(ops)),
+      // The inactive segment lookup.
+      $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        queries.push(Prisma.sql(strings, ...values));
+        return Promise.resolve((opts.inactive ?? []).map((userId) => ({ userId })));
+      }),
     };
     const deliver = jest.fn<Promise<DeliveryResult>, [{ userId: string }]>((r) =>
       Promise.resolve(
@@ -210,7 +223,7 @@ describe('CampaignsService', () => {
     } as unknown as NotificationsService;
     const mail = { isConfigured: () => true, send: jest.fn() } as unknown as MailService;
     const service = new CampaignsService(prisma as unknown as PrismaService, notifications, mail);
-    return { service, prisma, deliver, deliveries, current: () => campaign };
+    return { service, prisma, deliver, deliveries, queries, current: () => campaign };
   }
 
   it('refuses to send to an empty audience instead of finishing "0 / 0"', async () => {
@@ -299,7 +312,7 @@ describe('CampaignsService', () => {
         user({ id: 'e', notifyPromotions: false }),
       ],
     });
-    await expect(h.service.preview('b1', 'ALL', 'PUSH')).resolves.toEqual({
+    await expect(h.service.preview('b1', { audience: 'ALL' }, 'PUSH')).resolves.toEqual({
       total: 5,
       reachable: 3,
       optedOut: 1,
@@ -308,6 +321,33 @@ describe('CampaignsService', () => {
       transports: { apns: true, fcm: true, webpush: true, telegram: true, email: true },
     });
     expect(h.deliver).not.toHaveBeenCalled();
+  });
+
+  it('INACTIVE reaches only the inactive segment, at the chosen store', async () => {
+    const h = setup({
+      users: [user({ id: 'gone', telegramUserId: 1n }), user({ id: 'regular', telegramUserId: 2n })],
+      inactive: ['gone'],
+    });
+    const preview = await h.service.preview(
+      'b1',
+      { audience: 'INACTIVE', inactiveDays: 7, segmentStoreId: 's1' },
+      'TELEGRAM',
+    );
+    expect(preview).toMatchObject({ total: 1, reachable: 1 });
+    const sql = h.queries[0];
+    expect(sql?.sql).toContain('p."orders" >=');
+    expect(sql?.values).toEqual(expect.arrayContaining([['b1'], ['s1'], 3]));
+  });
+
+  it('sends an INACTIVE campaign to the people inactive at the moment of sending', async () => {
+    const h = setup({
+      users: [user({ id: 'gone' }), user({ id: 'regular' })],
+      inactive: ['gone'],
+      campaign: { audience: 'INACTIVE', inactiveDays: 14, status: 'SENDING' },
+    });
+    await h.service.run('c1');
+    expect([...h.deliveries.keys()]).toEqual(['gone']);
+    expect(h.current()).toMatchObject({ status: 'SENT', targetCount: 1 });
   });
 
   it('keeps why the app push failed when the Telegram fallback still delivered', async () => {
@@ -322,6 +362,35 @@ describe('CampaignsService', () => {
       sentCount: 1,
       failedCount: 0,
       lastError: 'FCM 401 UNAUTHENTICATED: Invalid APNs credential.',
+    });
+  });
+});
+
+describe('CampaignsService.create', () => {
+  function create() {
+    const prisma = { campaign: { create: jest.fn(({ data }: { data: unknown }) => Promise.resolve(data)) } };
+    const service = new CampaignsService(
+      prisma as unknown as PrismaService,
+      {} as NotificationsService,
+      {} as MailService,
+    );
+    return { service, prisma };
+  }
+  const copy = { brandId: 'b1', title: 'Скучаем', body: 'Возвращайтесь', channel: 'PUSH' as const };
+
+  it('keeps the days and the store of an INACTIVE audience, 14 days by default', async () => {
+    const { service, prisma } = create();
+    await service.create({ ...copy, audience: 'INACTIVE', segmentStoreId: 's1' });
+    expect(prisma.campaign.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ audience: 'INACTIVE', inactiveDays: 14, segmentStoreId: 's1', status: 'DRAFT' }),
+    });
+  });
+
+  it('drops them for any other audience', async () => {
+    const { service, prisma } = create();
+    await service.create({ ...copy, audience: 'ALL', inactiveDays: 7, segmentStoreId: 's1' });
+    expect(prisma.campaign.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ audience: 'ALL', inactiveDays: null, segmentStoreId: null }),
     });
   });
 });

@@ -542,6 +542,11 @@ model Campaign {
   body           String
   channel        CampaignChannel
   audience       CampaignAudience @default(ALL)
+  /// INACTIVE only: days without an order (3, 7 or 14) and, optionally, the
+  /// one store whose orders count. A plain id, not a relation: a store that
+  /// goes away leaves the audience empty instead of widening it to the brand.
+  inactiveDays   Int?
+  segmentStoreId String?
   status         CampaignStatus   @default(DRAFT)
   /// Target / sent / failed counters stamped during send.
   targetCount    Int              @default(0)
@@ -584,6 +589,10 @@ enum CampaignAudience {
   HAS_ORDERED
   /// Customers whose last paid order is older than 30 days.
   INACTIVE_30D
+  /// The inactive segment of the admin: at least 3 counted orders and none
+  /// for `Campaign.inactiveDays` days, at `segmentStoreId` when set. The
+  /// same customers as «Клиенты → Неактивные».
+  INACTIVE
 }
 
 enum CampaignStatus {
@@ -1344,6 +1353,11 @@ model Promo {
   endsAt           DateTime
   status           PromoStatus @default(DRAFT)
   currency         Currency    @default(USD)
+  /// Only for inactive customers: set, the code works for someone with at
+  /// least 3 counted orders and none for this many days (3, 7 or 14) — at
+  /// `segmentStoreId` when that is set. Null: anyone.
+  inactiveDays     Int?
+  segmentStoreId   String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
