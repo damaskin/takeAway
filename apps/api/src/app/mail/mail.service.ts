@@ -17,6 +17,10 @@ import * as nodemailer from 'nodemailer';
  * Delivery failures are caught and logged — they never propagate to the
  * caller so a flaky SMTP provider can't wedge password-reset requests
  * or order receipts.
+ *
+ * Logs name the template, the subject and only the recipient's domain —
+ * never the body, which carries password-reset links and other one-time
+ * tokens.
  */
 @Injectable()
 export class MailService implements OnModuleInit {
@@ -62,7 +66,7 @@ export class MailService implements OnModuleInit {
       <hr />
       <p>If you did not request a reset, ignore this email. Otherwise, open the link above to set a new password.</p>
     `;
-    await this.send(email, subject, text, html);
+    await this.deliver('password-reset', email, subject, text, html);
   }
 
   /**
@@ -86,7 +90,7 @@ export class MailService implements OnModuleInit {
       <p>${escapeHtml(greetingEn)}</p>
       <p>Thanks for your first <strong>takeAway</strong> order! Loyalty points, promo codes and one-tap reorder are now available in your profile.</p>
     `;
-    await this.send(email, subject, text, html);
+    await this.deliver('welcome', email, subject, text, html);
   }
 
   /**
@@ -149,29 +153,42 @@ export class MailService implements OnModuleInit {
       <p>Thanks for your order <strong>#${escapeHtml(receipt.orderCode)}</strong> at ${escapeHtml(receipt.storeName)}.</p>
       <p><strong>Total:</strong> ${escapeHtml(fmtEn(receipt.totalCents))}</p>
     `;
-    await this.send(email, subject, text, html, attachments);
+    await this.deliver('order-receipt', email, subject, text, html, attachments);
   }
 
   /** Public helper so other services can queue transactional messages through the same transport. */
-  async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
+  send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
+    return this.deliver('custom', to, subject, text, html, attachments);
+  }
+
+  private async deliver(
+    template: string,
+    to: string,
+    subject: string,
+    text: string,
+    html?: string,
+    attachments?: MailAttachment[],
+  ): Promise<void> {
     const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
+    const what =
+      `template=${template} to=*@${recipientDomain(to)} subject=${JSON.stringify(subject)}` +
+      (attachments?.length ? ` attachments=${attachments.length}` : '');
     if (!this.transporter) {
-      this.logger.warn(
-        `[mail] (stub — SMTP_HOST not set) to=${to} subject=${JSON.stringify(subject)} body=${text.slice(0, 200)}` +
-          (attachments?.length ? ` attachments=${attachments.length}` : ''),
-      );
+      this.logger.warn(`[mail] (stub — SMTP_HOST not set, not sent) ${what}`);
       return;
     }
     try {
       await this.transporter.sendMail({ from, to, subject, text, html, attachments });
-      this.logger.log(
-        `[mail] sent to=${to} subject=${JSON.stringify(subject)}` +
-          (attachments?.length ? ` attachments=${attachments.length}` : ''),
-      );
+      this.logger.log(`[mail] sent ${what}`);
     } catch (err) {
-      this.logger.error(`[mail] delivery failed to=${to}: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(`[mail] delivery failed ${what}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+function recipientDomain(address: string): string {
+  const at = address.lastIndexOf('@');
+  return at >= 0 ? address.slice(at + 1) : 'unknown';
 }
 
 export interface MailAttachment {
