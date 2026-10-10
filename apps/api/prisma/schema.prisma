@@ -871,15 +871,22 @@ model Modifier {
   @@index([ingredientId])
 }
 
-/// A brand's library of add-ins — oat milk, vanilla syrup, an extra shot —
-/// kept apart from the products so stock is switched in one place. Options
-/// of any number of products point here; while `isAvailable` is false those
-/// options are hidden from every client and refused by the cart, and they
-/// come back as soon as it is switched on again.
+/// A brand's library of add-ons («Добавки») — oat milk, vanilla syrup, an
+/// extra shot. The one place an add-on is defined: its name, its usual
+/// price and whether it is in stock. A product offers an add-on through an
+/// option (`Modifier`, or a milk `Variation`) that points here; deleting the
+/// option takes the add-on off that product only, deleting the entry takes
+/// it off every product. While `isAvailable` is false the options are
+/// hidden from every client and refused by the cart, and they come back as
+/// soon as it is switched on again.
 model Ingredient {
   id          String   @id @default(cuid())
   brandId     String
   name        String
+  /// The usual surcharge, in minor units. An option put on a product from
+  /// the library starts at it, and changing it moves every option that
+  /// still charges the old price (a product given its own price keeps it).
+  priceCents  Int      @default(0)
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

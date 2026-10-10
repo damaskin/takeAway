@@ -7,7 +7,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { CreateCategoryDto } from './dto/admin-category.dto';
-import { CreateModifierDto, CreateProductDto } from './dto/admin-product.dto';
+import { CreateModifierDto, CreateProductDto, CreateVariationDto } from './dto/admin-product.dto';
 
 /** The HTTP body a Nest exception renders — where the admin reads `code` from. */
 function body(err: unknown): Record<string, unknown> {
@@ -69,7 +69,9 @@ function build() {
     },
     ingredient: {
       findFirst: jest.fn(),
-      upsert: jest.fn(({ create }: { create: { name: string } }) => Promise.resolve({ id: `ing-${create.name}` })),
+      upsert: jest.fn(({ create }: { create: { name: string; priceCents?: number } }) =>
+        Promise.resolve({ id: `ing-${create.name}`, name: create.name, priceCents: create.priceCents ?? 0 }),
+      ),
     },
     cartItem: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -103,6 +105,14 @@ describe('menu DTOs', () => {
       await errors(CreateProductDto, { brandId: 'b1', categoryId: 'c1', name: 'Латте', basePriceCents: 3500 }),
     ).toEqual([]);
     expect(await errors(CreateModifierDto, { name: 'Ванильный сироп' })).toEqual([]);
+  });
+
+  it('lets an option picked from the add-ons library leave its name out, and nothing else', async () => {
+    expect(await errors(CreateModifierDto, { ingredientId: 'ing-1' })).toEqual([]);
+    expect(await errors(CreateVariationDto, { type: 'MILK', ingredientId: 'ing-1' })).toEqual([]);
+    expect(await errors(CreateModifierDto, {})).toEqual(['name']);
+    expect(await errors(CreateModifierDto, { ingredientId: null })).toEqual(['name']);
+    expect(await errors(CreateModifierDto, { ingredientId: 'ing-1', name: '' })).toEqual(['name']);
   });
 
   it('holds a typed slug to lowercase latin, digits and hyphens, 2 to 60 long', async () => {
@@ -456,7 +466,7 @@ describe('AdminCatalogService — options', () => {
     expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { brandId_name: { brandId: 'b1', name: 'Овсяное' } },
-        create: { brandId: 'b1', name: 'Овсяное' },
+        create: { brandId: 'b1', name: 'Овсяное', priceCents: 0 },
       }),
     );
     expect(prisma.variation.create).toHaveBeenLastCalledWith({
@@ -471,6 +481,60 @@ describe('AdminCatalogService — options', () => {
 
     expect(prisma.modifier.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Ванильный сироп', ingredientId: 'ing-Ванильный сироп' }),
+    });
+  });
+
+  // «Добавки» is the one place an add-on is defined: picking it is enough.
+  it('puts an add-on picked from the library on a product at its name and usual price', async () => {
+    const { svc, prisma } = withOptions();
+    prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-vanilla', name: 'Ванильный сироп', priceCents: 500 });
+
+    await svc.createModifier('p1', { ingredientId: 'ing-vanilla', maxCount: 2 }, ['b1']);
+
+    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+    expect(prisma.modifier.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Ванильный сироп',
+        slug: 'vanilnyy-sirop',
+        priceDeltaCents: 500,
+        maxCount: 2,
+        ingredientId: 'ing-vanilla',
+      }),
+    });
+  });
+
+  it('keeps a price typed for this product over the usual one', async () => {
+    const { svc, prisma } = withOptions();
+    prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-shot', name: 'Шот', priceCents: 1000 });
+
+    await svc.createModifier('p1', { ingredientId: 'ing-shot', priceDeltaCents: 1500 }, ['b1']);
+
+    expect(prisma.modifier.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Шот', priceDeltaCents: 1500 }),
+    });
+  });
+
+  it('files a new typed extra in the library at the price it was given', async () => {
+    const { svc, prisma } = withOptions();
+
+    await svc.createModifier('p1', { name: 'Карамельный сироп', priceDeltaCents: 700 }, ['b1']);
+
+    expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: { brandId: 'b1', name: 'Карамельный сироп', priceCents: 700 } }),
+    );
+    expect(prisma.modifier.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ priceDeltaCents: 700, ingredientId: 'ing-Карамельный сироп' }),
+    });
+  });
+
+  it('charges the usual price when a typed extra matches a library entry and no price was given', async () => {
+    const { svc, prisma } = withOptions();
+    prisma.ingredient.upsert.mockResolvedValueOnce({ id: 'ing-oat', name: 'Овсяное', priceCents: 600 });
+
+    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное' }, ['b1']);
+
+    expect(prisma.variation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Овсяное', priceDeltaCents: 600, ingredientId: 'ing-oat' }),
     });
   });
 
@@ -495,7 +559,7 @@ describe('AdminCatalogService — options', () => {
     expect(body(err)['code']).toBe('INGREDIENT_UNKNOWN');
     expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
       where: { id: 'ing-foreign', brandId: 'b1' },
-      select: { id: true },
+      select: { id: true, name: true, priceCents: true },
     });
     expect(prisma.modifier.update).not.toHaveBeenCalled();
   });

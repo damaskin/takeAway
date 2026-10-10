@@ -18,6 +18,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 import { SLUG_MESSAGE, SLUG_PATTERN } from './admin-category.dto';
@@ -30,8 +31,15 @@ export const MAX_PRODUCT_IMAGES = 6;
  * column that overflows at 2^31 — a 500 instead of a clear 400.
  */
 // 10 000 000 in currency units: room for rupiah prices, still far below the column's limit.
-const MAX_PRICE_CENTS = 1_000_000_000;
+export const MAX_PRICE_CENTS = 1_000_000_000;
 const MAX_PREP_SECONDS = 24 * 60 * 60;
+
+/**
+ * An option picked from the add-ons library may leave its name out: it takes
+ * the library entry's. Everything else needs one.
+ */
+const nameRequired = (o: { name?: unknown; ingredientId?: unknown }) =>
+  o.name !== undefined || typeof o.ingredientId !== 'string';
 
 export class CreateProductDto {
   @ApiProperty()
@@ -198,15 +206,20 @@ export class CreateVariationDto {
   @IsEnum(VariationType)
   type!: VariationType;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: "Required unless `ingredientId` is given: then the add-on's name" })
+  @ValidateIf(nameRequired)
   @IsString()
   @Length(1, 60)
-  name!: string;
+  name?: string;
 
-  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @ApiPropertyOptional({
+    minimum: 0,
+    description: "Omitted: the linked add-on's usual price (`Ingredient.priceCents`), else 0",
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_CENTS)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
@@ -251,15 +264,20 @@ export class CreateModifierDto {
   @Matches(SLUG_PATTERN, { message: SLUG_MESSAGE })
   slug?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: "Required unless `ingredientId` is given: then the add-on's name" })
+  @ValidateIf(nameRequired)
   @IsString()
   @Length(1, 80)
-  name!: string;
+  name?: string;
 
-  @ApiPropertyOptional({ default: 0, minimum: 0 })
+  @ApiPropertyOptional({
+    minimum: 0,
+    description: "Omitted: the linked add-on's usual price (`Ingredient.priceCents`), else 0",
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(MAX_PRICE_CENTS)
   priceDeltaCents?: number;
 
   @ApiPropertyOptional({ default: 0 })
