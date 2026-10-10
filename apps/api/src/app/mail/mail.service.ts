@@ -172,12 +172,42 @@ export class MailService implements OnModuleInit {
       this.logger.error(`[mail] delivery failed to=${to}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  /**
+   * Sends a message and says whether the SMTP server took it — for callers
+   * that tell the user what happened (the staff invite: "email sent" or
+   * "pass the password on yourself"). Never logs the body: invite mails carry
+   * one-time set-password links. Without SMTP it sends nothing and answers
+   * false.
+   */
+  async deliver(to: string, mail: OutgoingMail): Promise<boolean> {
+    if (!this.transporter) {
+      this.logger.warn(`[mail] not sent (SMTP_HOST not set) to=${to} subject=${JSON.stringify(mail.subject)}`);
+      return false;
+    }
+    const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
+    try {
+      await this.transporter.sendMail({ from, to, subject: mail.subject, text: mail.text, html: mail.html });
+      this.logger.log(`[mail] sent to=${to} subject=${JSON.stringify(mail.subject)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`[mail] delivery failed to=${to}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
 }
 
 export interface MailAttachment {
   filename: string;
   content: Buffer;
   contentType?: string;
+}
+
+/** A composed message, ready for {@link MailService.deliver}. */
+export interface OutgoingMail {
+  subject: string;
+  text: string;
+  html: string;
 }
 
 /**
