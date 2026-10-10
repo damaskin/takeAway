@@ -12,14 +12,16 @@ function userWith(role: Role, id = 'u1'): AuthenticatedUser {
 describe('BrandScopeService', () => {
   let brandFindMany: jest.Mock;
   let userStoreFindMany: jest.Mock;
+  let userStoreCount: jest.Mock;
   let service: BrandScopeService;
 
   beforeEach(() => {
     brandFindMany = jest.fn();
     userStoreFindMany = jest.fn();
+    userStoreCount = jest.fn();
     const prisma = {
       brand: { findMany: brandFindMany },
-      userStore: { findMany: userStoreFindMany },
+      userStore: { findMany: userStoreFindMany, count: userStoreCount },
     } as unknown as PrismaService;
     service = new BrandScopeService(prisma);
   });
@@ -80,6 +82,37 @@ describe('BrandScopeService', () => {
     it('throws for staff with no assignments acting on any brand', async () => {
       userStoreFindMany.mockResolvedValue([]);
       await expect(service.assertBrand(userWith(Role.STAFF), 'b1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('managesUser', () => {
+    it('passes for SUPER_ADMIN without looking at the target', async () => {
+      await expect(service.managesUser(userWith(Role.SUPER_ADMIN), 'target')).resolves.toBe(true);
+      expect(userStoreCount).not.toHaveBeenCalled();
+    });
+
+    it("counts the target's stores outside the caller's brands", async () => {
+      brandFindMany.mockResolvedValue([{ id: 'b1' }]);
+      userStoreCount.mockResolvedValue(0);
+      await expect(service.managesUser(userWith(Role.BRAND_ADMIN), 'target')).resolves.toBe(true);
+      expect(userStoreCount).toHaveBeenCalledWith({
+        where: { userId: 'target', store: { brandId: { notIn: ['b1'] } } },
+      });
+    });
+
+    it('refuses an account that also works for another brand', async () => {
+      brandFindMany.mockResolvedValue([{ id: 'b1' }]);
+      userStoreCount.mockResolvedValue(1);
+      await expect(service.managesUser(userWith(Role.BRAND_ADMIN), 'target')).resolves.toBe(false);
+    });
+
+    it('refuses any linked account for a brand admin who owns no brand yet', async () => {
+      brandFindMany.mockResolvedValue([]);
+      userStoreCount.mockResolvedValue(2);
+      await expect(service.managesUser(userWith(Role.BRAND_ADMIN), 'target')).resolves.toBe(false);
+      expect(userStoreCount).toHaveBeenCalledWith({
+        where: { userId: 'target', store: { brandId: { notIn: [] } } },
+      });
     });
   });
 

@@ -1,4 +1,4 @@
-import { HttpException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Role, type User } from '@prisma/client';
 
@@ -21,8 +21,17 @@ interface Where {
   NOT?: { kdsPinHash?: { startsWith?: string } };
 }
 
+/** A UserStore row, with the brand of its store. */
+interface Link {
+  userId: string;
+  storeId: string;
+  brandId: string;
+}
+
+const AT_STORE_1: Link[] = [{ userId: 'barista-1', storeId: 'store-1', brandId: 'brand-1' }];
+
 describe('AuthService.loginWithKdsPin', () => {
-  function build(env: Record<string, string>, rows: Row[] = []) {
+  function build(env: Record<string, string>, rows: Row[] = [], links: Link[] = AT_STORE_1) {
     const values = new Map<string, string>();
     const redis = {
       get: async (key: string) => values.get(key) ?? null,
@@ -51,6 +60,13 @@ describe('AuthService.loginWithKdsPin', () => {
     });
     const prisma = {
       user: { findFirst },
+      userStore: {
+        findMany: jest.fn(async ({ where }: { where: { userId: string } }) =>
+          links
+            .filter((l) => l.userId === where.userId)
+            .map((l) => ({ storeId: l.storeId, store: { brandId: l.brandId } })),
+        ),
+      },
       device: { create: jest.fn().mockResolvedValue({ id: 'device-1' }) },
     };
     const tokens = { issue: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r', expiresIn: 900 }) };
@@ -124,5 +140,39 @@ describe('AuthService.loginWithKdsPin', () => {
     expect((error as HttpException).getStatus()).toBe(429);
     expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_LOCKED' });
     expect(tokens.issue).not.toHaveBeenCalled();
+  });
+
+  describe('the session stays within the brand of the store', () => {
+    const env = { KDS_PIN_SECRET: 'a-real-secret' };
+    const pinned = () => barista({ kdsPinHash: build(env).pins.hash('store-1', '4821') });
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('signs in an account that works at several stores of the same brand', async () => {
+      const links = [...AT_STORE_1, { userId: 'barista-1', storeId: 'store-2', brandId: 'brand-1' }];
+      const { auth } = build(env, [pinned()], links);
+      await expect(auth.loginWithKdsPin('store-1', '4821')).resolves.toMatchObject({ user: { id: 'barista-1' } });
+    });
+
+    it('refuses the right PIN of an account that also works for another brand, and logs it', async () => {
+      const links = [...AT_STORE_1, { userId: 'barista-1', storeId: 'store-9', brandId: 'brand-2' }];
+      const { auth, tokens } = build(env, [pinned()], links);
+
+      await expect(auth.loginWithKdsPin('store-1', '4821')).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(tokens.issue).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('barista-1'));
+    });
+
+    it('refuses the PIN of an account that no longer works at this store', async () => {
+      const links = [{ userId: 'barista-1', storeId: 'store-2', brandId: 'brand-1' }];
+      const { auth, tokens } = build(env, [pinned()], links);
+
+      await expect(auth.loginWithKdsPin('store-1', '4821')).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(tokens.issue).not.toHaveBeenCalled();
+    });
   });
 });

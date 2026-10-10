@@ -32,7 +32,7 @@ export class AdminRidersController {
   @HttpCode(HttpStatus.CREATED)
   async add(@CurrentUser() user: AuthenticatedUser, @Param('storeId') storeId: string, @Body() dto: AddRiderDto) {
     await this.stores.assertAllowed(user.id, user.role, storeId);
-    return this.riders.add(storeId, dto.phone, dto.name);
+    return this.riders.add(storeId, dto.phone, dto.name, user);
   }
 
   @Delete(':userId')

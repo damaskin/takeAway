@@ -161,12 +161,21 @@ function world() {
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 
+  const resolveBrandIds = async (caller: AuthenticatedUser): Promise<string[] | null> => {
+    if (caller.role === Role.SUPER_ADMIN) return null;
+    if (caller.role === Role.BRAND_ADMIN) return ['brand-1'];
+    const own = pivot.filter((p) => p.userId === caller.id).map((p) => p.storeId);
+    return [...new Set(stores.filter((s) => own.includes(s.id)).map((s) => s.brandId))];
+  };
   const scope = {
-    resolveBrandIds: jest.fn(async (caller: AuthenticatedUser) => {
-      if (caller.role === Role.SUPER_ADMIN) return null;
-      if (caller.role === Role.BRAND_ADMIN) return ['brand-1'];
-      const own = pivot.filter((p) => p.userId === caller.id).map((p) => p.storeId);
-      return [...new Set(stores.filter((s) => own.includes(s.id)).map((s) => s.brandId))];
+    resolveBrandIds: jest.fn(resolveBrandIds),
+    // Same rule as BrandScopeService.managesUser, over the in-memory pivot.
+    managesUser: jest.fn(async (caller: AuthenticatedUser, userId: string) => {
+      const brands = await resolveBrandIds(caller);
+      if (brands === null) return true;
+      return pivot
+        .filter((p) => p.userId === userId)
+        .every((p) => brands.includes(stores.find((s) => s.id === p.storeId)?.brandId ?? ''));
     }),
   };
   const passwords = { hash: jest.fn(async () => 'bcrypt') };
@@ -383,17 +392,65 @@ describe('AdminStaffMembersService — staff as people', () => {
       expect(codeOf(error)).toBe('STAFF_EMAIL_TAKEN');
     });
 
-    it('adds staff of another brand without a new account', async () => {
-      const { svc, storesOf, prisma } = world();
-      const member = await svc.invite(
-        { ...invite(['store-centre']), email: 'foreign-barista@noname.md' },
-        owner,
-        'brand-1',
-      );
+    it('refuses staff of another brand: no link, no role change, the same answer as for a customer', async () => {
+      const { svc, storesOf, prisma, users } = world();
+      const foreign = await svc
+        .invite({ ...invite(['store-centre'], 'STORE_MANAGER'), email: 'foreign-barista@noname.md' }, owner, 'brand-1')
+        .catch((e: unknown) => e);
+      const customer = await svc
+        .invite({ ...invite(['store-centre']), email: 'customer@noname.md' }, owner, 'brand-1')
+        .catch((e: unknown) => e);
+
+      expect(foreign).toBeInstanceOf(ConflictException);
+      expect((foreign as HttpException).getResponse()).toEqual((customer as HttpException).getResponse());
+      expect(JSON.stringify((foreign as HttpException).getResponse())).not.toMatch(/STAFF"|CUSTOMER|noname\.md/);
       expect(prisma.user.create).not.toHaveBeenCalled();
-      expect(member.userId).toBe('foreign-barista');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(storesOf('foreign-barista')).toEqual(['store-other']);
+      expect(users.find((u) => u.id === 'foreign-barista')?.role).toBe(Role.STAFF);
+    });
+
+    it('lets a super admin still add staff of another brand', async () => {
+      const { svc, storesOf } = world();
+      await svc.invite({ ...invite(['store-centre']), email: 'foreign-barista@noname.md' }, superAdmin, 'brand-1');
       expect(storesOf('foreign-barista')).toEqual(['store-centre', 'store-other']);
-      expect(member.stores.map((s) => s.id)).toEqual(['store-centre']);
+    });
+  });
+
+  describe('someone who also works for another brand', () => {
+    /** Links the other brand's barista to Centre, as a super admin could. */
+    async function shared() {
+      const w = world();
+      const foreign = { email: 'foreign-barista@noname.md', role: 'STAFF' as const, tempPassword: 'temporary-1' };
+      await w.svc.invite({ ...foreign, storeIds: ['store-centre'] }, superAdmin, 'brand-1');
+      w.prisma.user.update.mockClear();
+      return w;
+    }
+
+    it('keeps their role out of the brand’s hands', async () => {
+      const { svc, prisma } = await shared();
+      const error = await svc.changeRole('foreign-barista', 'MENU_EDITOR', owner, 'brand-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('adds none of the brand’s stores to them, but lets the brand take them off its own', async () => {
+      const { svc, storesOf } = await shared();
+      const error = await svc
+        .setStores('foreign-barista', ['store-centre', 'store-station'], owner, 'brand-1')
+        .catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      expect(storesOf('foreign-barista')).toEqual(['store-centre', 'store-other']);
+
+      await svc.setStores('foreign-barista', [], owner, 'brand-1');
+      expect(storesOf('foreign-barista')).toEqual(['store-other']);
+    });
+
+    it('lets a super admin change their role', async () => {
+      const { svc } = await shared();
+      const member = await svc.changeRole('foreign-barista', 'MENU_EDITOR', superAdmin, 'brand-1');
+      expect(member.role).toBe(Role.MENU_EDITOR);
     });
   });
 });

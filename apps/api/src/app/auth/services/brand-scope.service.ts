@@ -53,6 +53,23 @@ export class BrandScopeService {
   }
 
   /**
+   * Whether every store the target user is linked to belongs to a brand in
+   * the caller's scope (SUPER_ADMIN: always). A staff account is global —
+   * one role, one password, one kitchen PIN, and a session that reaches all
+   * of its stores — so a brand may change only an account that works for
+   * it alone; otherwise it could re-role, or sign in as, another brand's
+   * employee. An account with no store links passes.
+   */
+  async managesUser(caller: AuthenticatedUser, targetUserId: string): Promise<boolean> {
+    const scope = await this.resolveBrandIds(caller);
+    if (scope === null) return true;
+    const elsewhere = await this.prisma.userStore.count({
+      where: { userId: targetUserId, store: { brandId: { notIn: scope } } },
+    });
+    return elsewhere === 0;
+  }
+
+  /**
    * Returns a Prisma `where` filter fragment that restricts rows to the
    * caller's brand scope. Returns `undefined` for SUPER_ADMIN (no filter).
    */

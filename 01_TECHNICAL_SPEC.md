@@ -795,15 +795,17 @@ GET    /admin/staff                  → [{ userId, email, phone, name, role, bl
                                           stores: [{ id, name }], kdsPinStoreId, hasKdsPin, editable }]
 GET    /admin/staff/:userId          → то же для одного (404 вне досягаемости)
 POST   /admin/staff                  { email, name?, role, tempPassword, storeIds[≥1] } → 201
-                                     //   409 STAFF_ALREADY_ON_TEAM / STAFF_EMAIL_TAKEN
+                                     //   409 STAFF_ALREADY_ON_TEAM / STAFF_EMAIL_TAKEN (email занят не сотрудником
+                                     //   или сотрудником, работающим и в другом бренде; без роли в ответе)
 PUT    /admin/staff/:userId/stores   { storeIds[] } → замена в пределах досягаемости; [] — убрать из команды
 PATCH  /admin/staff/:userId/role     { role: STORE_MANAGER | STAFF | MENU_EDITOR }
                                      //   403 STAFF_STORE_OUT_OF_SCOPE / STAFF_ROLE_NOT_ALLOWED / STAFF_NOT_EDITABLE
+                                     //   (роль, новые точки и PIN — только если все точки человека в брендах вызывающего)
 
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
 PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
-GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]
+GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]   // POST: 409 RIDER_PHONE_TAKEN — номер у другого аккаунта
 
 # Orders / Promo / Gift cards / Campaigns
 GET    /admin/orders/:id             → состав, платежи, возвраты, лента событий (scope как у списка; 404 вне scope)

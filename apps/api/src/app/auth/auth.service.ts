@@ -106,6 +106,14 @@ export class AuthService {
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
     if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
+    // The session reaches every store of the account, and a PIN typed at one
+    // brand's tablet must open nothing beyond that brand. An account no
+    // longer at this store, or working for several brands, signs in with
+    // email and password instead.
+    if (!(await this.staysWithinPinBrand(user.id, storeId))) {
+      this.logger.warn(`KDS PIN sign-in refused: user ${user.id} reaches beyond the brand of store ${storeId}`);
+      throw generic;
+    }
     await this.kdsPins.clearFailures(storeId);
 
     const device = await this.prisma.device.create({
@@ -113,6 +121,16 @@ export class AuthService {
     });
     const tokens = await this.tokens.issue(user.id, device.id);
     return { ...tokens, user: this.toAuthUser(user) };
+  }
+
+  /** True when the user works at `storeId` and every store they work at is of that store's brand. */
+  private async staysWithinPinBrand(userId: string, storeId: string): Promise<boolean> {
+    const links = await this.prisma.userStore.findMany({
+      where: { userId },
+      select: { storeId: true, store: { select: { brandId: true } } },
+    });
+    const here = links.find((l) => l.storeId === storeId);
+    return !!here && links.every((l) => l.store.brandId === here.store.brandId);
   }
 
   /**
