@@ -37,6 +37,32 @@ void main() {
       expect(older.isInactive, isFalse);
     });
 
+    test('reads what a store sells, keeping only the string entries, and null from an older API', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      expect(
+        Store.fromJson({
+          ...raw,
+          'kinds': ['COFFEE', 'FOOD'],
+        }).kinds,
+        ['COFFEE', 'FOOD'],
+      );
+      expect(
+        Store.fromJson({
+          ...raw,
+          'kinds': ['FOOD', 7, null],
+        }).kinds,
+        ['FOOD'],
+      );
+      expect(Store.fromJson({...raw, 'kinds': 'FOOD'}).kinds, isNull);
+      expect(Store.fromJson({...raw}..remove('kinds')).kinds, isNull);
+
+      final cached = Store.fromJson({
+        ...raw,
+        'kinds': ['FOOD'],
+      });
+      expect(Store.fromJson(jsonDecode(jsonEncode(cached.toJson())) as Map<String, dynamic>).kinds, ['FOOD']);
+    });
+
     test('parses store detail with brand and empty working hours', () {
       final store = StoreDetail.fromJson(fixture('store_detail.json')! as Map<String, dynamic>);
       expect(store.brand.name, 'NoName Coffee');

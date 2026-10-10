@@ -51,6 +51,7 @@ class Store {
     this.brandName,
     this.logoUrl,
     this.heroImageUrl,
+    this.kinds,
     this.distanceMeters,
   });
 
@@ -97,7 +98,16 @@ class Store {
 
   /// Logo for the store card — the brand's, stores have none of their own.
   final String? logoUrl;
+
+  /// Photo of the store itself; null when it has none (store cards then show
+  /// the brand's [logoUrl]).
   final String? heroImageUrl;
+
+  /// What the store sells: `COFFEE`, `FOOD` or both. Only the string entries
+  /// are kept; null from API versions that predate it, and a missing or
+  /// empty list means a coffee shop.
+  @JsonKey(fromJson: _kindsFromJson)
+  final List<String>? kinds;
   final double? distanceMeters;
 
   bool get hasLocation => latitude != 0 || longitude != 0;
@@ -182,6 +192,7 @@ class StoreDetail extends Store {
     super.openNow,
     super.acceptingOrders,
     super.heroImageUrl,
+    super.kinds,
     super.distanceMeters,
     this.phone,
     this.email,
@@ -425,3 +436,10 @@ class PickupSlot {
   final int capacity;
   final bool available;
 }
+
+List<String>? _kindsFromJson(Object? raw) => raw is List
+    ? [
+        for (final kind in raw)
+          if (kind is String) kind,
+      ]
+    : null;
