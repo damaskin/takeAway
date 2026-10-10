@@ -124,6 +124,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/platform/platform.page').then((m) => m.PlatformPage),
       },
       {
+        path: 'settlements',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'settlements' satisfies NavKey },
+        loadComponent: () => import('./features/settlements/settlements.page').then((m) => m.SettlementsPage),
+      },
+      {
         path: 'dashboard',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'dashboard' satisfies NavKey },

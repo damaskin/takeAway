@@ -42,6 +42,14 @@ describe('permissions map', () => {
       expect(canAccess('SUPER_ADMIN', 'brands')).toBe(true);
     });
 
+    it('opens settlements to the platform admin and the brand owner, and to nobody on the floor', () => {
+      expect(ADMIN_ROLES.settlements).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(canAccess('STORE_MANAGER', 'settlements')).toBe(false);
+      expect(canAccess('STAFF', 'settlements')).toBe(false);
+      expect(canAccess('MENU_EDITOR', 'settlements')).toBe(false);
+      expect(navLink('settlements')).toBe('/settlements');
+    });
+
     it('keeps customer feedback SUPER_ADMIN-only', () => {
       expect(ADMIN_ROLES.feedback).toEqual(['SUPER_ADMIN']);
       expect(navLink('feedback')).toBe('/feedback');
