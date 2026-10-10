@@ -511,12 +511,14 @@ model Brand {
   /// New brands start on BASIC; only a SUPER_ADMIN changes it.
   plan             BrandPlan             @default(BASIC)
   /// Platform commission in basis points (1000 = 10 %). Follows the plan's
-  /// default unless a SUPER_ADMIN set another value for this brand.
+  /// default unless a SUPER_ADMIN set another value for this brand. The rate
+  /// valid now, mirrored from `BrandCommissionRate` — settlements read the
+  /// history, not this column.
   commissionBps    Int                   @default(1000)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
-  owner           User?            @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  owner           User?                 @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   stores          Store[]
   categories      Category[]
   products        Product[]
@@ -525,9 +527,89 @@ model Brand {
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
   campaigns       Campaign[]
+  commissionRates BrandCommissionRate[]
+  payouts         BrandPayout[]
 
   @@index([moderationStatus])
   @@index([ownerId])
+}
+
+/// Where a brand's commission rate came from.
+enum CommissionRateSource {
+  /// The plan's default rate (BASIC 10 %, PRO 15 %) at the time it was set.
+  PLAN
+  /// Individual terms agreed with this brand.
+  INDIVIDUAL
+}
+
+/// The brand's platform commission over time. A row applies from its
+/// `effectiveFrom` until the next row's, so the validity ranges are contiguous
+/// by construction — no gaps or overlaps to keep consistent. An order is
+/// charged the rate valid at the moment it was settled (accepted by the store,
+/// or paid when it never was). `Brand.commissionBps` mirrors the row valid
+/// now. See docs/settlements.md.
+model BrandCommissionRate {
+  id            String               @id @default(cuid())
+  brandId       String
+  /// Basis points (1000 = 10 %).
+  bps           Int
+  source        CommissionRateSource
+  /// UTC instant the rate starts to apply, inclusive.
+  effectiveFrom DateTime
+  note          String?
+  /// The platform admin who set it. A plain id: the record outlives the account.
+  createdById   String?
+  createdAt     DateTime             @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, effectiveFrom])
+}
+
+/// A payout fixed for a brand or already sent to it.
+enum PayoutStatus {
+  /// Fixed by a platform admin; the transfer has not gone out yet.
+  PENDING
+  /// The money has been transferred.
+  PAID
+}
+
+/// Money the platform owes a brand for one settlement period: what it
+/// collected by card for the brand's orders, net of refunds, minus the
+/// commission. Periods follow each other without gaps or overlaps, and the
+/// amount is the whole balance owed at the end of the period, so a refund
+/// that lands after a payout is carried into the next one. See
+/// docs/settlements.md.
+model BrandPayout {
+  id              String       @id @default(cuid())
+  brandId         String
+  currency        Currency
+  /// First and last local day the payout settles, both included, in `timeZone`.
+  periodFrom      DateTime     @db.Date
+  periodTo        DateTime     @db.Date
+  timeZone        String
+  /// The instant `periodTo` ends at (local midnight after it). Balances are
+  /// matched on it: the payout settles everything settled before it.
+  periodEnd       DateTime
+  /// What the platform transfers.
+  amountCents     Int
+  /// The period's own figures when it was fixed, kept for the record: card
+  /// money net of refunds, and the commission on it.
+  cardNetCents    Int
+  commissionCents Int
+  status          PayoutStatus @default(PENDING)
+  paidAt          DateTime?
+  /// Bank transfer number or any other handle on the payment.
+  reference       String?
+  comment         String?
+  createdById     String?
+  paidById        String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  @@index([brandId, currency, periodEnd])
 }
 
 /// Brand-driven outbound campaign. The admin composes copy in the dashboard;
