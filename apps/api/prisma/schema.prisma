@@ -767,6 +767,12 @@ model Category {
   availableFrom    Int?
   availableTo      Int?
   visible          Boolean      @default(true)
+  /// Not sold on its own: the category and its products are left out of
+  /// every customer menu and the cart refuses them, while the admin, the
+  /// stop-list and a POS sync keep them. For a POS import's «Дополнительные
+  /// ингредиенты» — rows that exist to be added to a drink, not ordered.
+  /// A POS sync never writes it.
+  addOnsOnly       Boolean      @default(false)
   /// External-POS link. See {@link Store.externalProvider}.
   externalProvider PosProvider?
   externalId       String?

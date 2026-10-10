@@ -5,6 +5,7 @@ import { sortVariationsForDisplay } from '@takeaway/utils';
 
 import { checkoutError } from '../common/http/checkout-error';
 import { activeStopWhere, availableOptionsIncludeAt } from '../catalog/option-availability';
+import { soldOnItsOwn } from '../catalog/product-listing';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
@@ -16,17 +17,30 @@ export type PricedProduct = Product & { variations: Variation[]; modifiers: Modi
 
 /**
  * A product as one store sells it: only the options that store has in stock,
- * and its listing row there — `stores` is empty when the store does not sell
- * the product at all.
+ * its listing row there — `stores` is empty when the store does not sell
+ * the product at all — and what its category says about selling it.
  */
-export type StoreProduct = PricedProduct & { stores: ReadonlyArray<{ storeId: string }> };
+export type StoreProduct = PricedProduct & {
+  stores: ReadonlyArray<{ storeId: string }>;
+  category: { visible: boolean; addOnsOnly: boolean };
+};
 
 /** `include` that loads a product as {@link StoreProduct} for `storeId`. */
 export function storeProductInclude(storeId: string, now: Date = new Date()) {
   return {
     ...availableOptionsIncludeAt(storeId, now),
     stores: { where: { storeId }, select: { storeId: true } },
+    category: { select: { visible: true, addOnsOnly: true } },
   } satisfies Prisma.ProductInclude;
+}
+
+/**
+ * On the menu as a thing to order: the product is shown and its category is
+ * too, and the category is not one of add-ons (an extra ingredient imported
+ * from the POS is added to a drink, never bought alone).
+ */
+function onTheMenu(product: StoreProduct): boolean {
+  return product.visible && soldOnItsOwn(product.category);
 }
 
 /** One line priced against the menu as it stands. */
@@ -78,8 +92,9 @@ export class CartService {
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
     const product = await this.loadProduct(dto.productId, dto.storeId);
     // A hidden product is off the menu — the catalog answers 404 for it, and
-    // so does the cart, or checkout would only turn it away later.
-    if (!product || !product.visible) throw new NotFoundException('Product not found');
+    // so does the cart, or checkout would only turn it away later. The same
+    // goes for one the menu leaves out with its category.
+    if (!product || !onTheMenu(product)) throw new NotFoundException('Product not found');
     // A store with no shift running takes no orders, so it takes nothing into
     // a basket either: the clients show it as closed, and an old tab, a QR
     // code or a direct link must not fill a cart nobody can send.
@@ -225,8 +240,9 @@ export class CartService {
         unitPriceCents,
       });
 
-      // Hidden, or no longer sold in this store: either way it cannot be made here.
-      if (!item.product.visible || item.product.stores.length === 0) {
+      // Hidden (itself or with its category), only an add-on, or no longer
+      // sold in this store: either way it cannot be ordered here.
+      if (!onTheMenu(item.product) || item.product.stores.length === 0) {
         changes.push(change('PRODUCT_UNAVAILABLE', null));
         removed.push(item.id);
         continue;

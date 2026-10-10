@@ -6,7 +6,7 @@ import type { PasswordService } from '../../auth/services/password.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
-import { CreateCategoryDto } from './dto/admin-category.dto';
+import { CreateCategoryDto, UpdateCategoryDto } from './dto/admin-category.dto';
 import { CreateModifierDto, CreateProductDto, CreateVariationDto } from './dto/admin-product.dto';
 
 /** The HTTP body a Nest exception renders — where the admin reads `code` from. */
@@ -154,6 +154,17 @@ describe('AdminCatalogService — categories', () => {
     expect(prisma.category.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ slug: 'season', visible: false }),
     });
+  });
+
+  it('marks a category as add-ons only, and back', async () => {
+    const { svc, prisma } = build();
+    prisma.category.findUnique.mockResolvedValue({ id: 'c-extra', brandId: 'b1' });
+
+    await svc.updateCategory('c-extra', { addOnsOnly: true }, ['b1']);
+
+    expect(prisma.category.update).toHaveBeenCalledWith({ where: { id: 'c-extra' }, data: { addOnsOnly: true } });
+    const dto = plainToInstance(UpdateCategoryDto, { addOnsOnly: 'yes' });
+    expect((await validate(dto)).map((e) => e.property)).toEqual(['addOnsOnly']);
   });
 
   it('puts a new category after the last one', async () => {

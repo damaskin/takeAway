@@ -93,3 +93,46 @@ describe('PosService.upsertImportedStores', () => {
     expect(createdData(prisma)['timezone']).toBe('Europe/Chisinau');
   });
 });
+
+/** A re-sync from the POS brings names and order up to date and nothing the owner decided here. */
+describe('PosService.upsertImportedMenu', () => {
+  it('leaves an imported category marked add-ons only (and its visibility) alone on the next sync', async () => {
+    const prisma = {
+      posIntegration: {
+        findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-1', provider: PosProvider.POSTER }),
+      },
+      category: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'c-extras' }),
+        update: jest.fn().mockResolvedValue({}),
+        create: jest.fn(),
+      },
+      product: { findFirst: jest.fn().mockResolvedValue({ id: 'p-syrup' }), update: jest.fn(), create: jest.fn() },
+      store: { findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }]) },
+    };
+    const module = await Test.createTestingModule({
+      providers: [
+        PosService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SecretCipher, useValue: {} },
+        { provide: BrandScopeService, useValue: {} },
+        { provide: IikoProvider, useValue: {} },
+        { provide: PosterProvider, useValue: {} },
+        { provide: NotificationsService, useValue: {} },
+        { provide: ConfigService, useValue: { get: jest.fn(() => undefined) } },
+        { provide: getQueueToken(POS_SYNC_QUEUE), useValue: {} },
+      ],
+    }).compile();
+
+    await module.get(PosService).upsertImportedMenu('int-1', {
+      categories: [{ externalId: '9', name: 'Дополнительные ингредиенты', sortOrder: 9 }],
+      products: [{ externalId: '41', categoryExternalId: '9', name: 'Сироп ванильный', basePriceCents: 500 }],
+      modifiers: [],
+    });
+
+    expect(prisma.category.update).toHaveBeenCalledWith({
+      where: { id: 'c-extras' },
+      data: { name: 'Дополнительные ингредиенты', sortOrder: 9 },
+    });
+    expect(prisma.category.create).not.toHaveBeenCalled();
+  });
+});
