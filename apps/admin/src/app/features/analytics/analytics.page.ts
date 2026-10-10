@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, type ParamMap, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 import { map } from 'rxjs';
@@ -8,6 +8,7 @@ import { map } from 'rxjs';
 import {
   AnalyticsApi,
   type AnalyticsPeriod,
+  type ChurnWindow,
   type CohortStats,
   type RevenueSeries,
   type StaffPerformance,
@@ -16,14 +17,31 @@ import {
 } from '../../core/analytics/analytics.service';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import { DEFAULT_INACTIVE_DAYS, parseInactiveDays } from '../../core/customers/inactive-segment';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
-import { DateRangeComponent, type DateRangeValue } from '../../shared/date-range.component';
+import {
+  DateRangeComponent,
+  type DateRangeValue,
+  RANGE_PRESETS,
+  type RangePreset,
+} from '../../shared/date-range.component';
 import { PlanLockComponent } from '../../shared/plan-lock.component';
 import { RetentionTabComponent } from './retention-tab.component';
 
 type Tab = 'overview' | 'stores' | 'staff' | 'retention';
 const TABS: readonly Tab[] = ['overview', 'stores', 'staff', 'retention'];
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The period a link opened the page with: `days` of a preset, or `from` and `to`. */
+function rangeFromQuery(q: ParamMap): DateRangeValue | null {
+  const from = q.get('from');
+  const to = q.get('to');
+  if (from && to && ISO_DAY.test(from) && ISO_DAY.test(to)) return { from, to };
+  const days = Number(q.get('days'));
+  return (RANGE_PRESETS as readonly number[]).includes(days) ? { days: days as RangePreset } : null;
+}
 
 interface ChartBar {
   date: string;
@@ -39,10 +57,13 @@ interface ChartBar {
  *   Overview   revenue by day (every plan); top products and customers (PRO)
  *   Stores     revenue and orders per store (every plan); the comparison (PRO)
  *   Staff      orders handled and shift hours per employee (PRO)
- *   Retention  customers lost and won back, with the people behind it (PRO)
+ *   Retention  «Возврат»: inactive customers, the money they take with them,
+ *              what to do about it, and who came back (PRO)
  *
  * One period picker and one store filter drive every tab; the tab is in the
- * address (`?tab=stores`) so a link opens the right one.
+ * address (`?tab=stores`) so a link opens the right one. A link may also
+ * bring its period (`days`, or `from`+`to`), store (`storeId`) and the
+ * inactivity window (`window`) — the dashboard's «Возврат» button does.
  */
 @Component({
   selector: 'app-admin-analytics',
@@ -344,7 +365,7 @@ interface ChartBar {
           @if (!plans.has('winBack')) {
             <app-plan-lock feature="winBack" />
           } @else if (brandId(); as id) {
-            <app-retention-tab [brandId]="id" [period]="period()" [currency]="currency()" />
+            <app-retention-tab [brandId]="id" [period]="period()" [currency]="currency()" [(window)]="churnWindow" />
           }
         }
       }
@@ -556,9 +577,12 @@ export class AdminAnalyticsPage {
   readonly plans = inject(PlanAccess);
   protected readonly fmt = inject(LocaleFormatService);
 
+  private readonly route = inject(ActivatedRoute);
+  private readonly opened = this.route.snapshot.queryParamMap;
+
   readonly tabs = TABS;
   readonly tab = toSignal(
-    inject(ActivatedRoute).queryParamMap.pipe(
+    this.route.queryParamMap.pipe(
       map((q) => {
         const t = q.get('tab') as Tab | null;
         return t && TABS.includes(t) ? t : 'overview';
@@ -567,8 +591,9 @@ export class AdminAnalyticsPage {
     { initialValue: 'overview' as Tab },
   );
 
-  readonly range = signal<DateRangeValue>({ days: 14 });
-  readonly storeId = signal<string | null>(null);
+  readonly range = signal<DateRangeValue>(rangeFromQuery(this.opened) ?? { days: 14 });
+  readonly storeId = signal<string | null>(this.opened.get('storeId'));
+  readonly churnWindow = signal<ChurnWindow>(parseInactiveDays(this.opened.get('window')) ?? DEFAULT_INACTIVE_DAYS);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly revenue = signal<RevenueSeries | null>(null);
@@ -607,12 +632,15 @@ export class AdminAnalyticsPage {
   readonly barGap = computed(() => (this.bars().length > 31 ? 1 : this.bars().length > 14 ? 3 : 6));
 
   constructor() {
-    // Stores for the filter follow the brand picked in the header.
+    // Stores for the filter follow the brand picked in the header. The store
+    // a link brought in stays for the brand it was opened with.
+    let previousBrand: string | null = null;
     effect(() => {
       const brandId = this.activeBrand.activeId();
       if (!brandId) return;
       untracked(() => {
-        this.storeId.set(null);
+        if (previousBrand !== null && previousBrand !== brandId) this.storeId.set(null);
+        previousBrand = brandId;
         this.catalog.listStores(brandId).subscribe({ next: (list) => this.stores.set(list) });
       });
     });

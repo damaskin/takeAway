@@ -1,14 +1,30 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 import { Subject, debounceTime } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { CustomersApi, type CustomerPage, type CustomerSort } from '../../core/customers/customers.service';
+import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import {
+  CustomersApi,
+  type CustomerPage,
+  type CustomerSegment,
+  type CustomerSort,
+} from '../../core/customers/customers.service';
+import {
+  DEFAULT_INACTIVE_DAYS,
+  INACTIVE_DAYS,
+  type InactiveDays,
+  campaignLink,
+  parseInactiveDays,
+} from '../../core/customers/inactive-segment';
 import { apiErrorMessage } from '../../core/http/api-error';
+import { PlanAccess } from '../../core/plans/plan-access.service';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
+
+const SEGMENTS: readonly CustomerSegment[] = ['all', 'regular', 'inactive'];
 
 const SORTS: readonly CustomerSort[] = [
   'lastOrderAt',
@@ -22,8 +38,13 @@ const PAGE_SIZE = 25;
 
 /**
  * The brand's customers (PRO): everyone with an order in its stores, with
- * what they spent, how often they come and where. A row opens the
- * customer's history. Deleted accounts are not listed.
+ * what they spent, how often they come, where, and what they keep ordering.
+ * A row opens the customer's history. Deleted accounts are not listed.
+ *
+ * Segments — all, regulars (3+ orders), inactive (3+ orders, none for 3, 7
+ * or 14 days) — and the store are in the address (`?segment=inactive&days=7
+ * &storeId=`): the win-back tab and the dashboard link here, and the way
+ * back from a customer keeps the filter.
  */
 @Component({
   selector: 'app-customers',
@@ -37,6 +58,44 @@ const PAGE_SIZE = 25;
           <p class="dash-muted">{{ 'admin.customers.subtitle' | translate }}</p>
         </div>
       </header>
+
+      <div class="cu-segments" role="group" [attr.aria-label]="'admin.customers.segmentLabel' | translate">
+        @for (s of segments; track s) {
+          <button
+            type="button"
+            class="cu-pill"
+            [class.cu-pill-on]="segment() === s"
+            [attr.aria-pressed]="segment() === s"
+            (click)="setFilter({ segment: s })"
+          >
+            {{ 'admin.customers.segments.' + s | translate }}
+          </button>
+        }
+        @if (segment() === 'inactive') {
+          <span class="cu-days-label">{{ 'admin.customers.inactiveDays' | translate }}</span>
+          @for (d of inactiveDays; track d) {
+            <button
+              type="button"
+              class="cu-pill cu-pill-small"
+              [class.cu-pill-on]="days() === d"
+              [attr.aria-pressed]="days() === d"
+              (click)="setFilter({ days: d })"
+            >
+              {{ 'admin.churn.window' | translate: { days: d } }}
+            </button>
+          }
+        }
+      </div>
+      @if (segment() !== 'all') {
+        <p class="cu-segment-hint">
+          {{ 'admin.customers.segmentHint.' + segment() | translate: { days: days() } }}
+          @if (segment() === 'inactive' && plans.has('campaigns')) {
+            <a [routerLink]="broadcast().commands" [queryParams]="broadcast().queryParams">{{
+              'admin.customers.toBroadcast' | translate
+            }}</a>
+          }
+        </p>
+      }
 
       <div class="cu-filters">
         <input
@@ -56,6 +115,18 @@ const PAGE_SIZE = 25;
             <option [value]="s" [selected]="sort() === s">{{ 'admin.customers.sort.' + s | translate }}</option>
           }
         </select>
+        @if (stores().length > 1) {
+          <select
+            class="cu-input cu-select"
+            [attr.aria-label]="'admin.customers.storeFilter' | translate"
+            (change)="setFilter({ storeId: $any($event.target).value || null })"
+          >
+            <option value="" [selected]="!storeId()">{{ 'admin.customers.allStores' | translate }}</option>
+            @for (s of stores(); track s.id) {
+              <option [value]="s.id" [selected]="storeId() === s.id">{{ s.name }}</option>
+            }
+          </select>
+        }
       </div>
 
       @if (error(); as e) {
@@ -69,7 +140,17 @@ const PAGE_SIZE = 25;
         @if (!page()) {
           <p class="dash-muted">{{ 'common.loading' | translate }}</p>
         } @else if (page()!.items.length === 0) {
-          <p class="dash-muted">{{ (search() ? 'admin.customers.noMatch' : 'admin.customers.empty') | translate }}</p>
+          <p class="dash-muted">
+            @if (search()) {
+              {{ 'admin.customers.noMatch' | translate }}
+            } @else if (segment() === 'inactive') {
+              {{ 'admin.customers.emptyInactive' | translate: { days: days() } }}
+            } @else if (segment() !== 'all') {
+              {{ 'admin.customers.noMatch' | translate }}
+            } @else {
+              {{ 'admin.customers.empty' | translate }}
+            }
+          </p>
         } @else {
           <div class="cu-table-wrap">
             <table class="cu-table">
@@ -89,11 +170,19 @@ const PAGE_SIZE = 25;
                 @for (c of page()!.items; track c.userId) {
                   <tr>
                     <td>
-                      <a class="cu-name" [routerLink]="[c.userId]">{{
+                      <a class="cu-name" [routerLink]="[c.userId]" queryParamsHandling="preserve">{{
                         c.name || ('admin.customers.noName' | translate)
                       }}</a>
                       @if (c.phone) {
                         <div class="cu-note">{{ c.phone }}</div>
+                      }
+                      @if (c.favouriteProduct; as fav) {
+                        <span
+                          class="cu-fav"
+                          [attr.data-kind]="fav.kind"
+                          [title]="'admin.customers.favouriteTitle' | translate: { count: fav.quantity }"
+                          >{{ 'admin.customers.favouriteBadge' | translate: { name: fav.name } }}</span
+                        >
                       }
                     </td>
                     <td class="num">{{ c.orders }}</td>
@@ -116,7 +205,7 @@ const PAGE_SIZE = 25;
           <ul class="cu-cards">
             @for (c of page()!.items; track c.userId) {
               <li>
-                <a [routerLink]="[c.userId]" class="cu-card">
+                <a [routerLink]="[c.userId]" queryParamsHandling="preserve" class="cu-card">
                   <div class="cu-card-top">
                     <span class="cu-name">{{ c.name || c.phone || ('admin.customers.noName' | translate) }}</span>
                     <span class="cu-card-total">{{ price(c.totalCents) }}</span>
@@ -132,6 +221,11 @@ const PAGE_SIZE = 25;
                   }}</span>
                   @if (c.favouriteStoreName) {
                     <span class="cu-note">{{ c.favouriteStoreName }}</span>
+                  }
+                  @if (c.favouriteProduct; as fav) {
+                    <span class="cu-fav" [attr.data-kind]="fav.kind">{{
+                      'admin.customers.favouriteBadge' | translate: { name: fav.name }
+                    }}</span>
                   }
                 </a>
               </li>
@@ -169,6 +263,67 @@ const PAGE_SIZE = 25;
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+      }
+      .cu-segments {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .cu-pill {
+        height: 32px;
+        padding: 0 14px;
+        border-radius: 9999px;
+        border: 1px solid var(--color-border-light);
+        background: var(--color-foam);
+        color: var(--color-text-secondary);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .cu-pill-small {
+        height: 28px;
+        padding: 0 10px;
+        font-size: 12px;
+      }
+      .cu-pill-on {
+        background: var(--color-espresso);
+        border-color: transparent;
+        color: white;
+      }
+      .cu-days-label {
+        margin-left: 8px;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
+      .cu-segment-hint {
+        margin: -6px 0 0;
+        font-size: 13px;
+        color: var(--color-text-secondary);
+      }
+      .cu-segment-hint a {
+        margin-left: 8px;
+        font-weight: 600;
+        color: var(--color-caramel);
+      }
+      .cu-fav {
+        display: inline-block;
+        margin-top: 4px;
+        padding: 1px 8px;
+        border-radius: 9999px;
+        background: var(--color-surface-variant);
+        color: var(--color-text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+        width: fit-content;
+      }
+      .cu-fav[data-kind='DRINK'] {
+        background: var(--color-caramel-light);
+        color: var(--color-caramel);
+      }
+      .cu-fav[data-kind='FOOD'] {
+        background: color-mix(in srgb, var(--chart-customers) 16%, transparent);
+        color: var(--color-positive);
       }
       .cu-input {
         height: 40px;
@@ -283,11 +438,27 @@ const PAGE_SIZE = 25;
 })
 export class CustomersPage {
   private readonly api = inject(CustomersApi);
+  private readonly catalog = inject(AdminCatalogApi);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly translate = inject(TranslateService);
+  private readonly router = inject(Router);
+  readonly plans = inject(PlanAccess);
   protected readonly fmt = inject(LocaleFormatService);
 
   readonly sorts = SORTS;
+  readonly segments = SEGMENTS;
+  readonly inactiveDays = INACTIVE_DAYS;
+  readonly stores = signal<StoreAdminDto[]>([]);
+
+  private readonly params = toSignal(inject(ActivatedRoute).queryParamMap, { requireSync: true });
+  readonly segment = computed<CustomerSegment>(() => {
+    const raw = this.params().get('segment') as CustomerSegment | null;
+    return raw && SEGMENTS.includes(raw) ? raw : 'all';
+  });
+  readonly days = computed<InactiveDays>(() => parseInactiveDays(this.params().get('days')) ?? DEFAULT_INACTIVE_DAYS);
+  readonly storeId = computed(() => this.params().get('storeId'));
+  /** The campaign composer on exactly this list. */
+  readonly broadcast = computed(() => campaignLink({ days: this.days(), storeId: this.storeId() }));
   readonly search = signal('');
   readonly sort = signal<CustomerSort>('lastOrderAt');
   readonly pageNo = signal(1);
@@ -302,15 +473,40 @@ export class CustomersPage {
       this.pageNo.set(1);
       this.search.set(value.trim());
     });
+    // Stores for the filter follow the brand picked in the header; another
+    // brand's store would only answer 403, so switching brands drops it.
+    let previousBrand: string | null = null;
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      if (!brandId) return;
+      untracked(() => {
+        if (previousBrand !== null && previousBrand !== brandId && this.storeId()) this.setFilter({ storeId: null });
+        previousBrand = brandId;
+        this.catalog.listStores(brandId).subscribe({ next: (list) => this.stores.set(list) });
+      });
+    });
     effect(() => {
       const brandId = this.activeBrand.activeId();
       const search = this.search();
       const sort = this.sort();
       const page = this.pageNo();
+      const segment = this.segment();
+      const inactiveDays = this.days();
+      const storeId = this.storeId();
       if (!brandId) return;
       untracked(() => {
         this.error.set(null);
-        this.api.list({ brandId, search, sort, page, pageSize: PAGE_SIZE }).subscribe({
+        const query = {
+          brandId,
+          storeId,
+          search,
+          sort,
+          page,
+          pageSize: PAGE_SIZE,
+          segment,
+          inactiveDays: segment === 'inactive' ? inactiveDays : undefined,
+        };
+        this.api.list(query).subscribe({
           next: (result) => this.page.set(result),
           error: (err) => {
             this.page.set({ items: [], total: 0, page: 1, pageSize: PAGE_SIZE });
@@ -323,6 +519,20 @@ export class CustomersPage {
 
   onSearch(value: string): void {
     this.typed.next(value);
+  }
+
+  /** Segment, days and store live in the address, so links and the way back keep them. */
+  setFilter(change: { segment?: CustomerSegment; days?: InactiveDays; storeId?: string | null }): void {
+    this.pageNo.set(1);
+    const segment = change.segment ?? this.segment();
+    void this.router.navigate([], {
+      queryParams: {
+        segment: segment === 'all' ? null : segment,
+        days: segment === 'inactive' ? (change.days ?? this.days()) : null,
+        storeId: change.storeId === undefined ? this.storeId() : change.storeId,
+      },
+      replaceUrl: true,
+    });
   }
 
   setSort(value: string): void {

@@ -89,7 +89,8 @@ export interface StaffPerformance {
   ordersPerHour: number | null;
 }
 
-export type ChurnWindow = 7 | 14;
+/** Days without an order after which a regular (3+ orders) is inactive. */
+export type ChurnWindow = 3 | 7 | 14;
 
 export interface RetentionCustomer {
   userId: string;
