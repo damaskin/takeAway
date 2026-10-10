@@ -29,6 +29,7 @@ Store _$StoreFromJson(Map<String, dynamic> json) => Store(
   brandName: json['brandName'] as String?,
   logoUrl: json['logoUrl'] as String?,
   heroImageUrl: json['heroImageUrl'] as String?,
+  kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
 );
 
@@ -55,6 +56,7 @@ Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
   'brandName': instance.brandName,
   'logoUrl': instance.logoUrl,
   'heroImageUrl': instance.heroImageUrl,
+  'kinds': instance.kinds,
   'distanceMeters': instance.distanceMeters,
 };
 
@@ -125,6 +127,7 @@ StoreDetail _$StoreDetailFromJson(Map<String, dynamic> json) => StoreDetail(
   openNow: json['openNow'] as bool?,
   acceptingOrders: json['acceptingOrders'] as bool?,
   heroImageUrl: json['heroImageUrl'] as String?,
+  kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
   phone: json['phone'] as String?,
   email: json['email'] as String?,
@@ -151,6 +154,7 @@ Map<String, dynamic> _$StoreDetailToJson(StoreDetail instance) => <String, dynam
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,
   'heroImageUrl': instance.heroImageUrl,
+  'kinds': instance.kinds,
   'distanceMeters': instance.distanceMeters,
   'timezone': instance.timezone,
   'phone': instance.phone,
