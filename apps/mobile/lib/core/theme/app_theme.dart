@@ -165,6 +165,9 @@ abstract final class AppTheme {
         backgroundColor: isDark ? brand.latte : brand.espresso,
         contentTextStyle: text.bodyMedium?.copyWith(color: isDark ? brand.textPrimary : brand.cream),
         actionTextColor: brand.caramel,
+        // Material's default is onInverseSurface — cream, which in the dark
+        // theme is near-black on this dark snack: the close button vanished.
+        closeIconColor: isDark ? brand.textPrimary : brand.cream,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.button)),
         elevation: 0,
       ),
