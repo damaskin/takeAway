@@ -84,6 +84,73 @@ void main() {
       expect(copy.allProducts.first.basePriceCents, menu.allProducts.first.basePriceCents);
     });
 
+    test('reads category kinds and add-on groups, and null from an older API', () {
+      final menu = Menu.fromJson({
+        'storeId': 's1',
+        'storeSlug': 'shawarma',
+        'categories': [
+          {
+            'id': 'c-food',
+            'slug': 'shawarma',
+            'name': 'Шаурма',
+            'sortOrder': 0,
+            'kind': 'FOOD',
+            'products': [
+              {
+                'id': 'p1',
+                'categoryId': 'c-food',
+                'slug': 'classic',
+                'name': 'Классическая',
+                'basePriceCents': 9000,
+                'prepTimeSeconds': 900,
+                'allergens': ['GLUTEN'],
+                'dietTags': <String>[],
+                'imageUrls': <String>[],
+                'sortOrder': 0,
+                'categoryKind': 'FOOD',
+              },
+            ],
+          },
+        ],
+      });
+      expect(menu.categories.single.kind, 'FOOD');
+      expect(menu.allProducts.single.categoryKind, 'FOOD');
+
+      final product = ProductDetail.fromJson({
+        ...(fixture('product_detail.json')! as Map<String, dynamic>),
+        'categoryKind': 'HOT_DRINKS',
+        'modifiers': [
+          {
+            'id': 'm1',
+            'slug': 'vanil',
+            'name': 'Ваниль',
+            'priceDeltaCents': 500,
+            'prepTimeDeltaSeconds': 0,
+            'minCount': 0,
+            'maxCount': 2,
+            'sortOrder': 0,
+            'group': 'Сиропы',
+          },
+          {
+            'id': 'm2',
+            'slug': 'koritsa',
+            'name': 'Корица',
+            'priceDeltaCents': 0,
+            'prepTimeDeltaSeconds': 0,
+            'minCount': 0,
+            'maxCount': 1,
+            'sortOrder': 1,
+          },
+        ],
+      });
+      expect(product.categoryKind, 'HOT_DRINKS');
+      expect(product.modifiers.map((m) => m.group), ['Сиропы', null]);
+      expect(ProductDetail.fromJson(product.toJson()).modifiers.first.group, 'Сиропы');
+
+      final old = Menu.fromJson(fixture('menu.json')! as Map<String, dynamic>);
+      expect(old.categories.first.kind, isNull);
+    });
+
     test('parses a product with no options', () {
       final product = ProductDetail.fromJson(fixture('product_detail.json')! as Map<String, dynamic>);
       expect(product.variations, isEmpty);

@@ -255,6 +255,7 @@ class Modifier {
     required this.minCount,
     required this.maxCount,
     required this.sortOrder,
+    this.group,
   });
 
   factory Modifier.fromJson(Map<String, dynamic> json) => _$ModifierFromJson(json);
@@ -273,6 +274,11 @@ class Modifier {
   final int maxCount;
   @JsonKey(defaultValue: 0)
   final int sortOrder;
+
+  /// The group the add-on is shown under on the product screen («Сиропы»,
+  /// «Соусы», «Убрать»). Null — the generic «Добавки» group, and on API
+  /// versions that predate groups.
+  final String? group;
 }
 
 @JsonSerializable(explicitToJson: true)
@@ -295,6 +301,7 @@ class Product {
     this.fatsGrams,
     this.carbsGrams,
     this.onStopList = false,
+    this.categoryKind,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
@@ -325,6 +332,11 @@ class Product {
   @JsonKey(defaultValue: false)
   final bool onStopList;
 
+  /// Kind of the product's category: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`,
+  /// `BAKERY` or `OTHER` — picks the placeholder of a product without a
+  /// photo. Null from API versions that predate it (read as `OTHER`).
+  final String? categoryKind;
+
   String? get imageUrl => imageUrls.isEmpty ? null : imageUrls.first;
   bool get hasNutrition => proteinsGrams != null || fatsGrams != null || carbsGrams != null;
 }
@@ -352,6 +364,7 @@ class ProductDetail extends Product {
     super.fatsGrams,
     super.carbsGrams,
     super.onStopList,
+    super.categoryKind,
   });
 
   factory ProductDetail.fromJson(Map<String, dynamic> json) => _$ProductDetailFromJson(json);
@@ -378,6 +391,7 @@ class MenuCategory {
     this.iconUrl,
     this.availableFrom,
     this.availableTo,
+    this.kind,
   });
 
   factory MenuCategory.fromJson(Map<String, dynamic> json) => _$MenuCategoryFromJson(json);
@@ -393,6 +407,10 @@ class MenuCategory {
   final int sortOrder;
   final int? availableFrom;
   final int? availableTo;
+
+  /// What the category holds: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY`
+  /// or `OTHER`. Null from API versions that predate it (read as `OTHER`).
+  final String? kind;
   @JsonKey(defaultValue: <Product>[])
   final List<Product> products;
 }
