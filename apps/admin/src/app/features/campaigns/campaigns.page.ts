@@ -10,6 +10,7 @@ import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { apiErrorMessage } from '../../core/http/api-error';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
 import { type CampaignRow, campaignStatusTone } from './campaign.types';
 
@@ -35,7 +36,7 @@ const POLL_MS = 3000;
 @Component({
   selector: 'app-admin-campaigns',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LocalDatePipe],
+  imports: [RouterLink, TranslatePipe, LocalDatePipe, ConfirmDialogComponent],
   template: `
     <section style="padding: 24px; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-start justify-between flex-wrap" style="gap: 12px">
@@ -203,13 +204,18 @@ const POLL_MS = 3000;
                         'admin.campaigns.edit' | translate
                       }}</a>
                     }
+                    @if (c.status === 'PENDING_REVIEW') {
+                      <button type="button" class="act-link" (click)="withdraw(c)" [disabled]="busy() === c.id">
+                        {{ 'admin.campaigns.moderation.withdraw' | translate }}
+                      </button>
+                    }
                     @if (c.sendable) {
                       <button type="button" class="act-primary" (click)="retry(c)" [disabled]="busy() === c.id">
                         {{ (busy() === c.id ? 'admin.campaigns.sending' : 'admin.campaigns.retry') | translate }}
                       </button>
                     }
                     @if (c.deletable) {
-                      <button type="button" class="act-danger" (click)="remove(c)" [disabled]="busy() === c.id">
+                      <button type="button" class="act-danger" (click)="askRemove(c)" [disabled]="busy() === c.id">
                         {{ 'admin.campaigns.delete' | translate }}
                       </button>
                     }
@@ -236,6 +242,22 @@ const POLL_MS = 3000;
         <p role="alert" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0">
           {{ message }}
         </p>
+      }
+
+      @if (removing(); as c) {
+        <app-confirm-dialog
+          tone="danger"
+          [title]="'admin.campaigns.deleteDialog.title' | translate: { title: c.title }"
+          [body]="
+            (c.status === 'APPROVED' ? 'admin.campaigns.deleteDialog.approved' : 'admin.campaigns.deleteDialog.pending')
+              | translate
+          "
+          [confirmLabel]="'admin.campaigns.delete' | translate"
+          [cancelLabel]="'common.cancel' | translate"
+          [busy]="busy() === c.id"
+          (confirmed)="remove(c)"
+          (cancelled)="removing.set(null)"
+        />
       }
     </section>
   `,
@@ -303,6 +325,8 @@ const POLL_MS = 3000;
         opacity: 0.6;
       }
       .act-link {
+        background: transparent;
+        padding: 0;
         color: var(--color-caramel);
         font-weight: 600;
         white-space: nowrap;
@@ -328,6 +352,8 @@ export class AdminCampaignsPage implements OnInit {
   readonly busy = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly notice = signal<string | null>(null);
+  /** The pending or approved campaign the delete dialog asks about. */
+  readonly removing = signal<CampaignRow | null>(null);
   /** A platform admin's campaign needs no review: their submit is the approval. */
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
 
@@ -363,6 +389,24 @@ export class AdminCampaignsPage implements OnInit {
     this.act(c, this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/send`, {}), () => null);
   }
 
+  /** «Отозвать в черновик»: out of the review queue, back to an editable draft. */
+  withdraw(c: CampaignRow): void {
+    this.act(
+      c,
+      this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/withdraw`, {}),
+      () => 'admin.campaigns.moderation.withdrawn',
+    );
+  }
+
+  /**
+   * A draft or a rejected campaign goes at once; one waiting for review or
+   * already approved (it is about to reach customers) asks first.
+   */
+  askRemove(c: CampaignRow): void {
+    if (c.status === 'PENDING_REVIEW' || c.status === 'APPROVED') this.removing.set(c);
+    else this.remove(c);
+  }
+
   remove(c: CampaignRow): void {
     this.busy.set(c.id);
     this.error.set(null);
@@ -370,10 +414,12 @@ export class AdminCampaignsPage implements OnInit {
     this.http.delete(`${this.api.baseUrl}/admin/campaigns/${c.id}`).subscribe({
       next: () => {
         this.busy.set(null);
+        this.removing.set(null);
         this.rows.update((rs) => rs.filter((r) => r.id !== c.id));
       },
       error: (err) => {
         this.busy.set(null);
+        this.removing.set(null);
         this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING));
       },
     });

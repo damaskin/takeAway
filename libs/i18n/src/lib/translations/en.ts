@@ -2007,6 +2007,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         pendingHint: 'Under review — nothing has been sent yet.',
         approvedNow: 'Approved — going out now.',
         approvedScheduled: 'Approved — goes out at the time picked.',
+        withdraw: 'Back to draft',
+        withdrawn: 'The campaign is a draft again: edit it and submit it for review when it is ready.',
+      },
+      deleteDialog: {
+        title: 'Delete the campaign «{{title}}»?',
+        pending: 'It is under review — once deleted there is nothing to review, and it cannot be restored.',
+        approved:
+          'It is approved and about to reach your customers. Once deleted it will not go out, and it cannot be restored.',
       },
       noBrand: 'Pick a brand in the top bar — a campaign goes to the customers of one brand.',
       reach: {
