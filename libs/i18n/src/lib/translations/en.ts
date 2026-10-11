@@ -1158,6 +1158,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       currency: 'Currency',
       currencyNote: 'Showing businesses that sell in {{currency}} — money in different currencies is never added up.',
+      storeCurrencyNote: 'Showing stores that sell in {{currency}} — money in different currencies is never added up.',
+      storeEmpty: 'No orders at “{{name}}” in this period or the one before.',
+      money: {
+        line: 'Sales {{sales}} − discounts {{discounts}} = revenue {{revenue}}',
+        giftCards: 'of which paid with gift cards {{value}}',
+        hint: 'Sales are orders at menu prices. Discounts are promo codes and points. Revenue is sales less discounts, gift-card payments included. Cancelled and expired orders do not count.',
+      },
+      returningHint:
+        'Returning customers ordered from you before this period too. New and returning together are all the customers of the period.',
     },
     dashboard: {
       timezoneAlert: {
@@ -2254,7 +2263,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       topProducts: 'Top products',
       noOrders: 'No orders yet.',
       cohortTitle: 'Customers in the period',
-      repeatRate: 'Repeat rate',
+      returning: 'Returning',
+      repeatRate: 'Ordered more than once',
+      repeatRateHint: 'Share of the period’s customers who placed two orders or more in it.',
+      topProductsHint: 'after discounts — never more than the revenue in total',
+      beforeDiscounts: 'before discounts {{value}}',
       avgBasket: 'Avg basket',
       newCustomers: 'New customers',
       pickupSla: 'Pickup SLA',

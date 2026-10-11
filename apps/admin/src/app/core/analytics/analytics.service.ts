@@ -8,13 +8,16 @@ import { API_CONFIG } from '../api/api.config';
 /**
  * The days a request covers: `days` ending today, or `from`/`to` calendar
  * days (both included). The API reads them in the brand's time zone and
- * compares with as many days right before. `storeId` narrows to one store.
+ * compares with as many days right before. `storeId` narrows to one store;
+ * `currency` picks whose stores count when the brand's stores price in
+ * several (a store brings its own).
  */
 export interface AnalyticsPeriod {
   days?: number;
   from?: string;
   to?: string;
   storeId?: string | null;
+  currency?: string | null;
 }
 
 /** The days a figure covers, as the API read them. */
@@ -30,26 +33,45 @@ export interface RevenuePoint {
   orderCount: number;
 }
 
+/**
+ * Revenue is sales (menu prices) less discounts (promo codes, points),
+ * gift-card payments included — the same on every screen.
+ */
 export interface RevenueSeries extends AnalyticsPeriodEcho {
   totalRevenueCents: number;
   totalOrders: number;
   avgBasketCents: number;
+  salesCents: number;
+  discountCents: number;
+  /** The part of the revenue gift cards paid for. */
+  giftCardCents: number;
   bestDay: RevenuePoint | null;
-  revenueDeltaPercent: number;
+  /** Null when the period before had no revenue: there is nothing to compare with. */
+  revenueDeltaPercent: number | null;
   previousRevenueCents: number;
   points: RevenuePoint[];
+  currency: string | null;
+  currencies: string[];
 }
 
 export interface TopProduct {
   name: string;
   unitsSold: number;
+  /** After discounts: the products add up to no more than the revenue. */
   revenueCents: number;
+  /** At menu price. */
+  salesCents: number;
 }
 
 export interface CohortStats {
+  customers: number;
+  /** First order here in the period. */
+  newCustomers: number;
+  /** Ordered here before the period too: customers − newCustomers. */
+  returningCustomers: number;
+  /** Customers with two or more orders inside the period, 0..100. */
   repeatRatePercent: number;
   avgBasketCents: number;
-  newCustomers: number;
   pickupSlaPercent: number;
 }
 
@@ -57,6 +79,7 @@ export interface CohortStats {
 export interface StorePerformance {
   storeId: string;
   storeName: string;
+  currency: string;
   revenueCents: number;
   orders: number;
   sharePercent: number;
@@ -231,6 +254,7 @@ export class AnalyticsApi {
       params: params({
         brandId,
         storeId: period.storeId,
+        currency: period.currency,
         // A custom range wins over a preset; never send both.
         ...(period.from || period.to ? { from: period.from, to: period.to } : { days: period.days }),
         ...extra,

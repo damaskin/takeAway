@@ -230,7 +230,7 @@ export class RetentionTabComponent {
   }
 
   price(cents: number): string {
-    return this.fmt.money(cents, this.currency(), { round: true });
+    return this.fmt.money(cents, this.currency());
   }
 
   deltaColor(value: number | null): string {
