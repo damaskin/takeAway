@@ -120,6 +120,42 @@ export const TRANSLATIONS_RU = {
       coffee: 'Кофе',
       food: 'Еда',
     },
+    /** Allergen codes a product may list; any other value is shown as the business wrote it. */
+    allergens: {
+      GLUTEN: 'Глютен',
+      MILK: 'Молоко',
+      LACTOSE: 'Лактоза',
+      EGGS: 'Яйца',
+      NUTS: 'Орехи',
+      PEANUTS: 'Арахис',
+      SOY: 'Соя',
+      FISH: 'Рыба',
+      SHELLFISH: 'Морепродукты',
+      SESAME: 'Кунжут',
+      CELERY: 'Сельдерей',
+      MUSTARD: 'Горчица',
+      SULPHITES: 'Сульфиты',
+    },
+    /** The product page on the site and the product screen in the Mini App. */
+    product: {
+      addons: 'Добавки',
+      required: 'обязательно',
+      notChosen: 'не выбрано',
+      caffeine: 'Кофеин',
+      allergens: 'Аллергены',
+      decrease: 'Меньше: {{name}}',
+      increase: 'Больше: {{name}}',
+      noteDrink: 'Пожелание бариста',
+      noteOther: 'Комментарий к заказу',
+      noteDrinkPlaceholder: 'Например, погорячее или без сахара',
+      noteOtherPlaceholder: 'Например, без лука или разрезать пополам',
+      pairings: 'Часто берут вместе',
+    },
+    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    upsell: {
+      title: 'К заказу',
+      add: 'Добавить: {{name}}',
+    },
   },
   nav: {
     menu: 'Меню',

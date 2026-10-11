@@ -118,6 +118,42 @@ export const TRANSLATIONS_EN: TranslationTree = {
       coffee: 'Coffee',
       food: 'Food',
     },
+    /** Allergen codes a product may list; any other value is shown as the business wrote it. */
+    allergens: {
+      GLUTEN: 'Gluten',
+      MILK: 'Milk',
+      LACTOSE: 'Lactose',
+      EGGS: 'Eggs',
+      NUTS: 'Nuts',
+      PEANUTS: 'Peanuts',
+      SOY: 'Soy',
+      FISH: 'Fish',
+      SHELLFISH: 'Shellfish',
+      SESAME: 'Sesame',
+      CELERY: 'Celery',
+      MUSTARD: 'Mustard',
+      SULPHITES: 'Sulphites',
+    },
+    /** The product page on the site and the product screen in the Mini App. */
+    product: {
+      addons: 'Add-ons',
+      required: 'required',
+      notChosen: 'none',
+      caffeine: 'Caffeine',
+      allergens: 'Allergens',
+      decrease: 'Fewer: {{name}}',
+      increase: 'More: {{name}}',
+      noteDrink: 'Note for the barista',
+      noteOther: 'Order note',
+      noteDrinkPlaceholder: 'For example, extra hot or no sugar',
+      noteOtherPlaceholder: 'For example, no onion or cut in half',
+      pairings: 'Goes well with',
+    },
+    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    upsell: {
+      title: 'Add to your order',
+      add: 'Add {{name}}',
+    },
   },
   nav: {
     menu: 'Menu',

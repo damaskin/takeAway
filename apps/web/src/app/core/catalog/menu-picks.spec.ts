@@ -120,6 +120,20 @@ describe('mixMenuPicks', () => {
     expect(picks.map((p) => p.product.slug)).toEqual(['shawarma']);
   });
 
+  it('carries what each item is, from the category it sits in', () => {
+    const kinded = menu('noname', [[product('latte')], [product('croissant')]]);
+    kinded.categories = kinded.categories.map((c, i) => ({ ...c, kind: i === 0 ? 'HOT_DRINKS' : 'BAKERY' }));
+    const picks = mixMenuPicks([
+      { store: noname, menu: kinded },
+      { store: turka, menu: menu('turka', [[product('shawarma')]]) },
+    ]);
+    expect(picks.map((p) => `${p.product.slug}:${p.kind}`)).toEqual([
+      'latte:HOT_DRINKS',
+      'shawarma:OTHER',
+      'croissant:BAKERY',
+    ]);
+  });
+
   it('stops at the limit', () => {
     const many = Array.from({ length: 12 }, (_, i) => [product(`item-${i}`)]);
     expect(mixMenuPicks([{ store: noname, menu: menu('noname', many) }], 8)).toHaveLength(8);

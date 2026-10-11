@@ -2,9 +2,10 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untrack
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { CartChangedError, PickupSlot } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
+import type { CartChangedError, CategoryKind, PickupSlot, StoreListItem, StoreMenu } from '@takeaway/shared-types';
+import { computeTax, isCartChangedError, isStoreInactive, productKind, suggestFood } from '@takeaway/utils';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import { ProductImageComponent } from '@takeaway/ui-kit';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
@@ -16,6 +17,7 @@ import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
 
@@ -33,7 +35,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
 @Component({
   selector: 'app-tma-checkout',
   standalone: true,
-  imports: [FormsModule, RouterLink, TranslatePipe],
+  imports: [FormsModule, RouterLink, TranslatePipe, ProductImageComponent, TmaFoodSuggestionsComponent],
   template: `
     <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
       <h1
@@ -278,7 +280,14 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
               style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 12px"
             >
               @for (item of c.items; track item.id) {
+                @let look = lineLooks().get(item.productId);
                 <div class="flex items-center justify-between" style="gap: 12px">
+                  <lib-product-image
+                    [src]="look?.src"
+                    [kind]="look?.kind"
+                    alt=""
+                    style="flex: none; width: 36px; height: 36px; border-radius: 9px"
+                  />
                   <span
                     class="flex-1"
                     style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
@@ -360,6 +369,17 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             </div>
           }
         </div>
+      }
+
+      <!-- «К заказу»: something to eat with the drinks -->
+      @if (upsell().length > 0 && servingStore(); as store) {
+        <app-tma-food-suggestions
+          data-testid="upsell"
+          [suggestions]="upsell()"
+          [store]="store"
+          [canAdd]="authStore.isAuthenticated()"
+          (cartChanged)="onUpsellAdded($event)"
+        />
       }
 
       <!-- Payment method: orders are paid by card only (Agroprombank). -->
@@ -482,7 +502,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly orders = inject(OrdersApi);
   private readonly tg = inject(TelegramBridgeService);
   private readonly router = inject(Router);
-  private readonly authStore = inject(TmaAuthStore);
+  readonly authStore = inject(TmaAuthStore);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
   private readonly deliveryFeeApi = inject(DeliveryFeeApi);
@@ -492,6 +512,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly webPayments = inject(WebPaymentApi);
 
   readonly cart = signal<CartView | null>(null);
+  /** The store the order goes to, for the «К заказу» cards. */
+  readonly servingStore = signal<StoreListItem | null>(null);
+  /** The store's menu: each line's photo and kind, and what to offer with the drinks. */
+  readonly menu = signal<StoreMenu | null>(null);
   readonly error = signal<string | null>(null);
   readonly pickupMode = signal<'ASAP' | 'SCHEDULED'>('ASAP');
   /** ISO start of the chosen slot; empty until the customer picks one. */
@@ -561,6 +585,31 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** The line whose quantity is on its way to the server; the steppers wait for it. */
   readonly changingItemId = signal<string | null>(null);
 
+  /** Each product's photo and kind, by product id, for the lines' thumbnails. */
+  readonly lineLooks = computed(() => {
+    const looks = new Map<string, { src: string | null; kind: CategoryKind }>();
+    for (const category of this.menu()?.categories ?? []) {
+      for (const product of category.products) {
+        looks.set(product.id, { src: product.imageUrls[0] ?? null, kind: productKind(product, category) });
+      }
+    }
+    return looks;
+  });
+
+  /**
+   * «К заказу»: food and bakery from the menu while the cart has drinks and
+   * nothing to eat. Gone once the order is placed — the basket is fixed then.
+   */
+  readonly upsell = computed(() => {
+    const cart = this.cart();
+    if (!cart || this.placedOrder() || this.storeInactive()) return [];
+    return suggestFood(
+      this.menu(),
+      cart.items.map((i) => i.productId),
+      6,
+    );
+  });
+
   readonly needsCard = computed(() => {
     const c = this.cart();
     return !!c && this.totalCents(c.subtotalCents) > 0;
@@ -582,6 +631,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (list) => {
         const store = (activeId ? list.find((s) => s.id === activeId) : null) ?? list[0];
         if (!store) return;
+        this.servingStore.set(store);
         this.storeName.set(store.name);
         this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
         this.activeStoreId = store.id;
@@ -603,6 +653,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
           },
         });
         this.refreshFeeQuote();
+        this.catalog.getMenu(store.slug).subscribe({
+          next: (menu) => this.menu.set(menu),
+          error: () => undefined,
+        });
       },
     });
 
@@ -798,6 +852,12 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.showError(err, 'tma.checkout.placeOrderFailed');
       },
     });
+  }
+
+  /** A «К заказу» item went in: show the new cart and the new total on the button. */
+  onUpsellAdded(cart: CartView): void {
+    this.cart.set(cart);
+    this.refreshMainButton();
   }
 
   refreshMainButton(): void {

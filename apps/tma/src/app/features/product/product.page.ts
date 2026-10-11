@@ -1,52 +1,71 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import type { Modifier, ProductDetail, Variation, VariationType } from '@takeaway/shared-types';
+import type { ProductDetail, StoreListItem, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
-import { isStoreInactive } from '@takeaway/utils';
+import { ProductImageComponent } from '@takeaway/ui-kit';
+import {
+  allergenChips,
+  defaultVariationSelection,
+  describeChoice,
+  initialModifierCounts,
+  isDrinkKind,
+  isFoodKind,
+  isStoreInactive,
+  priceWithOptions,
+  productKind,
+  suggestFood,
+  type VariationSelection,
+} from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
-
-const VARIATION_GROUPS: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
-
-// Translation keys; resolved via TranslateService in `variationLabel()`.
-const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
-  SIZE: 'tma.product.labels.size',
-  TEMPERATURE: 'tma.product.labels.temperature',
-  MILK: 'tma.product.labels.milk',
-  CUP: 'tma.product.labels.cup',
-};
+import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
+import { TmaProductOptionsComponent } from './product-options.component';
 
 /**
  * TMA Product Detail — pencil XJUmz.
  *
  * tcContent (0/16/16/16 padding, gap 20):
- *   hero — 220px image (16px radius)
- *   infoRow — title (Fraunces 20/700) · base price (Inter 18/700 caramel)
+ *   hero — 220px image: the photo, or the placeholder for the product's kind
+ *   infoRow — title (Fraunces 20/700) · live price (Inter 18/700 caramel)
+ *   meta — calories, prep time, caffeine (not for food or bakery), allergen chips
  *   description
- *   sizeSection / milkSection / extrasSection — pill-button rows
+ *   options — choice chips per size / temperature / milk / cup, add-on
+ *     groups opening in place (see TmaProductOptionsComponent)
+ *   note — «Пожелание бариста» for a drink, «Комментарий к заказу» else
+ *   «Часто берут вместе» under a drink, when the store sells food
+ *   choice bar — pinned above Telegram's button: the choice in one line
+ *     and the price
  * MainButton (Telegram blue, 48px) handles add-to-cart action. It stays
  * hidden while the serving store is closed — the cart would refuse the item.
  */
 @Component({
   selector: 'app-tma-product',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    TranslatePipe,
+    ProductImageComponent,
+    TmaProductOptionsComponent,
+    TmaFoodSuggestionsComponent,
+  ],
   template: `
-    <section style="padding: 0 16px 120px 16px; display: flex; flex-direction: column; gap: 20px">
+    <section style="padding: 0 16px 24px 16px; display: flex; flex-direction: column; gap: 20px">
       @if (product(); as p) {
-        <!-- Hero image. background-image, not the background shorthand: the
-             shorthand resets background-size and -position, and a photo
-             came out at its natural size, cropped at the top-left corner. -->
-        <div
-          [style.background-image]="heroBg(p)"
-          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px; background-size: cover; background-position: center; background-repeat: no-repeat; background-color: var(--color-cream)"
-        ></div>
+        <lib-product-image
+          [src]="p.imageUrls[0]"
+          [kind]="kind()"
+          [alt]="p.name"
+          [eager]="true"
+          style="height: 220px; margin: 16px -16px 0 -16px; border-radius: 0 0 24px 24px"
+        />
 
         <!-- Title row -->
         <div class="flex items-start justify-between" style="gap: 12px">
@@ -55,7 +74,7 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
               style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso)"
               >{{ p.name }}</span
             >
-            <div class="flex items-center" style="gap: 12px">
+            <div class="flex items-center flex-wrap" style="gap: 4px 12px">
               @if (p.calories !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
                   >🔥 {{ 'tma.product.labels.kcal' | translate: { calories: p.calories } }}</span
@@ -64,6 +83,17 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
                 >⌛ {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}</span
               >
+              @if (showCaffeine()) {
+                <span
+                  role="img"
+                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                  [attr.aria-label]="'common.product.caffeine' | translate"
+                >
+                  @for (i of [0, 1, 2, 3]; track i) {
+                    <span [style.opacity]="i < (p.caffeineLevel ?? 0) ? 1 : 0.25">☕</span>
+                  }
+                </span>
+              }
             </div>
           </div>
           <span style="font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--color-caramel)">{{
@@ -79,87 +109,46 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
           </p>
         }
 
-        <!-- Variation sections -->
-        @for (group of variationGroups(); track group.type) {
-          <div class="flex flex-col" style="gap: 10px">
-            <span
-              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-              >{{ variationLabel(group.type) | translate }}</span
-            >
-            <div class="flex flex-wrap" style="gap: 8px">
-              @for (v of group.variations; track v.id) {
-                <button
-                  type="button"
-                  (click)="selectVariation(group.type, v.id)"
-                  [style.background]="isSelected(group.type, v.id) ? 'var(--color-caramel)' : 'var(--color-foam)'"
-                  [style.color]="isSelected(group.type, v.id) ? 'white' : 'var(--color-text-primary)'"
-                  [style.border]="
-                    isSelected(group.type, v.id) ? '1px solid transparent' : '1px solid var(--color-border-light)'
-                  "
-                  style="height: 38px; padding: 0 16px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 500"
-                >
-                  {{ v.name }}
-                </button>
-              }
-            </div>
+        @if (allergens().length > 0) {
+          <div
+            class="flex items-center flex-wrap"
+            data-testid="allergens"
+            style="gap: 6px; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+          >
+            <span>{{ 'common.product.allergens' | translate }}:</span>
+            @for (a of allergens(); track a.text) {
+              <span
+                style="padding: 3px 9px; border-radius: 9999px; background: var(--color-latte); color: var(--color-text-secondary); font-weight: 500"
+                >{{ a.code ? ('common.allergens.' + a.code | translate) : a.text }}</span
+              >
+            }
           </div>
         }
 
-        @if (p.modifiers.length > 0) {
-          <div class="flex flex-col" style="gap: 10px">
-            <span
-              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-              >{{ 'tma.product.labels.addons' | translate }}</span
-            >
-            <div class="flex flex-col" style="gap: 8px">
-              @for (m of p.modifiers; track m.id) {
-                <div
-                  class="flex items-center justify-between"
-                  style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); padding: 12px 14px; gap: 12px"
-                >
-                  <div class="flex flex-col" style="gap: 2px">
-                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)">{{
-                      m.name
-                    }}</span>
-                    @if (m.priceDeltaCents > 0) {
-                      <span style="font-family: var(--font-sans); font-size: 11px; color: var(--color-text-tertiary)"
-                        >+{{ price(m.priceDeltaCents) }}</span
-                      >
-                    }
-                  </div>
-                  <div
-                    class="flex items-center"
-                    style="border: 1px solid var(--color-border); border-radius: var(--radius-button); overflow: hidden"
-                  >
-                    <button
-                      type="button"
-                      (click)="decModifier(m)"
-                      [disabled]="modifierCount(m.id) <= m.minCount"
-                      class="disabled:opacity-30"
-                      style="width: 32px; height: 32px; font-size: 16px; color: var(--color-text-primary)"
-                    >
-                      −
-                    </button>
-                    <span
-                      class="flex items-center justify-center"
-                      style="width: 28px; height: 32px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-                      >{{ modifierCount(m.id) }}</span
-                    >
-                    <button
-                      type="button"
-                      (click)="incModifier(m)"
-                      [disabled]="modifierCount(m.id) >= m.maxCount"
-                      class="disabled:opacity-30"
-                      style="width: 32px; height: 32px; font-size: 16px; color: var(--color-text-primary)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-        }
+        <app-tma-product-options
+          [variations]="p.variations"
+          [modifiers]="p.modifiers"
+          [currency]="currency()"
+          [(selection)]="selectedVariations"
+          [(counts)]="modifierCounts"
+        />
+
+        <!-- Note for whoever makes it -->
+        <label class="flex flex-col" style="gap: 8px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ (isDrink() ? 'common.product.noteDrink' : 'common.product.noteOther') | translate }}</span
+          >
+          <textarea
+            [(ngModel)]="notes"
+            rows="2"
+            maxlength="200"
+            [placeholder]="
+              (isDrink() ? 'common.product.noteDrinkPlaceholder' : 'common.product.noteOtherPlaceholder') | translate
+            "
+            style="padding: 10px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); resize: none; outline: none"
+          ></textarea>
+        </label>
 
         @if (storeClosed()) {
           <div
@@ -192,8 +181,35 @@ const VARIATION_LABEL_KEYS: Record<VariationType, string> = {
             {{ 'tma.product.offlinePrompt' | translate }}
           </p>
         }
+
+        @if (pairings().length > 0 && store(); as s) {
+          <app-tma-food-suggestions
+            title="common.product.pairings"
+            [suggestions]="pairings()"
+            [store]="s"
+            [canAdd]="authStore.isAuthenticated() && !storeClosed()"
+          />
+        }
       }
     </section>
+
+    @if (product(); as p) {
+      <!-- The choice and its price, right above Telegram's add button. -->
+      <div
+        data-testid="choice-summary"
+        class="flex items-center"
+        style="position: sticky; bottom: 0; z-index: 5; gap: 12px; padding: 10px 16px calc(10px + var(--tg-safe-area-bottom, 0px)); background: var(--color-cream); border-top: 1px solid var(--color-border-light); font-family: var(--font-sans)"
+      >
+        <span
+          class="flex-1"
+          style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--color-text-secondary)"
+          >{{ choice() || p.name }}</span
+        >
+        <span style="flex: none; font-size: 15px; font-weight: 700; color: var(--color-caramel)">{{
+          price(totalCents())
+        }}</span>
+      </div>
+    }
   `,
 })
 export class TmaProductPage implements OnInit, OnDestroy {
@@ -211,37 +227,57 @@ export class TmaProductPage implements OnInit, OnDestroy {
   readonly error = signal<string | null>(null);
   /** The store this product would be added to takes no orders right now. */
   readonly storeClosed = signal(false);
-  readonly selectedVariations = signal<Partial<Record<VariationType, string>>>({});
+  readonly selectedVariations = signal<VariationSelection>({});
   readonly modifierCounts = signal<Record<string, number>>({});
-  private storeId: string | null = null;
+  notes = '';
+  /** The store the product would be added to. */
+  readonly store = signal<StoreListItem | null>(null);
   /** The serving store's currency; the customer's profile currency is not what they pay in. */
-  readonly currency = signal<string | null>(null);
+  readonly currency = computed(() => this.store()?.currency ?? null);
+  /** The serving store's menu: the product's kind, and what goes well with it. */
+  readonly menu = signal<StoreMenu | null>(null);
   private detachBack: (() => void) | null = null;
-
-  readonly variationGroups = computed(() => {
-    const p = this.product();
-    if (!p) return [];
-    return VARIATION_GROUPS.map((type) => ({
-      type,
-      variations: p.variations.filter((v) => v.type === type).sort((a, b) => a.sortOrder - b.sortOrder),
-    })).filter((g) => g.variations.length > 0);
-  });
 
   readonly totalCents = computed(() => {
     const p = this.product();
-    if (!p) return 0;
-    let total = p.basePriceCents;
-    const selected = this.selectedVariations();
-    for (const v of p.variations) if (selected[v.type] === v.id) total += v.priceDeltaCents;
-    const counts = this.modifierCounts();
-    for (const m of p.modifiers) total += (counts[m.id] ?? 0) * m.priceDeltaCents;
-    return total;
+    return p ? priceWithOptions(p, this.selectedVariations(), this.modifierCounts()) : 0;
+  });
+
+  /** The choice in one line over the add button: "L · Oat · +Vanilla ×2". */
+  readonly choice = computed(() => {
+    const p = this.product();
+    return p ? describeChoice(p, this.selectedVariations(), this.modifierCounts()) : '';
+  });
+
+  /** What the product is — picks the placeholder, the note's wording and whether caffeine is shown. */
+  readonly kind = computed(() => {
+    const p = this.product();
+    if (!p) return 'OTHER';
+    const category = this.menu()?.categories.find((c) => c.id === p.categoryId) ?? null;
+    return productKind(p, category);
+  });
+
+  readonly isDrink = computed(() => isDrinkKind(this.kind()));
+
+  /** Caffeine means nothing on a croissant, whatever the POS sent. */
+  readonly showCaffeine = computed(() => {
+    const level = this.product()?.caffeineLevel;
+    return level !== null && level !== undefined && !isFoodKind(this.kind());
+  });
+
+  readonly allergens = computed(() => allergenChips(this.product()?.allergens));
+
+  /** «Часто берут вместе»: food and bakery from the same menu, under a drink. */
+  readonly pairings = computed(() => {
+    const p = this.product();
+    return p ? suggestFood(this.menu(), [p.id], 6) : [];
   });
 
   constructor() {
     // The session can land after this screen renders (a retry from the
     // route guard). Bring the Telegram main button back when it does,
-    // instead of leaving the customer looking at a dead product page.
+    // instead of leaving the customer looking at a dead product page. The
+    // label carries the price, so it follows every change of the options.
     effect(() => {
       if (this.authStore.isAuthenticated() && this.product()) {
         this.refreshMainButton();
@@ -266,7 +302,8 @@ export class TmaProductPage implements OnInit, OnDestroy {
       .subscribe({
         next: (p) => {
           this.product.set(p);
-          this.initializeDefaults(p);
+          this.selectedVariations.set(defaultVariationSelection(p.variations));
+          this.modifierCounts.set(initialModifierCounts(p.modifiers));
           this.resolveStore(p.brandId);
           this.refreshMainButton();
         },
@@ -282,74 +319,12 @@ export class TmaProductPage implements OnInit, OnDestroy {
     this.detachBack?.();
   }
 
-  /** Returns a translation key — resolved via | translate in the template. */
-  variationLabel(type: VariationType): string {
-    return VARIATION_LABEL_KEYS[type];
-  }
-
-  selectVariation(type: VariationType, id: string): void {
-    this.selectedVariations.update((s) => ({ ...s, [type]: id }));
-    this.tg.haptic('light');
-    this.refreshMainButton();
-  }
-
-  isSelected(type: VariationType, id: string): boolean {
-    return this.selectedVariations()[type] === id;
-  }
-
-  modifierCount(id: string): number {
-    return this.modifierCounts()[id] ?? 0;
-  }
-
-  incModifier(m: Modifier): void {
-    this.modifierCounts.update((state) => {
-      const current = state[m.id] ?? 0;
-      if (current >= m.maxCount) return state;
-      return { ...state, [m.id]: current + 1 };
-    });
-    this.tg.haptic('light');
-    this.refreshMainButton();
-  }
-
-  decModifier(m: Modifier): void {
-    this.modifierCounts.update((state) => {
-      const current = state[m.id] ?? 0;
-      if (current <= m.minCount) return state;
-      return { ...state, [m.id]: current - 1 };
-    });
-    this.tg.haptic('light');
-    this.refreshMainButton();
-  }
-
   price(cents: number): string {
     return this.fmt.money(cents, this.currency());
   }
 
   minutes(seconds: number): number {
     return Math.max(1, Math.round(seconds / 60));
-  }
-
-  heroBg(p: ProductDetail): string {
-    const url = p.imageUrls?.[0];
-    // A quote in a POS-supplied URL would otherwise end the CSS string early.
-    if (url) return `url('${url.replace(/'/g, '%27')}')`;
-    return 'linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)';
-  }
-
-  private initializeDefaults(p: ProductDetail): void {
-    const defaults: Partial<Record<VariationType, string>> = {};
-    for (const v of p.variations) if (v.isDefault && !defaults[v.type]) defaults[v.type] = v.id;
-    for (const type of VARIATION_GROUPS) {
-      if (!defaults[type]) {
-        const first = p.variations.find((v: Variation) => v.type === type);
-        if (first) defaults[type] = first.id;
-      }
-    }
-    this.selectedVariations.set(defaults);
-
-    const counts: Record<string, number> = {};
-    for (const m of p.modifiers) counts[m.id] = m.minCount;
-    this.modifierCounts.set(counts);
   }
 
   private refreshMainButton(): void {
@@ -373,26 +348,35 @@ export class TmaProductPage implements OnInit, OnDestroy {
       next: (list) => {
         const active = list.find((s) => s.id === this.activeStore.current());
         const fit = active?.brandId === brandId ? active : list.find((s) => s.brandId === brandId);
-        this.storeId = fit?.id ?? null;
-        this.currency.set(fit?.currency ?? null);
+        this.store.set(fit ?? null);
         this.storeClosed.set(!!fit && isStoreInactive(fit));
         if (!fit) this.error.set(this.translate.instant('tma.product.noStore'));
+        else this.loadMenu(fit.slug);
         this.refreshMainButton();
       },
     });
   }
 
+  private loadMenu(storeSlug: string): void {
+    this.catalog.getMenu(storeSlug).subscribe({
+      next: (menu) => this.menu.set(menu),
+      error: () => undefined,
+    });
+  }
+
   private onMainButton(): void {
     const p = this.product();
-    if (!p || !this.storeId) return;
+    const store = this.store();
+    if (!p || !store) return;
     this.tg.haptic('medium');
     this.cartService
       .add({
-        storeId: this.storeId,
+        storeId: store.id,
         productId: p.id,
         quantity: 1,
         variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
         modifiers: this.modifierCounts(),
+        notes: this.notes.trim() || undefined,
       })
       .subscribe({
         next: () => void this.router.navigate(['/checkout']),

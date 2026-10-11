@@ -13,10 +13,17 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
+import type {
+  CategoryKind,
+  CategoryWithProducts,
+  ProductSummary,
+  StoreDetail,
+  StoreMenu,
+} from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
-import { formatMinutesOfDay, isStoreInactive, todaysOpeningHours } from '@takeaway/utils';
+import { ProductImageComponent } from '@takeaway/ui-kit';
+import { formatMinutesOfDay, isStoreInactive, productKind, todaysOpeningHours } from '@takeaway/utils';
 import { Subscription, filter, map } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
@@ -55,7 +62,7 @@ import { categoryIcon } from '../../core/catalog/category-icon';
 @Component({
   selector: 'app-web-menu',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [ProductImageComponent, RouterLink, TranslatePipe],
   template: `
     <div class="store-bar" data-sticky-top>
       @if (store(); as s) {
@@ -235,19 +242,12 @@ import { categoryIcon } from '../../core/catalog/category-icon';
                   class="product-card"
                   [class.is-sold-out]="p.onStopList"
                 >
-                  <div class="product-media">
-                    @if (p.imageUrls[0]; as url) {
-                      <img
-                        [src]="url"
-                        [alt]="p.name"
-                        loading="lazy"
-                        decoding="async"
-                        class="w-full h-full object-cover"
-                      />
-                    } @else {
-                      <span aria-hidden="true">{{ icon(cat) }}</span>
-                    }
-                  </div>
+                  <lib-product-image
+                    class="product-media"
+                    [src]="p.imageUrls[0]"
+                    [kind]="kindOf(p, cat)"
+                    [alt]="p.name"
+                  />
                   <div class="flex flex-1 flex-col" style="gap: 6px; padding: 12px 14px 14px">
                     <span
                       class="line-clamp-2"
@@ -455,12 +455,7 @@ import { categoryIcon } from '../../core/catalog/category-icon';
         opacity: 0.55;
       }
       .product-media {
-        display: grid;
-        place-items: center;
         aspect-ratio: 4 / 3;
-        overflow: hidden;
-        background: linear-gradient(135deg, var(--color-latte), var(--color-cream));
-        font-size: 44px;
       }
       .product-add,
       .cart-count {
@@ -558,9 +553,6 @@ import { categoryIcon } from '../../core/catalog/category-icon';
         .menu-grid {
           grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
           gap: 12px;
-        }
-        .product-media {
-          font-size: 36px;
         }
         .cart-bar {
           bottom: 12px;
@@ -701,6 +693,11 @@ export class MenuPage {
 
   icon(cat: CategoryWithProducts): string {
     return categoryIcon(cat.name);
+  }
+
+  /** Picks the placeholder of a product without a photo. */
+  kindOf(product: ProductSummary, cat: CategoryWithProducts): CategoryKind {
+    return productKind(product, cat);
   }
 
   etaMinutes(store: StoreDetail): number {

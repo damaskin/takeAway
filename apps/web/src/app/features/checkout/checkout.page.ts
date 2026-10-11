@@ -2,9 +2,10 @@ import { Component, OnInit, computed, effect, inject, signal, untracked } from '
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { CartChangedError, PickupSlot, StoreListItem } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError, isStoreInactive } from '@takeaway/utils';
+import type { CartChangedError, CategoryKind, PickupSlot, StoreListItem, StoreMenu } from '@takeaway/shared-types';
+import { computeTax, isCartChangedError, isStoreInactive, productKind, suggestFood } from '@takeaway/utils';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import { ProductImageComponent } from '@takeaway/ui-kit';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
@@ -15,6 +16,7 @@ import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
+import { FoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 
 type PickupMode = 'ASAP' | 'SCHEDULED';
 type FulfillmentType = 'PICKUP' | 'DELIVERY';
@@ -28,7 +30,7 @@ interface Step {
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe, ProductImageComponent, FoodSuggestionsComponent],
   host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     <section class="min-h-screen">
@@ -308,7 +310,14 @@ interface Step {
               style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; padding: var(--spacing-base) var(--spacing-lg); display: flex; flex-direction: column; gap: 12px"
             >
               @for (item of c.items; track item.id) {
+                @let look = lineLooks().get(item.productId);
                 <div class="flex items-center justify-between" style="gap: 12px">
+                  <lib-product-image
+                    [src]="look?.src"
+                    [kind]="look?.kind"
+                    alt=""
+                    style="flex: none; width: 40px; height: 40px; border-radius: 10px"
+                  />
                   <span
                     class="flex-1"
                     style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
@@ -422,6 +431,19 @@ interface Step {
                 </span>
               </div>
             </section>
+
+            <!-- «К заказу»: something to eat with the drinks -->
+            @if (upsell().length > 0 && servingStore(); as store) {
+              <app-food-suggestions
+                class="w-full"
+                style="max-width: 500px"
+                data-testid="upsell"
+                [suggestions]="upsell()"
+                [store]="store"
+                [canAdd]="authStore.isAuthenticated()"
+                (cartChanged)="onUpsellAdded($event)"
+              />
+            }
 
             <!-- Loyalty points -->
             @if (pointsBalance() >= pointsMin()) {
@@ -713,6 +735,10 @@ export class CheckoutPage implements OnInit {
   private readonly webPayments = inject(WebPaymentApi);
 
   readonly cart = signal<CartView | null>(null);
+  /** The store the order goes to, for the «К заказу» cards. */
+  readonly servingStore = signal<StoreListItem | null>(null);
+  /** The store's menu: each line's photo and kind, and what to offer with the drinks. */
+  readonly menu = signal<StoreMenu | null>(null);
   readonly mode = signal<PickupMode>('ASAP');
   /** Prices are the store's, whatever currency the customer's profile has. */
   readonly currency = signal<string | null>(null);
@@ -810,6 +836,31 @@ export class CheckoutPage implements OnInit {
     notes: new FormControl('', { nonNullable: true }),
   });
 
+  /** Each product's photo and kind, by product id, for the lines' thumbnails. */
+  readonly lineLooks = computed(() => {
+    const looks = new Map<string, { src: string | null; kind: CategoryKind }>();
+    for (const category of this.menu()?.categories ?? []) {
+      for (const product of category.products) {
+        looks.set(product.id, { src: product.imageUrls[0] ?? null, kind: productKind(product, category) });
+      }
+    }
+    return looks;
+  });
+
+  /**
+   * «К заказу»: food and bakery from the menu while the cart has drinks and
+   * nothing to eat. Gone once the order is placed — the basket is fixed then.
+   */
+  readonly upsell = computed(() => {
+    const cart = this.cart();
+    if (!cart || this.placedOrder() || this.storeInactive()) return [];
+    return suggestFood(
+      this.menu(),
+      cart.items.map((i) => i.productId),
+      6,
+    );
+  });
+
   readonly readyAt = computed<Date>(() => {
     if (this.mode() === 'ASAP') {
       return new Date(Date.now() + (this.cart()?.etaSeconds ?? 0) * 1000);
@@ -898,8 +949,29 @@ export class CheckoutPage implements OnInit {
     this.storeOpen.set(store.openNow !== false);
     this.storeInactive.set(isStoreInactive(store));
     if (!this.storeOpen()) this.selectMode('SCHEDULED');
+    this.servingStore.set(store);
     this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
+    this.loadMenu(store.slug);
     this.refreshFeeQuote();
+  }
+
+  /** The copy the menu page left behind, else a fresh one; without it the lines just show placeholders. */
+  private loadMenu(storeSlug: string): void {
+    const cached = this.catalog.cachedMenu(storeSlug);
+    if (cached) {
+      this.menu.set(cached);
+      return;
+    }
+    this.catalog.getMenu(storeSlug).subscribe({
+      next: (menu) => this.menu.set(menu),
+      error: () => undefined,
+    });
+  }
+
+  /** A «К заказу» item went in: show the new cart; discounts were for the old subtotal. */
+  onUpsellAdded(cart: CartView): void {
+    this.cart.set(cart);
+    this.onCartQuantityChanged();
   }
 
   requestLocation(): void {

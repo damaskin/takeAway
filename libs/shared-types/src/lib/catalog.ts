@@ -9,6 +9,7 @@ export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
 export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
 export type StoreKind = 'COFFEE' | 'FOOD';
+export type CategoryKind = 'HOT_DRINKS' | 'COLD_DRINKS' | 'FOOD' | 'BAKERY' | 'OTHER';
 
 /** Every store kind, in the order the admin and the filters list them. */
 export const STORE_KINDS: readonly StoreKind[] = ['COFFEE', 'FOOD'];
@@ -120,6 +121,7 @@ export interface Modifier {
   minCount: number;
   maxCount: number;
   sortOrder: number;
+  group?: string | null;
 }
 
 export interface ProductSummary {
@@ -140,6 +142,7 @@ export interface ProductSummary {
   imageUrls: string[];
   sortOrder: number;
   onStopList?: boolean;
+  categoryKind?: CategoryKind;
 }
 
 export interface ProductDetail extends ProductSummary {
@@ -159,6 +162,7 @@ export interface CategoryWithProducts {
   availableFrom: number | null;
   availableTo: number | null;
   products: ProductSummary[];
+  kind?: CategoryKind;
 }
 
 export interface StoreMenu {
