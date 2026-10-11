@@ -12,6 +12,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { mixMenuPicks, storesToSample, type MenuPick } from '../../core/catalog/menu-picks';
 import { storeAddress } from '../../core/catalog/store-place';
+import { SocialLinksComponent } from './social-links.component';
 
 interface HowStep {
   icon: string;
@@ -28,7 +29,7 @@ interface FooterLink {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, BrandLogoComponent, StoreLogoComponent],
+  imports: [RouterLink, TranslatePipe, BrandLogoComponent, StoreLogoComponent, SocialLinksComponent],
   template: `
     <!-- Hero — pencil SNCQE. The design's closing banner; it opens the page. -->
     <section
@@ -360,6 +361,7 @@ interface FooterLink {
         <span style="font-family: var(--font-sans); font-size: 13px; color: rgba(248,243,235,0.4)">
           {{ 'web.home.footer.rights' | translate }}
         </span>
+        <app-social-links />
       </div>
     </footer>
   `,
@@ -401,6 +403,7 @@ export class HomePage implements OnInit {
       title: 'nav.about',
       links: [
         { label: 'nav.about', route: '/', fragment: 'how-it-works' },
+        { label: 'web.appInstall.footerLink', route: '/app' },
         { label: 'web.business.footerLink', route: '/business/signup' },
       ],
     },

@@ -47,12 +47,25 @@ describe('legal page content', () => {
     }
   });
 
-  it('gives every page the support contacts', () => {
+  it('gives every page the support contacts: the email, and the form on /support', () => {
     for (const key of LEGAL_DOC_KEYS) {
       for (const locale of LOCALES) {
         const text = lines(LEGAL_DOCUMENTS[key][locale]).join('\n');
         expect(text).toContain('(mailto:help@takeaway.md)');
-        expect(text).toContain('(https://t.me/takaway_tgbot)');
+        if (key !== 'support') expect(text).toContain('](/support)');
+      }
+    }
+  });
+
+  // The bot only sends order notifications; what people write to it is lost.
+  it('never lists the Telegram bot as a way to reach support', () => {
+    for (const key of LEGAL_DOC_KEYS) {
+      for (const locale of LOCALES) {
+        const contacts = LEGAL_DOCUMENTS[key][locale].sections
+          .filter((s) => s.id === 'contact' || s.id === 'contacts')
+          .flatMap((s) => s.blocks.flatMap((b) => (typeof b === 'string' ? [] : b.list)));
+        expect(contacts.length).toBeGreaterThan(0);
+        for (const item of contacts) expect(item).not.toContain('t.me/');
       }
     }
   });

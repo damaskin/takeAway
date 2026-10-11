@@ -28,6 +28,11 @@ export const appRoutes: Route[] = [
         data: { doc: 'support' },
         loadComponent: () => import('./features/legal/legal.page').then((m) => m.LegalPage),
       },
+      // takeaway.md/app — the one link to the app: a phone goes on to its store.
+      {
+        path: 'app',
+        loadComponent: () => import('./features/app-install/app-install.page').then((m) => m.AppInstallPage),
+      },
       {
         path: 'business/signup',
         loadComponent: () =>

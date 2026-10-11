@@ -14,11 +14,12 @@ export const SUPPORT_EN: LegalDocument = {
       blocks: [
         {
           list: [
+            'The "Write to us" form at the top of this page — we reply by email or phone, whichever you leave.',
             'Email: [help@takeaway.md](mailto:help@takeaway.md)',
-            'Telegram: [@takaway_tgbot](https://t.me/takaway_tgbot)',
           ],
         },
         'If it is about an order, include its code — the four digits on the order screen — so we can find it faster.',
+        'The [@takaway_tgbot](https://t.me/takaway_tgbot) Telegram bot sends order notifications and opens ordering in Telegram, but does not read messages — write to us through the form or by email.',
       ],
     },
     {
@@ -49,7 +50,7 @@ export const SUPPORT_EN: LegalDocument = {
       heading: 'How do I cancel an order or get a refund?',
       blocks: [
         'Until the business starts preparing your order, you can cancel it on the order screen. Refund rules are set by the business, and refunds go back to the card you paid with.',
-        'If the order is already being prepared, something went wrong or a refund has not arrived, write to [help@takeaway.md](mailto:help@takeaway.md) or on [Telegram](https://t.me/takaway_tgbot) with your order code, and we will sort it out with the business.',
+        'If the order is already being prepared, something went wrong or a refund has not arrived, write to us through the form at the top of this page or at [help@takeaway.md](mailto:help@takeaway.md) with your order code, and we will sort it out with the business.',
       ],
     },
     {

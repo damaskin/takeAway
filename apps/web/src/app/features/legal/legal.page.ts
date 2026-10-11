@@ -7,20 +7,22 @@ import { LocaleFormatService } from '@takeaway/i18n';
 import { LEGAL_DOC_KEYS, type LegalDocKey } from './legal-document';
 import { LEGAL_DOCUMENTS } from './legal-documents';
 import { LegalTextComponent } from './legal-text.component';
+import { SupportFormComponent } from './support-form.component';
 
 /**
  * /privacy, /terms and /support — public, no sign-in. The App Store listing
  * links the first and the last, so they have to open for anyone.
  *
  * One page for all three: the route says which document (`data.doc`), the
- * language switcher says which translation. The browser tab gets the
+ * language switcher says which translation. Support opens with the «Написать
+ * нам» form, before its contacts and answers. The browser tab gets the
  * document's title while it is open and the site's own back afterwards —
  * no other page sets one.
  */
 @Component({
   selector: 'app-legal-page',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LegalTextComponent],
+  imports: [RouterLink, TranslatePipe, LegalTextComponent, SupportFormComponent],
   template: `
     <section
       style="background: var(--color-cream); padding: clamp(32px, 6vw, 56px) clamp(16px, 5vw, 24px) clamp(48px, 8vw, 80px)"
@@ -50,6 +52,12 @@ import { LegalTextComponent } from './legal-text.component';
               }
             </ol>
           </nav>
+        }
+
+        @if (doc() === 'support') {
+          <div class="legal-card">
+            <app-support-form />
+          </div>
         }
 
         <div class="legal-card legal-prose">
