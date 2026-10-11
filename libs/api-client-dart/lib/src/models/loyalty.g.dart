@@ -51,6 +51,9 @@ PromoValidation _$PromoValidationFromJson(Map<String, dynamic> json) => PromoVal
   discountCents: (json['discountCents'] as num?)?.toInt() ?? 0,
   pointsMultiplier: (json['pointsMultiplier'] as num?)?.toDouble() ?? 1,
   reason: json['reason'] as String?,
+  reasonCode: json['reasonCode'] as String?,
+  minOrderCents: (json['minOrderCents'] as num?)?.toInt(),
+  currency: json['currency'] as String?,
 );
 
 GiftCardValidation _$GiftCardValidationFromJson(Map<String, dynamic> json) => GiftCardValidation(

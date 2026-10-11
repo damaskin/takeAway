@@ -255,6 +255,7 @@ class Modifier {
     required this.minCount,
     required this.maxCount,
     required this.sortOrder,
+    this.group,
   });
 
   factory Modifier.fromJson(Map<String, dynamic> json) => _$ModifierFromJson(json);
@@ -273,6 +274,12 @@ class Modifier {
   final int maxCount;
   @JsonKey(defaultValue: 0)
   final int sortOrder;
+
+  /// Display group of the add-on — «Сиропы», «Соусы», «Убрать». Null (or
+  /// blank, or from API versions that predate it) means the generic
+  /// «Добавки».
+  @JsonKey(fromJson: _labelFromJson)
+  final String? group;
 }
 
 @JsonSerializable(explicitToJson: true)
@@ -295,6 +302,7 @@ class Product {
     this.fatsGrams,
     this.carbsGrams,
     this.onStopList = false,
+    this.categoryKind,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
@@ -325,6 +333,12 @@ class Product {
   @JsonKey(defaultValue: false)
   final bool onStopList;
 
+  /// Kind of the product's category: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`,
+  /// `BAKERY` or `OTHER`, as sent (values this client does not know pass
+  /// through). Null from API versions that predate it.
+  @JsonKey(fromJson: _labelFromJson)
+  final String? categoryKind;
+
   String? get imageUrl => imageUrls.isEmpty ? null : imageUrls.first;
   bool get hasNutrition => proteinsGrams != null || fatsGrams != null || carbsGrams != null;
 }
@@ -352,6 +366,7 @@ class ProductDetail extends Product {
     super.fatsGrams,
     super.carbsGrams,
     super.onStopList,
+    super.categoryKind,
   });
 
   factory ProductDetail.fromJson(Map<String, dynamic> json) => _$ProductDetailFromJson(json);
@@ -378,6 +393,7 @@ class MenuCategory {
     this.iconUrl,
     this.availableFrom,
     this.availableTo,
+    this.kind,
   });
 
   factory MenuCategory.fromJson(Map<String, dynamic> json) => _$MenuCategoryFromJson(json);
@@ -395,6 +411,11 @@ class MenuCategory {
   final int? availableTo;
   @JsonKey(defaultValue: <Product>[])
   final List<Product> products;
+
+  /// What the category holds: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY`
+  /// or `OTHER`, as sent. Null from API versions that predate it.
+  @JsonKey(fromJson: _labelFromJson)
+  final String? kind;
 }
 
 @JsonSerializable(explicitToJson: true)
@@ -443,3 +464,7 @@ List<String>? _kindsFromJson(Object? raw) => raw is List
           if (kind is String) kind,
       ]
     : null;
+
+/// A text field that older APIs leave out and newer ones may send blank:
+/// anything but a non-blank string reads as null.
+String? _labelFromJson(Object? raw) => raw is String && raw.trim().isNotEmpty ? raw.trim() : null;
