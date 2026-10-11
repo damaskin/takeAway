@@ -23,6 +23,7 @@ import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 import { UserStoreScopeService } from './services/user-store-scope.service';
+import { jwtAccessSecret } from './jwt-secrets';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -35,7 +36,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access',
+        secret: jwtAccessSecret(config),
       }),
     }),
     // Global throttler: coarse defense across the whole API, per account when

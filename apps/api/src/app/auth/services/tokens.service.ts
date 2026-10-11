@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { jwtRefreshSecret } from '../jwt-secrets';
 
 interface IssuedTokens {
   accessToken: string;
@@ -34,7 +35,7 @@ export class TokensService {
   ) {
     this.accessTtlSeconds = parseDurationSeconds(config.get<string>('JWT_ACCESS_TTL') ?? '15m');
     this.refreshTtlSeconds = parseDurationSeconds(config.get<string>('JWT_REFRESH_TTL') ?? '7d');
-    this.refreshSecret = config.get<string>('JWT_REFRESH_SECRET') ?? 'change-me-in-prod-refresh';
+    this.refreshSecret = jwtRefreshSecret(config);
   }
 
   async issue(userId: string, deviceId: string | null): Promise<IssuedTokens> {

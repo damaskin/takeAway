@@ -5,6 +5,7 @@ import { Role } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { UsersService } from '../../users/users.service';
+import { jwtAccessSecret } from '../jwt-secrets';
 
 interface JwtPayload {
   sub: string;
@@ -28,7 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access',
+      secretOrKey: jwtAccessSecret(config),
     });
   }
 
