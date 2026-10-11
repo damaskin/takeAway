@@ -292,6 +292,31 @@ describe('CatalogService', () => {
     );
   });
 
+  // NoName's 21 «Дополнительные ингредиенты» from Poster are add-ons: the
+  // category is left out of every client's menu (they all read this one).
+  it('leaves hidden and add-ons-only categories out of the menu', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'cafe', slug: 'cafe', brandId: 'brand-1' });
+    prisma.category.findMany.mockResolvedValue([]);
+
+    await service.getMenu('cafe');
+
+    expect(prisma.category.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { brandId: 'brand-1', visible: true, addOnsOnly: false } }),
+    );
+  });
+
+  it('does not open a product the menu leaves out with its category', async () => {
+    prisma.product.findFirst.mockResolvedValue(null);
+
+    await expect(service.getProduct('syrup-vanilla')).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ category: { visible: true, addOnsOnly: false } }),
+      }),
+    );
+  });
+
   // Opened from a store: a product that store does not sell is not found, and
   // the options it has run out of (oat milk here, not at the café) are hidden.
   it('looks a product up as the browsed store sells it', async () => {

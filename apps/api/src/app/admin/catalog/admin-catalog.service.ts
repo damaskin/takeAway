@@ -23,7 +23,7 @@ import { recordCommissionRate, rateSourceFor } from '../../plans/commission-hist
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
-import { ingredientIdFor } from './ingredient-link';
+import { linkedIngredient, linkId, optionDefaults } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
@@ -818,8 +818,16 @@ export class AdminCatalogService {
   async createVariation(productId: string, dto: CreateVariationDto, scope: BrandScope = null) {
     const product = await this.getProduct(productId, scope);
     return this.prisma.$transaction(async (tx) => {
-      // Milk is an ingredient that runs out; sizes and cups are not.
-      const ingredientId = await ingredientIdFor(tx, product.brandId, dto.ingredientId, dto.name, dto.type === 'MILK');
+      // Milk is an add-on that runs out; sizes and cups are not.
+      const linked = await linkedIngredient(
+        tx,
+        product.brandId,
+        dto.ingredientId,
+        dto.name,
+        dto.type === 'MILK',
+        dto.priceDeltaCents,
+      );
+      const { name, priceDeltaCents } = optionDefaults(dto, linked);
       // One default per type, so the size a customer finds pre-selected is
       // never a coin toss between two "default" sizes.
       if (dto.isDefault) {
@@ -829,7 +837,9 @@ export class AdminCatalogService {
         });
       }
       const sortOrder = dto.sortOrder ?? (await nextVariationSortOrder(tx, productId, dto.type));
-      return tx.variation.create({ data: { productId, ...dto, sortOrder, ingredientId } });
+      return tx.variation.create({
+        data: { productId, ...dto, name, priceDeltaCents, sortOrder, ingredientId: linkId(linked) },
+      });
     });
   }
 
@@ -843,8 +853,8 @@ export class AdminCatalogService {
             data: { isDefault: false },
           });
         }
-        const ingredientId = await ingredientIdFor(tx, existing.product.brandId, dto.ingredientId, undefined, false);
-        return tx.variation.update({ where: { id }, data: { ...dto, ingredientId } });
+        const linked = await linkedIngredient(tx, existing.product.brandId, dto.ingredientId, undefined, false);
+        return tx.variation.update({ where: { id }, data: { ...dto, ingredientId: linkId(linked) } });
       })
       .catch((err: unknown) => {
         if (prismaCode(err) === 'P2025') throw new NotFoundException('Variation not found');
@@ -885,41 +895,54 @@ export class AdminCatalogService {
    * The slug is built from the name when omitted. The admin used to derive
    * it in the browser keeping only [a-z0-9], so «Ванильный сироп» produced
    * an empty slug and the modifier could not be created at all.
+   *
+   * Every extra is an add-on of the brand library: picked from it by
+   * `ingredientId` (name and price default to the library's), or typed by
+   * name and filed under the entry of that name, made if missing.
    */
   async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
     const product = await this.getProduct(productId, scope);
     assertCountRange(dto.minCount ?? 0, dto.maxCount ?? 1);
+    const linked = await linkedIngredient(
+      this.prisma,
+      product.brandId,
+      dto.ingredientId,
+      dto.name,
+      true,
+      dto.priceDeltaCents,
+    );
+    const { name, priceDeltaCents } = optionDefaults(dto, linked);
     const slug =
       dto.slug ??
       (await uniqueSlug(
-        dto.name,
+        name,
         async (candidate) => (await this.prisma.modifier.count({ where: { productId, slug: candidate } })) > 0,
         'option',
       ));
     const sortOrder = dto.sortOrder ?? (await nextModifierSortOrder(this.prisma, productId));
-    const ingredientId = await ingredientIdFor(this.prisma, product.brandId, dto.ingredientId, dto.name, true);
     return this.prisma.modifier
-      .create({ data: { productId, ...dto, slug, sortOrder, ingredientId } })
+      .create({
+        data: { productId, ...dto, name, priceDeltaCents, slug, sortOrder, ingredientId: linkId(linked) },
+      })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
   async updateModifier(id: string, dto: UpdateModifierDto, scope: BrandScope = null) {
     const existing = await this.findModifier(id, scope);
     assertCountRange(dto.minCount ?? existing.minCount, dto.maxCount ?? existing.maxCount);
-    const ingredientId = await ingredientIdFor(
-      this.prisma,
-      existing.product.brandId,
-      dto.ingredientId,
-      undefined,
-      false,
-    );
+    const linked = await linkedIngredient(this.prisma, existing.product.brandId, dto.ingredientId, undefined, false);
+    const ingredientId = linkId(linked);
     return this.prisma.modifier.update({ where: { id }, data: { ...dto, ingredientId } }).catch((err: unknown) => {
       if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
       return rethrowSlugTaken(err, dto.slug);
     });
   }
 
-  /** Cart lines priced with this modifier go with it; see {@link deleteProduct}. */
+  /**
+   * Takes the extra off this product only: its add-on stays in the library
+   * for the other products and the next one. Cart lines priced with this
+   * modifier go with it; see {@link deleteProduct}.
+   */
   async deleteModifier(id: string, scope: BrandScope = null) {
     const existing = await this.findModifier(id, scope);
     await this.prisma
@@ -966,7 +989,7 @@ function assertCountRange(minCount: number, maxCount: number): void {
 }
 
 /** How many of this modifier a cart line carries (`modifiersJson` is `{ [modifierId]: count }`). */
-function modifierCount(json: Prisma.JsonValue, modifierId: string): number {
+export function modifierCount(json: Prisma.JsonValue, modifierId: string): number {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return 0;
   return Number(json[modifierId] ?? 0);
 }
@@ -976,7 +999,7 @@ function modifierCount(json: Prisma.JsonValue, modifierId: string): number {
  * shows a subtotal for something that is no longer in it. Carts are
  * ephemeral; placed orders keep their own snapshot and are not touched.
  */
-async function dropCartLines(
+export async function dropCartLines(
   tx: Prisma.TransactionClient,
   lines: ReadonlyArray<{ id: string; cartId: string }>,
 ): Promise<void> {

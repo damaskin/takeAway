@@ -61,11 +61,11 @@ type StatusFilter = OrderStatus | 'ALL';
 
     <section
       class="orders-shell"
-      style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start"
+      style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 240px); gap: 24px; align-items: start"
     >
       <!-- Orders table -->
       <article
-        class="flex flex-col"
+        class="orders-box flex flex-col"
         style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden; min-width: 0; overflow-x: auto"
       >
         @if (loading() && orders().length === 0) {
@@ -83,41 +83,41 @@ type StatusFilter = OrderStatus | 'ALL';
             {{ 'admin.orders.empty' | translate }}
           </p>
         } @else {
-          <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
+          <table class="ot" style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
             <thead style="background: var(--color-cream)">
               <tr>
                 <th
-                  style="text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: left; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.code' | translate }}
                 </th>
                 <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: left; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.store' | translate }}
                 </th>
                 <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: left; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.items' | translate }}
                 </th>
                 <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: left; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.pickup' | translate }}
                 </th>
                 <th
-                  style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: right; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.total' | translate }}
                 </th>
                 <th
-                  style="text-align: center; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: center; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.status' | translate }}
                 </th>
                 <th
-                  style="text-align: right; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
+                  style="text-align: right; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
                 >
                   {{ 'admin.orders.columns.placed' | translate }}
                 </th>
@@ -131,37 +131,35 @@ type StatusFilter = OrderStatus | 'ALL';
                   [style.background]="selectedOrderId() === o.id ? 'var(--color-caramel-light)' : 'transparent'"
                 >
                   <td
-                    style="padding: 12px 16px; font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--color-caramel)"
+                    style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--color-caramel)"
                   >
                     {{ o.orderCode }}
                   </td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-primary)">
+                  <td style="font-size: 13px; color: var(--color-text-primary)">
                     {{ o.storeName }}
                   </td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary)">
+                  <td style="font-size: 13px; color: var(--color-text-secondary)">
                     {{ o.itemCount }}
                   </td>
-                  <td style="padding: 12px; font-size: 12px; color: var(--color-text-secondary)">
+                  <td style="font-size: 12px; color: var(--color-text-secondary)">
                     {{
                       (o.pickupMode === 'ASAP' ? 'admin.orders.pickup.asap' : 'admin.orders.pickup.scheduled')
                         | translate
                     }}
                     · {{ formatTime(o.pickupAt, o.storeTimezone) }}
                   </td>
-                  <td
-                    style="padding: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
-                  >
+                  <td style="font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right">
                     {{ price(o.totalCents, o.currency) }}
                   </td>
-                  <td style="padding: 12px; text-align: center">
+                  <td style="text-align: center">
                     <span
                       [style.background]="statusBg(o.status)"
                       [style.color]="statusColor(o.status)"
-                      style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
+                      style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap"
                       >{{ statusLabel(o.status) | translate }}</span
                     >
                   </td>
-                  <td style="padding: 12px 16px; font-size: 12px; color: var(--color-text-tertiary); text-align: right">
+                  <td style="font-size: 12px; color: var(--color-text-tertiary); text-align: right">
                     {{ timeAgo(o.createdAt) }}
                   </td>
                 </tr>
@@ -210,6 +208,39 @@ type StatusFilter = OrderStatus | 'ALL';
       @media (max-width: 900px) {
         .orders-shell {
           grid-template-columns: 1fr !important;
+        }
+      }
+      /* Beside the sidebar and the status rail a 1280px laptop leaves the
+         table under 700px: the cells tighten instead of pushing the last
+         columns past the edge. */
+      .orders-box {
+        container-type: inline-size;
+      }
+      .ot th,
+      .ot td {
+        padding: 12px;
+      }
+      .ot th:first-child,
+      .ot td:first-child,
+      .ot th:last-child,
+      .ot td:last-child {
+        padding: 12px 16px;
+      }
+      @container (max-width: 760px) {
+        .ot th,
+        .ot td {
+          padding: 10px 6px;
+        }
+        .ot th:first-child,
+        .ot td:first-child {
+          padding-left: 12px;
+        }
+        .ot th:last-child,
+        .ot td:last-child {
+          padding-right: 12px;
+        }
+        .ot th {
+          letter-spacing: 0 !important;
         }
       }
     `,

@@ -523,7 +523,7 @@ StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не б
 ### 5.3. Catalog
 
 ```
-Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible,
+Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible, addOnsOnly,
           externalProvider?, externalId?)
 Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
          caffeineLevel?, calories?, P/F/C, allergens[], dietTags[VEGAN|GLUTEN_FREE|...],
@@ -533,7 +533,7 @@ Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
            prepTimeDeltaSeconds, isDefault, ingredientId?)
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
           minCount, maxCount, externalProvider?, externalId?, ingredientId?)
-Ingredient (id, brandId, name, isAvailable)   -- библиотека добавок бренда, (brandId, name) уникально
+Ingredient (id, brandId, name, priceCents, isAvailable)   -- справочник «Добавки» бренда, (brandId, name) уникально
 ProductStore (productId, storeId)              -- точки, где товар продаётся; PK (productId, storeId)
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
 StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка закончилась в одной точке; PK (storeId, ingredientId)
@@ -541,7 +541,9 @@ StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка за�
 
 **Меню по точкам.** Товар есть в меню точки и заказывается в ней, только если для пары (товар, точка) есть строка `ProductStore`; без строк товар не продаётся нигде. Миграция `20261004000000_store_menu_availability` заполнила каждую пару «товар × точка его бренда», так что после выкатки ничего не пропало. Новый товар без `storeIds` получает все точки бренда (так же — импорт из POS); новая точка (кабинет или импорт из POS) получает все товары бренда. `GET /stores/:id/menu` отдаёт только товары точки и пропускает категории, где их нет; `GET /products/:idOrSlug?store=` отвечает 404 для товара, который эта точка не продаёт. Корзина отвечает 400 `ITEMS_UNAVAILABLE` (с названием) на товар не этой точки, оформление снимает такую строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`).
 
-**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
+**Справочник «Добавки» — единственный источник добавки.** Запись `Ingredient` хранит название добавки, её обычную цену (`priceCents`) и наличие. Добавки (modifiers) и молоко (MILK-варианты) товара — это ссылки на запись справочника: опцию можно создать по одному `ingredientId` (название и доплата берутся из справочника, введённая доплата важнее), а новая добавка или молоко, введённые по названию, привязываются к записи с тем же названием (создаётся при отсутствии — с доплатой, указанной для опции), `ingredientId: null` — не отслеживать. Новое название или цена записи (`PATCH /admin/ingredients/:id`) переносятся во все опции, где ещё стоят прежние название или цена; опция со своим названием или ценой в каком-то товаре их сохраняет. Удаление опции убирает добавку только из этого товара — запись остаётся в справочнике. Удаление записи (`DELETE /admin/ingredients/:id`) убирает её опции из всех товаров вместе со строками корзин, где они выбраны (корзины пересчитываются, оформленные заказы не меняются). Миграция `20261010120000_ingredient_price` заполнила `priceCents` самой частой доплатой опций каждой записи. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
+
+**Категории «только как добавка».** `Category.addOnsOnly = true` — товары категории не продаются отдельно (например, «Дополнительные ингредиенты», пришедшие из Poster как обычные товары). Такая категория остаётся в кабинете, стоп-листе и синхронизации с POS, но `GET /stores/:id/menu` её не отдаёт, `GET /products/:idOrSlug` отвечает 404 на её товары, `POST /cart/items` — 404, а оформление снимает уже лежащую в корзине строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`). Так же теперь обрабатывается товар скрытой категории (`visible = false`). Синхронизация с POS пишет в категорию только название и порядок, поэтому флаг переживает повторный импорт. Дальше такую категорию можно превратить в источник справочника: связать её товары с записями `Ingredient` (например, `Ingredient.productId`), чтобы цена добавки и её стоп-лист шли из POS.
 
 ### 5.4. Cart / Order / Payment
 
@@ -798,7 +800,11 @@ GET                    /admin/products/stores?brandId=   точки бренда
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
-GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     библиотека добавок бренда (GET ?brandId=), PATCH { isAvailable } — «закончилось/появилось»
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (GET ?brandId=, ответы несут priceCents и products[]); POST/PATCH { name, priceCents?, isAvailable? },
+                                                    PATCH { isAvailable } — «закончилось/появилось», новое name/priceCents переносится в опции с прежними значениями;
+                                                    DELETE убирает добавку из всех товаров
+#   POST /admin/products/:id/modifiers и /variations принимают { ingredientId } без name/priceDeltaCents — берутся из справочника
+#   /admin/categories: create/update принимают addOnsOnly (категория «только как добавка»)
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
 POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
