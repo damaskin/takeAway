@@ -74,12 +74,12 @@ edge container's address. Keep all takeaway.md records proxied.
 
 ### nginx limits
 
-| Zone / limit | Rate                            | Burst | Applies to                                                                                                 |
-| ------------ | ------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
-| `api`        | 20 req/s per visitor            | 40    | every `/api/` request on every host                                                                        |
-| `auth`       | 10 req/min per visitor          | 5     | `/api/auth/password/{login,forgot,reset}`, `/api/auth/kds/pin`, `/api/business/register` — on top of `api` |
-| `tiles`      | 30 req/s per visitor            | 60    | `/tiles/` (only misses of Cloudflare's cache reach us)                                                     |
-| `realtime`   | 20 open connections per visitor | —     | `/socket.io/`                                                                                              |
+| Zone / limit    | Rate                            | Burst | Applies to                                                                                                 |
+| --------------- | ------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------- |
+| `api`           | 20 req/s per visitor            | 40    | every `/api/` request on every host                                                                        |
+| `auth`          | 10 req/min per visitor          | 5     | `/api/auth/password/{login,forgot,reset}`, `/api/auth/kds/pin`, `/api/business/register` — on top of `api` |
+| `tile_requests` | 30 req/s per visitor            | 60    | `/tiles/` (only misses of Cloudflare's cache reach us)                                                     |
+| `realtime`      | 20 open connections per visitor | —     | `/socket.io/`                                                                                              |
 
 Customer sign-in (Telegram, Google, Apple) and token refresh stay on the
 general budget on purpose: many customers share one carrier address. The API
