@@ -2,9 +2,35 @@ import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import { resolveDateRange } from './analytics-range';
+import type { AnalyticsScope } from './analytics-scope';
 import { OverviewService } from './overview.service';
 
 const WEEK = resolveDateRange({ from: '2026-09-28', to: '2026-10-04' }, 'Europe/Chisinau', 30);
+
+/** What the controller hands over: the scope, the wider view it is part of, the days and the currency. */
+function ctx(scope: AnalyticsScope, parent: AnalyticsScope = scope, storeId: string | null = null) {
+  return { scope, parent, storeId, range: WEEK, currency: 'MDL', currencies: ['MDL'] };
+}
+
+/** One row of the GROUPING SETS query. */
+function group(key: string | null, current: boolean, orders: number, revenue: number, customers = orders) {
+  return {
+    key,
+    current,
+    orders,
+    revenue: BigInt(revenue),
+    sales: BigInt(revenue + 500),
+    discounts: 500n,
+    giftCards: 0n,
+    commission: revenue * 0.15,
+    placed: orders,
+    cancelled: 0,
+    expired: 0,
+    pickupSecSum: 0,
+    pickupCount: 0,
+    customers,
+  };
+}
 
 /** The SQL and the bound values of one `$queryRaw` tagged-template call. */
 function query(call: unknown[]): Prisma.Sql {
@@ -31,7 +57,11 @@ function setup(rows: (sql: string) => unknown[] = () => []) {
           plan: 'PRO',
           commissionBps: 1500,
           moderationStatus: 'APPROVED',
-          stores: [{ id: 's1', timezone: 'Europe/Chisinau' }],
+          stores: [
+            { id: 's1', timezone: 'Europe/Chisinau', currency: 'MDL' },
+            // Opened in another currency: never added to Alpha's lei.
+            { id: 's9', timezone: 'Europe/Chisinau', currency: 'RUP' },
+          ],
         },
         {
           id: 'b2',
@@ -51,7 +81,7 @@ function setup(rows: (sql: string) => unknown[] = () => []) {
 describe('OverviewService.business', () => {
   it('stays inside the scope and binds instants as UTC timestamps', async () => {
     const { service, $queryRaw } = setup();
-    await service.business({ brandIds: ['b1'], storeIds: null }, WEEK, { storeComparison: true, deep: true });
+    await service.business(ctx({ brandIds: ['b1'], storeIds: null }), { storeComparison: true, deep: true });
 
     expect($queryRaw).toHaveBeenCalledTimes(5);
     for (const call of $queryRaw.mock.calls) {
@@ -66,7 +96,7 @@ describe('OverviewService.business', () => {
 
   it('skips the hourly load without deepAnalytics and nulls the PRO parts', async () => {
     const { service, $queryRaw } = setup();
-    const o = await service.business({ brandIds: ['b1'], storeIds: null }, WEEK, {
+    const o = await service.business(ctx({ brandIds: ['b1'], storeIds: null }), {
       storeComparison: false,
       deep: false,
     });
@@ -84,7 +114,7 @@ describe('OverviewService.business', () => {
 
   it('reads each store at its own zone, borrowing the period zone for a UTC placeholder', async () => {
     const { service, $queryRaw } = setup();
-    await service.business({ brandIds: ['b1'], storeIds: null }, WEEK, { storeComparison: true, deep: true });
+    await service.business(ctx({ brandIds: ['b1'], storeIds: null }), { storeComparison: true, deep: true });
     const load = $queryRaw.mock.calls.map(query).find((q) => q.sql.includes('ISODOW'));
     expect(load?.values).toContainEqual(['s1', 's2']);
     expect(load?.values).toContainEqual(['Europe/Chisinau', 'Europe/Chisinau']);
@@ -141,7 +171,7 @@ describe('OverviewService.business', () => {
             ]
           : [],
     );
-    const o = await service.business({ brandIds: ['b1'], storeIds: null }, WEEK, {
+    const o = await service.business(ctx({ brandIds: ['b1'], storeIds: null }), {
       storeComparison: true,
       deep: false,
     });
@@ -157,6 +187,67 @@ describe('OverviewService.business', () => {
     expect(o.previous).toEqual(expect.objectContaining({ revenueCents: 1000, newCustomers: 1 }));
     expect(o.byStore[0]).toEqual(expect.objectContaining({ id: 's1', sharePercent: 100 }));
     expect(o.daily[1]?.newCustomers).toBe(1);
+    expect([o.currency, o.currencies]).toEqual(['MDL', ['MDL']]);
+  });
+
+  it('counts revenue as sales less discounts everywhere, never the card charge', async () => {
+    const { service, $queryRaw } = setup();
+    await service.business(ctx({ brandIds: ['b1'], storeIds: null }), { storeComparison: true, deep: true });
+    const money = $queryRaw.mock.calls.map(query).filter((q) => q.sql.includes('"revenue"'));
+    expect(money.length).toBeGreaterThanOrEqual(3);
+    for (const q of money) {
+      expect(q.sql).toContain('GREATEST(o."subtotalCents" - o."discountCents", 0)');
+      expect(q.sql).not.toContain('o."totalCents"');
+    }
+  });
+
+  it('narrowed to one store, shows its own row as the totals and still lists every store', async () => {
+    const brand = { brandIds: ['b1'], storeIds: null };
+    const picked = { brandIds: ['b1'], storeIds: ['s2'] };
+    const { service, $queryRaw } = setup((sql) =>
+      sql.includes('GROUPING SETS')
+        ? [
+            group(null, true, 5, 7000, 4),
+            group('s1', true, 5, 7000, 4),
+            group(null, false, 2, 3000),
+            group('s1', false, 2, 3000),
+          ]
+        : [],
+    );
+    const o = await service.business(ctx(picked, brand, 's2'), { storeComparison: true, deep: true });
+
+    // test2 had nothing: its own zeros, not the brand's figures, and no store active.
+    expect(o.current).toEqual(expect.objectContaining({ revenueCents: 0, orders: 0, customers: 0, activeUnits: 0 }));
+    expect(o.previous.revenueCents).toBe(0);
+    // Both stores stay on the panel, so another one is a click away.
+    expect(o.byStore.map((s) => [s.id, s.revenueCents, s.sharePercent])).toEqual([
+      ['s1', 7000, 100],
+      ['s2', 0, 0],
+    ]);
+    const queries = $queryRaw.mock.calls.map(query);
+    const grouped = queries.find((q) => q.sql.includes('GROUPING SETS'));
+    expect(grouped?.values).not.toContainEqual(['s2']);
+    // Days, first orders, load and statuses are the store's own.
+    for (const q of queries.filter((x) => x !== grouped)) expect(q.values).toContainEqual(['s2']);
+  });
+
+  it("takes a picked store's totals from its row of the brand query", async () => {
+    const brand = { brandIds: ['b1'], storeIds: null };
+    const { service } = setup((sql) =>
+      sql.includes('GROUPING SETS')
+        ? [group(null, true, 5, 7000, 4), group('s1', true, 3, 4000, 2), group('s2', true, 2, 3000, 2)]
+        : [],
+    );
+    const o = await service.business(ctx({ brandIds: ['b1'], storeIds: ['s1'] }, brand, 's1'), {
+      storeComparison: true,
+      deep: false,
+    });
+    expect(o.current).toEqual(
+      expect.objectContaining({ revenueCents: 4000, salesCents: 4500, orders: 3, customers: 2, activeUnits: 1 }),
+    );
+    expect(o.byStore.find((s) => s.id === 's1')).toEqual(
+      expect.objectContaining({ revenueCents: 4000, orders: 3, sharePercent: 57.1 }),
+    );
   });
 });
 
@@ -170,6 +261,7 @@ describe('OverviewService.platform', () => {
     expect(p.byBrand.map((b) => [b.name, b.plan, b.commissionBps, b.stores])).toEqual([['Alpha', 'PRO', 1500, 1]]);
     const grouped = $queryRaw.mock.calls.map(query).find((q) => q.sql.includes('GROUPING SETS'));
     expect(grouped?.values).toContainEqual(['b1']);
+    expect(grouped?.values).toContainEqual(['s1']);
     expect(grouped?.sql).toContain('s."brandId" AS "key"');
   });
 

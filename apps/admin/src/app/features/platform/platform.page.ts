@@ -153,7 +153,7 @@ const REFRESH_MS = 60_000;
             [deltaText]="deltas().customers.text"
             [hint]="deltas().customers.hint"
             [footLeft]="'admin.overview.foot.newCustomers' | translate: { value: fmt.int(d.current.newCustomers) }"
-            [footRight]="'admin.overview.foot.repeat' | translate: { value: repeatShare(d.current) }"
+            [footRight]="'admin.overview.foot.repeat' | translate: { value: fmt.returningShare(d.current) }"
           >
             <app-mini-bars
               kpiChart
@@ -602,11 +602,6 @@ export class PlatformPage {
 
   money(cents: number | null | undefined): string {
     return this.fmt.money(cents, this.data()?.currency);
-  }
-
-  repeatShare(t: OverviewTotals): string {
-    if (t.customers === 0) return '—';
-    return this.fmt.percent((Math.max(0, t.customers - t.newCustomers) / t.customers) * 100, 0);
   }
 
   /** The commission as a share of revenue: the blended rate across plans. */

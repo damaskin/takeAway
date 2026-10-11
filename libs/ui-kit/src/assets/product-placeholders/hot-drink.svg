@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Hot drink">
+  <ellipse cx="100" cy="179" rx="40" ry="6" fill="#000" opacity=".08"/>
+  <path d="M66 58h68l-10 114q-24 5-48 0z" fill="#D6B48C"/>
+  <path d="M120 58h14l-10 114q-6 1.5-12 2z" fill="#000" opacity=".07"/>
+  <path d="M70.5 94h59l-3.4 38h-52.2z" fill="#A8754A"/>
+  <path d="M120.6 94h8.9l-3.4 38h-8.4z" fill="#000" opacity=".08"/>
+  <rect x="60" y="46" width="80" height="14" rx="5" fill="#EFEAE3"/>
+  <path d="M68 46q2-12 16-13h32q14 1 16 13z" fill="#FBF9F6"/>
+  <rect x="92" y="35.5" width="16" height="4" rx="2" fill="#D9D2C7"/>
+</svg>

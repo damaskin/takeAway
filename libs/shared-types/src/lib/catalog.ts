@@ -8,6 +8,10 @@ export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
 export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
+export type StoreKind = 'COFFEE' | 'FOOD';
+
+/** Every store kind, in the order the admin and the filters list them. */
+export const STORE_KINDS: readonly StoreKind[] = ['COFFEE', 'FOOD'];
 
 export type { PickupPointType };
 
@@ -16,7 +20,10 @@ export interface StoreListItem {
   brandId: string;
   /** Name of the business the store belongs to. Absent from older API builds. */
   brandName?: string;
-  /** Logo for the store card: the brand's, since stores have none of their own. */
+  /**
+   * The brand's logo. The store's own photo is `heroImageUrl`; a card shows
+   * this one only when the store has none: `heroImageUrl ?? logoUrl`.
+   */
   logoUrl?: string | null;
   slug: string;
   name: string;
@@ -51,6 +58,8 @@ export interface StoreListItem {
   /** IANA zone. Pickup and opening times are shown on the store's clock. */
   timezone: string;
   heroImageUrl: string | null;
+  /** What the store sells, for map markers and filters. Missing or empty = coffee. */
+  kinds?: StoreKind[];
   distanceMeters: number | null;
 }
 

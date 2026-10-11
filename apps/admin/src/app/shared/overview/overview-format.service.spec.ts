@@ -39,6 +39,9 @@ describe('todayIn', () => {
   });
 });
 
+/** Text with every run of whitespace (NBSP included) as one space. */
+const plain = (s: string) => s.replace(/\s+/g, ' ');
+
 describe('OverviewFormat', () => {
   let format: OverviewFormat;
 
@@ -60,6 +63,20 @@ describe('OverviewFormat', () => {
       previousTo: '2026-09-04',
     });
     expect(line.replace(/\s+/g, ' ')).toBe('5 сент. 2026 — 4 окт. 2026 · сравнение с предыдущими 30 днями');
+  });
+
+  it('writes money with kopecks where there are any, like the analytics page', () => {
+    expect(plain(format.money(630, 'RUP'))).toBe('6,30 руб.');
+    expect(plain(format.money(6300, 'RUP'))).toBe('63 руб.');
+    expect(plain(format.money(210, 'RUP'))).toBe('2,10 руб.');
+    expect(format.money(null, 'RUP')).toBe('—');
+  });
+
+  it('counts returning customers among the period’s, as a whole percent', () => {
+    // The tester: one customer, new — none returning, whatever the order count.
+    expect(plain(format.returningShare({ customers: 1, returningCustomers: 0 }))).toBe('0 %');
+    expect(plain(format.returningShare({ customers: 3, returningCustomers: 2 }))).toBe('67 %');
+    expect(format.returningShare({ customers: 0, returningCustomers: 0 })).toBe('—');
   });
 
   it('marks growth as new when there was nothing before', () => {

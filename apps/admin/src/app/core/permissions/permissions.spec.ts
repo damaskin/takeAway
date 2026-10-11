@@ -42,6 +42,14 @@ describe('permissions map', () => {
       expect(canAccess('SUPER_ADMIN', 'brands')).toBe(true);
     });
 
+    it('opens settlements to the platform admin and the brand owner, and to nobody on the floor', () => {
+      expect(ADMIN_ROLES.settlements).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(canAccess('STORE_MANAGER', 'settlements')).toBe(false);
+      expect(canAccess('STAFF', 'settlements')).toBe(false);
+      expect(canAccess('MENU_EDITOR', 'settlements')).toBe(false);
+      expect(navLink('settlements')).toBe('/settlements');
+    });
+
     it('keeps customer feedback SUPER_ADMIN-only', () => {
       expect(ADMIN_ROLES.feedback).toEqual(['SUPER_ADMIN']);
       expect(navLink('feedback')).toBe('/feedback');
@@ -73,6 +81,21 @@ describe('permissions map', () => {
       expect(canAccess('MENU_EDITOR', 'orders')).toBe(false);
       expect(canAccess('MENU_EDITOR', 'stores')).toBe(false);
       expect(canAccess('MENU_EDITOR', 'telegramLink')).toBe(false);
+    });
+
+    it('puts promo codes and gift cards under «Акции» without changing who sees them', () => {
+      const roles: AdminRole[] = ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'];
+      for (const role of roles) {
+        expect(canAccess(role, 'promotions')).toBe(canAccess(role, 'promo') || canAccess(role, 'giftCards'));
+      }
+      expect(ADMIN_ROLES.promo).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(ADMIN_ROLES.giftCards).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(navLink('promotions')).toBe('/promotions');
+      expect(navLink('promo')).toBe('/promotions/promo');
+      expect(navLink('giftCards')).toBe('/promotions/gift-cards');
+      // Promo codes stay PRO, gift cards stay on every plan; the section itself is not gated.
+      expect(NAV_PLAN_FEATURE.promo).toBe('promo');
+      expect(NAV_PLAN_FEATURE.promotions).toBeUndefined();
     });
 
     it('denies RIDER the admin panel entirely', () => {

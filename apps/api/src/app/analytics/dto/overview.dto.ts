@@ -12,16 +12,15 @@ import type {
   PlatformOverview,
 } from '@takeaway/shared-types';
 
-import { AnalyticsQueryDto } from './analytics-query.dto';
-
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
+import { AnalyticsQueryDto, CURRENCIES } from './analytics-query.dto';
 
 /** The platform view's period and, when brands sell in several, which currency to show. */
 export class PlatformOverviewQueryDto extends AnalyticsQueryDto {
+  // Redeclared for its own default; the initializer only satisfies the compiler.
   @ApiPropertyOptional({ enum: CURRENCIES, description: 'Defaults to the currency that sold the most.' })
   @IsOptional()
   @IsIn([...CURRENCIES])
-  currency?: string;
+  override currency?: string = undefined;
 }
 
 export class OverviewPeriodDto implements OverviewPeriod {
@@ -34,11 +33,17 @@ export class OverviewPeriodDto implements OverviewPeriod {
 }
 
 export class OverviewTotalsDto implements OverviewTotals {
-  @ApiProperty() revenueCents!: number;
+  @ApiProperty({ description: 'Items at menu price, before discounts.' }) salesCents!: number;
+  @ApiProperty({ description: 'Promo codes and loyalty points.' }) discountCents!: number;
+  @ApiProperty({ description: 'Sales less discounts, whether paid by card or with a gift card.' })
+  revenueCents!: number;
+  @ApiProperty({ description: 'The part of the revenue gift cards paid for.' }) giftCardCents!: number;
   @ApiProperty({ description: 'Not cancelled, not expired.' }) orders!: number;
   @ApiProperty({ description: 'Every order placed.' }) placed!: number;
   @ApiProperty() customers!: number;
   @ApiProperty({ description: 'First counted order in the scope falls in the period.' }) newCustomers!: number;
+  @ApiProperty({ description: 'Ordered in the scope before the period: customers − newCustomers.' })
+  returningCustomers!: number;
   @ApiProperty({ nullable: true, type: Number }) avgCheckCents!: number | null;
   @ApiProperty() cancelled!: number;
   @ApiProperty() expired!: number;
@@ -103,6 +108,8 @@ export class PlatformBrandRowDto extends OverviewRowDto implements PlatformBrand
 
 export class BusinessOverviewDto implements BusinessOverview {
   @ApiProperty({ type: () => OverviewPeriodDto }) period!: OverviewPeriodDto;
+  @ApiProperty({ nullable: true, type: String }) currency!: string | null;
+  @ApiProperty({ type: String, isArray: true }) currencies!: string[];
   @ApiProperty({ type: () => OverviewTotalsDto }) current!: OverviewTotalsDto;
   @ApiProperty({ type: () => OverviewTotalsDto }) previous!: OverviewTotalsDto;
   @ApiProperty({ type: () => OverviewDayDto, isArray: true }) daily!: OverviewDayDto[];

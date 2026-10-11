@@ -5,6 +5,7 @@ import type { StaffMember, StaffRoleName } from '@takeaway/shared-types';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import { PasswordService } from '../../auth/services/password.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const STAFF_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
@@ -51,6 +52,12 @@ type MemberRow = Prisma.UserGetPayload<{ select: typeof MEMBER_SELECT }> & {
  * barista's stores never drops the barista from another manager's café.
  * A store manager also cannot hand out the manager role or edit other
  * managers, and nobody edits their own access here.
+ *
+ * An account is global (one role, one password, one kitchen PIN), so its
+ * role is changed, and stores are added to it, only when every store it
+ * works at is within the caller's brands — see
+ * {@link BrandScopeService.managesUser}. Taking it off the caller's own
+ * stores stays possible.
  */
 @Injectable()
 export class AdminStaffMembersService {
@@ -97,6 +104,7 @@ export class AdminStaffMembersService {
     const wanted = new Set(storeIds);
     const toRemove = current.filter((id) => !wanted.has(id));
     const toAdd = storeIds.filter((id) => !current.includes(id));
+    if (toAdd.length > 0) await this.assertManaged(userId, user);
 
     const ops: Prisma.PrismaPromise<unknown>[] = [];
     if (toRemove.length > 0) {
@@ -131,6 +139,7 @@ export class AdminStaffMembersService {
     this.assertRoleAllowed(role, user);
     const row = await this.findOnTeam(userId, reach);
     this.assertEditable(row, user);
+    await this.assertManaged(userId, user);
     if (row.role !== role) {
       await this.prisma.user.update({ where: { id: userId }, data: { role } });
     }
@@ -140,8 +149,10 @@ export class AdminStaffMembersService {
   /**
    * Invites someone to one or more stores. A new email gets an account with
    * a temporary password to rotate on first sign-in; an existing staff
-   * account (e.g. from another brand) joins with the requested role. Someone
-   * already on the team is changed on their own page instead.
+   * account of the caller's brands (e.g. from a store outside a manager's
+   * reach) joins with the requested role. Someone already on the team is
+   * changed on their own page instead. Any other existing account — a
+   * customer, an admin, staff of another brand — gets the same neutral 409.
    */
   async invite(
     input: { email: string; name?: string; role: StaffRoleName; tempPassword: string; storeIds: string[] },
@@ -173,15 +184,7 @@ export class AdminStaffMembersService {
       });
       userId = created.id;
     } else {
-      if (!STAFF_ROLES.includes(existing.role)) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          code: 'STAFF_EMAIL_TAKEN',
-          role: existing.role,
-          message: `User ${email} already has role ${existing.role}; pick a different email`,
-        });
-      }
+      if (!STAFF_ROLES.includes(existing.role)) throw emailInUse();
       if (existing.userStores.some((s) => reach.has(s.storeId))) {
         throw new ConflictException({
           statusCode: 409,
@@ -191,6 +194,7 @@ export class AdminStaffMembersService {
           message: 'This person already works here — change their stores on their page',
         });
       }
+      if (!(await this.scope.managesUser(user, existing.id))) throw emailInUse();
       if (existing.role !== input.role) {
         // A manager inviting someone who manages another café would demote them.
         if (user.role === Role.STORE_MANAGER && existing.role === Role.STORE_MANAGER) {
@@ -257,6 +261,12 @@ export class AdminStaffMembersService {
     }
   }
 
+  private async assertManaged(userId: string, user: AuthenticatedUser): Promise<void> {
+    if (!(await this.scope.managesUser(user, userId))) {
+      throw this.forbidden('STAFF_NOT_EDITABLE', 'You cannot change this person’s access');
+    }
+  }
+
   private assertRoleAllowed(role: StaffRoleName, user: AuthenticatedUser): void {
     if (user.role === Role.STORE_MANAGER && role === Role.STORE_MANAGER) {
       throw this.forbidden('STAFF_ROLE_NOT_ALLOWED', 'A store manager cannot appoint managers');
@@ -302,4 +312,13 @@ export class AdminStaffMembersService {
       editable: this.isEditable(row, user),
     };
   }
+}
+
+/** Same answer whatever the existing account is: no role, no name. */
+function emailInUse(): ConflictException {
+  return codedConflict(
+    'STAFF_EMAIL_TAKEN',
+    'This email is already in use. Ask the employee to use a different email.',
+    'email',
+  );
 }

@@ -34,3 +34,15 @@ export function withStoreIds<T extends { stores: ReadonlyArray<{ storeId: string
   const { stores, ...rest } = row;
   return { ...rest, storeIds: stores.map((s) => s.storeId) };
 }
+
+/**
+ * A category whose products a customer can order on their own: shown, and
+ * not one that holds add-ons (`Category.addOnsOnly`). The menu lists only
+ * these, the product page and the cart refuse the rest.
+ */
+export const SOLD_ON_ITS_OWN = { visible: true, addOnsOnly: false } as const satisfies Prisma.CategoryWhereInput;
+
+/** {@link SOLD_ON_ITS_OWN} for a category already loaded. */
+export function soldOnItsOwn(category: { visible: boolean; addOnsOnly: boolean }): boolean {
+  return category.visible && !category.addOnsOnly;
+}

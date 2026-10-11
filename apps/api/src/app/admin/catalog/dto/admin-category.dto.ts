@@ -72,6 +72,16 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   visible?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Not sold on its own: the category and its products are left out of customer menus and refused by the cart ' +
+      '(e.g. a POS import of extra ingredients). A POS sync never changes it',
+  })
+  @IsOptional()
+  @IsBoolean()
+  addOnsOnly?: boolean;
 }
 
 /** A category stays in its brand: `brandId` is not updatable. */

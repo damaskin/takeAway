@@ -1,11 +1,17 @@
 import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import type { Promo, PromoStatus } from '@takeaway/shared-types';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { type Promo, type PromoStatus, isPromoEditable, promoNextStatuses } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { map } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { campaignLink, parseInactiveDays } from '../../core/customers/inactive-segment';
+import { apiErrorMessage } from '../../core/http/api-error';
 import { AdminPromoApi } from '../../core/promo/promo.service';
+import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
+import { PROMO_ERROR_WORDING } from './promo-errors';
 
 type FilterKey = 'All' | 'Running' | 'Scheduled' | 'Expired' | 'Paused' | 'Draft';
 
@@ -17,47 +23,57 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
   Draft: 'DRAFT',
 };
 
+/** A status move the row offers, with the words on its button. */
+interface PromoAction {
+  status: PromoStatus;
+  label: string;
+}
+
 /**
- * Admin Promo / Loyalty — pencil C4 (5fLM7).
+ * Admin Promo / Loyalty — pencil C4 (5fLM7), the «Промокоды» tab of «Акции».
  *
- * Lists /admin/promo, supports status filter, PATCHes status from the table,
- * and has a lightweight inline "create promo" form that POSTs /admin/promo.
+ * Lists /admin/promo with a status filter. Each row says where the promo
+ * stands and offers the next steps as buttons — start a draft, pause,
+ * resume, end — and opens the form to edit a draft, or a scheduled or
+ * paused promo nobody has used yet.
  */
 @Component({
   selector: 'app-admin-promo',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, ConfirmDialogComponent],
   template: `
-    <div
-      class="flex items-center justify-between flex-wrap"
-      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px"
-    >
-      <h1
-        style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
+    <div class="flex items-center justify-end flex-wrap" style="padding: 16px clamp(16px, 4vw, 24px) 0; gap: 8px">
+      <button
+        type="button"
+        (click)="refresh()"
+        [disabled]="loading()"
+        class="flex items-center"
+        style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
       >
-        {{ 'admin.promo.title' | translate }}
-      </h1>
-      <div class="flex items-center" style="gap: 8px">
-        <button
-          type="button"
-          (click)="refresh()"
-          [disabled]="loading()"
-          class="flex items-center"
-          style="height: 36px; padding: 0 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-        >
-          {{ (loading() ? 'common.refreshing' : 'common.refresh') | translate }}
-        </button>
-        <a
-          routerLink="/promo/new"
-          class="flex items-center"
-          style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
-        >
-          {{ 'admin.promo.newPromo' | translate }}
-        </a>
-      </div>
+        {{ (loading() ? 'common.refreshing' : 'common.refresh') | translate }}
+      </button>
+      <a
+        routerLink="/promotions/promo/new"
+        class="flex items-center"
+        style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none"
+      >
+        {{ 'admin.promo.newPromo' | translate }}
+      </a>
     </div>
 
-    <section style="padding: 24px; display: flex; flex-direction: column; gap: 24px">
+    <section style="padding: 16px clamp(16px, 4vw, 24px) 24px; display: flex; flex-direction: column; gap: 24px">
+      @if (created(); as c) {
+        <div class="promo-created" role="status">
+          <span>{{ 'admin.promo.created.title' | translate: { code: c.code } }}</span>
+          @if (c.broadcast; as link) {
+            <a [routerLink]="link.commands" [queryParams]="link.queryParams">{{
+              'admin.promo.created.broadcast' | translate
+            }}</a>
+          }
+          <button type="button" (click)="dismissCreated()">{{ 'admin.promo.created.dismiss' | translate }}</button>
+        </div>
+      }
+
       <!-- Loyalty tier cards (static — tiers come from M5 analytics) -->
       <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
         @for (t of tiers; track t.name) {
@@ -78,14 +94,20 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
         }
       </div>
 
+      @if (error(); as e) {
+        <p role="alert" style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
+          {{ e }}
+        </p>
+      }
+
       <!-- Promos table -->
       <article
         class="flex flex-col"
         style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; overflow: hidden; overflow-x: auto"
       >
         <header
-          class="flex items-center justify-between"
-          style="padding: 20px; border-bottom: 1px solid var(--color-border-light)"
+          class="flex items-center justify-between flex-wrap"
+          style="padding: 20px; border-bottom: 1px solid var(--color-border-light); gap: 12px"
         >
           <div class="flex flex-col" style="gap: 4px">
             <h2
@@ -97,7 +119,7 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
               'admin.promo.table.subtitle' | translate: { total: promos().length, running: runningCount() }
             }}</span>
           </div>
-          <div class="flex" style="gap: 8px">
+          <div class="flex flex-wrap" style="gap: 8px">
             @for (f of filters; track f) {
               <button
                 type="button"
@@ -124,79 +146,68 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
             }
           </p>
         } @else {
-          <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
-            <thead style="background: var(--color-cream)">
+          <table class="promo-table">
+            <thead>
               <tr>
-                <th
-                  style="text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.code' | translate }}
-                </th>
-                <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.label' | translate }}
-                </th>
-                <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.type' | translate }}
-                </th>
-                <th
-                  style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.value' | translate }}
-                </th>
-                <th
-                  style="text-align: left; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.window' | translate }}
-                </th>
-                <th
-                  style="text-align: right; padding: 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.usage' | translate }}
-                </th>
-                <th
-                  style="text-align: center; padding: 12px 16px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase"
-                >
-                  {{ 'admin.promo.table.status' | translate }}
-                </th>
+                <th>{{ 'admin.promo.table.code' | translate }}</th>
+                <th>{{ 'admin.promo.table.label' | translate }}</th>
+                <th>{{ 'admin.promo.table.type' | translate }}</th>
+                <th class="num">{{ 'admin.promo.table.value' | translate }}</th>
+                <th>{{ 'admin.promo.table.window' | translate }}</th>
+                <th class="num">{{ 'admin.promo.table.usage' | translate }}</th>
+                <th>{{ 'admin.promo.table.status' | translate }}</th>
+                <th>{{ 'admin.promo.actions.title' | translate }}</th>
               </tr>
             </thead>
             <tbody>
               @for (p of filtered(); track p.id) {
-                <tr style="border-top: 1px solid var(--color-border-light)">
-                  <td
-                    style="padding: 12px 16px; font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--color-caramel)"
-                  >
-                    {{ p.code }}
+                <tr>
+                  <td class="promo-code">
+                    <a [routerLink]="['/promotions/promo', p.id]">{{ p.code }}</a>
                   </td>
-                  <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary)">{{ p.label }}</td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary)">
-                    {{ 'admin.promo.type.' + p.type | translate }}
+                  <td>
+                    {{ p.label }}
+                    @if (p.inactiveDays) {
+                      <div class="promo-audience">
+                        {{ 'admin.promo.audienceBadge' | translate: { days: p.inactiveDays } }}
+                      </div>
+                    }
                   </td>
-                  <td
-                    style="padding: 12px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); text-align: right"
-                  >
-                    {{ formatValue(p) }}
-                  </td>
-                  <td style="padding: 12px; font-size: 12px; color: var(--color-text-secondary)">
-                    {{ formatWindow(p) }}
-                  </td>
-                  <td style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right">
+                  <td class="promo-muted">{{ 'admin.promo.type.' + p.type | translate }}</td>
+                  <td class="num promo-strong">{{ formatValue(p) }}</td>
+                  <td class="promo-muted promo-small">{{ formatWindow(p) }}</td>
+                  <td class="num promo-muted">
                     {{ p.redemptionsCount }}{{ p.maxRedemptions > 0 ? '/' + p.maxRedemptions : '' }}
                   </td>
-                  <td style="padding: 12px 16px; text-align: center">
-                    <button
-                      type="button"
-                      (click)="cyclePromo(p)"
+                  <td>
+                    <span
+                      class="promo-status"
                       [style.background]="statusBg(p.status)"
                       [style.color]="statusColor(p.status)"
-                      style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; border: none; cursor: pointer"
                     >
                       {{ 'admin.promo.status.' + p.status | translate }}
-                    </button>
+                    </span>
+                  </td>
+                  <td>
+                    <div class="promo-actions">
+                      @if (editable(p)) {
+                        <a [routerLink]="['/promotions/promo', p.id]" class="promo-action">{{
+                          'admin.promo.actions.edit' | translate
+                        }}</a>
+                      }
+                      @for (a of actions(p); track a.status) {
+                        <button
+                          type="button"
+                          class="promo-action"
+                          [class.promo-action-main]="a.status === 'RUNNING'"
+                          [class.promo-action-danger]="a.status === 'EXPIRED'"
+                          [disabled]="busyId() === p.id"
+                          (click)="act(p, a.status)"
+                        >
+                          {{ a.label | translate }}
+                        </button>
+                      }
+                    </div>
                   </td>
                 </tr>
               }
@@ -205,19 +216,177 @@ const FILTER_MAP: Record<Exclude<FilterKey, 'All'>, PromoStatus> = {
         }
       </article>
     </section>
+
+    @if (ending(); as p) {
+      <app-confirm-dialog
+        tone="danger"
+        [title]="'admin.promo.actions.endConfirmTitle' | translate: { code: p.code }"
+        [body]="'admin.promo.actions.endConfirmBody' | translate"
+        [confirmLabel]="'admin.promo.actions.end' | translate"
+        [cancelLabel]="'common.cancel' | translate"
+        [busy]="busyId() === p.id"
+        (confirmed)="setStatus(p, 'EXPIRED')"
+        (cancelled)="ending.set(null)"
+      />
+    }
   `,
+  styles: [
+    `
+      .promo-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--font-sans);
+      }
+      .promo-table thead {
+        background: var(--color-cream);
+      }
+      .promo-table th {
+        text-align: left;
+        padding: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-text-tertiary);
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .promo-table td {
+        padding: 12px;
+        font-size: 14px;
+        color: var(--color-text-primary);
+        border-top: 1px solid var(--color-border-light);
+        vertical-align: top;
+      }
+      .promo-table .num {
+        text-align: right;
+      }
+      .promo-code a {
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-caramel);
+        text-decoration: none;
+      }
+      .promo-muted {
+        font-size: 13px;
+        color: var(--color-text-secondary) !important;
+      }
+      .promo-small {
+        font-size: 12px !important;
+        white-space: nowrap;
+      }
+      .promo-strong {
+        font-weight: 600;
+      }
+      .promo-audience {
+        margin-top: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--chart-warning);
+      }
+      .promo-status {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      .promo-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .promo-action {
+        height: 28px;
+        padding: 0 10px;
+        display: inline-flex;
+        align-items: center;
+        border-radius: 9999px;
+        border: 1px solid var(--color-border);
+        background: var(--color-foam);
+        color: var(--color-text-primary);
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .promo-action:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .promo-action-main {
+        background: var(--color-caramel);
+        border-color: transparent;
+        color: white;
+      }
+      .promo-action-danger {
+        color: var(--color-berry);
+      }
+      .promo-created {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        padding: 12px 16px;
+        border-radius: 14px;
+        background: var(--color-caramel-light);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        color: var(--color-espresso);
+      }
+      .promo-created a {
+        font-weight: 600;
+        color: var(--color-caramel);
+      }
+      .promo-created button {
+        margin-left: auto;
+        border: 0;
+        background: none;
+        color: var(--color-text-secondary);
+        font-size: 13px;
+        cursor: pointer;
+      }
+    `,
+  ],
 })
 export class AdminPromoPage implements OnInit {
   private readonly api = inject(AdminPromoApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly router = inject(Router);
 
   readonly filter = signal<FilterKey>('All');
   readonly filters: FilterKey[] = ['All', 'Running', 'Scheduled', 'Paused', 'Draft', 'Expired'];
 
   readonly loading = signal(false);
   readonly promos = signal<Promo[]>([]);
+  readonly error = signal<string | null>(null);
+  readonly busyId = signal<string | null>(null);
+  /** The promo whose «Завершить» waits for a yes. */
+  readonly ending = signal<Promo | null>(null);
+
+  /**
+   * The code the form just saved (`?created=CODE`), with the way on to a
+   * campaign when it is a code for inactive customers.
+   */
+  readonly created = toSignal(
+    inject(ActivatedRoute).queryParamMap.pipe(
+      map((q) => {
+        const code = q.get('created');
+        if (!code) return null;
+        const days = parseInactiveDays(q.get('inactiveDays'));
+        return {
+          code,
+          broadcast: days ? campaignLink({ days, storeId: q.get('storeId') }, code) : null,
+        };
+      }),
+    ),
+    { initialValue: null },
+  );
+
   readonly tiers = [
     {
       name: 'Silver',
@@ -267,14 +436,7 @@ export class AdminPromoPage implements OnInit {
         this.promos.set([]);
         return;
       }
-      this.loading.set(true);
-      this.api.list(brandId).subscribe({
-        next: (list) => {
-          this.promos.set(list);
-          this.loading.set(false);
-        },
-        error: () => this.loading.set(false),
-      });
+      this.load(brandId);
     });
   }
 
@@ -284,33 +446,64 @@ export class AdminPromoPage implements OnInit {
 
   refresh(): void {
     const brandId = this.activeBrand.activeId();
-    if (!brandId) return;
-    this.loading.set(true);
-    this.api.list(brandId).subscribe({
-      next: (list) => {
-        this.promos.set(list);
-        this.loading.set(false);
+    if (brandId) this.load(brandId);
+  }
+
+  editable(p: Promo): boolean {
+    return isPromoEditable(p);
+  }
+
+  /** The next steps from where the promo stands: start, pause, resume, end. */
+  actions(p: Promo): PromoAction[] {
+    return promoNextStatuses(p).map((status) => ({
+      status,
+      label:
+        status === 'EXPIRED'
+          ? 'admin.promo.actions.end'
+          : status === 'PAUSED'
+            ? 'admin.promo.actions.pause'
+            : p.status === 'DRAFT'
+              ? 'admin.promo.actions.start'
+              : 'admin.promo.actions.resume',
+    }));
+  }
+
+  /** Ending cannot be undone, so it asks first; the other moves happen at once. */
+  act(p: Promo, status: PromoStatus): void {
+    if (status === 'EXPIRED') {
+      this.ending.set(p);
+      return;
+    }
+    this.setStatus(p, status);
+  }
+
+  setStatus(p: Promo, status: PromoStatus): void {
+    this.busyId.set(p.id);
+    this.error.set(null);
+    this.api.updateStatus(p.id, status).subscribe({
+      next: (updated) => {
+        this.busyId.set(null);
+        this.ending.set(null);
+        this.promos.update((list) => list.map((x) => (x.id === updated.id ? updated : x)));
       },
-      error: () => this.loading.set(false),
+      error: (err) => {
+        this.busyId.set(null);
+        this.ending.set(null);
+        this.error.set(
+          apiErrorMessage(err, this.translate, {
+            ...PROMO_ERROR_WORDING,
+            statuses: { 500: 'admin.promo.errors.statusFailed' },
+          }),
+        );
+      },
     });
   }
 
-  cyclePromo(p: Promo): void {
-    // Simple state machine: DRAFT → SCHEDULED → RUNNING → PAUSED → RUNNING.
-    const next: PromoStatus =
-      p.status === 'DRAFT'
-        ? 'SCHEDULED'
-        : p.status === 'SCHEDULED'
-          ? 'RUNNING'
-          : p.status === 'RUNNING'
-            ? 'PAUSED'
-            : p.status === 'PAUSED'
-              ? 'RUNNING'
-              : 'DRAFT';
-    this.api.updateStatus(p.id, next).subscribe({
-      next: (updated) => {
-        this.promos.update((list) => list.map((x) => (x.id === updated.id ? updated : x)));
-      },
+  dismissCreated(): void {
+    void this.router.navigate([], {
+      queryParams: { created: null, inactiveDays: null, storeId: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
@@ -349,5 +542,16 @@ export class AdminPromoPage implements OnInit {
     if (status === 'PAUSED') return '#8A6720';
     if (status === 'EXPIRED') return '#8F2F3C';
     return 'var(--color-text-secondary)';
+  }
+
+  private load(brandId: string): void {
+    this.loading.set(true);
+    this.api.list(brandId).subscribe({
+      next: (list) => {
+        this.promos.set(list);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
   }
 }

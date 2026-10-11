@@ -177,6 +177,32 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('a store with a photo of its own shows it, cropped to the tile, and the logo when it fails', (
+    tester,
+  ) async {
+    const logo = 'https://cdn.takeaway.md/logo.png';
+    const hero = 'https://cdn.takeaway.md/hero.jpg';
+    final api = FakeApi()
+      ..moreStores = [
+        {...FakeApi.storeJson, 'id': 'st_2', 'name': 'С фото', 'logoUrl': logo, 'heroImageUrl': hero},
+      ];
+    final h = await pumpApp(tester, api: api, activeStoreId: null);
+
+    final image = find.descendant(
+      of: find.ancestor(of: find.text('С фото'), matching: find.byType(StoreTile)),
+      matching: find.byType(CachedNetworkImage),
+    );
+    final photo = tester.widget<CachedNetworkImage>(image);
+    expect(photo.imageUrl, hero);
+    expect(photo.fit, BoxFit.cover, reason: 'a photo fills the tile, unlike a logo');
+
+    final fallback = photo.errorWidget!(tester.element(image), hero, Exception('404')) as ClipRRect;
+    final logoImage = (fallback.child! as SizedBox).child! as CachedNetworkImage;
+    expect(logoImage.imageUrl, logo);
+
+    await h.unmount(tester);
+  });
+
   testWidgets('stores come before the menu in the tab bar', (tester) async {
     final h = await pumpApp(tester);
 

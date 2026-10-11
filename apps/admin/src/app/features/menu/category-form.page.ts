@@ -15,6 +15,10 @@ import { slugValidator } from './menu-input';
  *
  * This form used to sit at the bottom of the 320px category rail, which is
  * the narrowest column in the admin.
+ *
+ * "Only as add-ons" is for a category like a POS import's «Дополнительные
+ * ингредиенты»: kept for the stop-list and the POS, never on a customer's
+ * menu or in a cart. A POS re-sync leaves the choice alone.
  */
 @Component({
   selector: 'app-category-form',
@@ -52,6 +56,14 @@ import { slugValidator } from './menu-input';
           <input type="checkbox" formControlName="visible" />
           <span>{{ 'admin.menu.fields.visible' | translate }}</span>
         </label>
+
+        <div class="flex flex-col" style="gap: 4px">
+          <label class="check">
+            <input type="checkbox" formControlName="addOnsOnly" data-testid="category-add-ons-only" />
+            <span>{{ 'admin.menu.category.addOnsOnly' | translate }}</span>
+          </label>
+          <span class="hint" style="padding-left: 22px">{{ 'admin.menu.category.addOnsOnlyHint' | translate }}</span>
+        </div>
 
         <details>
           <summary
@@ -91,6 +103,7 @@ export class CategoryFormPage {
   readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
     visible: new FormControl(true, { nonNullable: true }),
+    addOnsOnly: new FormControl(false, { nonNullable: true }),
     slug: new FormControl('', { nonNullable: true, validators: [slugValidator] }),
   });
 
@@ -107,7 +120,12 @@ export class CategoryFormPage {
           const found = list.find((c) => c.id === id);
           if (found) {
             this.loadedName.set(found.name);
-            this.form.reset({ name: found.name, visible: found.visible, slug: found.slug });
+            this.form.reset({
+              name: found.name,
+              visible: found.visible,
+              addOnsOnly: found.addOnsOnly ?? false,
+              slug: found.slug,
+            });
           } else {
             this.error.set(this.translate.instant('admin.menu.errors.gone'));
           }
@@ -125,7 +143,7 @@ export class CategoryFormPage {
     this.submitted.set(true);
     const brandId = this.activeBrand.activeId();
     if (this.form.invalid || !brandId) return;
-    const { name, visible, slug } = this.form.getRawValue();
+    const { name, visible, addOnsOnly, slug } = this.form.getRawValue();
     this.saving.set(true);
     this.error.set(null);
 
@@ -136,14 +154,20 @@ export class CategoryFormPage {
 
     const id = this.categoryId();
     if (id) {
-      this.api.updateCategory(id, { name: name.trim(), visible }).subscribe({
+      this.api.updateCategory(id, { name: name.trim(), visible, addOnsOnly }).subscribe({
         next: () => this.router.navigate(['/menu'], { queryParams: { category: id } }),
         error: fail,
       });
       return;
     }
     this.api
-      .createCategory({ brandId, name: name.trim(), visible, ...(slug.trim() ? { slug: slug.trim() } : {}) })
+      .createCategory({
+        brandId,
+        name: name.trim(),
+        visible,
+        addOnsOnly,
+        ...(slug.trim() ? { slug: slug.trim() } : {}),
+      })
       .subscribe({
         // The next thing anyone does with a new category is fill it.
         next: (created) => this.router.navigate(['/menu'], { queryParams: { category: created.id } }),

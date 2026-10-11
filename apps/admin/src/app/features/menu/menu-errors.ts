@@ -14,6 +14,7 @@ const MENU_CODES = [
   'IMAGES_CHANGED',
   'INGREDIENT_UNKNOWN',
   'INGREDIENT_NAME_TAKEN',
+  'OPTION_NAME_REQUIRED',
   'STORE_UNKNOWN',
 ] as const;
 
@@ -32,12 +33,14 @@ const MENU_FIELDS = [
   'allergens',
   'dietTags',
   'visible',
+  'addOnsOnly',
   'priceDeltaCents',
   'minCount',
   'maxCount',
   'sortOrder',
   'ingredientId',
   'isAvailable',
+  'priceCents',
 ] as const;
 
 const MENU_WORDING: ApiErrorWording = {

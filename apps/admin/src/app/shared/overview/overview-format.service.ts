@@ -76,9 +76,16 @@ export class OverviewFormat {
     return this.translate.instant(`admin.overview.${key}`, params);
   }
 
+  /** Kopecks where there are any: «6,30 руб.», the way every analytics screen writes money. */
   money(cents: number | null | undefined, currency: string | null | undefined): string {
     if (cents === null || cents === undefined) return '—';
-    return this.fmt.money(cents, currency, { round: true });
+    return this.fmt.money(cents, currency);
+  }
+
+  /** Returning customers — they had ordered before the period — among its customers, whole percents. */
+  returningShare(t: { customers: number; returningCustomers: number } | null | undefined): string {
+    if (!t || t.customers === 0) return '—';
+    return this.percent((t.returningCustomers / t.customers) * 100, 0);
   }
 
   int(value: number): string {

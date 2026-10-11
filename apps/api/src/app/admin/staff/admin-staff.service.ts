@@ -5,6 +5,7 @@ import { KdsPinService } from '../../auth/services/kds-pin.service';
 import { PasswordService } from '../../auth/services/password.service';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -20,6 +21,11 @@ import { PrismaService } from '../../prisma/prisma.service';
  *   - Existing other staff role       → allow rebind (MANAGER ↔ STAFF).
  *   - Existing CUSTOMER / RIDER       → refuse (different scope model).
  *   - Existing BRAND_ADMIN/SUPER_ADMIN → refuse (never demote admins here).
+ *   - Existing staff of another brand  → refuse (staff accounts are global).
+ * Every refusal is the same neutral 409, without the account's role.
+ *
+ * Role changes and kitchen PINs need the whole account to be the caller's:
+ * see {@link BrandScopeService.managesUser}.
  */
 @Injectable()
 export class AdminStaffService {
@@ -100,14 +106,13 @@ export class AdminStaffService {
       existing.role === Role.STAFF ||
       existing.role === Role.MENU_EDITOR
     ) {
+      if (!(await this.scope.managesUser(user, existing.id))) throw emailInUse();
       userId = existing.id;
       if (existing.role !== input.role) {
         await this.prisma.user.update({ where: { id: userId }, data: { role: input.role } });
       }
     } else {
-      throw new ConflictException(
-        `User ${email} already has role ${existing.role}; change their role first or pick a different email`,
-      );
+      throw emailInUse();
     }
 
     try {
@@ -135,6 +140,7 @@ export class AdminStaffService {
     if (!staffRoles.includes(pivot.user.role)) {
       throw new ForbiddenException('Cannot change role of a non-staff user here');
     }
+    await this.assertManaged(userId, user);
     await this.prisma.user.update({ where: { id: userId }, data: { role } });
     const entry = (await this.list(storeId, user)).find((r) => r.userId === userId);
     if (!entry) throw new NotFoundException('Staff was updated but could not be reloaded');
@@ -160,6 +166,8 @@ export class AdminStaffService {
       where: { userId_storeId: { userId, storeId } },
     });
     if (!rostered) throw new NotFoundException('Staff is not rostered for this store');
+    // A PIN signs in as the account: never for one that also works elsewhere.
+    await this.assertManaged(userId, user);
 
     const target = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!target || (target.role !== Role.STORE_MANAGER && target.role !== Role.STAFF)) {
@@ -208,6 +216,17 @@ export class AdminStaffService {
     }
   }
 
+  private async assertManaged(userId: string, user: AuthenticatedUser): Promise<void> {
+    if (!(await this.scope.managesUser(user, userId))) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: 'STAFF_NOT_EDITABLE',
+        message: 'You cannot change this person’s access',
+      });
+    }
+  }
+
   private async assertStore(storeId: string, user: AuthenticatedUser): Promise<void> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, brandId: true } });
     if (!store) throw new NotFoundException('Store not found');
@@ -225,4 +244,13 @@ export class AdminStaffService {
       if (!assigned) throw new ForbiddenException('Store is outside your scope');
     }
   }
+}
+
+/** Same answer whatever the existing account is: no role, no name. */
+function emailInUse(): ConflictException {
+  return codedConflict(
+    'STAFF_EMAIL_TAKEN',
+    'This email is already in use. Ask the employee to use a different email.',
+    'email',
+  );
 }

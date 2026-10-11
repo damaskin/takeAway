@@ -8,7 +8,14 @@ import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
-import { CreatePromoDto, PromoDto, UpdatePromoStatusDto, ValidPromoResultDto, ValidatePromoDto } from './dto/promo.dto';
+import {
+  CreatePromoDto,
+  PromoDto,
+  UpdatePromoDto,
+  UpdatePromoStatusDto,
+  ValidPromoResultDto,
+  ValidatePromoDto,
+} from './dto/promo.dto';
 import { PromoService } from './promo.service';
 
 // Guessing codes through the open preview costs a request per guess; cap it
@@ -63,6 +70,32 @@ export class PromoController {
     return this.promo.create(dto);
   }
 
+  @ApiBearerAuth()
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @RequiresPlanFeature('promo')
+  @Get('admin/promo/:id')
+  @ApiOkResponse({ type: PromoDto })
+  async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<PromoDto> {
+    await this.promo.assertOwned(user, id, this.scope);
+    return this.promo.get(id);
+  }
+
+  /** Edits a draft, or a scheduled or paused promo nobody has used; 409 PROMO_NOT_EDITABLE otherwise. */
+  @ApiBearerAuth()
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @RequiresPlanFeature('promo')
+  @Patch('admin/promo/:id')
+  @ApiOkResponse({ type: PromoDto })
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePromoDto,
+  ): Promise<PromoDto> {
+    await this.promo.assertOwned(user, id, this.scope);
+    return this.promo.update(id, dto);
+  }
+
+  /** Draft → active → paused → ended; 409 PROMO_STATUS_NOT_ALLOWED for any other move. */
   @ApiBearerAuth()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   @RequiresPlanFeature('promo')
