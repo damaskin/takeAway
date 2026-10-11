@@ -9,6 +9,14 @@ const product = (over: Partial<ProductKindSignals>): ProductKindSignals => ({
 });
 
 describe('productKind', () => {
+  it('goes by the kind the business gave the category', () => {
+    expect(productKind(product({ categoryKind: 'COLD_DRINKS', categoryName: 'Сезонное' }))).toBe('DRINK');
+    expect(productKind(product({ categoryKind: 'BAKERY', caffeineLevel: 1 }))).toBe('FOOD');
+    expect(productKind(product({ categoryKind: 'FOOD', name: 'Латте-шаурма' }))).toBe('FOOD');
+    // OTHER says nothing: the other signals decide.
+    expect(productKind(product({ categoryKind: 'OTHER', categoryName: 'Горячие напитки' }))).toBe('DRINK');
+  });
+
   it('trusts caffeine and drink options first', () => {
     expect(productKind(product({ caffeineLevel: 0, categoryName: 'Десерты' }))).toBe('DRINK');
     expect(productKind(product({ drinkOptions: true }))).toBe('DRINK');

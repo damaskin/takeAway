@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { CategoryKind } from '@takeaway/shared-types';
 
 import type { AnalyticsScope } from '../analytics/analytics-scope';
 import { COUNTED, REVENUE, num, orderWhere, scopeConditions, whereAll } from '../analytics/analytics-sql';
@@ -37,6 +38,7 @@ interface FavouriteRow {
   name: string | null;
   quantity: number;
   categoryName: string | null;
+  categoryKind: CategoryKind | null;
   caffeineLevel: number | null;
   drinkOptions: boolean;
 }
@@ -231,7 +233,7 @@ export class CustomersService {
     if (userIds.length === 0) return out;
     const rows = await this.prisma.$queryRaw<FavouriteRow[]>`
       SELECT f."userId" AS "userId", f."name" AS "name", f."quantity" AS "quantity",
-             c."name" AS "categoryName", pr."caffeineLevel" AS "caffeineLevel",
+             c."name" AS "categoryName", c."kind"::text AS "categoryKind", pr."caffeineLevel" AS "caffeineLevel",
              EXISTS (
                SELECT 1 FROM "Variation" v
                WHERE v."productId" = pr.id AND v."type" IN ('TEMPERATURE', 'MILK', 'CUP')
@@ -261,6 +263,7 @@ export class CustomersService {
         kind: productKind({
           name,
           categoryName: r.categoryName,
+          categoryKind: r.categoryKind,
           caffeineLevel: r.caffeineLevel,
           drinkOptions: Boolean(r.drinkOptions),
         }),
