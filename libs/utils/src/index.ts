@@ -8,3 +8,5 @@ export * from './lib/store';
 export * from './lib/store-kinds';
 export * from './lib/store-time-zone';
 export * from './lib/phone';
+export * from './lib/contact';
+export * from './lib/temp-password';

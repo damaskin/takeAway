@@ -4,6 +4,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { STAFF_PASSWORD_MAX_LENGTH, STAFF_PASSWORD_MIN_LENGTH } from '@takeaway/shared-types';
+import { generateTempPassword, tempPasswordValid } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -17,7 +18,6 @@ import {
 import { FormPageComponent } from '../../shared/form-page.component';
 import { staffErrorMessage } from './staff-errors';
 import { StaffStorePickerComponent } from './staff-store-picker.component';
-import { generateTempPassword, tempPasswordValid } from './temp-password';
 
 /**
  * Invite someone to the team, on its own route. The person can work at
