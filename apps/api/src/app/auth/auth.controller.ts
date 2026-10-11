@@ -127,14 +127,16 @@ export class AuthController {
   /**
    * Self-service password change. Used by the admin / KDS 'change your
    * temp password' flow after an invited staff signs in for the first
-   * time. Requires the current password and replaces the stored hash.
+   * time. Requires the current password and replaces the stored hash, then
+   * signs out every other session of the account (the one making the change
+   * stays when it sends its `refreshToken`).
    */
   @Post('password/change')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiNoContentResponse()
   async passwordChangeSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: PasswordChangeSelfDto): Promise<void> {
-    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword);
+    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword, dto.refreshToken);
   }
 
   @Public()

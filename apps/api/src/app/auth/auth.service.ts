@@ -119,8 +119,18 @@ export class AuthService {
    * Self-service password change for an authenticated staff user. Verifies
    * the current password before setting the new one; clears the
    * `passwordMustChange` flag on success.
+   *
+   * A new password is how someone locks out whoever learnt the old one, so
+   * every other session ends: their refresh tokens are revoked, and their
+   * access tokens run out within minutes. `keepRefreshToken` (the session
+   * making the change) stays valid, so that person is not signed out too.
    */
-  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changeOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    keepRefreshToken?: string,
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.passwordHash) throw new UnauthorizedException('Account has no password set');
     if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw new UnauthorizedException('Account cannot change password here');
@@ -133,6 +143,7 @@ export class AuthService {
       where: { id: user.id },
       data: { passwordHash: hash, passwordMustChange: false },
     });
+    await this.tokens.revokeAll(user.id, keepRefreshToken);
   }
 
   /**
@@ -161,6 +172,11 @@ export class AuthService {
     await this.mail.sendPasswordReset(user.email ?? email, resetUrl);
   }
 
+  /**
+   * Sets a new password from an emailed link and signs the account out
+   * everywhere: a reset is what someone does when they think the old
+   * password, or a device, is in the wrong hands.
+   */
   async resetPassword(token: string, newPassword: string): Promise<void> {
     const hash = this.passwords.hashResetToken(token);
     const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
@@ -179,6 +195,7 @@ export class AuthService {
         data: { consumedAt: new Date() },
       }),
     ]);
+    await this.tokens.revokeAll(record.userId);
   }
 
   /**

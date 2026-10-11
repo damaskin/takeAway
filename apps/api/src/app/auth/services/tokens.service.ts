@@ -92,9 +92,23 @@ export class TokensService {
    * Ends every session of a user: all of their refresh tokens stop rotating.
    * Access tokens are short-lived and are refused by the JWT strategy once
    * the account is blocked, so there is nothing to revoke for them here.
+   *
+   * `keepRefreshToken` spares one session — the one changing its own
+   * password stays signed in while every other device is signed out. It is
+   * only honoured when it really is a live token of this same user.
    */
-  revokeAll(userId: string): Promise<number> {
-    return this.redis.delMatching(this.refreshKey(escapeGlob(userId), '*'));
+  async revokeAll(userId: string, keepRefreshToken?: string): Promise<number> {
+    const keep = keepRefreshToken ? await this.ownSessionKey(userId, keepRefreshToken) : null;
+    return this.redis.delMatching(this.refreshKey(escapeGlob(userId), '*'), keep ? new Set([keep]) : undefined);
+  }
+
+  private async ownSessionKey(userId: string, refreshToken: string): Promise<string | null> {
+    try {
+      const payload = await this.verifyRefresh(refreshToken);
+      return payload.sub === userId ? this.refreshKey(userId, payload.jti) : null;
+    } catch {
+      return null;
+    }
   }
 
   private async verifyRefresh(token: string): Promise<{ sub: string; jti: string }> {
