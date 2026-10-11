@@ -404,7 +404,7 @@ takeaway/
 - **Brand registration + moderation**: бизнес регистрируется в админке (`/signup` → `POST /business/register`) с валютой бренда (MDL по умолчанию) и языком писем; телефон — E.164, конфликты возвращаются кодами (`EMAIL_TAKEN`, `EMAIL_CUSTOMER_ACCOUNT`, `PHONE_TAKEN`). Бренд создаётся `PENDING`; владелец попадает на дашборд с чек-листом «Запуск бренда» (`GET /my-brand/onboarding`: логотип, точка с адресом и часами, категория и товар с фото, оплата, модерация) и видит баннер статуса на всех страницах. SUPER_ADMIN одобряет/отклоняет в модальном окне; причина отказа обязательна (и на сервере). Отклонённый бренд после правок отправляется повторно (`POST /my-brand/resubmit`). Письма владельцу («заявка получена», «одобрен», «нужны правки» — на языке бренда) и платформе (новая заявка, повторная подача — email всем SUPER_ADMIN и ops-чат в Telegram); сбой отправки не ломает запрос. Контакт поддержки — `SUPPORT_EMAIL` / `SUPPORT_TELEGRAM`.
 - **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов; цена вводится в валюте бренда, время приготовления — в минутах; до 6 фото на товар (первое — главное, JPEG/PNG/WebP/AVIF до 5 МБ, тип определяется по содержимому, SVG не принимается); слаги необязательны и генерируются из названия с транслитерацией кириллицы; порядок категорий и товаров; удаление непустой категории — 409 `CATEGORY_NOT_EMPTY` или перенос товаров (`?moveProductsTo=`); удаление товара или опции чистит корзины в транзакции; «нет в наличии» по точке — до отмены или до конца дня в часовом поясе точки; описание, КБЖУ, кофеин, диетические метки, аллергены.
 - **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; если он не передан, API выводит его из города / страны / координат (`suggestStoreTimeZone` в `libs/utils`: Молдова и ПМР → `Europe/Chisinau`, Украина → `Europe/Kyiv`, Россия → `Europe/Moscow`, Румыния → `Europe/Bucharest` и др.; рамка координат Молдовы), иначе берёт преобладающий пояс других точек бренда, иначе `Europe/Chisinau` — никогда не UTC (так же для точек из POS). Форма создания подставляет пояс по адресу, пока владелец не выбрал его сам; открытая точка на UTC подсвечивается красным баннером на карточке и на дашборде; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
-- **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate.
+- **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate (правило 8–128 символов показано у поля, кнопка «Сгенерировать», под выбором роли — описание Менеджер / Кухня / Редактор меню, по умолчанию Кухня) и письмо-приглашение с одноразовой ссылкой задать свой пароль (72 ч); без SMTP форма показывает, что передать лично. На странице — «Планшеты кухни»: привязанные планшеты, одноразовая ссылка для нового, отвязка. «Забыл пароль» и ссылки в письмах ведут на `ADMIN_APP_URL`; без SMTP или (в проде) без `ADMIN_APP_URL` восстановление отвечает 503 `PASSWORD_RESET_UNAVAILABLE`, а не обещает письмо.
 - **Меню по точкам и стоп-лист**: в форме товара — «Продаётся в точках» (галочки, по умолчанию все; у бренда с одной точкой блок скрыт и точка назначается сама), в таблице меню — чипы точек и «—» в колонке наличия для точки, где товар не продаётся. Страница «Стоп-лист» (`/stop-list`, роли SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER / STAFF, ссылка в меню и в шапке «Кухни»): выбор из своих точек, блюда и напитки точки и добавки, которыми пользуются её товары, переключатель «В наличии / В стопе» (до отмены или до конца дня), поиск и фильтр «только в стопе». STAFF только переключает — создавать, менять и удалять товары и добавки он не может (API-роли).
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
 - **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: `/promo`, `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список ушедших, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет.
@@ -425,7 +425,11 @@ takeaway/
 
 - Раздел «Кухня» (`/kitchen`) в кабинете бизнеса `apps/admin`; отдельное приложение `apps/kds` выведено 26.09.2026, `kds.takeaway.md` отвечает 301 на `admin.takeaway.md/login/pin`. Планшет на точке — тот же кабинет в «режиме планшета»: без меню и шапки, тёмная доска на весь экран; включается PIN-входом или кнопкой на доске
 - Новые заказы приходят по всему кабинету: всплывающая карточка с «Принять», звук, системное уведомление из фоновой вкладки, счётчик непринятых в меню. Кабинет держит одно сокет-подключение (`kds.subscribe` на все точки активного бренда) с повторным входом в комнаты после переподключения
-- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`; без секрета (пусто или `CHANGE_ME`) установка и вход по PIN отвечают 503 `KDS_PIN_NOT_CONFIGURED`, API при этом стартует. Защита от подбора: кроме per-IP throttle — счётчик в Redis на точку, после 10 неверных PIN за 10 минут вход по PIN на точке закрыт на 10 минут (429 `KDS_PIN_LOCKED`). UI lockscreen — `/login/pin` в кабинете (выбор точки один раз на устройство, экранная клавиатура).
+- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) scoped to one store (только STAFF/STORE_MANAGER, аккаунт должен работать в этой точке и только в её бренде). PIN управляется через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`: новый PIN — ровно 6 цифр и не «первая догадка» (одна цифра шесть раз, ряд 123456/987654; 400 `KDS_PIN_FORMAT` / `KDS_PIN_TOO_SIMPLE`), на входе принимаются 4–6 цифр, так что выданные раньше 4–5-значные PIN работают. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`; без секрета (пусто или `CHANGE_ME`) установка и вход по PIN отвечают 503 `KDS_PIN_NOT_CONFIGURED`, API при этом стартует.
+- **Привязка планшета** (`KitchenDevice`): вход по PIN принимается только с планшета, привязанного к бренду точки (`deviceToken` в теле; без него 401 `KDS_DEVICE_REQUIRED`, с неизвестным/отвязанным — 401 `KDS_DEVICE_UNKNOWN`). Планшет привязывается один раз: сотрудник бренда (STAFF и выше) открывает на нём «Кухню» под своей учётной записью — доска вызывает `POST /auth/kds/device { storeId }`, так же сами привязались планшеты, вошедшие до появления привязки, — или владелец/менеджер делает на странице «Сотрудники» одноразовую ссылку `/login/pin?pair=<code>` (код в Redis, 24 часа, один раз; `POST /auth/kds/device/pair`). Токен (256 бит) лежит в localStorage планшета, в БД — только SHA-256. Экран PIN берёт точки из `GET /auth/kds/device` (заголовок `X-Kitchen-Device`): только точки привязанного бренда, где есть хотя бы один действующий PIN. Публичный `GET /stores` экран PIN больше не использует. Список, ссылка и отвязка — `/admin/kitchen-devices`.
+- **Сессия по PIN ограничена кухней**: токены несут claim `kds = storeId` (сохраняется при refresh), `KdsSessionGuard` пускает такую сессию только в маршруты с `@KdsSessionAllowed` (доска и смена `/kds/*`, стоп-лист и наличие точки, список точек и свой бренд, `/auth/me`) и только для своей точки (403 `KDS_SESSION_LIMITED` / `KDS_SESSION_STORE`); `BrandScopeService` сужает её до бренда точки; сокет — только `kds.subscribe` своей точки. Кабинет при PIN-сессии показывает только «Кухню» и «Стоп-лист».
+- **Защита от подбора**: per-IP throttle (8/мин) + счётчик в Redis на пару точка × планшет: 5 неверных PIN бесплатно, затем пауза 1, 2, 4 … 60 минут (429 `KDS_PIN_LOCKED` с `retryAfterSeconds`), успешный вход сбрасывает; общий потолок на точку — 100 неверных за час → пауза 15 минут. Планшет проверяется до подсчёта, поэтому посторонний не может заблокировать кухню. UI lockscreen — `/login/pin` в кабинете: 4–6 цифр, отправка кнопкой «Войти»/Enter (длину PIN экран не знает, автоотправка на 4-й цифре делала 5–6-значные PIN невозможными).
+- **«Загружены»**: кнопка в шапке доски при открытой смене (`PUT /kds/busy?storeId= { busy }`) переключает `Store.status` OPEN ⇄ OVERLOADED (тот же статус, что владелец видит значком в «Точках» и может выбрать в редакторе точки); закрытую точку (`CLOSED`) не трогает — 409 `STORE_SWITCHED_OFF`. Смена несёт `busy`, отметка снимается сама при «Закончить работу». Каталог отдаёт у загруженной точки `busyMeter = 100` (иначе сохранённое значение); ETA по-прежнему считается по очереди (`KitchenLoadService`), загрузка его не меняет. Оповещения: `kds.shiftChanged`, `store.availabilityChanged` (клиенты перечитывают точку) и `store.loadChanged`.
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
 - **Смена точки**: точка принимает заказы, только пока открыта смена (`StoreShift` с `closedAt = null`). Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках». Пока смена закрыта, `GET /stores` отдаёт `acceptingOrders: false` (и `openNow: false`; пока открыта — оба `true`, даже вне часов работы), клиенты показывают точку «Не работает», создание заказа отвечает `STORE_NOT_TAKING_ORDERS`. Корзину собрать можно. Смена открывается и закрывается только вручную; остальные планшеты узнают об этом по `kds.shiftChanged`
 - **Клиент на месте**: строка доски несёт `customerArrival` (`NEARBY` | `HERE` | null) и `customerArrivedAt` из событий `CUSTOMER_NEARBY` / `CUSTOMER_HERE`; на карточке — плашка «Клиент рядом» / зелёная «Клиент на месте · N мин»
@@ -491,7 +495,9 @@ User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, curr
 Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, apnsToken?,   // apnsToken — сырой APNs-токен iOS (hex)
         apnsEnvironment?[PRODUCTION|SANDBOX], locale, lastSeenAt)
 OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
-PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
+PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)   // «забыл пароль» (1 ч) и ссылка из приглашения сотрудника (72 ч)
+KitchenDevice (id, brandId [CASCADE], tokenHash (unique, SHA-256), createdById?, createdAt,
+               lastUsedAt?, revokedAt?)                       // планшет кухни, привязанный к бренду; токен — в localStorage планшета
 Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardOrderId?,
           referrerPointsCredited, refereePointsCredited)
 Feedback (id, userId? [SET NULL], kind[REVIEW|SUGGESTION|PROBLEM], message (1–2000, trimmed),
@@ -507,7 +513,7 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        plan[BASIC|PRO] = BASIC, commissionBps = 1000)   // тариф и комиссия платформы, меняет SUPER_ADMIN
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
-       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
+       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,   // OVERLOADED = «Загружены» с кухни; в API busyMeter у неё 100
        taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
        externalProvider?[POSTER|IIKO], externalId?)
@@ -628,8 +634,15 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ```
 POST   /auth/password/login          { email, password } → tokens
-POST   /auth/kds/pin                  { storeId, pin } → tokens   (KDS lockscreen, STAFF/STORE_MANAGER, 4–6 digits)
-POST   /auth/password/forgot         { email }
+POST   /auth/kds/pin                  { storeId, pin, deviceToken } → tokens + kdsStoreId
+                                     //   (KDS lockscreen, STAFF/STORE_MANAGER, 4–6 digits; только с привязанного планшета:
+                                     //   401 KDS_DEVICE_REQUIRED | KDS_DEVICE_UNKNOWN; 429 KDS_PIN_LOCKED { retryAfterSeconds });
+                                     //   сессия ограничена кухней точки (claim `kds`)
+POST   /auth/kds/device               { storeId } → { deviceToken, brandId, brandName }   (auth: STAFF+, точка в скоупе)
+POST   /auth/kds/device/pair          { code } → то же   (одноразовая ссылка со страницы «Сотрудники»; 401 KDS_PAIRING_INVALID)
+GET    /auth/kds/device               [X-Kitchen-Device] → { brandId, brandName, stores[{id,name,city}] }
+                                     //   точки бренда, где есть действующий PIN; 401 KDS_DEVICE_UNKNOWN
+POST   /auth/password/forgot         { email }   → 204; 503 PASSWORD_RESET_UNAVAILABLE, если нет SMTP_HOST или (в проде) ADMIN_APP_URL
 POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { oldPassword, newPassword }    (auth)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
@@ -794,7 +807,11 @@ PUT/DELETE             /admin/stores/:id/ingredient-stops/:ingredientId   // { e
 GET    /admin/staff                  → [{ userId, email, phone, name, role, blocked, addedAt,
                                           stores: [{ id, name }], kdsPinStoreId, hasKdsPin, editable }]
 GET    /admin/staff/:userId          → то же для одного (404 вне досягаемости)
-POST   /admin/staff                  { email, name?, role, tempPassword, storeIds[≥1] } → 201
+POST   /admin/staff                  { email, name?, role, tempPassword (8–128), storeIds[≥1] }
+                                     //   → 201 { ...StaffMember, inviteEmail: SENT|NOT_CONFIGURED|FAILED, accountCreated }
+                                     //   Письмо-приглашение: кабинет, логин и для нового аккаунта одноразовая ссылка
+                                     //   /reset-password?token=…&invite=1 (PasswordResetToken, 72 ч); временный пароль не пишется.
+                                     //   Без SMTP / ADMIN_APP_URL — NOT_CONFIGURED, токен не создаётся.
                                      //   409 STAFF_ALREADY_ON_TEAM / STAFF_EMAIL_TAKEN (email занят не сотрудником
                                      //   или сотрудником, работающим и в другом бренде; без роли в ответе)
 PUT    /admin/staff/:userId/stores   { storeIds[] } → замена в пределах досягаемости; [] — убрать из команды
@@ -802,9 +819,14 @@ PATCH  /admin/staff/:userId/role     { role: STORE_MANAGER | STAFF | MENU_EDITOR
                                      //   403 STAFF_STORE_OUT_OF_SCOPE / STAFF_ROLE_NOT_ALLOWED / STAFF_NOT_EDITABLE
                                      //   (роль, новые точки и PIN — только если все точки человека в брендах вызывающего)
 
+# Планшеты кухни (?brandId= обязателен; SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER бренда, не PIN-сессия)
+GET    /admin/kitchen-devices        → [{ id, createdAt, createdByName, lastUsedAt }]
+POST   /admin/kitchen-devices/pairing-code → { code, expiresAt }   // ссылка /login/pin?pair=<code>, 24 ч, один раз
+DELETE /admin/kitchen-devices/:id    → 204   // отвязать: токен перестаёт открывать экран PIN
+
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
-PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
+PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }   // новый PIN — ровно 6 цифр, не 111111/123456
 GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]   // POST: 409 RIDER_PHONE_TAKEN — номер у другого аккаунта
 
 # Orders / Promo / Gift cards / Campaigns
@@ -856,9 +878,11 @@ GET                    /admin/pos/jobs/:provider
 
 ```
 GET    /kds/orders                    // + customerArrival, customerArrivedAt
-GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName }
+GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName, busy }
 POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
-POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно
+POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно; снимает «Загружены» (OVERLOADED → OPEN)
+PUT    /kds/busy?storeId=             { busy } → смена с busy; Store.status OPEN ⇄ OVERLOADED, 409 STORE_SWITCHED_OFF у CLOSED
+// Весь /kds/* доступен PIN-сессии только для её точки (KdsSessionGuard)
 POST   /kds/orders/:id/accept
 POST   /kds/orders/:id/reject         { reason: OUT_OF_STOCK|TOO_BUSY|CLOSING|OTHER, comment? } → отмена до принятия, бронь снимается / списанное возвращается, пуш клиенту с причиной
 POST   /kds/orders/:id/start
@@ -894,7 +918,7 @@ WS     /ws                          (события: order.statusChanged, order.
 ```
 
 - **Подключение**: токен (`auth.token`, `Authorization: Bearer` или `?token=`) необязателен. Без токена сокет подключается анонимно: не попадает ни в одну комнату, `order.subscribe` / `kds.subscribe` / `dispatch.subscribe` отвечают `{ok:false}`, приходят только публичные события. Невалидный или просроченный токен и заблокированный аккаунт — по-прежнему разрыв соединения (клиент обновляет токен и переподключается).
-- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busyMeter, currentEtaSeconds}`; `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия и закрытия смены, смены статуса точки в админке и удаления точки (`acceptingOrders: false`). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; при текущем правиле `openNow = acceptingOrders`, перезапрашивать точку ради `openNow` не нужно.
+- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busy, busyMeter, currentEtaSeconds}` — шлётся, когда кухня ставит или снимает «Загружены» (и когда отметку снимает конец смены); `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия и закрытия смены, смены статуса точки в админке, «Загружены» на кухне и удаления точки (`acceptingOrders: false`). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; при текущем правиле `openNow = acceptingOrders`, перезапрашивать точку ради `openNow` не нужно.
 - **Комнатные события**: `order.statusChanged` (комнаты `order:<id>` и `user:<id>`), `kds.orderChanged` / `kds.shiftChanged` (`kds:<storeId>`: роль персонала и точка в скоупе), `dispatch.orderChanged` (`dispatch:<storeId>`, STORE_MANAGER и выше).
 
 OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter — `libs/api-client-dart` (Retrofit + json_serializable), модели проверяются тестами на ответах живого API.
