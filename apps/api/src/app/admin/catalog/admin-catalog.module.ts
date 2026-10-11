@@ -6,6 +6,7 @@ import { RealtimeModule } from '../../realtime/realtime.module';
 import { AdminBrandsController } from './admin-brands.controller';
 import { AdminCatalogService } from './admin-catalog.service';
 import { AdminCategoriesController } from './admin-categories.controller';
+import { AdminCategoryOptionsService } from './admin-category-options.service';
 import { AdminIngredientsController } from './admin-ingredients.controller';
 import { AdminIngredientsService } from './admin-ingredients.service';
 import { AdminProductImagesService } from './admin-product-images.service';
@@ -26,6 +27,7 @@ import { StoreAvailabilityService } from './store-availability.service';
   ],
   providers: [
     AdminCatalogService,
+    AdminCategoryOptionsService,
     AdminProductImagesService,
     AdminIngredientsService,
     BrandModerationService,

@@ -292,6 +292,91 @@ describe('CatalogService', () => {
     expect(menu.categories[0]?.products[0]?.onStopList).toBe(true);
   });
 
+  // The clients pick a product's placeholder and the add-on groups from these.
+  it('tells the kind of every category, and of its products', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'store-1', slug: 'shawarma', brandId: 'brand-1' });
+    const product = (id: string) => ({
+      id,
+      categoryId: 'c',
+      slug: id,
+      name: id,
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 900,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: [],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+    });
+    prisma.category.findMany.mockResolvedValue([
+      { id: 'c-food', slug: 'food', name: 'Шаурма', kind: 'FOOD', products: [product('classic')] },
+      { id: 'c-hot', slug: 'coffee', name: 'Кофе', kind: 'HOT_DRINKS', products: [product('latte')] },
+    ]);
+
+    const menu = await service.getMenu('shawarma');
+
+    expect(menu.categories.map((c) => [c.id, c.kind])).toEqual([
+      ['c-food', 'FOOD'],
+      ['c-hot', 'HOT_DRINKS'],
+    ]);
+    expect(menu.categories.map((c) => c.products[0]?.categoryKind)).toEqual(['FOOD', 'HOT_DRINKS']);
+  });
+
+  it('sends the category kind and the add-on groups with a product', async () => {
+    const modifier = (id: string, group: string | null) => ({
+      id,
+      slug: id,
+      name: id,
+      priceDeltaCents: 0,
+      prepTimeDeltaSeconds: 0,
+      minCount: 0,
+      maxCount: 1,
+      sortOrder: 0,
+      group,
+    });
+    prisma.product.findFirst.mockResolvedValue({
+      id: 'p-shawarma',
+      categoryId: 'c-food',
+      brandId: 'brand-1',
+      slug: 'shawarma',
+      name: 'Шаурма',
+      description: null,
+      basePriceCents: 100,
+      prepTimeSeconds: 900,
+      caffeineLevel: null,
+      calories: null,
+      proteinsGrams: null,
+      fatsGrams: null,
+      carbsGrams: null,
+      allergens: ['GLUTEN'],
+      dietTags: [],
+      imageUrls: [],
+      sortOrder: 0,
+      variations: [],
+      modifiers: [modifier('garlic', 'Соусы'), modifier('no-onion', 'Убрать'), modifier('napkins', null)],
+      category: { kind: 'FOOD' },
+    });
+
+    const product = await service.getProduct('shawarma');
+
+    expect(product.categoryKind).toBe('FOOD');
+    expect(product.modifiers.map((m) => [m.id, m.group])).toEqual([
+      ['garlic', 'Соусы'],
+      ['no-onion', 'Убрать'],
+      ['napkins', null],
+    ]);
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ category: { select: { kind: true } } }),
+      }),
+    );
+  });
+
   // One brand, a burger bar and a pizzeria: each store's menu holds only
   // what that store sells, and a category left empty there is not shown.
   it('shows only the products the store sells, and drops categories left empty', async () => {
@@ -404,6 +489,7 @@ describe('CatalogService', () => {
       sortOrder: 0,
       variations: [milk('oat', true, [{ storeId: 'pizza' }]), milk('whole', false, [])],
       modifiers: [],
+      category: { kind: 'HOT_DRINKS' },
     });
 
     const product = await service.getProduct('latte', 'pizzeria');
@@ -438,6 +524,7 @@ describe('CatalogService', () => {
       sortOrder: 0,
       variations: [],
       modifiers: [],
+      category: { kind: 'OTHER' },
     });
 
     const product = await service.getProduct('test');
@@ -501,6 +588,7 @@ describe('CatalogService', () => {
       sortOrder: 0,
       variations: [milk('oat', 0, true, false), milk('whole', 1, false, true), milk('almond', 2, false, null)],
       modifiers: [],
+      category: { kind: 'HOT_DRINKS' },
     });
 
     const product = await service.getProduct('latte');

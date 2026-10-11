@@ -6,7 +6,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import { AdminIngredientsService } from './admin-ingredients.service';
 import { CreateIngredientDto } from './dto/admin-ingredient.dto';
 
-const VANILLA = { brandId: 'b1', name: 'Ванильный сироп', priceCents: 500 };
+const VANILLA = { brandId: 'b1', name: 'Ванильный сироп', priceCents: 500, group: null as string | null };
 
 function row(patch: Record<string, unknown> = {}) {
   return {
@@ -46,6 +46,10 @@ function build() {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     cart: { update: jest.fn().mockResolvedValue({}) },
+    categoryOption: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
@@ -72,7 +76,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
 
     expect(prisma.ingredient.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { brandId: 'b1', name: 'Шот эспрессо', priceCents: 1000, isAvailable: true },
+        data: { brandId: 'b1', name: 'Шот эспрессо', priceCents: 1000, isAvailable: true, group: null },
       }),
     );
     expect(created).toMatchObject({ name: 'Шот эспрессо', priceCents: 1000, products: [] });
@@ -118,6 +122,19 @@ describe('AdminIngredientsService — the add-ons library', () => {
     ]);
   });
 
+  it("lists the brand's add-on groups once each, whatever the case, A to Z", async () => {
+    const { svc, prisma } = build();
+    prisma.ingredient.findMany.mockResolvedValue([{ group: 'Сиропы' }]);
+    prisma.modifier.findMany.mockResolvedValue([{ group: 'Убрать' }, { group: 'сиропы' }]);
+    prisma.categoryOption.findMany.mockResolvedValue([{ group: 'Дополнительно' }]);
+
+    expect(await svc.groups(['b1'], 'b1')).toEqual(['Дополнительно', 'Сиропы', 'Убрать']);
+    expect(prisma.modifier.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { product: { brandId: 'b1' }, group: { not: null } } }),
+    );
+    await expect(svc.groups(['b1'], 'b2')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   describe('update', () => {
     it('renames the options that still carry the old name, and only those', async () => {
       const { svc, prisma } = build();
@@ -130,7 +147,26 @@ describe('AdminIngredientsService — the add-ons library', () => {
       };
       expect(prisma.modifier.updateMany).toHaveBeenCalledWith(rename);
       expect(prisma.variation.updateMany).toHaveBeenCalledWith(rename);
+      expect(prisma.categoryOption.updateMany).toHaveBeenCalledWith(rename);
       expect(prisma.modifier.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    // Library «Ваниль» moves from «Добавки» to «Сиропы»: the extras that sat in
+    // the old group follow, one a product put under «Топпинги» stays there.
+    it('moves the extras and set add-ons still in the old group to the new one', async () => {
+      const { svc, prisma } = build();
+
+      const updated = await svc.update('ing-vanilla', { group: 'Сиропы' }, ['b1']);
+
+      const regroup = { where: { ingredientId: 'ing-vanilla', group: null }, data: { group: 'Сиропы' } };
+      expect(prisma.modifier.updateMany).toHaveBeenCalledWith(regroup);
+      expect(prisma.categoryOption.updateMany).toHaveBeenCalledWith({
+        where: { ...regroup.where, kind: 'MODIFIER' },
+        data: regroup.data,
+      });
+      // Milk choices have no add-on group.
+      expect(prisma.variation.updateMany).not.toHaveBeenCalled();
+      expect(updated.group).toBe('Сиропы');
     });
 
     it('moves the options still at the old price to the new one; a product with its own price keeps it', async () => {
@@ -144,6 +180,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
       };
       expect(prisma.modifier.updateMany).toHaveBeenCalledWith(reprice);
       expect(prisma.variation.updateMany).toHaveBeenCalledWith(reprice);
+      expect(prisma.categoryOption.updateMany).toHaveBeenCalledWith(reprice);
     });
 
     it('leaves the options alone when only the stock switch moves', async () => {

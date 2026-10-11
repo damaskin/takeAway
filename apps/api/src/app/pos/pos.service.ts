@@ -19,6 +19,7 @@ import {
   StoreFulfillment,
   StoreStatus,
 } from '@prisma/client';
+import { inferCategoryKind } from '@takeaway/utils';
 import { Queue } from 'bullmq';
 
 import { BrandScopeService } from '../auth/services/brand-scope.service';
@@ -505,6 +506,9 @@ export class PosService {
             slug: this.posSlug(provider, 'category', c.externalId),
             name: c.name,
             sortOrder: c.sortOrder ?? 0,
+            // Only a new category gets a kind here, guessed from the POS
+            // name; the owner's choice is never overwritten on a re-sync.
+            kind: inferCategoryKind(c.name),
             externalProvider: provider,
             externalId: c.externalId,
           },

@@ -26,6 +26,14 @@ export class AdminIngredientsController {
     return this.ingredients.list(scope, brandId);
   }
 
+  /** Add-on groups the brand uses («Сиропы», «Соусы»…), for suggestions in the editors. */
+  @Get('groups')
+  @ApiQuery({ name: 'brandId', required: true })
+  async groups(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId: string): Promise<string[]> {
+    const scope = await this.scope.resolveBrandIds(user);
+    return this.ingredients.groups(scope, brandId);
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngredientDto): Promise<IngredientAdminDto> {

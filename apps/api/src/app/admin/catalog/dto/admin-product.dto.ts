@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { DietTag, VariationType } from '@prisma/client';
+import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
+import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
@@ -22,6 +24,7 @@ import {
 } from 'class-validator';
 
 import { SLUG_MESSAGE, SLUG_PATTERN } from './admin-category.dto';
+import { trimGroup } from './option-group';
 
 /** Photos per product: enough for a gallery, few enough to keep a menu card light. */
 export const MAX_PRODUCT_IMAGES = 6;
@@ -158,10 +161,22 @@ export class CreateProductDto {
   @ArrayUnique()
   @IsString({ each: true })
   storeIds?: string[];
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      "Create only: copy the category's option set onto the new product (and, when `prepTimeSeconds` is omitted, " +
+      "start at the category's default preparation time). False = a bare product",
+  })
+  @IsOptional()
+  @IsBoolean()
+  applyCategoryOptions?: boolean;
 }
 
-/** A product stays in its brand: `brandId` is not updatable. */
-export class UpdateProductDto extends PartialType(OmitType(CreateProductDto, ['brandId'] as const)) {}
+/** A product stays in its brand: `brandId` is not updatable. The category's set is copied on create only. */
+export class UpdateProductDto extends PartialType(
+  OmitType(CreateProductDto, ['brandId', 'applyCategoryOptions'] as const),
+) {}
 
 export class ToggleVisibilityDto {
   @ApiProperty()
@@ -316,6 +331,19 @@ export class CreateModifierDto {
   @IsOptional()
   @IsString()
   ingredientId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: MODIFIER_GROUP_MAX_LENGTH,
+    description:
+      'Group the add-on is shown under («Сиропы», «Убрать»); null = the generic «Добавки». ' +
+      "On create, omitted = the library entry's group",
+  })
+  @IsOptional()
+  @Transform(trimGroup)
+  @IsString()
+  @MaxLength(MODIFIER_GROUP_MAX_LENGTH)
+  group?: string | null;
 }
 
 export class UpdateModifierDto extends PartialType(CreateModifierDto) {}

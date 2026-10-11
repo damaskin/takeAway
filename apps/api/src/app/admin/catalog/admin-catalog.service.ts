@@ -15,6 +15,7 @@ import {
   type VariationType,
 } from '@prisma/client';
 import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
+import { inferCategoryKind } from '@takeaway/utils';
 
 import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
 import { slugify, uniqueSlug } from '../../common/text/slug';
@@ -23,7 +24,8 @@ import { recordCommissionRate, rateSourceFor } from '../../plans/commission-hist
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
-import { linkedIngredient, linkId, optionDefaults } from './ingredient-link';
+import { copyCategoryOptions } from './category-option-copy';
+import { linkedIngredient, linkId, optionDefaults, optionGroup } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
@@ -541,8 +543,8 @@ export class AdminCatalogService {
       where,
       orderBy: [{ brandId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
       // The editor shows how full each category is, and knows before a delete
-      // that the products need somewhere to go.
-      include: { _count: { select: { products: true } } },
+      // that the products need somewhere to go; and whether it has an option set.
+      include: { _count: { select: { products: true, options: true } } },
     });
   }
 
@@ -556,7 +558,8 @@ export class AdminCatalogService {
   /**
    * Nobody should have to invent a URL slug to add "Десерты": it is built
    * from the name when omitted, and a new category goes after the last one
-   * instead of sharing position 0 with every other.
+   * instead of sharing position 0 with every other. Without a `kind` the
+   * name decides it (`inferCategoryKind`): «Десерты» is BAKERY.
    */
   async createCategory(dto: CreateCategoryDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
@@ -569,8 +572,11 @@ export class AdminCatalogService {
         'category',
       ));
     const sortOrder = dto.sortOrder ?? (await nextCategorySortOrder(this.prisma, dto.brandId));
+    // A caller that does not say (the onboarding, an API client) gets the
+    // kind the name suggests, as the admin would have proposed.
+    const kind = dto.kind ?? inferCategoryKind(dto.name);
     return this.prisma.category
-      .create({ data: { ...dto, slug, sortOrder } })
+      .create({ data: { ...dto, kind, slug, sortOrder } })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
@@ -675,6 +681,8 @@ export class AdminCatalogService {
       include: {
         variations: { orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }], include: { ingredient: INGREDIENT_SUMMARY } },
         modifiers: { orderBy: { sortOrder: 'asc' }, include: { ingredient: INGREDIENT_SUMMARY } },
+        // The options editor offers the choice groups that fit the kind.
+        category: { select: { name: true, kind: true } },
         ...LISTING_INCLUDE,
       },
     });
@@ -688,11 +696,18 @@ export class AdminCatalogService {
    * one-store café never sees the choice, and API callers that predate
    * per-store menus keep their behaviour. An empty list is allowed: the
    * product exists but is sold nowhere yet.
+   *
+   * The new product starts from its category: the category's option set is
+   * copied onto it and, without a time of its own, it takes the category's
+   * default preparation time — unless `applyCategoryOptions` is false.
    */
   async createProduct(dto: CreateProductDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
-    await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
-    const { storeIds: requested, ...fields } = dto;
+    const category = await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
+    const { storeIds: requested, applyCategoryOptions, ...fields } = dto;
+    const fromCategory = applyCategoryOptions !== false;
+    const prepTimeSeconds =
+      fields.prepTimeSeconds ?? (fromCategory ? (category.defaultPrepTimeSeconds ?? undefined) : undefined);
     const storeIds = await this.storesOfBrand(dto.brandId, requested);
     const slug =
       dto.slug ??
@@ -703,10 +718,20 @@ export class AdminCatalogService {
         'product',
       ));
     const sortOrder = dto.sortOrder ?? (await nextProductSortOrder(this.prisma, dto.categoryId));
-    const created = await this.prisma.product
-      .create({
-        data: { ...fields, slug, sortOrder, stores: { create: storeIds.map((storeId) => ({ storeId })) } },
-        include: LISTING_INCLUDE,
+    const created = await this.prisma
+      .$transaction(async (tx) => {
+        const product = await tx.product.create({
+          data: {
+            ...fields,
+            prepTimeSeconds,
+            slug,
+            sortOrder,
+            stores: { create: storeIds.map((storeId) => ({ storeId })) },
+          },
+          include: LISTING_INCLUDE,
+        });
+        if (fromCategory) await copyCategoryOptions(tx, dto.categoryId, [product.id]);
+        return product;
       })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
     return withStoreIds(created);
@@ -760,11 +785,18 @@ export class AdminCatalogService {
    * lists a category's products. Without this check a brand could file its
    * own product under a competitor's category and appear in their menu.
    */
-  private async assertCategoryOfBrand(categoryId: string, brandId: string): Promise<void> {
-    const category = await this.prisma.category.findUnique({ where: { id: categoryId }, select: { brandId: true } });
+  private async assertCategoryOfBrand(
+    categoryId: string,
+    brandId: string,
+  ): Promise<{ defaultPrepTimeSeconds: number | null }> {
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+      select: { brandId: true, defaultPrepTimeSeconds: true },
+    });
     if (!category || category.brandId !== brandId) {
       throw new BadRequestException('The category belongs to another brand');
     }
+    return { defaultPrepTimeSeconds: category.defaultPrepTimeSeconds ?? null };
   }
 
   /**
@@ -897,8 +929,8 @@ export class AdminCatalogService {
    * an empty slug and the modifier could not be created at all.
    *
    * Every extra is an add-on of the brand library: picked from it by
-   * `ingredientId` (name and price default to the library's), or typed by
-   * name and filed under the entry of that name, made if missing.
+   * `ingredientId` (name, price and group default to the library's), or
+   * typed by name and filed under the entry of that name, made if missing.
    */
   async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
     const product = await this.getProduct(productId, scope);
@@ -910,8 +942,10 @@ export class AdminCatalogService {
       dto.name,
       true,
       dto.priceDeltaCents,
+      dto.group ?? null,
     );
     const { name, priceDeltaCents } = optionDefaults(dto, linked);
+    const group = optionGroup(dto.group, linked);
     const slug =
       dto.slug ??
       (await uniqueSlug(
@@ -922,7 +956,7 @@ export class AdminCatalogService {
     const sortOrder = dto.sortOrder ?? (await nextModifierSortOrder(this.prisma, productId));
     return this.prisma.modifier
       .create({
-        data: { productId, ...dto, name, priceDeltaCents, slug, sortOrder, ingredientId: linkId(linked) },
+        data: { productId, ...dto, name, priceDeltaCents, slug, sortOrder, ingredientId: linkId(linked), group },
       })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }

@@ -118,6 +118,7 @@ function modifier(m: Partial<Modifier> & Pick<Modifier, 'id' | 'name'>): Modifie
     externalProvider: null,
     externalId: null,
     ingredientId: null,
+    group: null,
     ...m,
   };
 }

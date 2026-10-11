@@ -95,6 +95,23 @@ enum VariationType {
   CUP
 }
 
+/// What a menu category holds: which fields its products have in the
+/// editor, which ready-made option sets the admin offers, which placeholder
+/// a product without a photo gets. OTHER shows everything.
+enum CategoryKind {
+  HOT_DRINKS
+  COLD_DRINKS
+  FOOD
+  BAKERY
+  OTHER
+}
+
+/// What an option of a category's option set becomes on a product.
+enum CategoryOptionKind {
+  VARIATION
+  MODIFIER
+}
+
 enum DietTag {
   VEGAN
   VEGETARIAN
@@ -857,31 +874,41 @@ model StoreWorkingHour {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Category {
-  id               String       @id @default(cuid())
-  brandId          String
-  slug             String
-  name             String
-  description      String?
-  iconUrl          String?
-  sortOrder        Int          @default(0)
+  id                     String       @id @default(cuid())
+  brandId                String
+  slug                   String
+  name                   String
+  description            String?
+  iconUrl                String?
+  sortOrder              Int          @default(0)
   // Optional availability window — minutes since local midnight.
-  availableFrom    Int?
-  availableTo      Int?
-  visible          Boolean      @default(true)
+  availableFrom          Int?
+  availableTo            Int?
+  visible                Boolean      @default(true)
   /// Not sold on its own: the category and its products are left out of
   /// every customer menu and the cart refuses them, while the admin, the
   /// stop-list and a POS sync keep them. For a POS import's «Дополнительные
   /// ингредиенты» — rows that exist to be added to a drink, not ordered.
   /// A POS sync never writes it.
-  addOnsOnly       Boolean      @default(false)
+  addOnsOnly             Boolean      @default(false)
+  /// Hot drinks, food… Set by the owner (the admin suggests one from the
+  /// name). A POS sync never writes it on an existing category.
+  kind                   CategoryKind @default(OTHER)
+  /// Preparation time a new product of the category starts with, seconds
+  /// (coffee 3 min, shawarma 15). Null = the product form's own default.
+  /// A POS sync never writes it.
+  defaultPrepTimeSeconds Int?
   /// External-POS link. See {@link Store.externalProvider}.
-  externalProvider PosProvider?
-  externalId       String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  externalProvider       PosProvider?
+  externalId             String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
-  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brand    Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
   products Product[]
+  /// The category's option set: copied onto a new product of the category,
+  /// and onto every product on «apply». Never read at order time.
+  options  CategoryOption[]
 
   @@unique([brandId, slug])
   @@unique([brandId, externalProvider, externalId])
@@ -968,6 +995,9 @@ model Modifier {
   externalId           String?
   /// See {@link Variation.ingredientId}.
   ingredientId         String?
+  /// Label the add-on is shown under on the product screen («Сиропы»,
+  /// «Соусы», «Убрать»), at most 40 characters. Null = the generic «Добавки».
+  group                String?
 
   product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
@@ -995,16 +1025,54 @@ model Ingredient {
   /// still charges the old price (a product given its own price keeps it).
   priceCents  Int      @default(0)
   isAvailable Boolean  @default(true)
+  /// The add-on group an extra made of it starts in («Ваниль» → «Сиропы»);
+  /// a new group reaches the extras that still carry the old one.
+  group       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brand      Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  modifiers  Modifier[]
-  variations Variation[]
-  storeStops StoreIngredientStop[]
+  brand           Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  modifiers       Modifier[]
+  variations      Variation[]
+  categoryOptions CategoryOption[]
+  storeStops      StoreIngredientStop[]
 
   @@unique([brandId, name])
   @@index([brandId, isAvailable])
+}
+
+/// One option of a category's option set — the options its products are
+/// meant to have («Молоко: Овсяное +10», «Сиропы: Ваниль +5»). The set is a
+/// template, not a source the menu reads: a new product of the category
+/// gets a copy of it, «apply» copies what is missing onto every product, and
+/// the cart and orders keep reading each product's own Variation/Modifier
+/// rows. Linked to the brand library like a product option, so a library
+/// rename or new price reaches it the same way.
+model CategoryOption {
+  id              String             @id @default(cuid())
+  categoryId      String
+  kind            CategoryOptionKind
+  /// VARIATION only: the pick-one group (size, milk…).
+  variationType   VariationType?
+  name            String
+  priceDeltaCents Int                @default(0)
+  /// MODIFIER only: the add-on group label; null = «Добавки».
+  group           String?
+  /// VARIATION only: pre-selected in its group.
+  isDefault       Boolean            @default(false)
+  /// MODIFIER only: how many of it one item may take.
+  maxCount        Int                @default(1)
+  sortOrder       Int                @default(0)
+  ingredientId    String?
+  createdAt       DateTime           @default(now())
+
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  /// Deleting the library entry takes the add-on off every product and out
+  /// of every category set.
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId, sortOrder])
+  @@index([ingredientId])
 }
 
 model StopListEntry {

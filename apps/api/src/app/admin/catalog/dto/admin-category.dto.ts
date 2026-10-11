@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import { CategoryKind } from '@prisma/client';
 import {
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -82,6 +84,30 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   addOnsOnly?: boolean;
+
+  @ApiPropertyOptional({
+    enum: CategoryKind,
+    default: CategoryKind.OTHER,
+    description:
+      'What the category holds: decides the product fields the admin shows, the option presets it offers and the ' +
+      'placeholder of a product without a photo. A POS sync never changes it',
+  })
+  @IsOptional()
+  @IsEnum(CategoryKind)
+  kind?: CategoryKind;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    minimum: 0,
+    maximum: 24 * 60 * 60,
+    description:
+      'Preparation time a new product of the category starts with, seconds; null = none. A POS sync never changes it',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(24 * 60 * 60)
+  defaultPrepTimeSeconds?: number | null;
 }
 
 /** A category stays in its brand: `brandId` is not updatable. */

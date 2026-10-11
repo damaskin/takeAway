@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
 
 import { MAX_PRICE_CENTS } from './admin-product.dto';
+import { trimGroup } from './option-group';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -34,6 +36,19 @@ export class CreateIngredientDto {
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: MODIFIER_GROUP_MAX_LENGTH,
+    description:
+      'Add-on group an extra made of it starts in («Сиропы»); null = «Добавки». A new group reaches every extra ' +
+      'that still carries the old one',
+  })
+  @IsOptional()
+  @Transform(trimGroup)
+  @IsString()
+  @MaxLength(MODIFIER_GROUP_MAX_LENGTH)
+  group?: string | null;
 }
 
 /** A rename also renames the options that still carry the old name. */
@@ -46,6 +61,8 @@ export interface IngredientAdminDto {
   name: string;
   priceCents: number;
   isAvailable: boolean;
+  /** Add-on group an extra made of it starts in; null = «Добавки». */
+  group: string | null;
   /** Products offering it (through an extra or a milk), by name. */
   products: Array<{ id: string; name: string }>;
   createdAt: Date;

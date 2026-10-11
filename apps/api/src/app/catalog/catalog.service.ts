@@ -233,6 +233,7 @@ export class CatalogService {
           sortOrder: c.sortOrder,
           availableFrom: c.availableFrom,
           availableTo: c.availableTo,
+          kind: c.kind,
           products: c.products.map((p) => ({
             id: p.id,
             categoryId: p.categoryId,
@@ -251,6 +252,7 @@ export class CatalogService {
             imageUrls: p.imageUrls,
             sortOrder: p.sortOrder,
             onStopList: stopList.has(p.id),
+            categoryKind: c.kind,
           })),
         })),
     };
@@ -304,6 +306,7 @@ export class CatalogService {
           where: store ? availableOptionAt(store.id, now) : AVAILABLE_OPTION,
           orderBy: { sortOrder: 'asc' },
         },
+        category: { select: { kind: true } },
       },
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -330,6 +333,7 @@ export class CatalogService {
       dietTags: product.dietTags,
       imageUrls: product.imageUrls,
       sortOrder: product.sortOrder,
+      categoryKind: product.category.kind,
       variations: variations.map((v) => ({
         id: v.id,
         type: v.type,
@@ -348,6 +352,7 @@ export class CatalogService {
         minCount: m.minCount,
         maxCount: m.maxCount,
         sortOrder: m.sortOrder,
+        group: m.group,
       })),
     };
   }

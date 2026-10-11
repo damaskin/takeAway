@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DietTag, VariationType } from '@prisma/client';
+import { CategoryKind, DietTag, VariationType } from '@prisma/client';
 
 export class VariationDto {
   @ApiProperty()
@@ -48,6 +48,13 @@ export class ModifierDto {
 
   @ApiProperty()
   sortOrder!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Group the add-on is shown under («Сиропы», «Убрать»); null = the generic «Добавки» group',
+  })
+  group!: string | null;
 }
 
 export class ProductDto {
@@ -104,6 +111,12 @@ export class ProductDto {
     required: false,
   })
   onStopList?: boolean;
+
+  @ApiProperty({
+    enum: CategoryKind,
+    description: "Kind of the product's category: picks the placeholder of a product without a photo",
+  })
+  categoryKind!: CategoryKind;
 }
 
 export class ProductDetailDto extends ProductDto {
@@ -147,6 +160,9 @@ export class CategoryWithProductsDto {
 
   @ApiProperty({ nullable: true, type: Number })
   availableTo!: number | null;
+
+  @ApiProperty({ enum: CategoryKind, description: 'Hot drinks, cold drinks, food, bakery or other' })
+  kind!: CategoryKind;
 
   @ApiProperty({ type: [ProductDto] })
   products!: ProductDto[];

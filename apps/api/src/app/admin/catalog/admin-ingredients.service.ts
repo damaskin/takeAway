@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { CategoryOptionKind, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertInScope, type BrandScope, dropCartLines, modifierCount } from './admin-catalog.service';
@@ -38,6 +38,37 @@ export class AdminIngredientsService {
     return rows.map(toDto);
   }
 
+  /**
+   * Every add-on group the brand uses — on library entries, product extras
+   * and category option sets — for the editors' suggestions, A to Z.
+   */
+  async groups(scope: BrandScope, brandId: string): Promise<string[]> {
+    assertInScope(scope, brandId);
+    const hasGroup = { group: { not: null } } as const;
+    const [ingredients, modifiers, options] = await Promise.all([
+      this.prisma.ingredient.findMany({
+        where: { brandId, ...hasGroup },
+        select: { group: true },
+        distinct: ['group'],
+      }),
+      this.prisma.modifier.findMany({
+        where: { product: { brandId }, ...hasGroup },
+        select: { group: true },
+        distinct: ['group'],
+      }),
+      this.prisma.categoryOption.findMany({
+        where: { category: { brandId }, ...hasGroup },
+        select: { group: true },
+        distinct: ['group'],
+      }),
+    ]);
+    const byKey = new Map<string, string>();
+    for (const { group } of [...ingredients, ...modifiers, ...options]) {
+      if (group && !byKey.has(group.toLowerCase())) byKey.set(group.toLowerCase(), group);
+    }
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+  }
+
   async create(dto: CreateIngredientDto, scope: BrandScope): Promise<IngredientAdminDto> {
     assertInScope(scope, dto.brandId);
     const row = await this.prisma.ingredient
@@ -47,6 +78,7 @@ export class AdminIngredientsService {
           name: dto.name,
           priceCents: dto.priceCents ?? 0,
           isAvailable: dto.isAvailable ?? true,
+          group: dto.group ?? null,
         },
         include: WITH_USAGE,
       })
@@ -55,10 +87,11 @@ export class AdminIngredientsService {
   }
 
   /**
-   * The entry and the options made of it stay in step: a new name or price
-   * reaches every option that still carries the old one. An option given a
-   * name or price of its own on one product («Сироп (двойной)», a dearer
-   * shot in the large size) keeps it.
+   * The entry and the options made of it stay in step: a new name, price
+   * or group reaches every option — on a product or in a category's option
+   * set — that still carries the old one. An option given a name, price or
+   * group of its own on one product («Сироп (двойной)», a dearer shot in the
+   * large size) keeps it.
    */
   async update(id: string, dto: UpdateIngredientDto, scope: BrandScope): Promise<IngredientAdminDto> {
     const before = await this.find(id, scope);
@@ -69,6 +102,7 @@ export class AdminIngredientsService {
           const rename = { where: { ingredientId: id, name: before.name }, data: { name: dto.name } };
           await tx.modifier.updateMany(rename);
           await tx.variation.updateMany(rename);
+          await tx.categoryOption.updateMany(rename);
         }
         if (dto.priceCents !== undefined && dto.priceCents !== before.priceCents) {
           const reprice = {
@@ -77,6 +111,16 @@ export class AdminIngredientsService {
           };
           await tx.modifier.updateMany(reprice);
           await tx.variation.updateMany(reprice);
+          await tx.categoryOption.updateMany(reprice);
+        }
+        if (dto.group !== undefined && dto.group !== before.group) {
+          // Milk choices have no group; only extras and set add-ons follow.
+          const regroup = { where: { ingredientId: id, group: before.group ?? null }, data: { group: dto.group } };
+          await tx.modifier.updateMany(regroup);
+          await tx.categoryOption.updateMany({
+            where: { ...regroup.where, kind: CategoryOptionKind.MODIFIER },
+            data: regroup.data,
+          });
         }
         return updated;
       })
@@ -90,7 +134,8 @@ export class AdminIngredientsService {
   /**
    * Deletes the add-on and takes it off every product that offers it: its
    * extras and milks go, and so do the cart lines made with them (the carts
-   * are re-totalled; placed orders keep their own snapshot).
+   * are re-totalled; placed orders keep their own snapshot). It leaves the
+   * category option sets too (their foreign key cascades).
    */
   async delete(id: string, scope: BrandScope): Promise<void> {
     await this.find(id, scope);
@@ -130,7 +175,7 @@ export class AdminIngredientsService {
   private async find(id: string, scope: BrandScope) {
     const row = await this.prisma.ingredient.findUnique({
       where: { id },
-      select: { brandId: true, name: true, priceCents: true },
+      select: { brandId: true, name: true, priceCents: true, group: true },
     });
     if (!row) throw new NotFoundException('Ingredient not found');
     assertInScope(scope, row.brandId);
@@ -147,6 +192,7 @@ function toDto(row: IngredientWithUsage): IngredientAdminDto {
     name: row.name,
     priceCents: row.priceCents,
     isAvailable: row.isAvailable,
+    group: row.group,
     products: [...products].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

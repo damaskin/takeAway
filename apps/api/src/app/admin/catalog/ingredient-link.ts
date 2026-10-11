@@ -7,9 +7,11 @@ export interface LinkedIngredient {
   id: string;
   name: string;
   priceCents: number;
+  /** The add-on group an extra made of it starts in. */
+  group: string | null;
 }
 
-const LINKED = { id: true, name: true, priceCents: true } as const satisfies Prisma.IngredientSelect;
+const LINKED = { id: true, name: true, priceCents: true, group: true } as const satisfies Prisma.IngredientSelect;
 
 /**
  * The library entry («Добавки») an option being written should point at.
@@ -18,8 +20,9 @@ const LINKED = { id: true, name: true, priceCents: true } as const satisfies Pri
  * - an id — must be in the product's brand library.
  * - omitted with `autoLink` — the library entry of the option's name, made
  *   if the brand has none yet (at `priceForNew`, the price the option is
- *   being given), so every new extra lands in the library and two
- *   products' «Овсяное молоко» share one switch.
+ *   being given, and in `groupForNew`, its add-on group), so every new
+ *   extra lands in the library and two products' «Овсяное молоко» share
+ *   one switch.
  * - omitted otherwise — `undefined`, the link is left as it is.
  */
 export async function linkedIngredient(
@@ -29,6 +32,7 @@ export async function linkedIngredient(
   name: string | undefined,
   autoLink: boolean,
   priceForNew = 0,
+  groupForNew: string | null = null,
 ): Promise<LinkedIngredient | null | undefined> {
   if (requested === null) return null;
   if (requested !== undefined) {
@@ -41,7 +45,7 @@ export async function linkedIngredient(
   return db.ingredient.upsert({
     where: { brandId_name: { brandId, name: trimmed } },
     update: {},
-    create: { brandId, name: trimmed, priceCents: priceForNew },
+    create: { brandId, name: trimmed, priceCents: priceForNew, group: groupForNew },
     select: LINKED,
   });
 }
@@ -63,4 +67,16 @@ export function optionDefaults(
   const name = dto.name?.trim() || linked?.name;
   if (!name) throw menuBadRequest('OPTION_NAME_REQUIRED', 'An option needs a name or an add-on from the library');
   return { name, priceDeltaCents: dto.priceDeltaCents ?? linked?.priceCents ?? 0 };
+}
+
+/**
+ * The add-on group a new extra goes in: the one asked for (`null` = the
+ * generic «Добавки»), else its library entry's — picking «Ваниль» from the
+ * library puts it under «Сиропы».
+ */
+export function optionGroup(
+  requested: string | null | undefined,
+  linked: LinkedIngredient | null | undefined,
+): string | null {
+  return requested !== undefined ? requested : (linked?.group ?? null);
 }

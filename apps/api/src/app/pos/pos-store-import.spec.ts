@@ -135,4 +135,70 @@ describe('PosService.upsertImportedMenu', () => {
     });
     expect(prisma.category.create).not.toHaveBeenCalled();
   });
+
+  // The POS owns names, prices and order. The kind, the default prep time and
+  // the add-on groups are set in takeAway and must survive every re-sync.
+  describe('kinds, prep times and add-on groups', () => {
+    async function sync(existing: { id: string } | null) {
+      const prisma = {
+        posIntegration: {
+          findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-1', provider: PosProvider.POSTER }),
+        },
+        category: {
+          findFirst: jest.fn().mockResolvedValue(existing),
+          update: jest.fn().mockResolvedValue({}),
+          create: jest.fn().mockResolvedValue({ id: 'c-new' }),
+        },
+        product: { findFirst: jest.fn().mockResolvedValue({ id: 'p-1' }), update: jest.fn(), create: jest.fn() },
+        store: { findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }]) },
+        // Not touched by a menu sync at all: `group` and the category option sets live here.
+        modifier: { update: jest.fn(), updateMany: jest.fn(), upsert: jest.fn(), create: jest.fn() },
+        categoryOption: { updateMany: jest.fn(), deleteMany: jest.fn(), create: jest.fn() },
+      };
+      const module = await Test.createTestingModule({
+        providers: [
+          PosService,
+          { provide: PrismaService, useValue: prisma },
+          { provide: SecretCipher, useValue: {} },
+          { provide: BrandScopeService, useValue: {} },
+          { provide: IikoProvider, useValue: {} },
+          { provide: PosterProvider, useValue: {} },
+          { provide: NotificationsService, useValue: {} },
+          { provide: ConfigService, useValue: { get: jest.fn(() => undefined) } },
+          { provide: getQueueToken(POS_SYNC_QUEUE), useValue: {} },
+        ],
+      }).compile();
+      await module.get(PosService).upsertImportedMenu('int-1', {
+        categories: [{ externalId: '3', name: 'Шаурма', sortOrder: 3 }],
+        products: [{ externalId: '41', categoryExternalId: '3', name: 'Шаурма классическая', basePriceCents: 9000 }],
+        modifiers: [],
+      });
+      return prisma;
+    }
+
+    it('never writes the kind or the default prep time of a category it already has', async () => {
+      const prisma = await sync({ id: 'c-shawarma' });
+
+      const data = (prisma.category.update.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+      expect(Object.keys(data).sort()).toEqual(['name', 'sortOrder']);
+    });
+
+    it('guesses the kind of a category it creates from the POS name, and sets no prep time', async () => {
+      const prisma = await sync(null);
+
+      const data = (prisma.category.create.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+      expect(data['kind']).toBe('FOOD');
+      expect(data).not.toHaveProperty('defaultPrepTimeSeconds');
+    });
+
+    it('leaves add-on groups and category option sets alone', async () => {
+      const prisma = await sync({ id: 'c-shawarma' });
+
+      for (const fn of [...Object.values(prisma.modifier), ...Object.values(prisma.categoryOption)]) {
+        expect(fn).not.toHaveBeenCalled();
+      }
+      const product = (prisma.product.update.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+      expect(product).not.toHaveProperty('modifiers');
+    });
+  });
 });

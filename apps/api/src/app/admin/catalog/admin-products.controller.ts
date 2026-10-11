@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { PRODUCT_PHOTO_RULE } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -104,7 +105,7 @@ export class AdminProductsController {
 
   /** One photo per request in a `file` field; appended to the end of the product's photos. */
   @Post(':id/images')
-  @ImageUpload()
+  @ImageUpload(PRODUCT_PHOTO_RULE)
   @HttpCode(HttpStatus.CREATED)
   async uploadImage(
     @CurrentUser() user: AuthenticatedUser,

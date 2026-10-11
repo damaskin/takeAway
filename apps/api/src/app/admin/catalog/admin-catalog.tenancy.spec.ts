@@ -10,6 +10,14 @@ import { UpdateCategoryDto } from './dto/admin-category.dto';
 import { UpdateProductDto } from './dto/admin-product.dto';
 import { UpdateStoreDto } from './dto/admin-store.dto';
 
+/** Lets `$transaction` callbacks run against the same fakes; the categories have no option set. */
+function withTransactions<T extends object>(prisma: T) {
+  return Object.assign(prisma, {
+    categoryOption: { findMany: jest.fn().mockResolvedValue([]) },
+    $transaction: jest.fn((run: (tx: T) => unknown) => run(prisma)),
+  });
+}
+
 /** Category ids are public; a brand must still not file products under someone else's. */
 describe('AdminCatalogService — brand boundaries', () => {
   const categories: Record<string, { brandId: string }> = {
@@ -18,7 +26,7 @@ describe('AdminCatalogService — brand boundaries', () => {
   };
 
   function build() {
-    const prisma = {
+    const prisma = withTransactions({
       category: {
         findUnique: jest.fn(({ where }: { where: { id: string } }) => Promise.resolve(categories[where.id] ?? null)),
       },
@@ -33,7 +41,7 @@ describe('AdminCatalogService — brand boundaries', () => {
       store: {
         findMany: jest.fn().mockResolvedValue([{ id: 'own-store' }]),
       },
-    };
+    });
     const svc = new AdminCatalogService(
       prisma as unknown as PrismaService,
       {} as PasswordService,
@@ -70,7 +78,7 @@ describe('AdminCatalogService — brand boundaries', () => {
 /** A store id is guessable too; a product must only ever be listed in its own brand's stores. */
 describe('AdminCatalogService — store listing boundaries', () => {
   function build() {
-    const prisma = {
+    const prisma = withTransactions({
       category: { findUnique: jest.fn().mockResolvedValue({ brandId: 'own' }) },
       product: {
         create: jest.fn(({ data }: { data: object }) => Promise.resolve({ ...data, stores: [] })),
@@ -87,7 +95,7 @@ describe('AdminCatalogService — store listing boundaries', () => {
         count: jest.fn().mockResolvedValue(0),
       },
       store: { findMany: jest.fn().mockResolvedValue([{ id: 'burgers' }, { id: 'pizza' }]) },
-    };
+    });
     const svc = new AdminCatalogService(
       prisma as unknown as PrismaService,
       {} as PasswordService,
