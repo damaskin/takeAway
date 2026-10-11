@@ -93,6 +93,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       PROMO_NOT_ELIGIBLE: "This code is for customers who haven't ordered in a while",
       TOO_MANY_UNPAID_ORDERS: 'You already have unpaid orders — pay for or cancel one before placing a new one',
       GIFT_CARD_BALANCE_CHANGED: 'The gift card balance has just changed — check the card and try again',
+      GIFT_CARD_UNKNOWN: 'There is no gift card with this code',
+      GIFT_CARD_OTHER_BRAND: 'This card is not valid at this place',
+      GIFT_CARD_CURRENCY: 'This card is in another currency and cannot be used here',
+      GIFT_CARD_EXPIRED: 'This gift card has expired',
+      GIFT_CARD_USED_UP: 'There is no money left on this card',
+      GIFT_CARD_CANCELLED: 'This gift card has been cancelled',
     },
     units: {
       min: 'min',

@@ -94,6 +94,12 @@ export const TRANSLATIONS_RU = {
       TOO_MANY_UNPAID_ORDERS:
         'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый',
       GIFT_CARD_BALANCE_CHANGED: 'Баланс подарочной карты только что изменился — проверьте карту и попробуйте снова',
+      GIFT_CARD_UNKNOWN: 'Такой подарочной карты нет',
+      GIFT_CARD_OTHER_BRAND: 'Эта карта не действует в этом заведении',
+      GIFT_CARD_CURRENCY: 'Карта в другой валюте — здесь её не применить',
+      GIFT_CARD_EXPIRED: 'Срок действия карты истёк',
+      GIFT_CARD_USED_UP: 'На карте не осталось денег',
+      GIFT_CARD_CANCELLED: 'Карта аннулирована',
     },
     units: {
       min: 'мин',

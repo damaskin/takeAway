@@ -430,5 +430,7 @@
   "errGiftCardCurrency": "Карта в другой валюте — здесь её не применить",
   "errGiftCardExpired": "Срок действия карты истёк",
   "errGiftCardUsedUp": "На карте не осталось денег",
-  "errGiftCardCancelled": "Карта аннулирована"
+  "errGiftCardCancelled": "Карта аннулирована",
+  "errGiftCardBalanceChanged": "Баланс подарочной карты только что изменился — проверьте карту и попробуйте снова",
+  "errTooManyUnpaidOrders": "У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый"
 }

@@ -49,13 +49,22 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     'PROMO_LIMIT_REACHED' => l10n.errPromoLimitReached,
     'PROMO_ALREADY_USED' => l10n.errPromoAlreadyUsed,
     'PROMO_NOT_ELIGIBLE' => l10n.errPromoNotEligible,
+    'GIFT_CARD_UNKNOWN' => l10n.errGiftCardUnknown,
+    'GIFT_CARD_OTHER_BRAND' => l10n.errGiftCardOtherBrand,
+    'GIFT_CARD_CURRENCY' => l10n.errGiftCardCurrency,
+    'GIFT_CARD_EXPIRED' => l10n.errGiftCardExpired,
+    'GIFT_CARD_USED_UP' => l10n.errGiftCardUsedUp,
+    'GIFT_CARD_CANCELLED' => l10n.errGiftCardCancelled,
+    'GIFT_CARD_BALANCE_CHANGED' => l10n.errGiftCardBalanceChanged,
+    'TOO_MANY_UNPAID_ORDERS' => l10n.errTooManyUnpaidOrders,
     _ => null,
   };
 }
 
-/// Words for a refused gift card. The API sends these without a code, only
-/// an English sentence (`GiftCardsService.validateForOrder`), so they are
-/// told apart by it; null for any other message.
+/// Words for a refused gift card from an API that predates the
+/// `GIFT_CARD_*` codes: those sent only an English sentence
+/// (`GiftCardsService.validateForOrder`), so they are told apart by it; null
+/// for any other message.
 String? giftCardErrorText(AppLocalizations l10n, String? message) {
   final text = message?.trim().toLowerCase();
   if (text == null || !text.startsWith('gift card')) return null;

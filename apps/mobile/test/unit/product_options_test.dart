@@ -273,6 +273,14 @@ void main() {
       );
       expect(checkoutErrorText(context, 'PROMO_MIN_ORDER'), 'Для этого промокода сумма заказа слишком мала');
       expect(checkoutErrorText(context, 'PROMO_EXPIRED'), 'Срок действия промокода истёк');
+      expect(checkoutErrorText(context, 'GIFT_CARD_UNKNOWN'), 'Такой подарочной карты нет');
+      expect(checkoutErrorText(context, 'GIFT_CARD_USED_UP'), 'На карте не осталось денег');
+      expect(checkoutErrorText(context, 'GIFT_CARD_CANCELLED'), 'Карта аннулирована');
+      expect(
+        checkoutErrorText(context, 'GIFT_CARD_BALANCE_CHANGED'),
+        'Баланс подарочной карты только что изменился — проверьте карту и попробуйте снова',
+      );
+      expect(checkoutErrorText(context, 'TOO_MANY_UNPAID_ORDERS'), startsWith('У вас уже есть неоплаченные заказы'));
       expect(checkoutErrorText(context, 'SOMETHING_NEW'), isNull);
       expect(checkoutErrorText(context, null), isNull);
     });

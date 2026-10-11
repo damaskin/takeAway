@@ -392,6 +392,7 @@ takeaway/
   - Brand admin выпускает карту через `/admin/gift-cards` → код шарится клиенту out-of-band
   - Клиент вводит код в чекаут (рядом с промо), баланс применяется как скидка через `GiftCardRedemption`
   - Поддержка частичного погашения (баланс остаётся)
+  - Отказ в карте на чекауте — 400 с кодом в теле (`GiftCardErrorCode` в `libs/shared-types`: `GIFT_CARD_UNKNOWN`, `GIFT_CARD_OTHER_BRAND`, `GIFT_CARD_CURRENCY`, `GIFT_CARD_EXPIRED`, `GIFT_CARD_USED_UP`, `GIFT_CARD_CANCELLED`) и прежним английским `message` — по нему переводят версии приложения, вышедшие до кодов; списание, которое опередил другой заказ, — 409 `GIFT_CARD_BALANCE_CHANGED`
 - НЕ реализовано в v1: customer-facing покупка карты со Stripe, кастомный дизайн/шаблон, email с подарком
 
 ### 3.8. Уведомления

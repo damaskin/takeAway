@@ -844,5 +844,13 @@
   "errGiftCardCurrency": "This gift card is in another currency",
   "errGiftCardExpired": "This gift card has expired",
   "errGiftCardUsedUp": "This gift card has no balance left",
-  "errGiftCardCancelled": "This gift card has been cancelled"
+  "errGiftCardCancelled": "This gift card has been cancelled",
+  "errGiftCardBalanceChanged": "The gift card balance has just changed — check the card and try again",
+  "@errGiftCardBalanceChanged": {
+    "description": "Checkout refused: another order spent the gift card while this one was being placed (GIFT_CARD_BALANCE_CHANGED)."
+  },
+  "errTooManyUnpaidOrders": "You already have unpaid orders — pay for or cancel one before placing a new one",
+  "@errTooManyUnpaidOrders": {
+    "description": "Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS)."
+  }
 }
