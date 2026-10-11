@@ -51,12 +51,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get genericError => 'Something went wrong. Please try again.';
 
   @override
-  String get networkError =>
-      'No connection. Check your internet and try again.';
+  String get networkError => 'No connection. Check your internet and try again.';
 
   @override
-  String get sessionExpired =>
-      'Your session has expired. Please sign in again.';
+  String get sessionExpired => 'Your session has expired. Please sign in again.';
 
   @override
   String get subtotal => 'Subtotal';
@@ -98,12 +96,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String itemsCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count items',
-      one: '1 item',
-    );
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count items', one: '1 item');
     return '$_temp0';
   }
 
@@ -123,22 +116,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get onboardingTitle1 => 'Order ahead';
 
   @override
-  String get onboardingBody1 =>
-      'Choose your coffee or lunch in a couple of taps, wherever you are.';
+  String get onboardingBody1 => 'Choose your coffee or lunch in a couple of taps, wherever you are.';
 
   @override
   String get onboardingTitle2 => 'Timed to your arrival';
 
   @override
-  String get onboardingBody2 =>
-      'Pick ASAP or a time slot. The kitchen starts so it is fresh when you walk in.';
+  String get onboardingBody2 => 'Pick ASAP or a time slot. The kitchen starts so it is fresh when you walk in.';
 
   @override
   String get onboardingTitle3 => 'Skip the queue';
 
   @override
-  String get onboardingBody3 =>
-      'Show your 4-digit code at the counter and grab your order. No waiting.';
+  String get onboardingBody3 => 'Show your 4-digit code at the counter and grab your order. No waiting.';
 
   @override
   String get onboardingNext => 'Next';
@@ -153,8 +143,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInTitle => 'Sign in to order';
 
   @override
-  String get signInSubtitle =>
-      'Your orders, points and cards stay with you on every device.';
+  String get signInSubtitle => 'Your orders, points and cards stay with you on every device.';
 
   @override
   String get continueWithTelegram => 'Continue with Telegram';
@@ -183,8 +172,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInAgreementPrivacy => 'Privacy Policy';
 
   @override
-  String get signInUnavailable =>
-      'No sign-in method is configured for this build.';
+  String get signInUnavailable => 'No sign-in method is configured for this build.';
 
   @override
   String get signInFailed => 'Could not sign in. Please try again.';
@@ -219,15 +207,13 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get signInMethodSwitched =>
-      'That account already had orders, so you are now in that profile.';
+  String get signInMethodSwitched => 'That account already had orders, so you are now in that profile.';
 
   @override
   String get signInMethodIosOnly => 'On iPhone';
 
   @override
-  String get telegramSignInFailed =>
-      'Telegram didn\'t confirm the sign-in. Please try again.';
+  String get telegramSignInFailed => 'Telegram didn\'t confirm the sign-in. Please try again.';
 
   @override
   String get storesTitle => 'Stores';
@@ -286,12 +272,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storesInactiveTitle => 'Not taking orders right now';
 
   @override
-  String get storesNoneActive =>
-      'No store is taking orders right now. Check back a little later.';
+  String get storesNoneActive => 'No store is taking orders right now. Check back a little later.';
 
   @override
-  String get storeBusyBanner =>
-      'The kitchen is busy — orders take a little longer.';
+  String get storeBusyBanner => 'The kitchen is busy — orders take a little longer.';
 
   @override
   String get openingHours => 'Opening hours';
@@ -567,27 +551,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'Card payments are unavailable right now, so the order can\'t be placed. Please try again a bit later.';
 
   @override
-  String get addCardToOrder =>
-      'Orders are paid by card. Add a card to place your order.';
+  String get addCardToOrder => 'Orders are paid by card. Add a card to place your order.';
 
   @override
   String get addCard => 'Add a card';
 
   @override
-  String get holdHint =>
-      'Your card is charged only once the store accepts your order.';
+  String get holdHint => 'Your card is charged only once the store accepts your order.';
 
   @override
   String get webPaymentHint =>
       'You pay by card on the bank\'s secure page. The amount is held now and charged when the store accepts your order.';
 
   @override
-  String get webPaymentNotOpened =>
-      'Couldn\'t open the payment page. Tap \"Pay\" to try again.';
+  String get webPaymentNotOpened => 'Couldn\'t open the payment page. Tap \"Pay\" to try again.';
 
   @override
-  String get webPaymentFailed =>
-      'The payment did not go through. You can try again.';
+  String get webPaymentFailed => 'The payment did not go through. You can try again.';
 
   @override
   String get summaryTitle => 'Summary';
@@ -676,8 +656,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateHeld => 'Charged when the store accepts';
 
   @override
-  String get paymentStateHeldHint =>
-      'If the store does not accept the order, your card is not charged.';
+  String get paymentStateHeldHint => 'If the store does not accept the order, your card is not charged.';
 
   @override
   String get paymentStatePending => 'Checking your payment';
@@ -716,8 +695,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelOrderTitle => 'Cancel this order?';
 
   @override
-  String get cancelOrderBody =>
-      'If your card was charged or held, the money goes back.';
+  String get cancelOrderBody => 'If your card was charged or held, the money goes back.';
 
   @override
   String get keepOrder => 'Keep it';
@@ -791,8 +769,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ordersEmptyHistory => 'No past orders yet';
 
   @override
-  String get ordersEmptyBody =>
-      'Place your first order and it will show up here.';
+  String get ordersEmptyBody => 'Place your first order and it will show up here.';
 
   @override
   String get ordersSignIn => 'Sign in to see your orders';
@@ -809,8 +786,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileGuestTitle => 'Sign in for the full experience';
 
   @override
-  String get profileGuestBody =>
-      'Save cards, collect points and follow your orders live.';
+  String get profileGuestBody => 'Save cards, collect points and follow your orders live.';
 
   @override
   String get signIn => 'Sign in';
@@ -865,8 +841,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedbackHintSuggestion => 'What should we add or improve?';
 
   @override
-  String get feedbackHintProblem =>
-      'What happened? If it\'s about an order, add its number.';
+  String get feedbackHintProblem => 'What happened? If it\'s about an order, add its number.';
 
   @override
   String get feedbackMessageRequired => 'Write a few words';
@@ -891,8 +866,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get feedbackDone => 'Done';
 
   @override
-  String get feedbackTooMany =>
-      'That\'s a lot of messages in a row. Please try again in an hour.';
+  String get feedbackTooMany => 'That\'s a lot of messages in a row. Please try again in an hour.';
 
   @override
   String get signOut => 'Sign out';
@@ -911,19 +885,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'Your profile, saved cards, loyalty points, sign-in methods and personal data will be deleted. Businesses keep your order history, but only in anonymised form. This cannot be undone.';
 
   @override
-  String get deleteAccountApple =>
-      'Apple will ask you to confirm, and takeAway will stop using your Apple ID.';
+  String get deleteAccountApple => 'Apple will ask you to confirm, and takeAway will stop using your Apple ID.';
 
   @override
   String get deleteAccountConfirm => 'Delete for good';
 
   @override
-  String get deleteAccountStaff =>
-      'Staff accounts are deleted by the business admin.';
+  String get deleteAccountStaff => 'Staff accounts are deleted by the business admin.';
 
   @override
-  String get deleteAccountAppleCancelled =>
-      'Deleting the account needs your confirmation with Apple.';
+  String get deleteAccountAppleCancelled => 'Deleting the account needs your confirmation with Apple.';
 
   @override
   String get accountDeleted => 'Your account has been deleted';
@@ -947,12 +918,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String pointsCount(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count points',
-      one: '1 point',
-    );
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count points', one: '1 point');
     return '$_temp0';
   }
 
@@ -992,15 +958,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notificationsTitle => 'Notifications';
 
   @override
-  String get notificationsSubtitle =>
-      'Choose what we may tell you about. You can change it any time.';
+  String get notificationsSubtitle => 'Choose what we may tell you about. You can change it any time.';
 
   @override
   String get notifOrderUpdates => 'Order updates';
 
   @override
-  String get notifOrderUpdatesHint =>
-      'When your order is accepted, ready or on its way.';
+  String get notifOrderUpdatesHint => 'When your order is accepted, ready or on its way.';
 
   @override
   String get notifPromotions => 'Promotions';
@@ -1009,8 +973,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifPromotionsHint => 'Discounts, new items and loyalty rewards.';
 
   @override
-  String get pushBlocked =>
-      'Notifications are turned off for takeAway in the system settings.';
+  String get pushBlocked => 'Notifications are turned off for takeAway in the system settings.';
 
   @override
   String get openSettings => 'Open settings';
@@ -1068,8 +1031,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get referralsApplyTitle => 'Have a friend\'s code?';
 
   @override
-  String get referralsApplyHint =>
-      'One time only, before your first paid order.';
+  String get referralsApplyHint => 'One time only, before your first paid order.';
 
   @override
   String referralsApplied(String code) {
@@ -1083,8 +1045,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get giftCardsTitle => 'Gift cards';
 
   @override
-  String get giftCardsEmpty =>
-      'No gift cards used yet. Enter a code at checkout and it will show up here.';
+  String get giftCardsEmpty => 'No gift cards used yet. Enter a code at checkout and it will show up here.';
 
   @override
   String giftCardUsedOn(String code, String brand) {
@@ -1099,8 +1060,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Add a card once and pay in one tap. We never see or store your full card number.';
 
   @override
-  String get paymentMethodsUnavailable =>
-      'Card payments are not available yet. You can pay at the counter.';
+  String get paymentMethodsUnavailable => 'Card payments are not available yet. You can pay at the counter.';
 
   @override
   String get paymentMethodsEmpty => 'No cards yet';
@@ -1139,8 +1099,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cardLabel => 'Card name (optional)';
 
   @override
-  String get cardPrivacy =>
-      'Your full card number is never sent or stored. The bank will text you a one-time code.';
+  String get cardPrivacy => 'Your full card number is never sent or stored. The bank will text you a one-time code.';
 
   @override
   String get cardSendCode => 'Send the code';
@@ -1175,8 +1134,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get languageRussian => 'Русский';
 
   @override
-  String get aboutBody =>
-      'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.';
+  String get aboutBody => 'takeAway — pre-order coffee and food. Choose, pay and pick it up without waiting in line.';
 
   @override
   String get aboutPrivacy => 'Privacy Policy';
@@ -1188,8 +1146,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutSupport => 'Support';
 
   @override
-  String get locationDenied =>
-      'Location access is off. Allow it in settings to see stores near you.';
+  String get locationDenied => 'Location access is off. Allow it in settings to see stores near you.';
 
   @override
   String get locationServiceOff => 'Location services are turned off.';
@@ -1216,12 +1173,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String cartBarLabel(int count, String time) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count items',
-      one: '1 item',
-    );
+    String _temp0 = intl.Intl.pluralLogic(count, locale: localeName, other: '$count items', one: '1 item');
     return '$_temp0 · ready by $time';
   }
 
@@ -1248,8 +1200,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeClosedTitle => 'This store is closed';
 
   @override
-  String get storeClosedBody =>
-      'It isn\'t taking orders right now. Choose another store or check back later.';
+  String get storeClosedBody => 'It isn\'t taking orders right now. Choose another store or check back later.';
 
   @override
   String hoursToday(String hours) {
@@ -1268,8 +1219,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeClosedNow => 'Closed now';
 
   @override
-  String get storeClosedNoOrders =>
-      'This store is closed and isn\'t taking orders right now.';
+  String get storeClosedNoOrders => 'This store is closed and isn\'t taking orders right now.';
 
   @override
   String get storeClosedCheckout =>
@@ -1282,12 +1232,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get orderReadySlogan => 'You spent 0 minutes in the queue. Enjoy!';
 
   @override
-  String get orderPickedUpSlogan =>
-      'Not a minute in the queue — just as planned. Have a great day!';
+  String get orderPickedUpSlogan => 'Not a minute in the queue — just as planned. Have a great day!';
 
   @override
-  String get notificationsDenied =>
-      'Notifications are turned off in your phone\'s settings.';
+  String get notificationsDenied => 'Notifications are turned off in your phone\'s settings.';
 
   @override
   String get storesRadius500 => '500 m';
@@ -1321,8 +1269,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storesShowAll => 'Show all stores';
 
   @override
-  String get locationUnavailable =>
-      'Couldn\'t tell where you are. Try again in a moment.';
+  String get locationUnavailable => 'Couldn\'t tell where you are. Try again in a moment.';
 
   @override
   String get productNoteFood => 'Order comment';
@@ -1390,16 +1337,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errCartEmpty => 'Your cart is empty';
 
   @override
-  String get errStoreNotTakingOrders =>
-      'This store is not taking orders right now';
+  String get errStoreNotTakingOrders => 'This store is not taking orders right now';
 
   @override
-  String get errStoreClosedAtTime =>
-      'The store is closed at that time — pick another time';
+  String get errStoreClosedAtTime => 'The store is closed at that time — pick another time';
 
   @override
-  String get errPickupSlotFull =>
-      'That time has just been taken — pick another one';
+  String get errPickupSlotFull => 'That time has just been taken — pick another one';
 
   @override
   String errPickupTimeOutOfRange(int minMinutes, int maxHours) {
@@ -1412,8 +1356,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get errItemsUnavailableGeneric =>
-      'Some items are not available right now';
+  String get errItemsUnavailableGeneric => 'Some items are not available right now';
 
   @override
   String errBelowMinOrder(String amount) {
@@ -1430,8 +1373,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errDeliveryAddressRequired => 'Enter a delivery address';
 
   @override
-  String get errDeliveryOutOfRange =>
-      'That address is outside the delivery area';
+  String get errDeliveryOutOfRange => 'That address is outside the delivery area';
 
   @override
   String get errPromoUnknown => 'There is no such promo code';
@@ -1451,8 +1393,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get errPromoMinOrderGeneric =>
-      'The order is too small for this promo code';
+  String get errPromoMinOrderGeneric => 'The order is too small for this promo code';
 
   @override
   String get errPromoLimitReached => 'This promo code has run out';
@@ -1461,8 +1402,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errPromoAlreadyUsed => 'You have already used this promo code';
 
   @override
-  String get errPromoNotEligible =>
-      'This code is for customers who haven\'t ordered in a while';
+  String get errPromoNotEligible => 'This code is for customers who haven\'t ordered in a while';
 
   @override
   String get errGiftCardUnknown => 'There is no such gift card';
@@ -1483,8 +1423,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errGiftCardCancelled => 'This gift card has been cancelled';
 
   @override
-  String get errGiftCardBalanceChanged =>
-      'The gift card balance has just changed — check the card and try again';
+  String get errGiftCardBalanceChanged => 'The gift card balance has just changed — check the card and try again';
 
   @override
   String get errTooManyUnpaidOrders =>
