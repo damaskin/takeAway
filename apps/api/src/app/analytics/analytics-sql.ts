@@ -10,6 +10,25 @@ import type { AnalyticsScope } from './analytics-scope';
  */
 export const COUNTED = Prisma.sql`o."status" NOT IN ('CANCELLED', 'EXPIRED')`;
 
+/*
+ * Money of an order, in SQL — the same arithmetic as `orderMoney()` in
+ * `money.ts`, where the definitions are explained. Revenue is never
+ * `totalCents`: that is what was charged to the card, and it leaves out
+ * whatever a gift card paid for.
+ */
+
+/** «Продажи»: the items at menu price, before any discount. */
+export const SALES = Prisma.sql`o."subtotalCents"`;
+
+/** «Скидки»: promo codes and loyalty points, never more than the sales. */
+export const DISCOUNTS = Prisma.sql`LEAST(o."discountCents", o."subtotalCents")`;
+
+/** «Выручка»: sales less discounts, however the customer paid. */
+export const REVENUE = Prisma.sql`GREATEST(o."subtotalCents" - o."discountCents", 0)`;
+
+/** The part of the revenue a gift card paid for. */
+export const GIFT_CARDS = Prisma.sql`LEAST(o."giftCardCents", ${REVENUE})`;
+
 /** Orders handed over at the counter with both timestamps: the pickup time sample. */
 export const PICKUP_DONE = Prisma.sql`o."status" = 'PICKED_UP' AND o."readyAt" IS NOT NULL AND o."pickedUpAt" IS NOT NULL`;
 

@@ -347,7 +347,7 @@ export class CustomerDetailPage {
   }
 
   price(cents: number): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: true });
+    return this.fmt.money(cents, this.activeBrand.active()?.currency);
   }
 
   frequency(days: number | null): string {

@@ -2,8 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { AnalyticsScope } from '../analytics/analytics-scope';
-import { COUNTED, num, orderWhere, scopeConditions, whereAll } from '../analytics/analytics-sql';
+import { COUNTED, REVENUE, num, orderWhere, scopeConditions, whereAll } from '../analytics/analytics-sql';
 import { customerLabels } from '../analytics/customer-labels';
+import { orderMoney } from '../analytics/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_INACTIVE_DAYS, perCustomerSql, segmentSql } from './customer-segment';
 import {
@@ -116,7 +117,7 @@ export class CustomersService {
       this.prisma.$queryRaw<CustomerRow[]>`${perCustomerSql(scope, userId)}`,
       this.prisma.$queryRaw<Array<{ storeId: string; storeName: string; orders: number; totalCents: bigint }>>`
         SELECT o."storeId" AS "storeId", s."name" AS "storeName",
-               COUNT(*)::int AS "orders", COALESCE(SUM(o."totalCents"), 0)::bigint AS "totalCents"
+               COUNT(*)::int AS "orders", COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents"
         FROM "Order" o
         JOIN "Store" s ON s.id = o."storeId"
         ${whereAll([...scopeConditions(scope), COUNTED, Prisma.sql`o."userId" = ${userId}`])}
@@ -132,7 +133,9 @@ export class CustomersService {
           orderCode: true,
           createdAt: true,
           status: true,
-          totalCents: true,
+          subtotalCents: true,
+          discountCents: true,
+          giftCardCents: true,
           currency: true,
           store: { select: { name: true } },
           _count: { select: { items: true } },
@@ -164,7 +167,8 @@ export class CustomersService {
         orderCode: o.orderCode,
         createdAt: o.createdAt.toISOString(),
         status: o.status,
-        totalCents: o.totalCents,
+        // The order's revenue, so the history adds up to the spend above.
+        totalCents: orderMoney(o).revenueCents,
         currency: o.currency,
         storeName: o.store.name,
         itemCount: o._count.items,

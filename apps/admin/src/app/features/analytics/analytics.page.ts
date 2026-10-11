@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, type ParamMap, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { defaultCurrency } from '@takeaway/utils';
 import { map } from 'rxjs';
 
 import {
@@ -26,6 +27,7 @@ import {
   RANGE_PRESETS,
   type RangePreset,
 } from '../../shared/date-range.component';
+import { OverviewFormat } from '../../shared/overview/overview-format.service';
 import { PlanLockComponent } from '../../shared/plan-lock.component';
 import { RetentionTabComponent } from './retention-tab.component';
 
@@ -64,6 +66,9 @@ interface ChartBar {
  * address (`?tab=stores`) so a link opens the right one. A link may also
  * bring its period (`days`, or `from`+`to`), store (`storeId`) and the
  * inactivity window (`window`) — the dashboard's «Возврат» button does.
+ * Money is counted the dashboard's way — revenue is sales less discounts,
+ * gift cards included — in one currency: a brand whose stores price in
+ * several picks one.
  */
 @Component({
   selector: 'app-admin-analytics',
@@ -86,9 +91,23 @@ interface ChartBar {
               }
             </select>
           }
+          @if (currencies().length > 1) {
+            <select
+              class="an-select"
+              [attr.aria-label]="'admin.overview.currency' | translate"
+              (change)="pickCurrency($any($event.target).value)"
+            >
+              @for (c of currencies(); track c) {
+                <option [value]="c" [selected]="c === currency()">{{ c }}</option>
+              }
+            </select>
+          }
           <app-date-range [(value)]="range" />
         </div>
       </header>
+      @if (currencies().length > 1) {
+        <p class="dash-hint">{{ 'admin.overview.storeCurrencyNote' | translate: { currency: currency() } }}</p>
+      }
 
       <nav class="an-tabs" role="tablist">
         @for (t of tabs; track t) {
@@ -117,15 +136,20 @@ interface ChartBar {
                 <div class="flex items-baseline flex-wrap" style="gap: 12px">
                   <span class="an-big">{{ price(revenue()?.totalRevenueCents ?? 0) }}</span>
                   @if (revenue(); as r) {
-                    <span
-                      class="an-delta"
-                      [style.color]="r.revenueDeltaPercent >= 0 ? '#3E8868' : 'var(--color-berry)'"
-                    >
-                      {{ r.revenueDeltaPercent >= 0 ? '▲' : '▼' }} {{ fmt.percent(abs(r.revenueDeltaPercent)) }}
-                      <span class="an-delta-note">{{
-                        'admin.analytics.vsPrevious' | translate: { amount: price(r.previousRevenueCents) }
-                      }}</span>
-                    </span>
+                    @if (r.revenueDeltaPercent !== null) {
+                      <span
+                        class="an-delta"
+                        [style.color]="r.revenueDeltaPercent >= 0 ? '#3E8868' : 'var(--color-berry)'"
+                      >
+                        {{ r.revenueDeltaPercent >= 0 ? '▲' : '▼' }} {{ fmt.percent(abs(r.revenueDeltaPercent)) }}
+                        <span class="an-delta-note">{{
+                          'admin.analytics.vsPrevious' | translate: { amount: price(r.previousRevenueCents) }
+                        }}</span>
+                      </span>
+                    } @else if (r.totalRevenueCents > 0) {
+                      <!-- Nothing before to compare with: «+100 % against 0» would say nothing. -->
+                      <span class="an-delta an-delta-new">{{ 'admin.overview.newInPeriod' | translate }}</span>
+                    }
                   }
                 </div>
                 @if (revenue(); as r) {
@@ -133,6 +157,22 @@ interface ChartBar {
                     'admin.analytics.ordersAndCheck'
                       | translate: { orders: r.totalOrders, check: price(r.avgBasketCents) }
                   }}</span>
+                  @if (r.salesCents > 0) {
+                    <span class="dash-hint" [attr.title]="'admin.overview.money.hint' | translate">
+                      {{
+                        'admin.overview.money.line'
+                          | translate
+                            : {
+                                sales: price(r.salesCents),
+                                discounts: price(r.discountCents),
+                                revenue: price(r.totalRevenueCents),
+                              }
+                      }}
+                      @if (r.giftCardCents > 0) {
+                        · {{ 'admin.overview.money.giftCards' | translate: { value: price(r.giftCardCents) } }}
+                      }
+                    </span>
+                  }
                 }
               </div>
               @if (revenue()?.bestDay; as best) {
@@ -173,6 +213,7 @@ interface ChartBar {
             <article class="dash-card">
               <header class="dash-card-head">
                 <h2>{{ 'admin.analytics.topProducts' | translate }}</h2>
+                <span class="dash-hint">{{ 'admin.analytics.topProductsHint' | translate }}</span>
               </header>
               @if (!plans.has('deepAnalytics')) {
                 <app-plan-lock feature="deepAnalytics" [compact]="true" />
@@ -185,8 +226,11 @@ interface ChartBar {
                       <span class="an-row-name">{{ row.name }}</span>
                       <span class="an-row-note"
                         >{{ row.unitsSold }} {{ 'admin.analytics.unitsSold' | translate }} ·
-                        {{ price(row.revenueCents) }}</span
-                      >
+                        {{ price(row.revenueCents) }}
+                        @if (row.salesCents !== row.revenueCents) {
+                          · {{ 'admin.analytics.beforeDiscounts' | translate: { value: price(row.salesCents) } }}
+                        }
+                      </span>
                     </div>
                     <div class="an-track"><div class="an-fill" [style.width.%]="productPercent(row)"></div></div>
                   </div>
@@ -203,16 +247,25 @@ interface ChartBar {
               } @else {
                 <div class="an-tiles">
                   <div class="an-tile">
+                    <span>{{ 'admin.overview.kpi.customers' | translate }}</span>
+                    <strong>{{ cohort()?.customers ?? 0 }}</strong>
+                  </div>
+                  <div class="an-tile">
+                    <span>{{ 'admin.analytics.newCustomers' | translate }}</span>
+                    <strong>{{ cohort()?.newCustomers ?? 0 }}</strong>
+                  </div>
+                  <!-- The dashboard's «постоянных»: had ordered before the period. -->
+                  <div class="an-tile" [attr.title]="'admin.overview.returningHint' | translate">
+                    <span>{{ 'admin.analytics.returning' | translate }}</span>
+                    <strong>{{ overview.returningShare(cohort()) }}</strong>
+                  </div>
+                  <div class="an-tile" [attr.title]="'admin.analytics.repeatRateHint' | translate">
                     <span>{{ 'admin.analytics.repeatRate' | translate }}</span>
                     <strong>{{ fmt.percent(cohort()?.repeatRatePercent ?? 0) }}</strong>
                   </div>
                   <div class="an-tile">
                     <span>{{ 'admin.analytics.avgBasket' | translate }}</span>
                     <strong>{{ price(cohort()?.avgBasketCents ?? 0) }}</strong>
-                  </div>
-                  <div class="an-tile">
-                    <span>{{ 'admin.analytics.newCustomers' | translate }}</span>
-                    <strong>{{ cohort()?.newCustomers ?? 0 }}</strong>
                   </div>
                   <div class="an-tile">
                     <span>{{ 'admin.analytics.pickupSla' | translate }}</span>
@@ -471,6 +524,9 @@ interface ChartBar {
         font-weight: 400;
         color: var(--color-text-tertiary);
       }
+      .an-delta-new {
+        color: #3e8868;
+      }
       .an-strong {
         font-size: 16px;
         font-weight: 700;
@@ -576,6 +632,7 @@ export class AdminAnalyticsPage {
   private readonly translate = inject(TranslateService);
   readonly plans = inject(PlanAccess);
   protected readonly fmt = inject(LocaleFormatService);
+  protected readonly overview = inject(OverviewFormat);
 
   private readonly route = inject(ActivatedRoute);
   private readonly opened = this.route.snapshot.queryParamMap;
@@ -594,6 +651,8 @@ export class AdminAnalyticsPage {
   readonly range = signal<DateRangeValue>(rangeFromQuery(this.opened) ?? { days: 14 });
   readonly storeId = signal<string | null>(this.opened.get('storeId'));
   readonly churnWindow = signal<ChurnWindow>(parseInactiveDays(this.opened.get('window')) ?? DEFAULT_INACTIVE_DAYS);
+  /** The currency picked when the brand's stores price in several. */
+  private readonly currencyPick = signal<string | null>(null);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly revenue = signal<RevenueSeries | null>(null);
@@ -604,9 +663,33 @@ export class AdminAnalyticsPage {
 
   readonly storesDetailed = computed(() => this.storeRows().some((s) => s.detailed));
 
-  readonly period = computed<AnalyticsPeriod>(() => ({ ...this.range(), storeId: this.storeId() }));
   readonly brandId = this.activeBrand.activeId;
-  readonly currency = computed(() => this.activeBrand.active()?.currency);
+  /** Every currency the brand's stores price in; money is never added up across them. */
+  readonly currencies = computed(() => [...new Set(this.stores().map((s) => s.currency))].sort());
+  /**
+   * The currency of every amount on the page: a picked store's own, else the
+   * one picked, else the one the API opens on (`defaultCurrency`, the same
+   * function it calls).
+   */
+  readonly currency = computed<string | null>(() => {
+    const brand = this.activeBrand.active()?.currency ?? null;
+    const store = this.stores().find((s) => s.id === this.storeId());
+    if (store) return store.currency;
+    const currencies = this.currencies();
+    if (currencies.length <= 1) return currencies[0] ?? brand;
+    return (
+      this.currencyPick() ??
+      defaultCurrency(
+        this.stores().map((s) => s.currency),
+        brand,
+      )
+    );
+  });
+  readonly period = computed<AnalyticsPeriod>(() => ({
+    ...this.range(),
+    storeId: this.storeId(),
+    ...(this.currencies().length > 1 ? { currency: this.currency() } : {}),
+  }));
 
   /** «за 14 дней» or «01.09 – 15.09», for the revenue caption. */
   readonly periodWords = computed(() => {
@@ -624,7 +707,7 @@ export class AdminAnalyticsPage {
     return r.points.map((p, i) => ({
       date: p.date,
       label: i % every === 0 ? this.fmt.shortDay(p.date, 'UTC') : '',
-      sub: best && p.date === best.date && r.points.length <= 31 ? this.price(p.revenueCents, true) : '',
+      sub: best && p.date === best.date && r.points.length <= 31 ? this.price(p.revenueCents) : '',
       height: max === 0 ? 0 : Math.round((p.revenueCents / max) * 100),
       title: `${this.fmt.dayMonth(p.date, 'UTC')}: ${this.price(p.revenueCents)} · ${p.orderCount}`,
     }));
@@ -639,7 +722,10 @@ export class AdminAnalyticsPage {
       const brandId = this.activeBrand.activeId();
       if (!brandId) return;
       untracked(() => {
-        if (previousBrand !== null && previousBrand !== brandId) this.storeId.set(null);
+        if (previousBrand !== null && previousBrand !== brandId) {
+          this.storeId.set(null);
+          this.currencyPick.set(null);
+        }
         previousBrand = brandId;
         this.catalog.listStores(brandId).subscribe({ next: (list) => this.stores.set(list) });
       });
@@ -652,6 +738,12 @@ export class AdminAnalyticsPage {
       if (!brandId) return;
       untracked(() => this.fetch(tab, brandId, period));
     });
+  }
+
+  /** Another currency is another set of stores: the store filter goes. */
+  pickCurrency(currency: string): void {
+    this.storeId.set(null);
+    this.currencyPick.set(currency);
   }
 
   setTab(tab: Tab): void {
@@ -669,8 +761,9 @@ export class AdminAnalyticsPage {
     return Math.round((row.revenueCents / max) * 100);
   }
 
-  price(cents: number, wholeUnits = false): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: wholeUnits });
+  /** Kopecks where there are any, as on the dashboard: «6,30 руб.». */
+  price(cents: number): string {
+    return this.fmt.money(cents, this.currency());
   }
 
   abs(value: number): number {

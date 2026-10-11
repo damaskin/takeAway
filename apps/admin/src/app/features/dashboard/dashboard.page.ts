@@ -98,10 +98,25 @@ interface DashboardOrder {
             }
           </select>
         }
+        @if (currencies().length > 1) {
+          <select
+            class="ov-select"
+            [attr.aria-label]="'admin.overview.currency' | translate"
+            (change)="pickCurrency($any($event.target).value)"
+          >
+            @for (c of currencies(); track c) {
+              <option [value]="c" [selected]="c === currency()">{{ c }}</option>
+            }
+          </select>
+        }
         @if (plans.has('promo')) {
           <a routerLink="/promotions/promo/new" class="ov-new-promo">{{ 'admin.dashboard.newPromo' | translate }}</a>
         }
       </app-overview-header>
+
+      @if (currencies().length > 1) {
+        <p class="dash-hint">{{ 'admin.overview.storeCurrencyNote' | translate: { currency: currency() } }}</p>
+      }
 
       <!-- Open stores still on UTC: their hours are read hours off; hides itself when none -->
       <app-store-timezone-alert />
@@ -173,7 +188,7 @@ interface DashboardOrder {
             [deltaText]="customersDelta().text"
             [hint]="customersDelta().hint"
             [footLeft]="'admin.overview.foot.newCustomers' | translate: { value: fmt.int(d.current.newCustomers) }"
-            [footRight]="'admin.overview.foot.repeat' | translate: { value: repeatShare(d.current) }"
+            [footRight]="'admin.overview.foot.repeat' | translate: { value: fmt.returningShare(d.current) }"
           >
             <app-mini-bars
               kpiChart
@@ -203,6 +218,23 @@ interface DashboardOrder {
             />
           </app-kpi-card>
         </div>
+
+        @if (d.current.salesCents > 0) {
+          <p class="dash-hint ov-money" [attr.title]="'admin.overview.money.hint' | translate">
+            {{
+              'admin.overview.money.line'
+                | translate
+                  : {
+                      sales: money(d.current.salesCents),
+                      discounts: money(d.current.discountCents),
+                      revenue: money(d.current.revenueCents),
+                    }
+            }}
+            @if (d.current.giftCardCents > 0) {
+              · {{ 'admin.overview.money.giftCards' | translate: { value: money(d.current.giftCardCents) } }}
+            }
+          </p>
+        }
 
         <div class="ov-kpis-sm">
           <app-kpi-card
@@ -285,12 +317,19 @@ interface DashboardOrder {
           <app-churn-widget [brandId]="brandId" [period]="period()" [currency]="currency()" />
         }
 
-        @if (d.current.placed + d.previous.placed === 0) {
+        @if (d.current.placed + d.previous.placed === 0 && !pickedStore()) {
           <article class="dash-card ov-state">
             <h2 class="ov-empty-title">{{ 'admin.overview.empty.title' | translate }}</h2>
             <p class="dash-muted">{{ 'admin.overview.empty.body' | translate }}</p>
           </article>
         } @else {
+          @if (pickedStore(); as store) {
+            @if (d.current.placed + d.previous.placed === 0) {
+              <p class="dash-muted ov-store-empty">
+                {{ 'admin.overview.storeEmpty' | translate: { name: store.name } }}
+              </p>
+            }
+          }
           <div class="ov-panels">
             <article class="dash-card">
               <header class="dash-card-head">
@@ -509,6 +548,12 @@ interface DashboardOrder {
         font-size: 18px;
         color: var(--color-espresso);
       }
+      .ov-money {
+        margin: -4px 0 0;
+      }
+      .ov-store-empty {
+        margin: 0;
+      }
       .ov-retry {
         margin-top: 8px;
         border: 0;
@@ -593,14 +638,19 @@ export class DashboardPage {
   readonly range = signal<DateRangeValue>({ days: 30 });
   /** The store the page is narrowed to; null for all of them. */
   readonly storeId = signal<string | null>(null);
-  readonly period = computed<AnalyticsPeriod>(() => ({ ...this.range(), storeId: this.storeId() }));
+  /** The currency picked when the brand's stores price in several; null lets the API choose. */
+  private readonly currencyPick = signal<string | null>(null);
+  readonly period = computed<AnalyticsPeriod>(() => {
+    const currency = this.currencyPick();
+    return { ...this.range(), storeId: this.storeId(), ...(currency ? { currency } : {}) };
+  });
 
   readonly data = signal<BusinessOverview | null>(null);
   readonly loading = signal(false);
   readonly error = signal(false);
   readonly statuses = signal<OrderStatusStats | null>(null);
   readonly liveRaw = signal<AdminOrderSummary[]>([]);
-  /** Every store in scope, from the last unfiltered answer — the selector's options. */
+  /** Every store in scope, from the last answer (a picked store's answer lists them all too). */
   readonly storeOptions = signal<Array<{ id: string; name: string }>>([]);
   readonly query = signal('');
   readonly sort = createSort<StoreSortKey>('revenue');
@@ -611,7 +661,9 @@ export class DashboardPage {
   readonly canSeeKitchen = computed(() => canAccess(this.role(), 'kitchen'));
   readonly canSeeMenu = computed(() => canAccess(this.role(), 'menu'));
   readonly canToggleShifts = computed(() => canOnStores(this.role(), 'edit'));
-  readonly currency = computed(() => this.activeBrand.active()?.currency ?? null);
+  /** The currency of every amount: the one the API counted in, the brand's until it answers. */
+  readonly currency = computed(() => this.data()?.currency ?? this.activeBrand.active()?.currency ?? null);
+  readonly currencies = computed(() => this.data()?.currencies ?? []);
 
   readonly moneyFn = (cents: number) => this.money(cents);
   // Whole percents, but a sliver still reads as more than nothing.
@@ -824,6 +876,7 @@ export class DashboardPage {
       this.activeBrand.activeId();
       untracked(() => {
         this.storeId.set(null);
+        this.currencyPick.set(null);
         this.storeOptions.set([]);
         this.data.set(null);
       });
@@ -845,7 +898,7 @@ export class DashboardPage {
       this.reloadTick();
       if (!brandId) return;
       untracked(() => {
-        this.orders.list({ take: 10, brandId }).subscribe({
+        this.orders.list({ take: 10, brandId, storeId: period.storeId ?? undefined }).subscribe({
           next: (list) =>
             this.liveRaw.set(list.filter((o) => !['PICKED_UP', 'CANCELLED', 'EXPIRED'].includes(o.status))),
         });
@@ -863,14 +916,14 @@ export class DashboardPage {
     this.storeId.set(id && id !== this.storeId() ? id : null);
   }
 
-  money(cents: number | null | undefined): string {
-    return this.fmt.money(cents, this.currency());
+  /** Another currency is another set of stores: the store filter goes. */
+  pickCurrency(currency: string): void {
+    this.storeId.set(null);
+    this.currencyPick.set(currency);
   }
 
-  /** Customers who had ordered before the period, among its customers. */
-  repeatShare(t: OverviewTotals): string {
-    if (t.customers === 0) return '—';
-    return this.fmt.percent((Math.max(0, t.customers - t.newCustomers) / t.customers) * 100, 0);
+  money(cents: number | null | undefined): string {
+    return this.fmt.money(cents, this.currency());
   }
 
   ordersDiff(s: OverviewRow): number {
@@ -899,7 +952,7 @@ export class DashboardPage {
     this.request = this.analytics.overview(brandId, period).subscribe({
       next: (data) => {
         this.data.set(data);
-        if (!period.storeId) this.storeOptions.set(data.byStore.map((s) => ({ id: s.id, name: s.name })));
+        this.storeOptions.set(data.byStore.map((s) => ({ id: s.id, name: s.name })));
         this.loading.set(false);
       },
       error: () => {

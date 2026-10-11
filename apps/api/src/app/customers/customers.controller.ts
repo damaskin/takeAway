@@ -9,7 +9,11 @@ import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { CustomersService } from './customers.service';
 import { CustomerDetailDto, CustomerPageDto, CustomerScopeQueryDto, CustomersQueryDto } from './dto/customers.dto';
 
-/** The business's customers and each one's history with it — a PRO feature. */
+/**
+ * The business's customers and each one's history with it — a PRO feature.
+ * Spend is revenue as everywhere in analytics (sales less discounts), in the
+ * brand's currency when its stores price in several.
+ */
 @ApiTags('customers')
 @ApiBearerAuth()
 @Controller('admin/customers')
@@ -24,7 +28,7 @@ export class CustomersController {
   @Get()
   @ApiOkResponse({ type: CustomerPageDto })
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: CustomersQueryDto): Promise<CustomerPageDto> {
-    const scope = await this.scopes.resolve(user, query.brandId, query.storeId);
+    const { scope } = await this.scopes.money(user, { brandId: query.brandId, storeId: query.storeId });
     return this.customers.list(scope, query);
   }
 
@@ -35,7 +39,7 @@ export class CustomersController {
     @Param('id') id: string,
     @Query() query: CustomerScopeQueryDto,
   ): Promise<CustomerDetailDto> {
-    const scope = await this.scopes.resolve(user, query.brandId, query.storeId);
+    const { scope } = await this.scopes.money(user, { brandId: query.brandId, storeId: query.storeId });
     return this.customers.detail(scope, id);
   }
 }

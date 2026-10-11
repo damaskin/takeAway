@@ -26,11 +26,15 @@ import { DashboardPage } from './dashboard.page';
 
 function totals(over: Partial<OverviewTotals> = {}): OverviewTotals {
   return {
+    salesCents: 1_300_000,
+    discountCents: 65_500,
     revenueCents: 1_234_500,
+    giftCardCents: 0,
     orders: 42,
     placed: 45,
     customers: 30,
     newCustomers: 6,
+    returningCustomers: 24,
     avgCheckCents: 29_393,
     cancelled: 2,
     expired: 1,
@@ -64,6 +68,8 @@ function store(id: string, name: string, revenueCents: number, orders: number, p
 }
 
 const PRO: BusinessOverview = {
+  currency: 'MDL',
+  currencies: ['MDL'],
   period: {
     from: '2026-09-28',
     to: '2026-10-04',
@@ -129,10 +135,12 @@ const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace
 describe('DashboardPage', () => {
   let overview: jest.Mock;
   let orderStatuses: jest.Mock;
+  let ordersList: jest.Mock;
   let revision: ReturnType<typeof signal<number>>;
 
   async function render(data: BusinessOverview = PRO, features: PlanFeature[] = ['promo']) {
     overview = jest.fn().mockReturnValue(of(data));
+    ordersList = jest.fn().mockReturnValue(of([]));
     orderStatuses = jest.fn().mockReturnValue(of(STATUSES));
     revision = signal(0);
     TestBed.configureTestingModule({
@@ -149,7 +157,7 @@ describe('DashboardPage', () => {
         { provide: PlanAccess, useValue: { has: (f: PlanFeature) => features.includes(f) } },
         { provide: OrderAlertsService, useValue: { revision } },
         { provide: FeatureFlagsStore, useValue: { deliveryEnabled: signal(false) } },
-        { provide: AdminOrdersApi, useValue: { list: jest.fn().mockReturnValue(of([])) } },
+        { provide: AdminOrdersApi, useValue: { list: ordersList } },
       ],
     });
     // The launch checklist and the widgets have their own specs and APIs.
@@ -254,6 +262,8 @@ describe('DashboardPage', () => {
     expect(text(fixture.nativeElement.querySelector('.ov-chip'))).toContain('Центр');
     // Every store stays in the selector while one is picked.
     expect(fixture.componentInstance.storeOptions().map((s) => s.id)).toEqual(['s1', 's2']);
+    // So do the live orders: only the picked store's.
+    expect(ordersList).toHaveBeenLastCalledWith({ take: 10, brandId: 'b1', storeId: 's1' });
 
     fixture.componentInstance.pickStore('s1');
     await settle(fixture);
@@ -286,6 +296,66 @@ describe('DashboardPage', () => {
     expect(el.querySelectorAll('app-kpi-card').length).toBe(9);
     expect(el.querySelector('app-share-bars')).not.toBeNull();
     expect(el.querySelector('app-donut-chart')).not.toBeNull();
+  });
+
+  it('writes money with kopecks and says how the revenue is made up', async () => {
+    // The tester's week at «Кофейни Качели»: 10 orders, one customer, new.
+    const week = {
+      ...PRO,
+      currency: 'RUP',
+      currencies: ['RUP'],
+      current: totals({
+        salesCents: 10_500,
+        discountCents: 4_200,
+        revenueCents: 6_300,
+        giftCardCents: 1_400,
+        orders: 10,
+        avgCheckCents: 630,
+        customers: 1,
+        newCustomers: 1,
+        returningCustomers: 0,
+      }),
+    };
+    const fixture = await render(week);
+    const el = fixture.nativeElement as HTMLElement;
+    const cards = [...el.querySelectorAll('app-kpi-card')];
+    expect(text(cards.find((c) => text(c).startsWith('Средний чек')))).toContain('6,30 руб.');
+    // New and returning add up: one new customer is 0 % returning, not 100 % «repeat».
+    expect(text(cards.find((c) => text(c).startsWith('Клиенты')))).toContain('постоянных 0 %');
+    expect(text(el.querySelector('.ov-money'))).toBe(
+      'Продажи 105 руб. − скидки 42 руб. = выручка 63 руб. · из них оплачено подарочными картами 14 руб.',
+    );
+  });
+
+  it('keeps the stores on screen for a picked store without orders', async () => {
+    const quiet = {
+      ...PRO,
+      current: totals({ placed: 0, orders: 0, revenueCents: 0, salesCents: 0 }),
+      previous: totals({ placed: 0, orders: 0, revenueCents: 0, salesCents: 0 }),
+      byStore: [store('s1', 'Центр', 800_000, 20, 30), store('test2', 'test2', 0, 0, 0)],
+    };
+    const fixture = await render(quiet);
+    fixture.componentInstance.pickStore('test2');
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(overview).toHaveBeenLastCalledWith('b1', { days: 30, storeId: 'test2' });
+    expect(text(el)).not.toContain('Заказов за период нет');
+    expect(text(el)).toContain('В точке «test2» за этот и прошлый период заказов не было.');
+    // The panel and the table stay, so another store is one click away.
+    expect(el.querySelector('app-share-bars')).not.toBeNull();
+    expect(el.querySelectorAll('.ov-table tbody tr')).toHaveLength(2);
+  });
+
+  it('offers the currencies when the stores price in several, and drops the store filter on a switch', async () => {
+    const fixture = await render({ ...PRO, currency: 'RUP', currencies: ['MDL', 'RUP'] });
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el)).toContain('Показаны точки с валютой RUP');
+    expect(text(el.querySelector('app-kpi-card'))).toContain('руб.');
+    fixture.componentInstance.pickStore('s1');
+    await settle(fixture);
+    fixture.componentInstance.pickCurrency('MDL');
+    await settle(fixture);
+    expect(overview).toHaveBeenLastCalledWith('b1', { days: 30, storeId: null, currency: 'MDL' });
   });
 
   it('says there is nothing yet when neither period has an order', async () => {

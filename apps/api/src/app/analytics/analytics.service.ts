@@ -6,7 +6,11 @@ import { addDays, type DateRange } from './analytics-range';
 import type { AnalyticsScope } from './analytics-scope';
 import {
   COUNTED,
+  DISCOUNTS,
+  GIFT_CARDS,
   PICKUP_DONE,
+  REVENUE,
+  SALES,
   createdBetween,
   num,
   orderWhere,
@@ -30,6 +34,7 @@ import {
   WinBackDto,
   WinBackPeriodDto,
 } from './dto/analytics.dto';
+import { sumMoney } from './money';
 import {
   type ChurnWindow,
   type CustomerTotals,
@@ -88,11 +93,24 @@ function average(sum: number, count: number): number | null {
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async revenueSeries(scope: AnalyticsScope, range: DateRange): Promise<RevenueSeriesDto> {
-    const rows = await this.prisma.$queryRaw<Array<{ day: string; orders: number; revenue: bigint }>>`
+  /**
+   * Revenue by day (see `money.ts` for what counts as revenue), with the
+   * sales and discounts it came from and what gift cards paid of it.
+   * `currency`/`currencies` are the controller's to fill in.
+   */
+  async revenueSeries(
+    scope: AnalyticsScope,
+    range: DateRange,
+  ): Promise<Omit<RevenueSeriesDto, 'currency' | 'currencies'>> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ day: string; orders: number; revenue: bigint; sales: bigint; discounts: bigint; giftCards: bigint }>
+    >`
       SELECT to_char((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${range.timeZone}, 'YYYY-MM-DD') AS "day",
              COUNT(*)::int AS "orders",
-             COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue"
+             COALESCE(SUM(${REVENUE}), 0)::bigint AS "revenue",
+             COALESCE(SUM(${SALES}), 0)::bigint AS "sales",
+             COALESCE(SUM(${DISCOUNTS}), 0)::bigint AS "discounts",
+             COALESCE(SUM(${GIFT_CARDS}), 0)::bigint AS "giftCards"
       FROM "Order" o
       JOIN "Store" s ON s.id = o."storeId"
       ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(range.previous.start, range.end)])}
@@ -108,6 +126,8 @@ export class AnalyticsService {
     const totalRevenueCents = points.reduce((sum, p) => sum + p.revenueCents, 0);
     const totalOrders = points.reduce((sum, p) => sum + p.orderCount, 0);
     const previousRevenueCents = rows.filter((r) => r.day < range.from).reduce((sum, r) => sum + num(r.revenue), 0);
+    const inPeriod = rows.filter((r) => r.day >= range.from && r.day <= range.to);
+    const total = (pick: (r: (typeof rows)[number]) => bigint) => inPeriod.reduce((sum, r) => sum + num(pick(r)), 0);
 
     // Only report a "best day" if there's actual revenue to compare against.
     const bestDay = points.reduce<RevenuePointDto | null>(
@@ -122,31 +142,55 @@ export class AnalyticsService {
       totalRevenueCents,
       totalOrders,
       avgBasketCents: totalOrders ? Math.round(totalRevenueCents / totalOrders) : 0,
+      salesCents: total((r) => r.sales),
+      discountCents: total((r) => r.discounts),
+      giftCardCents: total((r) => r.giftCards),
       bestDay,
-      revenueDeltaPercent: percentChange(previousRevenueCents, totalRevenueCents) ?? (totalRevenueCents > 0 ? 100 : 0),
+      // Null when the period before sold nothing: «+100 % against 0» says
+      // nothing, the page writes «new in the period» instead.
+      revenueDeltaPercent: percentChange(previousRevenueCents, totalRevenueCents),
       previousRevenueCents,
       points,
     };
   }
 
+  /**
+   * Best sellers on the revenue's own basis: each order's discount is
+   * spread over its lines by price, so the products add up to no more than
+   * the revenue on the same page (each product is rounded down; see
+   * `productRevenue()`). `salesCents` is the same before discounts.
+   */
   async topProducts(scope: AnalyticsScope, range: DateRange, take = 10): Promise<TopProductDto[]> {
     // Grouped by the name in the order snapshot, so a renamed product still
     // rolls up under the label it was sold with.
-    const rows = await this.prisma.$queryRaw<Array<{ name: string; units: number; revenue: bigint }>>`
+    const rows = await this.prisma.$queryRaw<Array<{ name: string; units: number; sales: bigint; revenue: bigint }>>`
       SELECT COALESCE(oi."productSnapshot"->>'name', 'Unknown') AS "name",
              COALESCE(SUM(oi."quantity"), 0)::int AS "units",
-             COALESCE(SUM(oi."totalCents"), 0)::bigint AS "revenue"
+             COALESCE(SUM(oi."totalCents"), 0)::bigint AS "sales",
+             COALESCE(FLOOR(SUM(oi."totalCents"::numeric * ${REVENUE} / NULLIF(o."subtotalCents", 0))), 0)::bigint
+               AS "revenue"
       FROM "OrderItem" oi
       JOIN "Order" o ON o.id = oi."orderId"
       JOIN "Store" s ON s.id = o."storeId"
       ${whereAll([...scopeConditions(scope), COUNTED, ...createdBetween(range.start, range.end)])}
       GROUP BY 1
-      ORDER BY 3 DESC, 2 DESC
+      ORDER BY 4 DESC, 2 DESC
       LIMIT ${take}
     `;
-    return rows.map((r) => ({ name: r.name, unitsSold: num(r.units), revenueCents: num(r.revenue) }));
+    return rows.map((r) => ({
+      name: r.name,
+      unitsSold: num(r.units),
+      revenueCents: num(r.revenue),
+      salesCents: num(r.sales),
+    }));
   }
 
+  /**
+   * The period's customers. New ones placed their first order here in the
+   * period; returning ones had ordered before it — the two add up to all of
+   * them, the way the dashboard counts. `repeatRatePercent` is a different
+   * thing: customers who ordered more than once inside the period.
+   */
   async cohort(scope: AnalyticsScope, range: DateRange): Promise<CohortStatsDto> {
     const where: Prisma.OrderWhereInput = {
       ...orderWhere(scope),
@@ -156,16 +200,22 @@ export class AnalyticsService {
 
     const orders = await this.prisma.order.findMany({
       where,
-      select: { userId: true, totalCents: true, acceptedAt: true, readyAt: true, createdAt: true },
+      select: {
+        userId: true,
+        subtotalCents: true,
+        discountCents: true,
+        giftCardCents: true,
+        acceptedAt: true,
+        readyAt: true,
+        createdAt: true,
+      },
     });
 
     const byUser = new Map<string, number>();
-    let sum = 0;
     let slaHits = 0;
     let slaTotal = 0;
     for (const o of orders) {
       byUser.set(o.userId, (byUser.get(o.userId) ?? 0) + 1);
-      sum += o.totalCents;
       if (o.readyAt) {
         slaTotal++;
         const secs = (o.readyAt.getTime() - (o.acceptedAt ?? o.createdAt).getTime()) / 1000;
@@ -190,9 +240,11 @@ export class AnalyticsService {
     const newCustomers = firstOrders.filter((row) => row._min.createdAt && row._min.createdAt >= range.start).length;
 
     return {
-      repeatRatePercent: Math.round(repeatRate),
-      avgBasketCents: orders.length ? Math.round(sum / orders.length) : 0,
+      customers: userIds.length,
       newCustomers,
+      returningCustomers: Math.max(0, userIds.length - newCustomers),
+      repeatRatePercent: Math.round(repeatRate),
+      avgBasketCents: orders.length ? Math.round(sumMoney(orders).revenueCents / orders.length) : 0,
       pickupSlaPercent: slaTotal ? Math.round((slaHits / slaTotal) * 100) : 0,
     };
   }
@@ -200,15 +252,19 @@ export class AnalyticsService {
   /**
    * The platform view: every brand with its figures for the period, busiest
    * first. Brands without a single order are listed too — a platform admin
-   * looks here for the ones that signed up and never took off.
+   * looks here for the ones that signed up and never took off. Money is in
+   * the brand's currency: a store that prices in another one is left out
+   * rather than added to it.
    */
   async brandPerformance(days = 7): Promise<BrandPerformanceDto[]> {
     const since = SQL_DATE_DAY(periodStart(days));
     const [rows, brands] = await Promise.all([
       this.prisma.$queryRaw<OrdersDailyRow[]>`
-        SELECT "brandId", "storeId", "day", "orderCount", "revenueCents"
-        FROM "mv_orders_daily"
-        WHERE "day" >= ${since}::date
+        SELECT m."brandId", m."storeId", m."day", m."orderCount", m."revenueCents"
+        FROM "mv_orders_daily" m
+        JOIN "Store" s ON s.id = m."storeId"
+        JOIN "Brand" b ON b.id = m."brandId"
+        WHERE m."day" >= ${since}::date AND s."currency" = b."currency"
       `,
       this.prisma.brand.findMany({
         select: {
@@ -256,7 +312,7 @@ export class AnalyticsService {
     const current = Prisma.sql`o."createdAt" >= ${utc(range.start)}`;
     const previous = Prisma.sql`o."createdAt" < ${utc(range.start)}`;
     const [stores, rows, staffRows] = await Promise.all([
-      this.prisma.store.findMany({ where: storeWhere(scope), select: { id: true, name: true } }),
+      this.prisma.store.findMany({ where: storeWhere(scope), select: { id: true, name: true, currency: true } }),
       this.prisma.$queryRaw<
         Array<{
           storeId: string;
@@ -275,8 +331,8 @@ export class AnalyticsService {
       >`
         SELECT o."storeId" AS "storeId",
                COUNT(*) FILTER (WHERE ${current} AND ${COUNTED})::int AS "orders",
-               COALESCE(SUM(o."totalCents") FILTER (WHERE ${current} AND ${COUNTED}), 0)::bigint AS "revenue",
-               COALESCE(SUM(o."totalCents") FILTER (WHERE ${previous} AND ${COUNTED}), 0)::bigint AS "previousRevenue",
+               COALESCE(SUM(${REVENUE}) FILTER (WHERE ${current} AND ${COUNTED}), 0)::bigint AS "revenue",
+               COALESCE(SUM(${REVENUE}) FILTER (WHERE ${previous} AND ${COUNTED}), 0)::bigint AS "previousRevenue",
                COUNT(*) FILTER (WHERE ${current})::int AS "placed",
                COUNT(*) FILTER (WHERE ${current} AND o."status" = 'CANCELLED')::int AS "cancelled",
                COUNT(*) FILTER (WHERE ${current} AND o."status" = 'EXPIRED')::int AS "expired",
@@ -323,6 +379,7 @@ export class AnalyticsService {
         const base = {
           storeId: store.id,
           storeName: store.name,
+          currency: store.currency,
           revenueCents: revenue,
           orders,
           sharePercent: share(revenue, totalRevenue),
@@ -509,7 +566,7 @@ export class AnalyticsService {
     >`
       SELECT CASE WHEN o."createdAt" >= ${utc(range.start)} THEN 'current' ELSE 'previous' END AS "bucket",
              COUNT(*)::int AS "orders",
-             COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue",
+             COALESCE(SUM(${REVENUE}), 0)::bigint AS "revenue",
              COALESCE(SUM(EXTRACT(EPOCH FROM (o."pickedUpAt" - o."readyAt"))) FILTER (WHERE ${PICKUP_DONE}), 0)::float8
                AS "pickupSecSum",
              COUNT(*) FILTER (WHERE ${PICKUP_DONE})::int AS "pickupCount"
@@ -670,7 +727,7 @@ export class AnalyticsService {
       SELECT o."userId" AS "userId",
              MAX(o."createdAt") AS "lastOrderAt",
              COUNT(*)::int AS "orders",
-             COALESCE(SUM(o."totalCents"), 0)::bigint AS "totalCents"
+             COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents"
       FROM "Order" o
       JOIN "Store" s ON s.id = o."storeId"
       JOIN "User" u ON u.id = o."userId"
@@ -725,7 +782,7 @@ export class AnalyticsService {
                l."lastOrderBefore" AS "lastOrderBefore",
                MIN(o."createdAt") AS "returnedAt",
                COUNT(*)::int AS "orders",
-               COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenueCents"
+               COALESCE(SUM(${REVENUE}), 0)::bigint AS "revenueCents"
         FROM lapsed l
         JOIN "Order" o ON o."userId" = l."userId"
         JOIN "Store" s ON s.id = o."storeId"

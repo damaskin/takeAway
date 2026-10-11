@@ -542,7 +542,7 @@ export class CustomersPage {
   }
 
   price(cents: number): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: true });
+    return this.fmt.money(cents, this.activeBrand.active()?.currency);
   }
 
   /** «раз в 9,5 дн.»; a dash for a single order. */

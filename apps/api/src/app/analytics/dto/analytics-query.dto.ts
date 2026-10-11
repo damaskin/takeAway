@@ -3,6 +3,8 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 import { ISO_DAY } from '../analytics-range';
+
+export const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
 import { CHURN_WINDOWS, type ChurnWindow } from '../retention';
 
 /**
@@ -36,6 +38,15 @@ export class AnalyticsQueryDto {
   @Type(() => Number)
   @IsInt()
   days?: number;
+
+  @ApiPropertyOptional({
+    enum: CURRENCIES,
+    description:
+      "When the brand's stores price in several currencies: whose stores to count. A store brings its own; defaults to the brand's currency.",
+  })
+  @IsOptional()
+  @IsIn([...CURRENCIES])
+  currency?: string;
 }
 
 export class TopProductsQueryDto extends AnalyticsQueryDto {

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import type { AnalyticsScope } from '../analytics/analytics-scope';
-import { COUNTED, num, scopeConditions, utc, whereAll } from '../analytics/analytics-sql';
+import { COUNTED, REVENUE, num, scopeConditions, utc, whereAll } from '../analytics/analytics-sql';
 import { CHURN_WINDOWS, type ChurnWindow, INACTIVE_MIN_ORDERS } from '../analytics/retention';
 import type { PrismaService } from '../prisma/prisma.service';
 
@@ -47,7 +47,7 @@ export function perCustomerSql(scope: AnalyticsScope, userId?: string): Prisma.S
   return Prisma.sql`
     SELECT o."userId" AS "userId",
            COUNT(*)::int AS "orders",
-           COALESCE(SUM(o."totalCents"), 0)::bigint AS "totalCents",
+           COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents",
            MIN(o."createdAt") AS "firstOrderAt",
            MAX(o."createdAt") AS "lastOrderAt"
     FROM "Order" o
