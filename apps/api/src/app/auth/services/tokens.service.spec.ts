@@ -83,6 +83,24 @@ describe('TokensService', () => {
     await expect(tokens.rotate(bob.refreshToken)).resolves.toMatchObject({ refreshToken: expect.any(String) });
   });
 
+  it('revokeAll can spare the caller’s own session — only a live token of the same user', async () => {
+    const { tokens } = setup();
+    const here = await tokens.issue('ana', 'device-1');
+    const stolen = await tokens.issue('ana', 'device-2');
+    const bob = await tokens.issue('bob', 'device-3');
+
+    await expect(tokens.revokeAll('ana', here.refreshToken)).resolves.toBe(1);
+    await expect(tokens.rotate(stolen.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(tokens.rotate(here.refreshToken)).resolves.toMatchObject({ refreshToken: expect.any(String) });
+
+    // Someone else's token, or garbage, spares nothing.
+    const again = await tokens.issue('ana', 'device-1');
+    await expect(tokens.revokeAll('ana', bob.refreshToken)).resolves.toBe(2);
+    await expect(tokens.rotate(again.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    await tokens.issue('ana', 'device-1');
+    await expect(tokens.revokeAll('ana', 'not-a-jwt')).resolves.toBe(1);
+  });
+
   it('never lets a user id widen the pattern', async () => {
     const { tokens } = setup();
     await tokens.issue('ana', null);

@@ -13,6 +13,7 @@ import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@ta
 import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
 import { checkoutError } from '../common/http/checkout-error';
+import { codedConflict } from '../common/http/coded-conflict';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, storeProductInclude, type CheckoutLine } from '../cart/cart.service';
@@ -35,6 +36,8 @@ import type { OrderDto, OrderItemDto, OrderPaymentDto, OrderPaymentState, OrderS
 import { withoutCoordinates } from './order-event-payload';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
+/** Orders one customer may have waiting for payment at once (`ORDER_MAX_UNPAID_PER_USER`). */
+const DEFAULT_MAX_UNPAID_ORDERS = 2;
 const MIN_SCHEDULED_LEAD_MINUTES = 10;
 const MAX_SCHEDULED_LEAD_HOURS = 24;
 const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
@@ -106,6 +109,7 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Cart not found');
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
+    await this.assertUnpaidOrdersBelowLimit(userId);
     await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
@@ -387,6 +391,38 @@ export class OrdersService {
     });
 
     return this.toOrderDto(order);
+  }
+
+  /**
+   * An order nobody has paid for still books a pickup slot — kitchen
+   * capacity — until it expires ({@link OrderExpiryService}), so a script
+   * placing orders and never paying could keep a store "full" for real
+   * customers. A customer may have only a few such orders open at once; the
+   * next one is refused with 409 `TOO_MANY_UNPAID_ORDERS` until they pay for
+   * or cancel one.
+   *
+   * "Unpaid" means: still CREATED, costs something, and no card payment has
+   * gone through or is held for it. A held or deferred charge sits in
+   * REQUIRES_ACTION and does not count; neither does an order that points or
+   * a gift card covered in full.
+   */
+  private async assertUnpaidOrdersBelowLimit(userId: string): Promise<void> {
+    const raw = Number(this.config.get<string>('ORDER_MAX_UNPAID_PER_USER'));
+    const limit = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_UNPAID_ORDERS;
+    const unpaid = await this.prisma.order.count({
+      where: {
+        userId,
+        status: 'CREATED',
+        totalCents: { gt: 0 },
+        payments: { none: { status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } } },
+      },
+    });
+    if (unpaid >= limit) {
+      throw codedConflict(
+        'TOO_MANY_UNPAID_ORDERS',
+        `You already have ${unpaid} unpaid orders. Pay for or cancel one of them before placing a new one.`,
+      );
+    }
   }
 
   async getForUser(userId: string, orderId: string): Promise<OrderDto> {

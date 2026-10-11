@@ -87,7 +87,8 @@ if [ -n "$health" ]; then
   info "$health"
   served="$(printf '%s' "$health" | sed -n 's/.*"commit":"\([0-9a-f]\{7,40\}\)".*/\1/p')"
   head_sha="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo '')"
-  if [ -n "$served" ] && [ "$served" = "$head_sha" ]; then
+  # A short commit in the public answer: match it as a prefix of HEAD.
+  if [ -n "$served" ] && [ -n "$head_sha" ] && [ "${head_sha#"$served"}" != "$head_sha" ]; then
     ok "serving the checked-out commit"
   else
     bad "serving $served but the checkout is at $head_sha — the container did not restart"

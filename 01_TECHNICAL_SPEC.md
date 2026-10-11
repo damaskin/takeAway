@@ -172,15 +172,17 @@ takeaway/
 
 ### 2.2. Backend (NestJS) — фактически
 
-- **NestJS 11** на **FastifyAdapter** (`@nestjs/platform-fastify`, `trustProxy: true`)
+- **NestJS 11** на **FastifyAdapter** (`@nestjs/platform-fastify`, `trustProxy` = один хоп — наш nginx, `TRUST_PROXY`; nginx ставит `X-Forwarded-For` из `CF-Connecting-IP`, см. `docs/security-hardening.md`)
 - **Database**: PostgreSQL 16 + **Prisma 6.19** (16 миграций, см. 5.x)
-- **Cache / session / rate limit**: Redis 7 через **ioredis 5**, `@nestjs/throttler`
+- **Cache / session / rate limit**: Redis 7 через **ioredis 5**, `@nestjs/throttler` (ключ — аккаунт для вошедших, адрес клиента для анонимов; поверх — лимиты nginx `limit_req`/`limit_conn`)
 - **Queue**: **BullMQ 5.74** (`@nestjs/bullmq`) для push/email/Telegram broadcast и POS sync
 - **Realtime**: `@nestjs/websockets` + Socket.io 4.8 (`@nestjs/platform-socket.io`)
 - **Auth**:
   - JWT через `@nestjs/jwt` + `passport-jwt` + `@nestjs/passport`
   - **Password (bcrypt 6)** для staff/RIDER + **Telegram initData** для customer + OAuth (Google/Apple через `OAuthAccount`)
-  - Refresh tokens, force-rotate при инвайте (`passwordMustChange`)
+  - Refresh tokens, force-rotate при инвайте (`passwordMustChange`); сброс пароля отзывает все сессии, смена — все, кроме текущей
+  - JWT-секреты без фолбэка в production: без `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` API не стартует
+  - Telegram initData старше `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS` (сутки) не принимается
   - **OTP / SMS** — не подключено (Twilio/MessageBird из ТЗ резерв на будущее)
 - **Validation**: `class-validator` + `class-transformer` + DTO
 - **OpenAPI**: `@nestjs/swagger` 11 — источник для `libs/api-client`
@@ -495,7 +497,7 @@ takeaway/
 ### 5.1. Identity / Auth
 
 ```
-User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, currency,
+User (id, phone?, email?, emailVerifiedAt?, passwordHash?, passwordMustChange, name?, locale, currency,   // emailVerifiedAt — адрес подтверждён Google/Apple; вход через соцсеть присоединяется к профилю по email только при нём
       telegramUserId?, role[CUSTOMER|RIDER|STAFF|STORE_MANAGER|BRAND_ADMIN|SUPER_ADMIN],
       notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?,
       kdsPinHash?, kdsPinStoreId?)                            // KDS lockscreen PIN, scoped to one store
@@ -674,7 +676,7 @@ GET    /auth/kds/device               [X-Kitchen-Device] → { brandId, brandNam
                                      //   точки бренда, где есть действующий PIN; 401 KDS_DEVICE_UNKNOWN
 POST   /auth/password/forgot         { email }   → 204; 503 PASSWORD_RESET_UNAVAILABLE, если нет SMTP_HOST или (в проде) ADMIN_APP_URL
 POST   /auth/password/reset          { token, password }
-POST   /auth/password/change         { oldPassword, newPassword }    (auth)
+POST   /auth/password/change         { currentPassword, newPassword, refreshToken? }    (auth; отзывает все сессии, кроме refreshToken)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 GET    /auth/me/sign-in-methods      → { telegram, google, apple }
@@ -955,7 +957,7 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ### 6.12. Health / Config
 
 ```
-GET    /health                       // liveness + build triple (version/commit/builtAt)
+GET    /health                       // liveness: { status, commit (12 символов) }; version/commit/builtAt/uptime — с заголовком X-Health-Token (HEALTH_TOKEN)
 GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
 GET    /config/features              → { deliveryEnabled, agroprombankEnabled, cardPaymentFlow: token|web|none, support: { email, telegram } }
 ```
