@@ -487,14 +487,17 @@ export class StoreCreatePage {
    */
   private afterCreate(store: StoreAdminDto): void {
     // From «Запуск бренда» the step still needs opening hours: straight to them.
-    const next = this.onboarding.active('store') ? { queryParams: { tab: 'hours' } } : {};
+    const open = () =>
+      this.onboarding.active('store')
+        ? this.router.navigate(['/stores', store.id], { queryParams: { tab: 'hours' } })
+        : this.router.navigate(['/stores', store.id]);
     const photo = this.photo();
     if (!photo) {
-      this.router.navigate(['/stores', store.id], next);
+      open();
       return;
     }
     this.api.uploadStoreImage(store.id, 'hero', photo).subscribe({
-      next: () => this.router.navigate(['/stores', store.id], next),
+      next: () => open(),
       error: (err) => {
         const reason =
           imageUploadRefusal(err, STORE_PHOTO_RULE, this.translate) ?? storeErrorMessage(err, this.translate);
