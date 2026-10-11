@@ -7,6 +7,7 @@ import { suggestStoreTimeZone } from '@takeaway/utils';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CreateStoreInput } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { storeErrorMessage } from './store-errors';
 import { STORE_CURRENCIES, STORE_SLUG_PATTERN, defaultCountryFor } from './store-options';
@@ -181,6 +182,7 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
 export class StoreCreatePage {
   private readonly api = inject(AdminCatalogApi);
   private readonly router = inject(Router);
+  private readonly onboarding = inject(OnboardingFlowService);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
 
@@ -304,7 +306,12 @@ export class StoreCreatePage {
     this.creating.set(true);
     this.createError.set(null);
     this.api.createStore(payload).subscribe({
-      next: (store) => this.router.navigate(['/stores', store.id]),
+      // From «Запуск бренда» the step still needs opening hours: straight to them.
+      next: (store) =>
+        this.router.navigate(
+          ['/stores', store.id],
+          this.onboarding.active('store') ? { queryParams: { tab: 'hours' } } : {},
+        ),
       error: (err) => {
         this.creating.set(false);
         this.createError.set(storeErrorMessage(err, this.translate));

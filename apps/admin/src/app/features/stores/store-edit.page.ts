@@ -3,6 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { type EditorTab, StoreEditorComponent } from './store-editor.component';
 
 const TABS: EditorTab[] = ['details', 'hours', 'photos', 'kitchen'];
@@ -61,6 +62,7 @@ export class StoreEditPage {
 
   private readonly api = inject(AdminCatalogApi);
   private readonly router = inject(Router);
+  private readonly onboarding = inject(OnboardingFlowService);
 
   readonly name = signal<string | null>(null);
   readonly initialTab = computed<EditorTab>(() => {
@@ -78,8 +80,10 @@ export class StoreEditPage {
     });
   }
 
+  /** Opened from «Запуск бренда»: a save that finishes the store step goes back there. */
   seen(updated: StoreAdminDto): void {
     this.name.set(updated.name);
+    void this.onboarding.afterSave('store');
   }
 
   back(): void {

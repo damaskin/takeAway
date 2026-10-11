@@ -5,6 +5,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CategoryAdminDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { describeMenuError } from './menu-errors';
 import { MENU_FORM_STYLES } from './menu-form.styles';
@@ -80,6 +81,7 @@ export class CategoryFormPage {
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  private readonly onboarding = inject(OnboardingFlowService);
 
   readonly isEdit = computed(() => !!this.categoryId());
   readonly loadedName = signal<string | null>(null);
@@ -134,10 +136,16 @@ export class CategoryFormPage {
       this.error.set(describeMenuError(err, this.translate));
     };
 
+    // Opened from «Запуск бренда»: back to it if the menu step is done now.
+    const toMenu = (category: string) =>
+      void this.onboarding.afterSave('menu').then((r) => {
+        if (r !== 'returned') void this.router.navigate(['/menu'], { queryParams: { category } });
+      });
+
     const id = this.categoryId();
     if (id) {
       this.api.updateCategory(id, { name: name.trim(), visible }).subscribe({
-        next: () => this.router.navigate(['/menu'], { queryParams: { category: id } }),
+        next: () => toMenu(id),
         error: fail,
       });
       return;
@@ -146,7 +154,7 @@ export class CategoryFormPage {
       .createCategory({ brandId, name: name.trim(), visible, ...(slug.trim() ? { slug: slug.trim() } : {}) })
       .subscribe({
         // The next thing anyone does with a new category is fill it.
-        next: (created) => this.router.navigate(['/menu'], { queryParams: { category: created.id } }),
+        next: (created) => toMenu(created.id),
         error: fail,
       });
   }
