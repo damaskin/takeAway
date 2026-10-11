@@ -1,15 +1,9 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  type AbstractControl,
-  FormControl,
-  FormGroup,
-  ReactiveFormsModule,
-  type ValidationErrors,
-  Validators,
-} from '@angular/forms';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { formatPhone, normalizePhone } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import {
@@ -19,9 +13,10 @@ import {
   BusinessService,
 } from '../../core/business/business.service';
 import { apiErrorCode, invalidFields } from '../../core/http/api-error';
+import { phoneValidator } from '../../shared/phone.validator';
 
 /** Conflicts the API explains with a code; each has its own sentence in `admin.signup.errors`. */
-const KNOWN_CONFLICTS = new Set(['EMAIL_TAKEN', 'EMAIL_CUSTOMER_ACCOUNT', 'PHONE_TAKEN']);
+const KNOWN_CONFLICTS = new Set(['EMAIL_TAKEN', 'EMAIL_CUSTOMER_ACCOUNT']);
 
 const SIGNUP_FIELDS = new Set(['brandName', 'ownerName', 'email', 'password', 'phone', 'currency', 'locale']);
 
@@ -103,14 +98,20 @@ const SIGNUP_FIELDS = new Set(['brandName', 'ownerName', 'email', 'password', 'p
               formControlName="phone"
               type="tel"
               autocomplete="tel"
+              required
               [placeholder]="'admin.signup.phonePlaceholder' | translate"
               class="form-input"
               [attr.aria-invalid]="phoneInvalid()"
             />
             @if (phoneInvalid()) {
               <span class="form-hint" style="color: var(--color-berry)">{{
-                'admin.signup.phoneInvalid' | translate
+                (form.controls.phone.hasError('required') ? 'admin.signup.phoneRequired' : 'admin.signup.phoneInvalid')
+                  | translate
               }}</span>
+            } @else if (phonePreview(); as preview) {
+              <span class="form-hint">{{ 'admin.signup.phoneWillSave' | translate: { phone: preview } }}</span>
+            } @else {
+              <span class="form-hint">{{ 'admin.signup.phoneHint' | translate }}</span>
             }
           </label>
 
@@ -221,9 +222,18 @@ export class SignupPage {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(8), Validators.maxLength(128)],
     }),
-    phone: new FormControl('', { nonNullable: true, validators: [internationalPhone] }),
+    // Required: the takeAway team calls the businesses that signed up and
+    // have not launched yet, to help them over the line.
+    phone: new FormControl('', { nonNullable: true, validators: [phoneValidator({ required: true })] }),
     // Moldova and Transnistria are where takeAway launches.
     currency: new FormControl<BrandCurrency>('MDL', { nonNullable: true, validators: [Validators.required] }),
+  });
+
+  private readonly phoneValue = toSignal(this.form.controls.phone.valueChanges, { initialValue: '' });
+  /** The number as it will be saved — «+373 69 123 456» — so a misread local number shows before sending. */
+  readonly phonePreview = computed(() => {
+    const e164 = normalizePhone(this.phoneValue());
+    return e164 ? formatPhone(e164) : null;
   });
 
   constructor() {
@@ -253,7 +263,7 @@ export class SignupPage {
         ownerName: raw.ownerName.trim(),
         email: raw.email.trim().toLowerCase(),
         password: raw.password,
-        phone: normalizePhone(raw.phone) || undefined,
+        phone: normalizePhone(raw.phone) ?? raw.phone.trim(),
         currency: raw.currency,
         // Emails about the brand come in the language the owner signed up in.
         locale: this.uiLocale(),
@@ -295,20 +305,4 @@ export class SignupPage {
     this.error.set(null);
     this.errorCode.set(null);
   }
-}
-
-/**
- * The API's rule, checked before the round-trip: international format once
- * separators are dropped, e.g. "+373 69 123 456". Empty is fine — the
- * phone is optional.
- */
-function internationalPhone(control: AbstractControl<string>): ValidationErrors | null {
-  const phone = normalizePhone(control.value ?? '');
-  if (!phone) return null;
-  return /^\+[1-9]\d{7,14}$/.test(phone) ? null : { internationalPhone: true };
-}
-
-function normalizePhone(input: string): string {
-  const compact = input.trim().replace(/[\s().-]/g, '');
-  return compact.startsWith('00') ? `+${compact.slice(2)}` : compact;
 }
