@@ -104,6 +104,59 @@ describe('CatalogService', () => {
     );
   });
 
+  describe('store kinds and photo', () => {
+    it("sends what each store sells, an empty list reading as coffee, with the store's own photo", async () => {
+      prisma.store.findMany.mockResolvedValue([
+        storeFixture({ kinds: ['COFFEE', 'FOOD'], heroImageUrl: 'https://cdn.takeaway.md/stores/marina.jpg' }),
+        storeFixture({ id: 'store-2', slug: 'burgers', kinds: ['FOOD'] }),
+        storeFixture({ id: 'store-3', slug: 'old', kinds: [] }),
+      ]);
+      const result = await service.listStores({});
+      expect(result.map((s) => [s.id, s.kinds, s.heroImageUrl])).toEqual([
+        ['store-1', ['COFFEE', 'FOOD'], 'https://cdn.takeaway.md/stores/marina.jpg'],
+        ['store-2', ['FOOD'], null],
+        ['store-3', ['COFFEE'], null],
+      ]);
+    });
+
+    it('filters the list by kind, counting a store without kinds as coffee', async () => {
+      prisma.store.findMany.mockResolvedValue([]);
+      await service.listStores({ kind: 'FOOD' });
+      expect(prisma.store.findMany.mock.calls[0]?.[0].where).toEqual(
+        expect.objectContaining({ kinds: { has: 'FOOD' } }),
+      );
+
+      await service.listStores({ kind: 'COFFEE' });
+      expect(prisma.store.findMany.mock.calls[1]?.[0].where).toEqual(
+        expect.objectContaining({ OR: [{ kinds: { has: 'COFFEE' } }, { kinds: { isEmpty: true } }] }),
+      );
+
+      await service.listStores({});
+      expect(prisma.store.findMany.mock.calls[2]?.[0].where).not.toHaveProperty('kinds');
+      expect(prisma.store.findMany.mock.calls[2]?.[0].where).not.toHaveProperty('OR');
+    });
+
+    it('carries kinds, the photo and the brand logo fallback on the store page', async () => {
+      prisma.store.findFirst.mockResolvedValue(
+        storeFixture({
+          kinds: ['FOOD'],
+          brand: {
+            id: 'brand-1',
+            slug: 'b',
+            name: 'B',
+            logoUrl: 'https://cdn.takeaway.md/b.png',
+            themeOverrides: null,
+          },
+        }),
+      );
+      const store = await service.getStore('dubai-marina');
+      expect(store.kinds).toEqual(['FOOD']);
+      expect(store.heroImageUrl).toBeNull();
+      expect(store.logoUrl).toBe('https://cdn.takeaway.md/b.png');
+      expect(store.brand.logoUrl).toBe('https://cdn.takeaway.md/b.png');
+    });
+  });
+
   it('computes distance and filters by radius when lat/lng provided', async () => {
     prisma.store.findMany.mockResolvedValue([
       storeFixture({ id: 'near', latitude: 25.078, longitude: 55.141 }),

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
-import { Currency, PickupPointType, StoreFulfillment, StoreStatus } from '@prisma/client';
+import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -145,6 +145,19 @@ export class CreateStoreDto {
   @IsOptional()
   @IsEnum(PickupPointType)
   pickupPointType?: PickupPointType;
+
+  @ApiPropertyOptional({
+    enum: StoreKind,
+    isArray: true,
+    default: ['COFFEE'],
+    description: 'What the store sells: coffee, food or both. Drives the marker on the customer map.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty({ message: 'kinds must name at least one of COFFEE, FOOD' })
+  @ArrayUnique()
+  @IsEnum(StoreKind, { each: true })
+  kinds?: StoreKind[];
 
   @ApiPropertyOptional({ minimum: 0, description: 'Smallest order the store accepts, in cents.' })
   @IsOptional()

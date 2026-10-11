@@ -81,6 +81,13 @@ enum PickupPointType {
   SHELF
 }
 
+/// What a store sells, for the customer map's markers and filters. A café
+/// that also cooks has both.
+enum StoreKind {
+  COFFEE
+  FOOD
+}
+
 enum VariationType {
   SIZE
   TEMPERATURE
@@ -639,6 +646,9 @@ model Store {
   status                StoreStatus        @default(OPEN)
   fulfillmentTypes      StoreFulfillment[]
   pickupPointType       PickupPointType    @default(COUNTER)
+  /// Never empty: the admin requires at least one. Readers still treat an
+  /// empty list as coffee, which is what every store was before kinds.
+  kinds                 StoreKind[]        @default([COFFEE])
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
   /// Fixed overhead on every order here, in seconds: ringing it up, plating,
