@@ -1,10 +1,13 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { of } from 'rxjs';
 
-import { AdminCatalogApi, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { AdminCatalogApi, type IngredientDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
+import { CategoryFormPage } from './category-form.page';
 import { ProductFormComponent } from './product-form.component';
 import { ProductOptionsPanelComponent } from './product-options-panel.component';
 
@@ -271,5 +274,159 @@ describe('ProductOptionsPanelComponent', () => {
     panel.saveModifier(syrup);
 
     expect(updateModifier).toHaveBeenCalledWith('m1', expect.objectContaining({ ingredientId: null }));
+  });
+
+  describe('add-ons from the library («Добавки»)', () => {
+    const library: IngredientDto[] = [
+      { id: 'i-vanilla', brandId: 'b1', name: 'Ванильный сироп', priceCents: 500, isAvailable: true, products: [] },
+      { id: 'i-shot', brandId: 'b1', name: 'Шот эспрессо', priceCents: 1000, isAvailable: true, products: [] },
+    ];
+    const vanillaOnLatte = {
+      id: 'm1',
+      slug: 'vanilla',
+      name: 'Ванильный сироп',
+      priceDeltaCents: 500,
+      prepTimeDeltaSeconds: 0,
+      minCount: 0,
+      maxCount: 3,
+      sortOrder: 0,
+      ingredientId: 'i-vanilla',
+      ingredient: { id: 'i-vanilla', name: 'Ванильный сироп', isAvailable: true },
+    };
+
+    function panel(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}) {
+      const fixture = setup(ProductOptionsPanelComponent, {
+        getProduct: jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [vanillaOnLatte] })),
+        listIngredients: jest.fn().mockReturnValue(of(library)),
+        createModifier: jest.fn().mockReturnValue(of({})),
+        createVariation: jest.fn().mockReturnValue(of({})),
+        deleteModifier: jest.fn().mockReturnValue(of(undefined)),
+        ...api,
+      });
+      fixture.componentRef.setInput('productId', 'p1');
+      fixture.componentRef.setInput('currency', 'MDL');
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('offers the add-ons the product does not have yet, with their usual price', () => {
+      const fixture = panel();
+
+      const picker = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="option-library-pick"]');
+      const options = [...(picker?.querySelectorAll('option') ?? [])].map((o) => o.textContent?.trim());
+      expect(options).toEqual(['Выберите добавку', 'Шот эспрессо · +10\u00a0MDL']);
+    });
+
+    it('puts a picked add-on on the product by its library id alone', () => {
+      const createModifier = jest.fn().mockReturnValue(of({}));
+      const fixture = panel({ createModifier });
+      const component = fixture.componentInstance;
+
+      component.libraryPick.setValue({ ingredientId: 'i-shot' });
+      component.addFromLibrary();
+
+      expect(createModifier).toHaveBeenCalledWith('p1', { ingredientId: 'i-shot', maxCount: 1 });
+      expect(component.libraryPick.controls.ingredientId.value).toBe('');
+    });
+
+    it('fills the usual price when a typed name is in the library', () => {
+      const createModifier = jest.fn().mockReturnValue(of({}));
+      const component = panel({ createModifier }).componentInstance;
+
+      component.modifierAdd.controls.name.setValue('шот эспрессо');
+      expect(component.modifierAdd.controls.price.value).toBe('10');
+
+      component.addModifier();
+      expect(createModifier).toHaveBeenCalledWith('p1', { name: 'шот эспрессо', priceDeltaCents: 1000, maxCount: 1 });
+    });
+
+    it('leaves an empty price to the server instead of sending zero', () => {
+      const createModifier = jest.fn().mockReturnValue(of({}));
+      const component = panel({ createModifier }).componentInstance;
+
+      component.modifierAdd.setValue({ name: 'Корица', price: '', maxCount: '1' });
+      component.addModifier();
+
+      expect(createModifier).toHaveBeenCalledWith('p1', { name: 'Корица', maxCount: 1 });
+    });
+
+    it('says that taking a library add-on off the product keeps it in the library', () => {
+      const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+      const deleteModifier = jest.fn().mockReturnValue(of(undefined));
+      const component = panel({ deleteModifier }).componentInstance;
+
+      component.deleteModifier(vanillaOnLatte);
+
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('В справочнике «Добавки» она останется'));
+      expect(deleteModifier).toHaveBeenCalledWith('m1');
+    });
+  });
+});
+
+describe('CategoryFormPage', () => {
+  beforeEach(() => TestBed.resetTestingModule());
+
+  function form(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>, categoryId?: string) {
+    TestBed.configureTestingModule({
+      imports: [CategoryFormPage],
+      providers: [
+        provideTranslateService(),
+        provideRouter([]),
+        { provide: AdminCatalogApi, useValue: api },
+        { provide: ActiveBrandService, useValue: { activeId: signal('b1') } },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+    jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(CategoryFormPage);
+    if (categoryId) fixture.componentRef.setInput('categoryId', categoryId);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  // NoName's «Дополнительные ингредиенты» from Poster: kept, but never on a customer's menu.
+  it('loads and saves «only as an add-on» for an existing category', () => {
+    const updateCategory = jest.fn().mockReturnValue(of({}));
+    const listCategories = jest.fn().mockReturnValue(
+      of([
+        {
+          id: 'c-extra',
+          brandId: 'b1',
+          slug: 'extra',
+          name: 'Дополнительные ингредиенты',
+          description: null,
+          sortOrder: 9,
+          visible: true,
+          addOnsOnly: false,
+        },
+      ]),
+    );
+    const fixture = form({ listCategories, updateCategory }, 'c-extra');
+    const page = fixture.componentInstance;
+
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Только как добавка — не продаётся отдельно');
+    expect(page.form.controls.addOnsOnly.value).toBe(false);
+    page.form.controls.addOnsOnly.setValue(true);
+    page.submit();
+
+    expect(updateCategory).toHaveBeenCalledWith('c-extra', {
+      name: 'Дополнительные ингредиенты',
+      visible: true,
+      addOnsOnly: true,
+    });
+  });
+
+  it('creates an ordinary category unless the box is ticked', () => {
+    const createCategory = jest.fn().mockReturnValue(of({ id: 'c-new' }));
+    const page = form({ createCategory, listCategories: jest.fn() }).componentInstance;
+
+    page.form.controls.name.setValue('Десерты');
+    page.submit();
+
+    expect(createCategory).toHaveBeenCalledWith({ brandId: 'b1', name: 'Десерты', visible: true, addOnsOnly: false });
   });
 });
