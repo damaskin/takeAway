@@ -18,14 +18,13 @@ export class CatalogService {
   private readonly api = inject(API_CONFIG);
 
   /**
-   * The last copy of each store, menu and the plain store list fetched, by
-   * slug and by id. A customer coming back from a product gets the menu
-   * drawn at once — so the page can return to where they were — while a
-   * fresh copy is fetched behind it.
+   * The last copy of each store and menu fetched, by slug and by id. A
+   * customer coming back from a product gets the menu drawn at once — so the
+   * page can return to where they were — while a fresh copy is fetched
+   * behind it.
    */
   private readonly storeCache = new Map<string, StoreDetail>();
   private readonly menuCache = new Map<string, StoreMenu>();
-  private storeListCache: StoreListItem[] | null = null;
 
   cachedStore(idOrSlug: string): StoreDetail | null {
     return this.storeCache.get(idOrSlug) ?? null;
@@ -35,20 +34,12 @@ export class CatalogService {
     return this.menuCache.get(idOrSlug) ?? null;
   }
 
-  /** The list `listStores()` returned last time it was called without a location. */
-  cachedStores(): StoreListItem[] | null {
-    return this.storeListCache;
-  }
-
   listStores(query: ListStoresQuery = {}): Observable<StoreListItem[]> {
     let params = new HttpParams();
     if (typeof query.lat === 'number') params = params.set('lat', String(query.lat));
     if (typeof query.lng === 'number') params = params.set('lng', String(query.lng));
     if (typeof query.radius === 'number') params = params.set('radius', String(query.radius));
-    const plain = params.keys().length === 0;
-    return this.http
-      .get<StoreListItem[]>(`${this.api.baseUrl}/stores`, { params })
-      .pipe(tap((list) => plain && (this.storeListCache = list)));
+    return this.http.get<StoreListItem[]>(`${this.api.baseUrl}/stores`, { params });
   }
 
   getStore(idOrSlug: string): Observable<StoreDetail> {

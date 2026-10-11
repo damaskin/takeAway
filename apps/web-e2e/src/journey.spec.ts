@@ -255,6 +255,72 @@ test.describe('customer journey', () => {
     await expect(page.getByTestId('points-section')).toHaveCount(0);
   });
 
+  test('the menu starts with choosing a place and offers the last one back', async ({ page }) => {
+    await installFakeApi(page);
+
+    await page.goto('/menu');
+    await expect(page.getByRole('heading', { name: 'Choose a place' })).toBeVisible();
+    await expect(page.getByText('takeAway Marina').first()).toBeVisible();
+    await expect(page.getByTestId('continue-store')).toHaveCount(0);
+
+    await page.goto('/stores/dubai-marina');
+    await expect(page.getByText(PRODUCT.name).first()).toBeVisible();
+
+    // Back to «Меню»: still the whole choice, with the last place on top.
+    await page.goto('/menu');
+    const resume = page.getByTestId('continue-store');
+    await expect(resume).toContainText('Continue at takeAway Marina');
+    await expect(resume).toHaveAttribute('href', '/stores/dubai-marina');
+    await expect(page.getByRole('heading', { name: 'Choose a place' })).toBeVisible();
+  });
+
+  test('a store that has not said what it sells counts as coffee on the map filter', async ({ page }) => {
+    await installFakeApi(page);
+
+    await page.goto('/stores');
+    await expect(page.getByText('takeAway Marina').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Food' }).click();
+    await expect(page.getByText(/no stores match this filter/i)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Coffee' }).click();
+    await expect(page.getByText('takeAway Marina').first()).toBeVisible();
+  });
+
+  test("the home page's menu picks name the place and open its product", async ({ page }) => {
+    await installFakeApi(page);
+    // Registered last, so it answers before the fake: the same menu, with a photo.
+    await page.route('**/api/stores/*/menu', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          storeId: 'store-1',
+          storeSlug: 'dubai-marina',
+          categories: [
+            {
+              id: 'cat-1',
+              slug: 'coffee',
+              name: 'Coffee',
+              description: null,
+              iconUrl: null,
+              sortOrder: 0,
+              availableFrom: null,
+              availableTo: null,
+              products: [{ ...PRODUCT, imageUrls: ['/no-such-photo.jpg'] }],
+            },
+          ],
+        }),
+      }),
+    );
+
+    await page.goto('/');
+    const pick = page.getByTestId('menu-pick').first();
+    await expect(pick).toContainText(PRODUCT.name);
+    await expect(pick.getByTestId('menu-pick-store')).toHaveText('takeAway Marina');
+    await expect(pick).toHaveAttribute('href', '/products/flat-white?store=dubai-marina');
+  });
+
   test('signed out, the product page will not let you add to the cart', async ({ page }) => {
     await installFakeApi(page);
 

@@ -7,6 +7,7 @@ export * from './lib/social-login/google-login-button.component';
 export * from './lib/social-login/apple-login-button.component';
 export * from './lib/leaflet-map/leaflet-map.component';
 export * from './lib/leaflet-map/map-tiles';
+export * from './lib/leaflet-map/store-pin';
 export * from './lib/observability/sentry.providers';
 export * from './lib/version-badge/version-badge.component';
 export * from './lib/brand-logo/brand-logo.component';
