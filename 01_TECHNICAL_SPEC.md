@@ -278,7 +278,9 @@ takeaway/
   - Калории, БЖУ, аллергены
   - Базовая цена + диапазон цен с модификаторами
 - **Вариации** (size, temperature, milk, cup): влияют на цену, могут быть связаны
-- **Модификаторы** (shots, syrups, toppings): add-on с плюсом к цене, min/max count
+- **Модификаторы** (shots, syrups, toppings): add-on с плюсом к цене, min/max count; у добавки есть группа (`Modifier.group`: «Сиропы», «Соусы», «Убрать»; пусто — общая «Добавки»), клиенты показывают добавки по группам
+- **Вид категории** (`Category.kind`: горячие напитки, холодные напитки, еда, выпечка, другое): по нему кабинет показывает поля товара (кофеин и «без кофеина» — только напиткам, чек-лист аллергенов, молоко и стакан — только напиткам), предлагает готовый набор опций и время приготовления по умолчанию (`Category.defaultPrepTimeSeconds`: кофе 3 мин, шаурма 15), а клиенты выбирают заглушку товара без фото (`libs/ui-kit/src/assets/product-placeholders`)
+- **Набор опций категории** (`CategoryOption`): варианты и добавки, которые получает каждый товар категории — новый сразу при создании, существующие по кнопке «Применить к товарам категории». Обычно собирается из платформенного пресета вида (`OPTION_PRESETS` в shared-types). Подробнее — 5.3
 - **Меню по точкам**: меню общее для бренда, но каждый товар продаётся только в отмеченных точках (`ProductStore`) — бургерная и пиццерия одного бренда показывают разное; цена везде одна. Категория без товаров этой точки в её меню не показывается
 - **Стоп-лист**: скрываем товар или добавку на конкретной точке в реальном времени (до отмены или до конца дня в часовом поясе точки); ведут сотрудники кухни
 - **Сезонные спецпозиции** с датой начала/окончания
@@ -545,6 +547,7 @@ StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не б
 
 ```
 Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible, addOnsOnly,
+          kind[HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER], defaultPrepTimeSeconds?,
           externalProvider?, externalId?)
 Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
          caffeineLevel?, calories?, P/F/C, allergens[], dietTags[VEGAN|GLUTEN_FREE|...],
@@ -553,8 +556,10 @@ Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
 Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
            prepTimeDeltaSeconds, isDefault, ingredientId?)
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
-          minCount, maxCount, externalProvider?, externalId?, ingredientId?)
-Ingredient (id, brandId, name, priceCents, isAvailable)   -- справочник «Добавки» бренда, (brandId, name) уникально
+          minCount, maxCount, externalProvider?, externalId?, ingredientId?, group?)   -- group ≤ 40 символов, null = «Добавки»
+Ingredient (id, brandId, name, priceCents, isAvailable, group?)   -- справочник «Добавки» бренда, (brandId, name) уникально
+CategoryOption (id, categoryId, kind[VARIATION|MODIFIER], variationType?, name, priceDeltaCents,
+                group?, isDefault, maxCount, sortOrder, ingredientId?)   -- набор опций категории (шаблон, не читается заказом)
 ProductStore (productId, storeId)              -- точки, где товар продаётся; PK (productId, storeId)
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
 StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка закончилась в одной точке; PK (storeId, ingredientId)
@@ -565,6 +570,14 @@ StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка за�
 **Справочник «Добавки» — единственный источник добавки.** Запись `Ingredient` хранит название добавки, её обычную цену (`priceCents`) и наличие. Добавки (modifiers) и молоко (MILK-варианты) товара — это ссылки на запись справочника: опцию можно создать по одному `ingredientId` (название и доплата берутся из справочника, введённая доплата важнее), а новая добавка или молоко, введённые по названию, привязываются к записи с тем же названием (создаётся при отсутствии — с доплатой, указанной для опции), `ingredientId: null` — не отслеживать. Новое название или цена записи (`PATCH /admin/ingredients/:id`) переносятся во все опции, где ещё стоят прежние название или цена; опция со своим названием или ценой в каком-то товаре их сохраняет. Удаление опции убирает добавку только из этого товара — запись остаётся в справочнике. Удаление записи (`DELETE /admin/ingredients/:id`) убирает её опции из всех товаров вместе со строками корзин, где они выбраны (корзины пересчитываются, оформленные заказы не меняются). Миграция `20261010120000_ingredient_price` заполнила `priceCents` самой частой доплатой опций каждой записи. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
 
 **Категории «только как добавка».** `Category.addOnsOnly = true` — товары категории не продаются отдельно (например, «Дополнительные ингредиенты», пришедшие из Poster как обычные товары). Такая категория остаётся в кабинете, стоп-листе и синхронизации с POS, но `GET /stores/:id/menu` её не отдаёт, `GET /products/:idOrSlug` отвечает 404 на её товары, `POST /cart/items` — 404, а оформление снимает уже лежащую в корзине строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`). Так же теперь обрабатывается товар скрытой категории (`visible = false`). Синхронизация с POS пишет в категорию только название и порядок, поэтому флаг переживает повторный импорт. Дальше такую категорию можно превратить в источник справочника: связать её товары с записями `Ingredient` (например, `Ingredient.productId`), чтобы цена добавки и её стоп-лист шли из POS.
+
+**Вид категории.** `Category.kind` — что лежит в категории: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY` или `OTHER` (по умолчанию). Миграция `20261011120000_category_kind_option_presets` проставила вид существующим категориям по названию — те же начала слов на русском и английском и тот же порядок (еда → холодные напитки → горячие → выпечка, первое совпадение), что и `inferCategoryKind` в `libs/utils` (тест в API сверяет регулярки миграции с утилитой). Кабинет предлагает вид новой категории по названию, `POST /admin/categories` без `kind` ставит его так же; синхронизация с POS задаёт вид только новой категории и никогда не перезаписывает его, как и `defaultPrepTimeSeconds`. От вида зависят только кабинет (поля товара: кофеин и «без кофеина»/«без сахара» — напиткам, «вегетарианское»/«без глютена» и чек-лист аллергенов — еде; варианты MILK/TEMPERATURE/CUP — только напиткам; у товара, перенесённого в категорию другого вида, скрытые поля сохраняются, кабинет предлагает их очистить) и клиентские заглушки — меню, корзина и цены от него не зависят. Аллергены чек-листа хранятся кодами (`MILK`, `GLUTEN`, … — `ALLERGENS` в shared-types) в том же `Product.allergens`, рядом со свободным текстом, который был до чек-листа; клиенты печатают код на языке покупателя (`allergenLabel` в `libs/utils`), текст — как есть.
+
+**Время приготовления по умолчанию.** `Category.defaultPrepTimeSeconds` — с каким `prepTimeSeconds` создаётся новый товар категории (кабинет подставляет его в форму; `POST /admin/products` без `prepTimeSeconds` берёт его на сервере). `POST /admin/categories/:id/prep-time/apply` ставит его всем товарам категории. Базовое время точки (`Store.baseEtaSeconds`) — только пробить, упаковать и выдать; готовка считается по товарам.
+
+**Набор опций категории.** `CategoryOption` — варианты и добавки, которые должны быть у товаров категории («Молоко: Овсяное +10», «Сиропы: Ваниль +5»). Набор — шаблон, заказ его не читает: корзина, оформление, цены и стоп-лист работают со строками `Variation`/`Modifier` каждого товара, как раньше. Поэтому набор не наследуется при чтении, а копируется: новый товар категории получает копию при создании (`applyCategoryOptions: false` — без неё), а `POST /admin/categories/:id/options/apply` добавляет каждому товару категории то, чего у него нет. Копирование ничего не удаляет и не меняет — ни цену, ни название, ни вариант по умолчанию; повторный запуск ничего не добавляет. Добавка или молоко совпадают по записи справочника (или по названию без учёта регистра, если связи нет); размер, температура и стакан копируются целой группой и только в товар, где такой группы ещё нет (у товара может быть своя шкала «0,3 / 0,4 л»). Применения к одной категории идут по очереди (advisory lock), гонка за слаг добавки повторяется. Опции набора ссылаются на справочник «Добавки» так же, как опции товара: при сохранении набора недостающие записи создаются с указанной ценой и группой, переименование, новая цена и новая группа записи переносятся и в наборы, удаление записи убирает её и из наборов. Готовые наборы по видам (`OPTION_PRESETS` в `libs/shared-types/src/lib/option-presets/`, с README) — константы в коде: кабинет показывает предпросмотр, бизнес снимает лишнее, вводит цены (почти все цены пресета — 0, валюты у брендов разные; добавка из справочника приходит со своей ценой) и сохраняет; редактора пресетов для SUPER_ADMIN в v1 нет.
+
+**Группы добавок.** `Modifier.group` — подпись группы на экране товара; `null` — общая группа «Добавки». `Ingredient.group` — группа, в которую попадает добавка, выбранная из справочника («Ваниль» → «Сиропы»); новая группа записи переносится в добавки товаров и наборов, где ещё стоит прежняя. `GET /admin/ingredients/groups?brandId=` — все группы бренда для подсказок.
 
 ### 5.4. Cart / Order / Payment
 
@@ -735,8 +748,10 @@ GET    /stores?lat=&lng=&radius=&kind=  // включает currentEtaSeconds, b
                                      //   kinds: ['COFFEE'|'FOOD'] (никогда не пусто); ?kind=FOOD|COFFEE — только такие точки (COFFEE включает точки без kinds)
 GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена); те же heroImageUrl, logoUrl, kinds + brand.logoUrl
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
+                                     //   категория несёт kind (HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER), товар — categoryKind
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
-                                     //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке
+                                     //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке;
+                                     //   categoryKind товара, modifiers[].group (null = «Добавки»); allergens — коды чек-листа и/или свободный текст
 GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
 ```
 
@@ -836,6 +851,12 @@ PATCH                                /admin/brands/:id/plan                   //
 #   POST /admin/brands (SUPER_ADMIN) создаёт бренд сразу APPROVED — модератор здесь
 #   сам автор; это единственный способ завести первый бренд на свежей установке.
 GET/POST/PATCH/DELETE  /admin/categories[/:id]      + PATCH /admin/categories/reorder, DELETE ?moveProductsTo=
+                                                    + kind, defaultPrepTimeSeconds в create/update (create без kind — по названию); список несёт _count.options
+GET/POST               /admin/categories/:id/options        набор опций категории; POST { options: [{ kind: VARIATION|MODIFIER, variationType?, name? | ingredientId?,
+                                                    priceDeltaCents?, group?, isDefault?, maxCount? }] } дописывает недостающее (повтор ничего не добавляет), отвечает всем набором
+PATCH/DELETE           /admin/categories/:id/options/:optionId   { name?, priceDeltaCents?, group?, isDefault?, maxCount?, sortOrder? }; DELETE — только из набора
+POST                   /admin/categories/:id/options/apply  → { total, products, variations, modifiers }: недостающее из набора во все товары категории
+POST                   /admin/categories/:id/prep-time/apply → { products }: defaultPrepTimeSeconds всем товарам категории
 GET/POST/PATCH/DELETE  /admin/products[/:id]        + PATCH /admin/products/:id/visibility, PATCH /admin/products/reorder
                                                     + storeIds[] в create/update (create без него — все точки бренда; update — заменяет список;
                                                       400 STORE_UNKNOWN для чужой точки), ответы несут storeIds, GET ?storeId= — товары точки
@@ -843,11 +864,15 @@ GET                    /admin/products/stores?brandId=   точки бренда
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
-GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (GET ?brandId=, ответы несут priceCents и products[]); POST/PATCH { name, priceCents?, isAvailable? },
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (GET ?brandId=, ответы несут priceCents, group и products[]); POST/PATCH { name, priceCents?, isAvailable?, group? },
                                                     PATCH { isAvailable } — «закончилось/появилось», новое name/priceCents переносится в опции с прежними значениями;
                                                     DELETE убирает добавку из всех товаров
 #   POST /admin/products/:id/modifiers и /variations принимают { ingredientId } без name/priceDeltaCents — берутся из справочника
 #   /admin/categories: create/update принимают addOnsOnly (категория «только как добавка»)
+#   POST /admin/products: applyCategoryOptions (по умолчанию true) — копия набора категории и её время приготовления, если prepTimeSeconds не передан
+#   POST/PATCH /admin/products/:id/modifiers: group (≤ 40, null = «Добавки»; при создании без group — группа записи справочника)
+#   POST /admin/products/:id/images: PRODUCT_PHOTO_RULE (JPEG/PNG/WebP/AVIF до 5 МБ; рекомендуем 1:1 от 1200×1200 или 3:4)
+GET                    /admin/ingredients/groups?brandId=   группы добавок бренда (справочник, товары, наборы) для подсказок
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
                                                     //   + kinds[] (COFFEE|FOOD, не пусто) в create/update
