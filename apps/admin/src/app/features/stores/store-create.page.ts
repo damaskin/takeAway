@@ -1,16 +1,32 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+  type AbstractControl,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  type ValidationErrors,
+  Validators,
+} from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { STORE_KINDS, STORE_PHOTO_RULE } from '@takeaway/shared-types';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { suggestStoreTimeZone } from '@takeaway/utils';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { AdminCatalogApi, type CreateStoreInput } from '../../core/catalog/admin-catalog.service';
+import { AdminCatalogApi, type CreateStoreInput, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { FormPageComponent } from '../../shared/form-page.component';
+import { acceptFor, imageFileError, imageUploadRefusal, ruleParams } from '../../shared/image-rules';
+import { AddressLocator } from './address-locator';
+import { LocatorStatusComponent } from './locator-status.component';
 import { storeErrorMessage } from './store-errors';
 import { STORE_CURRENCIES, STORE_SLUG_PATTERN, defaultCountryFor } from './store-options';
 import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select.component';
+
+function atLeastOneKind(group: AbstractControl): ValidationErrors | null {
+  const values = Object.values((group as FormGroup).getRawValue() as Record<string, boolean>);
+  return values.some(Boolean) ? null : { noneChecked: true };
+}
 
 /**
  * Create a store, on its own route.
@@ -22,7 +38,37 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
 @Component({
   selector: 'app-store-create',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, FormPageComponent, LeafletMapComponent, TimezoneSelectComponent],
+  imports: [
+    ReactiveFormsModule,
+    TranslatePipe,
+    FormPageComponent,
+    LeafletMapComponent,
+    TimezoneSelectComponent,
+    LocatorStatusComponent,
+  ],
+  providers: [AddressLocator],
+  styles: [
+    `
+      .check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-sans);
+        font-size: 14px;
+        color: var(--color-text-primary);
+      }
+      .hint {
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
+      .error {
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--color-berry);
+      }
+    `,
+  ],
   template: `
     <app-form-page
       [backTo]="['/stores']"
@@ -55,6 +101,7 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
               class="field-input"
               [placeholder]="'admin.stores.placeholders.address' | translate"
               [style.border-color]="invalid('addressLine') ? 'var(--color-berry)' : null"
+              (blur)="locator.flush()"
             />
           </label>
         </div>
@@ -67,6 +114,7 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
               class="field-input"
               [placeholder]="'admin.stores.placeholders.city' | translate"
               [style.border-color]="invalid('city') ? 'var(--color-berry)' : null"
+              (blur)="locator.flush()"
             />
           </label>
           <label class="field">
@@ -78,6 +126,7 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
               style="text-transform: uppercase"
               [placeholder]="'admin.stores.placeholders.country' | translate"
               [style.border-color]="invalid('country') ? 'var(--color-berry)' : null"
+              (blur)="locator.flush()"
             />
           </label>
           <label class="field">
@@ -122,6 +171,29 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
           </label>
         </div>
 
+        <div
+          class="field"
+          formGroupName="kinds"
+          role="group"
+          data-testid="store-kinds"
+          [attr.aria-label]="'admin.stores.kinds.title' | translate"
+        >
+          <span class="field-label">{{ 'admin.stores.kinds.title' | translate }}</span>
+          <div class="flex flex-wrap" style="gap: 16px">
+            @for (k of kindOptions; track k) {
+              <label class="check">
+                <input type="checkbox" [formControlName]="k" />
+                <span>{{ 'admin.stores.kinds.' + k | translate }}</span>
+              </label>
+            }
+          </div>
+          @if (form.controls.kinds.invalid) {
+            <span class="error">{{ 'admin.stores.kinds.required' | translate }}</span>
+          } @else {
+            <span class="hint">{{ 'admin.stores.kinds.hint' | translate }}</span>
+          }
+        </div>
+
         <div class="field">
           <span class="field-label">{{ 'admin.stores.fields.location' | translate }}</span>
           <div
@@ -131,28 +203,75 @@ import { TimezoneSelectComponent, defaultStoreTimeZone } from './timezone-select
             <lib-leaflet-map
               [pickable]="true"
               [markers]="pickerMarkers()"
+              [center]="locator.area()"
               [zoom]="13"
               (markerMoved)="onPickerMoved($event)"
             />
           </div>
-          <span
-            [style.color]="invalid('latitude') ? 'var(--color-berry)' : 'var(--color-text-tertiary)'"
-            style="font-family: var(--font-sans); font-size: 12px"
-            >{{
-              (pickerMarkers().length ? 'admin.stores.fields.pickOnMap' : 'admin.stores.hints.clickMap') | translate
-            }}</span
-          >
+          <app-locator-status [locator]="locator" [hasPin]="pickerMarkers().length > 0" />
+          @if (invalid('latitude') && !pickerMarkers().length) {
+            <span class="error">{{ 'admin.stores.hints.clickMap' | translate }}</span>
+          }
         </div>
 
         <div class="form-row">
           <label class="field">
             <span class="field-label">{{ 'admin.stores.fields.latitude' | translate }}</span>
-            <input formControlName="latitude" type="number" step="0.000001" class="field-input field-input-mono" />
+            <input
+              formControlName="latitude"
+              type="number"
+              step="0.000001"
+              class="field-input field-input-mono"
+              (change)="locator.pinnedByHand(null)"
+            />
           </label>
           <label class="field">
             <span class="field-label">{{ 'admin.stores.fields.longitude' | translate }}</span>
-            <input formControlName="longitude" type="number" step="0.000001" class="field-input field-input-mono" />
+            <input
+              formControlName="longitude"
+              type="number"
+              step="0.000001"
+              class="field-input field-input-mono"
+              (change)="locator.pinnedByHand(null)"
+            />
           </label>
+        </div>
+
+        <div class="field" data-testid="store-create-photo">
+          <span class="field-label">{{ 'admin.stores.createForm.photo' | translate }}</span>
+          <span class="hint">{{ 'admin.stores.photos.heroHint' | translate }}</span>
+          <span class="hint" style="color: var(--color-text-secondary)">{{
+            'admin.images.storeRule' | translate: photoRule
+          }}</span>
+          <div class="flex items-center flex-wrap" style="gap: 12px; margin-top: 4px">
+            @if (photoPreview(); as preview) {
+              <img
+                [src]="preview"
+                alt=""
+                style="width: 180px; max-width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 10px; border: 1px solid var(--color-border-light)"
+              />
+            }
+            <label
+              style="padding: 8px 14px; background: var(--color-latte); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-espresso); cursor: pointer"
+            >
+              {{ (photo() ? 'admin.stores.createForm.photoChange' : 'admin.stores.createForm.photoPick') | translate }}
+              <input type="file" [accept]="photoAccept" (change)="onPhotoPicked($event)" style="display: none" />
+            </label>
+            @if (photo()) {
+              <button
+                type="button"
+                (click)="clearPhoto()"
+                style="padding: 0; background: none; border: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); cursor: pointer"
+              >
+                {{ 'admin.stores.createForm.photoRemove' | translate }}
+              </button>
+            } @else {
+              <span class="hint">{{ 'admin.stores.createForm.photoLater' | translate }}</span>
+            }
+          </div>
+          @if (photoError(); as message) {
+            <span role="alert" class="error">{{ message }}</span>
+          }
         </div>
 
         <details>
@@ -183,11 +302,20 @@ export class StoreCreatePage {
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  readonly locator = inject(AddressLocator);
 
   readonly currencies = STORE_CURRENCIES;
+  readonly kindOptions = STORE_KINDS;
+  readonly photoAccept = acceptFor(STORE_PHOTO_RULE);
+  readonly photoRule = ruleParams(STORE_PHOTO_RULE);
   readonly creating = signal(false);
   readonly createError = signal<string | null>(null);
   private readonly submitted = signal(false);
+
+  /** The cover photo picked here; uploaded right after the store is created. */
+  readonly photo = signal<File | null>(null);
+  readonly photoPreview = signal<string | null>(null);
+  readonly photoError = signal<string | null>(null);
 
   readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
@@ -201,6 +329,13 @@ export class StoreCreatePage {
     timezone: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     phone: new FormControl('', { nonNullable: true }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.email] }),
+    kinds: new FormGroup(
+      {
+        COFFEE: new FormControl(true, { nonNullable: true }),
+        FOOD: new FormControl(false, { nonNullable: true }),
+      },
+      { validators: [atLeastOneKind] },
+    ),
     latitude: new FormControl<number | null>(null, {
       validators: [Validators.required, Validators.min(-90), Validators.max(90)],
     }),
@@ -233,6 +368,13 @@ export class StoreCreatePage {
       );
       this.deriveZone();
     });
+
+    const c = this.form.controls;
+    this.locator.connect(
+      { addressLine: c.addressLine, city: c.city, country: c.country },
+      { pinned: false, place: (p) => this.form.patchValue({ latitude: round6(p.lat), longitude: round6(p.lng) }) },
+    );
+    inject(DestroyRef).onDestroy(() => this.revokePreview());
   }
 
   /**
@@ -255,7 +397,29 @@ export class StoreCreatePage {
   }
 
   onPickerMoved(p: LatLng): void {
-    this.form.patchValue({ latitude: round6(p.lat), longitude: round6(p.lng) });
+    const point = { lat: round6(p.lat), lng: round6(p.lng) };
+    this.form.patchValue({ latitude: point.lat, longitude: point.lng });
+    this.locator.pinnedByHand(point);
+  }
+
+  /** Checked at once, so a wrong file is reported before the store is created, not after. */
+  onPhotoPicked(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const problem = imageFileError(file, STORE_PHOTO_RULE, this.translate);
+    this.photoError.set(problem);
+    if (problem) return;
+    this.revokePreview();
+    this.photo.set(file);
+    this.photoPreview.set(URL.createObjectURL(file));
+  }
+
+  clearPhoto(): void {
+    this.revokePreview();
+    this.photo.set(null);
+    this.photoError.set(null);
   }
 
   /** An invalid field is marked once touched or after a submit attempt. */
@@ -300,16 +464,48 @@ export class StoreCreatePage {
       phone: v.phone.trim() || undefined,
       email: v.email.trim() || undefined,
       slug: v.slug.trim() || undefined,
+      kinds: STORE_KINDS.filter((k) => v.kinds[k]),
     };
     this.creating.set(true);
     this.createError.set(null);
     this.api.createStore(payload).subscribe({
-      next: (store) => this.router.navigate(['/stores', store.id]),
+      next: (store) => this.afterCreate(store),
       error: (err) => {
         this.creating.set(false);
         this.createError.set(storeErrorMessage(err, this.translate));
       },
     });
+  }
+
+  /**
+   * The photo needs the store's id, so it goes up once the store exists. The
+   * store is there either way: if the photo fails, the editor opens on its
+   * photos tab with the reason, rather than this form offering to create
+   * the store a second time.
+   */
+  private afterCreate(store: StoreAdminDto): void {
+    const photo = this.photo();
+    if (!photo) {
+      this.router.navigate(['/stores', store.id]);
+      return;
+    }
+    this.api.uploadStoreImage(store.id, 'hero', photo).subscribe({
+      next: () => this.router.navigate(['/stores', store.id]),
+      error: (err) => {
+        const reason =
+          imageUploadRefusal(err, STORE_PHOTO_RULE, this.translate) ?? storeErrorMessage(err, this.translate);
+        this.router.navigate(['/stores', store.id], {
+          queryParams: { tab: 'photos' },
+          state: { photoError: this.translate.instant('admin.stores.createForm.photoFailed', { reason }) },
+        });
+      },
+    });
+  }
+
+  private revokePreview(): void {
+    const url = this.photoPreview();
+    if (url) URL.revokeObjectURL(url);
+    this.photoPreview.set(null);
   }
 
   private reset(): void {
@@ -323,6 +519,7 @@ export class StoreCreatePage {
       timezone: defaultStoreTimeZone(),
       phone: '',
       email: '',
+      kinds: { COFFEE: true, FOOD: false },
       latitude: null,
       longitude: null,
       slug: '',
