@@ -1,6 +1,15 @@
 import type { CategoryKind } from '@takeaway/shared-types';
 
-import { CATEGORY_KIND_STEMS, categoryKindPattern, inferCategoryKind } from './category-kind';
+import { CATEGORY_KIND_STEMS, categoryKindPattern, inferCategoryKind, productPlaceholderUrl } from './category-kind';
+
+describe('productPlaceholderUrl', () => {
+  it('picks the placeholder of the kind, and the neutral one for anything else', () => {
+    expect(productPlaceholderUrl('HOT_DRINKS')).toBe('/ui-kit/product-placeholders/hot-drink.svg');
+    expect(productPlaceholderUrl('BAKERY', 'assets/')).toBe('assets/bakery.svg');
+    expect(productPlaceholderUrl(undefined)).toBe('/ui-kit/product-placeholders/other.svg');
+    expect(productPlaceholderUrl('FLOWERS')).toBe('/ui-kit/product-placeholders/other.svg');
+  });
+});
 
 /** Category names seen in cafés and fast-food menus, with the kind a person would pick. */
 const TYPICAL_CATEGORY_NAMES: ReadonlyArray<readonly [string, CategoryKind]> = [

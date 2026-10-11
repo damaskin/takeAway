@@ -161,3 +161,22 @@ export function inferCategoryKind(name: string | null | undefined): CategoryKind
   if (!text.trim()) return 'OTHER';
   return MATCHERS.find(([, re]) => re.test(text))?.[0] ?? 'OTHER';
 }
+
+const PLACEHOLDER_FILES: Readonly<Record<CategoryKind, string>> = {
+  HOT_DRINKS: 'hot-drink.svg',
+  COLD_DRINKS: 'cold-drink.svg',
+  FOOD: 'food.svg',
+  BAKERY: 'bakery.svg',
+  OTHER: 'other.svg',
+};
+
+/**
+ * The picture a product without a photo shows, by its category's kind —
+ * one of libs/ui-kit/src/assets/product-placeholders, which the Angular
+ * apps serve under `/ui-kit/product-placeholders/`. A missing or unknown
+ * kind (an older API) gets the neutral one.
+ */
+export function productPlaceholderUrl(kind: string | null | undefined, base = '/ui-kit/product-placeholders/'): string {
+  const known = (Object.keys(PLACEHOLDER_FILES) as CategoryKind[]).find((k) => k === kind);
+  return `${base}${PLACEHOLDER_FILES[known ?? 'OTHER']}`;
+}
