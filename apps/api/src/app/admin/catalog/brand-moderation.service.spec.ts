@@ -117,8 +117,11 @@ describe('BrandModerationService', () => {
     expect(prisma.brand.update).not.toHaveBeenCalled();
   });
 
-  it('counts the brands waiting for review', async () => {
-    await expect(service.pendingCount()).resolves.toEqual({ count: 3 });
+  it('counts the brands waiting for review and the owners waiting for a plan answer', async () => {
+    prisma.brand.count.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+
+    await expect(service.pendingCount()).resolves.toEqual({ count: 3, planRequests: 1 });
     expect(prisma.brand.count).toHaveBeenCalledWith({ where: { moderationStatus: PENDING } });
+    expect(prisma.brand.count).toHaveBeenCalledWith({ where: { requestedPlan: { not: null } } });
   });
 });

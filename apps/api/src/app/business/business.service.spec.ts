@@ -100,6 +100,7 @@ describe('BusinessService.register', () => {
       data: expect.objectContaining({
         name: 'Кофейня Ромашка',
         slug: 'kofeynya-romashka',
+        contactPhone: '+37369123456',
         currency: Currency.MDL,
         locale: Locale.RU,
         moderationStatus: BrandModerationStatus.PENDING,
@@ -139,29 +140,37 @@ describe('BusinessService.register', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('names the phone, not the email, when the phone is what is taken', async () => {
+  // The owner is often a customer of the app already, with this very number
+  // on their customer account. The team still needs the number to call.
+  it('signs up with a phone another account has: it is the brand phone, just not on the owner account', async () => {
     prisma.user.findUnique.mockImplementation(({ where }: { where: { phone?: string } }) =>
-      Promise.resolve(where.phone ? { id: 'someone' } : null),
+      Promise.resolve(where.phone ? { id: 'customer' } : null),
     );
 
-    await expect(conflictCode(service.register(dto))).resolves.toBe('PHONE_TAKEN');
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    await expect(service.register(dto)).resolves.toEqual(expect.objectContaining({ brand: expect.anything() }));
+
+    expect(tx.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ phone: null }) });
+    expect(tx.brand.create).toHaveBeenCalledWith({ data: expect.objectContaining({ contactPhone: '+37369123456' }) });
   });
 
-  it('skips the phone check when no phone was given', async () => {
-    await service.register({ ...dto, phone: undefined });
+  it.each([[['phone']], ['User_phone_key']])(
+    'keeps the sign-up when the phone is claimed in a race on %j, without the phone on the account',
+    async (target) => {
+      tx.user.create.mockRejectedValueOnce(uniqueViolation(target));
 
-    expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
-  });
+      await expect(service.register(dto)).resolves.toEqual(expect.objectContaining({ brand: expect.anything() }));
 
-  it.each([
-    [['phone'], 'PHONE_TAKEN'],
-    [['email'], 'EMAIL_TAKEN'],
-    ['User_phone_key', 'PHONE_TAKEN'],
-  ])('maps a race lost on %j to %s', async (target, code) => {
-    tx.user.create.mockRejectedValue(uniqueViolation(target));
+      expect(tx.user.create).toHaveBeenLastCalledWith({ data: expect.objectContaining({ phone: null }) });
+      expect(tx.brand.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ contactPhone: '+37369123456' }),
+      });
+    },
+  );
 
-    await expect(conflictCode(service.register(dto))).resolves.toBe(code);
+  it('maps a race lost on the email to EMAIL_TAKEN', async () => {
+    tx.user.create.mockRejectedValue(uniqueViolation(['email']));
+
+    await expect(conflictCode(service.register(dto))).resolves.toBe('EMAIL_TAKEN');
   });
 
   it('retries a slug lost to a simultaneous sign-up instead of failing the owner', async () => {

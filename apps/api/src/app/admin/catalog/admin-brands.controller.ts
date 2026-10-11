@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BrandModerationStatus, Role } from '@prisma/client';
 
@@ -42,10 +42,15 @@ export class AdminBrandsController {
     return this.moderation.pendingCount();
   }
 
+  /**
+   * Every brand with its contact phone and launch-checklist progress.
+   * `?notLaunched=true`: self-registered brands that have not launched yet —
+   * the platform team's call list.
+   */
   @Get()
   @Roles(Role.SUPER_ADMIN)
-  list(@Query('status') status?: BrandModerationStatus) {
-    return this.admin.listBrands(status);
+  list(@Query('status') status?: BrandModerationStatus, @Query('notLaunched') notLaunched?: string) {
+    return this.admin.listBrands(status, notLaunched === 'true' || notLaunched === '1');
   }
 
   @Get(':id')
@@ -78,6 +83,13 @@ export class AdminBrandsController {
   @Roles(Role.SUPER_ADMIN)
   setPlan(@Param('id') id: string, @Body() dto: SetBrandPlanDto) {
     return this.admin.setBrandPlan(id, dto);
+  }
+
+  /** Closes the owner's «Перейти на PRO» request without changing the plan (setting a plan closes it too). */
+  @Delete(':id/plan-request')
+  @Roles(Role.SUPER_ADMIN)
+  dismissPlanRequest(@Param('id') id: string) {
+    return this.admin.dismissPlanRequest(id);
   }
 
   @Get(':id/owner')

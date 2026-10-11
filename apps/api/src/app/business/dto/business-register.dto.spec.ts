@@ -15,6 +15,7 @@ const valid = {
   ownerName: 'Ion',
   email: 'owner@romashka.md',
   password: 'correct-horse',
+  phone: '+373 69 123 456',
   currency: 'MDL',
   locale: 'RU',
 };
@@ -24,6 +25,12 @@ describe('BusinessRegisterDto', () => {
     ['+373 69 123-456', '+37369123456'],
     ['+373 (69) 12-34-56', '+37369123456'],
     ['0037369123456', '+37369123456'],
+    ['069 123 456', '+37369123456'],
+    ['0777 12345', '+37377712345'],
+    ['+380 50 123 4567', '+380501234567'],
+    ['050 123 4567', '+380501234567'],
+    ['+7 916 123-45-67', '+79161234567'],
+    ['8 916 123-45-67', '+79161234567'],
     ['+44 20 7946 0958', '+442079460958'],
   ])('accepts %s as %s', async (typed, stored) => {
     const { dto, invalid } = await check({ ...valid, phone: typed });
@@ -32,8 +39,8 @@ describe('BusinessRegisterDto', () => {
     expect(dto.phone).toBe(stored);
   });
 
-  it.each(['069123456', '+0 69 123 456', '+373', 'call me'])(
-    'refuses %s: no country code, or not a number',
+  it.each(['+373 69 123 45', '+0 69 123 456', '+373', '12345', 'call me'])(
+    'refuses %s: a typo, no country code, or not a number',
     async (typed) => {
       const { invalid } = await check({ ...valid, phone: typed });
 
@@ -41,11 +48,10 @@ describe('BusinessRegisterDto', () => {
     },
   );
 
-  it('treats an empty phone as no phone', async () => {
-    const { dto, invalid } = await check({ ...valid, phone: '  ' });
+  it.each([undefined, '', '   '])('requires a phone — the team calls those who never launched (%j)', async (phone) => {
+    const { invalid } = await check({ ...valid, phone });
 
-    expect(invalid).toEqual([]);
-    expect(dto.phone).toBeUndefined();
+    expect(invalid).toEqual(['phone']);
   });
 
   it('requires a currency and a language instead of defaulting to USD and English', async () => {

@@ -9,6 +9,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { ImageUpload, UploadedImage, type UploadedImageFile } from '../common/upload/uploaded-image.decorator';
 import { BrandOwnerService } from './brand-owner.service';
 import { BrandOnboardingDto } from './dto/brand-onboarding.dto';
+import { CreatePlanRequestDto, PlanRequestDto } from './dto/plan-request.dto';
 
 /**
  * The owner's own brand, for the admin panel's /settings screen and the
@@ -63,5 +64,22 @@ export class BrandOwnerController {
   @HttpCode(HttpStatus.OK)
   resubmit(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId?: string) {
     return this.brands.resubmit(user, brandId);
+  }
+
+  /**
+   * «Перейти на PRO»: asks the platform team for another plan. 409
+   * `PLAN_ALREADY_ACTIVE` when the brand is on it already; asking twice
+   * answers with the standing request.
+   */
+  @Post('plan-request')
+  @Roles(Role.BRAND_ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: PlanRequestDto })
+  requestPlan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreatePlanRequestDto,
+    @Query('brandId') brandId?: string,
+  ): Promise<PlanRequestDto> {
+    return this.brands.requestPlan(user, dto.plan, dto.note, brandId);
   }
 }

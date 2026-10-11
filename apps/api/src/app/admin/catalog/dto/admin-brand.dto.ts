@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Currency, Locale } from '@prisma/client';
 import { IsEnum, IsObject, IsOptional, IsString, IsUrl, Length } from 'class-validator';
 
+import { IsInternationalPhone, ToPhone } from '../../../common/text/phone';
+
 export class CreateBrandDto {
   @ApiProperty()
   @IsString()
@@ -27,6 +29,13 @@ export class CreateBrandDto {
   @IsOptional()
   @IsUrl()
   logoUrl?: string;
+
+  /** The number the platform team calls the business on; normalised to E.164. */
+  @ApiPropertyOptional({ example: '+37369123456', description: 'Normalised to E.164, like the sign-up phone.' })
+  @ToPhone()
+  @IsOptional()
+  @IsInternationalPhone()
+  contactPhone?: string;
 
   /**
    * CSS-variable overrides applied on top of the Telegram theme in TMA.
