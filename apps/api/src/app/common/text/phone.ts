@@ -1,18 +1,32 @@
-/**
- * International (E.164) phone numbers: a plus, a country code that never
- * starts with zero, and 8–15 digits in all.
- */
-export const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
+import { normalizePhone } from '@takeaway/utils';
+import { Transform } from 'class-transformer';
+import { ValidateBy, type ValidationOptions } from 'class-validator';
 
 /**
- * A phone number the way people type it — «+373 (69) 12-34-56»,
- * «0037369123456» — reduced to E.164. Only separators are dropped and the
- * `00` exit prefix becomes `+`; a number without its country code is left
- * as it is and fails {@link E164_PATTERN}, because «069…» is a local number
- * in more than one country and guessing which would put the wrong number
- * on the account.
+ * A phone field the way people type it, reduced to E.164 before validation
+ * (see `normalizePhone`): «+373 (69) 12-34-56», «069 123 456» and
+ * «8 916 123-45-67» all arrive as the international number. What does not
+ * read as a phone number is left as it was typed, for
+ * {@link IsInternationalPhone} to refuse; blank becomes `undefined`.
  */
-export function normalizePhone(input: string): string {
-  const compact = input.trim().replace(/[\s().-]/g, '');
-  return compact.startsWith('00') ? `+${compact.slice(2)}` : compact;
+export function ToPhone(): PropertyDecorator {
+  return Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    if (value.trim() === '') return undefined;
+    return normalizePhone(value) ?? value;
+  });
+}
+
+/** Passes an E.164 number that {@link ToPhone} produced; refuses anything it could not read. */
+export function IsInternationalPhone(options?: ValidationOptions): PropertyDecorator {
+  return ValidateBy(
+    {
+      name: 'isInternationalPhone',
+      validator: {
+        validate: (value: unknown) => typeof value === 'string' && normalizePhone(value) === value,
+        defaultMessage: () => '$property must be a phone number in international format, e.g. +37369123456',
+      },
+    },
+    options,
+  );
 }

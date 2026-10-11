@@ -1,11 +1,19 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { InviteStaffRequest, SetStaffStoresRequest, StaffMember, StaffRoleName } from '@takeaway/shared-types';
+import type {
+  InviteStaffRequest,
+  KitchenDeviceSummary,
+  KitchenPairingCode,
+  SetStaffStoresRequest,
+  StaffInviteResult,
+  StaffMember,
+  StaffRoleName,
+} from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
 
-export type { InviteStaffRequest, StaffMember } from '@takeaway/shared-types';
+export type { InviteStaffRequest, StaffInviteResult, StaffMember } from '@takeaway/shared-types';
 
 export type StaffRole = StaffRoleName;
 
@@ -50,9 +58,32 @@ export class StaffService {
     });
   }
 
-  /** Invites someone to one or more stores at once. */
-  invite(body: InviteStaffRequest, brandId: string | null): Observable<StaffMember> {
-    return this.http.post<StaffMember>(`${this.api.baseUrl}/admin/staff`, body, { params: this.brandParams(brandId) });
+  /** Invites someone to one or more stores at once; the answer says whether the invite email went out. */
+  invite(body: InviteStaffRequest, brandId: string | null): Observable<StaffInviteResult> {
+    return this.http.post<StaffInviteResult>(`${this.api.baseUrl}/admin/staff`, body, {
+      params: this.brandParams(brandId),
+    });
+  }
+
+  // ── The brand's kitchen tablets ──
+
+  kitchenDevices(brandId: string): Observable<KitchenDeviceSummary[]> {
+    return this.http.get<KitchenDeviceSummary[]>(`${this.api.baseUrl}/admin/kitchen-devices`, { params: { brandId } });
+  }
+
+  /** A one-time code for a tablet link, `/login/pin?pair=<code>`; it works once, for 24 hours. */
+  kitchenPairingCode(brandId: string): Observable<KitchenPairingCode> {
+    return this.http.post<KitchenPairingCode>(
+      `${this.api.baseUrl}/admin/kitchen-devices/pairing-code`,
+      {},
+      {
+        params: { brandId },
+      },
+    );
+  }
+
+  unbindKitchenDevice(brandId: string, deviceId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/kitchen-devices/${deviceId}`, { params: { brandId } });
   }
 
   /**
@@ -84,7 +115,7 @@ export class StaffService {
     return this.http.get<StaffRoster[]>(`${this.api.baseUrl}/admin/stores/${storeId}/staff`);
   }
 
-  /** Sets or rotates the 4–6 digit PIN a staff member unlocks this store's kitchen tablet with. */
+  /** Sets or rotates the 6-digit PIN a staff member unlocks this store's kitchen tablet with. */
   setKdsPin(storeId: string, userId: string, pin: string): Observable<void> {
     return this.http.put<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/kds-pin`, { pin });
   }

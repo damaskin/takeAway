@@ -1,8 +1,12 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
+import type { KitchenDeviceBinding, KitchenDeviceStores } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
+
+/** The header a bound tablet sends its token in. */
+export const KITCHEN_DEVICE_HEADER = 'X-Kitchen-Device';
 
 /** The statuses an order passes through while it is on the kitchen board. */
 export type KitchenOrderStatus = 'CREATED' | 'PAID' | 'ACCEPTED' | 'IN_PROGRESS' | 'READY';
@@ -35,6 +39,8 @@ export interface StoreShift {
   openedByName: string | null;
   closedAt: string | null;
   closedByName: string | null;
+  /** The kitchen marked the store «Загружены». Absent from older API builds. */
+  busy?: boolean;
 }
 
 export type KitchenAction = 'accept' | 'start' | 'ready' | 'pickedUp';
@@ -83,9 +89,24 @@ export class KitchenApi {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
 
-  /** Every public store — what a tablet can be set up for before anyone signs in. */
-  publicStores(): Observable<Array<{ id: string; name: string; city: string }>> {
-    return this.http.get<Array<{ id: string; name: string; city: string }>>(`${this.api.baseUrl}/stores`);
+  /**
+   * The stores a bound tablet's PIN screen offers: its brand's stores where
+   * someone has a PIN. 401 `KDS_DEVICE_UNKNOWN` once the tablet is unbound.
+   */
+  deviceStores(deviceToken: string): Observable<KitchenDeviceStores> {
+    return this.http.get<KitchenDeviceStores>(`${this.api.baseUrl}/auth/kds/device`, {
+      headers: new HttpHeaders({ [KITCHEN_DEVICE_HEADER]: deviceToken }),
+    });
+  }
+
+  /** Binds this browser to the brand of a store the signed-in employee works at. */
+  bindDevice(storeId: string): Observable<KitchenDeviceBinding> {
+    return this.http.post<KitchenDeviceBinding>(`${this.api.baseUrl}/auth/kds/device`, { storeId });
+  }
+
+  /** Binds this browser with the one-time code of a tablet link from the Staff page. */
+  pairDevice(code: string): Observable<KitchenDeviceBinding> {
+    return this.http.post<KitchenDeviceBinding>(`${this.api.baseUrl}/auth/kds/device/pair`, { code });
   }
 
   list(storeId: string): Observable<KitchenOrder[]> {
@@ -102,6 +123,12 @@ export class KitchenApi {
   setShift(storeId: string, open: boolean): Observable<StoreShift> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.post<StoreShift>(`${this.api.baseUrl}/kds/shift/${open ? 'open' : 'close'}`, {}, { params });
+  }
+
+  /** «Загружены» on or off; answers the shift with the new `busy`. */
+  setBusy(storeId: string, busy: boolean): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.put<StoreShift>(`${this.api.baseUrl}/kds/busy`, { busy }, { params });
   }
 
   run(action: KitchenAction, storeId: string, orderId: string): Observable<{ id: string; status: string }> {

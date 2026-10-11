@@ -44,8 +44,19 @@ for v in "${REQUIRED_VARS[@]}"; do
     missing=1
   fi
 done
+# The API refuses to start in production with a placeholder JWT secret (a
+# secret that is in the repository signs tokens anyone can forge). Say so
+# here, before the build, rather than in a crash-looping container.
+for v in JWT_ACCESS_SECRET JWT_REFRESH_SECRET; do
+  case "${!v:-}" in
+    CHANGE_ME|change-me-in-prod-*)
+      echo "ERROR: $v in .env.production is still a placeholder." >&2
+      missing=1
+      ;;
+  esac
+done
 if [ "$missing" = "1" ]; then
-  echo "Generate POS_CREDENTIALS_KEY with: openssl rand -hex 32" >&2
+  echo "Generate POS_CREDENTIALS_KEY / JWT secrets with: openssl rand -hex 32" >&2
   exit 1
 fi
 

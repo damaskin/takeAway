@@ -31,6 +31,12 @@ export interface AuthSession extends AuthTokens {
    * change-password screen before the normal landing page.
    */
   mustChangePassword?: boolean;
+  /**
+   * Set when the session was opened with a kitchen PIN: the one store it
+   * works. The API lets such a session reach only that store's kitchen
+   * board and stop-list; the admin shows nothing else.
+   */
+  kdsStoreId?: string;
 }
 
 export interface PasswordChangeSelfRequest {

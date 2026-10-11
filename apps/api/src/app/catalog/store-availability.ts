@@ -38,3 +38,27 @@ export function acceptingOrders(store: AvailabilityFacts): boolean {
 export function openNow(store: AvailabilityFacts): boolean {
   return acceptingOrders(store);
 }
+
+/**
+ * "We're swamped" — the kitchen's «Загружены» switch. It is the store status
+ * OVERLOADED, the same value the owner can pick in the store editor, so the
+ * two never disagree. Busy is not closed: the store keeps taking orders.
+ */
+export function isBusy(store: { status: string }): boolean {
+  return store.status === 'OVERLOADED';
+}
+
+/** What a store marked busy reports as its load: full. */
+export const BUSY_METER_FULL = 100;
+
+/**
+ * The 0–100 load the storefronts colour a store by (green / amber / red).
+ * A store marked busy reads as full; otherwise the stored value stands
+ * (0 unless someone set it).
+ *
+ * It colours the store and nothing else: the ETA a customer is quoted comes
+ * from the real queue (KitchenLoadService) and does not read this.
+ */
+export function busyMeterOf(store: { status: string; busyMeter: number }): number {
+  return isBusy(store) ? BUSY_METER_FULL : store.busyMeter;
+}

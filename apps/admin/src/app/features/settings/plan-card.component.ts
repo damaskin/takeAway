@@ -1,6 +1,7 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 import {
   ALL_PLAN_FEATURES,
   type BrandPlan,
@@ -9,16 +10,20 @@ import {
   planHasFeature,
 } from '@takeaway/shared-types';
 
+import { apiErrorMessage } from '../../core/http/api-error';
+import { SettingsService } from '../../core/settings/settings.service';
+
 /**
- * The brand's business plan in /settings, read-only: the commission, what
- * the plan includes and, on BASIC, what PRO would add. Changing it is the
- * platform's call (there is no payment flow), so the owner gets the way to
- * ask for it; a platform admin gets a link to the brands page.
+ * The brand's business plan in /settings: the commission, what the plan
+ * includes and, on BASIC, what PRO would add. Changing it is the
+ * platform's call (there is no payment flow), so the owner presses
+ * «Перейти на PRO» — the takeAway team gets the request and calls back —
+ * or writes to support; a platform admin gets a link to the brands page.
  */
 @Component({
   selector: 'app-plan-card',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, LocalDatePipe],
   template: `
     <section id="plan" class="plan">
       <header class="plan-head">
@@ -50,7 +55,26 @@ import {
       @if (plan() === 'BASIC') {
         <div class="plan-upgrade">
           <strong>{{ 'admin.plans.settings.upgradeTitle' | translate: { percent: proPercent } }}</strong>
-          <span>{{ 'admin.plans.upsell.how' | translate }}</span>
+          @if (requestedAt(); as at) {
+            <span class="plan-requested" role="status">{{
+              'admin.plans.request.sent' | translate: { date: (at | localDate: 'dateTime') }
+            }}</span>
+          } @else if (platformAdmin()) {
+            <span>{{ 'admin.plans.upsell.how' | translate }}</span>
+          } @else {
+            <span>{{ 'admin.plans.request.hint' | translate }}</span>
+            <div class="plan-actions">
+              <button type="button" class="plan-request" [disabled]="requesting()" (click)="requestPro()">
+                {{ (requesting() ? 'admin.plans.request.sending' : 'admin.plans.request.cta') | translate }}
+              </button>
+              <button type="button" class="plan-support" (click)="support.emit()">
+                {{ 'admin.support.entry' | translate }}
+              </button>
+            </div>
+          }
+          @if (requestError(); as message) {
+            <span role="alert" class="plan-error">{{ message }}</span>
+          }
         </div>
       }
       @if (platformAdmin()) {
@@ -169,13 +193,86 @@ import {
         font-weight: 600;
         color: var(--color-caramel);
       }
+      .plan-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .plan-request,
+      .plan-support {
+        height: 36px;
+        padding: 0 16px;
+        border-radius: var(--radius-button);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .plan-request {
+        border: 0;
+        background: var(--color-espresso);
+        color: white;
+      }
+      .plan-request:disabled {
+        opacity: 0.6;
+      }
+      .plan-support {
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-espresso);
+      }
+      .plan-requested {
+        color: var(--color-text-primary);
+        font-weight: 600;
+      }
+      .plan-error {
+        color: var(--color-berry);
+      }
     `,
   ],
 })
 export class PlanCardComponent {
+  private readonly settings = inject(SettingsService);
+  private readonly translate = inject(TranslateService);
+
   readonly plan = input.required<BrandPlan>();
   readonly commissionBps = input<number | null | undefined>(null);
   readonly platformAdmin = input(false);
+  /** When the owner asked for PRO, if the request still stands. */
+  readonly planRequestedAt = input<string | null | undefined>(null);
+  /** «Написать в поддержку» from the card: the page opens the dialog. */
+  readonly support = output<void>();
+
+  /** The request sent from this card, until the page reloads the brand. */
+  private readonly sentAt = signal<string | null>(null);
+  readonly requestedAt = computed(() => this.sentAt() ?? this.planRequestedAt() ?? null);
+  readonly requesting = signal(false);
+  readonly requestError = signal<string | null>(null);
+
+  /** «Перейти на PRO»: the takeAway team gets the request and calls back. */
+  requestPro(): void {
+    this.requesting.set(true);
+    this.requestError.set(null);
+    this.settings.requestPlan('PRO').subscribe({
+      next: (res) => {
+        this.requesting.set(false);
+        this.sentAt.set(res.planRequestedAt);
+      },
+      error: (err) => {
+        this.requesting.set(false);
+        this.requestError.set(
+          apiErrorMessage(err, this.translate, {
+            codes: {
+              FEEDBACK_TOO_MANY: 'admin.support.tooMany',
+              PLAN_ALREADY_ACTIVE: 'admin.plans.request.alreadyActive',
+            },
+            network: 'common.networkError',
+          }),
+        );
+      },
+    });
+  }
 
   readonly features = ALL_PLAN_FEATURES;
   readonly proPercent = DEFAULT_COMMISSION_BPS.PRO / 100;

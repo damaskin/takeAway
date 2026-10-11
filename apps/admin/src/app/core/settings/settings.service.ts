@@ -21,6 +21,11 @@ export interface MyBrand {
   /** Business plan and platform commission (basis points); read-only here. */
   plan?: BrandPlan;
   commissionBps?: number;
+  /** The number the takeAway team calls the business on, E.164. */
+  contactPhone?: string | null;
+  /** The plan asked for with «Перейти на PRO», while the request stands. */
+  requestedPlan?: BrandPlan | null;
+  planRequestedAt?: string | null;
   _count?: { stores: number; products: number };
 }
 
@@ -30,6 +35,14 @@ export interface UpdateMyBrandRequest {
   currency?: string;
   locale?: 'EN' | 'RU';
   themeOverrides?: Record<string, string>;
+  /** Any common format; the API stores E.164. */
+  contactPhone?: string;
+}
+
+/** The standing «Перейти на PRO» request. */
+export interface PlanRequest {
+  requestedPlan: BrandPlan;
+  planRequestedAt: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -44,6 +57,15 @@ export class SettingsService {
 
   updateMyBrand(body: UpdateMyBrandRequest): Observable<MyBrand> {
     return this.http.patch<MyBrand>(`${this.api.baseUrl}/my-brand`, body, { params: this.brandParams() });
+  }
+
+  /** «Перейти на PRO»: asks the takeAway team; they get in touch. Asking twice is harmless. */
+  requestPlan(plan: BrandPlan, note?: string): Observable<PlanRequest> {
+    return this.http.post<PlanRequest>(
+      `${this.api.baseUrl}/my-brand/plan-request`,
+      { plan, ...(note ? { note } : {}) },
+      { params: this.brandParams() },
+    );
   }
 
   uploadLogo(file: File): Observable<{ logoUrl: string }> {

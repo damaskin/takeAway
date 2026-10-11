@@ -3,6 +3,7 @@ import { BrandModerationStatus, Currency, Locale, Role } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import type { FeatureFlagsService } from '../config/feature-flags.service';
+import type { FeedbackService } from '../feedback/feedback.service';
 import type { OnboardingNotifier } from '../onboarding/onboarding-notifier.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { StorageService } from '../storage/storage.service';
@@ -34,6 +35,7 @@ describe('BrandOwnerService', () => {
     product: { count: jest.Mock };
   };
   let notifier: { brandResubmitted: jest.Mock };
+  let feedback: { createFromBusiness: jest.Mock };
   let flags: { cardPaymentFlow: 'token' | 'web' | 'none' };
   let service: BrandOwnerService;
 
@@ -52,13 +54,75 @@ describe('BrandOwnerService', () => {
       product: { count: jest.fn().mockResolvedValue(0) },
     };
     notifier = { brandResubmitted: jest.fn().mockResolvedValue(undefined) };
+    feedback = { createFromBusiness: jest.fn().mockResolvedValue({ id: 'f1', createdAt: '2026-10-10T12:00:00Z' }) };
     flags = { cardPaymentFlow: 'none' };
     service = new BrandOwnerService(
       prisma as unknown as PrismaService,
       {} as StorageService,
       flags as unknown as FeatureFlagsService,
       notifier as unknown as OnboardingNotifier,
+      feedback as unknown as FeedbackService,
     );
+  });
+
+  describe('plan request («Перейти на PRO»)', () => {
+    beforeEach(() => {
+      prisma.brand.findUniqueOrThrow.mockResolvedValue({ plan: 'BASIC', requestedPlan: null, planRequestedAt: null });
+    });
+
+    it('records the wish on the brand and writes to support, which pings the platform team', async () => {
+      const result = await service.requestPlan(owner, 'PRO', 'Хотим рассылки', 'b1');
+
+      expect(prisma.brand.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { requestedPlan: 'PRO', planRequestedAt: expect.any(Date) },
+      });
+      expect(feedback.createFromBusiness).toHaveBeenCalledWith('owner1', 'b1', {
+        kind: 'PLAN_CHANGE',
+        message: 'Хотим рассылки',
+      });
+      expect(result).toEqual({ requestedPlan: 'PRO', planRequestedAt: expect.any(String) });
+    });
+
+    it('answers a second click with the standing request and wakes nobody', async () => {
+      const at = new Date('2026-10-09T10:00:00Z');
+      prisma.brand.findUniqueOrThrow.mockResolvedValue({ plan: 'BASIC', requestedPlan: 'PRO', planRequestedAt: at });
+
+      await expect(service.requestPlan(owner, 'PRO', undefined, 'b1')).resolves.toEqual({
+        requestedPlan: 'PRO',
+        planRequestedAt: at.toISOString(),
+      });
+      expect(prisma.brand.update).not.toHaveBeenCalled();
+      expect(feedback.createFromBusiness).not.toHaveBeenCalled();
+    });
+
+    it('refuses the plan the brand is already on', async () => {
+      prisma.brand.findUniqueOrThrow.mockResolvedValue({ plan: 'PRO', requestedPlan: null, planRequestedAt: null });
+
+      await expect(codeOf(service.requestPlan(owner, 'PRO', undefined, 'b1'))).resolves.toBe('PLAN_ALREADY_ACTIVE');
+      expect(feedback.createFromBusiness).not.toHaveBeenCalled();
+    });
+
+    it('takes the request back when nobody could be told, so the owner can ask again', async () => {
+      feedback.createFromBusiness.mockRejectedValue(new Error('FEEDBACK_TOO_MANY'));
+
+      await expect(service.requestPlan(owner, 'PRO', undefined, 'b1')).rejects.toThrow('FEEDBACK_TOO_MANY');
+      expect(prisma.brand.update).toHaveBeenLastCalledWith({
+        where: { id: 'b1' },
+        data: { requestedPlan: null, planRequestedAt: null },
+      });
+    });
+  });
+
+  describe('contact phone', () => {
+    it('lets the owner change the number the platform team calls', async () => {
+      await service.update(owner, { contactPhone: '+37377712345' }, 'b1');
+
+      expect(prisma.brand.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { contactPhone: '+37377712345' },
+      });
+    });
   });
 
   describe('which brand', () => {

@@ -1,12 +1,21 @@
-import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Locale, OAuthProvider, Role, type User } from '@prisma/client';
+import { Locale, OAuthProvider, Prisma, Role, type User } from '@prisma/client';
 
+import { adminAppUrl } from '../common/config/admin-app-url';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
 import { KDS_PIN_LEGACY_SENTINEL_PREFIX, KdsPinService } from './services/kds-pin.service';
+import { KitchenDeviceService, unknownDevice } from './services/kitchen-device.service';
 import {
   OAuthIdentityService,
   type OAuthIdentity,
@@ -45,6 +54,7 @@ export class AuthService {
     private readonly kdsPins: KdsPinService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly kitchenDevices: KitchenDeviceService,
   ) {}
 
   /**
@@ -75,18 +85,39 @@ export class AuthService {
   }
 
   /**
-   * KDS PIN login. Issued from the kitchen tablet's lockscreen — short
-   * numeric PIN scoped to one store. Returns the same shape as the password
-   * login so the KDS app can reuse the same JWT/refresh wiring; the device
-   * is tagged `WEB` for now (KDS web runs in a browser).
+   * KDS PIN login, from the kitchen tablet's lockscreen: a short numeric PIN
+   * scoped to one store, accepted only from a tablet bound to that store's
+   * brand (see KitchenDeviceService). Returns the same shape as the password
+   * login so the admin reuses its JWT/refresh wiring, but the session is
+   * narrowed to the store: it opens that store's kitchen board and
+   * stop-list and nothing else (KdsSessionGuard).
+   *
+   * Order matters: the tablet is checked before any PIN is counted, so
+   * nobody outside the brand's tablets can run up a store's failures, and
+   * failures are counted per store *and* tablet (KdsPinService).
    */
-  async loginWithKdsPin(storeId: string, pin: string): Promise<AuthSessionDto> {
+  async loginWithKdsPin(storeId: string, pin: string, deviceToken?: string): Promise<AuthSessionDto> {
     const generic = new UnauthorizedException('Invalid PIN');
     // No secret, no PIN sign-in: 503 KDS_PIN_NOT_CONFIGURED before anything
     // touches the database.
     this.kdsPins.assertConfigured();
+    if (!deviceToken) {
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        error: 'Unauthorized',
+        code: 'KDS_DEVICE_REQUIRED',
+        message: 'This tablet is not bound to a business yet',
+      });
+    }
+    const tablet = await this.kitchenDevices.resolve(deviceToken);
+    if (!tablet) throw unknownDevice();
     if (!this.kdsPins.isValidFormat(pin)) throw generic;
-    await this.kdsPins.assertNotLocked(storeId);
+
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
+    // A store of another brand is not on this tablet's picker; refuse it
+    // without counting a failure against anyone.
+    if (!store || store.brandId !== tablet.brandId) throw generic;
+    await this.kdsPins.assertNotLocked(storeId, tablet.id);
 
     const expected = this.kdsPins.hash(storeId, pin);
     const user = await this.prisma.user.findFirst({
@@ -99,28 +130,29 @@ export class AuthService {
       },
     });
     if (!user || !this.kdsPins.isUsableHash(user.kdsPinHash)) {
-      await this.kdsPins.recordFailure(storeId);
+      await this.kdsPins.recordFailure(storeId, tablet.id);
       throw generic;
     }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
     if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
-    // The session reaches every store of the account, and a PIN typed at one
-    // brand's tablet must open nothing beyond that brand. An account no
-    // longer at this store, or working for several brands, signs in with
-    // email and password instead.
+    // A PIN typed at one brand's tablet must open nothing beyond that brand.
+    // The session is narrowed to this store anyway (KdsSessionGuard); on top
+    // of that an account no longer at this store, or working for several
+    // brands, signs in with email and password instead.
     if (!(await this.staysWithinPinBrand(user.id, storeId))) {
       this.logger.warn(`KDS PIN sign-in refused: user ${user.id} reaches beyond the brand of store ${storeId}`);
       throw generic;
     }
-    await this.kdsPins.clearFailures(storeId);
+    await this.kdsPins.clearFailures(storeId, tablet.id);
+    await this.kitchenDevices.touch(tablet.id);
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
     });
-    const tokens = await this.tokens.issue(user.id, device.id);
-    return { ...tokens, user: this.toAuthUser(user) };
+    const tokens = await this.tokens.issue(user.id, device.id, { kdsStoreId: storeId });
+    return { ...tokens, user: this.toAuthUser(user), kdsStoreId: storeId };
   }
 
   /** True when the user works at `storeId` and every store they work at is of that store's brand. */
@@ -137,8 +169,18 @@ export class AuthService {
    * Self-service password change for an authenticated staff user. Verifies
    * the current password before setting the new one; clears the
    * `passwordMustChange` flag on success.
+   *
+   * A new password is how someone locks out whoever learnt the old one, so
+   * every other session ends: their refresh tokens are revoked, and their
+   * access tokens run out within minutes. `keepRefreshToken` (the session
+   * making the change) stays valid, so that person is not signed out too.
    */
-  async changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changeOwnPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    keepRefreshToken?: string,
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.passwordHash) throw new UnauthorizedException('Account has no password set');
     if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw new UnauthorizedException('Account cannot change password here');
@@ -151,14 +193,34 @@ export class AuthService {
       where: { id: user.id },
       data: { passwordHash: hash, passwordMustChange: false },
     });
+    await this.tokens.revokeAll(user.id, keepRefreshToken);
   }
 
   /**
    * Issues a reset token for the given email. Always returns the same shape
    * even if the email is unknown — clients show a generic "if the address
    * exists we emailed a link" so attackers can't enumerate accounts.
+   *
+   * Except when no email can leave this server at all: without SMTP, or in
+   * production without ADMIN_APP_URL for the link, the request used to
+   * answer 204 and the page said "check your inbox" for a letter that was
+   * never sent. Now it answers 503 `PASSWORD_RESET_UNAVAILABLE` up front —
+   * the same for every address, so it tells nothing about accounts.
    */
   async requestPasswordReset(email: string): Promise<void> {
+    const base = adminAppUrl(this.config);
+    const mailReady = this.mail.isConfigured();
+    if (!mailReady || !base) {
+      const missing = [mailReady ? null : 'SMTP_HOST', base ? null : 'ADMIN_APP_URL'].filter(Boolean).join(', ');
+      this.logger.error(`Password reset requested, but no reset email can be sent: ${missing} not set`);
+      throw new ServiceUnavailableException({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        error: 'Service Unavailable',
+        code: 'PASSWORD_RESET_UNAVAILABLE',
+        message: 'Password reset by email is not available on this server',
+      });
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user || !PASSWORD_LOGIN_ROLES.has(user.role)) {
       this.logger.debug(`Password reset requested for unknown/non-staff email: ${email}`);
@@ -174,11 +236,15 @@ export class AuthService {
       },
     });
 
-    const base = this.config.get<string>('ADMIN_APP_URL') ?? 'http://localhost:4202';
-    const resetUrl = `${base.replace(/\/$/, '')}/reset-password?token=${raw}`;
+    const resetUrl = `${base}/reset-password?token=${raw}`;
     await this.mail.sendPasswordReset(user.email ?? email, resetUrl);
   }
 
+  /**
+   * Sets a new password from an emailed link and signs the account out
+   * everywhere: a reset is what someone does when they think the old
+   * password, or a device, is in the wrong hands.
+   */
   async resetPassword(token: string, newPassword: string): Promise<void> {
     const hash = this.passwords.hashResetToken(token);
     const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
@@ -197,6 +263,7 @@ export class AuthService {
         data: { consumedAt: new Date() },
       }),
     ]);
+    await this.tokens.revokeAll(record.userId);
   }
 
   /**
@@ -313,22 +380,33 @@ export class AuthService {
    * order:
    *
    *   1. We have seen this provider subject before — sign that user in.
-   *   2. The provider vouches for an email we already know — link the
-   *      social account to it, so a customer who started on Telegram and
-   *      later taps "Continue with Google" lands in the same profile
-   *      instead of a duplicate with an empty order history.
+   *   2. The provider vouches for an email that a profile here has *also
+   *      proven* (`emailVerifiedAt`) — link the social account to it, so a
+   *      customer who signed up with Google and later taps "Continue with
+   *      Apple" lands in the same profile instead of a duplicate with an
+   *      empty order history.
    *   3. Otherwise create a fresh customer.
    *
    * Case 2 deliberately refuses staff and admin accounts. Those sign in
    * with email + password on purpose, and letting a social login walk into
    * one would mean anyone who can create a Google account on the brand's
    * domain inherits its privileges.
+   *
+   * Case 2 also refuses an address that was only typed into a profile
+   * (PATCH /auth/me). It used to accept it, so anyone could put a victim's
+   * address on their own profile and wait: the victim's first Google sign-in
+   * then landed in the attacker's profile, which the attacker still controls
+   * through Telegram. The verified sign-in now gets a profile of its own and
+   * takes the address with it — the provider has just proven who owns it,
+   * the other profile never did.
    */
   private async finalizeOAuthSignIn(identity: OAuthIdentity, fallbackName: string | null): Promise<AuthSessionDto> {
     const provider = OAuthProvider[identity.provider];
     const name = identity.name ?? fallbackName;
     const email = identity.email?.toLowerCase() ?? null;
+    const verifiedEmail = email && identity.emailVerified ? email : null;
     const locale = identity.locale?.toLowerCase().startsWith('ru') ? Locale.RU : Locale.EN;
+    const now = new Date();
 
     const user = await this.prisma.$transaction(async (tx) => {
       const link = await tx.oAuthAccount.findUnique({
@@ -338,30 +416,50 @@ export class AuthService {
         include: { user: true },
       });
       if (link) {
+        const data: Prisma.UserUpdateInput = {};
         // Backfill a name only while we have none — never overwrite one the
         // customer edited in their profile.
-        if (name && !link.user.name) {
-          return tx.user.update({ where: { id: link.userId }, data: { name } });
+        if (name && !link.user.name) data.name = name;
+        // The provider vouches for the address on the profile: from now on
+        // it counts as proven.
+        if (verifiedEmail && link.user.email === verifiedEmail && !link.user.emailVerifiedAt) {
+          data.emailVerifiedAt = now;
         }
-        return link.user;
+        return Object.keys(data).length > 0 ? tx.user.update({ where: { id: link.userId }, data }) : link.user;
       }
 
-      if (email && identity.emailVerified) {
-        const byEmail = await tx.user.findUnique({ where: { email } });
+      let storedEmail: string | null = null;
+      if (verifiedEmail) {
+        const byEmail = await tx.user.findUnique({ where: { email: verifiedEmail } });
         if (byEmail) {
           if (byEmail.role !== Role.CUSTOMER) {
             throw new UnauthorizedException('This email belongs to a staff account — sign in with your password');
           }
-          await tx.oAuthAccount.create({
-            data: { userId: byEmail.id, provider, providerUserId: identity.providerUserId },
-          });
-          return name && !byEmail.name ? tx.user.update({ where: { id: byEmail.id }, data: { name } }) : byEmail;
+          if (byEmail.emailVerifiedAt) {
+            await tx.oAuthAccount.create({
+              data: { userId: byEmail.id, provider, providerUserId: identity.providerUserId },
+            });
+            return name && !byEmail.name ? tx.user.update({ where: { id: byEmail.id }, data: { name } }) : byEmail;
+          }
+          // Only typed in over there, never proven: release it.
+          await tx.user.update({ where: { id: byEmail.id }, data: { email: null } });
+          this.logger.warn(
+            `${identity.provider} sign-in proved an email that profile ${byEmail.id} had only typed in; ` +
+              'the address moved to a new profile instead of joining that one',
+          );
         }
+        storedEmail = verifiedEmail;
+      } else if (email) {
+        // An address the provider does not vouch for is kept for receipts
+        // when nobody else has it, and never counts as proven.
+        const taken = await tx.user.findUnique({ where: { email }, select: { id: true } });
+        if (!taken) storedEmail = email;
       }
 
       return tx.user.create({
         data: {
-          email,
+          email: storedEmail,
+          emailVerifiedAt: verifiedEmail ? now : null,
           name,
           locale,
           oauthAccounts: { create: { provider, providerUserId: identity.providerUserId } },

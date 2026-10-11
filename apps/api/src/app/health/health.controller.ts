@@ -1,4 +1,6 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { createHash, timingSafeEqual } from 'node:crypto';
+
+import { Controller, Get, Headers, HttpStatus, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators/public.decorator';
 import { ReadinessService, type ReadinessReport } from './readiness.service';
@@ -12,7 +14,19 @@ interface StatusReply {
   status(code: number): unknown;
 }
 
-interface HealthResponse {
+/** What anyone gets: alive, and which build — no more than the deploy gate needs. */
+interface PublicHealth {
+  status: 'ok';
+  /**
+   * The first {@link SHORT_COMMIT_LENGTH} characters of the commit the
+   * container was built from. deploy/scripts/smoke-test.sh compares it with
+   * the commit it just deployed.
+   */
+  commit: string;
+}
+
+/** With a valid `X-Health-Token` (`HEALTH_TOKEN`): the full build triple and uptime. */
+interface DetailedHealth {
   status: 'ok';
   uptime: number;
   timestamp: string;
@@ -24,21 +38,33 @@ interface HealthResponse {
   builtAt: string;
 }
 
+export const SHORT_COMMIT_LENGTH = 12;
+
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(private readonly readiness: ReadinessService) {}
 
+  /**
+   * Liveness. Public, so it says only that the process answers and a short
+   * commit. The version, build time and uptime used to be public as well — a
+   * free fingerprint of exactly which release (and when it last restarted)
+   * anyone probing the API was looking at; they now need `X-Health-Token`.
+   */
   @Get()
   @Public()
-  @ApiOkResponse({ description: 'Service liveness probe + build metadata' })
-  check(): HealthResponse {
+  @ApiOkResponse({ description: 'Liveness probe + short commit; full build metadata with X-Health-Token' })
+  check(@Headers('x-health-token') token?: string): PublicHealth | DetailedHealth {
+    const commit = process.env['BUILD_COMMIT'] ?? 'unknown';
+    if (!healthTokenMatches(token, process.env['HEALTH_TOKEN'])) {
+      return { status: 'ok', commit: commit.slice(0, SHORT_COMMIT_LENGTH) };
+    }
     return {
       status: 'ok',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       version: process.env['BUILD_VERSION'] ?? 'dev',
-      commit: process.env['BUILD_COMMIT'] ?? 'unknown',
+      commit,
       builtAt: process.env['BUILD_TIME'] ?? 'unknown',
     };
   }
@@ -57,4 +83,13 @@ export class HealthController {
     reply.status(report.ready ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE);
     return report;
   }
+}
+
+/** Constant-time, and never true while no token is configured. */
+function healthTokenMatches(given: string | undefined, expected: string | undefined): boolean {
+  const want = expected?.trim();
+  if (!want || !given) return false;
+  const a = createHash('sha256').update(given).digest();
+  const b = createHash('sha256').update(want).digest();
+  return timingSafeEqual(a, b);
 }

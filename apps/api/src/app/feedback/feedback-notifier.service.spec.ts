@@ -74,6 +74,48 @@ describe('FeedbackNotifier', () => {
     expect(notifications.deliver).not.toHaveBeenCalled();
   });
 
+  it('names the brand and its phone when a business writes to support from the admin', async () => {
+    prisma.feedback.findUnique.mockResolvedValue(
+      feedback({
+        kind: FeedbackKind.QUESTION,
+        source: FeedbackSource.BUSINESS,
+        appVersion: null,
+        contact: null,
+        message: 'Как подключить оплату картой?',
+        user: { name: 'Ион', email: 'owner@romashka.md', phone: null },
+        brand: { name: 'Кофейня Ромашка', contactPhone: '+37369123456', plan: 'BASIC', requestedPlan: null },
+      }),
+    );
+    await notifier.feedbackReceived('fb-1');
+
+    const text = opsChat.send.mock.calls[0][0] as string;
+    expect(text).toContain('Поддержка бизнеса: вопрос — Кофейня Ромашка');
+    expect(text).toContain('Бренд: Кофейня Ромашка · тариф BASIC');
+    expect(text).toContain('Телефон бренда: +37369123456');
+    expect(text).toContain('Как подключить оплату картой?');
+    expect(text).toContain('https://admin.takeaway.md/feedback');
+  });
+
+  it('announces a plan-change request with the plan asked for and a link to the brands', async () => {
+    prisma.feedback.findUnique.mockResolvedValue(
+      feedback({
+        kind: FeedbackKind.PLAN_CHANGE,
+        source: FeedbackSource.BUSINESS,
+        appVersion: null,
+        contact: null,
+        message: '',
+        brand: { name: 'Кофейня Ромашка', contactPhone: null, plan: 'BASIC', requestedPlan: 'PRO' },
+      }),
+    );
+    await notifier.feedbackReceived('fb-1');
+
+    const text = opsChat.send.mock.calls[0][0] as string;
+    expect(text).toContain('Заявка на смену тарифа: Кофейня Ромашка');
+    expect(text).toContain('Хочет перейти на: PRO');
+    expect(text).toContain('Телефон бренда: —');
+    expect(text).toContain('https://admin.takeaway.md/brands');
+  });
+
   it('speaks English when PLATFORM_LOCALE says so and leaves out a missing contact', async () => {
     env['PLATFORM_LOCALE'] = 'en';
     prisma.feedback.findUnique.mockResolvedValue(

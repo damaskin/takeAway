@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -18,6 +19,10 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { GiftCardDto, GiftCardValidationDto, IssueGiftCardDto, ValidateGiftCardDto } from './dto/issue-gift-card.dto';
 import { GiftCardsService } from './gift-cards.service';
+
+// A gift card code is money to whoever types it in. Ten checks a minute per
+// account is plenty for a customer and useless for guessing. Dev gets 10x.
+const VALIDATE_PER_MINUTE = 10 * (process.env['NODE_ENV'] !== 'production' ? 10 : 1);
 
 @ApiTags('gift-cards')
 @ApiBearerAuth()
@@ -36,6 +41,7 @@ export class GiftCardsController {
    * before the user clicks Pay.
    */
   @Post('gift-cards/validate')
+  @Throttle({ default: { limit: VALIDATE_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: GiftCardValidationDto })
   async validate(
     @CurrentUser() user: AuthenticatedUser,

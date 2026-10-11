@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 
 @Component({
   selector: 'app-forgot-password',
@@ -95,9 +96,12 @@ export class ForgotPasswordPage {
   }
 
   private extractMessage(err: unknown): string {
-    const maybe = err as { error?: { message?: unknown }; message?: unknown };
-    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-    if (typeof maybe.message === 'string') return maybe.message;
-    return this.translate.instant('common.genericError');
+    // The server cannot send email at all (no SMTP, or no ADMIN_APP_URL for
+    // the link): say so instead of promising a letter.
+    if (apiErrorCode(err) === 'PASSWORD_RESET_UNAVAILABLE') return this.translate.instant('admin.forgot.unavailable');
+    return apiErrorMessage(err, this.translate, {
+      network: 'common.networkError',
+      statuses: { 429: 'admin.forgot.tooMany' },
+    });
   }
 }

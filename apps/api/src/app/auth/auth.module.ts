@@ -3,13 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
+import { KitchenDeviceController } from './kitchen-device.controller';
+import { KdsSessionGuard } from './guards/kds-session.guard';
+import { KitchenDeviceService } from './services/kitchen-device.service';
 import { AuthService } from './auth.service';
+import { AppThrottlerGuard } from './guards/app-throttler.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AccountDeletionService } from './services/account-deletion.service';
@@ -22,6 +26,7 @@ import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
 import { UserStoreScopeService } from './services/user-store-scope.service';
+import { jwtAccessSecret } from './jwt-secrets';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -34,11 +39,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access',
+        secret: jwtAccessSecret(config),
       }),
     }),
-    // Global throttler: per-IP coarse defense across the whole API. Dev gets a
-    // much more generous default so iterating on the login flow doesn't keep
+    // Global throttler: coarse defense across the whole API, per account when
+    // signed in and per client address otherwise (AppThrottlerGuard). Dev gets
+    // a much more generous default so iterating on the login flow doesn't keep
     // hitting 429 — production keeps the conservative 100/min.
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -50,13 +56,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, KitchenDeviceController],
   providers: [
     AuthService,
     AccountDeletionService,
     AppleTokenRevocationService,
     PasswordService,
     KdsPinService,
+    KitchenDeviceService,
     OAuthIdentityService,
     SignInMethodsService,
     TokensService,
@@ -65,9 +72,21 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     BrandScopeService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Right after authentication: a kitchen PIN session stops here unless
+    // the route is marked for the kitchen (and is about its own store).
+    { provide: APP_GUARD, useClass: KdsSessionGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // After the JWT guard on purpose: it keys signed-in requests on the user.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
-  exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, KdsPinService, TokensService],
+  exports: [
+    AuthService,
+    UserStoreScopeService,
+    BrandScopeService,
+    PasswordService,
+    KdsPinService,
+    KitchenDeviceService,
+    TokensService,
+  ],
 })
 export class AuthModule {}

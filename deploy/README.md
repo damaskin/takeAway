@@ -207,8 +207,13 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
   ```bash
   docker compose -f docker-compose.prod.yml exec postgres psql -U takeaway
   ```
-- **Health:** `https://api.takeaway.md/api/health` reports the build version;
+- **Health:** `https://api.takeaway.md/api/health` reports a short commit
+  (version, build time and uptime with `X-Health-Token: $HEALTH_TOKEN`);
   `/api/health/ready` is the deploy gate and checks Postgres and Redis.
+- **Rate limits and security headers** live in our nginx (`nginx.conf`,
+  `snippets/api-proxy.conf`, `snippets/security-headers.conf`); what they are,
+  why, and the Cloudflare/host steps still open are in
+  [docs/security-hardening.md](../docs/security-hardening.md).
 - **Map tiles:** `https://takeaway.md/tiles/{z}/{x}/{y}.png` is our cache of
   OpenStreetMap (nginx `proxy_cache` in the `tile_cache` volume, Cloudflare in
   front). `X-Cache-Status` shows HIT/MISS; size, purge and the OSM policy are

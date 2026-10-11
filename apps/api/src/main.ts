@@ -8,11 +8,20 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app/app.module';
+import { corsOriginCheck } from './app/common/http/cors-origins';
+import { resolveTrustProxy } from './app/common/http/trust-proxy';
 import { SentryExceptionFilter } from './app/common/observability/sentry-exception.filter';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }), {
+  // Exactly the proxy hops we run (our nginx), not every address in
+  // X-Forwarded-For — see common/http/trust-proxy.ts.
+  const adapter = new FastifyAdapter({ trustProxy: resolveTrustProxy(process.env['TRUST_PROXY']) });
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
     bufferLogs: true,
+    // Keeps the exact bytes of JSON bodies on `request.rawBody`. The Stripe
+    // webhook signature is computed over those bytes; re-serialising the
+    // parsed body never matches, so verification could not succeed.
+    rawBody: true,
   });
 
   app.useLogger(app.get(Logger));
@@ -63,24 +72,10 @@ async function bootstrap(): Promise<void> {
     customTypes: /^(text|application)\/.*/,
   });
   // Reflecting any origin with credentials means a page on any domain can
-  // call this API in a signed-in browser's name. Prod runs on a known set
-  // of hosts, so name them; an unset list stays permissive for local
-  // development, where the SPAs sit on four different ports.
-  const allowedOrigins = (process.env['CORS_ALLOWED_ORIGINS'] ?? '')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-  if (allowedOrigins.length > 0) {
-    app.enableCors({ origin: allowedOrigins, credentials: true });
-  } else {
-    if (process.env['NODE_ENV'] === 'production') {
-      // Loud, because this is the one place a misconfiguration is both
-      // invisible and exploitable.
-      // eslint-disable-next-line no-console
-      console.warn('CORS_ALLOWED_ORIGINS is not set — the API will reflect any origin. Set it before going live.');
-    }
-    app.enableCors({ origin: true, credentials: true });
-  }
+  // call this API in a signed-in browser's name. CORS_ALLOWED_ORIGINS names
+  // the sites; unset, it is the production sites (plus localhost outside
+  // production) — never "whoever asks". See common/http/cors-origins.ts.
+  app.enableCors({ origin: corsOriginCheck(), credentials: true });
   const fastify = app.getHttpAdapter().getInstance() as unknown as {
     addHook: (
       name: 'onRequest' | 'onSend',

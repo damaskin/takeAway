@@ -9,6 +9,7 @@ import { of, throwError } from 'rxjs';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type BrandDto } from '../../core/catalog/admin-catalog.service';
 import { GeocodingApi } from '../../core/geocoding/geocoding.api';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { StoreCreatePage } from './store-create.page';
 
 /** Leaflet needs a real layout; the page only needs the map's inputs and outputs. */
@@ -39,6 +40,8 @@ describe('StoreCreatePage', () => {
         provideTranslateService({ fallbackLang: 'ru' }),
         { provide: AdminCatalogApi, useValue: { createStore, uploadStoreImage } },
         { provide: GeocodingApi, useValue: { locate: () => of(null), reverse: () => of(null) } },
+        // Not opened from «Запуск бренда»: a new store opens on its details as always.
+        { provide: OnboardingFlowService, useValue: { active: () => false } },
         {
           provide: ActiveBrandService,
           useValue: { active: signal(BRAND), loadError: signal(null), refresh: jest.fn() },

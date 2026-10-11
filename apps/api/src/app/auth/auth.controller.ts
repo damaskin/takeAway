@@ -30,6 +30,7 @@ import { AccountDeletionService } from './services/account-deletion.service';
 import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { KdsSessionAllowed } from './decorators/kds-session.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
@@ -90,12 +91,14 @@ export class AuthController {
   }
 
   /**
-   * KDS lockscreen PIN login. Rate-limited per-IP — production allows
-   * 8 attempts per minute, which is plenty for a real barista mistyping
-   * once or twice and a brute-forcer can't enumerate 10⁴–10⁶ PINs through
-   * it before the per-IP limiter trips. On top of that, a store's PIN login
-   * pauses for 10 minutes after 10 wrong PINs (429 KDS_PIN_LOCKED), and
-   * without KDS_PIN_SECRET it answers 503 KDS_PIN_NOT_CONFIGURED.
+   * KDS lockscreen PIN login, from a bound kitchen tablet only (401
+   * KDS_DEVICE_REQUIRED / KDS_DEVICE_UNKNOWN otherwise). Rate-limited per-IP
+   * — production allows 8 attempts per minute. On top of that each tablet
+   * gets 5 wrong PINs at a store, then pauses of 1, 2, 4 … 60 minutes (429
+   * KDS_PIN_LOCKED with retryAfterSeconds), with a store-wide ceiling far
+   * above honest use. Without KDS_PIN_SECRET it answers 503
+   * KDS_PIN_NOT_CONFIGURED. The session it opens works only that store's
+   * kitchen board and stop-list.
    */
   @Public()
   @Post('kds/pin')
@@ -103,7 +106,7 @@ export class AuthController {
   @Throttle({ default: { limit: limits.kdsPin, ttl: 60_000 } })
   @ApiOkResponse({ type: AuthSessionDto })
   kdsPinLogin(@Body() dto: KdsPinLoginDto): Promise<AuthSessionDto> {
-    return this.auth.loginWithKdsPin(dto.storeId, dto.pin);
+    return this.auth.loginWithKdsPin(dto.storeId, dto.pin, dto.deviceToken);
   }
 
   @Public()
@@ -127,14 +130,16 @@ export class AuthController {
   /**
    * Self-service password change. Used by the admin / KDS 'change your
    * temp password' flow after an invited staff signs in for the first
-   * time. Requires the current password and replaces the stored hash.
+   * time. Requires the current password and replaces the stored hash, then
+   * signs out every other session of the account (the one making the change
+   * stays when it sends its `refreshToken`).
    */
   @Post('password/change')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiNoContentResponse()
   async passwordChangeSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: PasswordChangeSelfDto): Promise<void> {
-    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword);
+    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword, dto.refreshToken);
   }
 
   @Public()
@@ -257,6 +262,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @KdsSessionAllowed()
   @ApiBearerAuth()
   @ApiOkResponse({ type: AuthUserDto })
   async me(@CurrentUser() user: AuthenticatedUser): Promise<AuthUserDto> {
@@ -383,7 +389,14 @@ export class AuthController {
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data['name'] = dto.name;
     if (dto.phone !== undefined) data['phone'] = dto.phone;
-    if (dto.email !== undefined) data['email'] = dto.email.toLowerCase();
+    if (dto.email !== undefined) {
+      const email = dto.email.toLowerCase();
+      data['email'] = email;
+      // A typed-in address is a claim, not a proof: it must not let a Google
+      // or Apple sign-in join this profile (see AuthService.finalizeOAuthSignIn).
+      const current = await this.prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
+      if (current?.email !== email) data['emailVerifiedAt'] = null;
+    }
     if (dto.dateOfBirth !== undefined) data['dateOfBirth'] = new Date(dto.dateOfBirth);
     if (dto.locale !== undefined) data['locale'] = dto.locale;
     if (dto.currency !== undefined) data['currency'] = dto.currency;

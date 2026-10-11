@@ -7,12 +7,11 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { type StaffMember, type StaffRole, StaffService } from '../../core/staff/staff.service';
+import { newPinProblem } from '../../core/kitchen/kitchen-pin';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { storeErrorMessage } from '../stores/store-errors';
 import { staffErrorMessage } from './staff-errors';
 import { StaffStorePickerComponent } from './staff-store-picker.component';
-
-const PIN_PATTERN = /^[0-9]{4,6}$/;
 
 /**
  * One employee: their role, the stores they work at, and the kitchen PIN.
@@ -134,7 +133,14 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
                   </div>
                 </form>
                 @if (pin() && !pinValid()) {
-                  <p class="note">{{ 'admin.stores.errors.pinFormat' | translate }}</p>
+                  <p class="note">
+                    {{
+                      (pinProblem() === 'TOO_SIMPLE'
+                        ? 'admin.stores.errors.pinTooSimple'
+                        : 'admin.stores.errors.pinFormat'
+                      ) | translate
+                    }}
+                  </p>
                 }
                 @if (pinSaved()) {
                   <p class="ok">{{ 'admin.stores.kitchen.saved' | translate }}</p>
@@ -312,7 +318,9 @@ export class StaffMemberPage {
 
   readonly canSave = computed(() => !!this.member()?.editable && this.dirty());
 
-  readonly pinValid = computed(() => PIN_PATTERN.test(this.pin()));
+  /** A new PIN is 6 digits and not a first guess; PINs set earlier with 4–5 digits keep working. */
+  readonly pinProblem = computed(() => newPinProblem(this.pin()));
+  readonly pinValid = computed(() => this.pinProblem() === null);
 
   /** A new PIN replaces the current one, whichever store that one opens. */
   readonly pinReplaces = computed(() => !!this.member()?.hasKdsPin);

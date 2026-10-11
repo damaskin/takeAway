@@ -172,15 +172,17 @@ takeaway/
 
 ### 2.2. Backend (NestJS) — фактически
 
-- **NestJS 11** на **FastifyAdapter** (`@nestjs/platform-fastify`, `trustProxy: true`)
+- **NestJS 11** на **FastifyAdapter** (`@nestjs/platform-fastify`, `trustProxy` = один хоп — наш nginx, `TRUST_PROXY`; nginx ставит `X-Forwarded-For` из `CF-Connecting-IP`, см. `docs/security-hardening.md`)
 - **Database**: PostgreSQL 16 + **Prisma 6.19** (16 миграций, см. 5.x)
-- **Cache / session / rate limit**: Redis 7 через **ioredis 5**, `@nestjs/throttler`
+- **Cache / session / rate limit**: Redis 7 через **ioredis 5**, `@nestjs/throttler` (ключ — аккаунт для вошедших, адрес клиента для анонимов; поверх — лимиты nginx `limit_req`/`limit_conn`)
 - **Queue**: **BullMQ 5.74** (`@nestjs/bullmq`) для push/email/Telegram broadcast и POS sync
 - **Realtime**: `@nestjs/websockets` + Socket.io 4.8 (`@nestjs/platform-socket.io`)
 - **Auth**:
   - JWT через `@nestjs/jwt` + `passport-jwt` + `@nestjs/passport`
   - **Password (bcrypt 6)** для staff/RIDER + **Telegram initData** для customer + OAuth (Google/Apple через `OAuthAccount`)
-  - Refresh tokens, force-rotate при инвайте (`passwordMustChange`)
+  - Refresh tokens, force-rotate при инвайте (`passwordMustChange`); сброс пароля отзывает все сессии, смена — все, кроме текущей
+  - JWT-секреты без фолбэка в production: без `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` API не стартует
+  - Telegram initData старше `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS` (сутки) не принимается
   - **OTP / SMS** — не подключено (Twilio/MessageBird из ТЗ резерв на будущее)
 - **Validation**: `class-validator` + `class-transformer` + DTO
 - **OpenAPI**: `@nestjs/swagger` 11 — источник для `libs/api-client`
@@ -405,13 +407,14 @@ takeaway/
 ### 3.9. Admin panel
 
 - **Роли** (фактический enum): `SUPER_ADMIN`, `BRAND_ADMIN`, `STORE_MANAGER`, `STAFF`, `RIDER`, `CUSTOMER`. `ANALYST` из исходного ТЗ — нет, аналитика доступна `BRAND_ADMIN`/`SUPER_ADMIN`.
-- **Brand registration + moderation**: бизнес регистрируется в админке (`/signup` → `POST /business/register`) с валютой бренда (MDL по умолчанию) и языком писем; телефон — E.164, конфликты возвращаются кодами (`EMAIL_TAKEN`, `EMAIL_CUSTOMER_ACCOUNT`, `PHONE_TAKEN`). Бренд создаётся `PENDING`; владелец попадает на дашборд с чек-листом «Запуск бренда» (`GET /my-brand/onboarding`: логотип, точка с адресом и часами, категория и товар с фото, оплата, модерация) и видит баннер статуса на всех страницах. SUPER_ADMIN одобряет/отклоняет в модальном окне; причина отказа обязательна (и на сервере). Отклонённый бренд после правок отправляется повторно (`POST /my-brand/resubmit`). Письма владельцу («заявка получена», «одобрен», «нужны правки» — на языке бренда) и платформе (новая заявка, повторная подача — email всем SUPER_ADMIN и ops-чат в Telegram); сбой отправки не ломает запрос. Контакт поддержки — `SUPPORT_EMAIL` / `SUPPORT_TELEGRAM`.
+- **Brand registration + moderation**: бизнес регистрируется в админке (`/signup` → `POST /business/register`) с валютой бренда (MDL по умолчанию) и языком писем; **телефон обязателен** (команда звонит тем, кто зарегистрировался и не запустился) и хранится как контактный телефон бренда `Brand.contactPhone` в E.164. Нормализация — `normalizePhone` в `libs/utils` (одна для API и админки): разделители убираются, `00` → `+`; без кода страны читаются только домашние привычки, различимые по длине — `0` + 8 цифр → Молдова/ПМР (+373), `0` + 9 цифр → Украина (+380), `8` + 10 цифр → Россия (+7), и код страны без плюса; для +373 / +380 / +7 проверяется длина номера. Форма показывает, как номер будет сохранён. Если номер уже есть у другого аккаунта (часто — у самого владельца как покупателя), регистрация не отказывает: номер остаётся у бренда, а на аккаунт владельца не ставится. Конфликты email возвращаются кодами (`EMAIL_TAKEN`, `EMAIL_CUSTOMER_ACCOUNT`). Владелец меняет телефон в настройках бренда (`PATCH /my-brand { contactPhone }`, очистить нельзя). Бренд создаётся `PENDING`; владелец попадает на дашборд с чек-листом «Запуск бренда» (`GET /my-brand/onboarding`: логотип, точка с адресом и часами, категория и товар с фото, оплата, модерация) и видит баннер статуса на всех страницах. Шаг, открытый из чек-листа, возвращает владельца на дашборд после сохранения, если шаг стал выполнен (короткая плашка «Сохранено» и подсветка следующего шага; после последнего — состояние «Всё готово» с переходом к панели); если шаг ещё не выполнен, страница остаётся и пишет, чего не хватает. Прямые заходы на те же страницы работают как раньше; пока запуск не завершён, на «Настройках», «Точках» и «Меню» есть ссылка «Вернуться к запуску бренда» (`OnboardingFlowService` в админке). SUPER_ADMIN одобряет/отклоняет в модальном окне; причина отказа обязательна (и на сервере). Отклонённый бренд после правок отправляется повторно (`POST /my-brand/resubmit`). Письма владельцу («заявка получена», «одобрен», «нужны правки» — на языке бренда) и платформе (новая заявка, повторная подача — email всем SUPER_ADMIN и ops-чат в Telegram); сбой отправки не ломает запрос. Контакт поддержки — `SUPPORT_EMAIL` / `SUPPORT_TELEGRAM`.
 - **Menu management**: CRUD категорий / продуктов / вариаций / модификаторов; цена вводится в валюте бренда, время приготовления — в минутах; до 6 фото на товар (первое — главное, JPEG/PNG/WebP/AVIF до 5 МБ, тип определяется по содержимому, SVG не принимается); слаги необязательны и генерируются из названия с транслитерацией кириллицы; порядок категорий и товаров; удаление непустой категории — 409 `CATEGORY_NOT_EMPTY` или перенос товаров (`?moveProductsTo=`); удаление товара или опции чистит корзины в транзакции; «нет в наличии» по точке — до отмены или до конца дня в часовом поясе точки; описание, КБЖУ, кофеин, диетические метки, аллергены.
 - **Store management**: новая точка создаётся `CLOSED` (черновик) с чек-листом готовности `readiness` (координаты, часовой пояс IANA, часы работы, видимая позиция в меню, одобрение бренда — информативно); открыть точку можно только когда обязательные пункты выполнены (409 `STORE_NOT_READY` со списком). Часовой пояс проверяется на сервере; если он не передан, API выводит его из города / страны / координат (`suggestStoreTimeZone` в `libs/utils`: Молдова и ПМР → `Europe/Chisinau`, Украина → `Europe/Kyiv`, Россия → `Europe/Moscow`, Румыния → `Europe/Bucharest` и др.; рамка координат Молдовы), иначе берёт преобладающий пояс других точек бренда, иначе `Europe/Chisinau` — никогда не UTC (так же для точек из POS). Форма создания подставляет пояс по адресу, пока владелец не выбрал его сам; открытая точка на UTC подсвечивается красным баннером на карточке и на дашборде; валюта берётся из бренда и блокируется после первого заказа (409 `STORE_CURRENCY_LOCKED`); точка с заказами не удаляется, а закрывается (409 `STORE_HAS_ORDERS`). Редактор: основное, часы работы (расписание или круглосуточно, выходные по дням, окна через полночь), касса и кухня (налог, способы получения, место выдачи, базовое время, параллельность, ёмкость слота, минимальный заказ), фото (обложка и до 8 в галерее), доступ на кухню (PIN сотрудников); **per-store delivery fee overrides**.
-- **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate.
+- **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate (правило 8–128 символов показано у поля, кнопка «Сгенерировать», под выбором роли — описание Менеджер / Кухня / Редактор меню, по умолчанию Кухня) и письмо-приглашение с одноразовой ссылкой задать свой пароль (72 ч); без SMTP форма показывает, что передать лично. На странице — «Планшеты кухни»: привязанные планшеты, одноразовая ссылка для нового, отвязка. «Забыл пароль» и ссылки в письмах ведут на `ADMIN_APP_URL`; без SMTP или (в проде) без `ADMIN_APP_URL` восстановление отвечает 503 `PASSWORD_RESET_UNAVAILABLE`, а не обещает письмо.
 - **Меню по точкам и стоп-лист**: в форме товара — «Продаётся в точках» (галочки, по умолчанию все; у бренда с одной точкой блок скрыт и точка назначается сама), в таблице меню — чипы точек и «—» в колонке наличия для точки, где товар не продаётся. Страница «Стоп-лист» (`/stop-list`, роли SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER / STAFF, ссылка в меню и в шапке «Кухни»): выбор из своих точек, блюда и напитки точки и добавки, которыми пользуются её товары, переключатель «В наличии / В стопе» (до отмены или до конца дня), поиск и фильтр «только в стопе». STAFF только переключает — создавать, менять и удалять товары и добавки он не может (API-роли).
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
-- **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: промокоды (`/promotions/promo`), `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список неактивных, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет. Смена тарифа или ставки пишется в историю ставок `BrandCommissionRate` (с этого момента), `Brand.commissionBps` — ставка, действующая сейчас.
+- **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: промокоды (`/promotions/promo`), `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список неактивных, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет. Смена тарифа или ставки пишется в историю ставок `BrandCommissionRate` (с этого момента), `Brand.commissionBps` — ставка, действующая сейчас. Владелец на BASIC просит PRO кнопкой «Перейти на PRO» в карточке тарифа (`POST /my-brand/plan-request { plan, note? }`): на бренде запоминаются `requestedPlan` + `planRequestedAt`, в «Обратную связь» пишется сообщение `PLAN_CHANGE` от бизнеса (тот же ops-алерт в Telegram, что и у отзывов клиентов), повторная заявка на тот же тариф ничего не шлёт, тариф, который уже стоит, — 409 `PLAN_ALREADY_ACTIVE`. SUPER_ADMIN видит заявку на карточке бренда и во вкладке «Заявки на тариф» (бейдж «Бренды» = заявки на модерацию + заявки на тариф); смена тарифа или «Закрыть заявку» (`DELETE /admin/brands/:id/plan-request`) её снимают.
+- **Поддержка из админки бизнеса**: «Написать в поддержку» внизу меню (роли бренда: BRAND_ADMIN, STORE_MANAGER, MENU_EDITOR, STAFF) и в карточке тарифа — тема (вопрос / не работает / предложение) и сообщение (`POST /admin/support?brandId=`). Ложится в «Обратную связь» с источником `BUSINESS` и брендом, алерт — как у отзывов клиентов, с названием, тарифом и телефоном бренда; лимит — тот же (5 в час на аккаунт).
 - **Расчёты с брендами** (`/settlements`; SUPER_ADMIN — «Расчёты с брендами», любой бренд; BRAND_ADMIN — «Расчёты», только свои, без правок): бренд, валюта (не суммируются), период в поясе точек бренда (прошлая/эта неделя, прошлый/этот месяц, свои даты). Заказ учитывается, если по нему захвачена оплата картой (даже возвращённая) или точка его приняла; день и ставка — по моменту принятия (если не принят — по первой захваченной оплате). Карточки: «Всего оплачено картами» (сумма захваченных `Payment.amountCents` без чаевых), «Комиссия takeAway» (ставка × (оплачено − возвраты), округление до копейки вверх от половины по каждому заказу), «К выплате бренду» (база − комиссия), «Уже выплачено», «Остаток» (на начало + к выплате − выплачено; возврат после выплаты уменьшает следующую). Отдельно — заказы на 0 (всё покрыли промокод/баллы/подарочная карта) и принятые без оплаты через платформу. Таблица по дням (продажи, промокоды, баллы, подарочные карты, доставка, оплачено, возвраты, база, комиссия, к выплате) и CSV. SUPER_ADMIN: «Зафиксировать выплату» (PENDING с дня после прошлой выплаты по конец выбранного завершённого периода, сумма — весь долг на конец периода), «Отметить выплаченной» с номером платёжки, удаление последней невыплаченной; индивидуальная ставка с даты (или возврат к ставке тарифа), история ставок с интервалами действия; ставка с будущей датой включается кроном `commission-rate-sync` (раз в час). Определения, пример и решения для владельца — `docs/settlements.md`.
 - **«Акции» (`/promotions`)**: один пункт меню (`NavKey` `promotions` = объединение ролей двух вкладок) с вкладками «Промокоды» (`/promotions/promo`, PRO, апселл внутри вкладки) и «Подарочные карты» (`/promotions/gift-cards`, все тарифы); у каждой вкладки свой `navKey` и guard, как раньше. Старые `/promo`, `/promo/new`, `/gift-cards`, `/gift-cards/new` редиректят на новые адреса.
 - **Промокоды**: в строке — статус и кнопки следующего шага (запустить / пауза / возобновить / завершить с подтверждением); черновик, а также запланированный или на паузе без единого использования — правятся целиком (`/promotions/promo/:id`, `PATCH /admin/promo/:id`, иначе 409 `PROMO_NOT_EDITABLE`); переходы вне схемы — 409 `PROMO_STATUS_NOT_ALLOWED`, занятый код — 409 `PROMO_CODE_TAKEN`, запуск после `endsAt` — 400 `PROMO_ENDED`. Форма задаёт лимиты на клиента и всего и «Кому доступен: всем / только неактивным (дни, точка)».
@@ -420,11 +423,14 @@ takeaway/
   - **Аудитории**: `ALL` — все клиенты (`role = CUSTOMER`, не заблокированы), у которых есть связь с брендом: заказ в его точке в любом статусе, корзина в его точке или купленная подарочная карта бренда (бот и приложение у платформы общие, поэтому вход через них с брендом не связывает); `HAS_ORDERED` — хотя бы один оплаченный заказ; `INACTIVE_30D` — платили, но не за последние 30 дней; `INACTIVE` — сегмент неактивных клиентов (`Campaign.inactiveDays` 3/7/14, `segmentStoreId` — только заказы этой точки, иначе весь бренд), состав считается в момент предпросмотра и отправки — те же люди, что «Клиенты → Неактивные». Вкладка «Возврат» и «Клиенты» открывают конструктор с этой аудиторией и готовым текстом (`?audience=INACTIVE&inactiveDays=&storeId=&code=`), а не списком id.
   - **Предпросмотр** до отправки (`GET /admin/campaigns/preview`): сколько человек в аудитории, сколько достижимо и через что (приложение / браузер / Telegram / email), сколько без канала и сколько отписались, и какие транспорты настроены на сервере.
   - **Тест себе** (`POST /admin/campaigns/test`): текст уходит только текущему админу по тем же правилам, без учёта его отписки.
-  - **Отправка в фоне**: `POST /admin/campaigns/:id/send` сразу переводит рассылку в `SENDING` и отвечает; рассылка идёт пачками по 50, по каждому получателю пишется `CampaignDelivery` (SENT / FAILED / NO_CHANNEL / OPTED_OUT), счётчики обновляются после каждой пачки. Итог — `SENT`, если доставлено хоть одному, иначе `FAILED` с `lastError`. Падение рассылки → `FAILED` с текстом ошибки; `SENDING` без движения дольше 10 минут крон переводит в `FAILED`.
-  - **Повтор**: можно отправить снова `FAILED`, зависшую `SENDING` и `SENT` с ошибками; получатели, которым уже доставлено, пропускаются. Пустая аудитория — 400 `CAMPAIGN_NO_RECIPIENTS`, повторный запуск во время отправки — 409 `CAMPAIGN_IN_PROGRESS`.
+  - **Модерация**: каждая рассылка бизнеса до отправки проходит проверку SUPER_ADMIN (и рассылка неактивным из «Возврата» / «Клиентов» — её конструктор тоже заканчивается «Отправить на модерацию»; в очереди охват `INACTIVE` считается по сегменту). `DRAFT` → «Отправить на модерацию» (`POST /admin/campaigns/:id/submit`) → `PENDING_REVIEW` (+ алерт в ops-чат `OPS_ALERT_TELEGRAM_CHAT_ID`, если он настроен) → `APPROVED` → отправка сразу или в `scheduledAt` → `SENDING` → `SENT` / `FAILED`; либо `REJECTED` с причиной `reviewNote`, которую бизнес видит в списке и в форме, правит (`PATCH /admin/campaigns/:id`) и отправляет снова. Править можно только `DRAFT` и `REJECTED` (409 `CAMPAIGN_NOT_EDITABLE`), удалить — всё, что ещё не начало уходить (`DRAFT` / `PENDING_REVIEW` / `REJECTED` / `APPROVED`). На модерацию не принимается пустая аудитория (400 `CAMPAIGN_NO_RECIPIENTS`) и время отправки в прошлом (400 `CAMPAIGN_SCHEDULED_IN_PAST`). Рассылка, отправленная SUPER_ADMIN, одобряется сразу при submit. Пока рассылка на модерации, бизнес может «Отозвать в черновик» (`POST /admin/campaigns/:id/withdraw`, `PENDING_REVIEW` → `DRAFT`, иначе 409 `CAMPAIGN_NOT_PENDING`); удаление ожидающей или одобренной рассылки админка подтверждает диалогом. О решении модератора владелец бренда узнаёт от бота в Telegram (если привязал) и по email (если настроен SMTP) — на языке бренда, с причиной отказа и ссылкой на рассылку; сбой доставки решение не отменяет. Очередь — `/campaign-moderation` в кабинете платформы (бейдж в меню): текст как у покупателя, канал, аудитория и охват сейчас, время отправки; «Одобрить» / «Отклонить» (причина обязательна); вкладки одобренных и отклонённых. Отправку без одобрения исключают три места: `isSendable` (повтор только при `approvedAt`), захват строки в `SENDING` (условие `approvedAt IS NOT NULL`) и сам фоновый прогон (`run` без `approvedAt` ничего не отправляет). Крон раз в минуту запускает одобренные рассылки, у которых наступило `scheduledAt` (и одобренные, чей старт потерялся при рестарте).
+  - **Отправка в фоне**: одобрение (или «Повторить») сразу переводит рассылку в `SENDING`; рассылка идёт пачками по 50, по каждому получателю пишется `CampaignDelivery` (SENT / FAILED / NO_CHANNEL / OPTED_OUT), счётчики обновляются после каждой пачки. Итог — `SENT`, если доставлено хоть одному, иначе `FAILED` с `lastError`. Падение рассылки → `FAILED` с текстом ошибки; `SENDING` без движения дольше 10 минут крон переводит в `FAILED`. Аудитория, опустевшая к моменту старта, — `FAILED` с причиной.
+  - **Повтор** (`POST /admin/campaigns/:id/send`): только одобренная рассылка — `FAILED`, зависшая `SENDING` и `SENT` с ошибками; получатели, которым уже доставлено, пропускаются. Пустая аудитория — 400 `CAMPAIGN_NO_RECIPIENTS`, повторный запуск во время отправки — 409 `CAMPAIGN_IN_PROGRESS`, неодобренная — 409 `CAMPAIGN_NOT_SENDABLE`.
+  - **Миграция `20261010110000_campaign_moderation`**: статус `SCHEDULED` удалён; существовавшие `SCHEDULED`, `FAILED` и `SENDING` стали `PENDING_REVIEW` (до аудитории они не дошли или дошли не целиком, а повтор теперь требует одобрения), `DRAFT` остались черновиками, `SENT` остались историей без одобрения (повторить их ошибки нельзя).
 - **Analytics**: summary, order-statuses, revenue, top-products, cohort, stores, staff, churn, winback и `/admin/customers`. Период — `from`/`to` (календарные дни в часовом поясе точки или преобладающем поясе бренда; `days` по-прежнему принимается), сравнение — с таким же отрезком до него; `storeId` сужает до точки в скоупе. Цифры бренда читаются из `Order` между локальными полуночами (индекс `Order(storeId, createdAt)`), выручка — без `CANCELLED` и `EXPIRED`. `mv_orders_daily` (UTC-дни, refresh каждые 5 минут через `AnalyticsRefreshService`) питает только экран «Весь проект». Неактивные (отток): клиент неактивен, когда он сделал минимум 3 засчитанных заказа (`INACTIVE_MIN_ORDERS`) и после последнего прошло 3/7/14 дней без нового; «стал неактивным в периоде» — этот порог пришёлся на период и клиент не вернулся к его концу; упущенная выручка — сумма их средних чеков. Возврат: клиенты, неактивные к началу периода (тот же порог 3 заказов), заказавшие в нём. Сегменты клиентов (`customers/customer-segment.ts`, одно правило для списка «Клиенты», аудитории `INACTIVE` и промокодов): постоянные — 3+ заказа; неактивные — 3+ заказа и ни одного за N дней (сейчас, без периода). Любимое клиента — позиции из 5+ штук по засчитанным заказам (по id товара из снимка позиции), напиток или блюдо — по кофеину, опциям напитка (температура, молоко, стакан) и названию категории/товара, иначе без типа. Удалённые аккаунты (`User.blockedAt`) в оттоке и списке клиентов не участвуют, их заказы остаются в выручке.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
-- **Обратная связь** (`/feedback`, только SUPER_ADMIN, пункт меню с бейджем непрочитанных): отзывы, предложения и проблемы, которые клиенты пишут из профиля в приложении, на сайте и в Mini App. Новые сверху; вкладки «Входящие» (всё, кроме архива) / «Непрочитанные» / «Архив», фильтр по типу; у карточки — тип, текст, клиент (имя, email, телефон, Telegram ID; «аккаунт удалён»), оставленный контакт, платформа и версия приложения, дата. «Прочитано» / «Непрочитано», «В архив» / «Вернуть из архива».
+- **Бренды** (`/brands`, только SUPER_ADMIN): у карточки — контактный телефон (ссылка `tel:`), прогресс «Запуска бренда» (`onboarding`: шагов из 5 и какие выполнены) и заявка на тариф; вкладки по модерации плюс «Зарегистрировались, но не запустились» (бренды с владельцем, чек-лист не завершён; то же — `GET /admin/brands?notLaunched=true`) и «Заявки на тариф».
+- **Обратная связь** (`/feedback`, только SUPER_ADMIN, пункт меню с бейджем непрочитанных): отзывы, предложения и проблемы, которые клиенты пишут из профиля в приложении, на сайте и в Mini App, и обращения бизнесов из админки (источник «Панель бизнеса», бренд и его телефон на карточке). Новые сверху; вкладки «Входящие» (всё, кроме архива) / «Непрочитанные» / «Архив», фильтр по типу; у карточки — тип, текст, клиент (имя, email, телефон, Telegram ID; «аккаунт удалён»), оставленный контакт, платформа и версия приложения, дата. «Прочитано» / «Непрочитано», «В архив» / «Вернуть из архива».
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
 - **Multi-brand**: ✅ через `BrandScopeService` (BRAND_ADMIN видит только свой бренд) и `UserStoreScopeService`: SUPER_ADMIN — все точки, BRAND_ADMIN — точки своих брендов, STORE_MANAGER и STAFF — назначенные. Скоуп проверяется во всех per-store маршрутах, в KDS-сокете, у курьеров и в аналитике.
 
@@ -432,7 +438,11 @@ takeaway/
 
 - Раздел «Кухня» (`/kitchen`) в кабинете бизнеса `apps/admin`; отдельное приложение `apps/kds` выведено 26.09.2026, `kds.takeaway.md` отвечает 301 на `admin.takeaway.md/login/pin`. Планшет на точке — тот же кабинет в «режиме планшета»: без меню и шапки, тёмная доска на весь экран; включается PIN-входом или кнопкой на доске
 - Новые заказы приходят по всему кабинету: всплывающая карточка с «Принять», звук, системное уведомление из фоновой вкладки, счётчик непринятых в меню. Кабинет держит одно сокет-подключение (`kds.subscribe` на все точки активного бренда) с повторным входом в комнаты после переподключения
-- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) — 4–6 цифр scoped to one store (только STAFF/STORE_MANAGER). PIN управляется brand admin'ом через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`; без секрета (пусто или `CHANGE_ME`) установка и вход по PIN отвечают 503 `KDS_PIN_NOT_CONFIGURED`, API при этом стартует. Защита от подбора: кроме per-IP throttle — счётчик в Redis на точку, после 10 неверных PIN за 10 минут вход по PIN на точке закрыт на 10 минут (429 `KDS_PIN_LOCKED`). UI lockscreen — `/login/pin` в кабинете (выбор точки один раз на устройство, экранная клавиатура).
+- Авторизация: email + password (`auth/password/login`), а также **KDS PIN** (`auth/kds/pin`) scoped to one store (только STAFF/STORE_MANAGER, аккаунт должен работать в этой точке и только в её бренде). PIN управляется через `PUT/DELETE /admin/stores/:id/staff/:userId/kds-pin`: новый PIN — ровно 6 цифр и не «первая догадка» (одна цифра шесть раз, ряд 123456/987654; 400 `KDS_PIN_FORMAT` / `KDS_PIN_TOO_SIMPLE`), на входе принимаются 4–6 цифр, так что выданные раньше 4–5-значные PIN работают. PIN хранится как HMAC-SHA256(storeId+pin) с server secret `KDS_PIN_SECRET`; без секрета (пусто или `CHANGE_ME`) установка и вход по PIN отвечают 503 `KDS_PIN_NOT_CONFIGURED`, API при этом стартует.
+- **Привязка планшета** (`KitchenDevice`): вход по PIN принимается только с планшета, привязанного к бренду точки (`deviceToken` в теле; без него 401 `KDS_DEVICE_REQUIRED`, с неизвестным/отвязанным — 401 `KDS_DEVICE_UNKNOWN`). Планшет привязывается один раз: сотрудник бренда (STAFF и выше) открывает на нём «Кухню» под своей учётной записью — доска вызывает `POST /auth/kds/device { storeId }`, так же сами привязались планшеты, вошедшие до появления привязки, — или владелец/менеджер делает на странице «Сотрудники» одноразовую ссылку `/login/pin?pair=<code>` (код в Redis, 24 часа, один раз; `POST /auth/kds/device/pair`). Токен (256 бит) лежит в localStorage планшета, в БД — только SHA-256. Экран PIN берёт точки из `GET /auth/kds/device` (заголовок `X-Kitchen-Device`): только точки привязанного бренда, где есть хотя бы один действующий PIN. Публичный `GET /stores` экран PIN больше не использует. Список, ссылка и отвязка — `/admin/kitchen-devices`.
+- **Сессия по PIN ограничена кухней**: токены несут claim `kds = storeId` (сохраняется при refresh), `KdsSessionGuard` пускает такую сессию только в маршруты с `@KdsSessionAllowed` (доска и смена `/kds/*`, стоп-лист и наличие точки, список точек и свой бренд, `/auth/me`) и только для своей точки (403 `KDS_SESSION_LIMITED` / `KDS_SESSION_STORE`); `BrandScopeService` сужает её до бренда точки; сокет — только `kds.subscribe` своей точки. Кабинет при PIN-сессии показывает только «Кухню» и «Стоп-лист».
+- **Защита от подбора**: per-IP throttle (8/мин) + счётчик в Redis на пару точка × планшет: 5 неверных PIN бесплатно, затем пауза 1, 2, 4 … 60 минут (429 `KDS_PIN_LOCKED` с `retryAfterSeconds`), успешный вход сбрасывает; общий потолок на точку — 100 неверных за час → пауза 15 минут. Планшет проверяется до подсчёта, поэтому посторонний не может заблокировать кухню. UI lockscreen — `/login/pin` в кабинете: 4–6 цифр, отправка кнопкой «Войти»/Enter (длину PIN экран не знает, автоотправка на 4-й цифре делала 5–6-значные PIN невозможными).
+- **«Загружены»**: кнопка в шапке доски при открытой смене (`PUT /kds/busy?storeId= { busy }`) переключает `Store.status` OPEN ⇄ OVERLOADED (тот же статус, что владелец видит значком в «Точках» и может выбрать в редакторе точки); закрытую точку (`CLOSED`) не трогает — 409 `STORE_SWITCHED_OFF`. Смена несёт `busy`, отметка снимается сама при «Закончить работу». Каталог отдаёт у загруженной точки `busyMeter = 100` (иначе сохранённое значение); ETA по-прежнему считается по очереди (`KitchenLoadService`), загрузка его не меняет. Оповещения: `kds.shiftChanged`, `store.availabilityChanged` (клиенты перечитывают точку) и `store.loadChanged`.
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
 - **Смена точки**: точка принимает заказы, только пока открыта смена (`StoreShift` с `closedAt = null`). Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках». Пока смена закрыта, `GET /stores` отдаёт `acceptingOrders: false` (и `openNow: false`; пока открыта — оба `true`, даже вне часов работы), клиенты показывают точку «Не работает», создание заказа отвечает `STORE_NOT_TAKING_ORDERS`. Корзину собрать можно. Смена открывается и закрывается только вручную; остальные планшеты узнают об этом по `kds.shiftChanged`
 - **Клиент на месте**: строка доски несёт `customerArrival` (`NEARBY` | `HERE` | null) и `customerArrivedAt` из событий `CUSTOMER_NEARBY` / `CUSTOMER_HERE`; на карточке — плашка «Клиент рядом» / зелёная «Клиент на месте · N мин»
@@ -491,19 +501,23 @@ takeaway/
 ### 5.1. Identity / Auth
 
 ```
-User (id, phone?, email?, passwordHash?, passwordMustChange, name?, locale, currency,
+User (id, phone?, email?, emailVerifiedAt?, passwordHash?, passwordMustChange, name?, locale, currency,   // emailVerifiedAt — адрес подтверждён Google/Apple; вход через соцсеть присоединяется к профилю по email только при нём
       telegramUserId?, role[CUSTOMER|RIDER|STAFF|STORE_MANAGER|BRAND_ADMIN|SUPER_ADMIN],
       notifyOrderUpdates, notifyPromotions, blockedAt?, referralCode?, referredByUserId?,
       kdsPinHash?, kdsPinStoreId?)                            // KDS lockscreen PIN, scoped to one store
 Device (id, userId, type[WEB|TMA|IOS|ANDROID], pushToken?, apnsToken?,   // apnsToken — сырой APNs-токен iOS (hex)
         apnsEnvironment?[PRODUCTION|SANDBOX], locale, lastSeenAt)
 OAuthAccount (id, userId, provider[GOOGLE|APPLE|TELEGRAM], providerUserId)
-PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)
+PasswordResetToken (id, userId, tokenHash, expiresAt, consumedAt?)   // «забыл пароль» (1 ч) и ссылка из приглашения сотрудника (72 ч)
+KitchenDevice (id, brandId [CASCADE], tokenHash (unique, SHA-256), createdById?, createdAt,
+               lastUsedAt?, revokedAt?)                       // планшет кухни, привязанный к бренду; токен — в localStorage планшета
 Referral (id, referrerId, refereeId, status[PENDING|REWARDED|CANCELLED], rewardOrderId?,
           referrerPointsCredited, refereePointsCredited)
-Feedback (id, userId? [SET NULL], kind[REVIEW|SUGGESTION|PROBLEM], message (1–2000, trimmed),
-          contact? (≤200), source[IOS|ANDROID|WEB|TMA], appVersion?,
-          status[NEW|READ|ARCHIVED], readAt?, createdAt)        // «Обратная связь» из профиля клиента
+Feedback (id, userId? [SET NULL], brandId? [SET NULL],
+          kind[REVIEW|SUGGESTION|PROBLEM|QUESTION|PLAN_CHANGE], message (1–2000, trimmed; у PLAN_CHANGE может быть пустым),
+          contact? (≤200), source[IOS|ANDROID|WEB|TMA|BUSINESS], appVersion?,
+          status[NEW|READ|ARCHIVED], readAt?, createdAt)        // «Обратная связь» из профиля клиента;
+                                                                 // BUSINESS — «Написать в поддержку» / «Перейти на PRO» из админки, с brandId
 ```
 
 ### 5.2. Tenancy / Stores
@@ -511,12 +525,14 @@ Feedback (id, userId? [SET NULL], kind[REVIEW|SUGGESTION|PROBLEM], message (1–
 ```
 Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        moderationStatus[PENDING|APPROVED|REJECTED], moderationNote?,
-       plan[BASIC|PRO] = BASIC, commissionBps = 1000)   // тариф и комиссия платформы, меняет SUPER_ADMIN
+       plan[BASIC|PRO] = BASIC, commissionBps = 1000,   // тариф и комиссия платформы, меняет SUPER_ADMIN
+       contactPhone? (E.164; обязателен при регистрации, у старых брендов — из телефона владельца или null),
+       requestedPlan?[BASIC|PRO], planRequestedAt?)     // заявка «Перейти на PRO», снимается сменой тарифа
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
        kinds[COFFEE|FOOD] = [COFFEE],          // что продаёт точка: маркер и фильтр на карте; не пусто
        heroImageUrl?, galleryUrls[],            // обложка — фото самой точки (логотип бренда — запасной)
-       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
+       busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,   // OVERLOADED = «Загружены» с кухни; в API busyMeter у неё 100
        taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
        externalProvider?[POSTER|IIKO], externalId?)
@@ -597,9 +613,11 @@ GiftCard (id, code unique, brandId, initialAmountCents, balanceCents, currency,
 GiftCardRedemption (id, giftCardId, orderId unique, amountCents)
 Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
           audience[ALL|HAS_ORDERED|INACTIVE_30D|INACTIVE], inactiveDays?, segmentStoreId?,
-          status[DRAFT|SCHEDULED|SENDING|SENT|FAILED],
+          status[DRAFT|PENDING_REVIEW|APPROVED|REJECTED|SENDING|SENT|FAILED],
           targetCount, sentCount, failedCount, noChannelCount, optedOutCount,
-          lastError?, scheduledAt?, startedAt?, sentAt?)
+          lastError?, scheduledAt? (не раньше), createdById? [SET NULL],
+          submittedAt?, reviewedAt?, reviewedById? [SET NULL], reviewNote? (причина отказа),
+          approvedAt? (без него прогон не стартует), startedAt?, sentAt?)
 CampaignDelivery (id, campaignId, userId, outcome[SENT|FAILED|NO_CHANNEL|OPTED_OUT],
                   via? ("apns,fcm,webpush" | "telegram" | "email"),
                   error?)   // также у SENT: что не сработало по дороге (app push перед Telegram)
@@ -658,10 +676,17 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ```
 POST   /auth/password/login          { email, password } → tokens
-POST   /auth/kds/pin                  { storeId, pin } → tokens   (KDS lockscreen, STAFF/STORE_MANAGER, 4–6 digits)
-POST   /auth/password/forgot         { email }
+POST   /auth/kds/pin                  { storeId, pin, deviceToken } → tokens + kdsStoreId
+                                     //   (KDS lockscreen, STAFF/STORE_MANAGER, 4–6 digits; только с привязанного планшета:
+                                     //   401 KDS_DEVICE_REQUIRED | KDS_DEVICE_UNKNOWN; 429 KDS_PIN_LOCKED { retryAfterSeconds });
+                                     //   сессия ограничена кухней точки (claim `kds`)
+POST   /auth/kds/device               { storeId } → { deviceToken, brandId, brandName }   (auth: STAFF+, точка в скоупе)
+POST   /auth/kds/device/pair          { code } → то же   (одноразовая ссылка со страницы «Сотрудники»; 401 KDS_PAIRING_INVALID)
+GET    /auth/kds/device               [X-Kitchen-Device] → { brandId, brandName, stores[{id,name,city}] }
+                                     //   точки бренда, где есть действующий PIN; 401 KDS_DEVICE_UNKNOWN
+POST   /auth/password/forgot         { email }   → 204; 503 PASSWORD_RESET_UNAVAILABLE, если нет SMTP_HOST или (в проде) ADMIN_APP_URL
 POST   /auth/password/reset          { token, password }
-POST   /auth/password/change         { oldPassword, newPassword }    (auth)
+POST   /auth/password/change         { currentPassword, newPassword, refreshToken? }    (auth; отзывает все сессии, кроме refreshToken)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
 GET    /auth/me/sign-in-methods      → { telegram, google, apple }
@@ -696,6 +721,9 @@ POST   /me/referrals/apply           { code }
 POST   /feedback                     { kind: REVIEW|SUGGESTION|PROBLEM, message (1–2000), contact? (≤200),
                                        source: IOS|ANDROID|WEB|TMA, appVersion? } → 201 { id, createdAt }
                                      // любой вошедший аккаунт; 429 FEEDBACK_TOO_MANY — больше 5 за час на аккаунт
+                                     // типы и источники — только клиентские (QUESTION / PLAN_CHANGE / BUSINESS — 400)
+POST   /admin/support[?brandId=]     { kind: QUESTION|PROBLEM|SUGGESTION, message (1–2000) } → 201 { id, createdAt }
+                                     // BRAND_ADMIN / STORE_MANAGER / MENU_EDITOR / STAFF; бренд — свой (чужой 403); тот же лимит
                                      //   (плюс 5/мин на IP); платформа узнаёт в Telegram, см. 3.8
 ```
 
@@ -784,12 +812,14 @@ PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVE
 ### 6.8. Brand owner / Business signup
 
 ```
-POST   /business/register            { brand, contact, currency, locale, phone? } → { brand: { moderationStatus: PENDING } }
+POST   /business/register            { brand, contact, currency, locale, phone } → { brand: { moderationStatus: PENDING } }
+                                     // phone обязателен, нормализуется в E.164 → Brand.contactPhone
 GET    /my-brand[?brandId=]          (BRAND_ADMIN → свой бренд; SUPER_ADMIN → бренд из brandId)
-PATCH  /my-brand[?brandId=]          (название, логотип, цвета, язык; валюта — до первого заказа, иначе 409 CURRENCY_LOCKED)
+PATCH  /my-brand[?brandId=]          (название, логотип, цвета, язык, contactPhone; валюта — до первого заказа, иначе 409 CURRENCY_LOCKED)
 POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO; JPG/PNG/WebP до 2 МБ, 413 IMAGE_TOO_LARGE / 415 IMAGE_TYPE)
 GET    /my-brand/onboarding[?brandId=]  → чек-лист запуска бренда
 POST   /my-brand/resubmit[?brandId=]    REJECTED → PENDING, уведомляет платформу
+POST   /my-brand/plan-request[?brandId=] { plan, note? } → { requestedPlan, planRequestedAt }   // BRAND_ADMIN; 409 PLAN_ALREADY_ACTIVE
 ```
 
 `brandId` у SUPER_ADMIN — бренд, выбранный переключателем в админке (без параметра — единственный
@@ -838,7 +868,11 @@ PUT/DELETE             /admin/stores/:id/ingredient-stops/:ingredientId   // { e
 GET    /admin/staff                  → [{ userId, email, phone, name, role, blocked, addedAt,
                                           stores: [{ id, name }], kdsPinStoreId, hasKdsPin, editable }]
 GET    /admin/staff/:userId          → то же для одного (404 вне досягаемости)
-POST   /admin/staff                  { email, name?, role, tempPassword, storeIds[≥1] } → 201
+POST   /admin/staff                  { email, name?, role, tempPassword (8–128), storeIds[≥1] }
+                                     //   → 201 { ...StaffMember, inviteEmail: SENT|NOT_CONFIGURED|FAILED, accountCreated }
+                                     //   Письмо-приглашение: кабинет, логин и для нового аккаунта одноразовая ссылка
+                                     //   /reset-password?token=…&invite=1 (PasswordResetToken, 72 ч); временный пароль не пишется.
+                                     //   Без SMTP / ADMIN_APP_URL — NOT_CONFIGURED, токен не создаётся.
                                      //   409 STAFF_ALREADY_ON_TEAM / STAFF_EMAIL_TAKEN (email занят не сотрудником
                                      //   или сотрудником, работающим и в другом бренде; без роли в ответе)
 PUT    /admin/staff/:userId/stores   { storeIds[] } → замена в пределах досягаемости; [] — убрать из команды
@@ -846,9 +880,14 @@ PATCH  /admin/staff/:userId/role     { role: STORE_MANAGER | STAFF | MENU_EDITOR
                                      //   403 STAFF_STORE_OUT_OF_SCOPE / STAFF_ROLE_NOT_ALLOWED / STAFF_NOT_EDITABLE
                                      //   (роль, новые точки и PIN — только если все точки человека в брендах вызывающего)
 
+# Планшеты кухни (?brandId= обязателен; SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER бренда, не PIN-сессия)
+GET    /admin/kitchen-devices        → [{ id, createdAt, createdByName, lastUsedAt }]
+POST   /admin/kitchen-devices/pairing-code → { code, expiresAt }   // ссылка /login/pin?pair=<code>, 24 ч, один раз
+DELETE /admin/kitchen-devices/:id    → 204   // отвязать: токен перестаёт открывать экран PIN
+
 # Staff / Riders (per-store scope)
 GET/POST/DELETE        /admin/stores/:storeId/staff[/:userId]
-PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }
+PUT/DELETE             /admin/stores/:storeId/staff/:userId/kds-pin   { pin }   // новый PIN — ровно 6 цифр, не 111111/123456
 GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]   // POST: 409 RIDER_PHONE_TAKEN — номер у другого аккаунта
 
 # Orders / Promo / Gift cards / Campaigns
@@ -862,8 +901,16 @@ GET/POST/DELETE        /admin/gift-cards[/:id]
 GET/POST               /admin/campaigns                  ?brandId= (SUPER_ADMIN — обязательно) // PRO (campaigns) — весь контроллер
 GET                    /admin/campaigns/preview          ?brandId=&audience=&channel=[&inactiveDays=3|7|14&storeId=] → охват по каналам + настроенные транспорты
 POST                   /admin/campaigns/test             { title, body, channel } → { outcome, via[], error? } — только себе
-POST                   /admin/campaigns/:id/send         → SENDING сразу, рассылка в фоне; также «Повторить» для FAILED/зависших/с ошибками
-DELETE                 /admin/campaigns/:id              (только DRAFT)
+GET/PATCH              /admin/campaigns/:id              // PATCH — только DRAFT / REJECTED (409 CAMPAIGN_NOT_EDITABLE); scheduledAt: null — сразу после одобрения
+POST                   /admin/campaigns/:id/submit       → PENDING_REVIEW (+ ops-алерт); от SUPER_ADMIN — сразу APPROVED и старт
+POST                   /admin/campaigns/:id/withdraw     → PENDING_REVIEW → DRAFT («Отозвать в черновик»); иначе 409 CAMPAIGN_NOT_PENDING
+POST                   /admin/campaigns/:id/send         → «Повторить» одобренную: FAILED / зависшая / SENT с ошибками; неодобренная — 409 CAMPAIGN_NOT_SENDABLE
+DELETE                 /admin/campaigns/:id              (DRAFT / PENDING_REVIEW / REJECTED / APPROVED; иначе 409 CAMPAIGN_NOT_DELETABLE)
+# Модерация рассылок (только SUPER_ADMIN, без проверки тарифа)
+GET                    /admin/campaign-moderation?view=PENDING_REVIEW|APPROVED|REJECTED   // очередь (старые сверху, с охватом reach) или последние 50 решений
+GET                    /admin/campaign-moderation/pending-count   // { count } — бейдж «Модерация рассылок»
+POST                   /admin/campaign-moderation/:id/approve     // PENDING_REVIEW → APPROVED, старт сразу или в scheduledAt
+POST                   /admin/campaign-moderation/:id/reject      { reason } → REJECTED; 409 CAMPAIGN_NOT_PENDING, если решение уже принято
 
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
 # Период у всех: ?from=YYYY-MM-DD&to=YYYY-MM-DD (дни в поясе бренда/точки) или ?days=N; ?storeId= — одна точка
@@ -892,8 +939,8 @@ PATCH                  /admin/settlements/payouts/:id/paid  { reference?, commen
 DELETE                 /admin/settlements/payouts/:id    // SUPER_ADMIN, только последняя PENDING; 409 PAYOUT_PAID / PAYOUT_NOT_LATEST
 
 # Обратная связь клиентов (только SUPER_ADMIN)
-GET                    /admin/feedback?status=NEW|READ|ARCHIVED&kind=&page=&pageSize=   // новые сверху; без status — всё, кроме ARCHIVED
-                                                           //   → { items[{ …, author: { name, email, phone, telegramUserId, deleted } | null }], total, page, pageSize, newCount }
+GET                    /admin/feedback?status=NEW|READ|ARCHIVED&kind=&source=&page=&pageSize=   // новые сверху; без status — всё, кроме ARCHIVED
+                                                           //   → { items[{ …, author: { name, email, phone, telegramUserId, deleted } | null, brand: { id, name, contactPhone } | null }], total, page, pageSize, newCount }
 GET                    /admin/feedback/new-count           // { count } — бейдж «Обратная связь»
 PATCH                  /admin/feedback/:id                 { status } — readAt ставится при первом прочтении, сохраняется в архиве, NEW его сбрасывает
 
@@ -911,9 +958,11 @@ GET                    /admin/pos/jobs/:provider
 
 ```
 GET    /kds/orders                    // + customerArrival, customerArrivedAt
-GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName }
+GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName, busy }
 POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
-POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно
+POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно; снимает «Загружены» (OVERLOADED → OPEN)
+PUT    /kds/busy?storeId=             { busy } → смена с busy; Store.status OPEN ⇄ OVERLOADED, 409 STORE_SWITCHED_OFF у CLOSED
+// Весь /kds/* доступен PIN-сессии только для её точки (KdsSessionGuard)
 POST   /kds/orders/:id/accept
 POST   /kds/orders/:id/reject         { reason: OUT_OF_STOCK|TOO_BUSY|CLOSING|OTHER, comment? } → отмена до принятия, бронь снимается / списанное возвращается, пуш клиенту с причиной
 POST   /kds/orders/:id/start
@@ -931,7 +980,7 @@ POST   /pos/webhooks/poster/:brandId           (legacy/per-brand webhook, пер
 ### 6.12. Health / Config
 
 ```
-GET    /health                       // liveness + build triple (version/commit/builtAt)
+GET    /health                       // liveness: { status, commit (12 символов) }; version/commit/builtAt/uptime — с заголовком X-Health-Token (HEALTH_TOKEN)
 GET    /health/ready                 → { ready, checks: { postgres, redis } }, 503 когда что-то лежит
 GET    /config/features              → { deliveryEnabled, agroprombankEnabled, cardPaymentFlow: token|web|none, support: { email, telegram } }
 ```
@@ -949,7 +998,7 @@ WS     /ws                          (события: order.statusChanged, order.
 ```
 
 - **Подключение**: токен (`auth.token`, `Authorization: Bearer` или `?token=`) необязателен. Без токена сокет подключается анонимно: не попадает ни в одну комнату, `order.subscribe` / `kds.subscribe` / `dispatch.subscribe` отвечают `{ok:false}`, приходят только публичные события. Невалидный или просроченный токен и заблокированный аккаунт — по-прежнему разрыв соединения (клиент обновляет токен и переподключается).
-- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busyMeter, currentEtaSeconds}`; `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия и закрытия смены, смены статуса точки в админке и удаления точки (`acceptingOrders: false`). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; при текущем правиле `openNow = acceptingOrders`, перезапрашивать точку ради `openNow` не нужно.
+- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busy, busyMeter, currentEtaSeconds}` — шлётся, когда кухня ставит или снимает «Загружены» (и когда отметку снимает конец смены); `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия и закрытия смены, смены статуса точки в админке, «Загружены» на кухне и удаления точки (`acceptingOrders: false`). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; при текущем правиле `openNow = acceptingOrders`, перезапрашивать точку ради `openNow` не нужно.
 - **Комнатные события**: `order.statusChanged` (комнаты `order:<id>` и `user:<id>`), `kds.orderChanged` / `kds.shiftChanged` (`kds:<storeId>`: роль персонала и точка в скоупе), `dispatch.orderChanged` (`dispatch:<storeId>`, STORE_MANAGER и выше).
 
 OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter — `libs/api-client-dart` (Retrofit + json_serializable), модели проверяются тестами на ответах живого API.

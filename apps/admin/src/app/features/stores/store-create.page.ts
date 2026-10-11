@@ -15,6 +15,7 @@ import { suggestStoreTimeZone } from '@takeaway/utils';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CreateStoreInput, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { acceptFor, imageFileError, imageUploadRefusal, ruleParams } from '../../shared/image-rules';
 import { AddressLocator } from './address-locator';
@@ -300,6 +301,7 @@ function atLeastOneKind(group: AbstractControl): ValidationErrors | null {
 export class StoreCreatePage {
   private readonly api = inject(AdminCatalogApi);
   private readonly router = inject(Router);
+  private readonly onboarding = inject(OnboardingFlowService);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   readonly locator = inject(AddressLocator);
@@ -484,13 +486,18 @@ export class StoreCreatePage {
    * the store a second time.
    */
   private afterCreate(store: StoreAdminDto): void {
+    // From «Запуск бренда» the step still needs opening hours: straight to them.
+    const open = () =>
+      this.onboarding.active('store')
+        ? this.router.navigate(['/stores', store.id], { queryParams: { tab: 'hours' } })
+        : this.router.navigate(['/stores', store.id]);
     const photo = this.photo();
     if (!photo) {
-      this.router.navigate(['/stores', store.id]);
+      open();
       return;
     }
     this.api.uploadStoreImage(store.id, 'hero', photo).subscribe({
-      next: () => this.router.navigate(['/stores', store.id]),
+      next: () => open(),
       error: (err) => {
         const reason =
           imageUploadRefusal(err, STORE_PHOTO_RULE, this.translate) ?? storeErrorMessage(err, this.translate);

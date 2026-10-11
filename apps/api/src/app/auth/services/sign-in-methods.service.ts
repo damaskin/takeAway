@@ -221,7 +221,13 @@ export class SignInMethodsService {
       // that no other profile uses — the unique index would refuse it anyway.
       if (!user.email && identity.email && identity.emailVerified) {
         const taken = await tx.user.findUnique({ where: { email: identity.email } });
-        if (!taken) data.email = identity.email;
+        if (!taken) {
+          data.email = identity.email;
+          data.emailVerifiedAt = new Date();
+        }
+      } else if (identity.emailVerified && user.email === identity.email && !user.emailVerifiedAt) {
+        // The provider vouches for the address already on the profile.
+        data.emailVerifiedAt = new Date();
       }
     }
     if (!user.name && identity.name) data.name = identity.name;
@@ -264,7 +270,7 @@ export class SignInMethodsService {
 
     await tx.oAuthAccount.updateMany({ where: { userId: from.id }, data: { userId: to.id } });
 
-    const { telegramUserId, email, name } = from;
+    const { telegramUserId, email, emailVerifiedAt, name } = from;
     const moveTelegram = telegramUserId !== null && to.telegramUserId === null;
     const moveEmail = email !== null && to.email === null;
     if (moveTelegram || moveEmail) {
@@ -273,14 +279,14 @@ export class SignInMethodsService {
         where: { id: from.id },
         data: {
           ...(moveTelegram ? { telegramUserId: null } : {}),
-          ...(moveEmail ? { email: null } : {}),
+          ...(moveEmail ? { email: null, emailVerifiedAt: null } : {}),
         },
       });
       await tx.user.update({
         where: { id: to.id },
         data: {
           ...(moveTelegram ? { telegramUserId } : {}),
-          ...(moveEmail ? { email } : {}),
+          ...(moveEmail ? { email, emailVerifiedAt } : {}),
           ...(!to.name && name ? { name } : {}),
         },
       });
