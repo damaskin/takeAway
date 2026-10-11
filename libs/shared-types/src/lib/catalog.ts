@@ -13,6 +13,35 @@ export type StoreKind = 'COFFEE' | 'FOOD';
 /** Every store kind, in the order the admin and the filters list them. */
 export const STORE_KINDS: readonly StoreKind[] = ['COFFEE', 'FOOD'];
 
+/**
+ * What a menu category holds. Decides which fields the product editor
+ * shows (caffeine for drinks, allergens for food), which ready-made option
+ * sets the admin offers (see `OPTION_PRESETS`) and which placeholder a
+ * product without a photo gets. OTHER shows everything and offers no set.
+ */
+export type CategoryKind = 'HOT_DRINKS' | 'COLD_DRINKS' | 'FOOD' | 'BAKERY' | 'OTHER';
+
+/** Every category kind, in the order the admin lists them. */
+export const CATEGORY_KINDS: readonly CategoryKind[] = ['HOT_DRINKS', 'COLD_DRINKS', 'FOOD', 'BAKERY', 'OTHER'];
+
+/**
+ * The usual preparation time of one item of a kind, in seconds — what the
+ * admin suggests as the category's default (a cappuccino takes 3 minutes, a
+ * shawarma 15). OTHER has no suggestion.
+ */
+export const CATEGORY_KIND_PREP_SECONDS: Readonly<Record<CategoryKind, number | null>> = {
+  HOT_DRINKS: 3 * 60,
+  COLD_DRINKS: 4 * 60,
+  FOOD: 15 * 60,
+  BAKERY: 2 * 60,
+  OTHER: null,
+};
+
+/** Drinks: the kinds whose products have caffeine, milk and cup options. */
+export function isDrinkKind(kind: CategoryKind | null | undefined): boolean {
+  return kind === 'HOT_DRINKS' || kind === 'COLD_DRINKS';
+}
+
 export type { PickupPointType };
 
 export interface StoreListItem {
@@ -111,6 +140,9 @@ export interface Variation {
   isDefault: boolean;
 }
 
+/** Longest add-on group label («Сиропы», «Убрать»): fits one line on a phone. */
+export const MODIFIER_GROUP_MAX_LENGTH = 40;
+
 export interface Modifier {
   id: string;
   slug: string;
@@ -120,6 +152,12 @@ export interface Modifier {
   minCount: number;
   maxCount: number;
   sortOrder: number;
+  /**
+   * The group the add-on is shown under on the product screen («Сиропы»,
+   * «Соусы», «Убрать»). Null or missing = the generic «Добавки» group.
+   * Add-ons of one group sit together, in `sortOrder`.
+   */
+  group?: string | null;
 }
 
 export interface ProductSummary {
@@ -140,6 +178,12 @@ export interface ProductSummary {
   imageUrls: string[];
   sortOrder: number;
   onStopList?: boolean;
+  /**
+   * The kind of the product's category, so a product fetched on its own
+   * (deep link, favourites) still picks the right placeholder and labels.
+   * Missing from older API builds: treat as OTHER.
+   */
+  categoryKind?: CategoryKind;
 }
 
 export interface ProductDetail extends ProductSummary {
@@ -158,6 +202,8 @@ export interface CategoryWithProducts {
   sortOrder: number;
   availableFrom: number | null;
   availableTo: number | null;
+  /** What the category holds. Missing from older API builds: treat as OTHER. */
+  kind?: CategoryKind;
   products: ProductSummary[];
 }
 

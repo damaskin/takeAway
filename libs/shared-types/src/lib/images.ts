@@ -33,6 +33,20 @@ export const STORE_PHOTO_RULE: ImageUploadRule = {
   aspect: '3:2',
 };
 
+/**
+ * A product photo — the picture on the menu card and the product screen.
+ * Takes AVIF too, like every product photo uploaded before the rules; the
+ * customer apps crop it to a square, so square (or 3:4 with the product in
+ * the middle) works best.
+ */
+export const PRODUCT_PHOTO_RULE: ImageUploadRule = {
+  maxBytes: 5 * 1024 * 1024,
+  types: ['image/jpeg', 'image/png', 'image/webp', 'image/avif'],
+  width: 1200,
+  height: 1200,
+  aspect: '1:1',
+};
+
 /** A brand's logo. Shown fitted into a square tile, so square works best. */
 export const BRAND_LOGO_RULE: ImageUploadRule = {
   maxBytes: 2 * 1024 * 1024,
