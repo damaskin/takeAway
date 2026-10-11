@@ -129,7 +129,7 @@ export const TERMS_RU: LegalDocument = {
         {
           list: [
             'E-mail: [help@takeaway.md](mailto:help@takeaway.md)',
-            'Telegram: [@takaway_tgbot](https://t.me/takaway_tgbot)',
+            'Форма «Написать нам» на странице [Поддержка](/support)',
           ],
         },
       ],

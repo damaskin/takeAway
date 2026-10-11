@@ -3,7 +3,13 @@ import { FeedbackKind, FeedbackSource, FeedbackStatus } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import type { FeedbackNotifier } from './feedback-notifier.service';
-import { FEEDBACK_PER_HOUR, FEEDBACK_TOO_MANY, FeedbackService } from './feedback.service';
+import {
+  FEEDBACK_PER_HOUR,
+  FEEDBACK_TOO_MANY,
+  FeedbackService,
+  SITE_SUPPORT_PER_CONTACT_PER_HOUR,
+  SiteSupportError,
+} from './feedback.service';
 
 const NOW = new Date('2026-10-07T12:00:00Z');
 
@@ -13,6 +19,7 @@ function row(overrides: Record<string, unknown> = {}) {
     kind: FeedbackKind.SUGGESTION,
     message: 'Add oat milk',
     contact: null,
+    name: null,
     source: FeedbackSource.IOS,
     appVersion: '1.2.0 (3)',
     status: FeedbackStatus.NEW,
@@ -177,6 +184,7 @@ describe('FeedbackService.list', () => {
       kind: 'SUGGESTION',
       message: 'Add oat milk',
       contact: null,
+      name: null,
       source: 'IOS',
       appVersion: '1.2.0 (3)',
       status: 'NEW',
@@ -218,6 +226,121 @@ describe('FeedbackService.list', () => {
     const page = await svc.list({});
     expect(page.items[0]?.author).toMatchObject({ deleted: true, name: null });
     expect(page.items[1]?.author).toBeNull();
+  });
+
+  it('hands over the name and contact a visitor left on the site', async () => {
+    const { svc, prisma } = setup();
+    prisma.feedback.findMany.mockResolvedValue([
+      row({ user: null, name: 'Ион', contact: 'ion@mail.md', source: FeedbackSource.WEB }),
+    ]);
+    const page = await svc.list({});
+    expect(page.items[0]).toMatchObject({ author: null, name: 'Ион', contact: 'ion@mail.md', source: 'WEB' });
+  });
+});
+
+describe('FeedbackService.createFromSite', () => {
+  const question = { kind: FeedbackKind.QUESTION, message: '  Где мой заказ 1234?  ' };
+
+  async function refusal(promise: Promise<unknown>): Promise<{ status: number; code: unknown }> {
+    const err = await promise.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    const http = err as HttpException;
+    return { status: http.getStatus(), code: (http.getResponse() as { code?: unknown }).code };
+  }
+
+  it('files a visitor’s message with the contact in one canonical form and pings the team', async () => {
+    const { svc, prisma, notifier } = setup();
+
+    await svc.createFromSite(null, { ...question, name: ' Ион ', contact: ' Ion@Mail.MD ' }, NOW);
+
+    expect(prisma.feedback.create).toHaveBeenCalledWith({
+      data: {
+        userId: null,
+        kind: 'QUESTION',
+        message: 'Где мой заказ 1234?',
+        contact: 'ion@mail.md',
+        name: 'Ион',
+        source: 'WEB',
+      },
+      select: { id: true },
+    });
+    expect(notifier.feedbackReceived).toHaveBeenCalledWith('fb-1');
+  });
+
+  it('stores a phone as E.164', async () => {
+    const { svc, prisma } = setup();
+    await svc.createFromSite(null, { ...question, contact: '069 123 456' }, NOW);
+    expect(prisma.feedback.create.mock.calls[0][0].data).toMatchObject({ contact: '+37369123456', name: null });
+  });
+
+  it('wants a way to answer a visitor', async () => {
+    const { svc, prisma } = setup();
+    expect(await refusal(svc.createFromSite(null, question, NOW))).toEqual({
+      status: HttpStatus.BAD_REQUEST,
+      code: SiteSupportError.CONTACT_REQUIRED,
+    });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a contact that is neither an email nor a phone, even from a customer', async () => {
+    const { svc, prisma } = setup();
+    for (const userId of [null, 'ana']) {
+      expect(await refusal(svc.createFromSite(userId, { ...question, contact: '@ivan_tg' }, NOW))).toEqual({
+        status: HttpStatus.BAD_REQUEST,
+        code: SiteSupportError.CONTACT_INVALID,
+      });
+    }
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('links a signed-in customer’s message to the account, a contact being optional', async () => {
+    const { svc, prisma } = setup();
+
+    await svc.createFromSite('ana', { ...question, name: 'Not me' }, NOW);
+
+    expect(prisma.feedback.create.mock.calls[0][0].data).toMatchObject({
+      userId: 'ana',
+      contact: null,
+      name: null,
+      source: 'WEB',
+    });
+    expect(prisma.feedback.count).toHaveBeenCalledWith({
+      where: { userId: 'ana', createdAt: { gte: new Date('2026-10-07T11:00:00Z') } },
+    });
+  });
+
+  it('caps one contact at a few messages an hour', async () => {
+    const { svc, prisma, notifier } = setup();
+    prisma.feedback.count.mockResolvedValue(SITE_SUPPORT_PER_CONTACT_PER_HOUR);
+
+    expect(await refusal(svc.createFromSite(null, { ...question, contact: '+373 69 123 456' }, NOW))).toEqual({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      code: FEEDBACK_TOO_MANY,
+    });
+    expect(prisma.feedback.count).toHaveBeenCalledWith({
+      where: { contact: '+37369123456', createdAt: { gte: new Date('2026-10-07T11:00:00Z') } },
+    });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+    expect(notifier.feedbackReceived).not.toHaveBeenCalled();
+  });
+
+  it('keeps the account cap for a signed-in customer', async () => {
+    const { svc, prisma } = setup();
+    prisma.feedback.count.mockResolvedValue(FEEDBACK_PER_HOUR);
+    expect((await refusal(svc.createFromSite('ana', question, NOW))).status).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('drops what a bot sends through the honeypot field, without telling it', async () => {
+    const { svc, prisma, notifier } = setup();
+
+    await expect(
+      svc.createFromSite(null, { ...question, contact: 'bot@spam.io', website: 'https://spam.io' }, NOW),
+    ).resolves.toBeUndefined();
+
+    expect(prisma.feedback.count).not.toHaveBeenCalled();
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+    expect(notifier.feedbackReceived).not.toHaveBeenCalled();
   });
 });
 

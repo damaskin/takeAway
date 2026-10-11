@@ -4,9 +4,15 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { of, switchMap } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { apiErrorCode } from '../../core/http/api-error';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
-import { type StaffMember, type StaffRole, StaffService } from '../../core/staff/staff.service';
+import {
+  type StaffMember,
+  type StaffPasswordReset,
+  type StaffRole,
+  StaffService,
+} from '../../core/staff/staff.service';
 import { newPinProblem } from '../../core/kitchen/kitchen-pin';
 import { FormPageComponent } from '../../shared/form-page.component';
 import { storeErrorMessage } from '../stores/store-errors';
@@ -14,8 +20,9 @@ import { staffErrorMessage } from './staff-errors';
 import { StaffStorePickerComponent } from './staff-store-picker.component';
 
 /**
- * One employee: their role, the stores they work at, and the kitchen PIN.
- * Stores are ticked here rather than people being added store by store.
+ * One employee: their role, the stores they work at, the kitchen PIN and —
+ * for the owner — «Сбросить пароль». Stores are ticked here rather than
+ * people being added store by store.
  */
 @Component({
   selector: 'app-staff-member',
@@ -151,6 +158,43 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
               }
             </section>
           }
+
+          @if (canResetPassword()) {
+            <section class="pin" aria-labelledby="member-password">
+              <h2 id="member-password">{{ 'admin.staff.password.title' | translate }}</h2>
+              @if (passwordReset(); as r) {
+                <p class="note">{{ 'admin.staff.password.done' | translate }}</p>
+                <div class="pin-actions">
+                  <code class="temp-password" data-testid="reset-temp-password">{{ r.tempPassword }}</code>
+                  <button type="button" class="primary" (click)="copyPassword(r.tempPassword)">
+                    {{ (passwordCopied() ? 'admin.staff.tablets.copied' : 'admin.staff.tablets.copy') | translate }}
+                  </button>
+                </div>
+                <p class="warn">{{ 'admin.staff.password.showOnce' | translate }}</p>
+                @switch (r.resetEmail) {
+                  @case ('SENT') {
+                    <p class="note">{{ 'admin.staff.password.emailSent' | translate: { email: m.email } }}</p>
+                  }
+                  @case ('FAILED') {
+                    <p class="note">{{ 'admin.staff.password.emailFailed' | translate }}</p>
+                  }
+                  @default {
+                    <p class="note">{{ 'admin.staff.password.emailOff' | translate }}</p>
+                  }
+                }
+              } @else {
+                <p class="note">{{ 'admin.staff.password.hint' | translate }}</p>
+                <div class="pin-actions">
+                  <button type="button" class="outline" [disabled]="passwordBusy()" (click)="resetPassword()">
+                    {{ 'admin.staff.password.reset' | translate }}
+                  </button>
+                </div>
+              }
+              @if (passwordError(); as message) {
+                <p role="alert" class="err">{{ message }}</p>
+              }
+            </section>
+          }
         </div>
       }
 
@@ -241,7 +285,30 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
         font-weight: 600;
         cursor: pointer;
       }
+      .outline {
+        height: 38px;
+        padding: 0 16px;
+        background: transparent;
+        color: var(--color-espresso);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-button);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .temp-password {
+        padding: 8px 12px;
+        background: var(--color-cream);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        font-family: var(--font-mono);
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        user-select: all;
+      }
       .primary:disabled,
+      .outline:disabled,
       .remove:disabled,
       .danger-link:disabled {
         opacity: 0.5;
@@ -299,7 +366,19 @@ export class StaffMemberPage {
   readonly pinSaved = signal(false);
   readonly pinError = signal<string | null>(null);
 
+  /** The new temporary password after «Сбросить пароль» — shown on this page once. */
+  readonly passwordReset = signal<StaffPasswordReset | null>(null);
+  readonly passwordBusy = signal(false);
+  readonly passwordCopied = signal(false);
+  readonly passwordError = signal<string | null>(null);
+
   readonly isSelf = computed(() => this.member()?.userId === this.authStore.user()?.id);
+
+  /** The owner (and the platform admin) can reset the password of someone they can edit. */
+  readonly canResetPassword = computed(() => {
+    const role = this.authStore.user()?.role;
+    return (role === 'BRAND_ADMIN' || role === 'SUPER_ADMIN') && !!this.member()?.editable;
+  });
 
   /** A store manager cannot appoint managers; the current role always stays listed. */
   readonly roleOptions = computed<StaffRole[]>(() => {
@@ -379,6 +458,42 @@ export class StaffMemberPage {
     });
   }
 
+  /**
+   * Ends the person's sessions and replaces their password with a generated
+   * one, which the owner passes on; the person changes it at the next
+   * sign-in, or sets their own from the emailed link.
+   */
+  resetPassword(): void {
+    const m = this.member();
+    if (!m || this.passwordBusy()) return;
+    const name = m.name || m.email || '';
+    if (!window.confirm(this.translate.instant('admin.staff.password.confirm', { name }))) return;
+    this.passwordBusy.set(true);
+    this.passwordError.set(null);
+    this.staffApi.resetPassword(m.userId, this.brandCtx.activeId()).subscribe({
+      next: (result) => {
+        this.passwordBusy.set(false);
+        this.passwordCopied.set(false);
+        this.passwordReset.set(result);
+      },
+      error: (err) => {
+        this.passwordBusy.set(false);
+        this.passwordError.set(
+          apiErrorCode(err) === 'STAFF_NOT_EDITABLE'
+            ? this.translate.instant('admin.staff.password.notEditable')
+            : staffErrorMessage(err, this.translate),
+        );
+      },
+    });
+  }
+
+  copyPassword(password: string): void {
+    void navigator.clipboard?.writeText(password).then(
+      () => this.passwordCopied.set(true),
+      () => undefined,
+    );
+  }
+
   onPinInput(event: Event): void {
     const field = event.target as HTMLInputElement;
     const digits = field.value.replace(/\D/g, '').slice(0, 6);
@@ -417,6 +532,8 @@ export class StaffMemberPage {
   private load(userId: string, brandId: string | null): void {
     this.loading.set(true);
     this.error.set(null);
+    this.passwordReset.set(null);
+    this.passwordError.set(null);
     this.catalog.listStores(brandId ?? undefined).subscribe({
       next: (list) => this.stores.set(list),
       error: (err) => this.error.set(staffErrorMessage(err, this.translate)),

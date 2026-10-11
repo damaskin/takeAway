@@ -130,7 +130,7 @@ export const TERMS_EN: LegalDocument = {
         {
           list: [
             'Email: [help@takeaway.md](mailto:help@takeaway.md)',
-            'Telegram: [@takaway_tgbot](https://t.me/takaway_tgbot)',
+            'The "Write to us" form on the [Support](/support) page',
           ],
         },
       ],

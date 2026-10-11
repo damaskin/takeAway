@@ -1,8 +1,11 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
 
+import { API_CONFIG } from '../../core/api/api.config';
 import { PRIVACY_RU } from './content/privacy.ru';
 import type { LegalDocKey } from './legal-document';
 import { LegalPage } from './legal.page';
@@ -17,7 +20,13 @@ describe('LegalPage', () => {
   async function open(doc: LegalDocKey): Promise<HTMLElement> {
     TestBed.configureTestingModule({
       imports: [LegalPage],
-      providers: [provideRouter([]), provideTranslateService({ fallbackLang: 'ru' })],
+      providers: [
+        provideRouter([]),
+        provideTranslateService({ fallbackLang: 'ru' }),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: API_CONFIG, useValue: { baseUrl: '/api' } },
+      ],
     });
     translate = TestBed.inject(TranslateService);
     translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
@@ -84,13 +93,24 @@ describe('LegalPage', () => {
   });
 
   it('opens site links through the router and web links in a new tab', async () => {
-    const el = await open('terms');
+    const el = await open('privacy');
 
-    const privacy = el.querySelector<HTMLAnchorElement>('.legal-prose a[href="/privacy"]');
-    expect(privacy?.target).toBe('');
+    const support = el.querySelector<HTMLAnchorElement>('.legal-prose a[href="/support"]');
+    expect(support?.target).toBe('');
+    // The notification bot, named where the policy says what it sends.
     const telegram = el.querySelector<HTMLAnchorElement>('a[href="https://t.me/takaway_tgbot"]');
     expect(telegram?.target).toBe('_blank');
     expect(telegram?.rel).toBe('noopener');
+  });
+
+  it('opens support with the «Написать нам» form, and only there', async () => {
+    const support = await open('support');
+    expect(support.querySelector('app-support-form h2')?.textContent?.trim()).toBe('Написать нам');
+    expect(support.querySelector('a[href="mailto:help@takeaway.md"]')).not.toBeNull();
+
+    TestBed.resetTestingModule();
+    const terms = await open('terms');
+    expect(terms.querySelector('app-support-form')).toBeNull();
   });
 
   it('keeps support short — no contents list — and links both documents at the bottom', async () => {

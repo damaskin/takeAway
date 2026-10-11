@@ -57,7 +57,8 @@ export const BUSY_METER_FULL = 100;
  * (0 unless someone set it).
  *
  * It colours the store and nothing else: the ETA a customer is quoted comes
- * from the real queue (KitchenLoadService) and does not read this.
+ * from the real queue (KitchenLoadService) and does not read this — only
+ * the busy switch itself, which adds `BUSY_EXTRA_WAIT_SECONDS` to it.
  */
 export function busyMeterOf(store: { status: string; busyMeter: number }): number {
   return isBusy(store) ? BUSY_METER_FULL : store.busyMeter;

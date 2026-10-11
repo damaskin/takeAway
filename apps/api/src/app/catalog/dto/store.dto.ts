@@ -129,13 +129,17 @@ export class BrandThemeDto {
   @ApiProperty({ nullable: true, type: String })
   logoUrl!: string | null;
 
-  /** Map of `{ "--css-var": "value" }` overrides for the TMA theme. */
+  /**
+   * Always null: every brand shows in the one takeAway style since
+   * 2026-10-11. Kept on the wire for the app builds that read it.
+   */
   @ApiProperty({
     nullable: true,
     type: Object,
-    description: 'CSS variable overrides applied on top of the Telegram theme',
+    deprecated: true,
+    description: 'Always null — brands no longer recolour the storefronts.',
   })
-  themeOverrides!: Record<string, string> | null;
+  themeOverrides!: null;
 }
 
 export class StoreDetailDto extends StoreListItemDto {

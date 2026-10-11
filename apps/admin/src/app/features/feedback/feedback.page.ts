@@ -8,7 +8,7 @@ import {
   type FeedbackKind,
   type FeedbackStatus,
 } from '@takeaway/shared-types';
-import { formatPhone } from '@takeaway/utils';
+import { formatPhone, normalizeContact } from '@takeaway/utils';
 
 import { FeedbackApi } from '../../core/feedback/feedback.service';
 import { apiErrorMessage } from '../../core/http/api-error';
@@ -20,7 +20,9 @@ const PAGE_SIZE = 20;
 
 /**
  * «Обратная связь» — reviews, suggestions and problem reports customers send
- * from their profile in the app, on the site and in the Mini App. The
+ * from their profile in the app, on the site and in the Mini App, messages
+ * from the site's «Поддержка» form (visitors without an account leave a name
+ * and an email or phone), and businesses writing from the admin. The
  * platform team reads them here, newest first, and marks them read or
  * archives them. SUPER_ADMIN only.
  */
@@ -96,7 +98,13 @@ const PAGE_SIZE = 20;
                 @if (f.contact) {
                   <div>
                     <dt>{{ 'admin.feedback.contact' | translate }}</dt>
-                    <dd class="fb-contact">{{ f.contact }}</dd>
+                    <dd class="fb-contact">
+                      @if (contactLink(f.contact); as link) {
+                        <a [href]="link.href">{{ link.label }}</a>
+                      } @else {
+                        {{ f.contact }}
+                      }
+                    </dd>
                   </div>
                 }
                 @if (f.brand; as brand) {
@@ -395,9 +403,23 @@ export class CustomerFeedbackPage {
   }
 
   author(f: AdminFeedback): string {
-    if (!f.author) return this.translate.instant('admin.feedback.noAuthor');
+    if (!f.author) {
+      // A visitor of the site's support form, with the name they gave.
+      return f.name
+        ? this.translate.instant('admin.feedback.guestNamed', { name: f.name })
+        : this.translate.instant('admin.feedback.noAuthor');
+    }
     const name = f.author.name || '—';
     return f.author.deleted ? `${name} (${this.translate.instant('admin.feedback.deletedAccount')})` : name;
+  }
+
+  /** An email or a phone to answer on, as a link; free text («@ivan_tg») stays text. */
+  contactLink(contact: string): { href: string; label: string } | null {
+    const point = normalizeContact(contact);
+    if (!point) return null;
+    return point.kind === 'email'
+      ? { href: `mailto:${point.value}`, label: contact }
+      : { href: `tel:${point.value}`, label: formatPhone(point.value) };
   }
 
   /** The account's own ways to reach the customer. */

@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OrderStatus } from '@prisma/client';
 
+import { isBusy } from '../catalog/store-availability';
 import { checkoutError } from '../common/http/checkout-error';
 import { PrismaService } from '../prisma/prisma.service';
 import { isOpenAt, type WorkingHour } from './opening-hours';
@@ -32,10 +34,21 @@ const SLOT_HORIZON_HOURS = 12;
  */
 const IN_PROGRESS_WORK_FACTOR = 0.5;
 
+/** {@link KitchenLoadService.busyExtraWaitSeconds} when `BUSY_EXTRA_WAIT_SECONDS` is not set. */
+export const DEFAULT_BUSY_EXTRA_WAIT_SECONDS = 5 * 60;
+
+/** What the queue wait of a store depends on. */
+export interface QueueFacts {
+  id: string;
+  kitchenParallelism: number;
+  /** OVERLOADED — «Загружены» in the kitchen — adds the busy wait. */
+  status: string;
+}
+
 export interface EtaQuote {
   /** Total seconds from now until handover. */
   etaSeconds: number;
-  /** Of which, waiting for the queue to clear. */
+  /** Of which, waiting for the queue to clear — the busy wait included. */
   queueWaitSeconds: number;
   /** Of which, this order's own preparation. */
   prepSeconds: number;
@@ -54,6 +67,7 @@ export interface PickupSlot {
 }
 
 export interface StoreCapacity {
+  status: string;
   baseEtaSeconds: number;
   kitchenParallelism: number;
   slotCapacity: number;
@@ -70,11 +84,19 @@ export interface StoreCapacity {
  * outstanding at the store rather than read off a field nobody updates:
  *
  *     eta = baseEtaSeconds + outstandingWork / kitchenParallelism + ownPrep
+ *           (+ busyExtraWait while the store is marked busy)
  *
  * `outstandingWork` sums `Order.workSeconds` (the whole order's cost to the
  * kitchen), while `ownPrep` uses `prepSeconds` (the longest single item).
  * Those are deliberately different numbers: a four-drink order occupies the
  * bar four times as long as it makes its own customer wait.
+ *
+ * The orders on the board are not all the kitchen is doing: when staff
+ * press «Загружены» (store status OVERLOADED) there is a queue at the
+ * counter, a big catering order, a short shift. The quote cannot see that,
+ * so while the store is busy its queue part grows by a fixed
+ * `BUSY_EXTRA_WAIT_SECONDS` (5 minutes by default) — on the store list, the
+ * store page, the checkout and the pickup time of an order placed then.
  *
  * Slots are the other half. A quote nobody can honour is worse than no
  * quote, so once a 15-minute window holds `slotCapacity` handovers it stops
@@ -83,15 +105,30 @@ export interface StoreCapacity {
  */
 @Injectable()
 export class KitchenLoadService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * What «Загружены» adds to the queue wait: `BUSY_EXTRA_WAIT_SECONDS`, a
+   * whole number of seconds; 0 turns it off. Unset or unreadable falls back
+   * to {@link DEFAULT_BUSY_EXTRA_WAIT_SECONDS}.
+   */
+  get busyExtraWaitSeconds(): number {
+    const raw = this.config.get<string | number>('BUSY_EXTRA_WAIT_SECONDS');
+    const value = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : DEFAULT_BUSY_EXTRA_WAIT_SECONDS;
+  }
 
   /**
    * Seconds of kitchen work outstanding at a store right now, divided by how
-   * many orders it runs in parallel.
+   * many orders it runs in parallel — plus the busy wait while the store is
+   * marked busy.
    */
-  async queueWaitSeconds(storeId: string, parallelism: number): Promise<number> {
-    const byStore = await this.queueWaitByStore([{ id: storeId, kitchenParallelism: parallelism }]);
-    return byStore.get(storeId) ?? 0;
+  async queueWaitSeconds(store: QueueFacts): Promise<number> {
+    const byStore = await this.queueWaitByStore([store]);
+    return byStore.get(store.id) ?? 0;
   }
 
   /**
@@ -99,8 +136,8 @@ export class KitchenLoadService {
    * every nearby store with a live wait, so the per-store version would turn
    * one screen into a query per pin on the map.
    */
-  async queueWaitByStore(stores: readonly { id: string; kitchenParallelism: number }[]): Promise<Map<string, number>> {
-    const waits = new Map<string, number>(stores.map((s) => [s.id, 0]));
+  async queueWaitByStore(stores: readonly QueueFacts[]): Promise<Map<string, number>> {
+    const waits = new Map<string, number>();
     if (stores.length === 0) return waits;
 
     const rows = await this.prisma.order.groupBy({
@@ -115,8 +152,10 @@ export class KitchenLoadService {
       work.set(row.storeId, (work.get(row.storeId) ?? 0) + (row._sum.workSeconds ?? 0) * factor);
     }
 
+    const busyExtra = this.busyExtraWaitSeconds;
     for (const store of stores) {
-      waits.set(store.id, Math.round((work.get(store.id) ?? 0) / Math.max(1, store.kitchenParallelism)));
+      const queue = Math.round((work.get(store.id) ?? 0) / Math.max(1, store.kitchenParallelism));
+      waits.set(store.id, queue + (isBusy(store) ? busyExtra : 0));
     }
     return waits;
   }
@@ -127,7 +166,7 @@ export class KitchenLoadService {
    */
   async quote(storeId: string, prepSeconds: number): Promise<EtaQuote> {
     const store = await this.capacityFor(storeId);
-    const queueWaitSeconds = await this.queueWaitSeconds(storeId, store.kitchenParallelism);
+    const queueWaitSeconds = await this.queueWaitSeconds({ id: storeId, ...store });
     return {
       etaSeconds: store.baseEtaSeconds + queueWaitSeconds + prepSeconds,
       queueWaitSeconds,
@@ -221,6 +260,7 @@ export class KitchenLoadService {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
       select: {
+        status: true,
         baseEtaSeconds: true,
         kitchenParallelism: true,
         slotCapacity: true,

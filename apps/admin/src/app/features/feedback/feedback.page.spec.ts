@@ -16,6 +16,7 @@ function item(overrides: Partial<AdminFeedback> = {}): AdminFeedback {
     kind: 'PROBLEM',
     message: 'Кофе был холодный',
     contact: '@ivan',
+    name: null,
     source: 'IOS',
     appVersion: '1.2.0 (3)',
     status: 'NEW',
@@ -152,5 +153,24 @@ describe('CustomerFeedbackPage', () => {
     const cards = el().querySelectorAll('article');
     expect(cards[0]?.textContent).toContain('— (аккаунт удалён)');
     expect(cards[1]?.textContent).toContain('Без аккаунта');
+  });
+
+  it('shows who a visitor of the site support form is and how to answer them', async () => {
+    expectList('page=1&pageSize=20').flush(
+      pageOf([
+        item({ author: null, name: 'Ион', contact: '+37369123456', source: 'WEB', appVersion: null }),
+        item({ id: 'fb-2', author: null, name: null, contact: 'ion@mail.md', source: 'WEB', appVersion: null }),
+      ]),
+    );
+    await fixture.whenStable();
+
+    const cards = el().querySelectorAll('article');
+    expect(cards[0]?.textContent).toContain('Ион (без аккаунта)');
+    const phone = cards[0]?.querySelector<HTMLAnchorElement>('a[href="tel:+37369123456"]');
+    expect(phone?.textContent?.trim()).toBe('+373 69 123 456');
+    expect(cards[1]?.textContent).toContain('Без аккаунта');
+    expect(cards[1]?.querySelector('a[href="mailto:ion@mail.md"]')).not.toBeNull();
+    // Free text is not a link.
+    expect(el().querySelector('a[href^="mailto:@"]')).toBeNull();
   });
 });

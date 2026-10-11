@@ -20,21 +20,15 @@ import { PlanCardComponent } from './plan-card.component';
 
 /**
  * Brand settings — the BRAND_ADMIN manages their own brand identity
- * (name, logo, currency, email language, theme overrides). SUPER_ADMIN gets
- * here too and edits whichever brand the top-bar selector is on; moderation
- * itself stays on the dedicated /admin/brands screen, and its outcome is
- * shown to the owner by the banner in the admin shell.
+ * (name, phone, logo, currency, email language). SUPER_ADMIN gets here too
+ * and edits whichever brand the top-bar selector is on; moderation itself
+ * stays on the dedicated /admin/brands screen, and its outcome is shown to
+ * the owner by the banner in the admin shell.
  *
- * `themeOverrides` is exposed as a small fixed list of well-known CSS
- * variables + a free-form JSON fallback (advanced) so non-technical
- * brand owners don't have to hand-edit JSON for the common case.
+ * There are no brand colours: every brand shows in the one takeAway style
+ * (owner decision, 2026-10-11 — the «Цвета темы» editor let a business
+ * paint the Mini App unreadable).
  */
-const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
-  { cssVar: '--color-caramel', labelKey: 'admin.settings.theme.caramel' },
-  { cssVar: '--color-cream', labelKey: 'admin.settings.theme.cream' },
-  { cssVar: '--color-foam', labelKey: 'admin.settings.theme.foam' },
-  { cssVar: '--color-espresso', labelKey: 'admin.settings.theme.espresso' },
-];
 
 @Component({
   selector: 'app-admin-settings',
@@ -211,41 +205,6 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
             }
           </div>
 
-          <fieldset style="border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; margin: 0">
-            <legend
-              style="padding: 0 6px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-            >
-              {{ 'admin.settings.theme.title' | translate }}
-            </legend>
-            <p
-              style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); margin: 0 0 12px"
-            >
-              {{ 'admin.settings.theme.hint' | translate }}
-            </p>
-            <div class="flex flex-col" style="gap: 10px" [formGroupName]="'themeOverrides'">
-              @for (f of themeFields; track f.cssVar) {
-                <label class="flex items-center" style="gap: 12px">
-                  <span
-                    class="flex-1"
-                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
-                    >{{ f.labelKey | translate }}</span
-                  >
-                  <input
-                    [formControlName]="f.cssVar"
-                    type="color"
-                    style="width: 48px; height: 36px; padding: 0; border: 1px solid var(--color-border); border-radius: 8px; background: transparent; cursor: pointer"
-                  />
-                  <input
-                    [formControlName]="f.cssVar"
-                    type="text"
-                    placeholder="#c77d3b"
-                    style="width: 120px; height: 36px; padding: 0 10px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-mono); font-size: 12px; outline: none"
-                  />
-                </label>
-              }
-            </div>
-          </fieldset>
-
           <div class="flex items-center" style="gap: 12px">
             <button
               type="submit"
@@ -296,7 +255,6 @@ export class AdminSettingsPage {
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
   /** «Написать в поддержку», from the plan card. */
   readonly supportOpen = signal(false);
-  readonly themeFields = THEME_FIELDS;
   readonly currencies = BRAND_CURRENCIES;
   readonly brand = signal<MyBrand | null>(null);
   readonly loading = signal(true);
@@ -315,7 +273,6 @@ export class AdminSettingsPage {
     currency: FormControl<string>;
     locale: FormControl<BrandLocale>;
     logoUrl: FormControl<string>;
-    themeOverrides: FormGroup<Record<string, FormControl<string>>>;
   }>;
 
   readonly hasChanges = computed(() => this.form.dirty);
@@ -327,10 +284,6 @@ export class AdminSettingsPage {
   });
 
   constructor() {
-    const themeCtrls: Record<string, FormControl<string>> = {};
-    for (const f of THEME_FIELDS) {
-      themeCtrls[f.cssVar] = new FormControl('', { nonNullable: true });
-    }
     this.form = new FormGroup({
       name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
       // Optional here only for brands from before sign-up asked for it;
@@ -339,7 +292,6 @@ export class AdminSettingsPage {
       currency: new FormControl('MDL', { nonNullable: true, validators: [Validators.required] }),
       locale: new FormControl<BrandLocale>('RU', { nonNullable: true }),
       logoUrl: new FormControl('', { nonNullable: true }),
-      themeOverrides: new FormGroup(themeCtrls),
     });
 
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
@@ -378,13 +330,6 @@ export class AdminSettingsPage {
         const currency = this.form.controls.currency;
         if (brand.currencyLocked) currency.disable();
         else currency.enable();
-        if (brand.themeOverrides) {
-          const group = this.form.controls.themeOverrides;
-          for (const [k, v] of Object.entries(brand.themeOverrides)) {
-            const ctrl = group.get(k);
-            if (ctrl) ctrl.setValue(v);
-          }
-        }
         this.form.markAsPristine();
         this.loading.set(false);
       },
@@ -401,10 +346,6 @@ export class AdminSettingsPage {
     this.saved.set(false);
     this.error.set(null);
     const v = this.form.getRawValue();
-    const overrides: Record<string, string> = {};
-    for (const [k, val] of Object.entries(v.themeOverrides)) {
-      if (typeof val === 'string' && val.trim()) overrides[k] = val.trim();
-    }
     this.settings
       .updateMyBrand({
         name: v.name.trim(),
@@ -412,7 +353,6 @@ export class AdminSettingsPage {
         ...(this.form.controls.currency.enabled ? { currency: v.currency } : {}),
         locale: v.locale,
         logoUrl: v.logoUrl.trim() || undefined,
-        themeOverrides: overrides,
       })
       .subscribe({
         next: (updated) => {

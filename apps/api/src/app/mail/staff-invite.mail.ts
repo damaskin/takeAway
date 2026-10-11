@@ -81,6 +81,58 @@ export function staffInviteMail(invite: StaffInvite): OutgoingMail {
   return { subject, text, html };
 }
 
+export interface StaffPasswordReset {
+  to: string;
+  name: string | null;
+  /** The brand(s) of the stores the person works at. */
+  brandName: string;
+  /** The cabinet's sign-in page. */
+  loginUrl: string;
+  /** One-time "set your password" link. */
+  setPasswordUrl: string;
+  /** How long {@link setPasswordUrl} stays valid. */
+  linkTtlHours: number;
+}
+
+/**
+ * The owner reset an employee's password on the Staff page: the old one no
+ * longer works and every session was ended. A one-time link to set a new
+ * one; the temporary password the owner got instead is never mailed — the
+ * owner hands it over in person, and either way works.
+ */
+export function staffPasswordResetMail(reset: StaffPasswordReset): OutgoingMail {
+  const subject = `Пароль сброшен — ${reset.brandName} / Your takeAway password was reset`;
+  const ru: string[] = [
+    reset.name ? `Здравствуйте, ${reset.name}!` : 'Здравствуйте!',
+    '',
+    `Владелец «${reset.brandName}» сбросил ваш пароль в кабинете takeAway. Старый пароль больше не действует, вход на всех устройствах завершён.`,
+    '',
+    `Задайте новый пароль по ссылке (одноразовая, действует ${reset.linkTtlHours} ч):`,
+    reset.setPasswordUrl,
+    '',
+    'Или войдите с временным паролем, который вам передаст владелец, — система попросит его сменить.',
+    '',
+    `Кабинет: ${reset.loginUrl}`,
+    `Логин: ${reset.to}`,
+  ];
+  const en: string[] = [
+    reset.name ? `Hi ${reset.name},` : 'Hi,',
+    '',
+    `The owner of ${reset.brandName} reset your takeAway password. The old password no longer works and you were signed out everywhere.`,
+    '',
+    `Set a new password with this one-time link (valid for ${reset.linkTtlHours} hours):`,
+    reset.setPasswordUrl,
+    '',
+    'Or sign in with the temporary password the owner gives you — you will be asked to change it.',
+    '',
+    `Sign in at: ${reset.loginUrl}`,
+    `Login: ${reset.to}`,
+  ];
+  const text = [...ru, '', '--', '', ...en].join('\n');
+  const html = `${paragraphs(ru)}\n<hr />\n${paragraphs(en)}`;
+  return { subject, text, html };
+}
+
 /** Blank lines split paragraphs, single newlines become <br />, URLs become links. */
 function paragraphs(lines: string[]): string {
   return lines

@@ -4,6 +4,7 @@ import {
   FEEDBACK_CONTACT_MAX_LENGTH,
   FEEDBACK_KINDS,
   FEEDBACK_MESSAGE_MAX_LENGTH,
+  FEEDBACK_NAME_MAX_LENGTH,
   FEEDBACK_SOURCES,
   SUPPORT_TOPICS,
 } from '@takeaway/shared-types';
@@ -67,6 +68,52 @@ export class CreateSupportDto {
   message!: string;
 }
 
+/**
+ * The site's «Поддержка» form. Whether `contact` is required depends on who
+ * sends it (a visitor without an account must leave one), so the service
+ * checks that, and reads it as an email or a phone.
+ */
+export class CreateSiteSupportDto {
+  @ApiProperty({ enum: SUPPORT_TOPICS })
+  @IsIn(SUPPORT_TOPICS)
+  kind!: FeedbackKind;
+
+  @ApiProperty({ maxLength: FEEDBACK_MESSAGE_MAX_LENGTH })
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(FEEDBACK_MESSAGE_MAX_LENGTH)
+  message!: string;
+
+  @ApiPropertyOptional({ maxLength: FEEDBACK_NAME_MAX_LENGTH })
+  @Transform(trimOrDrop)
+  @IsOptional()
+  @IsString()
+  @MaxLength(FEEDBACK_NAME_MAX_LENGTH)
+  name?: string;
+
+  @ApiPropertyOptional({
+    maxLength: FEEDBACK_CONTACT_MAX_LENGTH,
+    description: 'An email or a phone number. Required without an account (`SUPPORT_CONTACT_REQUIRED`).',
+  })
+  @Transform(trimOrDrop)
+  @IsOptional()
+  @IsString()
+  @MaxLength(FEEDBACK_CONTACT_MAX_LENGTH)
+  contact?: string;
+
+  /**
+   * Honeypot: the form hides this field from people, so a value means a bot
+   * filled every input it found. Such a request is answered like any other
+   * and dropped.
+   */
+  @ApiPropertyOptional({ description: 'Leave empty.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(FEEDBACK_CONTACT_MAX_LENGTH)
+  website?: string;
+}
+
 export class FeedbackReceiptDto {
   @ApiProperty() id!: string;
   @ApiProperty() createdAt!: string;
@@ -125,12 +172,23 @@ export class AdminFeedbackDto {
   @ApiProperty({ enum: FeedbackKind }) kind!: FeedbackKind;
   @ApiProperty() message!: string;
   @ApiProperty({ nullable: true, type: String }) contact!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'The name a visitor without an account gave on the site support form.',
+  })
+  name!: string | null;
   @ApiProperty({ enum: FeedbackSource }) source!: FeedbackSource;
   @ApiProperty({ nullable: true, type: String }) appVersion!: string | null;
   @ApiProperty({ enum: FeedbackStatus }) status!: FeedbackStatus;
   @ApiProperty() createdAt!: string;
   @ApiProperty({ nullable: true, type: String }) readAt!: string | null;
-  @ApiProperty({ nullable: true, type: () => FeedbackAuthorDto }) author!: FeedbackAuthorDto | null;
+  @ApiProperty({
+    nullable: true,
+    type: () => FeedbackAuthorDto,
+    description: 'Null for a visitor without an account, and when the account is gone.',
+  })
+  author!: FeedbackAuthorDto | null;
   @ApiProperty({
     nullable: true,
     type: () => FeedbackBrandDto,

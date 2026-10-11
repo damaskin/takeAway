@@ -13,7 +13,6 @@ export interface MyBrand {
   logoUrl: string | null;
   currency: string;
   locale: 'EN' | 'RU';
-  themeOverrides: Record<string, string> | null;
   moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   moderationNote: string | null;
   /** True once the brand has an order: the API then refuses a new currency. */
@@ -34,7 +33,6 @@ export interface UpdateMyBrandRequest {
   logoUrl?: string;
   currency?: string;
   locale?: 'EN' | 'RU';
-  themeOverrides?: Record<string, string>;
   /** Any common format; the API stores E.164. */
   contactPhone?: string;
 }

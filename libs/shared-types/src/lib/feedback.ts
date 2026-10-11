@@ -11,7 +11,7 @@ export type FeedbackKind = 'REVIEW' | 'SUGGESTION' | 'PROBLEM' | 'QUESTION' | 'P
 /** What a customer picks from in the profile form. */
 export const FEEDBACK_KINDS: readonly FeedbackKind[] = ['REVIEW', 'SUGGESTION', 'PROBLEM'];
 
-/** The topics of «Написать в поддержку» in the business admin. */
+/** The topics of «Написать в поддержку» in the business admin and of the site's «Поддержка» form. */
 export const SUPPORT_TOPICS: readonly FeedbackKind[] = ['QUESTION', 'PROBLEM', 'SUGGESTION'];
 
 /** Every kind — the platform admin's inbox filter. */
@@ -38,6 +38,8 @@ export const FEEDBACK_STATUSES: readonly FeedbackStatus[] = ['NEW', 'READ', 'ARC
 export const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
 /** Longest "how to reach me" the API accepts, after trimming. */
 export const FEEDBACK_CONTACT_MAX_LENGTH = 200;
+/** Longest name a visitor may leave on the site's support form. */
+export const FEEDBACK_NAME_MAX_LENGTH = 80;
 
 /** `POST /feedback` — signed-in customers only. */
 export interface CreateFeedbackRequest {
@@ -49,6 +51,28 @@ export interface CreateFeedbackRequest {
   source: FeedbackSource;
   /** The app build, e.g. `1.2.0 (3)`; the web clients leave it out. */
   appVersion?: string;
+}
+
+/**
+ * `POST /feedback/support` — the site's «Поддержка» form. Open to visitors
+ * without an account; a signed-in customer's message is filed under their
+ * account. Answers 204 with no body.
+ */
+export interface SiteSupportRequest {
+  /** One of {@link SUPPORT_TOPICS}. */
+  kind: FeedbackKind;
+  /** 1…{@link FEEDBACK_MESSAGE_MAX_LENGTH} characters once trimmed. */
+  message: string;
+  /** Up to {@link FEEDBACK_NAME_MAX_LENGTH} characters. */
+  name?: string;
+  /**
+   * An email or a phone number to answer on. Required without an account;
+   * a signed-in customer may leave it out and is answered on the account's
+   * own contacts.
+   */
+  contact?: string;
+  /** Left empty by people: the form hides it. Anything in it marks a bot. */
+  website?: string;
 }
 
 /** What `POST /feedback` answers with. */
@@ -74,13 +98,15 @@ export interface AdminFeedback {
   kind: FeedbackKind;
   message: string;
   contact: string | null;
+  /** The name a visitor without an account gave on the site's support form. */
+  name: string | null;
   source: FeedbackSource;
   appVersion: string | null;
   status: FeedbackStatus;
   createdAt: string;
   /** When it was first marked read; null while NEW. */
   readAt: string | null;
-  /** Null when the account row is gone. */
+  /** Null for a visitor without an account, and when the account row is gone. */
   author: FeedbackAuthor | null;
   /** The brand a business message is about; null for customer feedback. */
   brand: FeedbackBrand | null;

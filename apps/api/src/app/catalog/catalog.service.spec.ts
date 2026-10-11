@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
@@ -70,13 +71,15 @@ describe('CatalogService', () => {
         // Real service against the mocked client — the ETA arithmetic is
         // part of what these assertions are checking.
         KitchenLoadService,
+        // BUSY_EXTRA_WAIT_SECONDS unset: the 5-minute default.
+        { provide: ConfigService, useValue: { get: () => undefined } },
       ],
     }).compile();
 
     service = moduleRef.get(CatalogService);
   });
 
-  it('reports a store the kitchen marked busy as full, still taking orders, with the queue-based ETA', async () => {
+  it('reports a store the kitchen marked busy as full, still taking orders, five minutes slower', async () => {
     prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'OVERLOADED', busyMeter: 0 })]);
     prisma.store.findFirst.mockResolvedValue(storeFixture({ status: 'OVERLOADED', busyMeter: 0 }));
 
@@ -85,13 +88,27 @@ describe('CatalogService', () => {
       status: 'OVERLOADED',
       busyMeter: 100,
       acceptingOrders: true,
-      currentEtaSeconds: 360,
+      currentEtaSeconds: 360 + 300,
     });
-    await expect(service.getStore('store-1')).resolves.toMatchObject({ busyMeter: 100, currentEtaSeconds: 360 });
+    await expect(service.getStore('store-1')).resolves.toMatchObject({
+      busyMeter: 100,
+      currentEtaSeconds: 360 + 300,
+    });
 
     prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'OPEN', busyMeter: 35 })]);
     const [normal] = await service.listStores({});
-    expect(normal?.busyMeter).toBe(35);
+    expect(normal).toMatchObject({ busyMeter: 35, currentEtaSeconds: 360 });
+  });
+
+  it('hands no brand colours to the storefronts, whatever the brand once saved', async () => {
+    prisma.store.findFirst.mockResolvedValue(
+      storeFixture({
+        brand: { id: 'brand-1', slug: 'b', name: 'B', logoUrl: null, themeOverrides: { '--color-caramel': '#ff0000' } },
+      }),
+    );
+    const store = await service.getStore('store-1');
+    expect(store.brand.themeOverrides).toBeNull();
+    expect(prisma.store.findFirst.mock.calls[0]?.[0].include.brand.select).not.toHaveProperty('themeOverrides');
   });
 
   it('lists stores without lat/lng', async () => {

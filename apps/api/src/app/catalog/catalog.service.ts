@@ -55,7 +55,8 @@ export class CatalogService {
 
     // One grouped query for every store's live queue, rather than one per
     // pin. `currentEtaSeconds` on the wire is now a computed figure: the
-    // store's fixed overhead plus what the queue owes.
+    // store's fixed overhead plus what the queue owes (and the busy wait
+    // while the kitchen has pressed «Загружены»).
     const waits = await this.kitchen.queueWaitByStore(stores);
 
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
@@ -133,13 +134,12 @@ export class CatalogService {
       include: {
         workingHours: { orderBy: { weekday: 'asc' } },
         shifts: OPEN_SHIFT,
-        brand: { select: { id: true, slug: true, name: true, logoUrl: true, themeOverrides: true } },
+        brand: { select: { id: true, slug: true, name: true, logoUrl: true } },
       },
     });
     if (!store) throw new NotFoundException('Store not found');
 
-    const currentEtaSeconds =
-      store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store.id, store.kitchenParallelism));
+    const currentEtaSeconds = store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store));
 
     return {
       id: store.id,
@@ -182,7 +182,11 @@ export class CatalogService {
         slug: store.brand.slug,
         name: store.brand.name,
         logoUrl: store.brand.logoUrl,
-        themeOverrides: (store.brand.themeOverrides as Record<string, string> | null) ?? null,
+        // One takeAway look for every brand (owner decision, 2026-10-11):
+        // a brand's colours are no longer handed to the storefronts. The
+        // column stays, so this line is the rollback; the field stays on
+        // the wire as null for the app builds that read it.
+        themeOverrides: null,
       },
     };
   }

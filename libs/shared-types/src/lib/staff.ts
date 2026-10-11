@@ -77,6 +77,19 @@ export interface StaffInviteResult extends StaffMember {
   accountCreated: boolean;
 }
 
+/**
+ * `POST /admin/staff/:userId/reset-password` — «Сбросить пароль», for the
+ * brand's owner and platform admins. The person's sessions are ended and
+ * the password is replaced by a generated one, to be changed at the next
+ * sign-in.
+ */
+export interface StaffPasswordReset {
+  /** The new temporary password. Shown to the owner once; it is not stored or sent anywhere. */
+  tempPassword: string;
+  /** Whether the person was also emailed a one-time link to set their own password. */
+  resetEmail: StaffInviteEmailStatus;
+}
+
 /** A kitchen tablet bound to the brand, as the Staff page lists it. */
 export interface KitchenDeviceSummary {
   id: string;

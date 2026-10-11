@@ -16,7 +16,6 @@ import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
-import { BrandThemeService } from '../../core/theme/brand-theme.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
 /**
@@ -164,7 +163,6 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly catalog = inject(CatalogService);
   private readonly tg = inject(TelegramBridgeService);
-  private readonly brandTheme = inject(BrandThemeService);
   private readonly activeStore = inject(ActiveStoreService);
   private readonly fmt = inject(LocaleFormatService);
 
@@ -223,7 +221,6 @@ export class TmaMenuPage implements OnInit, OnDestroy {
         // Remember which store the customer is shopping in — the product and
         // checkout pages have no store segment in their route and rely on it.
         this.activeStore.set(s.id);
-        this.brandTheme.apply(s.brand?.themeOverrides ?? null);
       },
     });
     this.catalog.getMenu(slug).subscribe({
@@ -239,7 +236,6 @@ export class TmaMenuPage implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.detachBack?.();
-    this.brandTheme.reset();
   }
 
   scrollToCategory(id: string): void {

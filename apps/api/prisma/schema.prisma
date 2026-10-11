@@ -425,7 +425,12 @@ model Feedback {
   /// Trimmed, 1–2000 characters.
   message    String
   /// How to reach the customer, when it is not the account's own contacts.
+  /// From the site's support form without an account: an email (lower case)
+  /// or an E.164 phone, always set.
   contact    String?
+  /// The name a visitor gave on the site's support form; null otherwise —
+  /// signed-in authors are `user`.
+  name       String?
   source     FeedbackSource
   /// App build, e.g. "1.2.0 (3)"; null from the web clients.
   appVersion String?

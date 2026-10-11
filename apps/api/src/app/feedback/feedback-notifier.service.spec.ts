@@ -192,6 +192,26 @@ describe('FeedbackNotifier', () => {
     expect(opsChat.send.mock.calls[0][0]).toContain('От: — · iOS');
   });
 
+  it('names a visitor from the site’s support form and says how to answer them', async () => {
+    prisma.feedback.findUnique.mockResolvedValue(
+      feedback({
+        kind: FeedbackKind.QUESTION,
+        source: FeedbackSource.WEB,
+        appVersion: null,
+        contact: '+37369123456',
+        name: 'Ион',
+        userId: null,
+        user: null,
+      }),
+    );
+    await notifier.feedbackReceived('fb-1');
+
+    const text = opsChat.send.mock.calls[0][0] as string;
+    expect(text).toContain('Обратная связь: вопрос');
+    expect(text).toContain('От: Ион (без аккаунта) · Web');
+    expect(text).toContain('Как связаться: +37369123456');
+  });
+
   it('never throws — a broken database or Telegram only ends up in the log', async () => {
     prisma.feedback.findUnique.mockRejectedValue(new Error('db down'));
     await expect(notifier.feedbackReceived('fb-1')).resolves.toBeUndefined();

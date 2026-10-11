@@ -1,8 +1,9 @@
-import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, HttpException, Logger, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import type { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { PasswordService } from '../../auth/services/password.service';
+import type { TokensService } from '../../auth/services/tokens.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { AdminStaffMembersService } from './admin-staff-members.service';
@@ -14,6 +15,8 @@ interface FakeUser {
   phone: string | null;
   name: string | null;
   role: Role;
+  passwordHash?: string;
+  passwordMustChange?: boolean;
   blockedAt: Date | null;
   createdAt: Date;
   kdsPinHash: string | null;
@@ -159,6 +162,9 @@ function world() {
         return { count: fresh.length };
       }),
     },
+    passwordResetToken: {
+      updateMany: jest.fn(async (_args: { where: { userId: string; consumedAt: null } }) => ({ count: 1 })),
+    },
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 
@@ -179,21 +185,26 @@ function world() {
         .every((p) => brands.includes(stores.find((s) => s.id === p.storeId)?.brandId ?? ''));
     }),
   };
-  const passwords = { hash: jest.fn(async () => 'bcrypt') };
-  const inviteMailer = { send: jest.fn(async () => 'SENT' as const) };
+  const passwords = { hash: jest.fn(async (plain: string) => `bcrypt(${plain})`) };
+  const inviteMailer = {
+    send: jest.fn(async () => 'SENT' as const),
+    sendPasswordReset: jest.fn(async (): Promise<'SENT' | 'FAILED' | 'NOT_CONFIGURED'> => 'SENT'),
+  };
+  const tokens = { revokeAll: jest.fn(async () => 2) };
 
   const svc = new AdminStaffMembersService(
     prisma as unknown as PrismaService,
     passwords as unknown as PasswordService,
     scope as unknown as BrandScopeService,
     inviteMailer as unknown as StaffInviteMailer,
+    tokens as unknown as TokensService,
   );
   const storesOf = (userId: string) =>
     pivot
       .filter((p) => p.userId === userId)
       .map((p) => p.storeId)
       .sort();
-  return { svc, prisma, users, storesOf, inviteMailer };
+  return { svc, prisma, users, storesOf, inviteMailer, tokens };
 }
 
 const owner = { id: 'owner', role: Role.BRAND_ADMIN } as AuthenticatedUser;
@@ -476,6 +487,96 @@ describe('AdminStaffMembersService — staff as people', () => {
       const { svc } = await shared();
       const member = await svc.changeRole('foreign-barista', 'MENU_EDITOR', superAdmin, 'brand-1');
       expect(member.role).toBe(Role.MENU_EDITOR);
+    });
+
+    it('keeps their password out of the brand’s hands', async () => {
+      const { svc, prisma, tokens, inviteMailer } = await shared();
+      const error = await svc.resetPassword('foreign-barista', owner, 'brand-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
+      expect(inviteMailer.sendPasswordReset).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    let logs: jest.SpyInstance;
+    beforeEach(() => {
+      logs = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    });
+    afterEach(() => logs.mockRestore());
+
+    it('gives the owner a new temporary password once, ends every session and mails a link', async () => {
+      const { svc, users, prisma, tokens, inviteMailer } = world();
+
+      const result = await svc.resetPassword('barista', owner, 'brand-1');
+
+      expect(result.resetEmail).toBe('SENT');
+      expect(result.tempPassword).toHaveLength(12);
+      expect(result.tempPassword).toMatch(/[a-z]/);
+      expect(result.tempPassword).toMatch(/[A-Z]/);
+      expect(result.tempPassword).toMatch(/[2-9]/);
+      const barista = users.find((u) => u.id === 'barista');
+      expect(barista).toMatchObject({ passwordHash: `bcrypt(${result.tempPassword})`, passwordMustChange: true });
+      expect(tokens.revokeAll).toHaveBeenCalledWith('barista');
+      // Links mailed before stop working; the new one is issued after that.
+      expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'barista', consumedAt: null },
+        data: { consumedAt: expect.any(Date) },
+      });
+      expect(inviteMailer.sendPasswordReset).toHaveBeenCalledWith({
+        userId: 'barista',
+        email: 'barista@noname.md',
+        name: 'barista',
+        storeIds: ['store-centre', 'store-station'],
+      });
+    });
+
+    it('logs who reset whose password, and never the password itself', async () => {
+      const { svc } = world();
+      const { tempPassword } = await svc.resetPassword('cook', owner, 'brand-1');
+      const lines = logs.mock.calls.map((call) => String(call[0]));
+      expect(lines).toContain('Staff password reset: user cook by owner (BRAND_ADMIN); sessions ended: 2; email: SENT');
+      expect(lines.join(' ')).not.toContain(tempPassword);
+    });
+
+    it('still hands the password over when the email cannot go out', async () => {
+      const { svc, inviteMailer } = world();
+      inviteMailer.sendPasswordReset.mockResolvedValueOnce('NOT_CONFIGURED');
+      await expect(svc.resetPassword('cook', owner, 'brand-1')).resolves.toMatchObject({
+        resetEmail: 'NOT_CONFIGURED',
+      });
+
+      inviteMailer.sendPasswordReset.mockRejectedValueOnce(new Error('db down'));
+      const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const failed = await svc.resetPassword('cook', owner, 'brand-1');
+      errors.mockRestore();
+      expect(failed.resetEmail).toBe('FAILED');
+      expect(failed.tempPassword).toHaveLength(12);
+    });
+
+    it('changes nothing when the sessions cannot be ended', async () => {
+      const { svc, prisma, tokens } = world();
+      tokens.revokeAll.mockRejectedValueOnce(new Error('redis down'));
+      await expect(svc.resetPassword('cook', owner, 'brand-1')).rejects.toThrow('redis down');
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('is for the owner and the platform admin, not a store manager', async () => {
+      const { svc, tokens } = world();
+      const error = await svc.resetPassword('barista', managerCentre).catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
+
+      await expect(svc.resetPassword('barista', superAdmin, 'brand-1')).resolves.toMatchObject({ resetEmail: 'SENT' });
+    });
+
+    it('reaches only the brand’s own team', async () => {
+      const { svc, tokens } = world();
+      await expect(svc.resetPassword('foreign-barista', owner, 'brand-1')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.resetPassword('customer', owner, 'brand-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
     });
   });
 });

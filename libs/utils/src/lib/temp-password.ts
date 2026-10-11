@@ -6,7 +6,7 @@ const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const DIGITS = '23456789';
 const ALL = LOWER + UPPER + DIGITS;
 
-/** A source of random 32-bit integers — `crypto.getRandomValues` in the browser. */
+/** A source of random 32-bit integers — Web Crypto's `getRandomValues`, in the browser and in Node alike. */
 export type RandomWords = (count: number) => Uint32Array;
 
 const cryptoWords: RandomWords = (count) => crypto.getRandomValues(new Uint32Array(count));
@@ -17,7 +17,8 @@ export function tempPasswordValid(password: string): boolean {
 }
 
 /**
- * A strong temporary password for the invite form: 12 characters from a
+ * A strong temporary password — for the admin's invite form, and for the
+ * API when an owner resets an employee's password: 12 characters from a
  * 56-symbol alphabet (about 70 bits), with at least one lower-case letter,
  * one capital and one digit, and nothing easy to misread when the owner
  * dictates it. Unbiased: values that would favour some symbols are redrawn.
