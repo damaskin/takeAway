@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -25,6 +26,10 @@ const MAX_COUNT = 99;
  * extras a customer can add several of, between a minimum and a maximum.
  * Every row can be edited in place — before, a typo in "Большой" or a
  * wrong surcharge meant deleting the option and building it again.
+ *
+ * Extras and milks are add-ons of the brand library («Добавки»): one is
+ * picked from it at its usual price, and a new one typed here joins it.
+ * Deleting an option takes the add-on off this product only.
  */
 @Component({
   selector: 'app-product-options-panel',
@@ -260,6 +265,36 @@ const MAX_COUNT = 99;
           }
         }
 
+        @if (pickable().length > 0) {
+          <form
+            [formGroup]="libraryPick"
+            (ngSubmit)="addFromLibrary()"
+            class="flex items-end flex-wrap"
+            style="gap: 8px"
+            data-testid="option-library-pick"
+          >
+            <label class="field" style="flex: 1 1 200px">
+              <span class="label">{{ 'admin.menu.options.fromLibrary' | translate }}</span>
+              <select class="control small" formControlName="ingredientId">
+                <option value="">{{ 'admin.menu.options.fromLibraryPlaceholder' | translate }}</option>
+                @for (i of pickable(); track i.id) {
+                  <option [value]="i.id">
+                    {{ i.name }} · {{ formatDelta(i.priceCents)
+                    }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
+                  </option>
+                }
+              </select>
+            </label>
+            <button
+              type="submit"
+              class="primary small disabled:opacity-50"
+              [disabled]="busy() || !libraryPick.controls.ingredientId.value"
+            >
+              {{ 'admin.menu.options.addFromLibrary' | translate }}
+            </button>
+          </form>
+        }
+
         <form [formGroup]="modifierAdd" (ngSubmit)="addModifier()" class="flex flex-col" style="gap: 8px">
           <div class="form-row-tight">
             <label class="field">
@@ -327,8 +362,13 @@ export class ProductOptionsPanelComponent {
   readonly variationTypes = VARIATION_TYPES;
   readonly variations = signal<VariationAdminDto[]>([]);
   readonly modifiers = signal<ModifierAdminDto[]>([]);
-  /** The brand's add-ins library, to link options to and to suggest names from. */
+  /** The brand's add-ons library, to pick extras from, link options to and suggest names from. */
   readonly ingredients = signal<IngredientDto[]>([]);
+  /** Library add-ons this product does not offer as an extra yet. */
+  readonly pickable = computed(() => {
+    const taken = new Set(this.modifiers().map((m) => m.ingredientId));
+    return this.ingredients().filter((i) => !taken.has(i.id));
+  });
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
@@ -379,6 +419,11 @@ export class ProductOptionsPanelComponent {
     ingredientId: new FormControl('', { nonNullable: true }),
   });
 
+  readonly libraryPick = new FormGroup({
+    /** '' = nothing picked yet. */
+    ingredientId: new FormControl('', { nonNullable: true }),
+  });
+
   readonly modifierAdd = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
@@ -403,6 +448,14 @@ export class ProductOptionsPanelComponent {
         this.refresh(id);
       });
     });
+    // Typing (or choosing from the suggestions) the name of a library add-on
+    // fills in its usual price, so the surcharge is not retyped per product.
+    this.modifierAdd.controls.name.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((name) => this.prefillPrice(name, this.modifierAdd.controls.price));
+    this.variationAdd.controls.name.valueChanges.pipe(takeUntilDestroyed()).subscribe((name) => {
+      if (this.variationAdd.controls.type.value === 'MILK') this.prefillPrice(name, this.variationAdd.controls.price);
+    });
   }
 
   formatDelta(cents: number): string {
@@ -421,13 +474,14 @@ export class ProductOptionsPanelComponent {
   addVariation(): void {
     this.variationAddSubmitted.set(true);
     const v = this.variationAdd.getRawValue();
-    const priceDeltaCents = v.price.trim() ? parseMoney(v.price) : 0;
+    const priceDeltaCents = v.price.trim() ? parseMoney(v.price) : undefined;
     if (this.variationAdd.invalid || priceDeltaCents === null) return;
     this.mutate(
       this.api.createVariation(this.productId(), {
         type: v.type,
         name: v.name.trim(),
-        priceDeltaCents,
+        // Left empty: a milk from the library costs its usual price, anything else nothing.
+        ...(priceDeltaCents === undefined ? {} : { priceDeltaCents }),
         isDefault: v.isDefault,
       }),
       () => {
@@ -469,20 +523,37 @@ export class ProductOptionsPanelComponent {
   }
 
   deleteVariation(v: VariationAdminDto): void {
-    if (!confirm(this.translate.instant('admin.menu.options.deleteConfirm', { name: v.name }))) return;
+    if (!confirm(this.deleteQuestion(v))) return;
     this.mutate(this.api.deleteVariation(v.id));
+  }
+
+  /** Puts a library add-on on this product as an extra, at its usual name and price. */
+  addFromLibrary(): void {
+    const ingredientId = this.libraryPick.controls.ingredientId.value;
+    if (!ingredientId) return;
+    this.mutate(this.api.createModifier(this.productId(), { ingredientId, maxCount: 1 }), () =>
+      this.libraryPick.reset({ ingredientId: '' }),
+    );
   }
 
   addModifier(): void {
     this.modifierAddSubmitted.set(true);
     const m = this.modifierAdd.getRawValue();
-    const priceDeltaCents = m.price.trim() ? parseMoney(m.price) : 0;
+    const priceDeltaCents = m.price.trim() ? parseMoney(m.price) : undefined;
     const maxCount = parseCount(m.maxCount, 1, MAX_COUNT);
     if (this.modifierAdd.invalid || priceDeltaCents === null || maxCount === null) return;
-    this.mutate(this.api.createModifier(this.productId(), { name: m.name.trim(), priceDeltaCents, maxCount }), () => {
-      this.modifierAddSubmitted.set(false);
-      this.modifierAdd.reset({ name: '', price: '', maxCount: '1' });
-    });
+    this.mutate(
+      this.api.createModifier(this.productId(), {
+        name: m.name.trim(),
+        // Left empty: an add-on already in the library costs its usual price, a new one nothing.
+        ...(priceDeltaCents === undefined ? {} : { priceDeltaCents }),
+        maxCount,
+      }),
+      () => {
+        this.modifierAddSubmitted.set(false);
+        this.modifierAdd.reset({ name: '', price: '', maxCount: '1' });
+      },
+    );
   }
 
   editModifier(m: ModifierAdminDto): void {
@@ -544,8 +615,22 @@ export class ProductOptionsPanelComponent {
   }
 
   deleteModifier(m: ModifierAdminDto): void {
-    if (!confirm(this.translate.instant('admin.menu.options.deleteConfirm', { name: m.name }))) return;
+    if (!confirm(this.deleteQuestion(m))) return;
     this.mutate(this.api.deleteModifier(m.id));
+  }
+
+  /** An option made of a library add-on only leaves this product; the question says so. */
+  private deleteQuestion(option: { name: string; ingredientId: string | null }): string {
+    const key = option.ingredientId ? 'admin.menu.options.deleteLinkedConfirm' : 'admin.menu.options.deleteConfirm';
+    return this.translate.instant(key, { name: option.name });
+  }
+
+  /** Fills an empty price with the usual one of the library add-on of that name. */
+  private prefillPrice(name: string, price: FormControl<string>): void {
+    if (price.value.trim()) return;
+    const wanted = name.trim().toLocaleLowerCase();
+    const match = wanted ? this.ingredients().find((i) => i.name.toLocaleLowerCase() === wanted) : undefined;
+    if (match && match.priceCents > 0) price.setValue(formatMoneyInput(match.priceCents, this.separator()));
   }
 
   /**

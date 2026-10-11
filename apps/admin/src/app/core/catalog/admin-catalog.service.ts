@@ -1,7 +1,7 @@
 import { HttpClient, type HttpEvent } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import type { BrandPlan } from '@takeaway/shared-types';
+import type { BrandPlan, StoreKind } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -38,6 +38,7 @@ export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type PickupPointType = 'COUNTER' | 'SHELF' | 'LOCKER';
 export type StoreImageKind = 'hero' | 'gallery';
+export type { StoreKind };
 
 /** The checks a closed store has to pass before it can be opened. */
 export type ReadinessCheck = 'coordinates' | 'timezone' | 'hours' | 'menu' | 'brandApproved';
@@ -67,6 +68,8 @@ export interface StoreAdminDto {
   workingHours?: StoreWorkingHourDto[];
   fulfillmentTypes?: StoreFulfillment[];
   pickupPointType?: PickupPointType;
+  /** What the store sells; never empty from the API. */
+  kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
   slotCapacity?: number;
@@ -101,6 +104,7 @@ export interface UpdateStoreInput {
   minOrderCents?: number;
   fulfillmentTypes?: StoreFulfillment[];
   pickupPointType?: PickupPointType;
+  kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
   slotCapacity?: number;
@@ -127,6 +131,8 @@ export interface CreateStoreInput {
   timezone?: string;
   phone?: string;
   email?: string;
+  /** Coffee when omitted. */
+  kinds?: StoreKind[];
 }
 
 export interface StoreImagesDto {
@@ -153,10 +159,15 @@ export interface IngredientSummaryDto {
   isAvailable: boolean;
 }
 
-/** A library entry: one in-stock switch for every option made of it. */
+/**
+ * An add-on of the brand library («Добавки») — the one place it is defined:
+ * name, usual price, one in-stock switch for every option made of it.
+ */
 export interface IngredientDto extends IngredientSummaryDto {
   brandId: string;
-  /** Products with an option made of it. */
+  /** Usual surcharge in minor units; what a product picking it from the library charges. */
+  priceCents: number;
+  /** Products offering it (an extra or a milk made of it). */
   products: Array<{ id: string; name: string }>;
 }
 
@@ -180,7 +191,9 @@ export interface ProductDetailDto extends ProductAdminDto {
 
 export interface CreateVariationInput {
   type: VariationAdminDto['type'];
-  name: string;
+  /** May be left out with `ingredientId`: the add-on's name. */
+  name?: string;
+  /** Left out: the linked add-on's usual price, else 0. */
   priceDeltaCents?: number;
   prepTimeDeltaSeconds?: number;
   isDefault?: boolean;
@@ -194,7 +207,9 @@ export type UpdateVariationInput = Partial<CreateVariationInput>;
 export interface CreateModifierInput {
   /** Built from the name on the server when omitted. */
   slug?: string;
-  name: string;
+  /** May be left out with `ingredientId`: the add-on's name. */
+  name?: string;
+  /** Left out: the linked add-on's usual price, else 0. */
   priceDeltaCents?: number;
   prepTimeDeltaSeconds?: number;
   minCount?: number;
@@ -214,6 +229,8 @@ export interface CategoryAdminDto {
   description: string | null;
   sortOrder: number;
   visible: boolean;
+  /** Not sold on its own: hidden from customer menus, its products only go into drinks as add-ons. */
+  addOnsOnly?: boolean;
   _count?: { products: number };
 }
 
@@ -256,6 +273,7 @@ export interface CreateCategoryInput {
   description?: string;
   sortOrder?: number;
   visible?: boolean;
+  addOnsOnly?: boolean;
 }
 
 export interface UpdateCategoryInput {
@@ -263,6 +281,7 @@ export interface UpdateCategoryInput {
   description?: string;
   sortOrder?: number;
   visible?: boolean;
+  addOnsOnly?: boolean;
 }
 
 /** What the product editor sends; `null` clears an optional value. */
@@ -550,14 +569,19 @@ export class AdminCatalogApi {
     return this.http.get<IngredientDto[]>(`${this.api.baseUrl}/admin/ingredients`, { params: { brandId } });
   }
 
-  createIngredient(input: { brandId: string; name: string }): Observable<IngredientDto> {
+  createIngredient(input: { brandId: string; name: string; priceCents?: number }): Observable<IngredientDto> {
     return this.http.post<IngredientDto>(`${this.api.baseUrl}/admin/ingredients`, input);
   }
 
-  updateIngredient(id: string, input: { name?: string; isAvailable?: boolean }): Observable<IngredientDto> {
+  /** A new name or price also reaches every option that still carries the old one. */
+  updateIngredient(
+    id: string,
+    input: { name?: string; priceCents?: number; isAvailable?: boolean },
+  ): Observable<IngredientDto> {
     return this.http.patch<IngredientDto>(`${this.api.baseUrl}/admin/ingredients/${id}`, input);
   }
 
+  /** Takes the add-on off every product that offers it, then out of the library. */
   deleteIngredient(id: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/ingredients/${id}`);
   }

@@ -12,6 +12,7 @@ import {
 import * as L from 'leaflet';
 
 import { MAP_TILES, tileLayerWithFallback } from './map-tiles';
+import { storePinIcon, storePinKind, type StorePinSells } from './store-pin';
 
 export interface MapMarker {
   id: string;
@@ -19,6 +20,11 @@ export interface MapMarker {
   lng: number;
   label?: string;
   kind?: 'store' | 'user';
+  /**
+   * What the store sells: the pin then shows a cup, a fork and knife, or
+   * both. Left out (order mini-map, admin picker) it is a plain pin.
+   */
+  sells?: readonly StorePinSells[];
 }
 
 export interface LatLng {
@@ -37,8 +43,9 @@ const FALLBACK_CENTER: LatLng = { lat: 47.0105, lng: 28.8638 };
  *  - default (`pickable=false`) — renders `markers` + an optional
  *    `userPosition` dot. Set `interactive=false` for static thumbnails
  *    (order-status mini-map).
- *  - `pickable=true` — renders a single draggable marker; dragging it or
- *    clicking the map emits `markerMoved`. Used by the admin store picker.
+ *  - `pickable=true` — renders a single draggable marker at `markers[0]`;
+ *    dragging it or clicking the map emits `markerMoved`. Without a marker,
+ *    `center` just moves the view. Used by the admin store picker.
  *
  * Leaflet touches the DOM directly, so init runs in `afterNextRender`.
  */
@@ -66,6 +73,8 @@ export class LeafletMapComponent {
   private markerLayer?: L.LayerGroup;
   private pickMarker?: L.Marker;
   private resizeObserver?: ResizeObserver;
+  /** The view has been fitted to markers once; a filter emptying them later leaves it there. */
+  private framed = false;
 
   /** First marker / explicit center / user position / fallback. */
   private readonly resolvedCenter = computed<LatLng>(() => {
@@ -123,8 +132,15 @@ export class LeafletMapComponent {
 
   private syncContent(): void {
     if (this.pickable()) {
-      const first = this.markers()[0] ?? this.center();
-      if (first) this.placePickMarker(first.lat, first.lng, false);
+      const first = this.markers()[0];
+      if (first) {
+        this.placePickMarker(first.lat, first.lng, false);
+        return;
+      }
+      // No pin yet: `center` only moves the view (the admin opens the map on
+      // the city it found), so the owner still puts the pin down themselves.
+      const center = this.center();
+      if (center) this.map?.setView([center.lat, center.lng], this.zoom());
       return;
     }
     this.renderMarkers();
@@ -139,7 +155,8 @@ export class LeafletMapComponent {
     const points: L.LatLngExpression[] = [];
 
     for (const m of this.markers()) {
-      const marker = L.marker([m.lat, m.lng], { icon: storeIcon(), title: m.label ?? '' });
+      const icon = m.sells ? storePinIcon(storePinKind(m.sells)) : storeIcon();
+      const marker = L.marker([m.lat, m.lng], { icon, title: m.label ?? '' });
       marker.on('click', () => this.markerClicked.emit(m.id));
       marker.addTo(layer);
       points.push([m.lat, m.lng]);
@@ -156,10 +173,11 @@ export class LeafletMapComponent {
       map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 16 });
     } else if (only) {
       map.setView(only, this.zoom());
-    } else {
+    } else if (this.center() || !this.framed) {
       const c = this.resolvedCenter();
       map.setView([c.lat, c.lng], this.zoom());
     }
+    if (points.length > 0) this.framed = true;
   }
 
   private placePickMarker(lat: number, lng: number, emit: boolean): void {

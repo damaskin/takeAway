@@ -16,6 +16,8 @@ function campaign(id: string): ModerationCampaign {
     body: '−20% на капучино',
     channel: 'PUSH',
     audience: 'ALL',
+    inactiveDays: null,
+    storeId: null,
     status: 'PENDING_REVIEW',
     targetCount: 0,
     sentCount: 0,

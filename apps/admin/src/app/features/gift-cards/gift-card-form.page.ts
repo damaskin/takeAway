@@ -39,7 +39,7 @@ import { GIFT_CARD_CURRENCIES, type GiftCardCurrency, type GiftCardRow } from '.
         </div>
         <div class="flex items-center flex-wrap" style="gap: 12px; margin-top: 20px">
           <a
-            routerLink="/gift-cards"
+            routerLink="/promotions/gift-cards"
             style="height: 40px; padding: 0 20px; display: inline-flex; align-items: center; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; text-decoration: none"
           >
             {{ 'admin.giftCards.title' | translate }}
@@ -55,7 +55,7 @@ import { GIFT_CARD_CURRENCIES, type GiftCardCurrency, type GiftCardRow } from '.
       </section>
     } @else {
       <app-form-page
-        [backTo]="['/gift-cards']"
+        [backTo]="['/promotions/gift-cards']"
         backLabel="admin.giftCards.title"
         title="admin.giftCards.issueCta"
         saveLabel="admin.giftCards.issueCta"

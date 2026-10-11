@@ -78,7 +78,7 @@ export class CampaignModerationService {
         field: 'scheduledAt',
       });
     }
-    const audienceSize = await this.campaigns.audienceSize(brandId, campaign.audience);
+    const audienceSize = await this.campaigns.audienceSize(brandId, campaign);
     if (audienceSize === 0) throw noRecipients();
 
     const selfApproved = actor.role === Role.SUPER_ADMIN;
@@ -140,7 +140,7 @@ export class CampaignModerationService {
       return Promise.all(
         rows.map(async (campaign) => ({
           campaign,
-          reach: await this.campaigns.preview(campaign.brandId, campaign.audience, campaign.channel),
+          reach: await this.campaigns.preview(campaign.brandId, campaign, campaign.channel),
         })),
       );
     }
@@ -188,6 +188,7 @@ export class CampaignModerationService {
           body: true,
           channel: true,
           audience: true,
+          inactiveDays: true,
           scheduledAt: true,
           brand: { select: { name: true } },
         },
@@ -200,6 +201,7 @@ export class CampaignModerationService {
           body: c.body,
           channel: c.channel,
           audience: c.audience,
+          inactiveDays: c.inactiveDays,
           audienceSize,
           scheduledAt: c.scheduledAt,
           adminUrl: this.adminUrl,

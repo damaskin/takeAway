@@ -19,6 +19,8 @@ const base: Campaign = {
   body: '−20% на капучино до пятницы',
   channel: 'PUSH',
   audience: 'INACTIVE_30D',
+  inactiveDays: null,
+  segmentStoreId: null,
   status: 'DRAFT',
   targetCount: 0,
   sentCount: 0,
@@ -242,7 +244,11 @@ describe('CampaignModerationService', () => {
           orderBy: [{ submittedAt: 'asc' }, { createdAt: 'asc' }],
         }),
       );
-      expect(campaigns.preview).toHaveBeenCalledWith('b1', 'INACTIVE_30D', 'PUSH');
+      expect(campaigns.preview).toHaveBeenCalledWith(
+        'b1',
+        expect.objectContaining({ audience: 'INACTIVE_30D' }),
+        'PUSH',
+      );
       expect(items).toEqual([{ campaign: row, reach: { total: 42, reachable: 30 } }]);
     });
 

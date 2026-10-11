@@ -6,6 +6,17 @@ import { API_CONFIG } from '../api/api.config';
 
 export type CustomerSort = 'lastOrderAt' | 'firstOrderAt' | 'orders' | 'totalCents' | 'avgCheckCents' | 'frequency';
 
+/** all; regular — 3+ orders; inactive — 3+ orders and none for `inactiveDays` days. */
+export type CustomerSegment = 'all' | 'regular' | 'inactive';
+
+/** A product a customer ordered 5 units of or more. */
+export interface FavouriteProduct {
+  name: string;
+  quantity: number;
+  /** Null when the menu gives no hint either way. */
+  kind: 'DRINK' | 'FOOD' | null;
+}
+
 export interface CustomerSummary {
   userId: string;
   name: string | null;
@@ -20,6 +31,8 @@ export interface CustomerSummary {
   daysSinceLastOrder: number;
   favouriteStoreId: string | null;
   favouriteStoreName: string | null;
+  /** Their most ordered product once it reached 5 units. */
+  favouriteProduct: FavouriteProduct | null;
 }
 
 export interface CustomerPage {
@@ -44,6 +57,8 @@ export interface CustomerDetail extends CustomerSummary {
   email: string | null;
   cancelledOrders: number;
   stores: Array<{ storeId: string; storeName: string; orders: number; totalCents: number }>;
+  /** Every product ordered 5 units or more, most ordered first. */
+  favourites: FavouriteProduct[];
   recentOrders: CustomerOrder[];
 }
 
@@ -51,6 +66,8 @@ export interface CustomersQuery {
   brandId?: string | null;
   storeId?: string | null;
   search?: string;
+  segment?: CustomerSegment;
+  inactiveDays?: number;
   sort?: CustomerSort;
   dir?: 'asc' | 'desc';
   page?: number;

@@ -16,12 +16,13 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
-import { formatMinutesOfDay, isStoreInactive, sortStoresByAvailability, todaysOpeningHours } from '@takeaway/utils';
-import { Subscription, catchError, map, of } from 'rxjs';
+import { formatMinutesOfDay, isStoreInactive, todaysOpeningHours } from '@takeaway/utils';
+import { Subscription, filter, map } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { LastStoreService } from '../../core/catalog/last-store.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { storeAddress } from '../../core/catalog/store-place';
 import { prefersReducedMotion, stickyTopInset } from '../../core/layout/sticky-inset';
@@ -572,6 +573,7 @@ export class MenuPage {
   private readonly route = inject(ActivatedRoute);
   private readonly catalog = inject(CatalogService);
   private readonly cart = inject(CartService);
+  private readonly lastStore = inject(LastStoreService);
   private readonly auth = inject(AuthStore);
   private readonly translate = inject(TranslateService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -633,6 +635,7 @@ export class MenuPage {
     this.route.paramMap
       .pipe(
         map((params) => params.get('slug')),
+        filter((slug): slug is string => slug !== null),
         takeUntilDestroyed(),
       )
       .subscribe((slug) => this.open(slug));
@@ -708,30 +711,13 @@ export class MenuPage {
     return this.fmt.money(cents, this.store()?.currency);
   }
 
-  /** `/menu` shows the first store of the list; `/stores/:slug` that store. */
-  private open(slug: string | null): void {
+  /** `/stores/:slug`. `/menu` is the store chooser, not this page. */
+  private open(slug: string): void {
     this.loads.unsubscribe();
     this.loads = new Subscription();
     this.error.set(null);
     this.fragmentPending = this.route.snapshot.fragment?.match(/^cat-(.+)$/)?.[1] ?? null;
-    // `/menu` opens the first store taking orders, not a closed one.
-    const known = slug ?? firstOpen(this.catalog.cachedStores() ?? [])?.slug ?? null;
-    if (known) {
-      this.load(known);
-      return;
-    }
-    this.store.set(null);
-    this.menu.set(null);
-    this.loads.add(
-      this.catalog
-        .listStores()
-        .pipe(catchError(() => of([])))
-        .subscribe((list) => {
-          const first = firstOpen(list);
-          if (first) this.load(first.slug);
-          else this.error.set(this.translate.instant('web.menu.storeNotFound'));
-        }),
-    );
+    this.load(slug);
   }
 
   /** Draws what was fetched before at once, then swaps in a fresh copy. */
@@ -744,7 +730,11 @@ export class MenuPage {
 
     this.loads.add(
       this.catalog.getStore(slug).subscribe({
-        next: (s) => this.store.set(s),
+        next: (s) => {
+          this.store.set(s);
+          // «Продолжить в …» on the store chooser next time.
+          this.lastStore.remember(s.slug);
+        },
         error: () => {
           if (!store) this.error.set(this.translate.instant('web.menu.storeNotFound'));
         },
@@ -821,11 +811,4 @@ export class MenuPage {
       else if (below > 0) rail.scrollBy({ top: below + 8, behavior });
     }
   }
-}
-
-/** The first store of the list taking orders, or the first one at all when none is. */
-function firstOpen<T extends { status: string; acceptingOrders?: boolean; openNow?: boolean }>(
-  list: readonly T[],
-): T | undefined {
-  return sortStoresByAvailability(list)[0];
 }

@@ -93,16 +93,28 @@ class ErrorState extends StatelessWidget {
 
 /// Floating snack helpers with consistent styling.
 ///
-/// An undo offer outranks everything else: while one is on screen, other
-/// snacks wait in the messenger's queue instead of closing it — a foreground
-/// push or an unrelated error used to take the "Undo" away before the
-/// customer could reach it.
+/// One snack at a time: a new one takes the place of the one on screen and
+/// of anything still waiting, instead of queueing behind them — removing
+/// three cart lines in a row used to leave three undo offers to sit through,
+/// one after another.
+///
+/// An undo offer outranks the rest: while one is on screen, another notice
+/// waits until it closes instead of taking it away — a foreground push or an
+/// unrelated error used to take the "Undo" away before the customer could
+/// reach it. Only the latest such notice waits.
 abstract final class Snack {
   static const _short = Duration(seconds: 3);
   static const _withAction = Duration(seconds: 5);
 
+  /// How long an undo offer stays once it has slid in: time enough to reach
+  /// "Undo", without hanging over the screen after the customer has moved on.
+  static const undoDuration = Duration(seconds: 3);
+
   static ScaffoldMessengerState? _undoMessenger;
   static ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _undo;
+
+  /// The notice held back by the undo offer on screen.
+  static SnackBar? _waiting;
 
   static bool _undoShowing(ScaffoldMessengerState messenger) =>
       _undo != null && identical(_undoMessenger, messenger) && messenger.mounted;
@@ -116,22 +128,24 @@ abstract final class Snack {
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    if (!_undoShowing(messenger)) messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      _bar(
-        context,
-        message,
-        icon: icon,
-        actionLabel: actionLabel,
-        onAction: onAction,
-        duration: actionLabel == null ? _short : _withAction,
-      ),
+    final bar = _bar(
+      context,
+      message,
+      icon: icon,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      duration: actionLabel == null ? _short : _withAction,
     );
+    if (_undoShowing(messenger)) {
+      _waiting = bar;
+    } else {
+      _replace(messenger, bar);
+    }
   }
 
   /// Offers to take back what was just done. Shown at once (not after the
-  /// server agrees), for five seconds, with a close button; nothing but the
-  /// next undo offer replaces it.
+  /// server agrees), for [undoDuration], with a close button; it replaces any
+  /// earlier offer.
   static void undo(
     BuildContext context,
     String message, {
@@ -141,27 +155,46 @@ abstract final class Snack {
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
-    messenger.hideCurrentSnackBar();
-    final controller = messenger.showSnackBar(
-      _bar(context, message, icon: icon, actionLabel: actionLabel, onAction: onUndo, duration: _withAction),
+    final controller = _replace(
+      messenger,
+      _bar(context, message, icon: icon, actionLabel: actionLabel, onAction: onUndo, duration: undoDuration),
     );
     _undo = controller;
     _undoMessenger = messenger;
     controller.closed.whenComplete(() {
-      if (identical(_undo, controller)) {
-        _undo = null;
-        _undoMessenger = null;
-      }
+      if (!identical(_undo, controller)) return;
+      _undo = null;
+      _undoMessenger = null;
+      _showWaiting(messenger);
     });
   }
 
   /// Closes the undo offer, e.g. when the change it would undo failed.
   static void dismissUndo() {
-    final controller = _undo;
     final messenger = _undoMessenger;
     _undo = null;
     _undoMessenger = null;
-    if (controller != null && messenger != null && messenger.mounted) controller.close();
+    if (messenger == null || !messenger.mounted) return;
+    // Cleared rather than closed: the offer may still be waiting for the
+    // snack before it to slide out, and only the one on screen can close.
+    messenger.clearSnackBars();
+    _showWaiting(messenger);
+  }
+
+  static void _showWaiting(ScaffoldMessengerState messenger) {
+    final waiting = _waiting;
+    _waiting = null;
+    if (waiting != null && messenger.mounted) _replace(messenger, waiting);
+  }
+
+  /// Shows [bar] once the snack on screen has slid out; anything queued
+  /// behind that one is dropped.
+  static ScaffoldFeatureController<SnackBar, SnackBarClosedReason> _replace(
+    ScaffoldMessengerState messenger,
+    SnackBar bar,
+  ) {
+    messenger.clearSnackBars();
+    return messenger.showSnackBar(bar);
   }
 
   static void error(BuildContext context, Object error) =>

@@ -1,27 +1,34 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 import type { Observable } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type IngredientDto } from '../../core/catalog/admin-catalog.service';
 import { describeMenuError } from '../menu/menu-errors';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
+import { formatMoneyInput, moneyValidator, parseMoney } from '../menu/menu-input';
 
-type Filter = 'all' | 'out';
+type Filter = 'all' | 'out' | 'unused';
 
 /**
- * The brand's add-ins library: oat milk, syrups, an extra shot — each with
- * one in-stock switch. Options of any number of products point at an entry;
- * switching it off hides those options in the site, the Telegram app and
- * the mobile app while the products stay on the menu, and switching it back
- * on returns them as they were. Options join the library by name when they
- * are added to a product; here the list is looked after.
+ * The brand's add-ons library («Добавки»): oat milk, syrups, an extra shot.
+ * It is the one place an add-on is defined — its name, its usual price and
+ * one in-stock switch. A product offers an add-on by picking it in «Меню →
+ * Опции»; taking it off a product leaves it here, deleting it here takes it
+ * off every product. Switching it off hides those options in the site, the
+ * Telegram app and the mobile app while the products stay on the menu.
+ *
+ * The add and edit forms are bound to form groups: the plain
+ * `<form (ngSubmit)>` they used to be never fired without one, so "Add"
+ * reloaded the page and nothing was ever added here.
  */
 @Component({
   selector: 'app-ingredients',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe],
+  imports: [ReactiveFormsModule, RouterLink, TranslatePipe],
   styles: [
     MENU_FORM_STYLES,
     `
@@ -44,6 +51,12 @@ type Filter = 'all' | 'out';
         font-weight: 600;
         color: var(--color-text-primary);
         overflow-wrap: anywhere;
+      }
+      .price {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        white-space: nowrap;
       }
       .switch {
         display: inline-flex;
@@ -90,6 +103,9 @@ type Filter = 'all' | 'out';
         color: var(--color-caramel);
         border-color: transparent;
       }
+      .price-field {
+        flex: 0 1 140px;
+      }
     `,
   ],
   template: `
@@ -118,26 +134,36 @@ type Filter = 'all' | 'out';
     >
       <p class="hint" style="margin: 0; font-size: 13px; color: var(--color-text-secondary)">
         {{ 'admin.ingredients.hint' | translate }}
+        <a routerLink="/menu" class="link">{{ 'admin.ingredients.menuLink' | translate }}</a>
       </p>
 
       <form
+        [formGroup]="addForm"
         (ngSubmit)="add()"
         class="flex items-end flex-wrap"
         style="gap: 8px 12px; padding: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px"
+        data-testid="ingredient-add"
       >
         <label class="field" style="flex: 1 1 220px">
           <span class="label">{{ 'admin.ingredients.newLabel' | translate }}</span>
           <input
             class="control"
-            [formControl]="newName"
+            formControlName="name"
             maxlength="80"
             enterkeyhint="done"
             [placeholder]="'admin.ingredients.newPlaceholder' | translate"
           />
         </label>
+        <label class="field price-field">
+          <span class="label">{{ 'admin.ingredients.price' | translate: { currency: currencyLabel() } }}</span>
+          <input class="control" formControlName="price" inputmode="decimal" autocomplete="off" placeholder="0" />
+        </label>
         <button type="submit" class="primary disabled:opacity-50" [disabled]="busy() || !brand()">
           {{ 'admin.ingredients.add' | translate }}
         </button>
+        @if (addSubmitted() && formError(addForm); as key) {
+          <span class="error" style="flex-basis: 100%">{{ key | translate }}</span>
+        }
       </form>
 
       <div class="flex items-center flex-wrap" style="gap: 8px">
@@ -146,6 +172,15 @@ type Filter = 'all' | 'out';
         </button>
         <button type="button" class="tab" [class.active]="filter() === 'out'" (click)="filter.set('out')">
           {{ 'admin.ingredients.filterOut' | translate: { count: outCount() } }}
+        </button>
+        <button
+          type="button"
+          class="tab"
+          [class.active]="filter() === 'unused'"
+          (click)="filter.set('unused')"
+          data-testid="ingredient-filter-unused"
+        >
+          {{ 'admin.ingredients.filterUnused' | translate: { count: unusedCount() } }}
         </button>
         <input
           class="control small"
@@ -170,26 +205,49 @@ type Filter = 'all' | 'out';
         @for (item of shown(); track item.id) {
           <div class="row" [class.out]="!item.isAvailable" data-testid="ingredient-row">
             @if (editingId() === item.id) {
-              <form (ngSubmit)="saveName(item)" class="flex items-center flex-wrap" style="gap: 8px; flex: 1 1 260px">
-                <input
-                  class="control small"
-                  style="flex: 1 1 160px"
-                  [formControl]="editName"
-                  maxlength="80"
-                  enterkeyhint="done"
-                  [attr.aria-label]="'admin.ingredients.rename' | translate"
-                />
-                <button type="submit" class="primary small" [disabled]="busy()">{{ 'common.save' | translate }}</button>
-                <button type="button" class="link muted" (click)="editingId.set(null)">
-                  {{ 'common.cancel' | translate }}
-                </button>
+              <form
+                [formGroup]="editForm"
+                (ngSubmit)="saveEdit(item)"
+                class="flex flex-col"
+                style="gap: 6px; flex: 1 1 320px; min-width: 0"
+                data-testid="ingredient-edit"
+              >
+                <div class="flex items-end flex-wrap" style="gap: 8px">
+                  <label class="field" style="flex: 1 1 160px">
+                    <span class="label">{{ 'admin.ingredients.name' | translate }}</span>
+                    <input class="control small" formControlName="name" maxlength="80" enterkeyhint="done" />
+                  </label>
+                  <label class="field price-field">
+                    <span class="label">{{
+                      'admin.ingredients.price' | translate: { currency: currencyLabel() }
+                    }}</span>
+                    <input class="control small" formControlName="price" inputmode="decimal" autocomplete="off" />
+                  </label>
+                  <button type="submit" class="primary small" [disabled]="busy()">
+                    {{ 'common.save' | translate }}
+                  </button>
+                  <button type="button" class="link muted" (click)="editingId.set(null)">
+                    {{ 'common.cancel' | translate }}
+                  </button>
+                </div>
+                @if (editSubmitted() && formError(editForm); as key) {
+                  <span class="error">{{ key | translate }}</span>
+                } @else if (item.products.length > 0) {
+                  <span class="hint">{{ 'admin.ingredients.editHint' | translate }}</span>
+                }
               </form>
             } @else {
               <div class="flex flex-col" style="gap: 2px; flex: 1 1 220px; min-width: 0">
-                <span class="name">{{ item.name }}</span>
-                <span class="hint">
+                <span class="flex items-baseline flex-wrap" style="gap: 4px 10px">
+                  <span class="name">{{ item.name }}</span>
+                  <span class="price" data-testid="ingredient-price">{{ formatPrice(item.priceCents) }}</span>
+                </span>
+                <span class="hint" data-testid="ingredient-usage">
                   @if (item.products.length > 0) {
-                    {{ 'admin.ingredients.usedIn' | translate: { products: productNames(item) } }}
+                    {{
+                      'admin.ingredients.usedIn'
+                        | translate: { count: item.products.length, products: productNames(item) }
+                    }}
                   } @else {
                     {{ 'admin.ingredients.unused' | translate }}
                   }
@@ -213,10 +271,16 @@ type Filter = 'all' | 'out';
             </button>
             @if (editingId() !== item.id) {
               <span class="flex items-center" style="gap: 12px">
-                <button type="button" class="link" [disabled]="busy()" (click)="startRename(item)">
-                  {{ 'admin.ingredients.rename' | translate }}
+                <button type="button" class="link" [disabled]="busy()" (click)="startEdit(item)">
+                  {{ 'admin.ingredients.edit' | translate }}
                 </button>
-                <button type="button" class="link danger" [disabled]="busy()" (click)="remove(item)">
+                <button
+                  type="button"
+                  class="link danger"
+                  [disabled]="busy()"
+                  (click)="remove(item)"
+                  data-testid="ingredient-delete"
+                >
                   {{ 'admin.menu.options.delete' | translate }}
                 </button>
               </span>
@@ -237,8 +301,10 @@ export class IngredientsPage {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly brand = this.activeBrand.active;
+  readonly currencyLabel = computed(() => this.brand()?.currency ?? '—');
   readonly items = signal<IngredientDto[]>([]);
   readonly loading = signal(false);
   readonly busy = signal(false);
@@ -246,15 +312,27 @@ export class IngredientsPage {
   readonly filter = signal<Filter>('all');
   readonly query = signal('');
   readonly editingId = signal<string | null>(null);
+  readonly addSubmitted = signal(false);
+  readonly editSubmitted = signal(false);
 
-  readonly newName = new FormControl('', { nonNullable: true, validators: [Validators.required] });
-  readonly editName = new FormControl('', { nonNullable: true, validators: [Validators.required] });
+  readonly addForm = new FormGroup({
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
+  });
+  readonly editForm = new FormGroup({
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
+    price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
+  });
 
   readonly outCount = computed(() => this.items().filter((i) => !i.isAvailable).length);
+  readonly unusedCount = computed(() => this.items().filter((i) => i.products.length === 0).length);
   readonly shown = computed(() => {
     const q = this.query().trim().toLocaleLowerCase();
+    const filter = this.filter();
     return this.items().filter(
-      (i) => (this.filter() === 'all' || !i.isAvailable) && (!q || i.name.toLocaleLowerCase().includes(q)),
+      (i) =>
+        (filter === 'all' || (filter === 'out' ? !i.isAvailable : i.products.length === 0)) &&
+        (!q || i.name.toLocaleLowerCase().includes(q)),
     );
   });
 
@@ -276,12 +354,27 @@ export class IngredientsPage {
       : names.join(', ');
   }
 
+  formatPrice(cents: number): string {
+    if (cents === 0) return this.translate.instant('admin.menu.options.noSurcharge');
+    return `+${this.fmt.money(cents, this.brand()?.currency ?? null)}`;
+  }
+
+  /** The translation key for what is wrong with a name-and-price form, if anything. */
+  formError(form: FormGroup): string | null {
+    if (form.get('name')?.invalid) return 'admin.menu.errors.name';
+    if (form.get('price')?.invalid) return 'admin.menu.errors.surcharge';
+    return null;
+  }
+
   add(): void {
+    this.addSubmitted.set(true);
     const brand = this.brand();
-    const name = this.newName.value.trim();
-    if (!brand || !name) return;
-    this.run(this.api.createIngredient({ brandId: brand.id, name }), (created) => {
-      this.newName.reset('');
+    const { name, price } = this.addForm.getRawValue();
+    const priceCents = price.trim() ? parseMoney(price) : 0;
+    if (!brand || this.addForm.invalid || !name.trim() || priceCents === null) return;
+    this.run(this.api.createIngredient({ brandId: brand.id, name: name.trim(), priceCents }), (created) => {
+      this.addSubmitted.set(false);
+      this.addForm.reset({ name: '', price: '' });
       this.items.update((list) => sortByName([...list, created]));
     });
   }
@@ -293,26 +386,39 @@ export class IngredientsPage {
     );
   }
 
-  startRename(item: IngredientDto): void {
+  startEdit(item: IngredientDto): void {
+    this.editSubmitted.set(false);
     this.editingId.set(item.id);
-    this.editName.reset(item.name);
+    this.editForm.reset({ name: item.name, price: formatMoneyInput(item.priceCents, this.separator()) });
   }
 
-  saveName(item: IngredientDto): void {
-    const name = this.editName.value.trim();
-    if (!name || name === item.name) {
+  /** Only what changed is sent: the server carries a new name or price to the products. */
+  saveEdit(item: IngredientDto): void {
+    this.editSubmitted.set(true);
+    const { name, price } = this.editForm.getRawValue();
+    const priceCents = price.trim() ? parseMoney(price) : 0;
+    if (this.editForm.invalid || !name.trim() || priceCents === null) return;
+    const change: { name?: string; priceCents?: number } = {};
+    if (name.trim() !== item.name) change.name = name.trim();
+    if (priceCents !== item.priceCents) change.priceCents = priceCents;
+    if (Object.keys(change).length === 0) {
       this.editingId.set(null);
       return;
     }
-    this.run(this.api.updateIngredient(item.id, { name }), (updated) => {
+    this.run(this.api.updateIngredient(item.id, change), (updated) => {
       this.editingId.set(null);
       this.items.update((list) => sortByName(list.map((i) => (i.id === updated.id ? updated : i))));
     });
   }
 
+  /** Deleting here takes the add-on off every product, so the question names them. */
   remove(item: IngredientDto): void {
-    const key = item.products.length > 0 ? 'admin.ingredients.deleteUsedConfirm' : 'admin.ingredients.deleteConfirm';
-    if (!confirm(this.translate.instant(key, { name: item.name, count: item.products.length }))) return;
+    const used = item.products.length > 0;
+    const message = this.translate.instant(
+      used ? 'admin.ingredients.deleteUsedConfirm' : 'admin.ingredients.deleteConfirm',
+      { name: item.name, count: item.products.length, products: this.productNames(item) },
+    );
+    if (!confirm(message)) return;
     this.run(this.api.deleteIngredient(item.id), () =>
       this.items.update((list) => list.filter((i) => i.id !== item.id)),
     );
@@ -343,7 +449,7 @@ export class IngredientsPage {
     this.api.listIngredients(brandId).subscribe({
       next: (list) => {
         this.loading.set(false);
-        this.items.set(sortByName(list));
+        this.items.set(sortByName(list.map(withDefaults)));
       },
       error: (err: unknown) => {
         this.loading.set(false);
@@ -351,6 +457,15 @@ export class IngredientsPage {
       },
     });
   }
+
+  private separator(): string {
+    return this.translate.getCurrentLang() === 'en' ? '.' : ',';
+  }
+}
+
+/** An older API answer has no price: show it as free rather than "NaN". */
+function withDefaults(item: IngredientDto): IngredientDto {
+  return { ...item, priceCents: item.priceCents ?? 0, products: item.products ?? [] };
 }
 
 function sortByName(list: IngredientDto[]): IngredientDto[] {

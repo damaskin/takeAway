@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsEnum, IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsEnum, IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+import { INACTIVE_DAYS } from '../../customers/customer-segment';
 
 const CHANNELS = ['PUSH', 'TELEGRAM', 'EMAIL'] as const;
-const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D'] as const;
+const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D', 'INACTIVE'] as const;
 const STATUSES = ['DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SENDING', 'SENT', 'FAILED'] as const;
 const MODERATION_VIEWS = ['PENDING_REVIEW', 'APPROVED', 'REJECTED'] as const;
 
@@ -31,6 +33,19 @@ export class CreateCampaignDto {
   @IsEnum(AUDIENCES)
   audience?: (typeof AUDIENCES)[number];
 
+  @ApiPropertyOptional({ enum: INACTIVE_DAYS, default: 14, description: 'INACTIVE: days without an order' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([...INACTIVE_DAYS])
+  inactiveDays?: number;
+
+  @ApiPropertyOptional({
+    description: "INACTIVE: only orders at this store of the brand count; the brand's when omitted",
+  })
+  @IsOptional()
+  @IsString()
+  storeId?: string;
+
   /**
    * Send no earlier than this (ISO 8601). Left out or null: as soon as it is
    * approved. Must still be ahead when the campaign is submitted.
@@ -42,7 +57,11 @@ export class CreateCampaignDto {
   scheduledAt?: string | null;
 }
 
-/** A draft or a rejected campaign changes; any field left out stays. `scheduledAt: null` clears the time. */
+/**
+ * A draft or a rejected campaign changes; any field left out stays.
+ * `scheduledAt: null` clears the time; a new `audience` comes with its
+ * `inactiveDays` / `storeId` (INACTIVE) or clears them.
+ */
 export class UpdateCampaignDto extends PartialType(CreateCampaignDto) {}
 
 /** The reason goes to the business as it is. */
@@ -120,6 +139,12 @@ export class CampaignDto {
 
   @ApiProperty({ enum: AUDIENCES })
   audience!: (typeof AUDIENCES)[number];
+
+  @ApiPropertyOptional({ nullable: true, type: Number, description: 'INACTIVE: days without an order' })
+  inactiveDays!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'INACTIVE: the store whose orders count' })
+  storeId!: string | null;
 
   @ApiProperty({ enum: STATUSES })
   status!: (typeof STATUSES)[number];

@@ -10,6 +10,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { STORE_KINDS } from '@takeaway/shared-types';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { DEFAULT_STORE_TIME_ZONE, isUnsetTimeZone, suggestStoreTimeZone } from '@takeaway/utils';
 import { firstValueFrom, merge } from 'rxjs';
@@ -21,12 +22,15 @@ import {
   type StoreAdminDto,
   type StoreFulfillment,
   type StoreImagesDto,
+  type StoreKind,
   type StoreStatus,
   type StoreWorkingHourDto,
   type UpdateStoreInput,
 } from '../../core/catalog/admin-catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
+import { AddressLocator } from './address-locator';
+import { LocatorStatusComponent } from './locator-status.component';
 import { STORE_CURRENCIES, STORE_SLUG_PATTERN } from './store-options';
 import { storeErrorMessage } from './store-errors';
 import { StoreKitchenAccessComponent } from './store-kitchen-access.component';
@@ -86,7 +90,9 @@ function toCents(units: number | null): number | null {
     TimezoneSelectComponent,
     StorePhotosComponent,
     StoreKitchenAccessComponent,
+    LocatorStatusComponent,
   ],
+  providers: [AddressLocator],
   template: `
     <div
       style="background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px"
@@ -144,12 +150,22 @@ function toCents(units: number | null): number | null {
                 </div>
                 <label class="field">
                   <span class="label">{{ 'admin.stores.fields.addressLine' | translate }}</span>
-                  <input formControlName="addressLine" class="input" [class.invalid]="shows('addressLine')" />
+                  <input
+                    formControlName="addressLine"
+                    class="input"
+                    [class.invalid]="shows('addressLine')"
+                    (blur)="locator.flush()"
+                  />
                 </label>
                 <div class="form-row">
                   <label class="field">
                     <span class="label">{{ 'admin.stores.fields.city' | translate }}</span>
-                    <input formControlName="city" class="input" [class.invalid]="shows('city')" />
+                    <input
+                      formControlName="city"
+                      class="input"
+                      [class.invalid]="shows('city')"
+                      (blur)="locator.flush()"
+                    />
                   </label>
                   <label class="field">
                     <span class="label">{{ 'admin.stores.fields.country' | translate }}</span>
@@ -160,8 +176,31 @@ function toCents(units: number | null): number | null {
                       class="input mono"
                       style="text-transform: uppercase"
                       [class.invalid]="shows('country')"
+                      (blur)="locator.flush()"
                     />
                   </label>
+                </div>
+                <div
+                  class="field"
+                  formGroupName="kinds"
+                  role="group"
+                  data-testid="store-kinds"
+                  [attr.aria-label]="'admin.stores.kinds.title' | translate"
+                >
+                  <span class="label">{{ 'admin.stores.kinds.title' | translate }}</span>
+                  <div class="flex flex-wrap" style="gap: 14px">
+                    @for (k of kindOptions; track k) {
+                      <label class="check">
+                        <input type="checkbox" [formControlName]="k" />
+                        <span>{{ 'admin.stores.kinds.' + k | translate }}</span>
+                      </label>
+                    }
+                  </div>
+                  @if (detailsForm.controls.kinds.invalid) {
+                    <span class="error">{{ 'admin.stores.kinds.required' | translate }}</span>
+                  } @else {
+                    <span class="hint">{{ 'admin.stores.kinds.hint' | translate }}</span>
+                  }
                 </div>
                 <div class="form-row">
                   <label class="field">
@@ -194,21 +233,38 @@ function toCents(units: number | null): number | null {
                   <lib-leaflet-map
                     [pickable]="canEdit()"
                     [markers]="pickerMarkers()"
+                    [center]="locator.area()"
                     [zoom]="14"
                     (markerMoved)="onPickerMoved($event)"
                   />
                 </div>
-                <span class="hint" [class.warn]="!hasCoordinates()">{{
-                  (hasCoordinates() ? 'admin.stores.fields.pickOnMap' : 'admin.stores.hints.noCoordinates') | translate
-                }}</span>
+                <app-locator-status
+                  [locator]="locator"
+                  [hasPin]="hasCoordinates()"
+                  [canEdit]="canEdit()"
+                  emptyHint="admin.stores.hints.noCoordinates"
+                  [emptyWarn]="true"
+                />
                 <div class="form-row">
                   <label class="field">
                     <span class="label">{{ 'admin.stores.fields.latitude' | translate }}</span>
-                    <input formControlName="latitude" type="number" step="0.000001" class="input mono" />
+                    <input
+                      formControlName="latitude"
+                      type="number"
+                      step="0.000001"
+                      class="input mono"
+                      (change)="locator.pinnedByHand(null)"
+                    />
                   </label>
                   <label class="field">
                     <span class="label">{{ 'admin.stores.fields.longitude' | translate }}</span>
-                    <input formControlName="longitude" type="number" step="0.000001" class="input mono" />
+                    <input
+                      formControlName="longitude"
+                      type="number"
+                      step="0.000001"
+                      class="input mono"
+                      (change)="locator.pinnedByHand(null)"
+                    />
                   </label>
                 </div>
                 <div class="field">
@@ -479,6 +535,7 @@ function toCents(units: number | null): number | null {
                 [heroImageUrl]="s.heroImageUrl ?? null"
                 [galleryUrls]="s.galleryUrls ?? []"
                 [canEdit]="canEdit()"
+                [initialError]="photoError()"
                 (changed)="onPhotosChanged($event)"
               />
             }
@@ -653,9 +710,12 @@ function toCents(units: number | null): number | null {
 export class StoreEditorComponent implements OnInit {
   readonly storeId = input.required<string>();
   readonly initialTab = input<EditorTab>('details');
+  /** Why the photo picked on the create form was not uploaded, shown on the photos tab. */
+  readonly photoError = input<string | null>(null);
   readonly saveCompleted = output<StoreAdminDto>();
   readonly closed = output<void>();
 
+  readonly locator = inject(AddressLocator);
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthStore);
@@ -686,6 +746,7 @@ export class StoreEditorComponent implements OnInit {
   readonly statuses: readonly StoreStatus[] = ['CLOSED', 'OPEN', 'OVERLOADED'];
   readonly currencies = STORE_CURRENCIES;
   readonly pickupPoints = PICKUP_POINTS;
+  readonly kindOptions = STORE_KINDS;
   readonly weekOrder = WEEK_ORDER;
   /** DELIVERY is only offered while the delivery module is switched on. */
   readonly fulfillmentOptions = computed(() =>
@@ -703,6 +764,13 @@ export class StoreEditorComponent implements OnInit {
     }),
     phone: new FormControl('', { nonNullable: true }),
     email: new FormControl('', { nonNullable: true, validators: [Validators.email] }),
+    kinds: new FormGroup(
+      {
+        COFFEE: new FormControl(true, { nonNullable: true }),
+        FOOD: new FormControl(false, { nonNullable: true }),
+      },
+      { validators: [atLeastOneChecked] },
+    ),
     latitude: new FormControl<number | null>(null, { validators: [Validators.min(-90), Validators.max(90)] }),
     longitude: new FormControl<number | null>(null, { validators: [Validators.min(-180), Validators.max(180)] }),
     timezone: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
@@ -784,6 +852,17 @@ export class StoreEditorComponent implements OnInit {
     merge(c.city.valueChanges, c.country.valueChanges, c.latitude.valueChanges, c.longitude.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.refreshSuggestedZone());
+    this.locator.connect(
+      { addressLine: c.addressLine, city: c.city, country: c.country },
+      {
+        // A store being edited already has its place; a new address moves it only on «Найти по адресу».
+        pinned: true,
+        place: (p) => {
+          this.detailsForm.patchValue({ latitude: round6(p.lat), longitude: round6(p.lng) });
+          c.latitude.markAsDirty();
+        },
+      },
+    );
     this.load();
   }
 
@@ -885,8 +964,10 @@ export class StoreEditorComponent implements OnInit {
   }
 
   onPickerMoved(p: LatLng): void {
-    this.detailsForm.patchValue({ latitude: round6(p.lat), longitude: round6(p.lng) });
+    const point = { lat: round6(p.lat), lng: round6(p.lng) };
+    this.detailsForm.patchValue({ latitude: point.lat, longitude: point.lng });
     this.detailsForm.controls.latitude.markAsDirty();
+    this.locator.pinnedByHand(point);
   }
 
   onPhotosChanged(images: StoreImagesDto): void {
@@ -1001,6 +1082,7 @@ export class StoreEditorComponent implements OnInit {
       taxIncludedInPrice: v.taxIncluded,
       fulfillmentTypes,
       pickupPointType: v.pickupPointType,
+      kinds: STORE_KINDS.filter((k) => v.kinds[k]),
       baseEtaSeconds: Math.round((v.baseEtaMinutes ?? 0) * 60),
       kitchenParallelism: v.kitchenParallelism ?? 1,
       slotCapacity: v.slotCapacity ?? 1,
@@ -1027,6 +1109,8 @@ export class StoreEditorComponent implements OnInit {
     this.store.set(s);
     const atOrigin = s.latitude === 0 && s.longitude === 0;
     const types = s.fulfillmentTypes ?? ['TAKEAWAY'];
+    // Missing or empty reads as coffee, as everywhere else.
+    const kinds: readonly StoreKind[] = s.kinds?.length ? s.kinds : ['COFFEE'];
     this.detailsForm.reset({
       name: s.name,
       status: s.status,
@@ -1035,6 +1119,7 @@ export class StoreEditorComponent implements OnInit {
       country: s.country,
       phone: s.phone ?? '',
       email: s.email ?? '',
+      kinds: { COFFEE: kinds.includes('COFFEE'), FOOD: kinds.includes('FOOD') },
       latitude: atOrigin ? null : s.latitude,
       longitude: atOrigin ? null : s.longitude,
       timezone: s.timezone ?? '',
@@ -1077,6 +1162,8 @@ export class StoreEditorComponent implements OnInit {
 
     this.submitted.set(false);
     this.syncMarker();
+    // A store imported from a POS sits at 0,0: there the typed address does move the pin.
+    this.locator.reset(!atOrigin);
     if (!this.canEdit()) {
       this.detailsForm.disable({ emitEvent: false });
       this.hoursForm.disable({ emitEvent: false });

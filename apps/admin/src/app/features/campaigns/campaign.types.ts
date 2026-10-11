@@ -14,7 +14,11 @@ export interface CampaignRow {
   title: string;
   body: string;
   channel: 'PUSH' | 'TELEGRAM' | 'EMAIL';
-  audience: 'ALL' | 'HAS_ORDERED' | 'INACTIVE_30D';
+  audience: 'ALL' | 'HAS_ORDERED' | 'INACTIVE_30D' | 'INACTIVE';
+  /** INACTIVE: days without an order (3, 7 or 14). */
+  inactiveDays: number | null;
+  /** INACTIVE: the one store whose orders count; null for the whole brand. */
+  storeId: string | null;
   status: CampaignStatus;
   targetCount: number;
   sentCount: number;
@@ -78,7 +82,7 @@ export interface CampaignTestResult {
 }
 
 export const CAMPAIGN_CHANNELS: Array<CampaignRow['channel']> = ['PUSH', 'TELEGRAM', 'EMAIL'];
-export const CAMPAIGN_AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D'];
+export const CAMPAIGN_AUDIENCES: Array<CampaignRow['audience']> = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D', 'INACTIVE'];
 
 /** How the status pill is coloured. */
 export function campaignStatusTone(status: CampaignStatus): 'ok' | 'bad' | 'busy' | 'wait' | 'idle' {

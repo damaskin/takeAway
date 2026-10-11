@@ -14,6 +14,7 @@ export type AdminRole = 'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'MENU_
 
 export type NavKey =
   | 'platform'
+  | 'settlements'
   | 'dashboard'
   | 'kitchen'
   | 'menu'
@@ -26,6 +27,7 @@ export type NavKey =
   | 'staff'
   | 'promo'
   | 'giftCards'
+  | 'promotions'
   | 'campaigns'
   | 'campaignModeration'
   | 'analytics'
@@ -47,6 +49,9 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // is excluded. STORE_MANAGER keeps it as an operational shift summary.
   // Every brand of the platform at once — the platform admin's own view.
   platform: [SA],
+  // Money the platform owes a brand for its card payments. The platform
+  // admin sees every brand and pays out; the owner reads their own figures.
+  settlements: [SA, BA],
   dashboard: [SA, BA, SM],
   // The order board the standalone kitchen app used to be: everyone who
   // takes orders on, kitchen STAFF included.
@@ -64,6 +69,9 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   staff: [SA, BA, SM],
   promo: [SA, BA],
   giftCards: [SA, BA],
+  // «Акции»: promo codes and gift cards under one menu item, each tab still
+  // guarded by its own key. Whoever may open either tab sees the section.
+  promotions: [SA, BA],
   campaigns: [SA, BA],
   // Every brand's campaigns waiting for review — the platform team decides.
   campaignModeration: [SA],
@@ -96,6 +104,7 @@ export function defaultLandingFor(role: AdminRole | undefined | null): string {
 
 const NAV_LINKS: Record<NavKey, string> = {
   platform: '/platform',
+  settlements: '/settlements',
   dashboard: '/dashboard',
   kitchen: '/kitchen',
   menu: '/menu',
@@ -106,8 +115,9 @@ const NAV_LINKS: Record<NavKey, string> = {
   dispatch: '/dispatch',
   riders: '/riders',
   staff: '/staff',
-  promo: '/promo',
-  giftCards: '/gift-cards',
+  promo: '/promotions/promo',
+  giftCards: '/promotions/gift-cards',
+  promotions: '/promotions',
   campaigns: '/campaigns',
   campaignModeration: '/campaign-moderation',
   analytics: '/analytics',

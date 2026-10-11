@@ -12,6 +12,7 @@ import type {
 import type { CampaignTransport } from '@takeaway/shared-types';
 
 import { codedConflict } from '../common/http/coded-conflict';
+import { DEFAULT_INACTIVE_DAYS, inactiveCustomerIds } from '../customers/customer-segment';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService, PUSH_RECIPIENT_SELECT, toPushRecipient } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -141,6 +142,16 @@ export function reachOf(user: AudienceUser, channel: CampaignChannel, transports
 }
 
 /**
+ * Who a campaign goes to: the audience, and for INACTIVE the days without an
+ * order and the one store whose orders count (the whole brand when null).
+ */
+export interface AudienceSpec {
+  audience: CampaignAudience;
+  inactiveDays?: number | null;
+  segmentStoreId?: string | null;
+}
+
+/**
  * The people an audience means, for one brand. Staff accounts and blocked
  * users are never included.
  *
@@ -151,8 +162,15 @@ export function reachOf(user: AudienceUser, channel: CampaignChannel, transports
  *   app (one platform bot, one app), so sign-in says nothing about a brand.
  * - HAS_ORDERED — at least one paid order at the brand.
  * - INACTIVE_30D — paid before, but not in the last 30 days.
+ *
+ * INACTIVE needs a count of orders per customer, which a relation filter
+ * cannot express; {@link CampaignsService.audienceFilter} looks them up.
  */
-export function audienceWhere(brandId: string, audience: CampaignAudience, now = new Date()): Prisma.UserWhereInput {
+export function audienceWhere(
+  brandId: string,
+  audience: Exclude<CampaignAudience, 'INACTIVE'>,
+  now = new Date(),
+): Prisma.UserWhereInput {
   const base: Prisma.UserWhereInput = { role: 'CUSTOMER', blockedAt: null };
   const paidHere: Prisma.OrderWhereInput = { store: { brandId }, status: { in: PAID_STATUSES } };
 
@@ -217,13 +235,21 @@ export function isDue(c: Pick<Campaign, 'status' | 'approvedAt' | 'scheduledAt'>
 }
 
 /** What the business composes. */
-export interface CampaignInput {
+export interface CampaignInput extends AudienceSpec {
   title: string;
   body: string;
   channel: CampaignChannel;
-  audience: CampaignAudience;
   /** Null: as soon as it is approved. */
   scheduledAt: Date | null;
+}
+
+/**
+ * The segment fields that go with an audience: INACTIVE keeps its days
+ * (the default when none came) and store, every other audience clears them.
+ */
+function segmentOf(spec: AudienceSpec): { inactiveDays: number | null; segmentStoreId: string | null } {
+  if (spec.audience !== 'INACTIVE') return { inactiveDays: null, segmentStoreId: null };
+  return { inactiveDays: spec.inactiveDays ?? DEFAULT_INACTIVE_DAYS, segmentStoreId: spec.segmentStoreId ?? null };
 }
 
 @Injectable()
@@ -283,6 +309,7 @@ export class CampaignsService {
         body: input.body,
         channel: input.channel,
         audience: input.audience,
+        ...segmentOf(input),
         scheduledAt: input.scheduledAt,
         status: 'DRAFT',
       },
@@ -293,12 +320,17 @@ export class CampaignsService {
    * Changes the copy, channel, audience or time of a draft or of a rejected
    * campaign — the rejection reason stays on it until it is resubmitted.
    * Conditional on the status, so a campaign that went into review in the
-   * meantime is never changed under the moderator.
+   * meantime is never changed under the moderator. A new audience brings
+   * its segment fields along (INACTIVE) or clears them (any other).
    */
   async update(brandId: string, id: string, patch: Partial<CampaignInput>): Promise<Campaign> {
+    const { audience, inactiveDays, segmentStoreId, ...rest } = patch;
+    const data: Prisma.CampaignUpdateManyMutationInput = { ...rest };
+    if (audience !== undefined)
+      Object.assign(data, { audience }, segmentOf({ audience, inactiveDays, segmentStoreId }));
     const { count } = await this.prisma.campaign.updateMany({
       where: { id, brandId, status: { in: [...EDITABLE_STATUSES] } },
-      data: patch,
+      data,
     });
     if (count === 0) {
       await this.findOwned(brandId, id);
@@ -326,8 +358,25 @@ export class CampaignsService {
   }
 
   /** How many people the audience matches right now. */
-  audienceSize(brandId: string, audience: CampaignAudience): Promise<number> {
-    return this.prisma.user.count({ where: audienceWhere(brandId, audience) });
+  async audienceSize(brandId: string, spec: AudienceSpec): Promise<number> {
+    return this.prisma.user.count({ where: await this.audienceFilter(brandId, spec) });
+  }
+
+  /**
+   * The audience as a filter on users. INACTIVE is the admin's inactive
+   * segment — 3+ orders, none for `inactiveDays` days — worked out at the
+   * moment of the call, so a customer who came back after the draft was
+   * saved is not messaged.
+   */
+  async audienceFilter(brandId: string, spec: AudienceSpec, now = new Date()): Promise<Prisma.UserWhereInput> {
+    if (spec.audience !== 'INACTIVE') return audienceWhere(brandId, spec.audience, now);
+    const ids = await inactiveCustomerIds(
+      this.prisma,
+      { brandIds: [brandId], storeIds: spec.segmentStoreId ? [spec.segmentStoreId] : null },
+      spec.inactiveDays ?? DEFAULT_INACTIVE_DAYS,
+      now,
+    );
+    return { role: 'CUSTOMER', blockedAt: null, id: { in: ids } };
   }
 
   transports(): Transports {
@@ -335,9 +384,9 @@ export class CampaignsService {
   }
 
   /** How many people a campaign would reach, and through what — shown before sending. */
-  async preview(brandId: string, audience: CampaignAudience, channel: CampaignChannel): Promise<CampaignPreview> {
+  async preview(brandId: string, spec: AudienceSpec, channel: CampaignChannel): Promise<CampaignPreview> {
     const users = await this.prisma.user.findMany({
-      where: audienceWhere(brandId, audience),
+      where: await this.audienceFilter(brandId, spec),
       select: AUDIENCE_USER_SELECT,
     });
     const transports = this.transports();
@@ -384,7 +433,7 @@ export class CampaignsService {
       });
     }
 
-    const audienceSize = await this.audienceSize(brandId, campaign.audience);
+    const audienceSize = await this.audienceSize(brandId, campaign);
     if (audienceSize === 0) throw noRecipients();
 
     if (!(await this.claim(campaign, audienceSize))) {
@@ -410,7 +459,7 @@ export class CampaignsService {
     const campaign = await this.prisma.campaign.findUnique({ where: { id } });
     if (!campaign || !isDue(campaign, now)) return false;
 
-    const audienceSize = await this.audienceSize(campaign.brandId, campaign.audience);
+    const audienceSize = await this.audienceSize(campaign.brandId, campaign);
     if (audienceSize === 0) {
       await this.prisma.campaign.updateMany({
         where: { id, status: 'APPROVED', updatedAt: campaign.updatedAt },
@@ -483,7 +532,7 @@ export class CampaignsService {
       });
       const alreadySent = new Set(done.map((d) => d.userId));
       const audience = await this.prisma.user.findMany({
-        where: audienceWhere(campaign.brandId, campaign.audience),
+        where: await this.audienceFilter(campaign.brandId, campaign),
         select: { id: true },
         orderBy: { createdAt: 'asc' },
       });

@@ -1,6 +1,6 @@
 import { Location } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -10,6 +10,13 @@ import { Observable, type Subscription, switchMap } from 'rxjs';
 import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
+import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
+import {
+  DEFAULT_INACTIVE_DAYS,
+  INACTIVE_DAYS,
+  type InactiveDays,
+  parseInactiveDays,
+} from '../../core/customers/inactive-segment';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { FormPageComponent } from '../../shared/form-page.component';
 import {
@@ -32,6 +39,11 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
  * and submits it in one go. Nothing is sent before the takeAway team
  * approves it — at once, or at the time picked here. A platform admin's
  * campaign needs no review, so their button reads «Отправить».
+ *
+ * `?audience=INACTIVE&inactiveDays=&storeId=` (from «Возврат», «Клиенты →
+ * Неактивные» or a saved win-back code) opens it on the inactive segment
+ * with a ready "we miss you" copy; `&code=` puts that promo code in it. The
+ * way out of that flow is the same «Отправить на модерацию».
  */
 @Component({
   selector: 'app-campaign-form',
@@ -97,6 +109,35 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
             </select>
           </label>
         </div>
+
+        @if (audience() === 'INACTIVE') {
+          <div class="form-row">
+            <label class="field">
+              <span class="field-label">{{ 'admin.campaigns.inactive.days' | translate }}</span>
+              <select formControlName="inactiveDays" class="field-input">
+                @for (d of inactiveDays; track d) {
+                  <option [ngValue]="d">{{ 'admin.campaigns.inactive.daysOption' | translate: { days: d } }}</option>
+                }
+              </select>
+            </label>
+            @if (stores().length > 1) {
+              <label class="field">
+                <span class="field-label">{{ 'admin.campaigns.inactive.store' | translate }}</span>
+                <select formControlName="storeId" class="field-input">
+                  <option value="">{{ 'admin.campaigns.inactive.allStores' | translate }}</option>
+                  @for (s of stores(); track s.id) {
+                    <option [value]="s.id">{{ s.name }}</option>
+                  }
+                </select>
+              </label>
+            }
+          </div>
+          <p
+            style="margin: -4px 0 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+          >
+            {{ 'admin.campaigns.inactive.hint' | translate }}
+          </p>
+        }
 
         <label class="field">
           <span class="field-label">{{ 'admin.campaigns.fields.scheduledAt' | translate }}</span>
@@ -219,9 +260,13 @@ export class CampaignFormPage implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly auth = inject(AuthStore);
+  private readonly catalog = inject(AdminCatalogApi);
+  private readonly query = inject(ActivatedRoute).snapshot.queryParamMap;
 
   readonly channels = CAMPAIGN_CHANNELS;
   readonly audiences = CAMPAIGN_AUDIENCES;
+  readonly inactiveDays = INACTIVE_DAYS;
+  readonly stores = signal<StoreAdminDto[]>([]);
   readonly creating = signal(false);
   readonly error = signal<string | null>(null);
   /** The campaign being edited; null on /campaigns/new. Set after the first save of a new one. */
@@ -240,6 +285,8 @@ export class CampaignFormPage implements OnInit {
     body: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
     channel: new FormControl<CampaignRow['channel']>('PUSH', { nonNullable: true }),
     audience: new FormControl<CampaignRow['audience']>('ALL', { nonNullable: true }),
+    inactiveDays: new FormControl<InactiveDays>(DEFAULT_INACTIVE_DAYS, { nonNullable: true }),
+    storeId: new FormControl('', { nonNullable: true }),
     /** `datetime-local` value in the admin's time zone; empty — as soon as it is approved. */
     scheduledAt: new FormControl('', { nonNullable: true }),
   });
@@ -250,6 +297,12 @@ export class CampaignFormPage implements OnInit {
   });
   readonly audience = toSignal(this.form.controls.audience.valueChanges, {
     initialValue: this.form.controls.audience.value,
+  });
+  readonly days = toSignal(this.form.controls.inactiveDays.valueChanges, {
+    initialValue: this.form.controls.inactiveDays.value,
+  });
+  readonly storeId = toSignal(this.form.controls.storeId.valueChanges, {
+    initialValue: this.form.controls.storeId.value,
   });
 
   readonly preview = signal<CampaignPreview | null>(null);
@@ -275,11 +328,20 @@ export class CampaignFormPage implements OnInit {
   private previewSub: Subscription | null = null;
 
   constructor() {
+    this.prefill();
     effect(() => {
       const brandId = this.brandId();
       const audience = this.audience();
       const channel = this.channel();
-      this.loadPreview(brandId, audience, channel);
+      const days = this.days();
+      const storeId = this.storeId();
+      this.loadPreview(brandId, audience, channel, { days, storeId });
+    });
+    // Stores for the inactive segment's "orders at" follow the brand in the header.
+    effect(() => {
+      const brandId = this.brandId();
+      if (!brandId) return;
+      untracked(() => this.catalog.listStores(brandId).subscribe({ next: (list) => this.stores.set(list) }));
     });
     inject(DestroyRef).onDestroy(() => this.previewSub?.unsubscribe());
   }
@@ -346,6 +408,10 @@ export class CampaignFormPage implements OnInit {
         body: raw.body,
         channel: raw.channel,
         audience: raw.audience,
+        // The inactive segment's window and store travel with that audience only.
+        ...(raw.audience === 'INACTIVE'
+          ? { inactiveDays: raw.inactiveDays, ...(raw.storeId ? { storeId: raw.storeId } : {}) }
+          : {}),
         scheduledAt: raw.scheduledAt ? new Date(raw.scheduledAt).toISOString() : null,
       };
       const id = this.campaignId();
@@ -382,6 +448,8 @@ export class CampaignFormPage implements OnInit {
           body: row.body,
           channel: row.channel,
           audience: row.audience,
+          inactiveDays: parseInactiveDays(String(row.inactiveDays ?? '')) ?? DEFAULT_INACTIVE_DAYS,
+          storeId: row.storeId ?? '',
           scheduledAt: row.scheduledAt ? toLocalInput(new Date(row.scheduledAt)) : '',
         });
         this.rejection.set(row.status === 'REJECTED' ? (row.reviewNote ?? '') || null : null);
@@ -415,10 +483,29 @@ export class CampaignFormPage implements OnInit {
     return { ok: false, text: this.translate.instant('admin.campaigns.test.noChannel') };
   }
 
+  /**
+   * The inactive segment and a ready copy when the composer was opened for
+   * it; the admin edits the words before saving.
+   */
+  private prefill(): void {
+    if (this.query.get('audience') !== 'INACTIVE') return;
+    const code = this.query.get('code');
+    this.form.patchValue({
+      audience: 'INACTIVE',
+      inactiveDays: parseInactiveDays(this.query.get('inactiveDays')) ?? DEFAULT_INACTIVE_DAYS,
+      storeId: this.query.get('storeId') ?? '',
+      title: this.translate.instant('admin.campaigns.template.title'),
+      body: code
+        ? this.translate.instant('admin.campaigns.template.bodyWithCode', { code })
+        : this.translate.instant('admin.campaigns.template.body'),
+    });
+  }
+
   private loadPreview(
     brandId: string | null,
     audience: CampaignRow['audience'],
     channel: CampaignRow['channel'],
+    segment: { days: InactiveDays; storeId: string },
   ): void {
     this.previewSub?.unsubscribe();
     this.preview.set(null);
@@ -430,7 +517,16 @@ export class CampaignFormPage implements OnInit {
     this.previewLoading.set(true);
     this.previewSub = this.http
       .get<CampaignPreview>(`${this.api.baseUrl}/admin/campaigns/preview`, {
-        params: { brandId, audience, channel },
+        params:
+          audience === 'INACTIVE'
+            ? {
+                brandId,
+                audience,
+                channel,
+                inactiveDays: segment.days,
+                ...(segment.storeId ? { storeId: segment.storeId } : {}),
+              }
+            : { brandId, audience, channel },
       })
       .subscribe({
         next: (p) => {

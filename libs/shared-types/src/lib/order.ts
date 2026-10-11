@@ -272,7 +272,9 @@ export type PromoErrorCode =
   | 'PROMO_EXPIRED'
   | 'PROMO_MIN_ORDER'
   | 'PROMO_LIMIT_REACHED'
-  | 'PROMO_ALREADY_USED';
+  | 'PROMO_ALREADY_USED'
+  /** The code is for inactive customers only, and this customer is not one. */
+  | 'PROMO_NOT_ELIGIBLE';
 
 /**
  * Stable codes on the errors a customer can meet while placing an order. The

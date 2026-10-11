@@ -1,7 +1,10 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Currency, PromoStatus, PromoType } from '@prisma/client';
 import type { PromoErrorCode } from '@takeaway/shared-types';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
+
+import { INACTIVE_DAYS } from '../../customers/customer-segment';
 
 export class PromoDto {
   @ApiProperty() id!: string;
@@ -15,9 +18,18 @@ export class PromoDto {
   @ApiProperty() perUserLimit!: number;
   @ApiProperty() startsAt!: string;
   @ApiProperty() endsAt!: string;
+  /** In effect now: an active promo reads SCHEDULED before its start and EXPIRED after its end. */
   @ApiProperty({ enum: PromoStatus }) status!: PromoStatus;
   @ApiProperty({ enum: Currency }) currency!: Currency;
   @ApiProperty() redemptionsCount!: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'Only for customers with 3+ orders and none for this many days; null — anyone',
+  })
+  inactiveDays!: number | null;
+  @ApiProperty({ nullable: true, type: String, description: 'With inactiveDays: only orders at this store count' })
+  segmentStoreId!: string | null;
 }
 
 export class ValidatePromoDto {
@@ -51,15 +63,64 @@ export class CreatePromoDto {
   @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) perUserLimit?: number;
   @ApiProperty() @IsDateString() startsAt!: string;
   @ApiProperty() @IsDateString() endsAt!: string;
-  @ApiProperty({ enum: PromoStatus, required: false })
+  @ApiProperty({
+    enum: [PromoStatus.DRAFT, PromoStatus.RUNNING, PromoStatus.SCHEDULED],
+    required: false,
+    description: 'DRAFT, or active from startsAt (RUNNING and SCHEDULED mean the same here)',
+  })
   @IsOptional()
-  @IsEnum(PromoStatus)
+  @IsIn([PromoStatus.DRAFT, PromoStatus.RUNNING, PromoStatus.SCHEDULED])
   status?: PromoStatus;
   @ApiProperty({ enum: Currency, required: false }) @IsOptional() @IsEnum(Currency) currency?: Currency;
+  @ApiPropertyOptional({ enum: INACTIVE_DAYS, description: 'Only for inactive customers: days without an order' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([...INACTIVE_DAYS])
+  inactiveDays?: number;
+  @ApiPropertyOptional({ description: 'With inactiveDays: only orders at this store of the brand count' })
+  @IsOptional()
+  @IsString()
+  segmentStoreId?: string;
+}
+
+/**
+ * Edits a promo that is still a draft, or scheduled or paused with no
+ * redemptions. Omitted fields stay; null clears `minSubtotalCents`,
+ * `inactiveDays` and `segmentStoreId`.
+ */
+export class UpdatePromoDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() @Length(2, 32) @Matches(/^[A-Za-z0-9_-]+$/) code?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @Length(1, 120) label?: string;
+  @ApiPropertyOptional({ enum: PromoType }) @IsOptional() @IsEnum(PromoType) type?: PromoType;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) value?: number;
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  minSubtotalCents?: number | null;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) maxRedemptions?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) perUserLimit?: number;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() startsAt?: string;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() endsAt?: string;
+  @ApiPropertyOptional({ enum: Currency }) @IsOptional() @IsEnum(Currency) currency?: Currency;
+  @ApiPropertyOptional({ enum: INACTIVE_DAYS, nullable: true, type: Number })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([...INACTIVE_DAYS])
+  inactiveDays?: number | null;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @IsOptional()
+  @IsString()
+  segmentStoreId?: string | null;
 }
 
 export class UpdatePromoStatusDto {
-  @ApiProperty({ enum: PromoStatus }) @IsEnum(PromoStatus) status!: PromoStatus;
+  @ApiProperty({
+    enum: PromoStatus,
+    description: 'RUNNING starts or resumes (SCHEDULED until startsAt), PAUSED pauses, EXPIRED ends for good',
+  })
+  @IsEnum(PromoStatus)
+  status!: PromoStatus;
 }
 
 /** Used when the checkout pipeline consumes a promo against an order. */

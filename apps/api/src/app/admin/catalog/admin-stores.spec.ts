@@ -123,6 +123,14 @@ describe('store DTOs', () => {
     expect(await errors(CreateStoreDto, { ...newStore, slug: 'noname-tsentr-2' })).toEqual([]);
   });
 
+  it('takes what the store sells — coffee, food or both, never nothing', async () => {
+    expect(await errors(CreateStoreDto, { ...newStore, kinds: ['COFFEE', 'FOOD'] })).toEqual([]);
+    expect(await errors(UpdateStoreDto, { kinds: ['FOOD'] })).toEqual([]);
+    expect(await errors(UpdateStoreDto, { kinds: [] })).toEqual(['kinds must name at least one of COFFEE, FOOD']);
+    expect(await errors(UpdateStoreDto, { kinds: ['TEA'] })).toHaveLength(1);
+    expect(await errors(UpdateStoreDto, { kinds: ['FOOD', 'FOOD'] })).toHaveLength(1);
+  });
+
   it('takes status on update only — a new store cannot be created open', async () => {
     expect(await errors(CreateStoreDto, { ...newStore, status: 'OPEN' })).toEqual(['property status should not exist']);
     expect(await errors(UpdateStoreDto, { status: 'OPEN' })).toEqual([]);
@@ -154,6 +162,19 @@ describe('AdminCatalogService — creating a store', () => {
     });
     expect(created.hasOrders).toBe(false);
     expect(created.readiness.ready).toBe(false); // no working hours yet
+  });
+
+  it('saves what the store sells, and leaves it to the coffee default when not said', async () => {
+    const food = build();
+    await food.svc.createStore({ ...newStore, kinds: ['FOOD'] }, ['brand-1']);
+    expect(written(food.prisma.store.create)).toMatchObject({ kinds: ['FOOD'] });
+
+    const plain = build();
+    await plain.svc.createStore(newStore, ['brand-1']);
+    expect(written(plain.prisma.store.create)['kinds']).toBeUndefined();
+
+    await plain.svc.updateStore('store-1', { kinds: ['COFFEE', 'FOOD'] }, ['brand-1']);
+    expect(written(plain.prisma.store.update)).toMatchObject({ kinds: ['COFFEE', 'FOOD'] });
   });
 
   // Opening a second café must not leave it with an empty menu: it starts

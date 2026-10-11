@@ -29,6 +29,11 @@ test.describe('takeAway web — smoke', () => {
     // Nav links.
     await expect(page.getByRole('link', { name: 'Menu' }).first()).toBeVisible();
     await expect(page.getByRole('link', { name: 'Stores' }).first()).toBeVisible();
+    // Businesses find their way in from the header, not only the footer.
+    await expect(page.locator('header').getByRole('link', { name: 'For business' })).toHaveAttribute(
+      'href',
+      '/business/signup',
+    );
     // Sign in pill + Order pill.
     await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Order' }).first()).toBeVisible();
@@ -82,6 +87,15 @@ test.describe('takeAway web — smoke', () => {
     await page.goto('/privacy');
     await page.getByRole('button', { name: /switch language to русский/i }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Политика конфиденциальности' })).toBeVisible();
+  });
+
+  // The site is a marketplace: «Меню» must not drop the visitor into one café.
+  test('the menu link opens the choice of places', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('header').getByRole('link', { name: 'Menu' }).first().click();
+    await expect(page).toHaveURL(/\/menu$/);
+    await expect(page.getByRole('heading', { name: 'Choose a place' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'What they sell' })).toBeVisible();
   });
 
   test('stores page renders the map chrome + nearby sidebar', async ({ page }) => {

@@ -94,7 +94,13 @@ interface Decision {
                 </div>
                 <div>
                   <dt>{{ 'admin.campaigns.fields.audience' | translate }}</dt>
-                  <dd>{{ 'admin.campaigns.audiences.' + c.audience | translate }}</dd>
+                  <dd>
+                    @if (c.audience === 'INACTIVE') {
+                      {{ 'admin.campaigns.audienceInactive' | translate: { days: c.inactiveDays ?? 14 } }}
+                    } @else {
+                      {{ 'admin.campaigns.audiences.' + c.audience | translate }}
+                    }
+                  </dd>
                 </div>
                 <div>
                   <dt>{{ 'admin.campaignModeration.when' | translate }}</dt>

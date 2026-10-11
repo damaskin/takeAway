@@ -2,6 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { BRAND_LOGO_RULE } from '@takeaway/shared-types';
 
 import { formatPhone, normalizePhone } from '@takeaway/utils';
 
@@ -11,6 +12,7 @@ import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business
 import { apiErrorCode } from '../../core/http/api-error';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { MyBrand, SettingsService } from '../../core/settings/settings.service';
+import { acceptFor, imageFileError, imageUploadRefusal, ruleParams } from '../../shared/image-rules';
 import { phoneValidator } from '../../shared/phone.validator';
 import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
 import { SupportDialogComponent } from '../../shared/support-dialog.component';
@@ -170,14 +172,20 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
                 <img
                   [src]="form.controls.logoUrl.value"
                   alt="logo"
-                  style="width: 64px; height: 64px; object-fit: cover; border-radius: 12px; background: var(--color-cream); border: 1px solid var(--color-border)"
+                  style="width: 64px; height: 64px; object-fit: contain; padding: 6px; box-sizing: border-box; border-radius: 12px; background: #ffffff; border: 1px solid var(--color-border)"
                 />
               }
               <label
                 style="padding: 8px 14px; background: var(--color-latte); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-espresso); cursor: pointer"
               >
                 {{ (uploading() ? 'admin.settings.uploading' : 'admin.settings.uploadLogo') | translate }}
-                <input type="file" accept="image/*" (change)="onLogoPicked($event)" style="display: none" />
+                <input
+                  type="file"
+                  [accept]="logoAccept"
+                  [disabled]="uploading()"
+                  (change)="onLogoPicked($event)"
+                  style="display: none"
+                />
               </label>
               @if (form.controls.logoUrl.value) {
                 <input
@@ -188,6 +196,19 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
                 />
               }
             </div>
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+              'admin.settings.logoHint' | translate
+            }}</span>
+            <span
+              data-testid="logo-rule"
+              style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+              >{{ 'admin.images.logoRule' | translate: logoRule }}</span
+            >
+            @if (logoError(); as message) {
+              <span role="alert" style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry)">{{
+                message
+              }}</span>
+            }
           </div>
 
           <fieldset style="border: 1px solid var(--color-border); border-radius: 12px; padding: 16px; margin: 0">
@@ -283,6 +304,10 @@ export class AdminSettingsPage {
   readonly uploading = signal(false);
   readonly saved = signal(false);
   readonly error = signal<string | null>(null);
+  /** A logo file that was refused, next to the button rather than at the bottom of the form. */
+  readonly logoError = signal<string | null>(null);
+  readonly logoAccept = acceptFor(BRAND_LOGO_RULE);
+  readonly logoRule = ruleParams(BRAND_LOGO_RULE);
 
   readonly form: FormGroup<{
     name: FormControl<string>;
@@ -412,7 +437,11 @@ export class AdminSettingsPage {
   onLogoPicked(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file) return;
+    input.value = '';
+    if (!file || this.uploading()) return;
+    const problem = imageFileError(file, BRAND_LOGO_RULE, this.translate);
+    this.logoError.set(problem);
+    if (problem) return;
     this.uploading.set(true);
     this.error.set(null);
     this.settings.uploadLogo(file).subscribe({
@@ -423,10 +452,9 @@ export class AdminSettingsPage {
       },
       error: (err) => {
         this.uploading.set(false);
-        this.error.set(this.extractMessage(err));
+        this.logoError.set(imageUploadRefusal(err, BRAND_LOGO_RULE, this.translate) ?? this.extractMessage(err));
       },
     });
-    input.value = '';
   }
 
   private extractMessage(err: unknown): string {

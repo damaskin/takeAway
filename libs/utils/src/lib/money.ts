@@ -52,6 +52,24 @@ export function formatMoney(
   return minor < 0 ? `${MINUS}${body}` : body;
 }
 
+/**
+ * The currency a business's figures open in when its stores price in more
+ * than one: the brand's own when a store uses it, else the one most stores
+ * use, a tie going to the first alphabetically. Money is never added up
+ * across currencies, so the figures cover the stores of this one. The API
+ * and the admin both call this, so they agree without asking each other.
+ */
+export function defaultCurrency(
+  storeCurrencies: ReadonlyArray<string | null | undefined>,
+  brandCurrency?: string | null,
+): string | null {
+  const count = new Map<string, number>();
+  for (const c of storeCurrencies) if (c) count.set(c, (count.get(c) ?? 0) + 1);
+  if (brandCurrency && count.has(brandCurrency)) return brandCurrency;
+  const ranked = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return ranked[0]?.[0] ?? brandCurrency ?? null;
+}
+
 /** Whether a language tag is Russian ("ru", "ru-RU", "RU"). */
 export function isRussian(lang: string | null | undefined): boolean {
   return (lang ?? '').toLowerCase().startsWith('ru');

@@ -39,7 +39,11 @@ export interface GroupTotalsRow {
   key: string | null;
   current: boolean;
   orders: number;
+  /** Sales less discounts — see `money.ts`. */
   revenue: number;
+  sales: number;
+  discounts: number;
+  giftCards: number;
   commission: number;
   placed: number;
   cancelled: number;
@@ -117,19 +121,24 @@ export function newCustomerTotals(
   return { current, previous };
 }
 
-/** One period's totals from its scope-wide row. */
+/** One period's totals from its scope-wide row (or the row of the store the page is narrowed to). */
 export function totalsFrom(row: GroupTotalsRow | undefined, newCustomers: number, activeUnits: number): OverviewTotals {
   const orders = row?.orders ?? 0;
   const revenue = row?.revenue ?? 0;
   const placed = row?.placed ?? 0;
   const cancelled = row?.cancelled ?? 0;
   const expired = row?.expired ?? 0;
+  const customers = row?.customers ?? 0;
   return {
+    salesCents: row?.sales ?? 0,
+    discountCents: row?.discounts ?? 0,
     revenueCents: revenue,
+    giftCardCents: row?.giftCards ?? 0,
     orders,
     placed,
-    customers: row?.customers ?? 0,
+    customers,
     newCustomers,
+    returningCustomers: Math.max(0, customers - newCustomers),
     avgCheckCents: average(revenue, orders),
     cancelled,
     expired,
