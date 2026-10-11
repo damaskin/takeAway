@@ -11,6 +11,9 @@ const STORE_ERRORS: ApiErrorWording = {
     STORE_GALLERY_FULL: 'admin.stores.errors.galleryFull',
     KDS_PIN_TAKEN: 'admin.stores.errors.pinTaken',
     KDS_PIN_NOT_CONFIGURED: 'admin.stores.errors.pinNotConfigured',
+    KDS_PIN_FORMAT: 'admin.stores.errors.pinFormat',
+    KDS_PIN_TOO_SIMPLE: 'admin.stores.errors.pinTooSimple',
+    STAFF_NOT_EDITABLE: 'admin.staff.errors.notEditable',
   },
   messages: {
     'timezone must be an IANA time zone such as Europe/Chisinau': 'admin.stores.errors.timezone',
@@ -22,6 +25,7 @@ const STORE_ERRORS: ApiErrorWording = {
     'Only JPEG, PNG, WebP or AVIF images are accepted': 'admin.stores.errors.imageType',
     'Object storage is not configured on this deployment': 'admin.stores.errors.storageOff',
     'pin must match /^[0-9]{4,6}$/ regular expression': 'admin.stores.errors.pinFormat',
+    'pin must be exactly 6 digits': 'admin.stores.errors.pinFormat',
     'PIN must be 4 to 6 digits': 'admin.stores.errors.pinFormat',
     'Staff is not rostered for this store': 'admin.stores.errors.notRostered',
     'User is not eligible for a KDS PIN': 'admin.stores.errors.notEligible',
