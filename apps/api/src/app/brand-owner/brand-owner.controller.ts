@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { BRAND_LOGO_RULE } from '@takeaway/shared-types';
 
 import { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -39,10 +40,10 @@ export class BrandOwnerController {
   /**
    * Upload a new logo. Accepts a single `file` multipart field, stores it
    * via the shared StorageService, and writes the resulting public URL
-   * into `Brand.logoUrl`.
+   * into `Brand.logoUrl`. JPEG, PNG or WebP up to 2 MB (BRAND_LOGO_RULE).
    */
   @Post('logo')
-  @ImageUpload()
+  @ImageUpload(BRAND_LOGO_RULE)
   uploadLogo(
     @CurrentUser() user: AuthenticatedUser,
     @UploadedImage() file: UploadedImageFile,

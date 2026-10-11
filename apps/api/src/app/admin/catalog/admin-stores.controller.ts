@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { STORE_PHOTO_RULE } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -97,10 +98,12 @@ export class AdminStoresController {
   /**
    * One photo per request, as the `file` field of a multipart body:
    * `kind=hero` replaces the cover, `kind=gallery` adds to the gallery.
+   * JPEG, PNG or WebP up to 5 MB (STORE_PHOTO_RULE): every customer app has
+   * to be able to draw it.
    */
   @Post(':id/images')
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER)
-  @ImageUpload()
+  @ImageUpload(STORE_PHOTO_RULE)
   async uploadImage(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
