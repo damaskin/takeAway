@@ -35,10 +35,13 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
-  /** Kitchen tablet sign-in: a short PIN valid for one store. */
-  loginWithPin(storeId: string, pin: string): Observable<AuthSession> {
+  /**
+   * Kitchen tablet sign-in: a short PIN valid for one store, from a tablet
+   * bound to the store's brand. The session opens only that store's kitchen.
+   */
+  loginWithPin(storeId: string, pin: string, deviceToken: string): Observable<AuthSession> {
     return this.http
-      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin })
+      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin, deviceToken })
       .pipe(tap((session) => this.store.set(session)));
   }
 
@@ -50,9 +53,14 @@ export class AuthService {
     return this.http.post<void>(`${this.api.baseUrl}/auth/password/reset`, body);
   }
 
+  /**
+   * A password change signs out every other session of the account; sending
+   * this session's refresh token keeps this one signed in.
+   */
   changePassword(body: { currentPassword: string; newPassword: string }): Observable<void> {
+    const refreshToken = this.store.session()?.refreshToken;
     return this.http
-      .post<void>(`${this.api.baseUrl}/auth/password/change`, body)
+      .post<void>(`${this.api.baseUrl}/auth/password/change`, refreshToken ? { ...body, refreshToken } : body)
       .pipe(tap(() => this.store.clearMustChangePassword()));
   }
 

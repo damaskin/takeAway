@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type IngredientDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { CategoryFormPage } from './category-form.page';
 import { ProductFormComponent } from './product-form.component';
 import { ProductOptionsPanelComponent } from './product-options-panel.component';
@@ -376,6 +377,8 @@ describe('CategoryFormPage', () => {
         provideRouter([]),
         { provide: AdminCatalogApi, useValue: api },
         { provide: ActiveBrandService, useValue: { activeId: signal('b1') } },
+        // Not opened from «Запуск бренда»: the form goes back to the menu as always.
+        { provide: OnboardingFlowService, useValue: { afterSave: () => Promise.resolve('inactive') } },
       ],
     });
     const translate = TestBed.inject(TranslateService);

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { STAFF_PASSWORD_MAX_LENGTH, STAFF_PASSWORD_MIN_LENGTH } from '@takeaway/shared-types';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -33,10 +34,15 @@ export class AddStaffDto {
   @MaxLength(80)
   name?: string;
 
-  @ApiProperty({ minLength: 8, description: 'Temporary password — the user should change it via /forgot-password' })
+  @ApiProperty({
+    minLength: STAFF_PASSWORD_MIN_LENGTH,
+    maxLength: STAFF_PASSWORD_MAX_LENGTH,
+    description:
+      'Temporary password the owner hands over; the person must change it on first sign-in. A new account is also emailed a one-time link to set its own.',
+  })
   @IsString()
-  @MinLength(8)
-  @MaxLength(128)
+  @MinLength(STAFF_PASSWORD_MIN_LENGTH)
+  @MaxLength(STAFF_PASSWORD_MAX_LENGTH)
   tempPassword!: string;
 }
 

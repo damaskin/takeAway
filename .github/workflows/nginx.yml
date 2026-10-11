@@ -90,6 +90,69 @@ jobs:
           echo "POST -> $code"
           [ "$code" = 403 ] || { echo "::error::POST should be refused, got $code"; exit 1; }
 
+      - name: Security headers
+        run: |
+          # The SPA roots are not mounted here, so pages and assets answer 404.
+          # The headers are sent `always`, so they must be on those as well —
+          # the point is that no location's own add_header drops them.
+          headers() { curl -sk --max-time 10 --resolve "$1:8443:127.0.0.1" -o /dev/null -D - "https://$1:8443$2" | tr -d '\r'; }
+          count() { printf '%s\n' "$1" | grep -ci "^$2" || true; }
+          fail=0
+          for host in takeaway.md admin.takeaway.md tma.takeaway.md; do
+            for path in / /main-ABC123.js /manifest.webmanifest /sw.js /icons/icon-192.png /api/health; do
+              h="$(headers "$host" "$path")"
+              for want in 'strict-transport-security: max-age=31536000; includeSubDomains' \
+                          'x-content-type-options: nosniff' \
+                          'referrer-policy: strict-origin-when-cross-origin' \
+                          'content-security-policy: .*frame-ancestors'; do
+                [ "$(count "$h" "$want")" = 1 ] || { echo "::error::$host$path: expected one '$want'"; fail=1; }
+              done
+              case "$host" in
+                tma.*)
+                  [ "$(count "$h" 'x-frame-options:')" = 0 ] || { echo "::error::$host$path: the Mini App must stay frameable"; fail=1; }
+                  [ "$(count "$h" "content-security-policy: frame-ancestors 'self' https://\*.telegram.org")" = 1 ] \
+                    || { echo "::error::$host$path: frame-ancestors must allow Telegram Web"; fail=1; } ;;
+                *)
+                  [ "$(count "$h" 'x-frame-options: DENY')" = 1 ] || { echo "::error::$host$path: expected X-Frame-Options DENY"; fail=1; } ;;
+              esac
+            done
+          done
+          h="$(headers admin.takeaway.md /)"
+          [ "$(count "$h" 'content-security-policy-report-only:')" = 1 ] || { echo "::error::admin: report-only CSP missing"; fail=1; }
+          [ "$fail" = 0 ] || { headers admin.takeaway.md /; exit 1; }
+          echo "security headers present on every location"
+
+      - name: Rate limits
+        run: |
+          post() {
+            curl -sk --max-time 10 --resolve "$1:8443:127.0.0.1" -o /tmp/body -w '%{http_code}' \
+              -X POST -H 'content-type: application/json' -d '{}' "${@:3}" "https://$1:8443$2"
+          }
+          # The auth zone allows a burst of 5 on top of 10 a minute, so the
+          # 7th sign-in attempt in a row is refused by nginx itself (api is
+          # not running here: the ones let through answer 502). A different
+          # X-Forwarded-For on each request must not help — nginx keys on
+          # CF-Connecting-IP, or the peer address without it.
+          codes=""
+          for i in $(seq 1 8); do
+            codes="$codes $(post admin.takeaway.md /api/auth/password/login -H "X-Forwarded-For: 203.0.113.$i")"
+          done
+          echo "password login x8:$codes"
+          case "$codes" in *429*) ;; *) echo "::error::no 429 from the auth zone"; exit 1 ;; esac
+          grep -q '"statusCode":429' /tmp/body || { echo "::error::429 body is not the JSON error"; cat /tmp/body; exit 1; }
+          echo "429 body: $(cat /tmp/body)"
+
+          # Another visitor, as Cloudflare reports it, has a budget of its own.
+          code="$(post admin.takeaway.md /api/auth/password/login -H 'CF-Connecting-IP: 198.51.100.7')"
+          echo "another visitor -> $code"
+          [ "$code" != 429 ] || { echo "::error::a different CF-Connecting-IP shared the limit"; exit 1; }
+
+          # The same door on api.takeaway.md (the mobile apps) is limited too.
+          codes=""
+          for i in $(seq 1 8); do codes="$codes $(post api.takeaway.md /api/auth/kds/pin -H 'CF-Connecting-IP: 198.51.100.8')"; done
+          echo "api host kds pin x8:$codes"
+          case "$codes" in *429*) ;; *) echo "::error::no 429 on api.takeaway.md"; exit 1 ;; esac
+
       - name: nginx log
         if: always()
         run: docker logs nginx 2>&1 | tail -50

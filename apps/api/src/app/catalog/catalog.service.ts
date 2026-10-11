@@ -6,7 +6,7 @@ import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
-import { acceptingOrders, openNow } from './store-availability';
+import { acceptingOrders, busyMeterOf, openNow } from './store-availability';
 import { storeKinds, storeKindWhere } from './store-kinds';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
@@ -79,7 +79,7 @@ export class CatalogService {
           status: s.status,
           fulfillmentTypes: this.filterFulfillment(s.fulfillmentTypes),
           pickupPointType: s.pickupPointType,
-          busyMeter: s.busyMeter,
+          busyMeter: busyMeterOf(s),
           currentEtaSeconds,
           acceptingOrders: acceptingOrders(s),
           openNow: openNow(s),
@@ -156,7 +156,7 @@ export class CatalogService {
       status: store.status,
       fulfillmentTypes: this.filterFulfillment(store.fulfillmentTypes),
       pickupPointType: store.pickupPointType,
-      busyMeter: store.busyMeter,
+      busyMeter: busyMeterOf(store),
       currentEtaSeconds,
       acceptingOrders: acceptingOrders(store),
       openNow: openNow(store),

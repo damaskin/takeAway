@@ -2,10 +2,9 @@ import { Component, computed, effect, inject, input, signal, untracked } from '@
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
+import { newPinProblem } from '../../core/kitchen/kitchen-pin';
 import { StaffService, type StaffRoster } from '../../core/staff/staff.service';
 import { storeErrorMessage } from './store-errors';
-
-const PIN_PATTERN = /^[0-9]{4,6}$/;
 
 /**
  * Who can unlock this store's kitchen tablet, and with which PIN. The KDS
@@ -123,7 +122,10 @@ const PIN_PATTERN = /^[0-9]{4,6}$/;
               </form>
               @if (draft(person.userId) && !pinValid(person.userId)) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
-                  'admin.stores.errors.pinFormat' | translate
+                  (newPinProblem(draft(person.userId)) === 'TOO_SIMPLE'
+                    ? 'admin.stores.errors.pinTooSimple'
+                    : 'admin.stores.errors.pinFormat'
+                  ) | translate
                 }}</span>
               }
               @if (rowError()?.userId === person.userId) {
@@ -190,14 +192,17 @@ export class StoreKitchenAccessComponent {
     this.drafts.update((d) => ({ ...d, [userId]: digits }));
   }
 
+  /** A new PIN is 6 digits and not a first guess (PINs set earlier with 4–5 digits keep working). */
+  readonly newPinProblem = newPinProblem;
+
   pinValid(userId: string): boolean {
-    return PIN_PATTERN.test(this.draft(userId));
+    return newPinProblem(this.draft(userId)) === null;
   }
 
   setPin(person: StaffRoster, event: Event): void {
     event.preventDefault();
     const pin = this.draft(person.userId);
-    if (!PIN_PATTERN.test(pin) || this.busyId()) return;
+    if (newPinProblem(pin) !== null || this.busyId()) return;
     this.start(person.userId);
     this.staff.setKdsPin(this.storeId(), person.userId, pin).subscribe({
       next: () => this.done(person.userId, true),

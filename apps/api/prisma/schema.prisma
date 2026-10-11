@@ -303,6 +303,11 @@ model User {
   id                 String    @id @default(cuid())
   phone              String?   @unique
   email              String?   @unique
+  /// When `email` was last proven to belong to this account — a Google or
+  /// Apple sign-in that vouched for the same verified address. Null for an
+  /// address typed into the profile. Only a verified address lets a social
+  /// sign-in join an existing profile by email; editing the email clears it.
+  emailVerifiedAt    DateTime?
   /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
   /// set a password.
@@ -367,6 +372,8 @@ model User {
   referralsAsReferee  Referral[]         @relation("ReferralsAsReferee")
   campaignDeliveries  CampaignDelivery[]
   feedback            Feedback[]
+  campaignsCreated    Campaign[]         @relation("CampaignCreatedBy")
+  campaignsReviewed   Campaign[]         @relation("CampaignReviewedBy")
 
   @@index([createdAt])
   @@index([referredByUserId])
@@ -412,6 +419,8 @@ enum ReferralStatus {
 model Feedback {
   id         String         @id @default(cuid())
   userId     String?
+  /// The brand a BUSINESS message is about; null for customer feedback.
+  brandId    String?
   kind       FeedbackKind
   /// Trimmed, 1–2000 characters.
   message    String
@@ -426,7 +435,8 @@ model Feedback {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -437,6 +447,10 @@ enum FeedbackKind {
   REVIEW
   SUGGESTION
   PROBLEM
+  /// A business asking the platform team something («Написать в поддержку»).
+  QUESTION
+  /// A business asking to move to another plan («Перейти на PRO»).
+  PLAN_CHANGE
 }
 
 enum FeedbackSource {
@@ -444,6 +458,8 @@ enum FeedbackSource {
   ANDROID
   WEB
   TMA
+  /// The business admin panel: a brand's staff writing to platform support.
+  BUSINESS
 }
 
 enum FeedbackStatus {
@@ -539,6 +555,13 @@ model Brand {
   /// valid now, mirrored from `BrandCommissionRate` — settlements read the
   /// history, not this column.
   commissionBps    Int                   @default(1000)
+  /// The number the platform team calls the business on, E.164. Required at
+  /// sign-up; null on brands created before it was asked for.
+  contactPhone     String?
+  /// The plan the owner asked to move to («Перейти на PRO»). Cleared when a
+  /// SUPER_ADMIN sets the plan or dismisses the request.
+  requestedPlan    BrandPlan?
+  planRequestedAt  DateTime?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -551,8 +574,10 @@ model Brand {
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
   campaigns       Campaign[]
+  feedback        Feedback[]
   commissionRates BrandCommissionRate[]
   payouts         BrandPayout[]
+  kitchenDevices  KitchenDevice[]
 
   @@index([moderationStatus])
   @@index([ownerId])
@@ -636,11 +661,14 @@ model BrandPayout {
   @@index([brandId, currency, periodEnd])
 }
 
-/// Brand-driven outbound campaign. The admin composes copy in the dashboard;
-/// "send" flips the row to SENDING and a background run fans it out via
-/// push (app → web → Telegram fallback) / Telegram / email. Counters are
-/// refreshed after every batch from the per-recipient CampaignDelivery rows,
-/// so a retry only reaches the people who did not get it the first time.
+/// Brand-driven outbound campaign. The admin composes copy in the dashboard
+/// and submits it for review; nothing goes out until a SUPER_ADMIN approves
+/// it (`approvedAt`), and a SUPER_ADMIN's own campaign is approved on submit.
+/// Approval starts a background run — at once, or at `scheduledAt` — that
+/// fans it out via push (app → web → Telegram fallback) / Telegram / email.
+/// Counters are refreshed after every batch from the per-recipient
+/// CampaignDelivery rows, so a retry only reaches the people who did not get
+/// it the first time.
 model Campaign {
   id             String           @id @default(cuid())
   brandId        String
@@ -665,7 +693,19 @@ model Campaign {
   optedOutCount  Int              @default(0)
   /// Last delivery error or the reason the whole run failed. Diagnostic text.
   lastError      String?
+  /// Send no earlier than this. Null: as soon as it is approved.
   scheduledAt    DateTime?
+  /// Who composed it — a SUPER_ADMIN's campaign skips review.
+  createdById    String?
+  /// Last time it went into the review queue.
+  submittedAt    DateTime?
+  /// The moderator's last decision, either way.
+  reviewedAt     DateTime?
+  reviewedById   String?
+  /// Why it was rejected, shown to the business. Cleared on resubmit.
+  reviewNote     String?
+  /// Set once, by approval. No run starts without it.
+  approvedAt     DateTime?
   /// When the current (or last) run started — a SENDING row whose
   /// `updatedAt` stops moving is treated as stuck and may be retried.
   startedAt      DateTime?
@@ -674,10 +714,13 @@ model Campaign {
   updatedAt      DateTime         @updatedAt
 
   brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdBy  User?              @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedBy User?              @relation("CampaignReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   deliveries CampaignDelivery[]
 
   @@index([brandId, status])
   @@index([brandId, createdAt])
+  @@index([status, submittedAt])
 }
 
 enum CampaignChannel {
@@ -701,9 +744,14 @@ enum CampaignAudience {
   INACTIVE
 }
 
+/// DRAFT → PENDING_REVIEW → APPROVED (waits for `scheduledAt`, if any) →
+/// SENDING → SENT / FAILED; or PENDING_REVIEW → REJECTED → (edit) →
+/// PENDING_REVIEW again.
 enum CampaignStatus {
   DRAFT
-  SCHEDULED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
   SENDING
   SENT
   FAILED
@@ -813,6 +861,30 @@ model Store {
   @@index([brandId])
   @@index([country, city])
   @@index([latitude, longitude])
+}
+
+/// A kitchen tablet bound to one brand. The PIN screen lists only that
+/// brand's stores, and PIN sign-in is accepted only from a bound tablet —
+/// it used to list every store of every brand to anyone. A tablet is bound
+/// by a signed-in employee of the brand opening the kitchen board on it, or
+/// by a one-time link from the Staff page; the raw token stays in the
+/// tablet's localStorage and only its SHA-256 is kept here.
+model KitchenDevice {
+  id          String    @id @default(cuid())
+  brandId     String
+  tokenHash   String    @unique
+  /// Who bound the tablet (the signed-in employee or the link's author).
+  /// Kept for the Staff page; not a relation, so removing the person keeps the row.
+  createdById String?
+  createdAt   DateTime  @default(now())
+  /// Last successful PIN sign-in from this tablet.
+  lastUsedAt  DateTime?
+  /// Unbound from the Staff page: the token no longer opens anything.
+  revokedAt   DateTime?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
 }
 
 /// Pivot table scoping a staff user to one or more stores. Used by the

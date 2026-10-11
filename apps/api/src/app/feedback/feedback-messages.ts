@@ -1,6 +1,16 @@
-import { type FeedbackKind, type FeedbackSource, Locale } from '@prisma/client';
+import { type BrandPlan, type FeedbackKind, type FeedbackSource, Locale } from '@prisma/client';
 
 import { escapeHtml } from '../mail/mail.service';
+
+/** The brand behind a message from the business admin. */
+export interface FeedbackBrand {
+  name: string;
+  /** The number the platform team calls the business on, E.164. */
+  contactPhone: string | null;
+  plan: BrandPlan;
+  /** The plan the owner asked for, on a plan-change request. */
+  requestedPlan: BrandPlan | null;
+}
 
 /** A new feedback, as the platform team is told about it. */
 export interface FeedbackNews {
@@ -12,6 +22,8 @@ export interface FeedbackNews {
   authorName: string | null;
   authorEmail: string | null;
   authorPhone: string | null;
+  /** Set on messages from the business admin (`source` BUSINESS). */
+  brand?: FeedbackBrand | null;
   /** Admin panel base URL, without a trailing slash. */
   adminUrl: string;
 }
@@ -27,8 +39,20 @@ export interface FeedbackDigest {
 }
 
 const KIND: Record<Locale, Record<FeedbackKind, string>> = {
-  RU: { REVIEW: 'Отзыв', SUGGESTION: 'Предложение', PROBLEM: 'Проблема' },
-  EN: { REVIEW: 'Review', SUGGESTION: 'Suggestion', PROBLEM: 'Problem' },
+  RU: {
+    REVIEW: 'Отзыв',
+    SUGGESTION: 'Предложение',
+    PROBLEM: 'Проблема',
+    QUESTION: 'Вопрос',
+    PLAN_CHANGE: 'Смена тарифа',
+  },
+  EN: {
+    REVIEW: 'Review',
+    SUGGESTION: 'Suggestion',
+    PROBLEM: 'Problem',
+    QUESTION: 'Question',
+    PLAN_CHANGE: 'Plan change',
+  },
 };
 
 const SOURCE: Record<FeedbackSource, string> = {
@@ -36,6 +60,7 @@ const SOURCE: Record<FeedbackSource, string> = {
   ANDROID: 'Android',
   WEB: 'Web',
   TMA: 'Telegram Mini App',
+  BUSINESS: 'Business admin',
 };
 
 /**
@@ -43,6 +68,7 @@ const SOURCE: Record<FeedbackSource, string> = {
  * whatever language the customer wrote it.
  */
 export function feedbackDigest(locale: Locale, n: FeedbackNews): FeedbackDigest {
+  if (n.brand) return businessDigest(locale, n, n.brand);
   const ru = locale === Locale.RU;
   const kind = KIND[ru ? Locale.RU : Locale.EN][n.kind];
   const author = [n.authorName, n.authorEmail, n.authorPhone].filter(Boolean).join(', ') || '—';
@@ -57,6 +83,40 @@ export function feedbackDigest(locale: Locale, n: FeedbackNews): FeedbackDigest 
     title: ru ? `Обратная связь: ${kind.toLowerCase()}` : `Customer feedback: ${kind.toLowerCase()}`,
     lines,
     link: { label: ru ? 'Открыть в панели' : 'Open in the admin', url: `${n.adminUrl}/feedback` },
+  };
+}
+
+/**
+ * A business writing to support, or asking for another plan: which brand,
+ * the number to call back, and — for a plan change — what they want.
+ */
+function businessDigest(locale: Locale, n: FeedbackNews, brand: FeedbackBrand): FeedbackDigest {
+  const ru = locale === Locale.RU;
+  const kind = KIND[ru ? Locale.RU : Locale.EN][n.kind];
+  const author = [n.authorName, n.authorEmail, n.authorPhone].filter(Boolean).join(', ') || '—';
+  const planChange = n.kind === 'PLAN_CHANGE';
+  const lines = [
+    `${ru ? 'Бренд' : 'Brand'}: ${brand.name} · ${ru ? 'тариф' : 'plan'} ${brand.plan}`,
+    `${ru ? 'Телефон бренда' : 'Brand phone'}: ${brand.contactPhone ?? '—'}`,
+    `${ru ? 'Пишет' : 'From'}: ${author}`,
+    ...(planChange && brand.requestedPlan
+      ? [`${ru ? 'Хочет перейти на' : 'Wants to move to'}: ${brand.requestedPlan}`]
+      : []),
+    ...(n.message ? ['', n.message] : []),
+  ];
+  return {
+    title: planChange
+      ? ru
+        ? `Заявка на смену тарифа: ${brand.name}`
+        : `Plan change request: ${brand.name}`
+      : ru
+        ? `Поддержка бизнеса: ${kind.toLowerCase()} — ${brand.name}`
+        : `Business support: ${kind.toLowerCase()} — ${brand.name}`,
+    lines,
+    link: {
+      label: ru ? 'Открыть в панели' : 'Open in the admin',
+      url: `${n.adminUrl}/${planChange ? 'brands' : 'feedback'}`,
+    },
   };
 }
 

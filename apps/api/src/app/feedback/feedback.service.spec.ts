@@ -26,6 +26,7 @@ function row(overrides: Record<string, unknown> = {}) {
       telegramUserId: 777000111222n,
       blockedAt: null,
     },
+    brand: null,
     ...overrides,
   };
 }
@@ -107,6 +108,41 @@ describe('FeedbackService.create', () => {
   });
 });
 
+describe('FeedbackService.createFromBusiness', () => {
+  it('files the message under the brand, from the business admin, and tells the platform team', async () => {
+    const { svc, prisma, notifier } = setup();
+
+    await svc.createFromBusiness(
+      'owner',
+      'b1',
+      { kind: FeedbackKind.QUESTION, message: '  Как подключить карты?  ' },
+      NOW,
+    );
+
+    expect(prisma.feedback.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'owner',
+        brandId: 'b1',
+        kind: 'QUESTION',
+        message: 'Как подключить карты?',
+        source: 'BUSINESS',
+      },
+      select: { id: true, createdAt: true },
+    });
+    expect(notifier.feedbackReceived).toHaveBeenCalledWith('fb-1');
+  });
+
+  it('shares the hourly cap with everything else the account sends', async () => {
+    const { svc, prisma } = setup();
+    prisma.feedback.count.mockResolvedValue(FEEDBACK_PER_HOUR);
+
+    await expect(
+      svc.createFromBusiness('owner', 'b1', { kind: FeedbackKind.PROBLEM, message: 'Не грузится меню' }, NOW),
+    ).rejects.toMatchObject({ response: { code: FEEDBACK_TOO_MANY } });
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('FeedbackService.list', () => {
   it('shows everything not archived, newest first, by default', async () => {
     const { svc, prisma } = setup();
@@ -154,7 +190,21 @@ describe('FeedbackService.list', () => {
         telegramUserId: '777000111222',
         deleted: false,
       },
+      brand: null,
     });
+  });
+
+  it('carries the brand of a business message and filters by source', async () => {
+    const { svc, prisma } = setup();
+    const brand = { id: 'b1', name: 'Кофейня Ромашка', contactPhone: '+37369123456' };
+    prisma.feedback.findMany.mockResolvedValue([row({ source: FeedbackSource.BUSINESS, brand })]);
+
+    const page = await svc.list({ source: FeedbackSource.BUSINESS });
+
+    expect(prisma.feedback.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: { not: 'ARCHIVED' }, source: 'BUSINESS' } }),
+    );
+    expect(page.items[0]?.brand).toEqual(brand);
   });
 
   it('marks the author of a deleted account and copes with no author at all', async () => {

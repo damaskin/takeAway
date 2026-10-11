@@ -23,8 +23,11 @@ export interface BusinessRegisterRequest {
   ownerName: string;
   email: string;
   password: string;
-  /** International format; the API drops spaces and dashes itself. */
-  phone?: string;
+  /**
+   * Required — the takeAway team calls businesses that signed up and did not
+   * launch. Sent as E.164; the API normalises any common format itself too.
+   */
+  phone: string;
   currency: BrandCurrency;
   locale: BrandLocale;
 }

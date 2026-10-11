@@ -1,3 +1,4 @@
+import { HttpException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Modifier, Variation } from '@prisma/client';
 
@@ -217,6 +218,7 @@ function harness() {
   const realtime = { emitKdsOrderChanged: jest.fn() };
   // Card payments off unless a test says otherwise.
   const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
+  const config = { get: jest.fn() };
 
   const cart = new CartService(prisma as unknown as PrismaService, kitchen as unknown as KitchenLoadService);
   const service = new OrdersService(
@@ -224,7 +226,7 @@ function harness() {
     realtime as unknown as RealtimeGateway,
     {} as PromoService,
     loyalty as unknown as LoyaltyService,
-    {} as ConfigService,
+    config as unknown as ConfigService,
     notifications as unknown as NotificationsService,
     { deliveryEnabled: false } as FeatureFlagsService,
     {} as DeliveryFeeService,
@@ -237,7 +239,7 @@ function harness() {
     holds as unknown as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail, realtime, holds, kitchen };
+  return { service, prisma, tx, mail, realtime, holds, kitchen, config };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -442,6 +444,50 @@ describe('OrdersService.create', () => {
     });
     expect(tx.order.create).not.toHaveBeenCalled();
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
+  });
+});
+
+describe('OrdersService.create — unpaid orders', () => {
+  it('refuses a third order while two are still waiting for payment, before touching the kitchen', async () => {
+    const { service, prisma, tx, kitchen } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.order.count.mockResolvedValue(2);
+
+    const err = await service.create('user-1', placeOrder).catch((e: unknown) => e as HttpException);
+
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(409);
+    expect((err as HttpException).getResponse()).toMatchObject({ code: 'TOO_MANY_UNPAID_ORDERS' });
+    expect(kitchen.assertSlotAvailable).not.toHaveBeenCalled();
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('counts only this customer’s CREATED orders that cost something and have no payment through or held', async () => {
+    const { service, prisma } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.order.count.mockResolvedValue(1);
+
+    await service.create('user-1', placeOrder);
+
+    expect(prisma.order.count).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        status: 'CREATED',
+        totalCents: { gt: 0 },
+        payments: { none: { status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } } },
+      },
+    });
+  });
+
+  it('takes the limit from ORDER_MAX_UNPAID_PER_USER', async () => {
+    const { service, prisma, tx, config } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    prisma.order.count.mockResolvedValue(2);
+    config.get.mockImplementation((key: string) => (key === 'ORDER_MAX_UNPAID_PER_USER' ? '3' : undefined));
+
+    await service.create('user-1', placeOrder);
+
+    expect(tx.order.create).toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Currency, Locale } from '@prisma/client';
-import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
 
-import { E164_PATTERN, normalizePhone } from '../../common/text/phone';
+import { IsInternationalPhone, ToPhone } from '../../common/text/phone';
 
 export class BusinessRegisterDto {
   @ApiProperty({ example: 'Morning Brew Café', minLength: 2, maxLength: 80 })
@@ -28,14 +27,20 @@ export class BusinessRegisterDto {
   @MaxLength(128)
   password!: string;
 
-  @ApiPropertyOptional({
+  /**
+   * Required: the platform team calls the businesses that signed up and
+   * never launched. Stored on the brand as its contact phone.
+   */
+  @ApiProperty({
     example: '+37369123456',
-    description: 'International format (E.164). Spaces, dashes and brackets are dropped; an empty value means none.',
+    description:
+      'Normalised to E.164: separators are dropped; Moldovan (0XX XXX XXX), Ukrainian (0XX XXX XXXX) and ' +
+      'Russian (8 XXX XXX-XX-XX) local formats are read; any other country needs its code.',
   })
-  @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' ? normalizePhone(value) || undefined : value))
-  @Matches(E164_PATTERN, { message: 'phone must be in international format, e.g. +37369123456' })
-  phone?: string;
+  @ToPhone()
+  @IsNotEmpty({ message: 'phone is required' })
+  @IsInternationalPhone()
+  phone!: string;
 
   /**
    * Required: a brand created in a currency nobody chose is what put Moldovan

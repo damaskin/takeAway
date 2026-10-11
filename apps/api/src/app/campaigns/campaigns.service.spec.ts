@@ -9,6 +9,7 @@ import {
   STALE_SENDING_MS,
   type Transports,
   audienceWhere,
+  isDue,
   isSendable,
   reachOf,
 } from './campaigns.service';
@@ -105,14 +106,15 @@ describe('reachOf', () => {
 });
 
 describe('isSendable', () => {
-  const at = (status: Campaign['status'], failedCount = 0, ageMs = 0) => ({
+  const approvedAt = new Date('2026-10-10T08:00:00Z');
+  const at = (status: Campaign['status'], failedCount = 0, ageMs = 0, approved: Date | null = approvedAt) => ({
     status,
     failedCount,
     updatedAt: new Date(Date.now() - ageMs),
+    approvedAt: approved,
   });
 
-  it('allows drafts, failed runs and finished runs with failures', () => {
-    expect(isSendable(at('DRAFT'))).toBe(true);
+  it('retries approved failed runs and finished runs with failures', () => {
     expect(isSendable(at('FAILED'))).toBe(true);
     expect(isSendable(at('SENT', 3))).toBe(true);
     expect(isSendable(at('SENT', 0))).toBe(false);
@@ -121,6 +123,35 @@ describe('isSendable', () => {
   it('allows a SENDING row only once it is stuck', () => {
     expect(isSendable(at('SENDING', 0, 1000))).toBe(false);
     expect(isSendable(at('SENDING', 0, STALE_SENDING_MS + 1000))).toBe(true);
+  });
+
+  it('never starts a first run: drafts and campaigns in review are sent by approval only', () => {
+    for (const status of ['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED'] as const) {
+      expect(isSendable(at(status))).toBe(false);
+    }
+  });
+
+  it('refuses every unapproved campaign, whatever its status says', () => {
+    for (const status of ['FAILED', 'SENT', 'SENDING'] as const) {
+      expect(isSendable(at(status, 3, STALE_SENDING_MS + 1000, null))).toBe(false);
+    }
+  });
+});
+
+describe('isDue', () => {
+  const now = new Date('2026-10-10T12:00:00Z');
+  const approvedAt = new Date('2026-10-10T11:00:00Z');
+
+  it('is due once approved, at once or when the scheduled time has come', () => {
+    expect(isDue({ status: 'APPROVED', approvedAt, scheduledAt: null }, now)).toBe(true);
+    expect(isDue({ status: 'APPROVED', approvedAt, scheduledAt: new Date('2026-10-10T11:59:00Z') }, now)).toBe(true);
+    expect(isDue({ status: 'APPROVED', approvedAt, scheduledAt: new Date('2026-10-10T12:01:00Z') }, now)).toBe(false);
+  });
+
+  it('is never due without approval', () => {
+    expect(isDue({ status: 'APPROVED', approvedAt: null, scheduledAt: null }, now)).toBe(false);
+    expect(isDue({ status: 'PENDING_REVIEW', approvedAt: null, scheduledAt: null }, now)).toBe(false);
+    expect(isDue({ status: 'DRAFT', approvedAt: null, scheduledAt: null }, now)).toBe(false);
   });
 });
 
@@ -142,11 +173,35 @@ describe('CampaignsService', () => {
     optedOutCount: 0,
     lastError: null,
     scheduledAt: null,
+    createdById: 'owner',
+    submittedAt: null,
+    reviewedAt: null,
+    reviewedById: null,
+    reviewNote: null,
+    approvedAt: null,
     startedAt: null,
     sentAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+  const approved = { approvedAt: new Date('2026-10-10T08:00:00Z') };
+
+  /** What a conditional update matches on, as the service writes it. */
+  interface CampaignWhere {
+    id?: string;
+    brandId?: string;
+    status?: Campaign['status'] | { in: Array<Campaign['status']> };
+    approvedAt?: { not: null };
+  }
+
+  function matches(c: Campaign, where: CampaignWhere): boolean {
+    if (where.id && where.id !== c.id) return false;
+    if (where.brandId && where.brandId !== c.brandId) return false;
+    if (typeof where.status === 'string' && where.status !== c.status) return false;
+    if (typeof where.status === 'object' && !where.status.in.includes(c.status)) return false;
+    if (where.approvedAt && c.approvedAt === null) return false;
+    return true;
+  }
 
   function setup(opts: {
     users: AudienceUser[];
@@ -154,21 +209,29 @@ describe('CampaignsService', () => {
     delivered?: string[];
     inactive?: string[];
   }) {
-    let campaign: Campaign = { ...baseCampaign, ...opts.campaign };
+    let campaign: Campaign | null = { ...baseCampaign, ...opts.campaign };
+    const current = (): Campaign => campaign as Campaign;
     const queries: Prisma.Sql[] = [];
     const deliveries = new Map<string, { outcome: CampaignDeliveryOutcome; error: string | null }>(
       (opts.delivered ?? []).map((id) => [id, { outcome: 'SENT', error: null }]),
     );
     const update = jest.fn(({ data }: { data: Partial<Campaign> }) => {
-      campaign = { ...campaign, ...data };
+      campaign = { ...current(), ...data };
       return Promise.resolve(campaign);
     });
     const prisma = {
       campaign: {
         findUnique: jest.fn(() => Promise.resolve(campaign)),
-        findUniqueOrThrow: jest.fn(() => Promise.resolve(campaign)),
-        updateMany: jest.fn(({ data }: { data: Partial<Campaign> }) => {
+        findUniqueOrThrow: jest.fn(() => Promise.resolve(current())),
+        findMany: jest.fn(() => Promise.resolve(campaign ? [{ id: campaign.id }] : [])),
+        updateMany: jest.fn(({ where, data }: { where: CampaignWhere; data: Partial<Campaign> }) => {
+          if (!campaign || !matches(campaign, where)) return Promise.resolve({ count: 0 });
           campaign = { ...campaign, ...data };
+          return Promise.resolve({ count: 1 });
+        }),
+        deleteMany: jest.fn(({ where }: { where: CampaignWhere }) => {
+          if (!campaign || !matches(campaign, where)) return Promise.resolve({ count: 0 });
+          campaign = null;
           return Promise.resolve({ count: 1 });
         }),
         update,
@@ -223,19 +286,19 @@ describe('CampaignsService', () => {
     } as unknown as NotificationsService;
     const mail = { isConfigured: () => true, send: jest.fn() } as unknown as MailService;
     const service = new CampaignsService(prisma as unknown as PrismaService, notifications, mail);
-    return { service, prisma, deliver, deliveries, queries, current: () => campaign };
+    return { service, prisma, deliver, deliveries, queries, current, exists: () => campaign !== null };
   }
 
-  it('refuses to send to an empty audience instead of finishing "0 / 0"', async () => {
-    const h = setup({ users: [] });
+  it('refuses to retry to an empty audience instead of finishing "0 / 0"', async () => {
+    const h = setup({ users: [], campaign: { status: 'FAILED', ...approved } });
     await expect(h.service.send('b1', 'c1')).rejects.toMatchObject({
       response: { code: 'CAMPAIGN_NO_RECIPIENTS' },
     });
     expect(h.prisma.campaign.updateMany).not.toHaveBeenCalled();
   });
 
-  it('answers at once with SENDING and does the fan-out in the background', async () => {
-    const h = setup({ users: [user({ id: 'app' })] });
+  it('answers a retry at once with SENDING and does the fan-out in the background', async () => {
+    const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'FAILED', ...approved } });
     const runs: Array<Promise<void>> = [];
     jest.spyOn(h.service, 'run').mockImplementation((id) => {
       runs.push(Promise.resolve(id).then(() => undefined));
@@ -256,7 +319,7 @@ describe('CampaignsService', () => {
         user({ id: 'nobody' }),
         user({ id: 'quiet', notifyPromotions: false }),
       ],
-      campaign: { status: 'SENDING' },
+      campaign: { status: 'SENDING', ...approved },
     });
     await h.service.run('c1');
     expect(h.current()).toMatchObject({
@@ -273,14 +336,14 @@ describe('CampaignsService', () => {
   });
 
   it('ends FAILED with a reason when nobody could be reached', async () => {
-    const h = setup({ users: [user({ id: 'nobody' })], campaign: { status: 'SENDING' } });
+    const h = setup({ users: [user({ id: 'nobody' })], campaign: { status: 'SENDING', ...approved } });
     await h.service.run('c1');
     expect(h.current().status).toBe('FAILED');
     expect(h.current().lastError).toMatch(/Nobody could be reached/);
   });
 
   it('marks the campaign FAILED with the error when the run crashes', async () => {
-    const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'SENDING' } });
+    const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'SENDING', ...approved } });
     h.prisma.user.findMany.mockRejectedValueOnce(new Error('connection reset'));
     await expect(h.service.run('c1')).resolves.toBeUndefined();
     expect(h.current()).toMatchObject({ status: 'FAILED', lastError: 'connection reset' });
@@ -289,7 +352,7 @@ describe('CampaignsService', () => {
   it('a retry skips everyone who already received the campaign', async () => {
     const h = setup({
       users: [user({ id: 'app' }), user({ id: 'tg', telegramUserId: 7n })],
-      campaign: { status: 'FAILED' },
+      campaign: { status: 'FAILED', ...approved },
       delivered: ['app'],
     });
     await h.service.run('c1');
@@ -298,7 +361,10 @@ describe('CampaignsService', () => {
   });
 
   it('will not start a second run while one is going', async () => {
-    const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'SENDING', updatedAt: new Date() } });
+    const h = setup({
+      users: [user({ id: 'app' })],
+      campaign: { status: 'SENDING', updatedAt: new Date(), ...approved },
+    });
     await expect(h.service.send('b1', 'c1')).rejects.toMatchObject({ response: { code: 'CAMPAIGN_IN_PROGRESS' } });
   });
 
@@ -323,6 +389,153 @@ describe('CampaignsService', () => {
     expect(h.deliver).not.toHaveBeenCalled();
   });
 
+  describe('moderation gate', () => {
+    it.each(['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED'] as const)(
+      'refuses "send" on a %s campaign: only approval starts a first run',
+      async (status) => {
+        const h = setup({ users: [user({ id: 'app' })], campaign: { status } });
+        await expect(h.service.send('b1', 'c1')).rejects.toMatchObject({
+          response: { code: 'CAMPAIGN_NOT_SENDABLE' },
+        });
+        expect(h.current().status).toBe(status);
+        expect(h.deliver).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses to retry a failed campaign that was never approved (one from before moderation)', async () => {
+      const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'FAILED' } });
+      await expect(h.service.send('b1', 'c1')).rejects.toMatchObject({
+        response: { code: 'CAMPAIGN_NOT_SENDABLE', message: 'The campaign has not been approved' },
+      });
+      expect(h.deliver).not.toHaveBeenCalled();
+    });
+
+    it.each(['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED', 'SENDING', 'FAILED'] as const)(
+      'a run of an unapproved %s campaign reaches nobody, whoever started it',
+      async (status) => {
+        const h = setup({ users: [user({ id: 'app' }), user({ id: 'tg', telegramUserId: 7n })], campaign: { status } });
+        await h.service.run('c1');
+        expect(h.deliver).not.toHaveBeenCalled();
+        expect(h.prisma.campaignDelivery.upsert).not.toHaveBeenCalled();
+        expect(h.current().status).toBe(status);
+      },
+    );
+
+    it('starts an approved campaign that is due, and only once', async () => {
+      const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'APPROVED', ...approved } });
+      const run = jest.spyOn(h.service, 'run').mockResolvedValue(undefined);
+
+      await expect(h.service.startIfDue('c1')).resolves.toBe(true);
+      await expect(h.service.startIfDue('c1')).resolves.toBe(false);
+
+      expect(h.current()).toMatchObject({ status: 'SENDING', targetCount: 1 });
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for the scheduled time', async () => {
+      const at = new Date('2026-10-12T09:00:00Z');
+      const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'APPROVED', scheduledAt: at, ...approved } });
+      const run = jest.spyOn(h.service, 'run').mockResolvedValue(undefined);
+
+      await expect(h.service.startIfDue('c1', new Date('2026-10-12T08:59:00Z'))).resolves.toBe(false);
+      expect(h.current().status).toBe('APPROVED');
+
+      await expect(h.service.startIfDue('c1', new Date('2026-10-12T09:00:00Z'))).resolves.toBe(true);
+      expect(run).toHaveBeenCalledWith('c1');
+    });
+
+    it('never starts a campaign marked APPROVED without an approval stamp', async () => {
+      const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'APPROVED' } });
+      const run = jest.spyOn(h.service, 'run').mockResolvedValue(undefined);
+
+      await expect(h.service.startIfDue('c1')).resolves.toBe(false);
+      await h.service.dispatchDue();
+
+      expect(h.current().status).toBe('APPROVED');
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('ends an approved campaign FAILED when its audience emptied since the review', async () => {
+      const h = setup({ users: [], campaign: { status: 'APPROVED', ...approved } });
+      const run = jest.spyOn(h.service, 'run').mockResolvedValue(undefined);
+
+      await expect(h.service.startIfDue('c1')).resolves.toBe(false);
+
+      expect(h.current()).toMatchObject({ status: 'FAILED', lastError: 'Nobody matches this audience' });
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('the scheduler asks only for approved campaigns whose time has come', async () => {
+      const h = setup({ users: [user({ id: 'app' })], campaign: { status: 'APPROVED', ...approved } });
+      jest.spyOn(h.service, 'run').mockResolvedValue(undefined);
+      const now = new Date('2026-10-12T09:00:00Z');
+
+      await h.service.dispatchDue(now);
+
+      expect(h.prisma.campaign.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: 'APPROVED',
+            approvedAt: { not: null },
+            OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+          },
+        }),
+      );
+      expect(h.current().status).toBe('SENDING');
+    });
+  });
+
+  describe('editing and deleting', () => {
+    it('edits a draft and a rejected campaign, keeping the rejection reason until resubmit', async () => {
+      const h = setup({ users: [], campaign: { status: 'REJECTED', reviewNote: 'Уберите капс' } });
+      await expect(h.service.update('b1', 'c1', { title: 'Скидка 20%' })).resolves.toMatchObject({
+        title: 'Скидка 20%',
+        status: 'REJECTED',
+        reviewNote: 'Уберите капс',
+      });
+    });
+
+    it.each(['PENDING_REVIEW', 'APPROVED', 'SENDING', 'SENT'] as const)(
+      'refuses to edit a %s campaign, so nothing changes under the moderator',
+      async (status) => {
+        const h = setup({ users: [], campaign: { status, ...approved } });
+        await expect(h.service.update('b1', 'c1', { body: 'other copy' })).rejects.toMatchObject({
+          response: { code: 'CAMPAIGN_NOT_EDITABLE' },
+        });
+        expect(h.current().body).toBe(baseCampaign.body);
+      },
+    );
+
+    it('404s another brand’s campaign instead of editing it', async () => {
+      const h = setup({ users: [] });
+      await expect(h.service.update('b2', 'c1', { title: 'x' })).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('deletes anything that has not started going out, and nothing that has', async () => {
+      const waiting = setup({ users: [], campaign: { status: 'APPROVED', ...approved } });
+      await waiting.service.delete('b1', 'c1');
+      expect(waiting.exists()).toBe(false);
+
+      const sent = setup({ users: [], campaign: { status: 'SENT', ...approved } });
+      await expect(sent.service.delete('b1', 'c1')).rejects.toMatchObject({
+        response: { code: 'CAMPAIGN_NOT_DELETABLE' },
+      });
+      expect(sent.exists()).toBe(true);
+    });
+
+    it('a new audience brings its segment along, and another audience clears it', async () => {
+      const h = setup({ users: [] });
+      await expect(
+        h.service.update('b1', 'c1', { audience: 'INACTIVE', inactiveDays: 7, segmentStoreId: 's1' }),
+      ).resolves.toMatchObject({ audience: 'INACTIVE', inactiveDays: 7, segmentStoreId: 's1' });
+      await expect(h.service.update('b1', 'c1', { audience: 'ALL' })).resolves.toMatchObject({
+        audience: 'ALL',
+        inactiveDays: null,
+        segmentStoreId: null,
+      });
+    });
+  });
+
   it('INACTIVE reaches only the inactive segment, at the chosen store', async () => {
     const h = setup({
       users: [user({ id: 'gone', telegramUserId: 1n }), user({ id: 'regular', telegramUserId: 2n })],
@@ -343,15 +556,28 @@ describe('CampaignsService', () => {
     const h = setup({
       users: [user({ id: 'gone' }), user({ id: 'regular' })],
       inactive: ['gone'],
-      campaign: { audience: 'INACTIVE', inactiveDays: 14, status: 'SENDING' },
+      campaign: { audience: 'INACTIVE', inactiveDays: 14, status: 'SENDING', ...approved },
     });
     await h.service.run('c1');
     expect([...h.deliveries.keys()]).toEqual(['gone']);
     expect(h.current()).toMatchObject({ status: 'SENT', targetCount: 1 });
   });
 
+  it('moderation sees the reach of an INACTIVE campaign, not of the whole brand', async () => {
+    const h = setup({
+      users: [user({ id: 'gone', telegramUserId: 1n }), user({ id: 'regular', telegramUserId: 2n })],
+      inactive: ['gone'],
+      campaign: { audience: 'INACTIVE', inactiveDays: 7, segmentStoreId: null },
+    });
+    await expect(h.service.preview('b1', h.current(), 'TELEGRAM')).resolves.toMatchObject({ total: 1 });
+    expect(h.queries).toHaveLength(1);
+  });
+
   it('keeps why the app push failed when the Telegram fallback still delivered', async () => {
-    const h = setup({ users: [user({ id: 'fallback', telegramUserId: 7n })], campaign: { status: 'SENDING' } });
+    const h = setup({
+      users: [user({ id: 'fallback', telegramUserId: 7n })],
+      campaign: { status: 'SENDING', ...approved },
+    });
     await h.service.run('c1');
     expect(h.deliveries.get('fallback')).toEqual({
       outcome: 'SENT',
@@ -376,7 +602,14 @@ describe('CampaignsService.create', () => {
     );
     return { service, prisma };
   }
-  const copy = { brandId: 'b1', title: 'Скучаем', body: 'Возвращайтесь', channel: 'PUSH' as const };
+  const copy = {
+    brandId: 'b1',
+    createdById: 'owner',
+    title: 'Скучаем',
+    body: 'Возвращайтесь',
+    channel: 'PUSH' as const,
+    scheduledAt: null,
+  };
 
   it('keeps the days and the store of an INACTIVE audience, 14 days by default', async () => {
     const { service, prisma } = create();

@@ -2,12 +2,13 @@ import { Component, computed, effect, inject, signal, untracked } from '@angular
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocalDatePipe } from '@takeaway/i18n';
 import {
+  ALL_FEEDBACK_KINDS,
   type AdminFeedback,
   type AdminFeedbackPage,
-  FEEDBACK_KINDS,
   type FeedbackKind,
   type FeedbackStatus,
 } from '@takeaway/shared-types';
+import { formatPhone } from '@takeaway/utils';
 
 import { FeedbackApi } from '../../core/feedback/feedback.service';
 import { apiErrorMessage } from '../../core/http/api-error';
@@ -96,6 +97,16 @@ const PAGE_SIZE = 20;
                   <div>
                     <dt>{{ 'admin.feedback.contact' | translate }}</dt>
                     <dd class="fb-contact">{{ f.contact }}</dd>
+                  </div>
+                }
+                @if (f.brand; as brand) {
+                  <div>
+                    <dt>{{ 'admin.feedback.brand' | translate }}: {{ brand.name }}</dt>
+                    @if (brand.contactPhone) {
+                      <dd>
+                        <a class="fb-contact" [href]="'tel:' + brand.contactPhone">{{ phone(brand.contactPhone) }}</a>
+                      </dd>
+                    }
                   </div>
                 }
               </dl>
@@ -346,7 +357,7 @@ export class CustomerFeedbackPage {
   private readonly translate = inject(TranslateService);
 
   readonly tabs: readonly Tab[] = ['inbox', 'NEW', 'ARCHIVED'];
-  readonly kinds = FEEDBACK_KINDS;
+  readonly kinds = ALL_FEEDBACK_KINDS;
   readonly tab = signal<Tab>('inbox');
   readonly kind = signal<FeedbackKind | null>(null);
   readonly pageNo = signal(1);
@@ -373,9 +384,14 @@ export class CustomerFeedbackPage {
   }
 
   setKind(value: string): void {
-    const kind = FEEDBACK_KINDS.find((k) => k === value) ?? null;
+    const kind = ALL_FEEDBACK_KINDS.find((k) => k === value) ?? null;
     this.pageNo.set(1);
     this.kind.set(kind);
+  }
+
+  /** A brand's phone, grouped for reading. */
+  phone(e164: string): string {
+    return formatPhone(e164);
   }
 
   author(f: AdminFeedback): string {

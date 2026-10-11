@@ -17,6 +17,7 @@ import {
 import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
 import { inferCategoryKind } from '@takeaway/utils';
 
+import { onboardingProgressOf } from '../../brand-owner/brand-onboarding';
 import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, newStoreTimeZone } from '../../common/time/time-zone';
@@ -102,15 +103,26 @@ export class AdminCatalogService {
   ) {}
 
   // ── Brands ────────────────────────────────────────────────────────────────
-  listBrands(status?: BrandModerationStatus) {
-    return this.prisma.brand.findMany({
-      where: status ? { moderationStatus: status } : undefined,
+  /**
+   * Every brand with its owner, contact phone and where it stands on the
+   * launch checklist. `notLaunched` keeps the self-registered brands that
+   * have not finished it — the ones the platform team calls.
+   */
+  async listBrands(status?: BrandModerationStatus, notLaunched = false) {
+    const brands = await this.prisma.brand.findMany({
+      where: {
+        ...(status ? { moderationStatus: status } : {}),
+        ...(notLaunched ? { ownerId: { not: null } } : {}),
+      },
       orderBy: [{ moderationStatus: 'asc' }, { name: 'asc' }],
       include: {
         owner: { select: { id: true, email: true, name: true, phone: true } },
         _count: { select: { stores: true, products: true } },
       },
     });
+    const progress = await onboardingProgressOf(this.prisma, brands);
+    const rows = brands.map((b) => ({ ...b, onboarding: progress.get(b.id) ?? null }));
+    return notLaunched ? rows.filter((b) => b.onboarding && !b.onboarding.complete) : rows;
   }
 
   /**
@@ -195,12 +207,26 @@ export class AdminCatalogService {
       });
       return tx.brand.update({
         where: { id },
-        data: { plan: dto.plan, commissionBps },
+        // Deciding on the plan answers the owner's request, whichever way.
+        data: { plan: dto.plan, commissionBps, requestedPlan: null, planRequestedAt: null },
         include: {
           owner: { select: { id: true, email: true, name: true, phone: true } },
           _count: { select: { stores: true, products: true } },
         },
       });
+    });
+  }
+
+  /** Closes the owner's plan-change request without changing the plan. */
+  async dismissPlanRequest(id: string) {
+    await this.getBrand(id);
+    return this.prisma.brand.update({
+      where: { id },
+      data: { requestedPlan: null, planRequestedAt: null },
+      include: {
+        owner: { select: { id: true, email: true, name: true, phone: true } },
+        _count: { select: { stores: true, products: true } },
+      },
     });
   }
 

@@ -3,6 +3,7 @@ import { planHasFeature } from '@takeaway/shared-types';
 import {
   ADMIN_ROLES,
   type AdminRole,
+  KITCHEN_SESSION_NAV,
   NAV_PLAN_FEATURE,
   type NavKey,
   canAccess,
@@ -40,6 +41,11 @@ describe('permissions map', () => {
       expect(canAccess('BRAND_ADMIN', 'brands')).toBe(false);
       expect(canAccess('STORE_MANAGER', 'brands')).toBe(false);
       expect(canAccess('SUPER_ADMIN', 'brands')).toBe(true);
+    });
+
+    it('keeps campaign moderation SUPER_ADMIN-only', () => {
+      expect(ADMIN_ROLES.campaignModeration).toEqual(['SUPER_ADMIN']);
+      expect(navLink('campaignModeration')).toBe('/campaign-moderation');
     });
 
     it('opens settlements to the platform admin and the brand owner, and to nobody on the floor', () => {
@@ -136,6 +142,23 @@ describe('permissions map', () => {
         expect(key).toBeDefined();
         expect(canAccess(role, key as NavKey)).toBe(true);
       }
+    });
+
+    it('lands a kitchen PIN session on the board, a manager’s too', () => {
+      expect(defaultLandingFor('STORE_MANAGER', true)).toBe('/kitchen');
+      expect(defaultLandingFor('STAFF', true)).toBe('/kitchen');
+    });
+  });
+
+  describe('kitchen PIN session', () => {
+    it('opens only the board and the stop-list, whatever the role behind the PIN', () => {
+      for (const key of ALL_KEYS) {
+        const expected = KITCHEN_SESSION_NAV.includes(key);
+        expect(canAccess('STORE_MANAGER', key, true)).toBe(expected);
+        expect(canAccess('STAFF', key, true)).toBe(expected && ADMIN_ROLES[key].includes('STAFF'));
+      }
+      expect(canAccess('STORE_MANAGER', 'staff', true)).toBe(false);
+      expect(canAccess('STORE_MANAGER', 'orders', true)).toBe(false);
     });
   });
 

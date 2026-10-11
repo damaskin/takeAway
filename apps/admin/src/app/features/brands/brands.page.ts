@@ -3,16 +3,25 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocalDatePipe } from '@takeaway/i18n';
 import { BRAND_PLANS, type BrandPlan, DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
+import { formatPhone } from '@takeaway/utils';
 
 import {
   AdminBrand,
+  type BrandOnboardingProgress,
   BrandModerationStatus,
   BrandsService,
   SetBrandModerationRequest,
 } from '../../core/brands/brands.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 
-type Tab = BrandModerationStatus;
+/**
+ * The moderation states, plus two call lists: self-registered brands that
+ * have not launched yet, and owners asking for another plan.
+ */
+type Tab = BrandModerationStatus | 'NOT_LAUNCHED' | 'PLAN_REQUESTS';
+
+/** The «Запуск бренда» steps, in the order the owner sees them. */
+const LAUNCH_STEPS = ['brandProfile', 'store', 'menu', 'payments', 'approved'] as const;
 
 /** A decision that needs a second look before it is sent. */
 interface PendingDecision {
@@ -47,12 +56,13 @@ interface PendingDecision {
         </a>
       </header>
 
-      <div class="flex" style="gap: 8px; margin-bottom: 16px">
+      <div class="flex flex-wrap" style="gap: 8px; margin-bottom: 16px">
         @for (t of tabs; track t) {
           <button
             type="button"
             class="tab"
             [class.tab-active]="tab() === t"
+            [class.tab-calls]="t === 'NOT_LAUNCHED' || t === 'PLAN_REQUESTS'"
             (click)="setTab(t)"
             style="padding: 8px 16px; border-radius: 999px; border: 1px solid var(--color-border); font-family: var(--font-sans); font-size: 14px; cursor: pointer"
           >
@@ -60,6 +70,9 @@ interface PendingDecision {
           </button>
         }
       </div>
+      @if (tab() === 'NOT_LAUNCHED') {
+        <p class="tab-hint">{{ 'admin.brands.notLaunchedHint' | translate }}</p>
+      }
 
       @if (loading()) {
         <p style="font-family: var(--font-sans); color: var(--color-text-secondary)">
@@ -119,6 +132,36 @@ interface PendingDecision {
                   </dd>
                 </div>
                 <div>
+                  <dt style="color: var(--color-text-tertiary)">{{ 'admin.brands.phone' | translate }}</dt>
+                  <dd style="margin: 2px 0 0; color: var(--color-text-primary)">
+                    @if (b.contactPhone) {
+                      <a class="phone-link" [href]="'tel:' + b.contactPhone">{{ phone(b.contactPhone) }}</a>
+                    } @else {
+                      —
+                    }
+                  </dd>
+                </div>
+                @if (b.onboarding; as o) {
+                  <div>
+                    <dt style="color: var(--color-text-tertiary)">{{ 'admin.brands.launch.label' | translate }}</dt>
+                    <dd style="margin: 2px 0 0; color: var(--color-text-primary)">
+                      <span class="launch-count" [class.launch-done]="o.complete">{{
+                        'admin.brands.launch.progress' | translate: { done: o.done, total: o.total }
+                      }}</span>
+                      <span class="launch-steps">
+                        @for (s of launchSteps; track s) {
+                          <span
+                            [class.launch-step-done]="stepDone(o, s)"
+                            [title]="'admin.brands.launch.steps.' + s | translate"
+                          >
+                            {{ stepDone(o, s) ? '✓' : '·' }} {{ 'admin.brands.launch.steps.' + s | translate }}
+                          </span>
+                        }
+                      </span>
+                    </dd>
+                  </div>
+                }
+                <div>
                   <dt style="color: var(--color-text-tertiary)">{{ 'admin.brands.stores' | translate }}</dt>
                   <dd style="margin: 2px 0 0; color: var(--color-text-primary)">{{ b._count.stores }}</dd>
                 </div>
@@ -141,6 +184,32 @@ interface PendingDecision {
                   </dd>
                 </div>
               </dl>
+
+              @if (b.requestedPlan) {
+                <div class="plan-request" role="note">
+                  <span>{{
+                    'admin.brands.planRequest.text'
+                      | translate
+                        : {
+                            plan: ('admin.plans.names.' + b.requestedPlan | translate),
+                            date: (b.planRequestedAt | localDate: 'dateTime'),
+                          }
+                  }}</span>
+                  @if (planEdit()?.id !== b.id) {
+                    <button type="button" class="plan-edit" (click)="editPlan(b, b.requestedPlan)">
+                      {{ 'admin.brands.planRequest.apply' | translate }}
+                    </button>
+                  }
+                  <button
+                    type="button"
+                    class="plan-cancel"
+                    [disabled]="actingOnId() === b.id"
+                    (click)="dismissPlanRequest(b)"
+                  >
+                    {{ 'admin.brands.planRequest.dismiss' | translate }}
+                  </button>
+                </div>
+              }
 
               @if (planEdit(); as edit) {
                 @if (edit.id === b.id) {
@@ -269,6 +338,51 @@ interface PendingDecision {
         color: white;
         border-color: var(--color-caramel);
       }
+      .tab-calls:not(.tab-active) {
+        border-style: dashed;
+      }
+      .tab-hint {
+        margin: -4px 0 16px;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--color-text-secondary);
+      }
+      .phone-link {
+        color: var(--color-caramel);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .launch-count {
+        font-weight: 600;
+        color: var(--color-amber);
+      }
+      .launch-done {
+        color: var(--color-mint);
+      }
+      .launch-steps {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 10px;
+        margin-top: 2px;
+        font-size: 12px;
+        color: var(--color-text-tertiary);
+      }
+      .launch-step-done {
+        color: var(--color-mint);
+      }
+      .plan-request {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--color-caramel-light);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--color-text-primary);
+      }
       .plan-pill {
         padding: 2px 8px;
         border-radius: 999px;
@@ -366,8 +480,9 @@ export class AdminBrandsPage {
   private readonly brands = inject(BrandsService);
   private readonly translate = inject(TranslateService);
 
-  readonly tabs: ReadonlyArray<Tab> = ['PENDING', 'APPROVED', 'REJECTED'];
+  readonly tabs: ReadonlyArray<Tab> = ['PENDING', 'APPROVED', 'REJECTED', 'NOT_LAUNCHED', 'PLAN_REQUESTS'];
   readonly tab = signal<Tab>('PENDING');
+  readonly launchSteps = LAUNCH_STEPS;
   readonly all = signal<AdminBrand[]>([]);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -385,12 +500,21 @@ export class AdminBrandsPage {
   });
 
   readonly counts = computed(() => {
-    const c: Record<Tab, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0 };
-    for (const b of this.all()) c[b.moderationStatus]++;
+    const c: Record<Tab, number> = { PENDING: 0, APPROVED: 0, REJECTED: 0, NOT_LAUNCHED: 0, PLAN_REQUESTS: 0 };
+    for (const b of this.all()) {
+      c[b.moderationStatus]++;
+      if (notLaunched(b)) c.NOT_LAUNCHED++;
+      if (b.requestedPlan) c.PLAN_REQUESTS++;
+    }
     return c;
   });
 
-  readonly filtered = computed(() => this.all().filter((b) => b.moderationStatus === this.tab()));
+  readonly filtered = computed(() => {
+    const tab = this.tab();
+    if (tab === 'NOT_LAUNCHED') return this.all().filter(notLaunched);
+    if (tab === 'PLAN_REQUESTS') return this.all().filter((b) => b.requestedPlan !== null);
+    return this.all().filter((b) => b.moderationStatus === tab);
+  });
 
   constructor() {
     this.load();
@@ -404,13 +528,41 @@ export class AdminBrandsPage {
     return String(bps / 100);
   }
 
+  /** «+373 69 123 456» rather than the bare E.164. */
+  phone(e164: string): string {
+    return formatPhone(e164);
+  }
+
+  stepDone(o: BrandOnboardingProgress, step: (typeof LAUNCH_STEPS)[number]): boolean {
+    return step === 'payments' ? true : o[step];
+  }
+
   defaultPercent(plan: BrandPlan): number {
     return DEFAULT_COMMISSION_BPS[plan] / 100;
   }
 
-  editPlan(brand: AdminBrand): void {
+  /** `plan`: the plan to start the form on — the one the owner asked for, when answering a request. */
+  editPlan(brand: AdminBrand, plan: BrandPlan = brand.plan): void {
     this.error.set(null);
-    this.planEdit.set({ id: brand.id, plan: brand.plan, percent: this.percent(brand.commissionBps) });
+    const percent = plan === brand.plan ? this.percent(brand.commissionBps) : String(this.defaultPercent(plan));
+    this.planEdit.set({ id: brand.id, plan, percent });
+  }
+
+  /** Closes the owner's plan request without changing the plan. */
+  dismissPlanRequest(brand: AdminBrand): void {
+    this.actingOnId.set(brand.id);
+    this.error.set(null);
+    this.brands.dismissPlanRequest(brand.id).subscribe({
+      next: (updated) => {
+        this.all.update((list) => list.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
+        this.syncBadge();
+        this.actingOnId.set(null);
+      },
+      error: (err) => {
+        this.actingOnId.set(null);
+        this.error.set(this.extractMessage(err));
+      },
+    });
   }
 
   /** A new plan brings its own rate; the platform admin can still type another one. */
@@ -434,6 +586,8 @@ export class AdminBrandsPage {
       .subscribe({
         next: (updated) => {
           this.all.update((list) => list.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
+          // Setting the plan answers the owner's request, if there was one.
+          this.syncBadge();
           this.actingOnId.set(null);
           this.planEdit.set(null);
         },
@@ -465,8 +619,8 @@ export class AdminBrandsPage {
     this.error.set(null);
     this.brands.setModeration(brand.id, body).subscribe({
       next: (updated) => {
-        this.all.update((list) => list.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
-        this.brands.setPendingCount(this.counts().PENDING);
+        this.all.update((list) => list.map((b) => (b.id === updated.id ? withModeration({ ...b, ...updated }) : b)));
+        this.syncBadge();
         this.actingOnId.set(null);
         onDone?.();
       },
@@ -483,7 +637,7 @@ export class AdminBrandsPage {
     this.brands.list().subscribe({
       next: (list) => {
         this.all.set(list);
-        this.brands.setPendingCount(this.counts().PENDING);
+        this.syncBadge();
         this.loading.set(false);
       },
       error: (err) => {
@@ -491,6 +645,12 @@ export class AdminBrandsPage {
         this.error.set(this.extractMessage(err));
       },
     });
+  }
+
+  /** The sidebar badge: brands to review and plan requests to answer. */
+  private syncBadge(): void {
+    const counts = this.counts();
+    this.brands.setPendingCount(counts.PENDING, counts.PLAN_REQUESTS);
   }
 
   private extractMessage(err: unknown): string {
@@ -502,4 +662,19 @@ export class AdminBrandsPage {
     if (typeof maybe.message === 'string') return maybe.message;
     return this.translate.instant('common.genericError');
   }
+}
+
+/** Signed up by an owner and not launched yet — the team's call list. */
+function notLaunched(b: AdminBrand): boolean {
+  return b.owner !== null && b.onboarding != null && !b.onboarding.complete;
+}
+
+/** A moderation decision moves the last step of the launch checklist. */
+function withModeration(b: AdminBrand): AdminBrand {
+  const o = b.onboarding;
+  if (!o) return b;
+  const approved = b.moderationStatus === 'APPROVED';
+  if (approved === o.approved) return b;
+  const done = o.done + (approved ? 1 : -1);
+  return { ...b, onboarding: { ...o, approved, done, complete: done === o.total } };
 }

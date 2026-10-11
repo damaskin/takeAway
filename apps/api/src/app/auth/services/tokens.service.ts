@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { jwtRefreshSecret } from '../jwt-secrets';
 
 interface IssuedTokens {
   accessToken: string;
@@ -18,6 +19,19 @@ interface RefreshSession {
   userId: string;
   deviceId: string | null;
   issuedAt: number;
+  /** Set for a kitchen PIN session — kept across refreshes, see {@link SessionScope}. */
+  kdsStoreId?: string;
+}
+
+/**
+ * Narrows what a session may do. A session opened with a kitchen PIN works
+ * one store's kitchen board and nothing else: the PIN is short and typed on
+ * a shared tablet, so it must not open a manager's menu, staff or refunds.
+ * The access token carries the store as the `kds` claim, and a refresh
+ * keeps it — a PIN session never widens into a full one.
+ */
+export interface SessionScope {
+  kdsStoreId: string;
 }
 
 @Injectable()
@@ -34,12 +48,13 @@ export class TokensService {
   ) {
     this.accessTtlSeconds = parseDurationSeconds(config.get<string>('JWT_ACCESS_TTL') ?? '15m');
     this.refreshTtlSeconds = parseDurationSeconds(config.get<string>('JWT_REFRESH_TTL') ?? '7d');
-    this.refreshSecret = config.get<string>('JWT_REFRESH_SECRET') ?? 'change-me-in-prod-refresh';
+    this.refreshSecret = jwtRefreshSecret(config);
   }
 
-  async issue(userId: string, deviceId: string | null): Promise<IssuedTokens> {
+  async issue(userId: string, deviceId: string | null, scope?: SessionScope): Promise<IssuedTokens> {
     const jti = randomUUID();
-    const accessToken = await this.jwt.signAsync({ sub: userId, jti }, { expiresIn: this.accessTtlSeconds });
+    const claims = scope ? { sub: userId, jti, kds: scope.kdsStoreId } : { sub: userId, jti };
+    const accessToken = await this.jwt.signAsync(claims, { expiresIn: this.accessTtlSeconds });
 
     const refreshTokenId = randomUUID();
     const refreshToken = await this.jwt.signAsync(
@@ -48,6 +63,7 @@ export class TokensService {
     );
 
     const session: RefreshSession = { userId, deviceId, issuedAt: Date.now() };
+    if (scope) session.kdsStoreId = scope.kdsStoreId;
     await this.redis.set(this.refreshKey(userId, refreshTokenId), JSON.stringify(session), this.refreshTtlSeconds);
 
     return {
@@ -75,7 +91,11 @@ export class TokensService {
     if (!user || user.blockedAt) {
       throw new UnauthorizedException('User not found or blocked');
     }
-    return this.issue(parsed.userId, parsed.deviceId);
+    return this.issue(
+      parsed.userId,
+      parsed.deviceId,
+      parsed.kdsStoreId ? { kdsStoreId: parsed.kdsStoreId } : undefined,
+    );
   }
 
   async revokeRefresh(refreshToken: string): Promise<void> {
@@ -91,9 +111,23 @@ export class TokensService {
    * Ends every session of a user: all of their refresh tokens stop rotating.
    * Access tokens are short-lived and are refused by the JWT strategy once
    * the account is blocked, so there is nothing to revoke for them here.
+   *
+   * `keepRefreshToken` spares one session — the one changing its own
+   * password stays signed in while every other device is signed out. It is
+   * only honoured when it really is a live token of this same user.
    */
-  revokeAll(userId: string): Promise<number> {
-    return this.redis.delMatching(this.refreshKey(escapeGlob(userId), '*'));
+  async revokeAll(userId: string, keepRefreshToken?: string): Promise<number> {
+    const keep = keepRefreshToken ? await this.ownSessionKey(userId, keepRefreshToken) : null;
+    return this.redis.delMatching(this.refreshKey(escapeGlob(userId), '*'), keep ? new Set([keep]) : undefined);
+  }
+
+  private async ownSessionKey(userId: string, refreshToken: string): Promise<string | null> {
+    try {
+      const payload = await this.verifyRefresh(refreshToken);
+      return payload.sub === userId ? this.refreshKey(userId, payload.jti) : null;
+    } catch {
+      return null;
+    }
   }
 
   private async verifyRefresh(token: string): Promise<{ sub: string; jti: string }> {

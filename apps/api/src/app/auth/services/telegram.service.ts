@@ -40,6 +40,18 @@ export interface TelegramLoginWidgetPayload {
 // replays an ancient auth_date.
 const LOGIN_WIDGET_MAX_AGE_SECONDS = 24 * 60 * 60;
 
+/**
+ * Mini App init data older than this is refused (`TELEGRAM_INIT_DATA_MAX_AGE_SECONDS`).
+ * Telegram signs `auth_date` when it opens the Mini App, and the signature
+ * never expires on its own: without this check one leaked init-data string —
+ * from a log, a proxy, a shared screenshot of devtools — signed its owner in
+ * forever. A day covers a Mini App left open overnight; the app keeps its
+ * session through refresh tokens and only re-sends init data to sign in.
+ */
+const DEFAULT_INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60;
+/** Telegram's clock and ours may disagree a little; a date further ahead than this is refused. */
+const MAX_FUTURE_SKEW_SECONDS = 5 * 60;
+
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
@@ -77,6 +89,9 @@ export class TelegramService {
       if (!botToken) {
         throw new UnauthorizedException('Telegram bot token is not configured');
       }
+      // Checked before the signature only because it is cheaper; a forged
+      // auth_date fails the HMAC below anyway.
+      this.assertFreshInitData(authDate);
       const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
       const fields = [...params.entries()]
         .filter(([k]) => k !== 'hash')
@@ -102,6 +117,18 @@ export class TelegramService {
     }
 
     return { user, authDate };
+  }
+
+  private assertFreshInitData(authDate: number): void {
+    const raw = Number(this.config.get<string>('TELEGRAM_INIT_DATA_MAX_AGE_SECONDS'));
+    const maxAge = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_INIT_DATA_MAX_AGE_SECONDS;
+    const age = Math.floor(Date.now() / 1000) - authDate;
+    if (!Number.isFinite(authDate) || authDate <= 0 || age > maxAge) {
+      throw new UnauthorizedException('Telegram init data is stale; reopen the Mini App');
+    }
+    if (age < -MAX_FUTURE_SKEW_SECONDS) {
+      throw new UnauthorizedException('Telegram init data is dated in the future');
+    }
   }
 
   /**

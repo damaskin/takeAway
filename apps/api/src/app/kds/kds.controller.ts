@@ -1,18 +1,33 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { KdsSessionAllowed } from '../auth/decorators/kds-session.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RejectOrderDto } from './dto/reject-order.dto';
+import { SetStoreBusyDto } from './dto/set-busy.dto';
 import { KdsService } from './kds.service';
 import { StoreShiftService } from './store-shift.service';
 
 @ApiTags('kds')
 @ApiBearerAuth()
 @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
+// The kitchen board itself: a PIN session works it, for its own store only.
+@KdsSessionAllowed({ from: 'query', key: 'storeId' })
 @Controller('kds')
 export class KdsController {
   constructor(
@@ -50,6 +65,22 @@ export class KdsController {
   async closeShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
     await this.assertInScope(user, storeId);
     return this.shifts.close(storeId, user.id);
+  }
+
+  /**
+   * «Загружены»: whoever is in the kitchen marks the store busy (or back to
+   * normal). Customers see it at once; orders keep coming. Answers the
+   * shift, which carries `busy`, and tells every tablet of the store.
+   */
+  @Put('busy')
+  @ApiQuery({ name: 'storeId', required: true })
+  async setBusy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('storeId') storeId: string,
+    @Body() dto: SetStoreBusyDto,
+  ) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.setBusy(storeId, dto.busy);
   }
 
   @Post('orders/:id/accept')
@@ -101,6 +132,10 @@ export class KdsController {
    * the kitchen board.
    */
   private async assertInScope(user: AuthenticatedUser, storeId: string): Promise<void> {
+    // A PIN session works the one store it was opened for.
+    if (user.kdsStoreId && user.kdsStoreId !== storeId) {
+      throw new ForbiddenException('Store is outside your scope');
+    }
     const scope = await this.scope.getScope(user.id, user.role);
     if (scope === '*') return;
     if (!scope.includes(storeId)) {

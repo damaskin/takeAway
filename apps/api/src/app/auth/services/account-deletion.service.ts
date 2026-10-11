@@ -140,6 +140,7 @@ export class AccountDeletionService {
         data: {
           name: null,
           email: null,
+          emailVerifiedAt: null,
           phone: null,
           avatarUrl: null,
           dateOfBirth: null,

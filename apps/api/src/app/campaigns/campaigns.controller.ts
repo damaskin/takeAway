@@ -4,12 +4,16 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Campaign, CampaignAudience, CampaignChannel } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -19,11 +23,15 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { INACTIVE_DAYS } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
+import { CampaignModerationService } from './campaign-moderation.service';
 import {
   type AudienceSpec,
+  type CampaignInput,
   type CampaignStats,
   CampaignsService,
+  DELETABLE_STATUSES,
   emptyCampaignStats,
+  isEditable,
   isSendable,
 } from './campaigns.service';
 import {
@@ -34,8 +42,22 @@ import {
   CampaignTestResultDto,
   CreateCampaignDto,
   TestCampaignDto,
+  UpdateCampaignDto,
 } from './dto/campaigns.dto';
 
+// Per account. Each call reaches real phones, inboxes and Telegram chats (and,
+// for a send, every customer of the brand), so a stolen or scripted session
+// must not be able to fire them in a loop. Dev gets 10x.
+const DEV_MULTIPLIER = process.env['NODE_ENV'] !== 'production' ? 10 : 1;
+const TESTS_PER_MINUTE = 10 * DEV_MULTIPLIER;
+const SENDS_PER_MINUTE = 5 * DEV_MULTIPLIER;
+
+/**
+ * A brand's campaigns. The business composes a draft, edits it and submits
+ * it for review; the platform team approves or rejects it on
+ * /admin/campaign-moderation, and approval starts the run. A SUPER_ADMIN's
+ * own submit is its approval.
+ */
 @ApiTags('campaigns')
 @ApiBearerAuth()
 @Controller('admin/campaigns')
@@ -43,6 +65,7 @@ import {
 export class CampaignsController {
   constructor(
     private readonly service: CampaignsService,
+    private readonly moderation: CampaignModerationService,
     private readonly brandScope: BrandScopeService,
     private readonly prisma: PrismaService,
   ) {}
@@ -88,11 +111,24 @@ export class CampaignsController {
   /** Sends the copy to the signed-in admin only — their app, browser or Telegram. */
   @Post('test')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @Throttle({ default: { limit: TESTS_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: CampaignTestResultDto })
   test(@CurrentUser() user: AuthenticatedUser, @Body() dto: TestCampaignDto): Promise<CampaignTestResultDto> {
     return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel });
   }
 
+  /** One campaign — the edit form loads it. */
+  @Get(':id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiOkResponse({ type: CampaignDto })
+  async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.service.findOwned(brandId, id);
+    const stats = await this.service.stats([row.id]);
+    return toCampaignDto(row, stats.get(row.id));
+  }
+
+  /** A new draft. Nothing is sent until it is submitted and approved. */
   @Post()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   @ApiQuery({ name: 'brandId', required: false, type: String })
@@ -111,20 +147,77 @@ export class CampaignsController {
     );
     const row = await this.service.create({
       brandId: resolved,
+      createdById: user.id,
       title: dto.title,
       body: dto.body,
       channel: dto.channel as CampaignChannel,
       ...spec,
+      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
     });
     return toCampaignDto(row);
   }
 
+  /** Edits a draft or a rejected campaign; 409 `CAMPAIGN_NOT_EDITABLE` for any other. */
+  @Patch(':id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiOkResponse({ type: CampaignDto })
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateCampaignDto,
+  ): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const patch: Partial<CampaignInput> = {};
+    if (dto.title !== undefined) patch.title = dto.title;
+    if (dto.body !== undefined) patch.body = dto.body;
+    if (dto.channel !== undefined) patch.channel = dto.channel as CampaignChannel;
+    if (dto.audience !== undefined) {
+      Object.assign(
+        patch,
+        await this.audienceSpec(brandId, dto.audience as CampaignAudience, dto.inactiveDays, dto.storeId),
+      );
+    }
+    if (dto.scheduledAt !== undefined) patch.scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
+    const row = await this.service.update(brandId, id, patch);
+    return toCampaignDto(row);
+  }
+
   /**
-   * Starts the send — or retries a failed / stuck one — and answers at once
-   * with the row in SENDING. Poll the list for the counters.
+   * «Отправить на модерацию»: a draft or a rejected campaign goes into the
+   * platform's review queue. A SUPER_ADMIN's submit approves it at once.
+   */
+  @Post(':id/submit')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  // Pings the ops chat, and a platform admin's submit sends — the send cap applies.
+  @Throttle({ default: { limit: SENDS_PER_MINUTE, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: CampaignDto })
+  async submit(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.moderation.submit(brandId, id, user);
+    const stats = await this.service.stats([row.id]);
+    return toCampaignDto(row, stats.get(row.id));
+  }
+
+  /** «Отозвать в черновик»: a campaign under review goes back to DRAFT; 409 `CAMPAIGN_NOT_PENDING` otherwise. */
+  @Post(':id/withdraw')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: CampaignDto })
+  async withdraw(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.moderation.withdraw(brandId, id);
+    return toCampaignDto(row);
+  }
+
+  /**
+   * Retries an approved campaign — a failed or stuck run, or the people a
+   * finished run missed — and answers at once with the row in SENDING.
+   * Poll the list for the counters. Never sends an unapproved campaign.
    */
   @Post(':id/send')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @Throttle({ default: { limit: SENDS_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: CampaignDto })
   async send(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
     const brandId = await this.resolveBrandIdForCampaign(user, id);
@@ -133,11 +226,12 @@ export class CampaignsController {
     return toCampaignDto(row, stats.get(row.id));
   }
 
+  /** Throws away a campaign that has not started going out. */
   @Delete(':id')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {
     const brandId = await this.resolveBrandIdForCampaign(user, id);
-    await this.service.deleteDraft(brandId, id);
+    await this.service.delete(brandId, id);
   }
 
   private async resolveBrandId(user: AuthenticatedUser, brandId?: string): Promise<string> {
@@ -184,7 +278,7 @@ export class CampaignsController {
   }
 }
 
-function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats()): CampaignDto {
+export function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats()): CampaignDto {
   return {
     id: c.id,
     brandId: c.brandId,
@@ -204,8 +298,19 @@ function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats())
     via: stats.via,
     errors: stats.errors,
     sendable: isSendable(c),
-    startedAt: c.startedAt ? c.startedAt.toISOString() : null,
-    sentAt: c.sentAt ? c.sentAt.toISOString() : null,
+    editable: isEditable(c),
+    deletable: DELETABLE_STATUSES.includes(c.status),
+    scheduledAt: iso(c.scheduledAt),
+    submittedAt: iso(c.submittedAt),
+    reviewedAt: iso(c.reviewedAt),
+    reviewNote: c.reviewNote,
+    approvedAt: iso(c.approvedAt),
+    startedAt: iso(c.startedAt),
+    sentAt: iso(c.sentAt),
     createdAt: c.createdAt.toISOString(),
   };
+}
+
+function iso(d: Date | null): string | null {
+  return d ? d.toISOString() : null;
 }

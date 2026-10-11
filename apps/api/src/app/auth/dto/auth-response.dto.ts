@@ -54,4 +54,11 @@ export class AuthSessionDto extends AuthTokensDto {
     description: 'True when the user was invited with a temp password and must rotate it before continuing.',
   })
   mustChangePassword?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Set on a kitchen PIN session: the one store it works. Such a session only opens the kitchen board and stop-list of that store.',
+  })
+  kdsStoreId?: string;
 }
