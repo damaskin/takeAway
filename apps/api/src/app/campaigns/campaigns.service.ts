@@ -5,11 +5,13 @@ import type {
   CampaignAudience,
   CampaignChannel,
   CampaignDeliveryOutcome,
+  CampaignStatus,
   OrderStatus,
   Prisma,
 } from '@prisma/client';
 import type { CampaignTransport } from '@takeaway/shared-types';
 
+import { codedConflict } from '../common/http/coded-conflict';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService, PUSH_RECIPIENT_SELECT, toPushRecipient } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -169,13 +171,59 @@ export function audienceWhere(brandId: string, audience: CampaignAudience, now =
   };
 }
 
-/** Whether "send" may start a run for a campaign in this state. */
-export function isSendable(c: Pick<Campaign, 'status' | 'failedCount' | 'updatedAt'>, now = Date.now()): boolean {
-  if (c.status === 'DRAFT' || c.status === 'FAILED') return true;
+/** Why a campaign action was refused, as the `code` of the 409 / 400 — the admin translates these. */
+export const CampaignError = {
+  NO_RECIPIENTS: 'CAMPAIGN_NO_RECIPIENTS',
+  IN_PROGRESS: 'CAMPAIGN_IN_PROGRESS',
+  NOT_SENDABLE: 'CAMPAIGN_NOT_SENDABLE',
+  NOT_EDITABLE: 'CAMPAIGN_NOT_EDITABLE',
+  NOT_SUBMITTABLE: 'CAMPAIGN_NOT_SUBMITTABLE',
+  NOT_PENDING: 'CAMPAIGN_NOT_PENDING',
+  NOT_DELETABLE: 'CAMPAIGN_NOT_DELETABLE',
+  SCHEDULED_IN_PAST: 'CAMPAIGN_SCHEDULED_IN_PAST',
+} as const;
+
+/** The copy can still change: never submitted, or sent back by the moderator. */
+export const EDITABLE_STATUSES: readonly CampaignStatus[] = ['DRAFT', 'REJECTED'];
+
+/** Nothing has gone out yet, so the business may throw it away — an approved one waiting for its time too. */
+export const DELETABLE_STATUSES: readonly CampaignStatus[] = ['DRAFT', 'PENDING_REVIEW', 'REJECTED', 'APPROVED'];
+
+/** The copy may change, and «Отправить на модерацию» (for a SUPER_ADMIN, «Отправить») applies. */
+export function isEditable(c: Pick<Campaign, 'status'>): boolean {
+  return EDITABLE_STATUSES.includes(c.status);
+}
+
+/**
+ * Whether "send" may restart a run: only an approved campaign, and only a
+ * failed run, a stuck one, or a finished run with failures. A first run is
+ * never started this way — approval starts it.
+ */
+export function isSendable(
+  c: Pick<Campaign, 'status' | 'failedCount' | 'updatedAt' | 'approvedAt'>,
+  now = Date.now(),
+): boolean {
+  if (!c.approvedAt) return false;
+  if (c.status === 'FAILED') return true;
   // A finished run with failures: retry reaches only the ones it missed.
   if (c.status === 'SENT') return c.failedCount > 0;
   if (c.status === 'SENDING') return now - c.updatedAt.getTime() > STALE_SENDING_MS;
   return false;
+}
+
+/** An approved campaign whose time has come (or that has no time set). */
+export function isDue(c: Pick<Campaign, 'status' | 'approvedAt' | 'scheduledAt'>, now = new Date()): boolean {
+  return c.status === 'APPROVED' && c.approvedAt !== null && (!c.scheduledAt || c.scheduledAt <= now);
+}
+
+/** What the business composes. */
+export interface CampaignInput {
+  title: string;
+  body: string;
+  channel: CampaignChannel;
+  audience: CampaignAudience;
+  /** Null: as soon as it is approved. */
+  scheduledAt: Date | null;
 }
 
 @Injectable()
@@ -225,31 +273,61 @@ export class CampaignsService {
     return out;
   }
 
-  create(input: {
-    brandId: string;
-    title: string;
-    body: string;
-    channel: CampaignChannel;
-    audience: CampaignAudience;
-  }): Promise<Campaign> {
+  /** A new draft. Nothing is sent until it is submitted and approved. */
+  create(input: CampaignInput & { brandId: string; createdById: string }): Promise<Campaign> {
     return this.prisma.campaign.create({
       data: {
         brandId: input.brandId,
+        createdById: input.createdById,
         title: input.title,
         body: input.body,
         channel: input.channel,
         audience: input.audience,
+        scheduledAt: input.scheduledAt,
         status: 'DRAFT',
       },
     });
   }
 
-  async deleteDraft(brandId: string, id: string): Promise<void> {
-    const c = await this.prisma.campaign.findUnique({ where: { id } });
-    if (!c) throw new NotFoundException('Campaign not found');
-    if (c.brandId !== brandId) throw new NotFoundException('Campaign not found');
-    if (c.status !== 'DRAFT') throw new BadRequestException('Only DRAFT campaigns can be deleted');
-    await this.prisma.campaign.delete({ where: { id } });
+  /**
+   * Changes the copy, channel, audience or time of a draft or of a rejected
+   * campaign — the rejection reason stays on it until it is resubmitted.
+   * Conditional on the status, so a campaign that went into review in the
+   * meantime is never changed under the moderator.
+   */
+  async update(brandId: string, id: string, patch: Partial<CampaignInput>): Promise<Campaign> {
+    const { count } = await this.prisma.campaign.updateMany({
+      where: { id, brandId, status: { in: [...EDITABLE_STATUSES] } },
+      data: patch,
+    });
+    if (count === 0) {
+      await this.findOwned(brandId, id);
+      throw codedConflict(CampaignError.NOT_EDITABLE, 'Only a draft or a rejected campaign can be changed');
+    }
+    return this.prisma.campaign.findUniqueOrThrow({ where: { id } });
+  }
+
+  /** Throws away a campaign that has not started going out. */
+  async delete(brandId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.campaign.deleteMany({
+      where: { id, brandId, status: { in: [...DELETABLE_STATUSES] } },
+    });
+    if (count === 0) {
+      await this.findOwned(brandId, id);
+      throw codedConflict(CampaignError.NOT_DELETABLE, 'A campaign that has started sending cannot be deleted');
+    }
+  }
+
+  /** The campaign, when it exists and is the brand's; 404 otherwise. */
+  async findOwned(brandId: string, id: string): Promise<Campaign> {
+    const campaign = await this.prisma.campaign.findUnique({ where: { id } });
+    if (!campaign || campaign.brandId !== brandId) throw new NotFoundException('Campaign not found');
+    return campaign;
+  }
+
+  /** How many people the audience matches right now. */
+  audienceSize(brandId: string, audience: CampaignAudience): Promise<number> {
+    return this.prisma.user.count({ where: audienceWhere(brandId, audience) });
   }
 
   transports(): Transports {
@@ -287,42 +365,33 @@ export class CampaignsService {
   }
 
   /**
-   * Starts (or retries) a campaign and returns at once with the row in
-   * SENDING; the fan-out runs in the background and refreshes the counters
-   * after every batch. A retry skips everyone who already received it.
+   * Retries an approved campaign — a failed run, a stuck one, or the people
+   * a finished run missed — and returns at once with the row in SENDING;
+   * the fan-out runs in the background and refreshes the counters after
+   * every batch. A retry skips everyone who already received it. A first
+   * run is started by approval, never here.
    */
   async send(brandId: string, id: string): Promise<Campaign> {
-    const campaign = await this.prisma.campaign.findUnique({ where: { id } });
-    if (!campaign || campaign.brandId !== brandId) throw new NotFoundException('Campaign not found');
+    const campaign = await this.findOwned(brandId, id);
     if (!isSendable(campaign)) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        code: campaign.status === 'SENDING' ? 'CAMPAIGN_IN_PROGRESS' : 'CAMPAIGN_NOT_SENDABLE',
-        message: `Cannot send a campaign in status ${campaign.status}`,
+        code: campaign.status === 'SENDING' ? CampaignError.IN_PROGRESS : CampaignError.NOT_SENDABLE,
+        message: campaign.approvedAt
+          ? `Cannot send a campaign in status ${campaign.status}`
+          : 'The campaign has not been approved',
       });
     }
 
-    const audienceSize = await this.prisma.user.count({ where: audienceWhere(brandId, campaign.audience) });
-    if (audienceSize === 0) {
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        code: 'CAMPAIGN_NO_RECIPIENTS',
-        message: 'Nobody matches this audience yet',
-      });
-    }
+    const audienceSize = await this.audienceSize(brandId, campaign.audience);
+    if (audienceSize === 0) throw noRecipients();
 
-    // Claim the row: only one run per campaign, even with two clicks.
-    const claimed = await this.prisma.campaign.updateMany({
-      where: { id, status: campaign.status, updatedAt: campaign.updatedAt },
-      data: { status: 'SENDING', startedAt: new Date(), lastError: null, targetCount: audienceSize },
-    });
-    if (claimed.count === 0) {
+    if (!(await this.claim(campaign, audienceSize))) {
       throw new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        code: 'CAMPAIGN_IN_PROGRESS',
+        code: CampaignError.IN_PROGRESS,
         message: 'The campaign is already being sent',
       });
     }
@@ -332,12 +401,82 @@ export class CampaignsService {
   }
 
   /**
+   * Starts the first run of an approved campaign whose time has come, and
+   * does nothing for any other — not approved, scheduled for later, already
+   * started. An audience that has emptied since the review ends it FAILED
+   * with the reason instead of a "0 / 0" run. True when a run was started.
+   */
+  async startIfDue(id: string, now = new Date()): Promise<boolean> {
+    const campaign = await this.prisma.campaign.findUnique({ where: { id } });
+    if (!campaign || !isDue(campaign, now)) return false;
+
+    const audienceSize = await this.audienceSize(campaign.brandId, campaign.audience);
+    if (audienceSize === 0) {
+      await this.prisma.campaign.updateMany({
+        where: { id, status: 'APPROVED', updatedAt: campaign.updatedAt },
+        data: { status: 'FAILED', lastError: emptyRunReason({ noChannelCount: 0, optedOutCount: 0 }) },
+      });
+      return false;
+    }
+    if (!(await this.claim(campaign, audienceSize))) return false;
+    void this.run(id);
+    return true;
+  }
+
+  /**
+   * Approved campaigns whose time has come. Approval starts an unscheduled
+   * one itself; this picks up the scheduled ones, and any approval whose
+   * start was lost to a restart.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async dispatchDue(now = new Date()): Promise<void> {
+    const due = await this.prisma.campaign.findMany({
+      where: {
+        status: 'APPROVED',
+        approvedAt: { not: null },
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+      },
+      select: { id: true },
+      orderBy: { approvedAt: 'asc' },
+      take: 20,
+    });
+    for (const { id } of due) {
+      await this.startIfDue(id, now).catch((err: Error) =>
+        this.logger.error(`Could not start campaign ${id}: ${err.message}`),
+      );
+    }
+  }
+
+  /**
+   * Claims the row for one run: only one run per campaign, even with two
+   * clicks or a click racing the scheduler — and never an unapproved one.
+   */
+  private async claim(campaign: Campaign, audienceSize: number): Promise<boolean> {
+    const claimed = await this.prisma.campaign.updateMany({
+      where: {
+        id: campaign.id,
+        status: campaign.status,
+        updatedAt: campaign.updatedAt,
+        approvedAt: { not: null },
+      },
+      data: { status: 'SENDING', startedAt: new Date(), lastError: null, targetCount: audienceSize },
+    });
+    return claimed.count > 0;
+  }
+
+  /**
    * The background run. Never throws: anything unexpected marks the
    * campaign FAILED with the reason, so the admin sees it and can retry.
+   * Moderation's last line of defence: a campaign without approval reaches
+   * nobody, whoever called this.
    */
   async run(id: string): Promise<void> {
     try {
       const campaign = await this.prisma.campaign.findUniqueOrThrow({ where: { id } });
+      if (!campaign.approvedAt) {
+        this.logger.error(`Campaign ${id} reached a run without approval (status ${campaign.status}); nothing sent`);
+        return;
+      }
       const done = await this.prisma.campaignDelivery.findMany({
         where: { campaignId: id, outcome: 'SENT' },
         select: { userId: true },
@@ -489,6 +628,15 @@ export class CampaignsService {
     });
     return counts;
   }
+}
+
+export function noRecipients(): BadRequestException {
+  return new BadRequestException({
+    statusCode: 400,
+    error: 'Bad Request',
+    code: CampaignError.NO_RECIPIENTS,
+    message: 'Nobody matches this audience yet',
+  });
 }
 
 /** Why a run with no failures reached nobody. */

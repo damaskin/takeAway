@@ -4,8 +4,11 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -18,7 +21,16 @@ import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { type CampaignStats, CampaignsService, emptyCampaignStats, isSendable } from './campaigns.service';
+import { CampaignModerationService } from './campaign-moderation.service';
+import {
+  type CampaignInput,
+  type CampaignStats,
+  CampaignsService,
+  DELETABLE_STATUSES,
+  emptyCampaignStats,
+  isEditable,
+  isSendable,
+} from './campaigns.service';
 import {
   CAMPAIGN_AUDIENCES,
   CAMPAIGN_CHANNELS,
@@ -27,8 +39,15 @@ import {
   CampaignTestResultDto,
   CreateCampaignDto,
   TestCampaignDto,
+  UpdateCampaignDto,
 } from './dto/campaigns.dto';
 
+/**
+ * A brand's campaigns. The business composes a draft, edits it and submits
+ * it for review; the platform team approves or rejects it on
+ * /admin/campaign-moderation, and approval starts the run. A SUPER_ADMIN's
+ * own submit is its approval.
+ */
 @ApiTags('campaigns')
 @ApiBearerAuth()
 @Controller('admin/campaigns')
@@ -36,6 +55,7 @@ import {
 export class CampaignsController {
   constructor(
     private readonly service: CampaignsService,
+    private readonly moderation: CampaignModerationService,
     private readonly brandScope: BrandScopeService,
     private readonly prisma: PrismaService,
   ) {}
@@ -80,6 +100,18 @@ export class CampaignsController {
     return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel });
   }
 
+  /** One campaign — the edit form loads it. */
+  @Get(':id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiOkResponse({ type: CampaignDto })
+  async get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.service.findOwned(brandId, id);
+    const stats = await this.service.stats([row.id]);
+    return toCampaignDto(row, stats.get(row.id));
+  }
+
+  /** A new draft. Nothing is sent until it is submitted and approved. */
   @Post()
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   @ApiQuery({ name: 'brandId', required: false, type: String })
@@ -92,17 +124,55 @@ export class CampaignsController {
     const resolved = await this.resolveBrandId(user, brandId);
     const row = await this.service.create({
       brandId: resolved,
+      createdById: user.id,
       title: dto.title,
       body: dto.body,
       channel: dto.channel as CampaignChannel,
       audience: (dto.audience ?? 'ALL') as CampaignAudience,
+      scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
     });
     return toCampaignDto(row);
   }
 
+  /** Edits a draft or a rejected campaign; 409 `CAMPAIGN_NOT_EDITABLE` for any other. */
+  @Patch(':id')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @ApiOkResponse({ type: CampaignDto })
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateCampaignDto,
+  ): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const patch: Partial<CampaignInput> = {};
+    if (dto.title !== undefined) patch.title = dto.title;
+    if (dto.body !== undefined) patch.body = dto.body;
+    if (dto.channel !== undefined) patch.channel = dto.channel as CampaignChannel;
+    if (dto.audience !== undefined) patch.audience = dto.audience as CampaignAudience;
+    if (dto.scheduledAt !== undefined) patch.scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
+    const row = await this.service.update(brandId, id, patch);
+    return toCampaignDto(row);
+  }
+
   /**
-   * Starts the send — or retries a failed / stuck one — and answers at once
-   * with the row in SENDING. Poll the list for the counters.
+   * «Отправить на модерацию»: a draft or a rejected campaign goes into the
+   * platform's review queue. A SUPER_ADMIN's submit approves it at once.
+   */
+  @Post(':id/submit')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: CampaignDto })
+  async submit(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.moderation.submit(brandId, id, user);
+    const stats = await this.service.stats([row.id]);
+    return toCampaignDto(row, stats.get(row.id));
+  }
+
+  /**
+   * Retries an approved campaign — a failed or stuck run, or the people a
+   * finished run missed — and answers at once with the row in SENDING.
+   * Poll the list for the counters. Never sends an unapproved campaign.
    */
   @Post(':id/send')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
@@ -114,11 +184,12 @@ export class CampaignsController {
     return toCampaignDto(row, stats.get(row.id));
   }
 
+  /** Throws away a campaign that has not started going out. */
   @Delete(':id')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {
     const brandId = await this.resolveBrandIdForCampaign(user, id);
-    await this.service.deleteDraft(brandId, id);
+    await this.service.delete(brandId, id);
   }
 
   private async resolveBrandId(user: AuthenticatedUser, brandId?: string): Promise<string> {
@@ -144,7 +215,7 @@ export class CampaignsController {
   }
 }
 
-function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats()): CampaignDto {
+export function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats()): CampaignDto {
   return {
     id: c.id,
     brandId: c.brandId,
@@ -162,8 +233,19 @@ function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats())
     via: stats.via,
     errors: stats.errors,
     sendable: isSendable(c),
-    startedAt: c.startedAt ? c.startedAt.toISOString() : null,
-    sentAt: c.sentAt ? c.sentAt.toISOString() : null,
+    editable: isEditable(c),
+    deletable: DELETABLE_STATUSES.includes(c.status),
+    scheduledAt: iso(c.scheduledAt),
+    submittedAt: iso(c.submittedAt),
+    reviewedAt: iso(c.reviewedAt),
+    reviewNote: c.reviewNote,
+    approvedAt: iso(c.approvedAt),
+    startedAt: iso(c.startedAt),
+    sentAt: iso(c.sentAt),
     createdAt: c.createdAt.toISOString(),
   };
+}
+
+function iso(d: Date | null): string | null {
+  return d ? d.toISOString() : null;
 }

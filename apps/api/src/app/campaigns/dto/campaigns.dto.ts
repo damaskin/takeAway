@@ -1,9 +1,11 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsISO8601, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const CHANNELS = ['PUSH', 'TELEGRAM', 'EMAIL'] as const;
 const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D'] as const;
-const STATUSES = ['DRAFT', 'SCHEDULED', 'SENDING', 'SENT', 'FAILED'] as const;
+const STATUSES = ['DRAFT', 'PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SENDING', 'SENT', 'FAILED'] as const;
+const MODERATION_VIEWS = ['PENDING_REVIEW', 'APPROVED', 'REJECTED'] as const;
 
 export class CreateCampaignDto {
   @ApiProperty()
@@ -28,6 +30,29 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsEnum(AUDIENCES)
   audience?: (typeof AUDIENCES)[number];
+
+  /**
+   * Send no earlier than this (ISO 8601). Left out or null: as soon as it is
+   * approved. Must still be ahead when the campaign is submitted.
+   */
+  @ApiPropertyOptional({ type: String, nullable: true, example: '2026-10-12T09:00:00.000Z' })
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  scheduledAt?: string | null;
+}
+
+/** A draft or a rejected campaign changes; any field left out stays. `scheduledAt: null` clears the time. */
+export class UpdateCampaignDto extends PartialType(CreateCampaignDto) {}
+
+/** The reason goes to the business as it is. */
+export class RejectCampaignDto {
+  @ApiProperty({ minLength: 1, maxLength: 1000 })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  reason!: string;
 }
 
 /** The copy of a campaign that is not saved yet, sent to the admin themselves. */
@@ -131,8 +156,31 @@ export class CampaignDto {
   })
   errors!: CampaignErrorCountDto[];
 
-  @ApiProperty({ description: 'Send may be pressed again: a draft, a failed or stuck run, or a run with failures' })
+  @ApiProperty({
+    description: 'Retry may be pressed: an approved campaign with a failed or stuck run, or with failures',
+  })
   sendable!: boolean;
+
+  @ApiProperty({ description: 'A draft or a rejected campaign: it can be edited and submitted for review' })
+  editable!: boolean;
+
+  @ApiProperty({ description: 'Nothing has gone out yet, so it can be deleted' })
+  deletable!: boolean;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Send no earlier than this' })
+  scheduledAt!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Last time it went into the review queue' })
+  submittedAt!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: "The moderator's last decision" })
+  reviewedAt!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Why it was rejected — shown to the business' })
+  reviewNote!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'When it was approved; nothing is sent before' })
+  approvedAt!: string | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })
   startedAt!: string | null;
@@ -142,6 +190,19 @@ export class CampaignDto {
 
   @ApiProperty()
   createdAt!: string;
+}
+
+class CampaignBrandDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() slug!: string;
+  @ApiPropertyOptional({ nullable: true, type: String }) logoUrl!: string | null;
+}
+
+class CampaignPersonDto {
+  @ApiProperty() id!: string;
+  @ApiPropertyOptional({ nullable: true, type: String }) name!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) email!: string | null;
 }
 
 class CampaignReachByChannelDto {
@@ -193,6 +254,32 @@ export class CampaignPreviewDto {
 
   @ApiProperty({ type: CampaignTransportsDto })
   transports!: CampaignTransportsDto;
+}
+
+/** A campaign in the platform admin's moderation queue or history. */
+export class CampaignModerationDto extends CampaignDto {
+  @ApiProperty({ type: CampaignBrandDto })
+  brand!: CampaignBrandDto;
+
+  @ApiPropertyOptional({ type: CampaignPersonDto, nullable: true, description: 'Who composed it' })
+  createdBy!: CampaignPersonDto | null;
+
+  @ApiPropertyOptional({ type: CampaignPersonDto, nullable: true, description: 'Who decided' })
+  reviewedBy!: CampaignPersonDto | null;
+
+  @ApiPropertyOptional({
+    type: CampaignPreviewDto,
+    nullable: true,
+    description: 'Who it reaches right now — for campaigns waiting for review only',
+  })
+  reach!: CampaignPreviewDto | null;
+}
+
+export class CampaignModerationQueryDto {
+  @ApiPropertyOptional({ enum: MODERATION_VIEWS, default: 'PENDING_REVIEW' })
+  @IsOptional()
+  @IsEnum(MODERATION_VIEWS)
+  view?: (typeof MODERATION_VIEWS)[number];
 }
 
 export class CampaignTestResultDto {
