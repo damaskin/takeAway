@@ -60,10 +60,13 @@ const adminPermissionGuard = (route: ActivatedRouteSnapshot) => {
   const store = inject(AuthStore);
   const router = inject(Router);
   const navKey = route.data['navKey'] as NavKey | undefined;
-  if (!navKey) return true;
   const role = store.user()?.role as AdminRole | undefined;
-  if (canAccess(role, navKey)) return true;
-  return router.createUrlTree([defaultLandingFor(role)]);
+  // A kitchen PIN session opens the board and the stop-list, nothing else —
+  // not even pages without a navKey.
+  const kitchenOnly = store.kdsStoreId() !== null;
+  if (!navKey) return kitchenOnly ? router.createUrlTree([defaultLandingFor(role, true)]) : true;
+  if (canAccess(role, navKey, kitchenOnly)) return true;
+  return router.createUrlTree([defaultLandingFor(role, kitchenOnly)]);
 };
 
 /** Redirect '/' to the first nav section the user can actually see. */
@@ -71,7 +74,7 @@ const redirectToFirstAllowed = () => {
   const store = inject(AuthStore);
   const router = inject(Router);
   const role = store.user()?.role as AdminRole | undefined;
-  return router.createUrlTree([defaultLandingFor(role)]);
+  return router.createUrlTree([defaultLandingFor(role, store.kdsStoreId() !== null)]);
 };
 
 export const appRoutes: Route[] = [

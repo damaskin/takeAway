@@ -1,12 +1,13 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
-import type { StaffMember, StaffRoleName } from '@takeaway/shared-types';
+import type { StaffInviteResult, StaffMember, StaffRoleName } from '@takeaway/shared-types';
 
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import { PasswordService } from '../../auth/services/password.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StaffInviteMailer } from './staff-invite-mailer.service';
 
 const STAFF_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
 
@@ -65,6 +66,7 @@ export class AdminStaffMembersService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly scope: BrandScopeService,
+    private readonly inviteMailer: StaffInviteMailer,
   ) {}
 
   async list(user: AuthenticatedUser, brandId?: string): Promise<StaffMember[]> {
@@ -158,7 +160,7 @@ export class AdminStaffMembersService {
     input: { email: string; name?: string; role: StaffRoleName; tempPassword: string; storeIds: string[] },
     user: AuthenticatedUser,
     brandId?: string,
-  ): Promise<StaffMember> {
+  ): Promise<StaffInviteResult> {
     const reach = await this.reach(user, brandId);
     this.assertWithinReach(input.storeIds, reach);
     this.assertRoleAllowed(input.role, user);
@@ -209,7 +211,17 @@ export class AdminStaffMembersService {
       data: input.storeIds.map((storeId) => ({ userId, storeId })),
       skipDuplicates: true,
     });
-    return this.reload(userId, reach, user);
+    const member = await this.reload(userId, reach, user);
+    // The person is on the team either way; the email only tells them so.
+    const inviteEmail = await this.inviteMailer.send({
+      userId,
+      email,
+      name: input.name ?? null,
+      role: input.role,
+      storeIds: input.storeIds,
+      newAccount: !existing,
+    });
+    return { ...member, inviteEmail, accountCreated: !existing };
   }
 
   private async reach(user: AuthenticatedUser, brandId?: string): Promise<Reach> {

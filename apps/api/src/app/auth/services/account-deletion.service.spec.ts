@@ -14,6 +14,7 @@ import {
   STAFF_DELETION_REFUSED,
 } from './account-deletion.service';
 import type { KdsPinService } from './kds-pin.service';
+import type { KitchenDeviceService } from './kitchen-device.service';
 import type { AppleTokenRevocationService } from './apple-token-revocation.service';
 import type { OAuthIdentityService } from './oauth-identity.service';
 import type { PasswordService } from './password.service';
@@ -662,6 +663,7 @@ describe('AccountDeletionService', () => {
         {} as KdsPinService,
         {} as MailService,
         {} as ConfigService,
+        {} as KitchenDeviceService,
       );
     }
 

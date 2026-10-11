@@ -35,10 +35,13 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
-  /** Kitchen tablet sign-in: a short PIN valid for one store. */
-  loginWithPin(storeId: string, pin: string): Observable<AuthSession> {
+  /**
+   * Kitchen tablet sign-in: a short PIN valid for one store, from a tablet
+   * bound to the store's brand. The session opens only that store's kitchen.
+   */
+  loginWithPin(storeId: string, pin: string, deviceToken: string): Observable<AuthSession> {
     return this.http
-      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin })
+      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin, deviceToken })
       .pipe(tap((session) => this.store.set(session)));
   }
 

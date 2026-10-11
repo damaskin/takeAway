@@ -99,6 +99,20 @@ describe('TokensService', () => {
     expect([...store.keys()]).toEqual([]);
   });
 
+  it('keeps a kitchen PIN session narrowed to its store across refreshes', async () => {
+    const { tokens } = setup();
+    const jwt = new JwtService({ secret: 'test-access-secret' });
+    const pin = await tokens.issue('ana', 'device-1', { kdsStoreId: 'store-1' });
+    expect(jwt.decode(pin.accessToken)).toMatchObject({ sub: 'ana', kds: 'store-1' });
+
+    const refreshed = await tokens.rotate(pin.refreshToken);
+    expect(jwt.decode(refreshed.accessToken)).toMatchObject({ sub: 'ana', kds: 'store-1' });
+
+    // A password session carries no such claim.
+    const full = await tokens.issue('ana', 'device-2');
+    expect(jwt.decode(full.accessToken)).not.toHaveProperty('kds');
+  });
+
   it('refuses to rotate when the user row is gone', async () => {
     const { tokens } = setup();
     const session = await tokens.issue('gone', null);

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BrandModerationStatus, Role } from '@prisma/client';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { KdsSessionAllowed } from '../../auth/decorators/kds-session.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
@@ -29,6 +30,7 @@ export class AdminBrandsController {
    * resolver narrows the result to their actual scope.
    */
   @Get('mine')
+  @KdsSessionAllowed()
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.MENU_EDITOR, Role.STAFF, Role.RIDER)
   async listMine(@CurrentUser() user: AuthenticatedUser) {
     const scope = await this.scope.resolveBrandIds(user);

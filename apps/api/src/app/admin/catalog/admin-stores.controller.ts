@@ -4,6 +4,7 @@ import { Role } from '@prisma/client';
 import { STORE_PHOTO_RULE } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { KdsSessionAllowed } from '../../auth/decorators/kds-session.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import { UserStoreScopeService } from '../../auth/services/user-store-scope.service';
@@ -40,14 +41,18 @@ export class AdminStoresController {
 
   // STORE_MANAGER needs read access so the admin can show their assigned stores
   // for hours / stop-list management; STAFF gets read for the stop-list flow.
+  // The kitchen board and stop-list read it too, so a PIN session may — and
+  // sees only the store its PIN opens.
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
+  @KdsSessionAllowed()
   @ApiQuery({ name: 'brandId', required: false })
   async list(@CurrentUser() user: AuthenticatedUser, @Query('brandId') brandId?: string) {
     const scope = await this.scope.resolveBrandIds(user);
     const stores = await this.admin.listStores(scope, brandId);
     const own = await this.stores.getScope(user.id, user.role);
-    return own === '*' ? stores : stores.filter((s) => own.includes(s.id));
+    const reachable = own === '*' ? stores : stores.filter((s) => own.includes(s.id));
+    return user.kdsStoreId ? reachable.filter((s) => s.id === user.kdsStoreId) : reachable;
   }
 
   @Get(':id')
@@ -133,6 +138,7 @@ export class AdminStoresController {
   }
 
   @Get(':id/stop-list')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   async listStopList(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     await this.stores.assertAllowed(user.id, user.role, id);
@@ -141,6 +147,7 @@ export class AdminStoresController {
   }
 
   @Post(':id/stop-list')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   async addStopListEntry(
     @CurrentUser() user: AuthenticatedUser,
@@ -153,6 +160,7 @@ export class AdminStoresController {
   }
 
   @Delete(':id/stop-list/:productId')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeStopListEntry(
@@ -170,6 +178,7 @@ export class AdminStoresController {
   // editing and deleting stays on the menu endpoints, which STAFF cannot call.
 
   @Get(':id/availability')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   @ApiOkResponse({ type: StoreAvailabilityDto })
   async getAvailability(
@@ -182,6 +191,7 @@ export class AdminStoresController {
   }
 
   @Put(':id/ingredient-stops/:ingredientId')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   async stopIngredient(
     @CurrentUser() user: AuthenticatedUser,
@@ -195,6 +205,7 @@ export class AdminStoresController {
   }
 
   @Delete(':id/ingredient-stops/:ingredientId')
+  @KdsSessionAllowed({ from: 'param', key: 'id' })
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   @HttpCode(HttpStatus.NO_CONTENT)
   async resumeIngredient(
