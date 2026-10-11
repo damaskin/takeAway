@@ -221,8 +221,8 @@ export class TelegramBridgeService {
   /**
    * Copy Telegram's themeParams onto the design-token CSS variables so the
    * whole app adopts the user's Telegram palette (light + dark) without
-   * touching individual components. Brand overrides are applied on top via
-   * {@link BrandThemeService}.
+   * touching individual components. Brands add no colours of their own:
+   * every brand shows in the one takeAway style (since 2026-10-11).
    */
   private applyTelegramTheme(): void {
     const tg = window.Telegram?.WebApp;
