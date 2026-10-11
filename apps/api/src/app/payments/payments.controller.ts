@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExcludeEndpoint, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -27,11 +27,10 @@ export class PaymentsController {
   @Post('webhook')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiExcludeEndpoint()
-  async webhook(
-    @Req() req: { body?: unknown; rawBody?: Buffer },
-    @Headers('stripe-signature') signature?: string,
-  ): Promise<void> {
-    const raw = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
-    await this.payments.handleWebhook(raw, signature);
+  async webhook(@Req() req: { rawBody?: Buffer }, @Headers('stripe-signature') signature?: string): Promise<void> {
+    // Stripe signs the exact bytes it sent. main.ts keeps them (`rawBody`);
+    // a re-serialised body can never match, so there is no fallback to one.
+    if (!req.rawBody) throw new BadRequestException('Webhook body must be JSON');
+    await this.payments.handleWebhook(req.rawBody, signature);
   }
 }

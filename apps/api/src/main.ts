@@ -18,6 +18,10 @@ async function bootstrap(): Promise<void> {
   const adapter = new FastifyAdapter({ trustProxy: resolveTrustProxy(process.env['TRUST_PROXY']) });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
     bufferLogs: true,
+    // Keeps the exact bytes of JSON bodies on `request.rawBody`. The Stripe
+    // webhook signature is computed over those bytes; re-serialising the
+    // parsed body never matches, so verification could not succeed.
+    rawBody: true,
   });
 
   app.useLogger(app.get(Logger));

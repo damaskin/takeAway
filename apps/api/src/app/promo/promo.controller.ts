@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -9,6 +10,10 @@ import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
 import { CreatePromoDto, PromoDto, UpdatePromoStatusDto, ValidPromoResultDto, ValidatePromoDto } from './dto/promo.dto';
 import { PromoService } from './promo.service';
+
+// Guessing codes through the open preview costs a request per guess; cap it
+// per address. Dev gets 10x, like the auth routes.
+const PREVIEW_PER_MINUTE = 20 * (process.env['NODE_ENV'] !== 'production' ? 10 : 1);
 
 @ApiTags('promo')
 @Controller()
@@ -29,6 +34,7 @@ export class PromoController {
   // Same validation, for signed-out guests that just want to preview a code.
   @Public()
   @Post('promo/preview')
+  @Throttle({ default: { limit: PREVIEW_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: ValidPromoResultDto })
   preview(@Body() dto: ValidatePromoDto): Promise<ValidPromoResultDto> {
     return this.promo.validate(null, dto.code, dto.brandId, dto.subtotalCents);
