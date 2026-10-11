@@ -57,7 +57,7 @@ interface NavItem {
         >
       </div>
 
-      @for (item of visibleItems(); track item.link) {
+      @for (item of visibleItems(); track item.label) {
         <a
           [routerLink]="item.link"
           routerLinkActive="admin-nav-active"
@@ -231,6 +231,8 @@ export class AdminSidebarComponent {
 
   readonly navItems: NavItem[] = [
     { icon: '🌐', label: 'admin.nav.platform', link: '/platform', roles: ADMIN_ROLES.platform },
+    // The same page under two names: the platform's «Расчёты с брендами», the owner's «Расчёты».
+    { icon: '💸', label: 'admin.nav.settlements', link: '/settlements', roles: ['SUPER_ADMIN'] },
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores', roles: ADMIN_ROLES.stores },
     {
@@ -275,6 +277,7 @@ export class AdminSidebarComponent {
       planFeature: NAV_PLAN_FEATURE.campaigns,
     },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
+    { icon: '💸', label: 'admin.nav.settlementsOwn', link: '/settlements', roles: ['BRAND_ADMIN'] },
     {
       icon: '🧑‍🤝‍🧑',
       label: 'admin.nav.customers',

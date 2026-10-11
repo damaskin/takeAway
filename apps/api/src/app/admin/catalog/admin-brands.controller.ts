@@ -76,8 +76,8 @@ export class AdminBrandsController {
   /** The brand's business plan and commission — the platform admin's call alone. */
   @Patch(':id/plan')
   @Roles(Role.SUPER_ADMIN)
-  setPlan(@Param('id') id: string, @Body() dto: SetBrandPlanDto) {
-    return this.admin.setBrandPlan(id, dto);
+  setPlan(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: SetBrandPlanDto) {
+    return this.admin.setBrandPlan(id, dto, user.id);
   }
 
   @Get(':id/owner')

@@ -19,6 +19,7 @@ import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
 import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, newStoreTimeZone } from '../../common/time/time-zone';
+import { recordCommissionRate, rateSourceFor } from '../../plans/commission-history';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
@@ -175,17 +176,29 @@ export class AdminCatalogService {
 
   /**
    * Moves a brand to another plan. The commission follows the plan's default
-   * unless the platform admin names a rate for this brand.
+   * unless the platform admin names a rate for this brand. The new rate
+   * applies from now on and goes into the brand's rate history, so the
+   * settlements of past periods keep the rate their orders were sold under.
    */
-  async setBrandPlan(id: string, dto: SetBrandPlanDto) {
+  async setBrandPlan(id: string, dto: SetBrandPlanDto, actorId?: string) {
     await this.getBrand(id);
-    return this.prisma.brand.update({
-      where: { id },
-      data: { plan: dto.plan, commissionBps: dto.commissionBps ?? DEFAULT_COMMISSION_BPS[dto.plan] },
-      include: {
-        owner: { select: { id: true, email: true, name: true, phone: true } },
-        _count: { select: { stores: true, products: true } },
-      },
+    const commissionBps = dto.commissionBps ?? DEFAULT_COMMISSION_BPS[dto.plan];
+    return this.prisma.$transaction(async (tx) => {
+      await recordCommissionRate(tx, {
+        brandId: id,
+        bps: commissionBps,
+        source: rateSourceFor(dto.plan, commissionBps),
+        effectiveFrom: new Date(),
+        createdById: actorId ?? null,
+      });
+      return tx.brand.update({
+        where: { id },
+        data: { plan: dto.plan, commissionBps },
+        include: {
+          owner: { select: { id: true, email: true, name: true, phone: true } },
+          _count: { select: { stores: true, products: true } },
+        },
+      });
     });
   }
 
