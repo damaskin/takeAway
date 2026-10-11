@@ -521,9 +521,10 @@ export class NotificationsService {
           ? message('order_out_for_delivery', `Заказ ${code} в пути 🛵`, 'Курьер выехал к вам.')
           : message('order_out_for_delivery', `Order ${code} is on its way 🛵`, 'The rider is heading to you.');
       case 'DELIVERED':
+        // Neutral on purpose: it may have been a coffee, not a meal.
         return ru
-          ? message('order_delivered', `Заказ ${code} доставлен`, 'Приятного аппетита!')
-          : message('order_delivered', `Order ${code} delivered`, 'Enjoy!');
+          ? message('order_delivered', `Заказ ${code} доставлен`, 'Хорошего дня!')
+          : message('order_delivered', `Order ${code} delivered`, 'Have a great day!');
       case 'CANCELLED':
         if (options.rejection) return this.buildRejectedMessage(code, ru, options.rejection, message);
         if (options.cardDeclined) {

@@ -321,6 +321,21 @@ describe('NotificationsService.notifyOrderStatus', () => {
     expect(delivery.sent()?.message.body).toBe('Ждём курьера, скоро выедет к вам.');
   });
 
+  // We do not know whether it was a coffee or a meal: no «Приятного аппетита».
+  it('wishes a good day when a delivery arrives', async () => {
+    const ru = setup();
+    await ru.service.notifyOrderStatus({ ...order, fulfillmentType: 'DELIVERY' }, 'DELIVERED');
+    expect(ru.sent()?.message).toMatchObject({
+      kind: 'order_delivered',
+      title: 'Заказ #A42 доставлен',
+      body: 'Хорошего дня!',
+    });
+
+    const en = setup({ locale: 'EN' });
+    await en.service.notifyOrderStatus({ ...order, fulfillmentType: 'DELIVERY' }, 'DELIVERED');
+    expect(en.sent()?.message).toMatchObject({ title: 'Order #A42 delivered', body: 'Have a great day!' });
+  });
+
   it.each(['CREATED', 'PAID', 'IN_PROGRESS', 'PICKED_UP'] as const)(
     'stays quiet on %s without looking the customer up',
     async (status) => {
