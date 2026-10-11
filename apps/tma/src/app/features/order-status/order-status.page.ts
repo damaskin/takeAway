@@ -1,7 +1,8 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import type { CategoryKind, StoreMenu } from '@takeaway/shared-types';
+import { LeafletMapComponent, ProductImageComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { buildDirectionsUrl, describeOrderItemOptions, productKind, readOrderItemSnapshot } from '@takeaway/utils';
 import { interval, take, timer, type Subscription } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -12,6 +13,7 @@ import {
   type OrderView,
 } from '../../core/orders/orders.service';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
@@ -46,7 +48,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
 @Component({
   selector: 'app-tma-order-status',
   standalone: true,
-  imports: [TranslatePipe, LeafletMapComponent],
+  imports: [TranslatePipe, LeafletMapComponent, ProductImageComponent],
   host: {
     '(document:visibilitychange)': 'onAppVisible()',
     '(window:focus)': 'onAppVisible()',
@@ -190,27 +192,35 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px; padding: 16px; gap: 10px"
           >
             @for (line of lines(); track line.id) {
-              <div class="flex flex-col" style="gap: 2px">
-                <div class="flex items-start justify-between" style="gap: 12px">
-                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
-                    >{{ line.quantity }} × {{ line.name }}</span
-                  >
-                  <span
-                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); white-space: nowrap"
-                    >{{ price(line.totalCents) }}</span
-                  >
+              <div class="flex items-start" style="gap: 10px">
+                <lib-product-image
+                  [src]="line.imageUrl"
+                  [kind]="line.kind"
+                  alt=""
+                  style="flex: none; width: 36px; height: 36px; border-radius: 9px"
+                />
+                <div class="flex flex-col flex-1" style="gap: 2px; min-width: 0">
+                  <div class="flex items-start justify-between" style="gap: 12px">
+                    <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
+                      >{{ line.quantity }} × {{ line.name }}</span
+                    >
+                    <span
+                      style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); white-space: nowrap"
+                      >{{ price(line.totalCents) }}</span
+                    >
+                  </div>
+                  @if (line.options) {
+                    <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
+                      line.options
+                    }}</span>
+                  }
+                  @if (line.notes) {
+                    <span
+                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-style: italic"
+                      >“{{ line.notes }}”</span
+                    >
+                  }
                 </div>
-                @if (line.options) {
-                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">{{
-                    line.options
-                  }}</span>
-                }
-                @if (line.notes) {
-                  <span
-                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-style: italic"
-                    >“{{ line.notes }}”</span
-                  >
-                }
               </div>
             }
             <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
@@ -261,6 +271,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly fmt = inject(LocaleFormatService);
   private readonly translate = inject(TranslateService);
   private readonly flags = inject(FeatureFlagsStore);
+  private readonly catalog = inject(CatalogService);
   private readonly webPayments = inject(WebPaymentApi);
 
   readonly order = signal<OrderView | null>(null);
@@ -273,13 +284,42 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private pollSub: Subscription | null = null;
   private lastRefreshAt = 0;
 
+  /**
+   * The store's menu, for each line's photo or placeholder: an order line
+   * keeps no picture of its own. A product gone from the menu since gets
+   * the neutral placeholder.
+   */
+  private readonly menu = signal<StoreMenu | null>(null);
+  private readonly storeId = computed(() => this.order()?.storeId ?? null);
+  private readonly loadMenu = effect(() => {
+    const storeId = this.storeId();
+    if (!storeId) return;
+    untracked(() =>
+      this.catalog.getMenu(storeId).subscribe({ next: (menu) => this.menu.set(menu), error: () => undefined }),
+    );
+  });
+
+  /** Each product's photo and kind, by product id. */
+  private readonly looks = computed(() => {
+    const looks = new Map<string, { src: string | null; kind: CategoryKind }>();
+    for (const category of this.menu()?.categories ?? []) {
+      for (const product of category.products) {
+        looks.set(product.id, { src: product.imageUrls[0] ?? null, kind: productKind(product, category) });
+      }
+    }
+    return looks;
+  });
+
   /** The order's lines with their size, milk and extras spelled out. */
   readonly lines = computed(() =>
     (this.order()?.items ?? []).map((item) => {
       const snap = readOrderItemSnapshot(item.productSnapshot);
+      const look = this.looks().get(snap.id);
       return {
         id: item.id,
         name: snap.name,
+        imageUrl: look?.src ?? null,
+        kind: look?.kind ?? null,
         quantity: item.quantity,
         totalCents: item.totalCents,
         options: describeOrderItemOptions(snap),
