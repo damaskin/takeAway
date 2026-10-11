@@ -1,6 +1,9 @@
+import { randomInt } from 'node:crypto';
+
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Currency, GiftCard, Prisma } from '@prisma/client';
 
+import { codedConflict } from '../common/http/coded-conflict';
 import { PrismaService } from '../prisma/prisma.service';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
@@ -56,12 +59,30 @@ export class GiftCardsService {
    * Lock in the redemption row and decrement the card balance. Called
    * inside the order-creation transaction so a failure after this point
    * rolls the balance back automatically.
+   *
+   * The balance was checked by {@link validateForOrder} before the
+   * transaction, so two checkouts with the same card at the same moment both
+   * saw the full balance and both spent it. The debit is therefore
+   * conditional — it only matches while the card is still ACTIVE and still
+   * holds the amount — and Postgres re-checks that condition on the row lock,
+   * so of two racing orders exactly one debit lands. The loser gets 409
+   * `GIFT_CARD_BALANCE_CHANGED` and its whole order rolls back.
    */
   async applyRedemption(
     tx: Prisma.TransactionClient,
     input: { giftCardId: string; orderId: string; amountCents: number },
   ): Promise<void> {
     if (input.amountCents <= 0) return;
+    const debited = await tx.giftCard.updateMany({
+      where: { id: input.giftCardId, status: 'ACTIVE', balanceCents: { gte: input.amountCents } },
+      data: { balanceCents: { decrement: input.amountCents } },
+    });
+    if (debited.count !== 1) {
+      throw codedConflict(
+        'GIFT_CARD_BALANCE_CHANGED',
+        'The gift card balance changed while the order was being placed. Check the card and try again.',
+      );
+    }
     await tx.giftCardRedemption.create({
       data: {
         giftCardId: input.giftCardId,
@@ -69,9 +90,9 @@ export class GiftCardsService {
         amountCents: input.amountCents,
       },
     });
-    const updated = await tx.giftCard.update({
+    const updated = await tx.giftCard.findUniqueOrThrow({
       where: { id: input.giftCardId },
-      data: { balanceCents: { decrement: input.amountCents } },
+      select: { balanceCents: true },
     });
     // If we drained the card, flip the status so it falls out of the
     // ACTIVE-list filter even before the next sweep.
@@ -212,10 +233,11 @@ function normalizeCode(code: string): string {
   return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+/** The code is the card's only secret, so it comes from the CSPRNG, not Math.random. */
 function generateCode(): string {
   let out = '';
   for (let i = 0; i < DEFAULT_CODE_LENGTH; i++) {
-    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+    out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return out;
 }

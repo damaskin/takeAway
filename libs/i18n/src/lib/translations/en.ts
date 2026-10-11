@@ -90,6 +90,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       PROMO_MIN_ORDER: 'This promo code needs an order of {{amount}} or more',
       PROMO_LIMIT_REACHED: 'This promo code has run out',
       PROMO_ALREADY_USED: 'You have already used this promo code',
+      TOO_MANY_UNPAID_ORDERS: 'You already have unpaid orders — pay for or cancel one before placing a new one',
+      GIFT_CARD_BALANCE_CHANGED: 'The gift card balance has just changed — check the card and try again',
     },
     units: {
       min: 'min',
