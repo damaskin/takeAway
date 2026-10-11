@@ -73,6 +73,7 @@ export class CustomerSummaryDto {
   @ApiProperty({ nullable: true, type: String }) name!: string | null;
   @ApiProperty({ nullable: true, type: String }) phone!: string | null;
   @ApiProperty() orders!: number;
+  /** Spend: the revenue of their orders — menu prices less discounts, gift-card payments included. */
   @ApiProperty() totalCents!: number;
   @ApiProperty() avgCheckCents!: number;
   @ApiProperty() firstOrderAt!: string;
@@ -103,6 +104,7 @@ export class CustomerOrderDto {
   @ApiProperty() orderCode!: string;
   @ApiProperty() createdAt!: string;
   @ApiProperty() status!: string;
+  /** The order's revenue, on the same basis as the customer's spend. */
   @ApiProperty() totalCents!: number;
   @ApiProperty() currency!: string;
   @ApiProperty() storeName!: string;

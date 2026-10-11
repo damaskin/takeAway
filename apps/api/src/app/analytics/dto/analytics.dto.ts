@@ -15,27 +15,51 @@ export class AnalyticsPeriodDto {
   @ApiProperty() timeZone!: string;
 }
 
+/**
+ * Revenue by day. Revenue is sales (items at menu price) less discounts
+ * (promo codes, loyalty points), whether paid by card or with a gift card;
+ * see `money.ts`.
+ */
 export class RevenueSeriesDto extends AnalyticsPeriodDto {
   @ApiProperty() totalRevenueCents!: number;
   @ApiProperty() totalOrders!: number;
   @ApiProperty() avgBasketCents!: number;
+  /** Items at menu price, before discounts. */
+  @ApiProperty() salesCents!: number;
+  /** Promo codes and loyalty points: salesCents − totalRevenueCents. */
+  @ApiProperty() discountCents!: number;
+  /** The part of the revenue gift cards paid for. */
+  @ApiProperty() giftCardCents!: number;
   @ApiProperty({ required: false, nullable: true }) bestDay!: RevenuePointDto | null;
-  /** Same-period delta vs the previous window (e.g. prior 14 days). */
-  @ApiProperty() revenueDeltaPercent!: number;
+  /** Same-period delta vs the previous window (e.g. prior 14 days); null when that window had no revenue. */
+  @ApiProperty({ nullable: true, type: Number }) revenueDeltaPercent!: number | null;
   @ApiProperty() previousRevenueCents!: number;
+  /** The currency of every amount; a brand whose stores price in several gets one of them. */
+  @ApiProperty({ nullable: true, type: String }) currency!: string | null;
+  /** Every currency the brand's stores price in. */
+  @ApiProperty({ type: String, isArray: true }) currencies!: string[];
   @ApiProperty({ type: () => RevenuePointDto, isArray: true }) points!: RevenuePointDto[];
 }
 
 export class TopProductDto {
   @ApiProperty() name!: string;
   @ApiProperty() unitsSold!: number;
+  /** After discounts, on the same basis as the revenue: the products add up to no more than it. */
   @ApiProperty() revenueCents!: number;
+  /** At menu price, before discounts. */
+  @ApiProperty() salesCents!: number;
 }
 
 export class CohortStatsDto {
+  /** Distinct customers with a counted order in the period. */
+  @ApiProperty() customers!: number;
+  /** Their first order here falls in the period. */
+  @ApiProperty() newCustomers!: number;
+  /** They had ordered here before the period: customers − newCustomers. */
+  @ApiProperty() returningCustomers!: number;
+  /** Customers who ordered more than once inside the period, 0..100. */
   @ApiProperty() repeatRatePercent!: number;
   @ApiProperty() avgBasketCents!: number;
-  @ApiProperty() newCustomers!: number;
   @ApiProperty() pickupSlaPercent!: number;
 }
 
@@ -46,6 +70,8 @@ export class CohortStatsDto {
 export class StorePerformanceDto {
   @ApiProperty() storeId!: string;
   @ApiProperty() storeName!: string;
+  /** The store's currency: all the stores of one answer share it. */
+  @ApiProperty() currency!: string;
   @ApiProperty() revenueCents!: number;
   @ApiProperty() orders!: number;
   /** Share of total revenue in the period, 0..100, one decimal. */

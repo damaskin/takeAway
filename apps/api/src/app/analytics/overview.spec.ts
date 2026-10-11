@@ -22,6 +22,9 @@ function row(key: string | null, current: boolean, over: Partial<GroupTotalsRow>
     current,
     orders: 0,
     revenue: 0,
+    sales: 0,
+    discounts: 0,
+    giftCards: 0,
     commission: 0,
     placed: 0,
     cancelled: 0,
@@ -47,11 +50,14 @@ describe('overviewPeriod', () => {
 });
 
 describe('totalsFrom', () => {
-  it('derives the check, the cancel rate and the pickup time', () => {
+  it('derives the check, the cancel rate, the pickup time and the returning customers', () => {
     const totals = totalsFrom(
       row(null, true, {
         orders: 4,
         revenue: 17_000,
+        sales: 20_000,
+        discounts: 3_000,
+        giftCards: 1_400,
         commission: 2550.4,
         placed: 6,
         cancelled: 1,
@@ -64,11 +70,15 @@ describe('totalsFrom', () => {
       2,
     );
     expect(totals).toEqual({
+      salesCents: 20_000,
+      discountCents: 3_000,
       revenueCents: 17_000,
+      giftCardCents: 1_400,
       orders: 4,
       placed: 6,
       customers: 3,
       newCustomers: 2,
+      returningCustomers: 1,
       avgCheckCents: 4250,
       cancelled: 1,
       expired: 1,

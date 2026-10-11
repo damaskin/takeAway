@@ -26,7 +26,9 @@ import { BusinessOverviewDto } from './dto/overview.dto';
 /**
  * Every endpoint narrows to the caller's own brands and stores; `brandId`
  * and `storeId` only pick among them (SUPER_ADMIN: any brand, or all when
- * omitted). Periods are `from`/`to` calendar days in the brand's time zone,
+ * omitted). Money is in one currency: a brand whose stores price in several
+ * is narrowed to the stores of one (`currency`, the store's own, or the
+ * brand's), and a picked store keeps the brand's days. Periods are `from`/`to` calendar days in the brand's time zone,
  * or `days` ending today; each figure is compared with the same number of
  * days right before. Endpoints marked with a plan feature answer 403
  * `PLAN_FEATURE_REQUIRED` on a plan without it.
@@ -55,10 +57,10 @@ export class AnalyticsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: AnalyticsQueryDto,
   ): Promise<BusinessOverviewDto> {
-    const { scope, range, features } = await this.scopes.context(user, query, 30);
-    return this.overviews.business(scope, range, {
-      storeComparison: features.has('storeComparison'),
-      deep: features.has('deepAnalytics'),
+    const ctx = await this.scopes.context(user, query, 30);
+    return this.overviews.business(ctx, {
+      storeComparison: ctx.features.has('storeComparison'),
+      deep: ctx.features.has('deepAnalytics'),
     });
   }
 
@@ -85,8 +87,8 @@ export class AnalyticsController {
   @Get('revenue')
   @ApiOkResponse({ type: RevenueSeriesDto })
   async revenue(@CurrentUser() user: AuthenticatedUser, @Query() query: AnalyticsQueryDto): Promise<RevenueSeriesDto> {
-    const { scope, range } = await this.scopes.context(user, query, 14);
-    return this.analytics.revenueSeries(scope, range);
+    const { scope, range, currency, currencies } = await this.scopes.context(user, query, 14);
+    return { ...(await this.analytics.revenueSeries(scope, range)), currency, currencies };
   }
 
   @Get('top-products')
