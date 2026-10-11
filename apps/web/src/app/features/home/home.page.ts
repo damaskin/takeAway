@@ -5,7 +5,7 @@ import type { StoreListItem } from '@takeaway/shared-types';
 import { isStoreInactive, sortStoresByAvailability } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
-import { BrandLogoComponent, StoreLogoComponent } from '@takeaway/ui-kit';
+import { BrandLogoComponent, ProductImageComponent, StoreLogoComponent } from '@takeaway/ui-kit';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -28,7 +28,7 @@ interface FooterLink {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, BrandLogoComponent, StoreLogoComponent],
+  imports: [RouterLink, TranslatePipe, BrandLogoComponent, ProductImageComponent, StoreLogoComponent],
   template: `
     <!-- Hero — pencil SNCQE. The design's closing banner; it opens the page. -->
     <section
@@ -161,12 +161,11 @@ interface FooterLink {
               data-testid="menu-pick"
               style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); overflow: hidden"
             >
-              <img
+              <lib-product-image
                 [src]="pick.product.imageUrls[0]"
+                [kind]="pick.kind"
                 [alt]="pick.product.name"
-                loading="lazy"
-                decoding="async"
-                style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--color-latte)"
+                style="width: 100%; aspect-ratio: 4 / 3"
               />
               <div class="flex flex-1 flex-col" style="gap: 6px; padding: 12px 14px 14px">
                 <span

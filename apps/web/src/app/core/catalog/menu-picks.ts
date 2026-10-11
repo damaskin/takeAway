@@ -1,10 +1,12 @@
-import type { ProductSummary, StoreListItem, StoreMenu } from '@takeaway/shared-types';
-import { sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
+import type { CategoryKind, ProductSummary, StoreListItem, StoreMenu } from '@takeaway/shared-types';
+import { productKind, sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
 
 /** A dish or drink for the home page's «Из меню», with the place that makes it. */
 export interface MenuPick {
   product: ProductSummary;
   store: StoreListItem;
+  /** What it is, for the placeholder should its photo fail to load. */
+  kind: CategoryKind;
 }
 
 /**
@@ -36,8 +38,10 @@ export function storesToSample(stores: readonly StoreListItem[], limit = 4): Sto
  */
 export function mixMenuPicks(entries: readonly { store: StoreListItem; menu: StoreMenu }[], limit = 8): MenuPick[] {
   const perPlace = entries.map(({ store, menu }) => {
-    const byCategory = menu.categories.map((c) => c.products.filter(showable));
-    return interleave(byCategory).map((product) => ({ product, store }));
+    const byCategory = menu.categories.map((c) =>
+      c.products.filter(showable).map((product) => ({ product, store, kind: productKind(product, c) })),
+    );
+    return interleave(byCategory);
   });
   return interleave(perPlace).slice(0, limit);
 }

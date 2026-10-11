@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { installFakeApi, PRODUCT } from './support/fake-api';
+import { installFakeApi, PRODUCT, type FakeProduct } from './support/fake-api';
 import { useEnglish } from './support/locale';
 
 /**
@@ -319,6 +319,110 @@ test.describe('customer journey', () => {
     await expect(pick).toContainText(PRODUCT.name);
     await expect(pick.getByTestId('menu-pick-store')).toHaveText('takeAway Marina');
     await expect(pick).toHaveAttribute('href', '/products/flat-white?store=dubai-marina');
+  });
+
+  test('a drink is put together from chips and add-on groups, and the choice goes to the cart', async ({ page }) => {
+    const latte: FakeProduct = {
+      ...PRODUCT,
+      categoryKind: 'HOT_DRINKS',
+      allergens: ['MILK'],
+      variations: [
+        {
+          id: 'size-m',
+          type: 'SIZE',
+          name: 'M',
+          priceDeltaCents: 0,
+          prepTimeDeltaSeconds: 0,
+          sortOrder: 0,
+          isDefault: true,
+        },
+        {
+          id: 'size-l',
+          type: 'SIZE',
+          name: 'L',
+          priceDeltaCents: 300,
+          prepTimeDeltaSeconds: 0,
+          sortOrder: 1,
+          isDefault: false,
+        },
+      ],
+      modifiers: [
+        {
+          id: 'vanilla',
+          slug: 'vanilla',
+          name: 'Vanilla',
+          group: 'Syrups',
+          priceDeltaCents: 200,
+          prepTimeDeltaSeconds: 0,
+          minCount: 0,
+          maxCount: 3,
+          sortOrder: 0,
+        },
+      ],
+    };
+    const api = await installFakeApi(page, { product: latte });
+    await signIn(page);
+
+    await page.goto('/products/flat-white?store=dubai-marina');
+    await expect(page.getByTestId('allergens')).toContainText('Milk');
+
+    // The default size is picked; a bigger one says what it adds.
+    await expect(page.getByRole('radio', { name: 'M', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('radio', { name: /^L\s*\+3 AED$/ }).click();
+
+    // Syrups wait behind one row until opened.
+    const syrups = page.getByRole('button', { name: /Syrups/ });
+    await expect(syrups).toHaveAttribute('aria-expanded', 'false');
+    await expect(syrups).toContainText('none');
+    await syrups.click();
+    await page.getByRole('button', { name: 'More: Vanilla' }).click();
+    await expect(syrups).toContainText('Vanilla');
+
+    // The choice in a line and the price on the button, live.
+    await expect(page.getByTestId('choice-summary')).toHaveText('L · +Vanilla');
+    await expect(page.getByRole('button', { name: /add to cart/i })).toContainText('23 AED');
+
+    await page.getByLabel('Note for the barista').fill('Extra hot');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await expect.poll(() => api.cartAdds.length).toBe(1);
+    expect(api.cartAdds[0]).toMatchObject({
+      productId: PRODUCT.id,
+      variationIds: ['size-l'],
+      modifiers: { vanilla: 1 },
+      notes: 'Extra hot',
+    });
+  });
+
+  test('checkout offers something to eat with a drink, added in one tap', async ({ page }) => {
+    await installFakeApi(page, { menuKinds: true });
+    await signIn(page);
+
+    await page.goto('/products/flat-white?store=dubai-marina');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await expect(page.getByRole('link', { name: /go to checkout/i })).toBeVisible();
+
+    await page.goto('/checkout?store=dubai-marina');
+    const upsell = page.getByTestId('upsell');
+    await expect(upsell.getByRole('heading', { name: 'Add to your order' })).toBeVisible();
+    await upsell.getByRole('button', { name: 'Add Croissant' }).click();
+
+    // In the order now — and with something to eat, nothing more is offered.
+    await expect(upsell).toHaveCount(0);
+    await expect(page.getByText('Croissant')).toBeVisible();
+    await expect(placeOrder(page)).toContainText('30 AED');
+  });
+
+  test('a drink without any food on the menu offers nothing extra', async ({ page }) => {
+    await installFakeApi(page);
+    await signIn(page);
+
+    await page.goto('/products/flat-white?store=dubai-marina');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await expect(page.getByRole('link', { name: /go to checkout/i })).toBeVisible();
+
+    await page.goto('/checkout?store=dubai-marina');
+    await expect(page.getByText(PRODUCT.name).first()).toBeVisible();
+    await expect(page.getByTestId('upsell')).toHaveCount(0);
   });
 
   test('signed out, the product page will not let you add to the cart', async ({ page }) => {
