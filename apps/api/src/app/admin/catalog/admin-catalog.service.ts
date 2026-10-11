@@ -168,9 +168,11 @@ export class AdminCatalogService {
    * page can splice it straight into its list.
    */
   createBrand(dto: CreateBrandDto) {
+    // Brand colours are no longer set (see CreateBrandDto.themeOverrides).
+    const { themeOverrides: _ignored, ...fields } = dto;
     return this.prisma.brand.create({
       data: {
-        ...dto,
+        ...fields,
         moderationStatus: BrandModerationStatus.APPROVED,
         moderatedAt: new Date(),
       },
@@ -183,7 +185,8 @@ export class AdminCatalogService {
 
   async updateBrand(id: string, dto: UpdateBrandDto) {
     await this.getBrand(id);
-    return this.prisma.brand.update({ where: { id }, data: dto });
+    const { themeOverrides: _ignored, ...fields } = dto;
+    return this.prisma.brand.update({ where: { id }, data: fields });
   }
 
   /**

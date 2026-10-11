@@ -125,6 +125,16 @@ describe('BrandOwnerService', () => {
     });
   });
 
+  describe('theme colours', () => {
+    // One takeAway style for every brand: an admin tab opened before the
+    // release still sends them, and they are dropped.
+    it('saves the rest of the form and drops the colours', async () => {
+      await service.update(owner, { name: 'Alpha', themeOverrides: { '--color-caramel': '#ff0000' } }, 'b1');
+
+      expect(prisma.brand.update).toHaveBeenCalledWith({ where: { id: 'b1' }, data: { name: 'Alpha' } });
+    });
+  });
+
   describe('which brand', () => {
     it('gives an owner who names no brand their oldest one, not whichever row comes first', async () => {
       await service.get(owner);

@@ -51,7 +51,7 @@ function harness(openShift: { id: string } | null = null, initialStatus: 'OPEN' 
     availability as unknown as StoreAvailabilityNotifier,
     kitchen as unknown as KitchenLoadService,
   );
-  return { service, prisma, realtime, availability, status: () => status };
+  return { service, prisma, realtime, availability, kitchen, status: () => status };
 }
 
 describe('StoreShiftService', () => {
@@ -117,7 +117,7 @@ describe('StoreShiftService', () => {
 
   describe('«Загружены»', () => {
     it('marks the store OVERLOADED and tells the kitchens, the storefronts and the load channel', async () => {
-      const { service, realtime, availability, status } = harness({ id: 'shift-1' });
+      const { service, realtime, availability, kitchen, status } = harness({ id: 'shift-1' });
       const shift = await service.setBusy('store-1', true);
 
       expect(status()).toBe('OVERLOADED');
@@ -127,7 +127,12 @@ describe('StoreShiftService', () => {
         shift: expect.objectContaining({ busy: true, open: true }),
       });
       expect(availability.announce).toHaveBeenCalledWith('store-1');
-      // Full meter, and the ETA is still the real queue: base 600 + 240 waiting.
+      // Full meter, and the ETA is still the real queue: base 600 + 240
+      // waiting, the busy wait included — the queue is asked about the
+      // store as it is now, busy.
+      expect(kitchen.queueWaitSeconds).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'store-1', kitchenParallelism: 2, status: 'OVERLOADED' }),
+      );
       expect(realtime.emitStoreLoad).toHaveBeenCalledWith({
         storeId: 'store-1',
         busy: true,

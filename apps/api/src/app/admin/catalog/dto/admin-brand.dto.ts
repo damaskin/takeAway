@@ -38,11 +38,13 @@ export class CreateBrandDto {
   contactPhone?: string;
 
   /**
-   * CSS-variable overrides applied on top of the Telegram theme in TMA.
-   * Shape: `{ "--color-caramel": "#aabb00", "--color-foam": "#ffffff" }`.
-   * Only `--*` keys with string values are accepted server-side.
+   * Accepted and ignored. Brands used to recolour the Mini App with CSS
+   * variables; since 2026-10-11 every brand shows in the one takeAway style
+   * and nothing reads or writes `Brand.themeOverrides` (the column stays for
+   * a rollback). Still allowed here so an admin tab opened before the
+   * release, whose settings form sends it, can save.
    */
-  @ApiPropertyOptional({ type: Object, description: 'CSS-variable overrides for brand theming.' })
+  @ApiPropertyOptional({ type: Object, deprecated: true, description: 'Ignored — brands no longer set colours.' })
   @IsOptional()
   @IsObject()
   themeOverrides?: Record<string, string>;

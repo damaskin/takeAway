@@ -88,8 +88,11 @@ export interface BrandTheme {
   slug: string;
   name: string;
   logoUrl: string | null;
-  /** CSS-variable overrides applied on top of the Telegram theme. */
-  themeOverrides: Record<string, string> | null;
+  /**
+   * Always null: every brand shows in the one takeAway style since
+   * 2026-10-11, and no client applies brand colours any more.
+   */
+  themeOverrides: null;
 }
 
 export interface StoreDetail extends StoreListItem {

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BrandModerationStatus, type BrandPlan, FeedbackKind, type Prisma, Role } from '@prisma/client';
 
 import type { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
@@ -69,7 +69,6 @@ export class BrandOwnerService {
     if (dto.locale !== undefined) data.locale = dto.locale;
     if (dto.logoUrl !== undefined) data.logoUrl = dto.logoUrl;
     if (dto.contactPhone !== undefined) data.contactPhone = dto.contactPhone;
-    if (dto.themeOverrides !== undefined) data.themeOverrides = sanitizeThemeOverrides(dto.themeOverrides);
     if (dto.currency !== undefined && dto.currency !== brand.currency) {
       // Revenue, analytics and payouts add a brand's orders up in its
       // currency. Once there are orders, switching it would put two
@@ -217,24 +216,4 @@ export class BrandOwnerService {
     const order = await this.prisma.order.findFirst({ where: { store: { brandId } }, select: { id: true } });
     return order !== null;
   }
-}
-
-/**
- * Only allow keys that look like CSS variables and string values. Drops
- * everything else silently — no stack-trace-leaking error for a malformed
- * key, just omission, which keeps the PATCH call idempotent for sensible
- * inputs and mildly defensive against injected nonsense.
- */
-function sanitizeThemeOverrides(input: Record<string, unknown>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(input)) {
-    if (!k.startsWith('--')) continue;
-    if (typeof v !== 'string') continue;
-    if (v.length > 120) continue; // defensive cap
-    out[k] = v;
-  }
-  if (Object.keys(out).length === 0 && Object.keys(input).length > 0) {
-    throw new BadRequestException('themeOverrides must be a map of --css-var keys to string values');
-  }
-  return out;
 }

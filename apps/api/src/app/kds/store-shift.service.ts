@@ -101,7 +101,8 @@ export class StoreShiftService {
    * OVERLOADED, off back to OPEN. That is the status the owner sees in
    * «Точки» and can also set in the store editor, and the storefronts show
    * as «Загружена» with a full (red) load meter. Orders keep coming; the
-   * ETA stays the queue-based one. A store switched off (CLOSED) is not
+   * ETA is still the queue-based one, plus `BUSY_EXTRA_WAIT_SECONDS` while
+   * busy (KitchenLoadService). A store switched off (CLOSED) is not
    * touched — 409 `STORE_SWITCHED_OFF`. Idempotent.
    */
   async setBusy(storeId: string, busy: boolean): Promise<StoreShiftDto> {
@@ -150,7 +151,7 @@ export class StoreShiftService {
         select: { status: true, busyMeter: true, baseEtaSeconds: true, kitchenParallelism: true },
       });
       if (!store) return;
-      const queue = await this.kitchen.queueWaitSeconds(storeId, store.kitchenParallelism);
+      const queue = await this.kitchen.queueWaitSeconds({ id: storeId, ...store });
       this.realtime.emitStoreLoad({
         storeId,
         busy: isBusy(store),

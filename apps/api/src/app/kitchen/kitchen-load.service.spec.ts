@@ -1,7 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { KitchenLoadService, SLOT_MINUTES, ceilToSlot, floorToSlot } from './kitchen-load.service';
+import {
+  DEFAULT_BUSY_EXTRA_WAIT_SECONDS,
+  KitchenLoadService,
+  SLOT_MINUTES,
+  ceilToSlot,
+  floorToSlot,
+} from './kitchen-load.service';
 
 const SLOT_MS = SLOT_MINUTES * 60 * 1000;
 
@@ -10,13 +17,17 @@ interface PrismaStub {
   order: { groupBy: jest.Mock; findMany: jest.Mock; count: jest.Mock };
 }
 
-function makeService(overrides: Partial<PrismaStub> = {}): {
+function makeService(
+  overrides: Partial<PrismaStub> = {},
+  env: Record<string, string | undefined> = {},
+): {
   service: KitchenLoadService;
   prisma: PrismaStub;
 } {
   const prisma: PrismaStub = {
     store: {
       findUnique: jest.fn().mockResolvedValue({
+        status: 'OPEN',
         baseEtaSeconds: 300,
         kitchenParallelism: 2,
         slotCapacity: 4,
@@ -32,7 +43,8 @@ function makeService(overrides: Partial<PrismaStub> = {}): {
     },
     ...overrides,
   };
-  return { service: new KitchenLoadService(prisma as unknown as PrismaService), prisma };
+  const config = { get: (key: string) => env[key] } as unknown as ConfigService;
+  return { service: new KitchenLoadService(prisma as unknown as PrismaService, config), prisma };
 }
 
 describe('KitchenLoadService', () => {
@@ -69,7 +81,7 @@ describe('KitchenLoadService', () => {
     it('divides outstanding work by how many orders run in parallel', async () => {
       const { service } = makeService();
       // 1200s of queued work over two hands = 600s of waiting.
-      const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2 }]);
+      const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2, status: 'OPEN' }]);
       expect(waits.get('store-1')).toBe(0);
 
       const busy = makeService({
@@ -79,7 +91,7 @@ describe('KitchenLoadService', () => {
           count: jest.fn(),
         },
       });
-      const busyWaits = await busy.service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2 }]);
+      const busyWaits = await busy.service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2, status: 'OPEN' }]);
       expect(busyWaits.get('store-1')).toBe(600);
     });
 
@@ -96,15 +108,15 @@ describe('KitchenLoadService', () => {
       });
 
       // (400 * 0.5 + 200) / 1 = 400
-      const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 1 }]);
+      const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 1, status: 'OPEN' }]);
       expect(waits.get('store-1')).toBe(400);
     });
 
     it('returns zero for a store with nothing queued', async () => {
       const { service } = makeService();
       const waits = await service.queueWaitByStore([
-        { id: 'quiet', kitchenParallelism: 2 },
-        { id: 'also-quiet', kitchenParallelism: 3 },
+        { id: 'quiet', kitchenParallelism: 2, status: 'OPEN' },
+        { id: 'also-quiet', kitchenParallelism: 3, status: 'OPEN' },
       ]);
       expect([...waits.values()]).toEqual([0, 0]);
     });
@@ -112,9 +124,9 @@ describe('KitchenLoadService', () => {
     it('asks the database once for many stores', async () => {
       const { service, prisma } = makeService();
       await service.queueWaitByStore([
-        { id: 'a', kitchenParallelism: 1 },
-        { id: 'b', kitchenParallelism: 1 },
-        { id: 'c', kitchenParallelism: 1 },
+        { id: 'a', kitchenParallelism: 1, status: 'OPEN' },
+        { id: 'b', kitchenParallelism: 1, status: 'OPEN' },
+        { id: 'c', kitchenParallelism: 1, status: 'OPEN' },
       ]);
       expect(prisma.order.groupBy).toHaveBeenCalledTimes(1);
     });
@@ -123,6 +135,40 @@ describe('KitchenLoadService', () => {
       const { service, prisma } = makeService();
       await service.queueWaitByStore([]);
       expect(prisma.order.groupBy).not.toHaveBeenCalled();
+    });
+
+    it('adds five minutes while the kitchen has pressed «Загружены», to that store only', async () => {
+      const { service } = makeService({
+        order: {
+          groupBy: jest.fn().mockResolvedValue([{ storeId: 'busy', status: 'PAID', _sum: { workSeconds: 600 } }]),
+          findMany: jest.fn(),
+          count: jest.fn(),
+        },
+      });
+
+      const waits = await service.queueWaitByStore([
+        { id: 'busy', kitchenParallelism: 2, status: 'OVERLOADED' },
+        { id: 'calm', kitchenParallelism: 2, status: 'OPEN' },
+      ]);
+
+      expect(DEFAULT_BUSY_EXTRA_WAIT_SECONDS).toBe(300);
+      expect(waits.get('busy')).toBe(300 + 300);
+      expect(waits.get('calm')).toBe(0);
+      // Busy with nothing on the board still means a wait at the counter.
+      await expect(service.queueWaitSeconds({ id: 'x', kitchenParallelism: 1, status: 'OVERLOADED' })).resolves.toBe(
+        300,
+      );
+    });
+
+    it('takes the busy wait from BUSY_EXTRA_WAIT_SECONDS, 0 turning it off', async () => {
+      const busy = { id: 's', kitchenParallelism: 1, status: 'OVERLOADED' };
+      await expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: '600' }).service.queueWaitSeconds(busy)).resolves.toBe(
+        600,
+      );
+      await expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: '0' }).service.queueWaitSeconds(busy)).resolves.toBe(0);
+      for (const nonsense of ['', 'five', '-60', '2.5']) {
+        expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: nonsense }).service.busyExtraWaitSeconds).toBe(300);
+      }
     });
   });
 
@@ -157,6 +203,23 @@ describe('KitchenLoadService', () => {
 
       expect(rush.etaSeconds).toBeGreaterThan(quiet.etaSeconds);
       expect(rush.etaSeconds - quiet.etaSeconds).toBe(1200);
+    });
+
+    it('quotes a busy store the busy wait on top — checkout and the pickup time of an ASAP order', async () => {
+      const { service, prisma } = makeService();
+      prisma.store.findUnique.mockResolvedValue({
+        status: 'OVERLOADED',
+        baseEtaSeconds: 300,
+        kitchenParallelism: 2,
+        slotCapacity: 4,
+        timezone: 'UTC',
+        workingHours: [],
+      });
+
+      const quote = await service.quote('store-1', 120);
+
+      expect(quote.queueWaitSeconds).toBe(300);
+      expect(quote.etaSeconds).toBe(300 + 300 + 120);
     });
   });
 
