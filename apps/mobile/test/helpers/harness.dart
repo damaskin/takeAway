@@ -113,12 +113,16 @@ Future<Harness> pumpApp(
 
   /// Extra provider overrides, e.g. a stand-in for a platform sheet.
   List<Override> overrides = const [],
+
+  /// What earlier launches left on the device, e.g. a remembered filter.
+  Map<String, Object> saved = const {},
 }) async {
   AppTheme.useGoogleFonts = false;
   SharedPreferences.setMockInitialValues({
     'app.onboarding.done': onboarded,
     'app.locale': locale.languageCode,
     'app.activeStoreId': ?activeStoreId,
+    ...saved,
   });
   final prefs = await SharedPreferences.getInstance();
   final fakeApi = api ?? FakeApi();

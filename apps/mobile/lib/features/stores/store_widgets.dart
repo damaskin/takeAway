@@ -22,15 +22,18 @@ String? displayAddress(Store store) {
   return text.isEmpty ? null : text;
 }
 
-/// The business's logo, whole, on a light rounded tile — or, when the
-/// business has not uploaded one or it fails to load, the quiet storefront
-/// tile store cards had before logos.
+/// The store's own photo when it has one; otherwise the business's logo,
+/// whole, on a light rounded tile — or, when the business has not uploaded
+/// one or it fails to load, the quiet storefront tile store cards had before
+/// logos.
 ///
-/// Logos come in every shape: wide wordmarks, square marks, transparent
-/// PNGs drawn in black. Filling the square cropped the wordmarks, and a
-/// transparent logo vanished on the dark theme; fitted inside a white tile
-/// with a margin every one of them stays whole and legible, and the tile
-/// looks the same in both themes, as a printed sticker would.
+/// A photo fills the square, cropped like any picture. Logos come in every
+/// shape: wide wordmarks, square marks, transparent PNGs drawn in black.
+/// Filling the square cropped the wordmarks, and a transparent logo vanished
+/// on the dark theme; fitted inside a white tile with a margin every one of
+/// them stays whole and legible, and the tile looks the same in both themes,
+/// as a printed sticker would. A photo that fails to load falls back to the
+/// logo.
 class StoreLogo extends StatelessWidget {
   const StoreLogo({required this.store, this.size = 48, super.key});
 
@@ -42,6 +45,24 @@ class StoreLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final photo = store.heroImageUrl;
+    if (!ProductImage.isUsable(photo)) return _logo(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.29),
+      child: SizedBox.square(
+        dimension: size,
+        child: CachedNetworkImage(
+          imageUrl: photo!,
+          fit: BoxFit.cover,
+          fadeInDuration: Motion.fast,
+          placeholder: (_, _) => ColoredBox(color: context.brand.latte),
+          errorWidget: (context, _, _) => _logo(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _logo(BuildContext context) {
     final brand = context.brand;
     final url = store.logoUrl;
     final radius = BorderRadius.circular(size * 0.29);
@@ -327,6 +348,11 @@ class _NearMeButtonState extends ConsumerState<_NearMeButton> {
 
 void showLocationProblem(BuildContext context, WidgetRef ref, LocationStatus status) {
   final l10n = AppLocalizations.of(context);
+  // Access is there, the phone just has no fix yet: settings would not help.
+  if (status == LocationStatus.unavailable) {
+    Snack.show(context, l10n.locationUnavailable, icon: Icons.location_searching_rounded);
+    return;
+  }
   Snack.show(
     context,
     status == LocationStatus.serviceOff ? l10n.locationServiceOff : l10n.locationDenied,
