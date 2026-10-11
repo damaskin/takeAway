@@ -1,7 +1,7 @@
 import { HttpClient, type HttpEvent } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import type { BrandPlan } from '@takeaway/shared-types';
+import type { BrandPlan, StoreKind } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -38,6 +38,7 @@ export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type PickupPointType = 'COUNTER' | 'SHELF' | 'LOCKER';
 export type StoreImageKind = 'hero' | 'gallery';
+export type { StoreKind };
 
 /** The checks a closed store has to pass before it can be opened. */
 export type ReadinessCheck = 'coordinates' | 'timezone' | 'hours' | 'menu' | 'brandApproved';
@@ -67,6 +68,8 @@ export interface StoreAdminDto {
   workingHours?: StoreWorkingHourDto[];
   fulfillmentTypes?: StoreFulfillment[];
   pickupPointType?: PickupPointType;
+  /** What the store sells; never empty from the API. */
+  kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
   slotCapacity?: number;
@@ -101,6 +104,7 @@ export interface UpdateStoreInput {
   minOrderCents?: number;
   fulfillmentTypes?: StoreFulfillment[];
   pickupPointType?: PickupPointType;
+  kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
   slotCapacity?: number;
@@ -127,6 +131,8 @@ export interface CreateStoreInput {
   timezone?: string;
   phone?: string;
   email?: string;
+  /** Coffee when omitted. */
+  kinds?: StoreKind[];
 }
 
 export interface StoreImagesDto {

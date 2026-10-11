@@ -847,6 +847,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
       button: 'Link Telegram',
       failed: 'Telegram did not confirm the link. Try again.',
     },
+    images: {
+      storeRule:
+        'JPG, PNG or WebP, up to {{maxMb}} MB. Best at {{width}}×{{height}} pixels ({{aspect}}) — then it fills the store card without being cropped.',
+      logoRule:
+        'JPG, PNG or WebP, up to {{maxMb}} MB. Square, best at {{width}}×{{height}} pixels, on a white or transparent background.',
+      errors: {
+        type: 'This file will not do: it has to be a JPG, PNG or WebP picture.',
+        size: 'The file is {{size}} MB and the limit is {{maxMb}} MB. Make the picture smaller and upload it again.',
+        tooLarge: 'The file is larger than {{maxMb}} MB. Make the picture smaller and upload it again.',
+      },
+    },
     settings: {
       title: 'Brand settings',
       subtitle: 'Edit your brand name, logo, currency and theme colors.',
@@ -854,6 +865,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       logoUrl: 'Logo URL',
       logo: 'Logo',
       uploadLogo: 'Upload logo',
+      logoHint:
+        "The logo of the business itself. Customers see it on the stores that have no photo of their own — a store's photo is uploaded on the store, under «Photos».",
       uploading: 'Uploading…',
       currency: 'Currency',
       currencyHint:
@@ -1625,6 +1638,34 @@ export const TRANSLATIONS_EN: TranslationTree = {
       createForm: {
         note: 'A new store starts closed. It takes orders once you set its working hours, fill the menu and open it.',
         invalid: 'Check the fields marked in red.',
+        photo: 'Store photo',
+        photoPick: 'Choose a photo',
+        photoChange: 'Choose another',
+        photoRemove: 'Remove',
+        photoLater: 'Optional — you can add it later under «Photos».',
+        photoFailed: 'The store was created, but its photo did not upload: {{reason}} Try again here.',
+      },
+      kinds: {
+        title: 'What the store sells',
+        COFFEE: 'Coffee and drinks',
+        FOOD: 'Food / fast food',
+        hint: "Decides the store's marker on the customers' map and the filters. Tick both if it sells both.",
+        required: 'Pick at least one.',
+        chip: {
+          COFFEE: 'Coffee',
+          FOOD: 'Food',
+        },
+      },
+      locate: {
+        find: 'Find by address',
+        searching: 'Looking the address up on the map…',
+        found: 'Found: {{name}}. Drag the pin to fine-tune the spot.',
+        approximate: 'Could not find the exact address — the map is on {{name}}. Put the pin on the map.',
+        notFound: 'Address not found — put the pin on the map.',
+        unavailable: 'Address search is unavailable right now — put the pin on the map.',
+        manual: 'Pin placed by hand: typing the address no longer moves it. «Find by address» looks it up again.',
+        addressChanged: 'The address changed but the pin stayed where it was. Press «Find by address» to move it.',
+        suggested: 'The address was filled in from the pin on the map — check it.',
       },
       fields: {
         name: 'Name',
@@ -1786,7 +1827,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       photos: {
         hero: 'Cover photo',
-        heroHint: "The main photo on the store's page. JPEG, PNG, WebP or AVIF up to 5 MB.",
+        heroHint:
+          "The store's own photo: customers see it on the store card, on the map and on the store's page. Without one they see the brand's logo.",
         noHero: 'No cover photo yet',
         upload: 'Upload',
         replace: 'Replace',

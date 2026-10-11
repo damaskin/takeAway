@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { StoreKind } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsLatitude, IsLongitude, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsLatitude, IsLongitude, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 export class ListStoresQueryDto {
   @ApiPropertyOptional({ description: 'Latitude of the query point (WGS84)' })
@@ -22,4 +23,12 @@ export class ListStoresQueryDto {
   @Min(100)
   @Max(50000)
   radius?: number;
+
+  @ApiPropertyOptional({
+    enum: StoreKind,
+    description: 'Only stores that sell this: FOOD for places to eat, COFFEE for coffee shops. A store can be both.',
+  })
+  @IsOptional()
+  @IsEnum(StoreKind)
+  kind?: StoreKind;
 }

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Currency, PickupPointType, StoreFulfillment, StoreStatus } from '@prisma/client';
+import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
 
 export class StoreWorkingHourDto {
   @ApiProperty({ description: '0 = Sunday, 6 = Saturday' })
@@ -28,7 +28,9 @@ export class StoreListItemDto {
   @ApiProperty({
     nullable: true,
     type: String,
-    description: "Logo shown on the store card. Stores have no logo of their own yet, so this is the brand's.",
+    description:
+      "The brand's logo. The store's own photo is heroImageUrl; a store card falls back to this logo only " +
+      'when the store has no photo (heroImageUrl ?? logoUrl).',
   })
   logoUrl!: string | null;
 
@@ -95,8 +97,20 @@ export class StoreListItemDto {
   @ApiProperty({ description: 'IANA zone of the store. Pickup and opening times are shown on its clock.' })
   timezone!: string;
 
-  @ApiProperty({ nullable: true, type: String })
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "The store's own photo (cover), uploaded in the admin. Null when it has none — show logoUrl then.",
+  })
   heroImageUrl!: string | null;
+
+  @ApiProperty({
+    enum: StoreKind,
+    isArray: true,
+    description:
+      'What the store sells, for map markers and filters. Never empty; clients treat a missing list as coffee.',
+  })
+  kinds!: StoreKind[];
 
   @ApiProperty({ nullable: true, type: Number, description: 'Distance from query point in meters, if lat/lng passed' })
   distanceMeters!: number | null;

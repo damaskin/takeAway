@@ -11,3 +11,4 @@ export * from './lib/feedback';
 export * from './lib/push';
 export * from './lib/settlements';
 export * from './lib/promo-status';
+export * from './lib/images';

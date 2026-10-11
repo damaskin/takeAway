@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
 import { acceptingOrders, openNow } from './store-availability';
+import { storeKinds, storeKindWhere } from './store-kinds';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -42,6 +43,7 @@ export class CatalogService {
       where: {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
+        ...storeKindWhere(query.kind),
       },
       include: {
         workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
@@ -86,6 +88,7 @@ export class CatalogService {
           currency: s.currency,
           timezone: s.timezone,
           heroImageUrl: s.heroImageUrl,
+          kinds: storeKinds(s.kinds),
           distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
         };
       })
@@ -161,6 +164,7 @@ export class CatalogService {
       taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,
       heroImageUrl: store.heroImageUrl,
+      kinds: storeKinds(store.kinds),
       distanceMeters: null,
       timezone: store.timezone,
       phone: store.phone,

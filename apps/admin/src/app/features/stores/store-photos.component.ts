@@ -1,17 +1,19 @@
 import { Component, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { STORE_PHOTO_RULE } from '@takeaway/shared-types';
 
 import { AdminCatalogApi, type StoreImageKind, type StoreImagesDto } from '../../core/catalog/admin-catalog.service';
+import { acceptFor, imageFileError, imageUploadRefusal, ruleParams } from '../../shared/image-rules';
 import { storeErrorMessage } from './store-errors';
 
 /** Mirrors MAX_STORE_GALLERY_IMAGES on the API. */
 export const MAX_GALLERY_PHOTOS = 8;
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/avif';
-
 /**
  * The store's cover photo and gallery. Each upload is saved the moment the
  * API accepts it, so this tab has nothing for the editor's Save button.
+ * The cover is the store's own picture in the customer apps; without one
+ * they show the brand's logo.
  */
 @Component({
   selector: 'app-store-photos',
@@ -28,17 +30,23 @@ const ACCEPT = 'image/jpeg,image/png,image/webp,image/avif';
         <p style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
           {{ 'admin.stores.photos.heroHint' | translate }}
         </p>
+        <p
+          data-testid="store-photo-rule"
+          style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+        >
+          {{ 'admin.images.storeRule' | translate: rule }}
+        </p>
         <div class="flex items-center flex-wrap" style="gap: 12px">
           @if (hero(); as url) {
             <img
               [src]="url"
               alt=""
-              style="width: 220px; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; border: 1px solid var(--color-border-light); background: var(--color-foam)"
+              style="width: 240px; max-width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 12px; border: 1px solid var(--color-border-light); background: var(--color-foam)"
             />
           } @else {
             <div
               class="flex items-center justify-center"
-              style="width: 220px; max-width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px dashed var(--color-border); font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+              style="width: 240px; max-width: 100%; aspect-ratio: 3 / 2; border-radius: 12px; border: 1px dashed var(--color-border); font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary); text-align: center; padding: 8px"
             >
               {{ 'admin.stores.photos.noHero' | translate }}
             </div>
@@ -149,23 +157,32 @@ export class StorePhotosComponent {
   readonly heroImageUrl = input<string | null>(null);
   readonly galleryUrls = input<string[]>([]);
   readonly canEdit = input(false);
+  /** A message to start with — the create form's photo that did not make it. */
+  readonly initialError = input<string | null>(null);
   readonly changed = output<StoreImagesDto>();
 
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
 
   readonly max = MAX_GALLERY_PHOTOS;
-  readonly accept = ACCEPT;
+  readonly accept = acceptFor(STORE_PHOTO_RULE);
+  readonly rule = ruleParams(STORE_PHOTO_RULE);
   readonly hero = linkedSignal(() => this.heroImageUrl());
   readonly gallery = linkedSignal(() => this.galleryUrls());
   readonly busy = signal<StoreImageKind | null>(null);
-  readonly error = signal<string | null>(null);
+  readonly error = linkedSignal<string | null>(() => this.initialError());
 
   upload(kind: StoreImageKind, event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
     if (!file || this.busy()) return;
+    // Checked here first: a 5 MB upload on a café's Wi-Fi only to hear "too big" is a minute lost.
+    const problem = imageFileError(file, STORE_PHOTO_RULE, this.translate);
+    if (problem) {
+      this.error.set(problem);
+      return;
+    }
     this.busy.set(kind);
     this.error.set(null);
     this.api.uploadStoreImage(this.storeId(), kind, file).subscribe({
@@ -194,6 +211,6 @@ export class StorePhotosComponent {
 
   private fail(err: unknown): void {
     this.busy.set(null);
-    this.error.set(storeErrorMessage(err, this.translate));
+    this.error.set(imageUploadRefusal(err, STORE_PHOTO_RULE, this.translate) ?? storeErrorMessage(err, this.translate));
   }
 }
