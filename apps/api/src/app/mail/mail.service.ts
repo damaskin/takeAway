@@ -166,6 +166,11 @@ export class MailService implements OnModuleInit {
     return this.deliver('staff-invite', to, invite.subject, invite.text, invite.html);
   }
 
+  /** The owner reset an employee's password; true when the SMTP server accepted it. */
+  sendStaffPasswordReset(to: string, reset: OutgoingMail): Promise<boolean> {
+    return this.deliver('staff-password-reset', to, reset.subject, reset.text, reset.html);
+  }
+
   /** Public helper so other services can queue transactional messages through the same transport. */
   async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
     await this.deliver('custom', to, subject, text, html, attachments);

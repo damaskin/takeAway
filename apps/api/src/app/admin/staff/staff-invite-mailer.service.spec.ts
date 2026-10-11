@@ -22,6 +22,7 @@ function build(opts: { smtp: boolean; env?: Record<string, string>; delivered?: 
   const mail = {
     isConfigured: jest.fn(() => opts.smtp),
     sendStaffInvite: jest.fn(async (_to: string, _mail: OutgoingMail) => opts.delivered ?? true),
+    sendStaffPasswordReset: jest.fn(async (_to: string, _mail: OutgoingMail) => opts.delivered ?? true),
   };
   const passwords = new PasswordService();
   const mailer = new StaffInviteMailer(
@@ -91,5 +92,39 @@ describe('StaffInviteMailer', () => {
   it('says FAILED when the mail server refuses', async () => {
     const { mailer } = build({ smtp: true, delivered: false });
     await expect(mailer.send(barista())).resolves.toBe('FAILED');
+  });
+
+  describe('after the owner reset a password', () => {
+    const reset = { userId: 'u-1', email: 'barista@cafe.md', name: 'Анна', storeIds: ['store-1'] };
+
+    it('mails a one-time link to set a new password, never the temporary one', async () => {
+      const { mailer, prisma, mail, passwords } = build({ smtp: true });
+      await expect(mailer.sendPasswordReset(reset)).resolves.toBe('SENT');
+
+      const { data } = prisma.passwordResetToken.create.mock.calls[0]?.[0] as {
+        data: { userId: string; tokenHash: string };
+      };
+      expect(data.userId).toBe('u-1');
+      const [to, message] = mail.sendStaffPasswordReset.mock.calls[0] as [string, OutgoingMail];
+      expect(to).toBe('barista@cafe.md');
+      expect(message.subject).toContain('NoName Coffee');
+      const link = /https:\/\/admin\.takeaway\.md\/reset-password\?token=([A-Za-z0-9_-]+)(\s|$)/.exec(message.text);
+      expect(link).not.toBeNull();
+      expect(passwords.hashResetToken(link?.[1] ?? '')).toBe(data.tokenHash);
+      expect(message.text).toContain('Старый пароль больше не действует');
+      expect(message.text).toContain('https://admin.takeaway.md/login');
+    });
+
+    it('sends nothing and makes no token without SMTP', async () => {
+      const { mailer, prisma, mail } = build({ smtp: false });
+      await expect(mailer.sendPasswordReset(reset)).resolves.toBe('NOT_CONFIGURED');
+      expect(prisma.passwordResetToken.create).not.toHaveBeenCalled();
+      expect(mail.sendStaffPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('says FAILED when the mail server refuses', async () => {
+      const { mailer } = build({ smtp: true, delivered: false });
+      await expect(mailer.sendPasswordReset(reset)).resolves.toBe('FAILED');
+    });
   });
 });

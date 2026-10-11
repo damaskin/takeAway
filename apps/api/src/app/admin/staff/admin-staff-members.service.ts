@@ -1,9 +1,11 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
-import type { StaffInviteResult, StaffMember, StaffRoleName } from '@takeaway/shared-types';
+import type { StaffInviteResult, StaffMember, StaffPasswordReset, StaffRoleName } from '@takeaway/shared-types';
+import { generateTempPassword } from '@takeaway/utils';
 
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import { PasswordService } from '../../auth/services/password.service';
+import { TokensService } from '../../auth/services/tokens.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -62,11 +64,14 @@ type MemberRow = Prisma.UserGetPayload<{ select: typeof MEMBER_SELECT }> & {
  */
 @Injectable()
 export class AdminStaffMembersService {
+  private readonly logger = new Logger(AdminStaffMembersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
     private readonly scope: BrandScopeService,
     private readonly inviteMailer: StaffInviteMailer,
+    private readonly tokens: TokensService,
   ) {}
 
   async list(user: AuthenticatedUser, brandId?: string): Promise<StaffMember[]> {
@@ -222,6 +227,67 @@ export class AdminStaffMembersService {
       newAccount: !existing,
     });
     return { ...member, inviteEmail, accountCreated: !existing };
+  }
+
+  /**
+   * «Сбросить пароль» on the person's page, for an employee who forgot it
+   * and has no access to their email, or one who left with it. Owners and
+   * platform admins only (the controller), and only for someone whose every
+   * store is within the caller's brands — an account is global, and its
+   * password opens the other brands' cabinets too.
+   *
+   * The new password is generated here and answered once; it is never
+   * stored in the clear, logged or mailed. It has to be changed at the next
+   * sign-in. Every session of the person ends — the cabinet and the kitchen
+   * tablet alike — and set-password links mailed before stop working. When
+   * the server can send email the person also gets a fresh one-time link to
+   * set their own password.
+   */
+  async resetPassword(userId: string, user: AuthenticatedUser, brandId?: string): Promise<StaffPasswordReset> {
+    if (user.role !== Role.BRAND_ADMIN && user.role !== Role.SUPER_ADMIN) {
+      throw this.forbidden('STAFF_NOT_EDITABLE', 'Only the owner can reset a password');
+    }
+    const reach = await this.reach(user, brandId);
+    const row = await this.findOnTeam(userId, reach);
+    this.assertEditable(row, user);
+    await this.assertManaged(userId, user);
+
+    // Sessions first: if that fails nothing has changed and the owner tries
+    // again, rather than the password changing to one nobody was shown.
+    // Access tokens already issued run out within minutes, as on any reset.
+    const sessions = await this.tokens.revokeAll(userId);
+    const tempPassword = generateTempPassword();
+    const passwordHash = await this.passwords.hash(tempPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, passwordMustChange: true } }),
+      this.prisma.passwordResetToken.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      }),
+    ]);
+
+    const resetEmail = await this.mailReset(row);
+    // Who did it to whom, for the audit trail — ids only, no password, no address.
+    this.logger.log(
+      `Staff password reset: user ${userId} by ${user.id} (${user.role}); sessions ended: ${sessions}; email: ${resetEmail}`,
+    );
+    return { tempPassword, resetEmail };
+  }
+
+  /** The set-password link after a reset. The password has changed by now, so a failure here only says so. */
+  private async mailReset(row: MemberRow): Promise<StaffPasswordReset['resetEmail']> {
+    if (!row.email) return 'NOT_CONFIGURED';
+    try {
+      return await this.inviteMailer.sendPasswordReset({
+        userId: row.id,
+        email: row.email,
+        name: row.name,
+        storeIds: row.userStores.map((s) => s.storeId),
+      });
+    } catch (err) {
+      this.logger.error(`Password reset email for user ${row.id} failed: ${(err as Error).message}`);
+      return 'FAILED';
+    }
   }
 
   private async reach(user: AuthenticatedUser, brandId?: string): Promise<Reach> {

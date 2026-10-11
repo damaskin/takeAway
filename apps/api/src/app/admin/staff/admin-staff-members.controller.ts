@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiForbiddenResponse, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import type { StaffInviteResult, StaffMember } from '@takeaway/shared-types';
+import type { StaffInviteResult, StaffMember, StaffPasswordReset } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -61,6 +61,35 @@ export class AdminStaffMembersController {
     @Query('brandId') brandId?: string,
   ): Promise<StaffMember> {
     return this.staff.setStores(userId, dto.storeIds, user, brandId || undefined);
+  }
+
+  /**
+   * «Сбросить пароль»: a generated temporary password, answered once, to be
+   * changed at the next sign-in; the person's sessions end, and they are
+   * emailed a link to set their own when the server can send mail. Owners
+   * and platform admins only — not store managers.
+   */
+  @Post(':userId/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN)
+  @ApiQuery({ name: 'brandId', required: false })
+  @ApiOkResponse({
+    schema: {
+      properties: {
+        tempPassword: { type: 'string' },
+        resetEmail: { type: 'string', enum: ['SENT', 'NOT_CONFIGURED', 'FAILED'] },
+      },
+    },
+  })
+  @ApiForbiddenResponse({
+    description: '`STAFF_NOT_EDITABLE` — the caller themself, or someone who also works for another brand.',
+  })
+  resetPassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Query('brandId') brandId?: string,
+  ): Promise<StaffPasswordReset> {
+    return this.staff.resetPassword(userId, user, brandId || undefined);
   }
 
   @Patch(':userId/role')
