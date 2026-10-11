@@ -1290,4 +1290,155 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get locationUnavailable => 'Не получилось определить, где вы. Попробуйте ещё раз чуть позже.';
+
+  @override
+  String get productNoteFood => 'Комментарий к заказу';
+
+  @override
+  String get productNoteFoodHint => 'Например: разогреть, без соуса…';
+
+  @override
+  String productContains(String list) {
+    return 'Содержит: $list';
+  }
+
+  @override
+  String get productAddonsNone => 'не выбрано';
+
+  @override
+  String get productRequired => 'обязательно';
+
+  @override
+  String get productPairsWith => 'Часто берут вместе';
+
+  @override
+  String get cartUpsellTitle => 'К заказу';
+
+  @override
+  String get allergenGluten => 'глютен';
+
+  @override
+  String get allergenMilk => 'молоко';
+
+  @override
+  String get allergenLactose => 'лактоза';
+
+  @override
+  String get allergenEggs => 'яйца';
+
+  @override
+  String get allergenNuts => 'орехи';
+
+  @override
+  String get allergenPeanuts => 'арахис';
+
+  @override
+  String get allergenSoy => 'соя';
+
+  @override
+  String get allergenFish => 'рыба';
+
+  @override
+  String get allergenShellfish => 'моллюски и ракообразные';
+
+  @override
+  String get allergenSesame => 'кунжут';
+
+  @override
+  String get allergenCelery => 'сельдерей';
+
+  @override
+  String get allergenMustard => 'горчица';
+
+  @override
+  String get allergenSulphites => 'сульфиты';
+
+  @override
+  String get errCartEmpty => 'Корзина пуста';
+
+  @override
+  String get errStoreNotTakingOrders => 'Эта точка сейчас не принимает заказы';
+
+  @override
+  String get errStoreClosedAtTime => 'В это время точка закрыта — выберите другое время';
+
+  @override
+  String get errPickupSlotFull => 'Это время только что заняли — выберите другое';
+
+  @override
+  String errPickupTimeOutOfRange(int minMinutes, int maxHours) {
+    return 'Ко времени можно заказать не раньше чем через $minMinutes мин и не позже чем через $maxHours ч';
+  }
+
+  @override
+  String errItemsUnavailable(String items) {
+    return 'Сейчас нет в наличии: $items';
+  }
+
+  @override
+  String get errItemsUnavailableGeneric => 'Часть позиций сейчас нет в наличии';
+
+  @override
+  String errBelowMinOrder(String amount) {
+    return 'Минимальная сумма заказа — $amount';
+  }
+
+  @override
+  String get errBelowMinOrderGeneric => 'Сумма заказа меньше минимальной';
+
+  @override
+  String get errDeliveryUnavailable => 'Доставка сейчас недоступна';
+
+  @override
+  String get errDeliveryAddressRequired => 'Укажите адрес доставки';
+
+  @override
+  String get errDeliveryOutOfRange => 'Этот адрес вне зоны доставки';
+
+  @override
+  String get errPromoUnknown => 'Такого промокода нет';
+
+  @override
+  String get errPromoInactive => 'Промокод сейчас не действует';
+
+  @override
+  String get errPromoNotStarted => 'Промокод ещё не начал действовать';
+
+  @override
+  String get errPromoExpired => 'Срок действия промокода истёк';
+
+  @override
+  String errPromoMinOrder(String amount) {
+    return 'Промокод действует при заказе от $amount';
+  }
+
+  @override
+  String get errPromoMinOrderGeneric => 'Для этого промокода сумма заказа слишком мала';
+
+  @override
+  String get errPromoLimitReached => 'Промокод закончился';
+
+  @override
+  String get errPromoAlreadyUsed => 'Вы уже воспользовались этим промокодом';
+
+  @override
+  String get errPromoNotEligible => 'Этот промокод — для тех, кто давно у нас не был';
+
+  @override
+  String get errGiftCardUnknown => 'Такой подарочной карты нет';
+
+  @override
+  String get errGiftCardOtherBrand => 'Эта карта не действует в этом заведении';
+
+  @override
+  String get errGiftCardCurrency => 'Карта в другой валюте — здесь её не применить';
+
+  @override
+  String get errGiftCardExpired => 'Срок действия карты истёк';
+
+  @override
+  String get errGiftCardUsedUp => 'На карте не осталось денег';
+
+  @override
+  String get errGiftCardCancelled => 'Карта аннулирована';
 }

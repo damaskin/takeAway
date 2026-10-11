@@ -303,7 +303,7 @@ class _CodeFieldState extends State<CodeField> {
               ? Padding(
                   padding: const EdgeInsets.only(top: 6, left: 4),
                   child: Text(
-                    s.message ?? l10n.promoInvalid,
+                    s.error == null ? l10n.promoInvalid : errorMessage(context, s.error!),
                     style: context.text.bodySmall?.copyWith(color: brand.berry),
                   ),
                 )

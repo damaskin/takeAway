@@ -11,25 +11,21 @@ import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
+import '../../shared/product_kinds.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
-import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/quantity_stepper.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../auth/sign_in_sheet.dart';
 import '../cart/cart_controller.dart';
+import '../cart/upsell.dart';
+import '../cart/upsell_row.dart';
 import '../catalog/catalog_providers.dart';
 import '../menu/product_card.dart';
-
-const _variationOrder = [
-  VariationType.size,
-  VariationType.temperature,
-  VariationType.milk,
-  VariationType.cup,
-  VariationType.unknown,
-];
+import 'option_widgets.dart';
+import 'product_options.dart';
 
 /// Product detail and customisation.
 class ProductScreen extends ConsumerStatefulWidget {
@@ -48,6 +44,9 @@ class ProductScreen extends ConsumerStatefulWidget {
 class _ProductScreenState extends ConsumerState<ProductScreen> {
   final Map<VariationType, String> _variations = {};
   final Map<String, int> _modifiers = {};
+
+  /// Add-on groups shown open, by [AddonGroup.key].
+  final Set<String> _expanded = {};
   final _notes = TextEditingController();
   int _quantity = 1;
   ProductDetail? _optionsFrom;
@@ -77,14 +76,15 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
 
   /// Picks the defaults, and again whenever a fresher copy of the product
   /// arrives: choices that are still on offer stay as the customer left
-  /// them, ones that ran out fall back to the default or are dropped.
+  /// them, ones that ran out fall back to the default or are dropped. The
+  /// first copy also opens the add-on groups with something to be taken.
   void _initDefaults(ProductDetail product) {
     if (identical(product, _optionsFrom)) return;
+    final first = _optionsFrom == null;
     _optionsFrom = product;
     final types = <VariationType>{};
-    for (final type in _variationOrder) {
-      final group = product.variations.where((v) => v.type == type).toList()
-        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    for (final type in variationOrder) {
+      final group = variationsOf(product, type);
       if (group.isEmpty) continue;
       types.add(type);
       final chosen = _variations[type];
@@ -97,7 +97,24 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     for (final m in product.modifiers) {
       _modifiers.putIfAbsent(m.id, () => m.minCount);
     }
+    if (first) {
+      _expanded.addAll([
+        for (final group in addonGroups(product))
+          if (group.isRequired) group.key,
+      ]);
+    }
   }
+
+  /// One add-on group open at a time: opening one closes the others.
+  void _toggleGroup(String key) => setState(() {
+    if (_expanded.contains(key)) {
+      _expanded.remove(key);
+    } else {
+      _expanded
+        ..clear()
+        ..add(key);
+    }
+  });
 
   int _unitPrice(ProductDetail product) {
     var total = product.basePriceCents;
@@ -152,13 +169,18 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
   @override
   Widget build(BuildContext context) {
     // As the store being browsed sells it: options it ran out of are not offered.
-    final key = (productId: widget.productId, storeId: ref.watch(activeStoreIdProvider));
+    final activeStoreId = ref.watch(activeStoreIdProvider);
+    final key = (productId: widget.productId, storeId: activeStoreId);
     final async = ref.watch(storeProductProvider(key));
     final product = async.valueOrNull;
     if (product != null) _initDefaults(product);
     final preview = product ?? widget.preview;
     final brand = context.brand;
     final store = product == null ? null : _storeFor(product);
+    final menuStoreId = store?.id ?? activeStoreId;
+    final menu = menuStoreId == null ? null : ref.watch(menuProvider(menuStoreId)).valueOrNull?.value;
+    final kind = preview == null ? null : productKindOf(preview, menu: menu);
+    final summary = optionsSummary(product, _variations.values, _modifiers, onlyChoices: true);
 
     return Scaffold(
       body: CustomScrollView(
@@ -175,6 +197,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                   backgroundColor: brand.foam.withValues(alpha: 0.92),
                   foregroundColor: brand.textPrimary,
                 ),
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                 icon: const Icon(Icons.close_rounded),
                 onPressed: () => context.pop(),
               ),
@@ -182,7 +205,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
             flexibleSpace: FlexibleSpaceBar(
               background: Hero(
                 tag: productHeroTag(widget.productId),
-                child: ProductImage(url: preview?.imageUrl, seed: widget.productId),
+                child: ProductImage(url: preview?.imageUrl, kind: kind, seed: widget.productId),
               ),
             ),
           ),
@@ -199,17 +222,19 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                   : _Details(
                       preview: preview,
                       product: product,
+                      kind: kind,
+                      summary: summary,
                       currency: store?.currency ?? ref.watch(activeStoreProvider)?.currency ?? 'USD',
                       variations: _variations,
                       modifiers: _modifiers,
-                      onVariation: (type, id) {
-                        HapticFeedback.selectionClick();
-                        setState(() => _variations[type] = id);
-                      },
+                      expanded: _expanded,
+                      onVariation: (type, id) => setState(() => _variations[type] = id),
                       onModifier: (id, count) => setState(() => _modifiers[id] = count),
+                      onToggleGroup: _toggleGroup,
                       notes: _notes,
                       showNotes: _showNotes,
                       onShowNotes: () => setState(() => _showNotes = true),
+                      pairing: _pairing(kind, store, menu),
                     ),
             ),
           ),
@@ -223,10 +248,26 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
               store: store,
               quantity: _quantity,
               unitPrice: _unitPrice(product),
+              summary: summary,
               adding: _adding,
               onQuantity: (q) => setState(() => _quantity = q),
               onAdd: store == null || product.onStopList || !store.isOpen ? null : () => _add(product, store),
             ),
+    );
+  }
+
+  /// «Часто берут вместе» under a drink: something to eat from the same
+  /// store, when it is taking orders and has any.
+  Widget? _pairing(ProductKind? kind, Store? store, Menu? menu) {
+    if (!(kind?.isDrink ?? false) || store == null || !store.isOpen || menu == null) return null;
+    final items = foodSuggestions(menu, exclude: {widget.productId});
+    if (items.isEmpty) return null;
+    final l10n = AppLocalizations.of(context);
+    return UpsellRow(
+      title: l10n.productPairsWith,
+      items: items,
+      store: store,
+      onAdded: (added) => Snack.show(context, l10n.addedToCart(added.name), icon: Icons.check_circle_rounded),
     );
   }
 }
@@ -235,32 +276,57 @@ class _Details extends StatelessWidget {
   const _Details({
     required this.preview,
     required this.product,
+    required this.kind,
+    required this.summary,
     required this.currency,
     required this.variations,
     required this.modifiers,
+    required this.expanded,
     required this.onVariation,
     required this.onModifier,
+    required this.onToggleGroup,
     required this.notes,
     required this.showNotes,
     required this.onShowNotes,
+    required this.pairing,
   });
 
   final Product? preview;
   final ProductDetail? product;
+  final ProductKind? kind;
+
+  /// The chosen options in a line, empty when there is nothing to choose.
+  final String summary;
   final String currency;
   final Map<VariationType, String> variations;
   final Map<String, int> modifiers;
+  final Set<String> expanded;
   final void Function(VariationType type, String id) onVariation;
   final void Function(String id, int count) onModifier;
+  final ValueChanged<String> onToggleGroup;
   final TextEditingController notes;
   final bool showNotes;
   final VoidCallback onShowNotes;
+  final Widget? pairing;
+
+  /// A drink by its category; on an API without kinds, anything with a
+  /// caffeine level or a size, milk or cup to choose.
+  bool get _isDrink {
+    final known = kind;
+    if (known != null) return known.isDrink;
+    final p = product ?? preview;
+    return (p?.caffeineLevel ?? 0) > 0 || (product?.variations.isNotEmpty ?? false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final p = product ?? preview;
+    // Caffeine means nothing on a croissant.
+    final showCaffeine = (p?.caffeineLevel ?? 0) > 0 && !(kind?.isFood ?? false);
+    final allergens = p == null ? '' : allergensText(l10n, p.allergens);
+    final drink = _isDrink;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,6 +335,21 @@ class _Details extends StatelessWidget {
           const ShimmerScope(child: Skeleton(width: 220, height: 28)),
         ] else ...[
           Text(p.name, style: context.text.displaySmall),
+          AnimatedSize(
+            duration: Motion.medium,
+            curve: Motion.emphasized,
+            alignment: Alignment.topLeft,
+            child: summary.isEmpty
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      summary,
+                      key: const ValueKey('product-summary'),
+                      style: context.text.bodyLarge?.copyWith(color: brand.caramel),
+                    ),
+                  ),
+          ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -278,11 +359,20 @@ class _Details extends StatelessWidget {
                 _MetaChip(icon: Icons.timer_outlined, label: l10n.minutes(minutesCeil(p.prepTimeSeconds))),
               if (p.calories != null)
                 _MetaChip(icon: Icons.local_fire_department_outlined, label: l10n.productCalories(p.calories!)),
-              if (p.caffeineLevel != null && p.caffeineLevel! > 0) _CaffeineChip(level: p.caffeineLevel!),
+              if (showCaffeine) _CaffeineChip(level: p.caffeineLevel!),
               for (final tag in p.dietTags)
                 _MetaChip(icon: Icons.eco_outlined, label: dietTagLabel(l10n, tag), tint: brand.mint),
             ],
           ),
+          if (allergens.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _MetaChip(
+              icon: Icons.info_outline_rounded,
+              label: l10n.productContains(allergens),
+              tint: brand.amber,
+              wrap: true,
+            ),
+          ],
           if (p.description != null && p.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
             Text(p.description!, style: context.text.bodyLarge?.copyWith(color: brand.textSecondary)),
@@ -294,12 +384,8 @@ class _Details extends StatelessWidget {
               style: context.text.bodySmall,
             ),
           ],
-          if (p.allergens.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text('${l10n.productAllergens}: ${p.allergens.join(', ')}', style: context.text.bodySmall),
-          ],
         ],
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         if (product == null)
           const ShimmerScope(
             child: Padding(
@@ -311,36 +397,35 @@ class _Details extends StatelessWidget {
                   SizedBox(height: 12),
                   Skeleton(height: 44, radius: Radii.pill),
                   SizedBox(height: 24),
-                  Skeleton(width: 100),
-                  SizedBox(height: 12),
-                  Skeleton(height: 56, radius: Radii.input),
+                  Skeleton(height: 52, radius: Radii.input),
                 ],
               ),
             ),
           )
         else ...[
-          for (final type in _variationOrder)
-            if (product!.variations.any((v) => v.type == type))
-              _VariationGroup(
+          for (final type in variationOrder)
+            if (variationsOf(product!, type) case final options when options.isNotEmpty)
+              VariationChips(
                 title: _variationTitle(l10n, type),
-                options: product!.variations.where((v) => v.type == type).toList()
-                  ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)),
+                options: options,
                 selected: variations[type],
                 currency: currency,
-                segmented: type == VariationType.size,
                 onSelect: (id) => onVariation(type, id),
               ),
           if (product!.modifiers.isNotEmpty) ...[
-            _SectionTitle(l10n.productAddons),
-            for (final m in [...product!.modifiers]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)))
-              _ModifierRow(
-                modifier: m,
-                count: modifiers[m.id] ?? m.minCount,
+            const SizedBox(height: 20),
+            for (final group in addonGroups(product!))
+              AddonGroupTile(
+                key: ValueKey('addons-${group.key}'),
+                group: group,
+                counts: modifiers,
                 currency: currency,
-                onChanged: (count) => onModifier(m.id, count),
+                expanded: expanded.contains(group.key),
+                onToggle: () => onToggleGroup(group.key),
+                onChanged: onModifier,
               ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           AnimatedSwitcher(
             duration: Motion.medium,
             child: showNotes
@@ -352,7 +437,10 @@ class _Details extends StatelessWidget {
                     minLines: 2,
                     maxLines: 4,
                     textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(labelText: l10n.productNote, hintText: l10n.productNoteHint),
+                    decoration: InputDecoration(
+                      labelText: drink ? l10n.productNote : l10n.productNoteFood,
+                      hintText: drink ? l10n.productNoteHint : l10n.productNoteFoodHint,
+                    ),
                   )
                 : Align(
                     key: const ValueKey('notes-button'),
@@ -360,10 +448,11 @@ class _Details extends StatelessWidget {
                     child: TextButton.icon(
                       onPressed: onShowNotes,
                       icon: const Icon(Icons.edit_note_rounded),
-                      label: Text(l10n.productNote),
+                      label: Text(drink ? l10n.productNote : l10n.productNoteFood),
                     ),
                   ),
           ),
+          if (pairing != null) ...[const SizedBox(height: 20), pairing!],
         ],
       ],
     );
@@ -383,41 +472,33 @@ class _Details extends StatelessWidget {
   };
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 22, bottom: 10),
-    child: Text(text, style: context.text.titleMedium),
-  );
-}
-
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label, this.tint});
+  const _MetaChip({required this.icon, required this.label, this.tint, this.wrap = false});
 
   final IconData icon;
   final String label;
   final Color? tint;
 
+  /// A long label (the allergens) wraps instead of running off the edge.
+  final bool wrap;
+
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
     final color = tint ?? brand.textSecondary;
+    final text = Text(label, style: context.text.labelMedium?.copyWith(color: brand.textPrimary));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: (tint ?? brand.latte).withValues(alpha: tint == null ? 0.6 : 0.16),
-        borderRadius: BorderRadius.circular(Radii.pill),
+        borderRadius: BorderRadius.circular(wrap ? Radii.input : Radii.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 15, color: color),
           const SizedBox(width: 5),
-          Text(label, style: context.text.labelMedium?.copyWith(color: brand.textPrimary)),
+          if (wrap) Flexible(child: text) else text,
         ],
       ),
     );
@@ -432,162 +513,26 @@ class _CaffeineChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
+    final label = AppLocalizations.of(context).productCaffeine;
     return Tooltip(
-      message: AppLocalizations.of(context).productCaffeine,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: brand.latte.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(Radii.pill),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < 4; i++)
-              Icon(Icons.coffee_rounded, size: 15, color: i < level ? brand.caramel : brand.border),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _VariationGroup extends StatelessWidget {
-  const _VariationGroup({
-    required this.title,
-    required this.options,
-    required this.selected,
-    required this.currency,
-    required this.segmented,
-    required this.onSelect,
-  });
-
-  final String title;
-  final List<Variation> options;
-  final String? selected;
-  final String currency;
-  final bool segmented;
-  final ValueChanged<String> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = context.brand;
-
-    Widget option(Variation v) {
-      final active = v.id == selected;
-      final delta = v.priceDeltaCents;
-      return Pressable(
-        onTap: () => onSelect(v.id),
-        child: AnimatedContainer(
-          duration: Motion.medium,
-          curve: Motion.emphasized,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      message: label,
+      child: Semantics(
+        label: '$label: $level/4',
+        excludeSemantics: true,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? brand.caramel : brand.foam,
-            borderRadius: BorderRadius.circular(segmented ? Radii.button : Radii.pill),
-            border: Border.all(color: active ? brand.caramel : brand.border),
-            boxShadow: active
-                ? [BoxShadow(color: brand.caramel.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))]
-                : null,
+            color: brand.latte.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(Radii.pill),
           ),
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                v.name,
-                textAlign: TextAlign.center,
-                style: context.text.labelLarge?.copyWith(color: active ? Colors.white : brand.textPrimary),
-              ),
-              if (delta != 0)
-                Text(
-                  '${delta > 0 ? '+' : '−'}${context.money(delta.abs(), currency)}',
-                  style: context.text.labelSmall?.copyWith(
-                    color: active ? Colors.white.withValues(alpha: 0.85) : brand.textTertiary,
-                  ),
-                ),
+              for (var i = 0; i < 4; i++)
+                Icon(Icons.coffee_rounded, size: 15, color: i < level ? brand.caramel : brand.border),
             ],
           ),
         ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionTitle(title),
-        if (segmented && options.length <= 4)
-          Row(
-            children: [
-              for (var i = 0; i < options.length; i++) ...[
-                if (i > 0) const SizedBox(width: 8),
-                Expanded(child: option(options[i])),
-              ],
-            ],
-          )
-        else
-          Wrap(spacing: 8, runSpacing: 8, children: [for (final v in options) option(v)]),
-      ],
-    );
-  }
-}
-
-class _ModifierRow extends StatelessWidget {
-  const _ModifierRow({required this.modifier, required this.count, required this.currency, required this.onChanged});
-
-  final Modifier modifier;
-  final int count;
-  final String currency;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = context.brand;
-    final l10n = AppLocalizations.of(context);
-    final active = count > 0;
-    final details = [
-      if (modifier.priceDeltaCents > 0) '+${context.money(modifier.priceDeltaCents, currency)}',
-      if (modifier.maxCount > 1) l10n.productAddonLimit(modifier.maxCount),
-    ].join(' · ');
-
-    return AnimatedContainer(
-      duration: Motion.medium,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: active ? brand.caramelSoft : brand.foam,
-        borderRadius: BorderRadius.circular(Radii.input),
-        border: Border.all(color: active ? brand.caramel.withValues(alpha: 0.5) : brand.borderLight),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(modifier.name, style: context.text.bodyLarge),
-                if (details.isNotEmpty) Text(details, style: context.text.bodySmall),
-              ],
-            ),
-          ),
-          if (modifier.maxCount <= 1)
-            Switch(
-              value: active,
-              onChanged: modifier.minCount >= 1
-                  ? null
-                  : (on) {
-                      HapticFeedback.selectionClick();
-                      onChanged(on ? 1 : 0);
-                    },
-            )
-          else
-            QuantityStepper(
-              value: count,
-              min: modifier.minCount,
-              max: modifier.maxCount,
-              compact: true,
-              onChanged: onChanged,
-            ),
-        ],
       ),
     );
   }
@@ -599,6 +544,7 @@ class _BottomBar extends StatelessWidget {
     required this.store,
     required this.quantity,
     required this.unitPrice,
+    required this.summary,
     required this.adding,
     required this.onQuantity,
     required this.onAdd,
@@ -608,6 +554,9 @@ class _BottomBar extends StatelessWidget {
   final Store? store;
   final int quantity;
   final int unitPrice;
+
+  /// The chosen options, so what goes into the cart is in view by the button.
+  final String summary;
   final bool adding;
   final ValueChanged<int> onQuantity;
   final VoidCallback? onAdd;
@@ -619,7 +568,7 @@ class _BottomBar extends StatelessWidget {
     final currency = store?.currency ?? 'USD';
 
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(16, 10, 16, 12 + MediaQuery.paddingOf(context).bottom),
       decoration: BoxDecoration(
         color: brand.foam,
         border: Border(top: BorderSide(color: brand.borderLight)),
@@ -633,23 +582,49 @@ class _BottomBar extends StatelessWidget {
               textAlign: TextAlign.center,
               style: context.text.bodyMedium?.copyWith(color: brand.berry),
             )
-          : Row(
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                QuantityStepper(value: quantity, min: 1, max: 20, onChanged: onQuantity),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: product.onStopList
-                      ? FilledButton(onPressed: null, child: Text(l10n.soldOut))
-                      : PrimaryButton(
-                          label: l10n.quickAdd,
-                          loading: adding,
-                          onPressed: onAdd,
-                          trailing: AnimatedMoney(
-                            cents: unitPrice * quantity,
-                            currency: currency,
-                            style: context.text.labelLarge!.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+                AnimatedSize(
+                  duration: Motion.medium,
+                  curve: Motion.emphasized,
+                  alignment: Alignment.bottomLeft,
+                  child: summary.isEmpty || product.onStopList
+                      ? const SizedBox(width: double.infinity)
+                      : Padding(
+                          padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+                          child: Text(
+                            summary,
+                            key: const ValueKey('bar-summary'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.text.bodySmall?.copyWith(color: brand.textSecondary),
                           ),
                         ),
+                ),
+                Row(
+                  children: [
+                    QuantityStepper(value: quantity, min: 1, max: 20, onChanged: onQuantity),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: product.onStopList
+                          ? FilledButton(onPressed: null, child: Text(l10n.soldOut))
+                          : PrimaryButton(
+                              label: l10n.quickAdd,
+                              loading: adding,
+                              onPressed: onAdd,
+                              trailing: AnimatedMoney(
+                                cents: unitPrice * quantity,
+                                currency: currency,
+                                style: context.text.labelLarge!.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -16,13 +16,14 @@ import 'web_payment.dart';
 
 /// A code the customer typed and what the server made of it.
 class AppliedCode {
-  const AppliedCode({this.code, this.cents = 0, this.message, this.ok = false, this.busy = false});
+  const AppliedCode({this.code, this.cents = 0, this.error, this.ok = false, this.busy = false});
 
   final String? code;
   final int cents;
 
-  /// Server's answer, success or refusal.
-  final String? message;
+  /// Why the server refused the code — an [ApiError] with the reason's code
+  /// when it gave one (see `errorMessage`); null otherwise.
+  final Object? error;
   final bool ok;
   final bool busy;
 
@@ -232,7 +233,14 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
           code: code,
           ok: result.valid,
           cents: result.valid ? result.discountCents : 0,
-          message: result.reason,
+          error: result.valid || (result.reasonCode == null && result.reason == null)
+              ? null
+              : ApiError(
+                  ApiErrorKind.rejected,
+                  message: result.reason,
+                  code: result.reasonCode,
+                  details: {'minOrderCents': result.minOrderCents, 'currency': result.currency},
+                ),
         ),
         promoMultiplier: result.valid ? result.pointsMultiplier : 1,
       );
@@ -240,7 +248,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
       if (state.points.spent > 0) unawaited(applyPoints(state.points.spent));
     } on Object catch (error) {
       state = state.copyWith(
-        promo: AppliedCode(code: code, message: ApiError.from(error).message),
+        promo: AppliedCode(code: code, error: ApiError.from(error)),
       );
     }
   }
@@ -262,7 +270,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
       );
     } on Object catch (error) {
       state = state.copyWith(
-        giftCard: AppliedCode(code: code, message: ApiError.from(error).message),
+        giftCard: AppliedCode(code: code, error: ApiError.from(error)),
       );
     }
   }

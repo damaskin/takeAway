@@ -20,14 +20,19 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/directions.dart';
 import '../../shared/money_text.dart';
+import '../../shared/product_kinds.dart';
+import '../../shared/store_kinds.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
+import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
+import '../catalog/product_visual.dart';
 import '../checkout/web_payment.dart';
+import '../product/product_options.dart';
 import 'order_progress.dart';
 import 'orders_providers.dart';
 
@@ -717,14 +722,16 @@ class _CodeCard extends StatelessWidget {
   }
 }
 
-class _StoreCard extends StatelessWidget {
+class _StoreCard extends ConsumerWidget {
   const _StoreCard({required this.order, required this.userPosition});
 
   final Order order;
   final LatLng? userPosition;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The order does not say what the store sells; the store list does.
+    final store = ref.watch(liveStoreProvider(order.storeId));
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final address = order.storeAddress;
@@ -757,7 +764,12 @@ class _StoreCard extends StatelessWidget {
           ),
           if (order.hasStoreLocation) ...[
             const SizedBox(height: 12),
-            StaticStoreMap(lat: order.storeLatitude, lng: order.storeLongitude, user: userPosition),
+            StaticStoreMap(
+              lat: order.storeLatitude,
+              lng: order.storeLongitude,
+              user: userPosition,
+              kinds: store == null ? const {StoreKind.coffee} : storeKinds(store),
+            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () => openDirections(order.storeLatitude, order.storeLongitude, label: order.storeName),
@@ -816,8 +828,10 @@ class _ItemsCard extends ConsumerWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  _ItemImage(storeId: order.storeId, productId: item.productId),
+                  const SizedBox(width: 12),
                   Text('${item.quantity}×', style: context.text.titleSmall?.copyWith(color: brand.caramel)),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -857,17 +871,42 @@ class _ItemOptions extends ConsumerWidget {
     }
     final detail = ref.watch(productDetailProvider(productId)).valueOrNull;
     final parts = <String>[
-      if (detail != null)
-        for (final v in detail.variations)
-          if (item.variationIds.contains(v.id)) v.name,
-      if (detail != null)
-        for (final m in detail.modifiers)
-          if ((item.modifiers[m.id] ?? 0) > 0)
-            item.modifiers[m.id]! > 1 ? '${item.modifiers[m.id]}× ${m.name}' : m.name,
+      optionsSummary(detail, item.variationIds, item.modifiers),
       if ((item.notes ?? '').isNotEmpty) '“${item.notes}”',
-    ];
+    ].where((part) => part.isNotEmpty);
     if (parts.isEmpty) return const SizedBox.shrink();
     return Text(parts.join(' · '), style: context.text.bodySmall);
+  }
+}
+
+/// A line's photo, or the illustration for its kind. The order keeps only
+/// the product id: the store's menu has the rest, and the product details
+/// when the menu no longer lists it.
+class _ItemImage extends ConsumerWidget {
+  const _ItemImage({required this.storeId, required this.productId});
+
+  final String storeId;
+  final String? productId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = productId;
+    ({String? imageUrl, ProductKind? kind}) visual = (imageUrl: null, kind: null);
+    if (id != null) {
+      visual = productVisualFor(ref, storeId, id);
+      if (visual.imageUrl == null && visual.kind == null && ref.watch(menuProvider(storeId)).hasValue) {
+        visual = productVisualFor(ref, storeId, id, detail: ref.watch(productDetailProvider(id)).valueOrNull);
+      }
+    }
+    return SizedBox.square(
+      dimension: 44,
+      child: ProductImage(
+        url: visual.imageUrl,
+        kind: visual.kind,
+        seed: id ?? '',
+        borderRadius: BorderRadius.circular(10),
+      ),
+    );
   }
 }
 

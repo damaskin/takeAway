@@ -7,30 +7,8 @@ import '../../shared/money_text.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/quantity_stepper.dart';
 import '../catalog/catalog_providers.dart';
-
-/// Human summary of a cart line's options — "Large · Oat milk · 2× Shot".
-/// Names come from the product details (the cart only stores ids), so the
-/// line renders with just the product name until they arrive.
-String optionsSummary(ProductDetail? product, List<String> variationIds, Map<String, int> modifiers) {
-  if (product == null) return '';
-  final parts = <String>[
-    for (final v in product.variations)
-      if (variationIds.contains(v.id)) v.name,
-    for (final m in product.modifiers)
-      if ((modifiers[m.id] ?? 0) > 0) (modifiers[m.id]! > 1 ? '${modifiers[m.id]}× ${m.name}' : m.name),
-  ];
-  return parts.join(' · ');
-}
-
-/// Photo for a product id, looked up in the store's loaded menu.
-String? menuImageFor(WidgetRef ref, String storeId, String productId) {
-  final menu = ref.watch(menuProvider(storeId)).valueOrNull?.value;
-  if (menu == null) return null;
-  for (final product in menu.allProducts) {
-    if (product.id == productId) return product.imageUrl;
-  }
-  return null;
-}
+import '../catalog/product_visual.dart';
+import '../product/product_options.dart';
 
 class CartLine extends ConsumerWidget {
   const CartLine({
@@ -51,7 +29,7 @@ class CartLine extends ConsumerWidget {
     final brand = context.brand;
     final detail = ref.watch(productDetailProvider(item.productId)).valueOrNull;
     final options = optionsSummary(detail, item.variationIds, item.modifiers);
-    final image = menuImageFor(ref, storeId, item.productId) ?? detail?.imageUrl;
+    final visual = productVisualFor(ref, storeId, item.productId, detail: detail);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -66,7 +44,12 @@ class CartLine extends ConsumerWidget {
           SizedBox(
             width: 72,
             height: 72,
-            child: ProductImage(url: image, seed: item.productId, borderRadius: BorderRadius.circular(16)),
+            child: ProductImage(
+              url: visual.imageUrl,
+              kind: visual.kind,
+              seed: item.productId,
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

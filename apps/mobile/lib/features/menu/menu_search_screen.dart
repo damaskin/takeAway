@@ -6,6 +6,7 @@ import '../../app/router.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
+import '../../shared/product_kinds.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/state_views.dart';
@@ -24,14 +25,14 @@ class MenuSearchScreen extends StatefulWidget {
 
 class _MenuSearchScreenState extends State<MenuSearchScreen> {
   final _query = TextEditingController();
-  List<(Product, String)> _all = const [];
+  List<(Product, MenuCategory)> _all = const [];
 
   @override
   void initState() {
     super.initState();
     _all = [
       for (final category in widget.menu.visibleCategories)
-        for (final product in category.products) (product, category.name),
+        for (final product in category.products) (product, category),
     ];
     _query.addListener(() => setState(() {}));
   }
@@ -44,12 +45,12 @@ class _MenuSearchScreenState extends State<MenuSearchScreen> {
 
   static String _fold(String s) => s.toLowerCase().replaceAll('ё', 'е').trim();
 
-  List<(Product, String)> get _results {
+  List<(Product, MenuCategory)> get _results {
     final terms = _fold(_query.text).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
     if (terms.isEmpty) return const [];
     return _all.where((entry) {
       final (product, category) = entry;
-      final haystack = _fold('${product.name} ${product.description ?? ''} $category');
+      final haystack = _fold('${product.name} ${product.description ?? ''} ${category.name}');
       return terms.every(haystack.contains);
     }).toList();
   }
@@ -108,6 +109,7 @@ class _MenuSearchScreenState extends State<MenuSearchScreen> {
                           height: 64,
                           child: ProductImage(
                             url: product.imageUrl,
+                            kind: productKindOf(product, categoryKind: category.kind),
                             seed: product.id,
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -119,7 +121,7 @@ class _MenuSearchScreenState extends State<MenuSearchScreen> {
                             children: [
                               Text(product.name, style: context.text.titleSmall, maxLines: 2),
                               const SizedBox(height: 2),
-                              Text(category, style: context.text.bodySmall),
+                              Text(category.name, style: context.text.bodySmall),
                             ],
                           ),
                         ),

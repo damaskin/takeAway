@@ -7,6 +7,7 @@ import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/product_kinds.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../catalog/catalog_providers.dart';
@@ -226,8 +227,11 @@ class _MenuViewState extends ConsumerState<_MenuView> {
                           childAspectRatio: 0.66,
                         ),
                         itemCount: categories[i].products.length,
-                        itemBuilder: (context, index) =>
-                            ProductCard(product: categories[i].products[index], store: store),
+                        itemBuilder: (context, index) => ProductCard(
+                          product: categories[i].products[index],
+                          store: store,
+                          kind: productKindOf(categories[i].products[index], categoryKind: categories[i].kind),
+                        ),
                       ),
                     ),
                   ],

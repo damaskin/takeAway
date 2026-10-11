@@ -5,7 +5,7 @@ enum ApiErrorKind { network, unauthorized, notFound, conflict, rateLimited, reje
 /// A failed API call, reduced to what the UI needs: a kind to branch on and,
 /// when the server gave one, its human-readable message.
 class ApiError implements Exception {
-  const ApiError(this.kind, {this.message, this.statusCode});
+  const ApiError(this.kind, {this.message, this.statusCode, this.code, this.details = const {}});
 
   /// Normalises anything thrown by the data layer.
   factory ApiError.from(Object error) {
@@ -28,9 +28,19 @@ class ApiError implements Exception {
     }
 
     final status = error.response?.statusCode;
-    final message = _serverMessage(error.response?.data);
+    final data = error.response?.data;
+    final message = _serverMessage(data);
+    final code = data is Map && data['code'] is String ? data['code'] as String : null;
+    final details = data is Map
+        ? {for (final e in data.entries) '${e.key}': e.value as Object?}
+        : const <String, Object?>{};
     if (status == null) {
-      return ApiError(error.error is Exception ? ApiErrorKind.network : ApiErrorKind.unknown, message: message);
+      return ApiError(
+        error.error is Exception ? ApiErrorKind.network : ApiErrorKind.unknown,
+        message: message,
+        code: code,
+        details: details,
+      );
     }
     final kind = switch (status) {
       401 || 403 => ApiErrorKind.unauthorized,
@@ -41,7 +51,7 @@ class ApiError implements Exception {
       >= 400 => ApiErrorKind.rejected,
       _ => ApiErrorKind.unknown,
     };
-    return ApiError(kind, message: message, statusCode: status);
+    return ApiError(kind, message: message, statusCode: status, code: code, details: details);
   }
 
   final ApiErrorKind kind;
@@ -50,6 +60,15 @@ class ApiError implements Exception {
   /// validation messages.
   final String? message;
   final int? statusCode;
+
+  /// Stable reason the server gave beside the English [message] —
+  /// `PROMO_EXPIRED`, `ITEMS_UNAVAILABLE`… The app words it (see
+  /// `checkoutErrorText`).
+  final String? code;
+
+  /// The rest of the error body: what the words for [code] need, such as the
+  /// items that ran out or the minimum order.
+  final Map<String, Object?> details;
 
   bool get isNetwork => kind == ApiErrorKind.network;
 
