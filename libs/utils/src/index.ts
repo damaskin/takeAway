@@ -7,3 +7,5 @@ export * from './lib/order-item';
 export * from './lib/store';
 export * from './lib/store-kinds';
 export * from './lib/store-time-zone';
+export * from './lib/category-kind';
+export * from './lib/allergens';
