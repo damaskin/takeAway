@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject } from '@angular/core';
+import { Component, DestroyRef, computed, inject, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -8,6 +8,7 @@ import { BrandLogoComponent } from '@takeaway/ui-kit';
 
 import { AuthStore } from '../core/auth/auth.store';
 import { BrandsService } from '../core/brands/brands.service';
+import { CampaignModerationApi } from '../core/campaigns/campaign-moderation.service';
 import { FeedbackApi } from '../core/feedback/feedback.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
@@ -26,10 +27,13 @@ interface NavItem {
   /** Role gate — item is hidden for users whose role is not in this list. */
   roles?: ReadonlyArray<AdminRole>;
   /** A live counter shown next to the label. */
-  badge?: 'pendingBrands' | 'pendingOrders' | 'newFeedback';
+  badge?: 'pendingBrands' | 'pendingOrders' | 'newFeedback' | 'pendingCampaigns';
   /** The plan feature the section needs; without it the item shows a PRO lock and opens the upgrade page. */
   planFeature?: PlanFeature;
 }
+
+/** A brand's staff, who write to the platform team — mirrors `@Roles` on `POST /admin/support`. */
+const SUPPORT_ROLES: ReadonlyArray<AdminRole> = ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF'];
 
 /**
  * Admin sidebar — pencil F52Ar (Component/Nav/AdminSidebar).
@@ -83,11 +87,21 @@ interface NavItem {
               >{{ 'admin.plans.proBadge' | translate }}</span
             >
           }
-          @if (item.badge === 'pendingBrands' && pendingBrands(); as count) {
+          @if (item.badge === 'pendingBrands' && brandsWaiting(); as count) {
             <span
               class="admin-nav-badge"
-              [title]="'admin.brands.pendingBadge' | translate: { count: count }"
-              [attr.aria-label]="'admin.brands.pendingBadge' | translate: { count: count }"
+              [title]="'admin.brands.waitingBadge' | translate: { brands: pendingBrands(), plans: planRequests() }"
+              [attr.aria-label]="
+                'admin.brands.waitingBadge' | translate: { brands: pendingBrands(), plans: planRequests() }
+              "
+              >{{ count }}</span
+            >
+          }
+          @if (item.badge === 'pendingCampaigns' && pendingCampaigns(); as count) {
+            <span
+              class="admin-nav-badge"
+              [title]="'admin.campaignModeration.pendingBadge' | translate: { count: count }"
+              [attr.aria-label]="'admin.campaignModeration.pendingBadge' | translate: { count: count }"
               >{{ count }}</span
             >
           }
@@ -103,6 +117,12 @@ interface NavItem {
       }
 
       <div class="admin-aside-bottom flex flex-col" style="gap: 8px">
+        @if (canWriteSupport()) {
+          <button type="button" class="admin-support flex items-center" (click)="supportRequested.emit()">
+            <span style="font-size: 18px" aria-hidden="true">✉</span>
+            <span class="flex-1" style="text-align: left">{{ 'admin.support.entry' | translate }}</span>
+          </button>
+        }
         @if (pwa.canInstall()) {
           <button
             type="button"
@@ -193,6 +213,23 @@ interface NavItem {
         color: var(--color-caramel);
         border-color: var(--color-caramel);
       }
+      .admin-support {
+        flex: 0 0 auto;
+        height: 42px;
+        padding: 0 12px;
+        gap: 10px;
+        border-radius: 10px;
+        border: 1px solid var(--color-border-light);
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .admin-support:hover {
+        color: var(--color-caramel);
+        border-color: var(--color-caramel);
+      }
     `,
   ],
 })
@@ -202,15 +239,32 @@ export class AdminSidebarComponent {
   private readonly brands = inject(BrandsService);
   private readonly orderAlerts = inject(OrderAlertsService);
   private readonly feedback = inject(FeedbackApi);
+  private readonly campaignModeration = inject(CampaignModerationApi);
   readonly pwa = inject(PwaService);
   readonly plans = inject(PlanAccess);
 
-  /** Brands waiting for a platform admin's decision; zero hides the badge. */
+  /** Brands waiting for a platform admin's decision. */
   readonly pendingBrands = computed(() => this.brands.pendingCount() ?? 0);
+  /** Owners waiting for an answer about their plan («Перейти на PRO»). */
+  readonly planRequests = computed(() => this.brands.planRequests() ?? 0);
+  /** Both, on «Бренды»; zero hides the badge. */
+  readonly brandsWaiting = computed(() => this.pendingBrands() + this.planRequests());
+  /** Business campaigns waiting for review; zero hides the badge. */
+  readonly pendingCampaigns = computed(() => this.campaignModeration.pendingCount() ?? 0);
   /** Orders nobody has accepted yet, across the brand's stores; zero hides it. */
   readonly pendingOrders = computed(() => this.orderAlerts.pendingCount());
   /** Customer feedback nobody has read yet; zero hides it. */
   readonly newFeedback = computed(() => this.feedback.newCount() ?? 0);
+  /** A brand's staff write to the platform team; the platform team is who they write to. */
+  readonly canWriteSupport = computed(() => {
+    const role = this.authStore.user()?.role as AdminRole | undefined;
+    return role !== undefined && SUPPORT_ROLES.includes(role);
+  });
+  /**
+   * «Написать в поддержку» was pressed. The layout opens the dialog: inside
+   * the phone drawer (a transformed box) a fixed dialog would be trapped.
+   */
+  readonly supportRequested = output<void>();
 
   constructor() {
     // New applications arrive while the platform admin works, so the count
@@ -219,6 +273,7 @@ export class AdminSidebarComponent {
       if (this.authStore.user()?.role !== 'SUPER_ADMIN') return;
       this.brands.loadPendingCount();
       this.feedback.loadNewCount();
+      this.campaignModeration.loadPendingCount();
     };
     refresh();
     inject(Router)
@@ -273,6 +328,13 @@ export class AdminSidebarComponent {
       link: '/campaigns',
       roles: ADMIN_ROLES.campaigns,
       planFeature: NAV_PLAN_FEATURE.campaigns,
+    },
+    {
+      icon: '🛡',
+      label: 'admin.nav.campaignModeration',
+      link: '/campaign-moderation',
+      roles: ADMIN_ROLES.campaignModeration,
+      badge: 'pendingCampaigns',
     },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
     {

@@ -1,12 +1,19 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+
+import { formatPhone, normalizePhone } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { BRAND_CURRENCIES, type BrandLocale } from '../../core/business/business.service';
 import { apiErrorCode } from '../../core/http/api-error';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { MyBrand, SettingsService } from '../../core/settings/settings.service';
+import { phoneValidator } from '../../shared/phone.validator';
+import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
+import { SupportDialogComponent } from '../../shared/support-dialog.component';
 import { PlanCardComponent } from './plan-card.component';
 
 /**
@@ -30,7 +37,7 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
 @Component({
   selector: 'app-admin-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, PlanCardComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, PlanCardComponent, OnboardingReturnComponent, SupportDialogComponent],
   styles: [
     `
       .status-pill[data-status='PENDING'] {
@@ -55,6 +62,8 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
       <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0 0 24px">
         {{ 'admin.settings.subtitle' | translate }}
       </p>
+
+      <app-onboarding-return step="brand" />
 
       @if (loading()) {
         <p style="color: var(--color-text-secondary)">{{ 'common.loading' | translate }}</p>
@@ -87,6 +96,34 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
               type="text"
               style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none"
             />
+          </label>
+
+          <label class="flex flex-col" style="gap: 6px">
+            <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+              'admin.settings.contactPhone' | translate
+            }}</span>
+            <input
+              formControlName="contactPhone"
+              type="tel"
+              autocomplete="tel"
+              [placeholder]="'admin.signup.phonePlaceholder' | translate"
+              [attr.aria-invalid]="form.controls.contactPhone.invalid"
+              style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none"
+            />
+            @if (form.controls.contactPhone.invalid && form.controls.contactPhone.dirty) {
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry)">{{
+                (form.controls.contactPhone.hasError('required')
+                  ? 'admin.signup.phoneRequired'
+                  : 'admin.signup.phoneInvalid'
+                ) | translate
+              }}</span>
+            } @else {
+              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
+                phonePreview()
+                  ? ('admin.signup.phoneWillSave' | translate: { phone: phonePreview() })
+                  : ('admin.settings.contactPhoneHint' | translate)
+              }}</span>
+            }
           </label>
 
           <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px">
@@ -211,10 +248,19 @@ const THEME_FIELDS: ReadonlyArray<{ cssVar: string; labelKey: string }> = [
           }
         </form>
         @if (brand()!.plan; as plan) {
-          <app-plan-card [plan]="plan" [commissionBps]="brand()!.commissionBps" [platformAdmin]="isPlatformAdmin()" />
+          <app-plan-card
+            [plan]="plan"
+            [commissionBps]="brand()!.commissionBps"
+            [platformAdmin]="isPlatformAdmin()"
+            [planRequestedAt]="brand()!.planRequestedAt"
+            (support)="supportOpen.set(true)"
+          />
         }
       } @else if (error()) {
         <p style="color: var(--color-berry)">{{ error() }}</p>
+      }
+      @if (supportOpen()) {
+        <app-support-dialog (closed)="supportOpen.set(false)" />
       }
     </section>
   `,
@@ -224,8 +270,11 @@ export class AdminSettingsPage {
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly auth = inject(AuthStore);
+  private readonly onboarding = inject(OnboardingFlowService);
 
   readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
+  /** «Написать в поддержку», from the plan card. */
+  readonly supportOpen = signal(false);
   readonly themeFields = THEME_FIELDS;
   readonly currencies = BRAND_CURRENCIES;
   readonly brand = signal<MyBrand | null>(null);
@@ -237,6 +286,7 @@ export class AdminSettingsPage {
 
   readonly form: FormGroup<{
     name: FormControl<string>;
+    contactPhone: FormControl<string>;
     currency: FormControl<string>;
     locale: FormControl<BrandLocale>;
     logoUrl: FormControl<string>;
@@ -244,6 +294,12 @@ export class AdminSettingsPage {
   }>;
 
   readonly hasChanges = computed(() => this.form.dirty);
+  private readonly phoneValue = signal('');
+  /** The number as it will be saved — «+373 69 123 456» — so a misread local number shows before saving. */
+  readonly phonePreview = computed(() => {
+    const e164 = normalizePhone(this.phoneValue());
+    return e164 ? formatPhone(e164) : null;
+  });
 
   constructor() {
     const themeCtrls: Record<string, FormControl<string>> = {};
@@ -252,6 +308,9 @@ export class AdminSettingsPage {
     }
     this.form = new FormGroup({
       name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
+      // Optional here only for brands from before sign-up asked for it;
+      // once there is a number it can be changed, not removed.
+      contactPhone: new FormControl('', { nonNullable: true, validators: [phoneValidator({ required: false })] }),
       currency: new FormControl('MDL', { nonNullable: true, validators: [Validators.required] }),
       locale: new FormControl<BrandLocale>('RU', { nonNullable: true }),
       logoUrl: new FormControl('', { nonNullable: true }),
@@ -259,6 +318,7 @@ export class AdminSettingsPage {
     });
 
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
+    this.form.controls.contactPhone.valueChanges.pipe(takeUntilDestroyed()).subscribe((v) => this.phoneValue.set(v));
 
     // A SUPER_ADMIN's brand is whichever one the top-bar selector is on, so
     // wait for the brand context and reload when it changes. BRAND_ADMIN
@@ -278,10 +338,16 @@ export class AdminSettingsPage {
         this.brand.set(brand);
         this.form.patchValue({
           name: brand.name,
+          contactPhone: brand.contactPhone ? formatPhone(brand.contactPhone) : '',
           currency: brand.currency,
           locale: brand.locale,
           logoUrl: brand.logoUrl ?? '',
         });
+        // A number once given can be changed but not removed — the API
+        // keeps it either way, so the form says so instead of pretending.
+        const phone = this.form.controls.contactPhone;
+        phone.setValidators(phoneValidator({ required: Boolean(brand.contactPhone) }));
+        phone.updateValueAndValidity({ emitEvent: false });
         // Orders are summed in the brand's currency; the API refuses a new
         // one after the first order, so the form does not offer it.
         const currency = this.form.controls.currency;
@@ -317,6 +383,7 @@ export class AdminSettingsPage {
     this.settings
       .updateMyBrand({
         name: v.name.trim(),
+        ...(v.contactPhone.trim() ? { contactPhone: v.contactPhone.trim() } : {}),
         ...(this.form.controls.currency.enabled ? { currency: v.currency } : {}),
         locale: v.locale,
         logoUrl: v.logoUrl.trim() || undefined,
@@ -332,6 +399,8 @@ export class AdminSettingsPage {
           this.saving.set(false);
           this.saved.set(true);
           setTimeout(() => this.saved.set(false), 3000);
+          // Opened from «Запуск бренда»: back to it once the step is done.
+          void this.onboarding.afterSave('brand');
         },
         error: (err) => {
           this.saving.set(false);
