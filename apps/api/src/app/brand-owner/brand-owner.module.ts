@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 
+import { FeedbackModule } from '../feedback/feedback.module';
 import { OnboardingModule } from '../onboarding/onboarding.module';
 import { BrandOwnerController } from './brand-owner.controller';
 import { BrandOwnerService } from './brand-owner.service';
 
 @Module({
-  imports: [OnboardingModule],
+  imports: [OnboardingModule, FeedbackModule],
   controllers: [BrandOwnerController],
   providers: [BrandOwnerService],
 })

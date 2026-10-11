@@ -29,6 +29,7 @@ export type NavKey =
   | 'giftCards'
   | 'promotions'
   | 'campaigns'
+  | 'campaignModeration'
   | 'analytics'
   | 'customers'
   | 'brands'
@@ -72,6 +73,8 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // guarded by its own key. Whoever may open either tab sees the section.
   promotions: [SA, BA],
   campaigns: [SA, BA],
+  // Every brand's campaigns waiting for review — the platform team decides.
+  campaignModeration: [SA],
   analytics: [SA, BA],
   customers: [SA, BA],
   brands: [SA],
@@ -84,17 +87,29 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   telegramLink: [BA, SM, ST],
 };
 
-export function canAccess(role: AdminRole | undefined | null, key: NavKey): boolean {
+/**
+ * What a kitchen PIN session may open, whatever the role behind the PIN:
+ * the board and the stop-list of its store. The API refuses it everything
+ * else (KdsSessionGuard), so the cabinet does not offer it either.
+ */
+export const KITCHEN_SESSION_NAV: ReadonlyArray<NavKey> = ['kitchen', 'stopList'];
+
+/**
+ * Whether a role sees a section. `kitchenOnly` is a kitchen PIN session,
+ * which sees only {@link KITCHEN_SESSION_NAV}.
+ */
+export function canAccess(role: AdminRole | undefined | null, key: NavKey, kitchenOnly = false): boolean {
   if (!role) return false;
+  if (kitchenOnly && !KITCHEN_SESSION_NAV.includes(key)) return false;
   return ADMIN_ROLES[key].includes(role);
 }
 
 /** First nav section accessible to the given role — used as a landing fallback. */
-export function defaultLandingFor(role: AdminRole | undefined | null): string {
+export function defaultLandingFor(role: AdminRole | undefined | null, kitchenOnly = false): string {
   if (!role) return '/login';
   const order: NavKey[] = ['platform', 'dashboard', 'kitchen', 'orders', 'menu', 'stores', 'analytics', 'settings'];
   for (const k of order) {
-    if (canAccess(role, k)) return navLink(k);
+    if (canAccess(role, k, kitchenOnly)) return navLink(k);
   }
   return '/change-password';
 }
@@ -116,6 +131,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   giftCards: '/promotions/gift-cards',
   promotions: '/promotions',
   campaigns: '/campaigns',
+  campaignModeration: '/campaign-moderation',
   analytics: '/analytics',
   customers: '/customers',
   brands: '/brands',

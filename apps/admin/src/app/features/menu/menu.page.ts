@@ -14,6 +14,7 @@ import {
   type StopListEntryDto,
   type StoreAdminDto,
 } from '../../core/catalog/admin-catalog.service';
+import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
 import { describeMenuError } from './menu-errors';
 import { MenuCategoriesComponent } from './menu-categories.component';
 import { swapped } from './menu-order';
@@ -42,7 +43,7 @@ type StockUntil = 'manual' | 'endOfDay';
 @Component({
   selector: 'app-menu',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, MenuCategoriesComponent],
+  imports: [RouterLink, TranslatePipe, MenuCategoriesComponent, OnboardingReturnComponent],
   template: `
     <!-- Top bar -->
     <div
@@ -109,6 +110,7 @@ type StockUntil = 'manual' | 'endOfDay';
       </p>
     }
 
+    <app-onboarding-return step="menu" [padded]="true" />
     <section class="menu-shell" [class.rail-folded]="railFolded()">
       @if (!railFolded()) {
         <app-menu-categories

@@ -32,6 +32,15 @@ describe('RealtimeGateway store rooms', () => {
     const { gw, client } = gateway('SUPER_ADMIN', '*');
     await expect(gw.subscribeToDispatch(client, { storeId: 'any' })).resolves.toEqual({ ok: true });
   });
+
+  it('keeps a kitchen PIN socket on its own store’s board and off the delivery queue', async () => {
+    const { gw, client } = gateway('STORE_MANAGER', ['store-1', 'store-2']);
+    (client.data as Record<string, unknown>)['kdsStoreId'] = 'store-1';
+
+    await expect(gw.subscribeToKds(client, { storeId: 'store-2' })).resolves.toEqual({ ok: false });
+    await expect(gw.subscribeToKds(client, { storeId: 'store-1' })).resolves.toEqual({ ok: true });
+    await expect(gw.subscribeToDispatch(client, { storeId: 'store-1' })).resolves.toEqual({ ok: false });
+  });
 });
 
 describe('RealtimeGateway handshake', () => {
@@ -54,6 +63,17 @@ describe('RealtimeGateway handshake', () => {
     await gw.handleConnection(socket);
     expect(client.join).toHaveBeenCalledWith('user:u1');
     expect(client.disconnect).not.toHaveBeenCalled();
+    expect(client.data['kdsStoreId']).toBeUndefined();
+  });
+
+  it('remembers the store of a kitchen PIN session from its token', async () => {
+    const { gw, client, socket } = connect({ blockedAt: null });
+    (gw as unknown as { jwt: { verifyAsync: jest.Mock } }).jwt.verifyAsync.mockResolvedValue({
+      sub: 'u1',
+      kds: 'store-1',
+    });
+    await gw.handleConnection(socket);
+    expect(client.data['kdsStoreId']).toBe('store-1');
   });
 
   it.each([
@@ -109,6 +129,71 @@ describe('RealtimeGateway anonymous sockets', () => {
     verifyAsync.mockRejectedValue(new Error('jwt expired'));
     await gw.handleConnection(socket);
     expect(client.disconnect).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('RealtimeGateway anonymous socket limits', () => {
+  function gatewayWith(env: Record<string, string> = {}) {
+    const config = { get: jest.fn((key: string) => env[key]) } as unknown as ConfigService;
+    const gw = new RealtimeGateway({} as JwtService, config, {} as PrismaService, {} as UserStoreScopeService);
+    let n = 0;
+    const open = () => {
+      const client = {
+        id: `anon-${++n}`,
+        handshake: { auth: {}, headers: {}, query: {} },
+        data: {} as Record<string, unknown>,
+        join: jest.fn(),
+        disconnect: jest.fn(),
+        conn: { close: jest.fn() },
+      };
+      return { client, socket: client as unknown as Socket };
+    };
+    return { gw, open };
+  }
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('recycles an anonymous socket by dropping its transport, so the client reconnects on its own', async () => {
+    jest.useFakeTimers();
+    const { gw, open } = gatewayWith({ REALTIME_ANONYMOUS_MAX_AGE_SECONDS: '600' });
+    const { client, socket } = open();
+    await gw.handleConnection(socket);
+
+    jest.advanceTimersByTime(600 * 0.75 * 1000 - 1000);
+    expect(client.conn.close).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(600 * 0.25 * 1000 + 2000);
+    expect(client.conn.close).toHaveBeenCalledTimes(1);
+    // A transport close, not a server kick: socket.io clients do not retry
+    // after `disconnect(true)` by themselves.
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('forgets a socket that left, so it neither counts nor gets closed later', async () => {
+    jest.useFakeTimers();
+    const { gw, open } = gatewayWith({ REALTIME_MAX_ANONYMOUS_SOCKETS: '1' });
+    const first = open();
+    await gw.handleConnection(first.socket);
+    gw.handleDisconnect(first.socket);
+
+    const second = open();
+    await gw.handleConnection(second.socket);
+    expect(second.client.disconnect).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(31 * 60 * 1000);
+    expect(first.client.conn.close).not.toHaveBeenCalled();
+  });
+
+  it('turns new anonymous sockets away past REALTIME_MAX_ANONYMOUS_SOCKETS', async () => {
+    const { gw, open } = gatewayWith({ REALTIME_MAX_ANONYMOUS_SOCKETS: '2' });
+    const sockets = [open(), open(), open()];
+    for (const s of sockets) await gw.handleConnection(s.socket);
+
+    expect(sockets[0]?.client.disconnect).not.toHaveBeenCalled();
+    expect(sockets[1]?.client.disconnect).not.toHaveBeenCalled();
+    expect(sockets[2]?.client.disconnect).toHaveBeenCalledWith(true);
+    for (const s of sockets) gw.handleDisconnect(s.socket);
   });
 });
 

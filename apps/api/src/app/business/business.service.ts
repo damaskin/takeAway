@@ -17,7 +17,6 @@ export const SignupConflict = {
   EMAIL_TAKEN: 'EMAIL_TAKEN',
   /** A customer signs in with this email (Google / Apple) and has no password to sign in with here. */
   EMAIL_CUSTOMER_ACCOUNT: 'EMAIL_CUSTOMER_ACCOUNT',
-  PHONE_TAKEN: 'PHONE_TAKEN',
 } as const;
 
 /**
@@ -32,7 +31,10 @@ interface RegisterInput {
   email: string;
   passwordHash: string;
   ownerName: string;
-  phone: string | undefined;
+  /** The brand's contact phone — always stored. */
+  phone: string;
+  /** Whether the owner's own account gets the phone too: only while no other account has it. */
+  phoneOnAccount: boolean;
   locale: Locale;
   currency: Currency;
   brandName: string;
@@ -51,7 +53,7 @@ export class BusinessService {
 
   async register(dto: BusinessRegisterDto): Promise<BusinessRegisterResponseDto> {
     const email = dto.email.toLowerCase();
-    await this.assertAvailable(email, dto.phone);
+    await this.assertAvailable(email);
 
     const passwordHash = await this.passwords.hash(dto.password);
     const { brand, user } = await this.createBrandAndOwner({
@@ -59,6 +61,7 @@ export class BusinessService {
       passwordHash,
       ownerName: dto.ownerName,
       phone: dto.phone,
+      phoneOnAccount: !(await this.phoneInUse(dto.phone)),
       locale: dto.locale,
       currency: dto.currency,
       brandName: dto.brandName,
@@ -105,7 +108,7 @@ export class BusinessService {
    * into a staff account behind its owner's back is worse than asking for a
    * different address.
    */
-  private async assertAvailable(email: string, phone: string | undefined): Promise<void> {
+  private async assertAvailable(email: string): Promise<void> {
     const byEmail = await this.prisma.user.findUnique({ where: { email }, select: { role: true } });
     if (byEmail?.role === Role.CUSTOMER) {
       throw codedConflict(
@@ -115,25 +118,35 @@ export class BusinessService {
       );
     }
     if (byEmail) throw emailTaken();
+  }
 
-    if (phone) {
-      const byPhone = await this.prisma.user.findUnique({ where: { phone }, select: { id: true } });
-      if (byPhone) throw phoneTaken();
-    }
+  /**
+   * A phone is unique across accounts, and the owner may well already have
+   * one with it — as a customer of the app. The sign-up is never refused for
+   * that: the number is the brand's contact phone, and only stays off the
+   * owner's own account.
+   */
+  private async phoneInUse(phone: string): Promise<boolean> {
+    const byPhone = await this.prisma.user.findUnique({ where: { phone }, select: { id: true } });
+    return byPhone !== null;
   }
 
   private async createBrandAndOwner(input: RegisterInput) {
+    let current = input;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.runRegisterTx(input);
+        return await this.runRegisterTx(current);
       } catch (err) {
         // The checks above and the insert are not atomic: a concurrent
         // sign-up can still claim the email, phone or slug in between.
         // Answer with the field that actually clashed.
         const field = uniqueViolationField(err);
         if (field === 'slug' && attempt < SLUG_ATTEMPTS) continue;
+        if (field === 'phone' && current.phoneOnAccount) {
+          current = { ...current, phoneOnAccount: false };
+          continue;
+        }
         if (field === 'email') throw emailTaken();
-        if (field === 'phone') throw phoneTaken();
         if (field === 'slug') throw new ConflictException('Could not reserve an address for this brand — try again');
 
         this.logger.error(
@@ -162,7 +175,7 @@ export class BusinessService {
           email: input.email,
           passwordHash: input.passwordHash,
           name: input.ownerName,
-          phone: input.phone,
+          phone: input.phoneOnAccount ? input.phone : null,
           role: Role.BRAND_ADMIN,
           locale: input.locale,
           currency: input.currency,
@@ -173,6 +186,7 @@ export class BusinessService {
           slug,
           name: input.brandName,
           ownerId: user.id,
+          contactPhone: input.phone,
           currency: input.currency,
           locale: input.locale,
           moderationStatus: BrandModerationStatus.PENDING,
@@ -189,10 +203,6 @@ function emailTaken(): ConflictException {
     'An account with this email already exists. Sign in or reset the password.',
     'email',
   );
-}
-
-function phoneTaken(): ConflictException {
-  return codedConflict(SignupConflict.PHONE_TAKEN, 'This phone number is already used by another account.', 'phone');
 }
 
 /**

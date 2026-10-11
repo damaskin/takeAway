@@ -29,6 +29,7 @@ import {
   type KitchenRejectReason,
   type StoreShift,
 } from '../../core/kitchen/kitchen.api';
+import { KitchenDeviceService } from '../../core/kitchen/kitchen-device.service';
 import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
@@ -96,6 +97,20 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
             <strong>{{ orders().length }}</strong> {{ 'kds.topbar.inQueue' | translate }}
           </span>
           <span class="kitchen-clock">{{ clock() }}</span>
+          @if (canMarkBusy()) {
+            <button
+              type="button"
+              class="kitchen-tool kitchen-busy"
+              [class.kitchen-busy-on]="markedBusy()"
+              [attr.aria-pressed]="markedBusy()"
+              [disabled]="busyToggling()"
+              [title]="(markedBusy() ? 'admin.kitchen.busy.onHint' : 'admin.kitchen.busy.offHint') | translate"
+              data-testid="kitchen-busy"
+              (click)="toggleBusy()"
+            >
+              {{ (markedBusy() ? 'admin.kitchen.busy.on' : 'admin.kitchen.busy.off') | translate }}
+            </button>
+          }
           <a
             class="kitchen-tool kitchen-link"
             routerLink="/stop-list"
@@ -167,6 +182,11 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         }
         @if (shiftError()) {
           <p class="kitchen-error" role="alert">{{ shiftError() }}</p>
+        }
+        @if (sh.open && markedBusy()) {
+          <p class="kitchen-busy-note" role="status" data-testid="kitchen-busy-note">
+            {{ 'admin.kitchen.busy.note' | translate }}
+          </p>
         }
       }
 
@@ -383,6 +403,16 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         display: inline-flex;
         align-items: center;
         text-decoration: none;
+      }
+      .kitchen-busy-on {
+        background: var(--color-amber);
+        border-color: var(--color-amber);
+        color: #3d2a05;
+      }
+      .kitchen-busy-note {
+        margin: 0;
+        font-size: 13px;
+        color: #8a6720;
       }
       .kitchen-head {
         display: flex;
@@ -770,6 +800,7 @@ export class KitchenPage {
   readonly mode = inject(KitchenModeService);
   readonly alerts = inject(OrderAlertsService);
   private readonly auth = inject(AuthService);
+  private readonly device = inject(KitchenDeviceService);
 
   readonly columns = KITCHEN_COLUMNS;
   readonly stores = signal<KitchenStore[]>([]);
@@ -785,6 +816,13 @@ export class KitchenPage {
   readonly shift = signal<StoreShift | null>(null);
   readonly shiftBusy = signal(false);
   readonly shiftError = signal<string | null>(null);
+  /** «Загружены»: the kitchen marked the store busy — customers see it, orders still come. */
+  readonly markedBusy = computed(() => !!this.shift()?.busy);
+  /** The switch shows while a shift is open in a store that is not switched off. */
+  readonly canMarkBusy = computed(
+    () => !!this.shift()?.open && this.shift()?.busy !== undefined && this.store()?.status !== 'CLOSED',
+  );
+  readonly busyToggling = signal(false);
 
   readonly rejectReasons = KITCHEN_REJECT_REASONS;
   readonly commentMax = KITCHEN_REJECT_COMMENT_MAX;
@@ -998,6 +1036,34 @@ export class KitchenPage {
     });
   }
 
+  /** «Загружены» on or off for the store on the board. */
+  toggleBusy(): void {
+    const storeId = this.storeId();
+    if (!storeId || this.busyToggling()) return;
+    const busy = !this.markedBusy();
+    this.busyToggling.set(true);
+    this.shiftError.set(null);
+    this.api.setBusy(storeId, busy).subscribe({
+      next: (shift) => {
+        this.busyToggling.set(false);
+        if (this.storeId() !== storeId) return;
+        this.shift.set(shift);
+        const status = shift.busy ? 'OVERLOADED' : 'OPEN';
+        this.stores.update((list) => list.map((s) => (s.id === storeId ? { ...s, status } : s)));
+      },
+      error: (err) => {
+        this.busyToggling.set(false);
+        this.shiftError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            codes: { STORE_SWITCHED_OFF: 'admin.kitchen.shift.storeClosed' },
+            statuses: { 403: 'common.forbidden' },
+          }),
+        );
+      },
+    });
+  }
+
   shiftTime(iso: string | null): string {
     return iso ? this.fmt.time(iso, this.store()?.timezone) : '';
   }
@@ -1090,6 +1156,10 @@ export class KitchenPage {
     this.shift.set(null);
     this.shiftError.set(null);
     if (!storeId) return;
+    // Whoever opens the board on this browser binds it to the store's brand
+    // as a kitchen tablet (once), so its PIN screen lists only that brand's
+    // stores — also how tablets signed in before binding existed get bound.
+    this.device.ensureBound(storeId);
     this.refresh();
     this.detach = this.realtime.watch(
       storeId,

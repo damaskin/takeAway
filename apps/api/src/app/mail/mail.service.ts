@@ -156,11 +156,22 @@ export class MailService implements OnModuleInit {
     await this.deliver('order-receipt', email, subject, text, html, attachments);
   }
 
-  /** Public helper so other services can queue transactional messages through the same transport. */
-  send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
-    return this.deliver('custom', to, subject, text, html, attachments);
+  /**
+   * The staff invite (composed by `staffInviteMail`). Unlike the others it
+   * says whether the SMTP server took it, so the admin can tell the owner
+   * "email sent" or "pass the password on yourself". The body carries a
+   * one-time set-password link and, like every message, is never logged.
+   */
+  sendStaffInvite(to: string, invite: OutgoingMail): Promise<boolean> {
+    return this.deliver('staff-invite', to, invite.subject, invite.text, invite.html);
   }
 
+  /** Public helper so other services can queue transactional messages through the same transport. */
+  async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
+    await this.deliver('custom', to, subject, text, html, attachments);
+  }
+
+  /** True when the SMTP server accepted the message; false when SMTP is off or the server refused. */
   private async deliver(
     template: string,
     to: string,
@@ -168,20 +179,22 @@ export class MailService implements OnModuleInit {
     text: string,
     html?: string,
     attachments?: MailAttachment[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const from = this.config.get<string>('SMTP_FROM') ?? 'no-reply@takeaway.local';
     const what =
       `template=${template} to=*@${recipientDomain(to)} subject=${JSON.stringify(subject)}` +
       (attachments?.length ? ` attachments=${attachments.length}` : '');
     if (!this.transporter) {
       this.logger.warn(`[mail] (stub — SMTP_HOST not set, not sent) ${what}`);
-      return;
+      return false;
     }
     try {
       await this.transporter.sendMail({ from, to, subject, text, html, attachments });
       this.logger.log(`[mail] sent ${what}`);
+      return true;
     } catch (err) {
       this.logger.error(`[mail] delivery failed ${what}: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
     }
   }
 }
@@ -195,6 +208,13 @@ export interface MailAttachment {
   filename: string;
   content: Buffer;
   contentType?: string;
+}
+
+/** A composed message, e.g. for {@link MailService.sendStaffInvite}. */
+export interface OutgoingMail {
+  subject: string;
+  text: string;
+  html: string;
 }
 
 /**

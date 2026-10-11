@@ -6,6 +6,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { BrandOwner, StaffMember, StaffRole, StaffService } from '../../core/staff/staff.service';
+import { KitchenTabletsComponent } from './kitchen-tablets.component';
 import { staffErrorMessage } from './staff-errors';
 
 const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
@@ -19,7 +20,7 @@ const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
 @Component({
   selector: 'app-admin-staff',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, KitchenTabletsComponent],
   template: `
     <section style="padding: clamp(16px, 3vw, 32px); max-width: 980px">
       <div class="flex items-start justify-between flex-wrap" style="gap: 12px; margin: 0 0 20px">
@@ -104,6 +105,11 @@ const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
       } @else if (stores().length === 0) {
         <p class="muted">{{ 'admin.staff.noStores' | translate }}</p>
       } @else {
+        <!-- ── Kitchen tablets ───────────────────────────────────────────── -->
+        @if (activeBrandId(); as brandId) {
+          <app-kitchen-tablets [brandId]="brandId" />
+        }
+
         <!-- ── Filters ───────────────────────────────────────────────────── -->
         <div class="filters" role="search">
           <label class="field filter-search">
@@ -334,6 +340,8 @@ export class AdminStaffPage {
   private readonly brandCtx = inject(ActiveBrandService);
 
   readonly isSuperAdmin = computed(() => this.authStore.user()?.role === 'SUPER_ADMIN');
+  /** The brand in the header — its kitchen tablets are listed here. */
+  readonly activeBrandId = computed(() => this.brandCtx.activeId());
   readonly roles = ROLES;
 
   /** Set when coming back from the invite form, so the same store stays picked. */

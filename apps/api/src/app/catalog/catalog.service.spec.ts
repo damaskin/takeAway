@@ -76,6 +76,24 @@ describe('CatalogService', () => {
     service = moduleRef.get(CatalogService);
   });
 
+  it('reports a store the kitchen marked busy as full, still taking orders, with the queue-based ETA', async () => {
+    prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'OVERLOADED', busyMeter: 0 })]);
+    prisma.store.findFirst.mockResolvedValue(storeFixture({ status: 'OVERLOADED', busyMeter: 0 }));
+
+    const [listed] = await service.listStores({});
+    expect(listed).toMatchObject({
+      status: 'OVERLOADED',
+      busyMeter: 100,
+      acceptingOrders: true,
+      currentEtaSeconds: 360,
+    });
+    await expect(service.getStore('store-1')).resolves.toMatchObject({ busyMeter: 100, currentEtaSeconds: 360 });
+
+    prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'OPEN', busyMeter: 35 })]);
+    const [normal] = await service.listStores({});
+    expect(normal?.busyMeter).toBe(35);
+  });
+
   it('lists stores without lat/lng', async () => {
     prisma.store.findMany.mockResolvedValue([storeFixture()]);
     const result = await service.listStores({});

@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type CategoryAdminDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { describeMenuError } from './menu-errors';
 import { ProductFormComponent, type ProductSavedEvent } from './product-form.component';
 
@@ -46,6 +47,7 @@ import { ProductFormComponent, type ProductSavedEvent } from './product-form.com
           [brandId]="brand"
           [currency]="currency()"
           (saved)="onSaved($event)"
+          (imagesChanged)="onImagesChanged()"
           (closed)="back()"
         />
 
@@ -71,6 +73,7 @@ export class ProductFormPage {
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
+  private readonly onboarding = inject(OnboardingFlowService);
 
   readonly categories = signal<CategoryAdminDto[]>([]);
   readonly product = signal<ProductAdminDto | null>(null);
@@ -112,13 +115,24 @@ export class ProductFormPage {
     });
   }
 
-  /** A new product goes on to its options; an edit is done. */
+  /**
+   * A new product goes on to its options; an edit is done. Opened from
+   * «Запуск бренда», a save that finishes the menu step goes back there.
+   */
   onSaved(event: ProductSavedEvent): void {
-    if (event.created) {
-      this.router.navigate(['/menu/products', event.product.id]);
-      return;
-    }
-    this.back();
+    void this.onboarding.afterSave('menu').then((r) => {
+      if (r === 'returned') return;
+      if (event.created) {
+        void this.router.navigate(['/menu/products', event.product.id]);
+        return;
+      }
+      this.back();
+    });
+  }
+
+  /** The first photo is what the menu step waits for. */
+  onImagesChanged(): void {
+    void this.onboarding.afterSave('menu');
   }
 
   back(): void {

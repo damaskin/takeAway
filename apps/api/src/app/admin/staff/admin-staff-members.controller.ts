@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import type { StaffMember } from '@takeaway/shared-types';
+import type { StaffInviteResult, StaffMember } from '@takeaway/shared-types';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -34,7 +34,7 @@ export class AdminStaffMembersController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: InviteStaffDto,
     @Query('brandId') brandId?: string,
-  ): Promise<StaffMember> {
+  ): Promise<StaffInviteResult> {
     return this.staff.invite(
       { email: dto.email, name: dto.name, role: dto.role, tempPassword: dto.tempPassword, storeIds: dto.storeIds },
       user,

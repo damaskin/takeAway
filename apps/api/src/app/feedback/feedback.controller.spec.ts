@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule, JwtService } from '@nestjs/jwt';
@@ -10,9 +10,11 @@ import { FEEDBACK_MESSAGE_MAX_LENGTH } from '@takeaway/shared-types';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { UsersService } from '../users/users.service';
 import { AdminFeedbackController } from './admin-feedback.controller';
+import { BusinessSupportController } from './business-support.controller';
 import { FeedbackController } from './feedback.controller';
 import { FeedbackService } from './feedback.service';
 
@@ -32,16 +34,24 @@ describe('feedback endpoints', () => {
   ]);
   const service = {
     create: jest.fn(async () => ({ id: 'fb-1', createdAt: '2026-10-07T10:00:00.000Z' })),
+    createFromBusiness: jest.fn(async () => ({ id: 'fb-2', createdAt: '2026-10-07T10:00:00.000Z' })),
     list: jest.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 25, newCount: 0 })),
     newCount: jest.fn(async () => ({ count: 3 })),
     setStatus: jest.fn(async () => ({ id: 'fb-1', status: 'READ' })),
+  };
+  const brandScope = {
+    resolveBrandIds: jest.fn(async () => ['b1']),
+    assertBrand: jest.fn(async (_user: unknown, brandId: string) => {
+      if (brandId !== 'b1') throw new ForbiddenException('Resource belongs to a brand outside your scope');
+    }),
   };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [PassportModule.register({ defaultStrategy: 'jwt' }), JwtModule.register({ secret: SECRET })],
-      controllers: [FeedbackController, AdminFeedbackController],
+      controllers: [FeedbackController, AdminFeedbackController, BusinessSupportController],
       providers: [
+        { provide: BrandScopeService, useValue: brandScope },
         JwtStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
@@ -116,6 +126,8 @@ describe('feedback endpoints', () => {
         { kind: 'REVIEW', message: 'x'.repeat(FEEDBACK_MESSAGE_MAX_LENGTH + 1), source: 'WEB' },
       ],
       ['an unknown kind', { kind: 'PRAISE', message: 'Nice', source: 'WEB' }],
+      ['a business kind', { kind: 'PLAN_CHANGE', message: 'PRO', source: 'WEB' }],
+      ['the business admin as the source', { kind: 'REVIEW', message: 'Nice', source: 'BUSINESS' }],
       ['no source', { kind: 'REVIEW', message: 'Nice' }],
       ['an unknown field', { kind: 'REVIEW', message: 'Nice', source: 'WEB', rating: 5 }],
     ])('refuses %s with 400', async (_, payload) => {
@@ -131,6 +143,43 @@ describe('feedback endpoints', () => {
         source: 'TMA',
       });
       expect(res.statusCode).toBe(201);
+    });
+  });
+
+  describe('POST /admin/support', () => {
+    const support = async (payload: Record<string, unknown>, as: string, query = '') =>
+      app.inject({
+        method: 'POST',
+        url: `/admin/support${query}`,
+        headers: { authorization: `Bearer ${await tokenFor(as)}` },
+        payload,
+      });
+
+    it('files a business question under the brand picked in the header', async () => {
+      const res = await support({ kind: 'QUESTION', message: '  Как подключить карты?  ' }, 'owner', '?brandId=b1');
+
+      expect(res.statusCode).toBe(201);
+      expect(service.createFromBusiness).toHaveBeenCalledWith('owner', 'b1', {
+        kind: 'QUESTION',
+        message: 'Как подключить карты?',
+      });
+    });
+
+    it('falls back to the first brand of the caller', async () => {
+      await support({ kind: 'PROBLEM', message: 'Не грузится меню' }, 'owner');
+      expect(service.createFromBusiness).toHaveBeenCalledWith('owner', 'b1', expect.anything());
+    });
+
+    it('refuses a brand that is not theirs, customers and the platform admin', async () => {
+      expect((await support({ kind: 'QUESTION', message: 'Hi' }, 'owner', '?brandId=b2')).statusCode).toBe(403);
+      expect((await support({ kind: 'QUESTION', message: 'Hi' }, 'ana')).statusCode).toBe(403);
+      expect((await support({ kind: 'QUESTION', message: 'Hi' }, 'root')).statusCode).toBe(403);
+      expect(service.createFromBusiness).not.toHaveBeenCalled();
+    });
+
+    it('refuses a topic that is not a support topic', async () => {
+      expect((await support({ kind: 'PLAN_CHANGE', message: 'PRO' }, 'owner')).statusCode).toBe(400);
+      expect((await support({ kind: 'REVIEW', message: 'Nice' }, 'owner')).statusCode).toBe(400);
     });
   });
 

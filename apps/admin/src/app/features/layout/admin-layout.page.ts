@@ -25,6 +25,7 @@ import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { AdminSidebarComponent } from '../../shared/admin-sidebar.component';
+import { SupportDialogComponent } from '../../shared/support-dialog.component';
 import { BrandStatusBannerComponent } from './brand-status-banner.component';
 import { OrderAlertsComponent } from './order-alerts.component';
 
@@ -58,6 +59,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
     BrandStatusBannerComponent,
     OrderAlertsComponent,
     LanguageSwitcherComponent,
+    SupportDialogComponent,
     TranslatePipe,
   ],
   template: `
@@ -74,7 +76,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
         [class.admin-sidebar-open]="sidebarOpen()"
         (click)="onSidebarTap($event)"
       >
-        <app-admin-sidebar>
+        <app-admin-sidebar (supportRequested)="openSupport()">
           <!-- On a phone the top bar has no room for the account: it lives
                at the foot of the drawer instead. -->
           <div class="admin-drawer-account flex items-center">
@@ -219,6 +221,9 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
         <app-order-alerts />
       </div>
     </div>
+    @if (supportOpen()) {
+      <app-support-dialog (closed)="supportOpen.set(false)" />
+    }
   `,
   styles: [
     `
@@ -341,6 +346,8 @@ export class AdminLayoutPage implements OnInit {
   readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));
 
   readonly sidebarOpen = signal(false);
+  /** «Написать в поддержку», opened from the sidebar. */
+  readonly supportOpen = signal(false);
 
   /** The one scrolling element of the shell. */
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
@@ -423,6 +430,11 @@ export class AdminLayoutPage implements OnInit {
 
   closeSidebar(): void {
     this.sidebarOpen.set(false);
+  }
+
+  openSupport(): void {
+    this.sidebarOpen.set(false);
+    this.supportOpen.set(true);
   }
 
   /**

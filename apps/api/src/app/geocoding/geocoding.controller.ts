@@ -12,8 +12,9 @@ import {
 } from './dto/geocode.dto';
 import { GeocodingService } from './geocoding.service';
 
-// Per IP, on top of the one-request-a-second pacing towards the geocoder.
-// The form debounces typing, so a person stays far below this.
+// Per account (AppThrottlerGuard keys signed-in requests on the user), on top
+// of the one-request-a-second pacing towards the geocoder and nginx's per-
+// visitor limit. The form debounces typing, so a person stays far below this.
 const LOOKUPS_PER_MINUTE = 30 * (process.env['NODE_ENV'] !== 'production' ? 10 : 1);
 
 /**

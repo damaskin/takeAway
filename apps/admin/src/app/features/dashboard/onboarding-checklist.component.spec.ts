@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import type { BrandDto } from '../../core/catalog/admin-catalog.service';
+import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { type BrandOnboarding, OnboardingApi } from '../../core/onboarding/onboarding.service';
 import { OnboardingChecklistComponent } from './onboarding-checklist.component';
 
@@ -94,6 +95,59 @@ describe('OnboardingChecklistComponent', () => {
     const list = await render('SUPER_ADMIN');
 
     expect(checklist).not.toHaveBeenCalled();
+    expect(list.visible()).toBe(false);
+  });
+
+  it('highlights the first step the owner still has to do', async () => {
+    const list = await render('BRAND_ADMIN');
+
+    expect(list.nextStep()).toBe('store');
+    expect(list.ownerPartDone()).toBe(false);
+  });
+
+  it('says only the review is left once brand, store and menu are done', async () => {
+    const list = await render('BRAND_ADMIN', { ...fresh, store: true, menu: true });
+
+    expect(list.nextStep()).toBeNull();
+    expect(list.ownerPartDone()).toBe(true);
+  });
+
+  it('opening a step starts the trip that brings the owner back', async () => {
+    const list = await render('BRAND_ADMIN');
+    const flow = TestBed.inject(OnboardingFlowService);
+
+    list.open('store');
+
+    expect(flow.active('store')).toBe(true);
+    expect(flow.active('menu')).toBe(false);
+  });
+
+  it('shows the step just finished, once', async () => {
+    const list = await render('BRAND_ADMIN');
+    const flow = TestBed.inject(OnboardingFlowService);
+    // What afterSave leaves behind when a step came back done.
+    (flow as unknown as { _flash: { set(v: unknown): void } })._flash.set({ step: 'brand', at: Date.now() });
+    TestBed.tick();
+
+    expect(list.flashStep()).toBe('brand');
+    expect(flow.flash()).toBeNull();
+  });
+
+  it('shows «всё готово» when the last step came back done, then leads to the panel', async () => {
+    const list = await render('BRAND_ADMIN', {
+      ...fresh,
+      moderationStatus: 'APPROVED',
+      store: true,
+      menu: true,
+      complete: true,
+    });
+    list.flashStep.set('menu');
+
+    expect(list.allDone()).toBe(true);
+    expect(list.visible()).toBe(true);
+
+    list.openPanel();
+
     expect(list.visible()).toBe(false);
   });
 });

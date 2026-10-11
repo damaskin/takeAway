@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiConflictResponse, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -14,6 +15,10 @@ import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-l
 import { OrderDto, OrderSummaryDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
+// Per account. A customer places one order and retries a few times at most
+// (a cart that changed under them answers 409 and is fixed up). Dev gets 10x.
+const CREATE_PER_MINUTE = 10 * (process.env['NODE_ENV'] !== 'production' ? 10 : 1);
+
 @ApiTags('orders')
 @ApiBearerAuth()
 @Controller()
@@ -25,10 +30,13 @@ export class OrdersController {
   ) {}
 
   @Post('orders')
+  @Throttle({ default: { limit: CREATE_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: OrderDto })
   @ApiConflictResponse({
     type: CartChangedErrorDto,
-    description: 'The cart no longer matches the menu. No order was created; the cart has been brought up to date.',
+    description:
+      'The cart no longer matches the menu (no order was created; the cart has been brought up to date), ' +
+      'or `TOO_MANY_UNPAID_ORDERS`: the customer already has too many orders waiting for payment.',
   })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateOrderDto): Promise<OrderDto> {
     return this.orders.create(user.id, dto);

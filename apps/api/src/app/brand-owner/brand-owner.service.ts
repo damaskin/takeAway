@@ -1,20 +1,23 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { BrandModerationStatus, type Prisma, Role } from '@prisma/client';
+import { BrandModerationStatus, type BrandPlan, FeedbackKind, type Prisma, Role } from '@prisma/client';
 
 import type { UpdateBrandDto } from '../admin/catalog/dto/admin-brand.dto';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { codedConflict } from '../common/http/coded-conflict';
 import type { UploadedImageFile } from '../common/upload/uploaded-image.decorator';
 import { FeatureFlagsService } from '../config/feature-flags.service';
+import { FeedbackService } from '../feedback/feedback.service';
 import { OnboardingNotifier } from '../onboarding/onboarding-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { PHOTOGRAPHED_PRODUCT_WHERE, READY_STORE_WHERE, progressOf } from './brand-onboarding';
 import type { BrandOnboardingDto } from './dto/brand-onboarding.dto';
 
 /** Why a brand-settings change was refused, as the `code` of the 409. */
 export const BrandOwnerConflict = {
   CURRENCY_LOCKED: 'CURRENCY_LOCKED',
   NOT_REJECTED: 'NOT_REJECTED',
+  PLAN_ALREADY_ACTIVE: 'PLAN_ALREADY_ACTIVE',
 } as const;
 
 const BRAND_REF = { id: true, slug: true, currency: true } satisfies Prisma.BrandSelect;
@@ -39,6 +42,7 @@ export class BrandOwnerService {
     private readonly storage: StorageService,
     private readonly flags: FeatureFlagsService,
     private readonly notifier: OnboardingNotifier,
+    private readonly feedback: FeedbackService,
   ) {}
 
   /** `currencyLocked` lets /settings disable the currency before the owner tries. */
@@ -64,6 +68,7 @@ export class BrandOwnerService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.locale !== undefined) data.locale = dto.locale;
     if (dto.logoUrl !== undefined) data.logoUrl = dto.logoUrl;
+    if (dto.contactPhone !== undefined) data.contactPhone = dto.contactPhone;
     if (dto.themeOverrides !== undefined) data.themeOverrides = sanitizeThemeOverrides(dto.themeOverrides);
     if (dto.currency !== undefined && dto.currency !== brand.currency) {
       // Revenue, analytics and payouts add a brand's orders up in its
@@ -97,28 +102,67 @@ export class BrandOwnerService {
         where: { id },
         select: { logoUrl: true, moderationStatus: true, moderationNote: true },
       }),
-      // A store a customer can order from needs somewhere to collect the
-      // order and a time it is open.
-      this.prisma.store.count({
-        where: { brandId: id, addressLine: { not: '' }, workingHours: { some: { isClosed: false } } },
-      }),
+      this.prisma.store.count({ where: { brandId: id, ...READY_STORE_WHERE } }),
       this.prisma.category.count({ where: { brandId: id } }),
-      this.prisma.product.count({ where: { brandId: id, imageUrls: { isEmpty: false } } }),
+      this.prisma.product.count({ where: { brandId: id, ...PHOTOGRAPHED_PRODUCT_WHERE } }),
     ]);
 
-    const brandProfile = Boolean(brand.logoUrl);
-    const store = readyStores > 0;
-    const menu = categories > 0 && productsWithPhoto > 0;
+    const progress = progressOf({
+      logoUrl: brand.logoUrl,
+      moderationStatus: brand.moderationStatus,
+      readyStores,
+      categories,
+      photographedProducts: productsWithPhoto,
+    });
     return {
       brandId: id,
       moderationStatus: brand.moderationStatus,
       moderationNote: brand.moderationNote,
-      brandProfile,
-      store,
-      menu,
+      brandProfile: progress.brandProfile,
+      store: progress.store,
+      menu: progress.menu,
       cardPayments: this.flags.cardPaymentFlow !== 'none',
-      complete: brandProfile && store && menu && brand.moderationStatus === BrandModerationStatus.APPROVED,
+      complete: progress.complete,
     };
+  }
+
+  /**
+   * «Перейти на PRO»: the owner asks for another plan. Changing it stays the
+   * platform's call, so this records the wish on the brand — the platform
+   * admin sees it on the brands list — and writes to support through the
+   * feedback inbox, which pings the platform team. Asking again for the same
+   * plan answers with the standing request and wakes nobody.
+   */
+  async requestPlan(user: AuthenticatedUser, plan: BrandPlan, note: string | undefined, brandId?: string) {
+    const { id } = await this.resolveBrand(user, brandId);
+    const brand = await this.prisma.brand.findUniqueOrThrow({
+      where: { id },
+      select: { plan: true, requestedPlan: true, planRequestedAt: true },
+    });
+    if (brand.plan === plan) {
+      throw codedConflict(BrandOwnerConflict.PLAN_ALREADY_ACTIVE, `The brand is already on ${plan}`, 'plan');
+    }
+    if (brand.requestedPlan === plan && brand.planRequestedAt) {
+      return { requestedPlan: plan, planRequestedAt: brand.planRequestedAt.toISOString() };
+    }
+
+    const requestedAt = new Date();
+    await this.prisma.brand.update({ where: { id }, data: { requestedPlan: plan, planRequestedAt: requestedAt } });
+    try {
+      await this.feedback.createFromBusiness(user.id, id, {
+        kind: FeedbackKind.PLAN_CHANGE,
+        message: note?.trim() ?? '',
+      });
+    } catch (err) {
+      // Nobody was told (the hourly cap, most likely): the request is not
+      // standing either, so the owner can ask again.
+      await this.prisma.brand.update({
+        where: { id },
+        data: { requestedPlan: brand.requestedPlan, planRequestedAt: brand.planRequestedAt },
+      });
+      throw err;
+    }
+    return { requestedPlan: plan, planRequestedAt: requestedAt.toISOString() };
   }
 
   /**

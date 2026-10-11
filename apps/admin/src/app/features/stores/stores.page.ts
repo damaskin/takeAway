@@ -14,6 +14,7 @@ import {
 import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 import { KitchenApi } from '../../core/kitchen/kitchen.api';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
+import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
 import { type EditorTab } from './store-editor.component';
 import { storeErrorMessage } from './store-errors';
 import { storeNeedsTimeZone } from './store-options';
@@ -29,7 +30,7 @@ interface CardError {
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, StoreReadinessComponent],
+  imports: [RouterLink, TranslatePipe, StoreReadinessComponent, OnboardingReturnComponent],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -52,6 +53,7 @@ interface CardError {
     </div>
 
     <section style="padding: 24px; display: flex; flex-direction: column; gap: 16px">
+      <app-onboarding-return step="store" />
       @if (brandBlocker(); as blocker) {
         <div
           style="padding: 16px 18px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-left: 4px solid var(--color-amber); border-radius: 12px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
@@ -112,9 +114,12 @@ interface CardError {
                   >{{ s.city }} · {{ s.country }}</span
                 >
               </div>
+              <!-- OVERLOADED is the kitchen's «Загружены» switch: shown here read-only, set on the board. -->
               <span
                 [style.background]="statusBg(s.status)"
                 [style.color]="statusColor(s.status)"
+                [attr.title]="s.status === 'OVERLOADED' ? ('admin.stores.busyHint' | translate) : null"
+                [attr.data-testid]="'store-status-' + s.id"
                 style="flex: none; padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
                 >{{ 'admin.stores.status.' + s.status | translate }}</span
               >

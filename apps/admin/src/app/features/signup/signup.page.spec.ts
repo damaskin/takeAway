@@ -63,17 +63,42 @@ describe('SignupPage', () => {
 
   it('sends the currency the owner picked, and English from an English page', () => {
     const page = make('en');
-    fill(page, { phone: '' });
+    fill(page);
     page.form.controls.currency.setValue('RUP');
 
     page.submit();
 
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ currency: 'RUP', locale: 'EN', phone: undefined }));
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ currency: 'RUP', locale: 'EN' }));
   });
 
-  it('stops a phone number without a country code before it reaches the server', () => {
+  it('requires a phone: the team calls those who signed up and did not launch', () => {
     const page = make();
-    fill(page, { phone: '069 123 456' });
+    fill(page, { phone: '' });
+
+    page.submit();
+
+    expect(register).not.toHaveBeenCalled();
+    expect(page.phoneInvalid()).toBe(true);
+    expect(page.form.controls.phone.hasError('required')).toBe(true);
+  });
+
+  it.each([
+    ['069 123 456', '+37369123456', '+373 69 123 456'],
+    ['050 123 4567', '+380501234567', '+380 50 123 4567'],
+    ['8 916 123-45-67', '+79161234567', '+7 916 123-45-67'],
+  ])('reads the local number %s, shows it as %s will be saved and sends E.164', (typed, e164, shown) => {
+    const page = make();
+    fill(page, { phone: typed });
+
+    expect(page.phonePreview()).toBe(shown);
+    page.submit();
+
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ phone: e164 }));
+  });
+
+  it('stops a number it cannot read before it reaches the server', () => {
+    const page = make();
+    fill(page, { phone: '12345' });
 
     page.submit();
 

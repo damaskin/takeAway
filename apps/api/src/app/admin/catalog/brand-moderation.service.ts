@@ -16,10 +16,16 @@ export class BrandModerationService {
     private readonly notifier: OnboardingNotifier,
   ) {}
 
-  /** Feeds the badge on «Бренды» in the platform admin's sidebar. */
-  async pendingCount(): Promise<{ count: number }> {
-    const count = await this.prisma.brand.count({ where: { moderationStatus: BrandModerationStatus.PENDING } });
-    return { count };
+  /**
+   * Feeds the badge on «Бренды» in the platform admin's sidebar: brands
+   * waiting for review, and owners waiting for an answer about their plan.
+   */
+  async pendingCount(): Promise<{ count: number; planRequests: number }> {
+    const [count, planRequests] = await Promise.all([
+      this.prisma.brand.count({ where: { moderationStatus: BrandModerationStatus.PENDING } }),
+      this.prisma.brand.count({ where: { requestedPlan: { not: null } } }),
+    ]);
+    return { count, planRequests };
   }
 
   /**
