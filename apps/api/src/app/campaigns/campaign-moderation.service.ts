@@ -4,9 +4,15 @@ import { type Campaign, Locale, type Prisma, Role } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { codedConflict } from '../common/http/coded-conflict';
+import { prevailingTimeZone } from '../common/time/time-zone';
+import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OpsChatService } from '../notifications/ops-chat.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { campaignSubmittedChatText } from './campaign-moderation-messages';
+import { campaignDecisionMessage, campaignSubmittedChatText } from './campaign-moderation-messages';
+
+/** Where takeAway works; the zone of a brand that has no store with one yet. */
+const DEFAULT_TIME_ZONE = 'Europe/Chisinau';
 import {
   type CampaignPreview,
   CampaignError,
@@ -56,7 +62,25 @@ export class CampaignModerationService {
     private readonly campaigns: CampaignsService,
     private readonly opsChat: OpsChatService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
+    private readonly mail: MailService,
   ) {}
+
+  /**
+   * «Отозвать в черновик»: PENDING_REVIEW → DRAFT, so the business can
+   * change the copy; it goes back into the queue with the next submit.
+   */
+  async withdraw(brandId: string, id: string): Promise<Campaign> {
+    const { count } = await this.prisma.campaign.updateMany({
+      where: { id, brandId, status: 'PENDING_REVIEW' },
+      data: { status: 'DRAFT', submittedAt: null },
+    });
+    if (count === 0) {
+      await this.campaigns.findOwned(brandId, id);
+      throw codedConflict(CampaignError.NOT_PENDING, 'The campaign is not waiting for review');
+    }
+    return this.prisma.campaign.findUniqueOrThrow({ where: { id } });
+  }
 
   /**
    * DRAFT / REJECTED → PENDING_REVIEW, and the platform team is told. From
@@ -112,6 +136,7 @@ export class CampaignModerationService {
     });
     if (count === 0) await this.notPending(id);
     await this.start(id, now);
+    void this.tellOwner(id);
     return this.prisma.campaign.findUniqueOrThrow({ where: { id }, include: QUEUE_INCLUDE });
   }
 
@@ -122,7 +147,64 @@ export class CampaignModerationService {
       data: { status: 'REJECTED', reviewNote: reason, reviewedAt: now, reviewedById: reviewer.id },
     });
     if (count === 0) await this.notPending(id);
+    void this.tellOwner(id);
     return this.prisma.campaign.findUniqueOrThrow({ where: { id }, include: QUEUE_INCLUDE });
+  }
+
+  /**
+   * Tells the brand owner how the moderator decided — through the staff
+   * paths the platform already has: the bot in Telegram when they linked it,
+   * and email when SMTP is set up. Best-effort: the decision stands either way.
+   */
+  private async tellOwner(id: string): Promise<void> {
+    try {
+      const c = await this.prisma.campaign.findUnique({
+        where: { id },
+        select: {
+          title: true,
+          approvedAt: true,
+          reviewNote: true,
+          scheduledAt: true,
+          brand: {
+            select: {
+              locale: true,
+              stores: { select: { timezone: true } },
+              owner: { select: { id: true, email: true, locale: true, telegramUserId: true, blockedAt: true } },
+            },
+          },
+        },
+      });
+      const owner = c?.brand.owner;
+      if (!c || !owner || owner.blockedAt) return;
+      const m = campaignDecisionMessage(c.brand.locale, {
+        campaignId: id,
+        title: c.title,
+        approved: c.approvedAt !== null,
+        reason: c.reviewNote,
+        scheduledAt: c.approvedAt && c.scheduledAt && c.scheduledAt > new Date() ? c.scheduledAt : null,
+        timeZone: prevailingTimeZone(c.brand.stores.map((s) => s.timezone)) ?? DEFAULT_TIME_ZONE,
+        adminUrl: this.adminUrl,
+      });
+      const deliveries: Promise<unknown>[] = [];
+      if (owner.telegramUserId !== null) {
+        deliveries.push(
+          this.notifications.deliver(
+            { userId: owner.id, locale: owner.locale, telegramUserId: owner.telegramUserId, pushTokens: [] },
+            { kind: 'generic', title: m.title, body: m.body },
+            'telegram',
+          ),
+        );
+      }
+      if (owner.email && this.mail.isConfigured())
+        deliveries.push(this.mail.send(owner.email, m.subject, m.text, m.html));
+      for (const r of await Promise.allSettled(deliveries)) {
+        if (r.status === 'rejected') this.logger.error(`Campaign ${id} decision not delivered: ${String(r.reason)}`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Could not tell the owner about campaign ${id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**

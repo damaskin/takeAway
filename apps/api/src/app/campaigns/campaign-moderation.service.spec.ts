@@ -3,6 +3,8 @@ import type { ConfigService } from '@nestjs/config';
 import { type Campaign, Role } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import type { MailService } from '../mail/mail.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 import type { OpsChatService } from '../notifications/ops-chat.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CampaignModerationService } from './campaign-moderation.service';
@@ -43,6 +45,7 @@ const base: Campaign = {
 
 interface Where {
   id?: string;
+  brandId?: string;
   status?: Campaign['status'] | { in: Array<Campaign['status']> };
 }
 
@@ -59,6 +62,14 @@ describe('CampaignModerationService', () => {
   };
   let campaigns: { findOwned: jest.Mock; audienceSize: jest.Mock; startIfDue: jest.Mock; preview: jest.Mock };
   let opsChat: { enabled: boolean; send: jest.Mock };
+  let notifications: { deliver: jest.Mock };
+  let mail: { isConfigured: jest.Mock; send: jest.Mock };
+  let brandRow: {
+    name: string;
+    locale: 'RU' | 'EN';
+    stores: Array<{ timezone: string }>;
+    owner: { id: string; email: string | null; locale: string; telegramUserId: bigint | null; blockedAt: null } | null;
+  };
   let service: CampaignModerationService;
   let errors: jest.SpyInstance;
 
@@ -71,12 +82,13 @@ describe('CampaignModerationService', () => {
     prisma = {
       campaign: {
         findUnique: jest.fn(({ select }: { select?: Record<string, unknown> }) =>
-          Promise.resolve(row && select?.['brand'] ? { ...row, brand: { name: 'Кофейня Ромашка' } } : row),
+          Promise.resolve(row && select?.['brand'] ? { ...row, brand: brandRow } : row),
         ),
         findUniqueOrThrow: jest.fn(() => Promise.resolve(row)),
         findMany: jest.fn(() => Promise.resolve(row ? [row] : [])),
         updateMany: jest.fn(({ where, data }: { where: Where; data: Partial<Campaign> }) => {
           if (!row || (where.id && where.id !== row.id)) return Promise.resolve({ count: 0 });
+          if (where.brandId && where.brandId !== row.brandId) return Promise.resolve({ count: 0 });
           const s = where.status;
           if (typeof s === 'string' && s !== row.status) return Promise.resolve({ count: 0 });
           if (typeof s === 'object' && !s.in.includes(row.status)) return Promise.resolve({ count: 0 });
@@ -95,6 +107,14 @@ describe('CampaignModerationService', () => {
       preview: jest.fn().mockResolvedValue({ total: 42, reachable: 30 }),
     };
     opsChat = { enabled: true, send: jest.fn().mockResolvedValue(true) };
+    notifications = { deliver: jest.fn().mockResolvedValue({ outcome: 'sent', via: ['telegram'] }) };
+    mail = { isConfigured: jest.fn().mockReturnValue(true), send: jest.fn().mockResolvedValue(undefined) };
+    brandRow = {
+      name: 'Кофейня Ромашка',
+      locale: 'RU',
+      stores: [{ timezone: 'Europe/Chisinau' }],
+      owner: { id: 'owner', email: 'owner@romashka.md', locale: 'RU', telegramUserId: 42n, blockedAt: null },
+    };
     service = new CampaignModerationService(
       prisma as unknown as PrismaService,
       campaigns as unknown as CampaignsService,
@@ -102,6 +122,8 @@ describe('CampaignModerationService', () => {
       {
         get: jest.fn((key: string) => (key === 'ADMIN_APP_URL' ? 'https://admin.takeaway.md/' : undefined)),
       } as unknown as ConfigService,
+      notifications as unknown as NotificationsService,
+      mail as unknown as MailService,
     );
     errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
@@ -210,6 +232,54 @@ describe('CampaignModerationService', () => {
       expect(campaigns.startIfDue).not.toHaveBeenCalled();
     });
 
+    it('tells the brand owner about an approval in Telegram and by email, in the brand language', async () => {
+      await service.approve('c1', root, NOW);
+      await flush();
+
+      expect(notifications.deliver).toHaveBeenCalledWith(
+        { userId: 'owner', locale: 'RU', telegramUserId: 42n, pushTokens: [] },
+        expect.objectContaining({ kind: 'generic', title: 'Рассылка «Скидка» одобрена' }),
+        'telegram',
+      );
+      expect(mail.send).toHaveBeenCalledWith(
+        'owner@romashka.md',
+        'Рассылка «Скидка» одобрена',
+        expect.stringContaining('уже уходит клиентам'),
+        expect.any(String),
+      );
+    });
+
+    it('tells the owner the reason of a rejection and links to the campaign to fix', async () => {
+      await service.reject('c1', root, 'Уберите капс', NOW);
+      await flush();
+
+      const [, message] = notifications.deliver.mock.calls[0] as [unknown, { title: string; body: string }];
+      expect(message.title).toBe('Рассылка «Скидка» отклонена');
+      expect(message.body).toContain('Причина: Уберите капс');
+      expect(message.body).toContain('https://admin.takeaway.md/campaigns/c1');
+    });
+
+    it('skips what the owner cannot get: no Telegram, no SMTP — and a brand without an owner', async () => {
+      if (brandRow.owner) brandRow.owner.telegramUserId = null;
+      mail.isConfigured.mockReturnValue(false);
+      await service.approve('c1', root, NOW);
+      await flush();
+      expect(notifications.deliver).not.toHaveBeenCalled();
+      expect(mail.send).not.toHaveBeenCalled();
+
+      given({ status: 'PENDING_REVIEW' });
+      brandRow.owner = null;
+      await expect(service.reject('c1', root, 'нет', NOW)).resolves.toMatchObject({ status: 'REJECTED' });
+    });
+
+    it('keeps the decision when telling the owner fails', async () => {
+      notifications.deliver.mockRejectedValue(new Error('Telegram 502'));
+      mail.send.mockRejectedValue(new Error('SMTP down'));
+
+      await expect(service.approve('c1', root, NOW)).resolves.toMatchObject({ status: 'APPROVED' });
+      await flush();
+    });
+
     it.each(['DRAFT', 'APPROVED', 'REJECTED', 'SENT'] as const)(
       'refuses to decide on a %s campaign — someone else already did',
       async (status) => {
@@ -229,6 +299,29 @@ describe('CampaignModerationService', () => {
       row = null;
 
       await expect(service.approve('c1', root, NOW)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('withdraw («Отозвать в черновик»)', () => {
+    it('takes a campaign under review back to a draft the business can change', async () => {
+      given({ status: 'PENDING_REVIEW', submittedAt: new Date('2026-10-10T09:00:00Z') });
+
+      await expect(service.withdraw('b1', 'c1')).resolves.toMatchObject({ status: 'DRAFT', submittedAt: null });
+    });
+
+    it.each(['DRAFT', 'APPROVED', 'REJECTED', 'SENDING'] as const)('refuses a %s campaign', async (status) => {
+      given({ status });
+
+      await expect(service.withdraw('b1', 'c1')).rejects.toMatchObject({
+        response: { code: 'CAMPAIGN_NOT_PENDING' },
+      });
+      expect(row?.status).toBe(status);
+    });
+
+    it('404s another brand’s campaign', async () => {
+      given({ status: 'PENDING_REVIEW' });
+
+      await expect(service.withdraw('b2', 'c1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

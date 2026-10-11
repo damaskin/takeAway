@@ -1,5 +1,7 @@
 import { type CampaignAudience, type CampaignChannel, Locale } from '@prisma/client';
 
+import { escapeHtml } from '../mail/mail.service';
+
 /** A campaign waiting for review, as the platform team is told about it. */
 export interface CampaignSubmission {
   brandName: string;
@@ -71,4 +73,75 @@ export function campaignSubmittedChatText(locale: Locale, s: CampaignSubmission)
     '',
     `${s.adminUrl}/campaign-moderation`,
   ].join('\n');
+}
+
+/** The moderator's decision, as the brand owner is told about it. */
+export interface CampaignDecision {
+  campaignId: string;
+  title: string;
+  approved: boolean;
+  /** The rejection reason; null on approval. */
+  reason: string | null;
+  /** When an approved campaign goes out; null — right away. */
+  scheduledAt: Date | null;
+  /** The brand's time zone for that time (its stores' prevailing one), IANA. */
+  timeZone: string;
+  /** Admin panel base URL, without a trailing slash. */
+  adminUrl: string;
+}
+
+/** One decision, laid out for the bot (title + body) and for email. */
+export interface CampaignDecisionMessage {
+  title: string;
+  body: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/** In the brand's language: the owner reads it, not the platform team. */
+export function campaignDecisionMessage(locale: Locale, d: CampaignDecision): CampaignDecisionMessage {
+  const ru = locale === Locale.RU;
+  const when = d.scheduledAt
+    ? new Intl.DateTimeFormat(ru ? 'ru-RU' : 'en-GB', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: d.timeZone,
+      }).format(d.scheduledAt)
+    : null;
+  const link = `${d.adminUrl}/campaigns${d.approved ? '' : `/${d.campaignId}`}`;
+  const title = d.approved
+    ? ru
+      ? `Рассылка «${d.title}» одобрена`
+      : `Campaign «${d.title}» approved`
+    : ru
+      ? `Рассылка «${d.title}» отклонена`
+      : `Campaign «${d.title}» rejected`;
+  const lines = d.approved
+    ? [
+        when
+          ? ru
+            ? `Она уйдёт клиентам ${when}.`
+            : `It goes out to your customers on ${when}.`
+          : ru
+            ? 'Она уже уходит клиентам — результат появится в списке рассылок.'
+            : 'It is going out to your customers now — the result shows up in the campaign list.',
+      ]
+    : [
+        `${ru ? 'Причина' : 'Reason'}: ${d.reason ?? '—'}`,
+        ru
+          ? 'Исправьте рассылку и отправьте её на модерацию снова.'
+          : 'Fix the campaign and submit it for review again.',
+      ];
+  const linkLabel = ru ? 'Открыть рассылки' : 'Open campaigns';
+  return {
+    title,
+    body: [...lines, '', link].join('\n'),
+    subject: title,
+    text: [...lines, '', `${linkLabel}: ${link}`].join('\n'),
+    html: [
+      ...lines.map((l) => `<p>${escapeHtml(l)}</p>`),
+      `<p><a href="${escapeHtml(link)}">${escapeHtml(linkLabel)}</a></p>`,
+    ].join('\n'),
+  };
 }

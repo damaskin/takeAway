@@ -188,6 +188,17 @@ export class CampaignsController {
     return toCampaignDto(row, stats.get(row.id));
   }
 
+  /** «Отозвать в черновик»: a campaign under review goes back to DRAFT; 409 `CAMPAIGN_NOT_PENDING` otherwise. */
+  @Post(':id/withdraw')
+  @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: CampaignDto })
+  async withdraw(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
+    const brandId = await this.resolveBrandIdForCampaign(user, id);
+    const row = await this.moderation.withdraw(brandId, id);
+    return toCampaignDto(row);
+  }
+
   /**
    * Retries an approved campaign — a failed or stuck run, or the people a
    * finished run missed — and answers at once with the row in SENDING.
