@@ -62,7 +62,7 @@ void main() {
           modifiers: [
             addon('shot', 'Шот', sort: 2, max: 3),
             addon('caramel', 'Карамель', group: 'Сиропы', sort: 1),
-            addon('vanilla', 'Ваниль', group: 'Сиропы', sort: 0),
+            addon('vanilla', 'Ваниль', group: 'Сиропы'),
             addon('sugar', 'Без сахара', group: 'Убрать', sort: 3),
             addon('cinnamon', 'Корица', sort: 4),
           ],

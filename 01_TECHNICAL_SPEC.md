@@ -206,6 +206,7 @@ takeaway/
 - **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`: FCM-токен, на iOS ещё сырой APNs-токен и шлюз (release-сборка — `PRODUCTION`, debug — `SANDBOX`). Устройство регистрируется только при разрешённых уведомлениях и снимается, когда их выключили в настройках телефона (проверка при возврате в приложение). Разрешение спрашивается один раз сразу после входа, после первого заказа или с экрана уведомлений — не при запуске. Android-каналы: `orders` (баннер, по умолчанию) и `promotions` (тихо)
 - **Maps**: `flutter_map` + OpenStreetMap через наш кеширующий прокси `takeaway.md/tiles` (nginx + Cloudflare, запасной путь — сам OSM; см. `docs/map-tiles.md`), маршрут — deep link в Apple/Google Maps
 - **Payments**: привязанные карты Агропромбанка через API (как web/TMA); Stripe в регионе не работает
+- **Images**: фото товаров — `cached_network_image`; без фото — иллюстрация по виду категории (`kind` / `categoryKind`) из `libs/ui-kit/src/assets/product-placeholders`, копии в `apps/mobile/assets/product-placeholders`, рисуются `flutter_svg` (SVG как есть, без растровых копий)
 - **Тесты**: unit + widget (`flutter test`, stateful fake API), интеграционный прогон на устройстве против живого API с KDS-переходами (`integration_test/`)
 
 ### 2.4. Инфраструктура — фактически
