@@ -1,33 +1,41 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, DestroyRef, OnInit, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocalDatePipe } from '@takeaway/i18n';
 import { CAMPAIGN_TRANSPORTS } from '@takeaway/shared-types';
+import type { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../../core/api/api.config';
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
-import type { CampaignRow } from './campaign.types';
+import { type CampaignRow, campaignStatusTone } from './campaign.types';
 
 /** How often the list re-reads itself while a campaign is going out. */
 const POLL_MS = 3000;
 
 /**
- * Brand-admin marketing campaigns. Compose a title + body, pick a
- * channel and audience, save the draft, then click Send. Sending runs in
- * the background: the row flips to SENDING at once and the list polls
- * until it settles on SENT or FAILED, showing who got it and through what
- * (iPhone app, app via Firebase, browser, Telegram), who could not be
- * reached and the most common errors. A failed, stuck or partly failed
- * campaign can be sent again — only the people it missed get it.
+ * Brand-admin marketing campaigns. Compose a title + body, pick a channel,
+ * an audience and, if wanted, a time; save the draft, then submit it for
+ * review. Nothing goes out until the takeAway team approves it — at once,
+ * or at the time picked. A rejected campaign shows the moderator's reason
+ * and can be edited and submitted again. A platform admin's own campaign
+ * needs no review: their «Отправить» approves it.
+ *
+ * Sending runs in the background: the row flips to SENDING and the list
+ * polls until it settles on SENT or FAILED, showing who got it and through
+ * what, who could not be reached and the most common errors. A failed,
+ * stuck or partly failed campaign can be retried — only the people it
+ * missed get it.
  *
  * Works on the brand picked in the top bar (SUPER_ADMIN picks any).
  */
 @Component({
   selector: 'app-admin-campaigns',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, LocalDatePipe],
   template: `
     <section style="padding: 24px; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
       <header class="flex items-start justify-between flex-wrap" style="gap: 12px">
@@ -49,6 +57,10 @@ const POLL_MS = 3000;
           </a>
         }
       </header>
+
+      @if (!isPlatformAdmin()) {
+        <p class="moderation-note">{{ 'admin.campaigns.moderation.note' | translate }}</p>
+      }
 
       @if (!activeBrand.activeId() && activeBrand.loaded()) {
         <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
@@ -85,19 +97,40 @@ const POLL_MS = 3000;
                   >
                     {{ c.body }}
                   </div>
+                  @if (c.scheduledAt && !c.startedAt) {
+                    <div style="margin-top: 4px; font-size: 12px; color: var(--color-text-secondary)">
+                      {{
+                        'admin.campaigns.scheduledFor' | translate: { time: (c.scheduledAt | localDate: 'dateTime') }
+                      }}
+                    </div>
+                  }
                 </td>
                 <td style="padding: 10px 14px">{{ 'admin.campaigns.channels.' + c.channel | translate }}</td>
                 <td style="padding: 10px 14px">{{ 'admin.campaigns.audiences.' + c.audience | translate }}</td>
                 <td style="padding: 10px 14px">
-                  <span
-                    style="padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap"
-                    [style.background]="statusBg(c.status)"
-                    [style.color]="statusColor(c.status)"
-                    >{{ 'admin.campaigns.status.' + c.status | translate }}</span
-                  >
+                  <span class="status-pill" [attr.data-tone]="tone(c)">{{
+                    'admin.campaigns.status.' + c.status | translate
+                  }}</span>
                 </td>
                 <td style="padding: 10px 14px; min-width: 200px">
-                  @if (c.status === 'DRAFT') {
+                  @if (c.status === 'REJECTED') {
+                    <div class="review-note" role="note">
+                      <strong>{{ 'admin.campaigns.moderation.rejectedTitle' | translate }}</strong>
+                      <span>{{ c.reviewNote || ('admin.campaigns.moderation.noReason' | translate) }}</span>
+                      <span class="review-hint">{{ 'admin.campaigns.moderation.fixHint' | translate }}</span>
+                    </div>
+                  } @else if (c.status === 'PENDING_REVIEW') {
+                    <span style="color: var(--color-text-secondary)">{{
+                      'admin.campaigns.moderation.pendingHint' | translate
+                    }}</span>
+                  } @else if (c.status === 'APPROVED') {
+                    <span style="color: var(--color-text-secondary)">{{
+                      (c.scheduledAt
+                        ? 'admin.campaigns.moderation.approvedScheduled'
+                        : 'admin.campaigns.moderation.approvedNow'
+                      ) | translate
+                    }}</span>
+                  } @else if (c.status === 'DRAFT') {
                     <span style="color: var(--color-text-secondary)">—</span>
                   } @else {
                     <div style="font-weight: 600; color: var(--color-espresso)">
@@ -147,31 +180,34 @@ const POLL_MS = 3000;
                     }
                   }
                 </td>
-                <td style="padding: 10px 14px; text-align: right; white-space: nowrap">
-                  @if (c.sendable) {
-                    <button
-                      (click)="send(c)"
-                      [disabled]="sending() === c.id"
-                      style="background: var(--color-caramel); color: white; padding: 4px 12px; border-radius: 6px; font-weight: 600"
-                    >
-                      {{
-                        (sending() === c.id
-                          ? 'admin.campaigns.sending'
-                          : c.status === 'DRAFT'
-                            ? 'admin.campaigns.send'
-                            : 'admin.campaigns.retry'
-                        ) | translate
-                      }}
-                    </button>
-                  }
-                  @if (c.status === 'DRAFT') {
-                    <button
-                      (click)="remove(c)"
-                      style="margin-left: 8px; background: transparent; color: var(--color-berry); padding: 4px 8px"
-                    >
-                      {{ 'admin.giftCards.cancel' | translate }}
-                    </button>
-                  }
+                <td style="padding: 10px 14px; text-align: right">
+                  <div class="row-actions">
+                    @if (c.editable) {
+                      <button type="button" class="act-primary" (click)="submit(c)" [disabled]="busy() === c.id">
+                        {{
+                          (busy() === c.id
+                            ? 'admin.campaigns.sending'
+                            : isPlatformAdmin()
+                              ? 'admin.campaigns.send'
+                              : 'admin.campaigns.moderation.submit'
+                          ) | translate
+                        }}
+                      </button>
+                      <a class="act-link" [routerLink]="['/campaigns', c.id]">{{
+                        'admin.campaigns.edit' | translate
+                      }}</a>
+                    }
+                    @if (c.sendable) {
+                      <button type="button" class="act-primary" (click)="retry(c)" [disabled]="busy() === c.id">
+                        {{ (busy() === c.id ? 'admin.campaigns.sending' : 'admin.campaigns.retry') | translate }}
+                      </button>
+                    }
+                    @if (c.deletable) {
+                      <button type="button" class="act-danger" (click)="remove(c)" [disabled]="busy() === c.id">
+                        {{ 'admin.campaigns.delete' | translate }}
+                      </button>
+                    }
+                  </div>
                 </td>
               </tr>
             } @empty {
@@ -185,6 +221,11 @@ const POLL_MS = 3000;
         </table>
       </div>
 
+      @if (notice(); as message) {
+        <p role="status" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint); margin: 0">
+          {{ message }}
+        </p>
+      }
       @if (error(); as message) {
         <p role="alert" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); margin: 0">
           {{ message }}
@@ -192,16 +233,97 @@ const POLL_MS = 3000;
       }
     </section>
   `,
+  styles: [
+    `
+      .moderation-note {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: var(--color-caramel-light);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--color-text-primary);
+      }
+      .status-pill {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        background: rgba(120, 120, 120, 0.15);
+        color: var(--color-text-secondary);
+      }
+      .status-pill[data-tone='ok'] {
+        background: rgba(76, 175, 80, 0.15);
+        color: var(--color-mint);
+      }
+      .status-pill[data-tone='bad'] {
+        background: rgba(244, 67, 54, 0.15);
+        color: var(--color-berry);
+      }
+      .status-pill[data-tone='busy'],
+      .status-pill[data-tone='wait'] {
+        background: rgba(255, 152, 0, 0.15);
+        color: var(--color-amber);
+      }
+      .review-note {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-width: 360px;
+        font-size: 12px;
+        color: var(--color-berry);
+        overflow-wrap: anywhere;
+      }
+      .review-hint {
+        color: var(--color-text-secondary);
+      }
+      .row-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px 10px;
+      }
+      .act-primary {
+        background: var(--color-caramel);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .act-primary:disabled {
+        opacity: 0.6;
+      }
+      .act-link {
+        color: var(--color-caramel);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .act-danger {
+        background: transparent;
+        color: var(--color-berry);
+        padding: 4px 4px;
+        white-space: nowrap;
+      }
+    `,
+  ],
 })
 export class AdminCampaignsPage implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
+  private readonly auth = inject(AuthStore);
   readonly activeBrand = inject(ActiveBrandService);
 
   readonly rows = signal<CampaignRow[]>([]);
-  readonly sending = signal<string | null>(null);
+  /** The campaign an action is in flight for. */
+  readonly busy = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+  readonly notice = signal<string | null>(null);
+  /** A platform admin's campaign needs no review: their submit is the approval. */
+  readonly isPlatformAdmin = computed(() => this.auth.user()?.role === 'SUPER_ADMIN');
 
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -219,26 +341,35 @@ export class AdminCampaignsPage implements OnInit {
     if (!this.activeBrand.loaded()) this.activeBrand.refresh();
   }
 
-  send(c: CampaignRow): void {
-    this.sending.set(c.id);
-    this.error.set(null);
-    this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/send`, {}).subscribe({
-      next: (row) => {
-        this.sending.set(null);
-        this.rows.update((rs) => rs.map((r) => (r.id === c.id ? row : r)));
-        this.schedulePoll();
-      },
-      error: (err) => {
-        this.sending.set(null);
-        this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING));
-      },
-    });
+  tone(c: CampaignRow): string {
+    return campaignStatusTone(c.status);
+  }
+
+  /** «Отправить на модерацию»; for a platform admin, «Отправить» — approved on the spot. */
+  submit(c: CampaignRow): void {
+    this.act(c, this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/submit`, {}), (row) =>
+      row.status === 'PENDING_REVIEW' ? 'admin.campaigns.moderation.submitted' : null,
+    );
+  }
+
+  /** Retries an approved campaign: a failed or stuck run, or the people it missed. */
+  retry(c: CampaignRow): void {
+    this.act(c, this.http.post<CampaignRow>(`${this.api.baseUrl}/admin/campaigns/${c.id}/send`, {}), () => null);
   }
 
   remove(c: CampaignRow): void {
+    this.busy.set(c.id);
+    this.error.set(null);
+    this.notice.set(null);
     this.http.delete(`${this.api.baseUrl}/admin/campaigns/${c.id}`).subscribe({
-      next: () => this.rows.update((rs) => rs.filter((r) => r.id !== c.id)),
-      error: (err) => this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING)),
+      next: () => {
+        this.busy.set(null);
+        this.rows.update((rs) => rs.filter((r) => r.id !== c.id));
+      },
+      error: (err) => {
+        this.busy.set(null);
+        this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING));
+      },
     });
   }
 
@@ -250,18 +381,23 @@ export class AdminCampaignsPage implements OnInit {
     return parts.length > 0 ? parts.join(' · ') : null;
   }
 
-  statusBg(status: CampaignRow['status']): string {
-    if (status === 'SENT') return 'rgba(76, 175, 80, 0.15)';
-    if (status === 'FAILED') return 'rgba(244, 67, 54, 0.15)';
-    if (status === 'SENDING') return 'rgba(255, 152, 0, 0.15)';
-    return 'rgba(120, 120, 120, 0.15)';
-  }
-
-  statusColor(status: CampaignRow['status']): string {
-    if (status === 'SENT') return 'var(--color-mint)';
-    if (status === 'FAILED') return 'var(--color-berry)';
-    if (status === 'SENDING') return 'var(--color-amber)';
-    return 'var(--color-text-secondary)';
+  private act(c: CampaignRow, request: Observable<CampaignRow>, noticeFor: (row: CampaignRow) => string | null): void {
+    this.busy.set(c.id);
+    this.error.set(null);
+    this.notice.set(null);
+    request.subscribe({
+      next: (row) => {
+        this.busy.set(null);
+        this.rows.update((rs) => rs.map((r) => (r.id === c.id ? row : r)));
+        const key = noticeFor(row);
+        if (key) this.notice.set(this.translate.instant(key));
+        this.schedulePoll();
+      },
+      error: (err) => {
+        this.busy.set(null);
+        this.error.set(apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING));
+      },
+    });
   }
 
   private refresh(brandId: string): void {
@@ -276,10 +412,19 @@ export class AdminCampaignsPage implements OnInit {
     });
   }
 
-  /** Keeps re-reading the list while anything is SENDING; stops once all settle. */
+  /**
+   * Keeps re-reading the list while anything is going out, or is approved
+   * and about to; stops once all settle.
+   */
   private schedulePoll(): void {
     this.stopPolling();
-    if (!this.rows().some((r) => r.status === 'SENDING')) return;
+    const now = Date.now();
+    const moving = this.rows().some(
+      (r) =>
+        r.status === 'SENDING' ||
+        (r.status === 'APPROVED' && (!r.scheduledAt || new Date(r.scheduledAt).getTime() <= now)),
+    );
+    if (!moving) return;
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;
       const brandId = this.activeBrand.activeId();

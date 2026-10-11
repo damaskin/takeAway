@@ -289,6 +289,19 @@ export const appRoutes: Route[] = [
         data: { navKey: 'campaigns' satisfies NavKey },
         loadComponent: () => import('./features/campaigns/campaign-form.page').then((m) => m.CampaignFormPage),
       }),
+      ...planGated('campaigns', {
+        path: 'campaigns/:id',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'campaigns' satisfies NavKey },
+        loadComponent: () => import('./features/campaigns/campaign-form.page').then((m) => m.CampaignFormPage),
+      }),
+      {
+        path: 'campaign-moderation',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'campaignModeration' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/campaign-moderation/campaign-moderation.page').then((m) => m.CampaignModerationPage),
+      },
       {
         path: 'analytics',
         canActivate: [adminPermissionGuard],

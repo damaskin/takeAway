@@ -42,6 +42,11 @@ describe('permissions map', () => {
       expect(canAccess('SUPER_ADMIN', 'brands')).toBe(true);
     });
 
+    it('keeps campaign moderation SUPER_ADMIN-only', () => {
+      expect(ADMIN_ROLES.campaignModeration).toEqual(['SUPER_ADMIN']);
+      expect(navLink('campaignModeration')).toBe('/campaign-moderation');
+    });
+
     it('keeps customer feedback SUPER_ADMIN-only', () => {
       expect(ADMIN_ROLES.feedback).toEqual(['SUPER_ADMIN']);
       expect(navLink('feedback')).toBe('/feedback');
