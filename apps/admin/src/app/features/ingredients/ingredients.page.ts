@@ -3,6 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
 import type { Observable } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -20,6 +21,9 @@ type Filter = 'all' | 'out' | 'unused';
  * Опции»; taking it off a product leaves it here, deleting it here takes it
  * off every product. Switching it off hides those options in the site, the
  * Telegram app and the mobile app while the products stay on the menu.
+ *
+ * Each add-on can carry the group an extra made of it starts in on a
+ * product («Ваниль» → «Сиропы»); the customer apps show add-ons by group.
  *
  * The add and edit forms are bound to form groups: the plain
  * `<form (ngSubmit)>` they used to be never fired without one, so "Add"
@@ -158,6 +162,17 @@ type Filter = 'all' | 'out' | 'unused';
           <span class="label">{{ 'admin.ingredients.price' | translate: { currency: currencyLabel() } }}</span>
           <input class="control" formControlName="price" inputmode="decimal" autocomplete="off" placeholder="0" />
         </label>
+        <label class="field" style="flex: 0 1 180px" [title]="'admin.ingredients.groupHint' | translate">
+          <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
+          <input
+            class="control"
+            formControlName="group"
+            list="ingredient-groups"
+            [attr.maxlength]="groupMaxLength"
+            [placeholder]="'admin.ingredients.groupPlaceholder' | translate"
+            data-testid="ingredient-group"
+          />
+        </label>
         <button type="submit" class="primary disabled:opacity-50" [disabled]="busy() || !brand()">
           {{ 'admin.ingredients.add' | translate }}
         </button>
@@ -201,6 +216,12 @@ type Filter = 'all' | 'out' | 'unused';
         <p class="hint" style="margin: 0">{{ 'common.loading' | translate }}</p>
       }
 
+      <datalist id="ingredient-groups">
+        @for (g of groups(); track g) {
+          <option [value]="g"></option>
+        }
+      </datalist>
+
       <div class="flex flex-col" style="gap: 8px">
         @for (item of shown(); track item.id) {
           <div class="row" [class.out]="!item.isAvailable" data-testid="ingredient-row">
@@ -223,6 +244,16 @@ type Filter = 'all' | 'out' | 'unused';
                     }}</span>
                     <input class="control small" formControlName="price" inputmode="decimal" autocomplete="off" />
                   </label>
+                  <label class="field" style="flex: 0 1 160px">
+                    <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
+                    <input
+                      class="control small"
+                      formControlName="group"
+                      list="ingredient-groups"
+                      [attr.maxlength]="groupMaxLength"
+                      [placeholder]="'admin.menu.options.defaultGroup' | translate"
+                    />
+                  </label>
                   <button type="submit" class="primary small" [disabled]="busy()">
                     {{ 'common.save' | translate }}
                   </button>
@@ -241,6 +272,9 @@ type Filter = 'all' | 'out' | 'unused';
                 <span class="flex items-baseline flex-wrap" style="gap: 4px 10px">
                   <span class="name">{{ item.name }}</span>
                   <span class="price" data-testid="ingredient-price">{{ formatPrice(item.priceCents) }}</span>
+                  @if (item.group) {
+                    <span class="price" data-testid="ingredient-group-label">{{ item.group }}</span>
+                  }
                 </span>
                 <span class="hint" data-testid="ingredient-usage">
                   @if (item.products.length > 0) {
@@ -315,13 +349,25 @@ export class IngredientsPage {
   readonly addSubmitted = signal(false);
   readonly editSubmitted = signal(false);
 
+  readonly groupMaxLength = MODIFIER_GROUP_MAX_LENGTH;
   readonly addForm = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
+    group: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MODIFIER_GROUP_MAX_LENGTH)] }),
   });
   readonly editForm = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
+    group: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MODIFIER_GROUP_MAX_LENGTH)] }),
+  });
+
+  /** The groups the library already uses, for suggestions. */
+  readonly groups = computed(() => {
+    const seen = new Map<string, string>();
+    for (const item of this.items()) {
+      if (item.group && !seen.has(item.group.toLocaleLowerCase())) seen.set(item.group.toLocaleLowerCase(), item.group);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
   });
 
   readonly outCount = computed(() => this.items().filter((i) => !i.isAvailable).length);
@@ -369,12 +415,19 @@ export class IngredientsPage {
   add(): void {
     this.addSubmitted.set(true);
     const brand = this.brand();
-    const { name, price } = this.addForm.getRawValue();
+    const { name, price, group } = this.addForm.getRawValue();
     const priceCents = price.trim() ? parseMoney(price) : 0;
     if (!brand || this.addForm.invalid || !name.trim() || priceCents === null) return;
-    this.run(this.api.createIngredient({ brandId: brand.id, name: name.trim(), priceCents }), (created) => {
+    const input = {
+      brandId: brand.id,
+      name: name.trim(),
+      priceCents,
+      ...(group.trim() ? { group: group.trim() } : {}),
+    };
+    this.run(this.api.createIngredient(input), (created) => {
       this.addSubmitted.set(false);
-      this.addForm.reset({ name: '', price: '' });
+      // Keep the group: several syrups are usually added in a row.
+      this.addForm.reset({ name: '', price: '', group });
       this.items.update((list) => sortByName([...list, created]));
     });
   }
@@ -389,18 +442,23 @@ export class IngredientsPage {
   startEdit(item: IngredientDto): void {
     this.editSubmitted.set(false);
     this.editingId.set(item.id);
-    this.editForm.reset({ name: item.name, price: formatMoneyInput(item.priceCents, this.separator()) });
+    this.editForm.reset({
+      name: item.name,
+      price: formatMoneyInput(item.priceCents, this.separator()),
+      group: item.group ?? '',
+    });
   }
 
-  /** Only what changed is sent: the server carries a new name or price to the products. */
+  /** Only what changed is sent: the server carries a new name, price or group to the products. */
   saveEdit(item: IngredientDto): void {
     this.editSubmitted.set(true);
-    const { name, price } = this.editForm.getRawValue();
+    const { name, price, group } = this.editForm.getRawValue();
     const priceCents = price.trim() ? parseMoney(price) : 0;
     if (this.editForm.invalid || !name.trim() || priceCents === null) return;
-    const change: { name?: string; priceCents?: number } = {};
+    const change: { name?: string; priceCents?: number; group?: string | null } = {};
     if (name.trim() !== item.name) change.name = name.trim();
     if (priceCents !== item.priceCents) change.priceCents = priceCents;
+    if ((group.trim() || null) !== (item.group ?? null)) change.group = group.trim() || null;
     if (Object.keys(change).length === 0) {
       this.editingId.set(null);
       return;

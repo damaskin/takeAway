@@ -1,20 +1,27 @@
 import { HttpEventType } from '@angular/common/http';
-import { Component, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { type CategoryKind, PRODUCT_PHOTO_RULE } from '@takeaway/shared-types';
+import { productPlaceholderUrl } from '@takeaway/utils';
 
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
+import { acceptFor, ruleParams } from '../../shared/image-rules';
 import { describeMenuError } from './menu-errors';
 
-/** Mirrors the API: six photos, raster formats only, 5 MB each. */
+/** Mirrors the API: six photos, the formats and size of `PRODUCT_PHOTO_RULE`. */
 export const MAX_PRODUCT_IMAGES = 6;
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
-const MAX_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_TYPES: readonly string[] = PRODUCT_PHOTO_RULE.types;
+const MAX_BYTES = PRODUCT_PHOTO_RULE.maxBytes;
 
 /**
  * A product's photos: upload (several at once, one request each, with
  * progress), remove, and pick the main one — the first photo is what
  * customers see on the menu card. The API stays the judge of type and
  * size; the checks here only spare a pointless upload of a 20 MB HEIC.
+ *
+ * The hint carries the upload rule and the platform's photo style, and a
+ * product without photos shows the placeholder customers see instead —
+ * the one of its category's kind.
  */
 @Component({
   selector: 'app-product-images',
@@ -33,8 +40,25 @@ const MAX_BYTES = 5 * 1024 * 1024;
         }}</span>
       </div>
       <p style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">
-        {{ 'admin.menu.images.hint' | translate }}
+        {{ 'admin.images.productRule' | translate: rule }}
       </p>
+      <p style="margin: 0; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)">
+        {{ 'admin.images.productStyle' | translate }}
+      </p>
+      @if (urls().length === 0) {
+        <div class="flex items-center" style="gap: 10px" data-testid="product-placeholder">
+          <img
+            [src]="placeholder()"
+            alt=""
+            width="56"
+            height="56"
+            style="border-radius: 12px; background: white; border: 1px solid var(--color-border-light)"
+          />
+          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+            >{{ 'admin.images.placeholder' | translate }}.</span
+          >
+        </div>
+      }
 
       <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px">
         @for (url of urls(); track url; let first = $first) {
@@ -123,11 +147,15 @@ export class ProductImagesComponent {
 
   readonly productId = input.required<string>();
   readonly imageUrls = input.required<string[]>();
+  /** Picks the placeholder shown while there is no photo. */
+  readonly categoryKind = input<CategoryKind>('OTHER');
   /** The new list after every successful change, for the product table's thumbnail. */
   readonly changed = output<string[]>();
 
   readonly max = MAX_PRODUCT_IMAGES;
-  readonly accept = ACCEPTED_TYPES.join(',');
+  readonly accept = acceptFor(PRODUCT_PHOTO_RULE);
+  readonly rule = { ...ruleParams(PRODUCT_PHOTO_RULE), max: MAX_PRODUCT_IMAGES };
+  readonly placeholder = computed(() => productPlaceholderUrl(this.categoryKind()));
   readonly urls = linkedSignal(() => this.imageUrls());
   readonly busy = signal(false);
   readonly uploading = signal(false);

@@ -2,6 +2,8 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { RouterLink } from '@angular/router';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import type { CategoryKind } from '@takeaway/shared-types';
+import { productPlaceholderUrl } from '@takeaway/utils';
 
 import { AdminCatalogApi, type CategoryAdminDto } from '../../core/catalog/admin-catalog.service';
 import { describeMenuError, menuErrorCode } from './menu-errors';
@@ -69,16 +71,29 @@ import { swapped } from './menu-order';
           >
             <span class="flex flex-col" style="flex: 1; min-width: 0; gap: 1px">
               <span style="overflow-wrap: break-word; line-height: 1.25">{{ cat.name }}</span>
-              @if (!cat.visible) {
-                <span [style]="badgeStyle">{{ 'admin.menu.hidden' | translate }}</span>
-              } @else if (cat.addOnsOnly) {
-                <span
-                  [style]="badgeStyle"
-                  [title]="'admin.menu.category.addOnsOnlyHint' | translate"
-                  data-testid="category-add-ons-only"
-                  >{{ 'admin.menu.category.addOnsOnlyBadge' | translate }}</span
-                >
-              }
+              <span class="flex items-center flex-wrap" style="gap: 2px 8px">
+                @if (cat.kind && cat.kind !== 'OTHER') {
+                  <span
+                    class="flex items-center"
+                    [style]="kindBadgeStyle"
+                    [title]="'admin.menu.kinds.' + cat.kind + '.name' | translate"
+                    data-testid="category-kind"
+                  >
+                    <img [src]="kindIcon(cat.kind)" alt="" width="14" height="14" />
+                    {{ 'admin.menu.kinds.' + cat.kind + '.short' | translate }}
+                  </span>
+                }
+                @if (!cat.visible) {
+                  <span [style]="badgeStyle">{{ 'admin.menu.hidden' | translate }}</span>
+                } @else if (cat.addOnsOnly) {
+                  <span
+                    [style]="badgeStyle"
+                    [title]="'admin.menu.category.addOnsOnlyHint' | translate"
+                    data-testid="category-add-ons-only"
+                    >{{ 'admin.menu.category.addOnsOnlyBadge' | translate }}</span
+                  >
+                }
+              </span>
             </span>
             @if (cat._count) {
               <span
@@ -210,6 +225,13 @@ export class MenuCategoriesComponent {
   readonly deleteIconStyle = `${this.iconStyle}; color: var(--color-berry); margin-right: 4px`;
   readonly badgeStyle =
     'font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px';
+
+  readonly kindBadgeStyle = `${this.badgeStyle}; gap: 3px`;
+
+  /** The kind's product placeholder doubles as its icon. */
+  kindIcon(kind: CategoryKind): string {
+    return productPlaceholderUrl(kind);
+  }
 
   move(index: number, delta: -1 | 1): void {
     const list = swapped(this.categories(), index, index + delta);

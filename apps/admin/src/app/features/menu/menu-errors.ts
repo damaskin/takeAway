@@ -41,6 +41,11 @@ const MENU_FIELDS = [
   'ingredientId',
   'isAvailable',
   'priceCents',
+  'kind',
+  'defaultPrepTimeSeconds',
+  'group',
+  'options',
+  'variationType',
 ] as const;
 
 const MENU_WORDING: ApiErrorWording = {

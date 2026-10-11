@@ -90,11 +90,11 @@ describe('IngredientsPage («Добавки»)', () => {
   it('adds a free add-on when the price is left empty, and refuses a price it cannot read', () => {
     const { page, mocks } = setup();
 
-    page.addForm.setValue({ name: 'Корица молотая', price: 'пять' });
+    page.addForm.setValue({ name: 'Корица молотая', price: 'пять', group: '' });
     page.add();
     expect(mocks.createIngredient).not.toHaveBeenCalled();
 
-    page.addForm.setValue({ name: 'Корица молотая', price: '' });
+    page.addForm.setValue({ name: 'Корица молотая', price: '', group: '' });
     page.add();
     expect(mocks.createIngredient).toHaveBeenCalledWith({ brandId: 'b1', name: 'Корица молотая', priceCents: 0 });
   });
@@ -126,7 +126,7 @@ describe('IngredientsPage («Добавки»)', () => {
     const { page, mocks } = setup();
 
     page.startEdit(VANILLA);
-    expect(page.editForm.getRawValue()).toEqual({ name: 'Ванильный сироп', price: '5' });
+    expect(page.editForm.getRawValue()).toEqual({ name: 'Ванильный сироп', price: '5', group: '' });
     page.editForm.controls.price.setValue('7,50');
     page.saveEdit(VANILLA);
 
@@ -146,6 +146,32 @@ describe('IngredientsPage («Добавки»)', () => {
     );
     expect(mocks.deleteIngredient).toHaveBeenCalledWith('ing-vanilla');
     expect(el.textContent).not.toContain('Ванильный сироп');
+  });
+
+  // «Ваниль» picked for a latte lands under «Сиропы» on the customer's screen.
+  it('files an add-on under a group, and sends a new group only when it changed', () => {
+    const { page, mocks } = setup();
+
+    page.addForm.setValue({ name: 'Карамель', price: '5', group: ' Сиропы ' });
+    page.add();
+    expect(mocks.createIngredient).toHaveBeenCalledWith({
+      brandId: 'b1',
+      name: 'Карамель',
+      priceCents: 500,
+      group: 'Сиропы',
+    });
+    // The group stays for the next syrup.
+    expect(page.addForm.controls.group.value).toBe(' Сиропы ');
+
+    page.startEdit(VANILLA);
+    page.editForm.controls.group.setValue('Сиропы');
+    page.saveEdit(VANILLA);
+    expect(mocks.updateIngredient).toHaveBeenLastCalledWith('ing-vanilla', { group: 'Сиропы' });
+
+    page.startEdit({ ...VANILLA, group: 'Сиропы' });
+    page.editForm.controls.group.setValue('');
+    page.saveEdit({ ...VANILLA, group: 'Сиропы' });
+    expect(mocks.updateIngredient).toHaveBeenLastCalledWith('ing-vanilla', { group: null });
   });
 
   it('deletes nothing when the question is declined', () => {

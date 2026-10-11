@@ -13,12 +13,23 @@ import {
   type VariationType,
 } from '../../core/catalog/admin-catalog.service';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { CATEGORY_KINDS, type CategoryKind, MODIFIER_GROUP_MAX_LENGTH, optionPresetFor } from '@takeaway/shared-types';
+import { productFieldsFor } from './category-kind';
 import { describeMenuError } from './menu-errors';
 import { MENU_FORM_STYLES } from './menu-form.styles';
 import { countValidator, formatMoneyInput, moneyValidator, parseCount, parseMoney } from './menu-input';
 
 const VARIATION_TYPES: VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 const MAX_COUNT = 99;
+
+/** The add-on group labels of every preset, for suggestions next to the brand's own. */
+function presetGroupNames(lang: 'ru' | 'en'): string[] {
+  return CATEGORY_KINDS.flatMap((kind) =>
+    optionPresetFor(kind)
+      .filter((g) => g.kind === 'MODIFIER')
+      .map((g) => g.name[lang]),
+  );
+}
 
 /**
  * Options of one product. Variations are chosen one per group (size,
@@ -30,6 +41,11 @@ const MAX_COUNT = 99;
  * Extras and milks are add-ons of the brand library («Добавки»): one is
  * picked from it at its usual price, and a new one typed here joins it.
  * Deleting an option takes the add-on off this product only.
+ *
+ * Extras sit in groups the customer sees («Сиропы», «Соусы», «Убрать»);
+ * one picked from the library lands in its library group. The choice
+ * groups offered follow the category's kind: no milk or cup for a burger
+ * (an existing one stays listed).
  */
 @Component({
   selector: 'app-product-options-panel',
@@ -134,8 +150,8 @@ const MAX_COUNT = 99;
           <div class="form-row-tight">
             <label class="field">
               <span class="label">{{ 'admin.menu.options.type' | translate }}</span>
-              <select class="control small" formControlName="type">
-                @for (t of variationTypes; track t) {
+              <select class="control small" formControlName="type" data-testid="variation-type">
+                @for (t of variationTypes(); track t) {
                   <option [value]="t">{{ 'admin.menu.options.types.' + t | translate }}</option>
                 }
               </select>
@@ -184,80 +200,93 @@ const MAX_COUNT = 99;
           <h3 [style]="headingStyle">{{ 'admin.menu.options.modifiers' | translate }}</h3>
           <p class="hint" style="margin: 0">{{ 'admin.menu.options.modifiersHint' | translate }}</p>
         </div>
-        @for (m of modifiers(); track m.id) {
-          @if (editingModifierId() === m.id) {
-            <form [formGroup]="modifierEdit" (ngSubmit)="saveModifier(m)" [style]="editBoxStyle">
-              <div class="form-row-tight">
+        @for (group of modifierGroups(); track group.key) {
+          <span class="label" style="font-weight: 700" data-testid="modifier-group">{{ group.label }}</span>
+          @for (m of group.items; track m.id) {
+            @if (editingModifierId() === m.id) {
+              <form [formGroup]="modifierEdit" (ngSubmit)="saveModifier(m)" [style]="editBoxStyle">
+                <div class="form-row-tight">
+                  <label class="field">
+                    <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
+                    <input class="control small" formControlName="name" maxlength="80" />
+                  </label>
+                  <label class="field">
+                    <span class="label">{{
+                      'admin.menu.options.priceDelta' | translate: { currency: currencyLabel() }
+                    }}</span>
+                    <input class="control small" formControlName="price" inputmode="decimal" autocomplete="off" />
+                  </label>
+                </div>
+                <div class="form-row-tight">
+                  <label class="field">
+                    <span class="label">{{ 'admin.menu.options.minCount' | translate }}</span>
+                    <input class="control small" formControlName="minCount" inputmode="numeric" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="label">{{ 'admin.menu.options.maxCount' | translate }}</span>
+                    <input class="control small" formControlName="maxCount" inputmode="numeric" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span class="label">{{ 'admin.menu.options.sortOrder' | translate }}</span>
+                    <input class="control small" formControlName="sortOrder" inputmode="numeric" autocomplete="off" />
+                  </label>
+                </div>
+                <span class="hint">{{ 'admin.menu.options.countHint' | translate }}</span>
                 <label class="field">
-                  <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
-                  <input class="control small" formControlName="name" maxlength="80" />
+                  <span class="label">{{ 'admin.menu.options.group' | translate }}</span>
+                  <input
+                    class="control small"
+                    formControlName="group"
+                    list="option-groups"
+                    [attr.maxlength]="groupMaxLength"
+                    [placeholder]="'admin.menu.options.defaultGroup' | translate"
+                  />
                 </label>
                 <label class="field">
-                  <span class="label">{{
-                    'admin.menu.options.priceDelta' | translate: { currency: currencyLabel() }
+                  <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
+                  <select class="control small" formControlName="ingredientId">
+                    <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                    @for (i of ingredients(); track i.id) {
+                      <option [value]="i.id">
+                        {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
+                      </option>
+                    }
+                  </select>
+                </label>
+                @if (modifierEditSubmitted() && modifierEditError(); as key) {
+                  <span class="error">{{ key | translate }}</span>
+                }
+                <div class="flex items-center flex-wrap" style="gap: 8px 12px">
+                  <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
+                    {{ 'common.save' | translate }}
+                  </button>
+                  <button type="button" class="link muted" (click)="cancelEdit()">
+                    {{ 'common.cancel' | translate }}
+                  </button>
+                </div>
+              </form>
+            } @else {
+              <div [style]="rowStyle">
+                <span [style]="nameStyle">{{ m.name }}</span>
+                @if (m.ingredient && !m.ingredient.isAvailable) {
+                  <span [style]="outBadgeStyle" data-testid="option-out-of-stock">{{
+                    'admin.menu.options.outOfStock' | translate
                   }}</span>
-                  <input class="control small" formControlName="price" inputmode="decimal" autocomplete="off" />
-                </label>
-              </div>
-              <div class="form-row-tight">
-                <label class="field">
-                  <span class="label">{{ 'admin.menu.options.minCount' | translate }}</span>
-                  <input class="control small" formControlName="minCount" inputmode="numeric" autocomplete="off" />
-                </label>
-                <label class="field">
-                  <span class="label">{{ 'admin.menu.options.maxCount' | translate }}</span>
-                  <input class="control small" formControlName="maxCount" inputmode="numeric" autocomplete="off" />
-                </label>
-                <label class="field">
-                  <span class="label">{{ 'admin.menu.options.sortOrder' | translate }}</span>
-                  <input class="control small" formControlName="sortOrder" inputmode="numeric" autocomplete="off" />
-                </label>
-              </div>
-              <span class="hint">{{ 'admin.menu.options.countHint' | translate }}</span>
-              <label class="field">
-                <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
-                <select class="control small" formControlName="ingredientId">
-                  <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
-                  @for (i of ingredients(); track i.id) {
-                    <option [value]="i.id">
-                      {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
-                    </option>
-                  }
-                </select>
-              </label>
-              @if (modifierEditSubmitted() && modifierEditError(); as key) {
-                <span class="error">{{ key | translate }}</span>
-              }
-              <div class="flex items-center flex-wrap" style="gap: 8px 12px">
-                <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
-                  {{ 'common.save' | translate }}
-                </button>
-                <button type="button" class="link muted" (click)="cancelEdit()">
-                  {{ 'common.cancel' | translate }}
-                </button>
-              </div>
-            </form>
-          } @else {
-            <div [style]="rowStyle">
-              <span [style]="nameStyle">{{ m.name }}</span>
-              @if (m.ingredient && !m.ingredient.isAvailable) {
-                <span [style]="outBadgeStyle" data-testid="option-out-of-stock">{{
-                  'admin.menu.options.outOfStock' | translate
+                }
+                <span class="hint">{{
+                  'admin.menu.options.countRange' | translate: { min: m.minCount, max: m.maxCount }
                 }}</span>
-              }
-              <span class="hint">{{
-                'admin.menu.options.countRange' | translate: { min: m.minCount, max: m.maxCount }
-              }}</span>
-              <span [style]="deltaStyle">{{ formatDelta(m.priceDeltaCents) }}</span>
-              <span class="flex items-center" style="gap: 10px">
-                <button type="button" class="link" [disabled]="busy()" (click)="editModifier(m)">
-                  {{ 'admin.menu.options.edit' | translate }}
-                </button>
-                <button type="button" class="link danger" [disabled]="busy()" (click)="deleteModifier(m)">
-                  {{ 'admin.menu.options.delete' | translate }}
-                </button>
-              </span>
-            </div>
+                <span [style]="deltaStyle">{{ formatDelta(m.priceDeltaCents) }}</span>
+                <span class="flex items-center" style="gap: 10px">
+                  <button type="button" class="link" [disabled]="busy()" (click)="editModifier(m)">
+                    {{ 'admin.menu.options.edit' | translate }}
+                  </button>
+                  <button type="button" class="link danger" [disabled]="busy()" (click)="deleteModifier(m)">
+                    {{ 'admin.menu.options.delete' | translate }}
+                  </button>
+                </span>
+              </div>
+            }
           }
         } @empty {
           @if (!loading()) {
@@ -324,6 +353,18 @@ const MAX_COUNT = 99;
               <input class="control small" formControlName="maxCount" inputmode="numeric" autocomplete="off" />
             </label>
           </div>
+          <label class="field">
+            <span class="label">{{ 'admin.menu.options.group' | translate }}</span>
+            <input
+              class="control small"
+              formControlName="group"
+              list="option-groups"
+              [attr.maxlength]="groupMaxLength"
+              [placeholder]="'admin.menu.options.groupPlaceholder' | translate"
+              data-testid="modifier-group-input"
+            />
+            <span class="hint">{{ 'admin.menu.options.groupHint' | translate }}</span>
+          </label>
           <div class="flex items-center flex-wrap" style="gap: 8px 16px">
             <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
               {{ 'admin.menu.options.addModifier' | translate }}
@@ -344,6 +385,11 @@ const MAX_COUNT = 99;
           <option [value]="i.name"></option>
         }
       </datalist>
+      <datalist id="option-groups">
+        @for (g of groupSuggestions(); track g) {
+          <option [value]="g"></option>
+        }
+      </datalist>
 
       @if (error()) {
         <p role="alert" class="error" style="grid-column: 1 / -1; margin: 0; font-size: 13px">{{ error() }}</p>
@@ -359,9 +405,41 @@ export class ProductOptionsPanelComponent {
   readonly productId = input.required<string>();
   readonly currency = input<string | null>(null);
 
-  readonly variationTypes = VARIATION_TYPES;
+  readonly groupMaxLength = MODIFIER_GROUP_MAX_LENGTH;
+  /** The kind of the product's category: which choice groups can be added. */
+  readonly kind = signal<CategoryKind>('OTHER');
+  readonly variationTypes = computed(() => productFieldsFor(this.kind()).variationTypes);
   readonly variations = signal<VariationAdminDto[]>([]);
   readonly modifiers = signal<ModifierAdminDto[]>([]);
+  /** Add-on groups the brand already uses. */
+  readonly brandGroups = signal<string[]>([]);
+  readonly groupSuggestions = computed(() => {
+    const lang = this.translate.getCurrentLang() === 'en' ? 'en' : 'ru';
+    const seen = new Set<string>();
+    return [...this.brandGroups(), ...presetGroupNames(lang)].filter((g) => {
+      const key = g.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+  /** Extras by the group the customer sees them under, in their order; ungrouped ones under «Добавки». */
+  readonly modifierGroups = computed(() => {
+    const groups: Array<{ key: string; label: string; items: ModifierAdminDto[] }> = [];
+    const sorted = [...this.modifiers()].sort((a, b) => a.sortOrder - b.sortOrder);
+    for (const m of sorted) {
+      const key = (m.group ?? '').toLocaleLowerCase();
+      const found = groups.find((g) => g.key === key);
+      if (found) found.items.push(m);
+      else
+        groups.push({
+          key,
+          label: m.group || this.translate.instant('admin.menu.options.defaultGroup'),
+          items: [m],
+        });
+    }
+    return groups;
+  });
   /** The brand's add-ons library, to pick extras from, link options to and suggest names from. */
   readonly ingredients = signal<IngredientDto[]>([]);
   /** Library add-ons this product does not offer as an extra yet. */
@@ -428,6 +506,8 @@ export class ProductOptionsPanelComponent {
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(80)] }),
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     maxCount: new FormControl('1', { nonNullable: true, validators: [countValidator(1, MAX_COUNT)] }),
+    /** '' = the library entry's group, or «Добавки». */
+    group: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MODIFIER_GROUP_MAX_LENGTH)] }),
   });
 
   readonly modifierEdit = new FormGroup({
@@ -438,6 +518,8 @@ export class ProductOptionsPanelComponent {
     sortOrder: new FormControl('', { nonNullable: true, validators: [countValidator(0, 10_000)] }),
     /** '' = not tracked. */
     ingredientId: new FormControl('', { nonNullable: true }),
+    /** '' = «Добавки». */
+    group: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MODIFIER_GROUP_MAX_LENGTH)] }),
   });
 
   constructor() {
@@ -548,10 +630,13 @@ export class ProductOptionsPanelComponent {
         // Left empty: an add-on already in the library costs its usual price, a new one nothing.
         ...(priceDeltaCents === undefined ? {} : { priceDeltaCents }),
         maxCount,
+        // Left empty: the library entry's group, if it has one.
+        ...(m.group.trim() ? { group: m.group.trim() } : {}),
       }),
       () => {
         this.modifierAddSubmitted.set(false);
-        this.modifierAdd.reset({ name: '', price: '', maxCount: '1' });
+        // Keep the group: several syrups are usually added in a row.
+        this.modifierAdd.reset({ name: '', price: '', maxCount: '1', group: m.group });
       },
     );
   }
@@ -566,6 +651,7 @@ export class ProductOptionsPanelComponent {
       maxCount: String(m.maxCount),
       sortOrder: String(m.sortOrder),
       ingredientId: m.ingredientId ?? '',
+      group: m.group ?? '',
     });
   }
 
@@ -609,6 +695,7 @@ export class ProductOptionsPanelComponent {
         maxCount,
         sortOrder,
         ingredientId: f.ingredientId || null,
+        group: f.group.trim() || null,
       }),
       () => this.cancelEdit(),
     );
@@ -661,6 +748,12 @@ export class ProductOptionsPanelComponent {
         this.loading.set(false);
         this.variations.set(p.variations ?? []);
         this.modifiers.set(p.modifiers ?? []);
+        this.kind.set(p.category?.kind ?? 'OTHER');
+        this.api.listOptionGroups(p.brandId).subscribe({
+          next: (groups) => this.brandGroups.set(groups),
+          // Without them the preset group names are still suggested.
+          error: () => this.brandGroups.set([]),
+        });
         // A new extra may have just joined the library; keep the list current.
         this.api.listIngredients(p.brandId).subscribe({
           next: (list) => this.ingredients.set([...list].sort((a, b) => a.name.localeCompare(b.name))),

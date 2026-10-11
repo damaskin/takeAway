@@ -917,6 +917,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'JPG, PNG or WebP, up to {{maxMb}} MB. Best at {{width}}×{{height}} pixels ({{aspect}}) — then it fills the store card without being cropped.',
       logoRule:
         'JPG, PNG or WebP, up to {{maxMb}} MB. Square, best at {{width}}×{{height}} pixels, on a white or transparent background.',
+      productRule:
+        'Up to {{max}} photos: JPEG, PNG, WebP or AVIF, {{maxMb}} MB each at most. Square works best ({{aspect}}, from {{width}}×{{height}} pixels), or 3:4 with the product in the middle. The first photo is the main one, shown in the menu.',
+      productStyle:
+        'How to shoot: the product cut out on white, a 3/4 angle, soft light, no third-party logos. Hot drinks in a paper cup, cold ones in a clear cup.',
+      placeholder: 'Until there is a photo, customers see this picture',
       errors: {
         type: 'This file will not do: it has to be a JPG, PNG or WebP picture.',
         size: 'The file is {{size}} MB and the limit is {{maxMb}} MB. Make the picture smaller and upload it again.',
@@ -1479,6 +1484,38 @@ export const TRANSLATIONS_EN: TranslationTree = {
         isAvailable: 'In stock',
         addOnsOnly: 'Only as an add-on',
         priceCents: 'Price',
+        kind: 'What the category holds',
+        defaultPrepTimeSeconds: 'Default preparation time',
+        group: 'Group',
+        options: 'Options',
+        variationType: 'Choice group',
+      },
+      kinds: {
+        HOT_DRINKS: {
+          name: 'Hot drinks',
+          short: 'Hot',
+          hint: 'Coffee, tea, cocoa. The product card has caffeine and size, milk, syrups.',
+        },
+        COLD_DRINKS: {
+          name: 'Cold drinks',
+          short: 'Cold',
+          hint: 'Iced coffee, lemonades, smoothies, shakes. The product card has caffeine and size, milk, ice, syrups.',
+        },
+        FOOD: {
+          name: 'Food',
+          short: 'Food',
+          hint: 'Shawarma, burgers, sandwiches, breakfasts. The product card has allergens, no caffeine; add-ons are sauces, «add», «remove».',
+        },
+        BAKERY: {
+          name: 'Bakery and desserts',
+          short: 'Bakery',
+          hint: 'Croissants, cakes, cookies. The product card has allergens, no caffeine; add-ons are warming up, jam.',
+        },
+        OTHER: {
+          name: 'Other',
+          short: 'Other',
+          hint: 'Anything else: the product card shows every field, there is no ready-made option set.',
+        },
       },
       category: {
         name: 'Category name',
@@ -1497,6 +1534,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
         addOnsOnlyNote:
           'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, add it to the add-ons library and pick it in the drink\'s options.',
         addOnsOnlyLink: 'Open add-ons →',
+        kind: 'What the category holds',
+        kindSuggested: 'Picked from the name — change it if it is wrong.',
+        prep: 'Default preparation time, min',
+        prepHint: 'A new product of the category starts with this time. Usual for «{{kind}}»: {{minutes}} min.',
+        prepHintOther: 'A new product of the category starts with this time. Empty — 3 minutes.',
+        prepSuggest: 'Use {{minutes}} min',
+        prepApply: 'Apply to every product of the category',
+        prepApplyConfirm:
+          'Set {{minutes}} min for every product of «{{name}}»? Times set on single products are replaced.',
+        prepApplied: 'Time updated on products: {{count}}.',
+        prepApplyDirty: 'Save the category first — the saved time is the one applied.',
       },
       slug: {
         advanced: 'Advanced',
@@ -1563,6 +1611,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
         stores: 'Sold in stores',
         storesHint: 'Same price in every store. New stores of the brand get the product automatically.',
         storesNone: 'No store is ticked — nobody will see the product.',
+        kindNote: 'Card fields for a «{{kind}}» category.',
+        hiddenData:
+          'The product has values a «{{kind}}» category does not show: {{fields}}. They are kept as they are — clear them if they are not needed.',
+        hiddenClear: 'Clear',
+        allergensChecklist: 'Allergens',
+        allergensOther: 'Other allergens',
+        allergensOtherHint: 'Comma-separated — whatever the list does not have.',
+        applyCategoryOptions: 'Add the category options ({{count}})',
+        applyCategoryOptionsHint:
+          "Variations and add-ons from the category's options, with their prices. They can be changed on this product later.",
+        prepFromCategory: "The category's default time.",
       },
       images: {
         title: 'Photos',
@@ -1575,6 +1634,30 @@ export const TRANSLATIONS_EN: TranslationTree = {
         remove: 'Remove',
         removeConfirm: 'Remove this photo?',
         onlySome: 'Not every file was added: a product can have at most {{max}} photos.',
+      },
+      categoryOptions: {
+        title: 'Category options',
+        hint: "The option set of this category's products: a new product gets it when created, existing ones on «Apply to the category's products». Customers see add-ons by group: milk, syrups, sauces…",
+        empty: 'No set yet. Start from a ready-made one — it can be adjusted before saving.',
+        addPreset: 'Add the set for «{{kind}}»',
+        presetKind: 'Set for',
+        previewTitle: 'Set for «{{kind}}»',
+        previewHint:
+          'Untick what you do not sell and type your prices. Add-ons already in the add-ons library come from there, with their price.',
+        fromLibrary: 'from the library',
+        inSet: 'already in the set',
+        save: 'Save the set ({{count}})',
+        saved: "The set is saved. Check the prices and press «Apply to the category's products».",
+        apply: "Apply to the category's products",
+        applyConfirm:
+          'Add the missing options to every product of «{{name}}»? Options and prices products already have stay as they are, nothing is removed.',
+        applied: 'Added to {{products}} of {{total}} products — variations: {{variations}}, add-ons: {{modifiers}}.',
+        appliedNothing: 'Every product of the category already has these options.',
+        sizesNote:
+          'Size, temperature and cup are added to a product as a whole group — only where it has no such group yet. Milk and add-ons go one by one, whichever are missing.',
+        deleteConfirm: 'Take «{{name}}» out of the category set? Products that already have it keep it.',
+        noProducts: 'The category has no products yet — every new product gets the set.',
+        noPreset: 'An «Other» category has no ready-made set — pick whose set to take.',
       },
       options: {
         variations: 'Variations',
@@ -1617,6 +1700,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         fromLibrary: 'From the library',
         fromLibraryPlaceholder: 'Pick an add-on',
         addFromLibrary: '+ Add',
+        group: 'Group',
+        groupPlaceholder: 'E.g. Syrups',
+        groupHint: 'Customers see add-ons by group: «Syrups», «Sauces», «Remove»… Empty — the general «Add-ons» group.',
+        defaultGroup: 'Add-ons',
       },
       errors: {
         gone: 'Not found — it may already be deleted.',
@@ -1683,6 +1770,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       menuLink: 'Go to the menu →',
       newLabel: 'New add-on',
       newPlaceholder: 'E.g. Lactose-free milk',
+      group: 'Group',
+      groupPlaceholder: 'E.g. Syrups',
+      groupHint: 'The group the add-on lands in on a product when it is picked from the library.',
       name: 'Name',
       price: 'Price, {{currency}}',
       add: '+ Add',
@@ -1878,7 +1968,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
           LOCKER: 'From a locker',
         },
         baseEta: 'Base time per order, min',
-        baseEtaHint: 'Ringing up, packing, handing over. Preparation and the queue come on top.',
+        baseEtaHint:
+          "The store's time is only ringing up, packing and handing over. Cooking time is set on each item (and by default on its category in Menu); the queue comes on top.",
         parallelism: 'Orders prepared at once',
         parallelismHint: 'How many orders the kitchen really works in parallel — it sets how fast a rush drains.',
         slotCapacity: 'Orders per 15 minutes',

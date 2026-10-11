@@ -1,7 +1,7 @@
 import { HttpClient, type HttpEvent } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import type { BrandPlan, StoreKind } from '@takeaway/shared-types';
+import type { BrandPlan, CategoryKind, StoreKind } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -38,7 +38,7 @@ export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type PickupPointType = 'COUNTER' | 'SHELF' | 'LOCKER';
 export type StoreImageKind = 'hero' | 'gallery';
-export type { StoreKind };
+export type { CategoryKind, StoreKind };
 
 /** The checks a closed store has to pass before it can be opened. */
 export type ReadinessCheck = 'coordinates' | 'timezone' | 'hours' | 'menu' | 'brandApproved';
@@ -169,6 +169,8 @@ export interface IngredientDto extends IngredientSummaryDto {
   priceCents: number;
   /** Products offering it (an extra or a milk made of it). */
   products: Array<{ id: string; name: string }>;
+  /** The add-on group an extra made of it starts in («Сиропы»); null = «Добавки». Missing from older APIs. */
+  group?: string | null;
 }
 
 export interface ModifierAdminDto {
@@ -182,11 +184,15 @@ export interface ModifierAdminDto {
   sortOrder: number;
   ingredientId: string | null;
   ingredient: IngredientSummaryDto | null;
+  /** Group the add-on is shown under («Сиропы», «Убрать»); null = «Добавки». Missing from older APIs. */
+  group?: string | null;
 }
 
 export interface ProductDetailDto extends ProductAdminDto {
   variations: VariationAdminDto[];
   modifiers: ModifierAdminDto[];
+  /** The product's category, for the choice groups that fit its kind. Missing from older APIs. */
+  category?: { name: string; kind: CategoryKind };
 }
 
 export interface CreateVariationInput {
@@ -217,6 +223,8 @@ export interface CreateModifierInput {
   sortOrder?: number;
   /** Omitted on create: joins the library entry of its name. `null` = not tracked. */
   ingredientId?: string | null;
+  /** Omitted on create: the library entry's group. `null` = «Добавки». */
+  group?: string | null;
 }
 
 export type UpdateModifierInput = Partial<CreateModifierInput>;
@@ -231,7 +239,11 @@ export interface CategoryAdminDto {
   visible: boolean;
   /** Not sold on its own: hidden from customer menus, its products only go into drinks as add-ons. */
   addOnsOnly?: boolean;
-  _count?: { products: number };
+  /** Hot drinks, food…: the fields of its products and its option presets. Missing from older APIs (= OTHER). */
+  kind?: CategoryKind;
+  /** Preparation time a new product of the category starts with, seconds. */
+  defaultPrepTimeSeconds?: number | null;
+  _count?: { products: number; options?: number };
 }
 
 export interface ProductAdminDto {
@@ -274,6 +286,8 @@ export interface CreateCategoryInput {
   sortOrder?: number;
   visible?: boolean;
   addOnsOnly?: boolean;
+  kind?: CategoryKind;
+  defaultPrepTimeSeconds?: number | null;
 }
 
 export interface UpdateCategoryInput {
@@ -282,6 +296,56 @@ export interface UpdateCategoryInput {
   sortOrder?: number;
   visible?: boolean;
   addOnsOnly?: boolean;
+  kind?: CategoryKind;
+  defaultPrepTimeSeconds?: number | null;
+}
+
+/** What an option of a category's set becomes on a product. */
+export type CategoryOptionKind = 'VARIATION' | 'MODIFIER';
+
+/** One option of a category's set («Опции категории»). */
+export interface CategoryOptionDto {
+  id: string;
+  categoryId: string;
+  kind: CategoryOptionKind;
+  variationType: VariationType | null;
+  name: string;
+  priceDeltaCents: number;
+  group: string | null;
+  isDefault: boolean;
+  maxCount: number;
+  sortOrder: number;
+  ingredientId: string | null;
+  ingredient: IngredientSummaryDto | null;
+}
+
+/** An option sent to a category's set; a library add-on may be named by `ingredientId` alone. */
+export interface CategoryOptionInput {
+  kind: CategoryOptionKind;
+  variationType?: VariationType;
+  name?: string;
+  ingredientId?: string | null;
+  priceDeltaCents?: number;
+  group?: string | null;
+  isDefault?: boolean;
+  maxCount?: number;
+}
+
+export interface UpdateCategoryOptionInput {
+  name?: string;
+  priceDeltaCents?: number;
+  group?: string | null;
+  isDefault?: boolean;
+  maxCount?: number;
+  sortOrder?: number;
+}
+
+/** What «apply to the category's products» added. */
+export interface ApplyCategoryOptionsResult {
+  total: number;
+  products: number;
+  variations: number;
+  modifiers: number;
 }
 
 /** What the product editor sends; `null` clears an optional value. */
@@ -309,6 +373,8 @@ export interface CreateProductInput extends Partial<Omit<ProductFieldsInput, 'na
   basePriceCents: number;
   /** Omitted = every store of the brand. */
   storeIds?: string[];
+  /** False: no copy of the category's option set (and no category prep time). Omitted = true. */
+  applyCategoryOptions?: boolean;
 }
 
 export interface UpdateProductInput extends Partial<ProductFieldsInput> {
@@ -478,6 +544,48 @@ export class AdminCatalogApi {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${id}`, { params });
   }
 
+  listCategoryOptions(categoryId: string): Observable<CategoryOptionDto[]> {
+    return this.http.get<CategoryOptionDto[]>(`${this.api.baseUrl}/admin/categories/${categoryId}/options`);
+  }
+
+  /** Appends to the set (options it has are skipped); answers the whole set. */
+  addCategoryOptions(categoryId: string, options: CategoryOptionInput[]): Observable<CategoryOptionDto[]> {
+    return this.http.post<CategoryOptionDto[]>(`${this.api.baseUrl}/admin/categories/${categoryId}/options`, {
+      options,
+    });
+  }
+
+  updateCategoryOption(
+    categoryId: string,
+    optionId: string,
+    input: UpdateCategoryOptionInput,
+  ): Observable<CategoryOptionDto[]> {
+    return this.http.patch<CategoryOptionDto[]>(
+      `${this.api.baseUrl}/admin/categories/${categoryId}/options/${optionId}`,
+      input,
+    );
+  }
+
+  deleteCategoryOption(categoryId: string, optionId: string): Observable<void> {
+    return this.http.delete<void>(`${this.api.baseUrl}/admin/categories/${categoryId}/options/${optionId}`);
+  }
+
+  /** Copies what each product of the category lacks from its set. */
+  applyCategoryOptions(categoryId: string): Observable<ApplyCategoryOptionsResult> {
+    return this.http.post<ApplyCategoryOptionsResult>(
+      `${this.api.baseUrl}/admin/categories/${categoryId}/options/apply`,
+      {},
+    );
+  }
+
+  /** Every product of the category gets the category's default preparation time. */
+  applyCategoryPrepTime(categoryId: string): Observable<{ products: number }> {
+    return this.http.post<{ products: number }>(
+      `${this.api.baseUrl}/admin/categories/${categoryId}/prep-time/apply`,
+      {},
+    );
+  }
+
   reorderCategories(orderedIds: string[]): Observable<void> {
     return this.http.patch<void>(`${this.api.baseUrl}/admin/categories/reorder`, { orderedIds });
   }
@@ -569,14 +677,24 @@ export class AdminCatalogApi {
     return this.http.get<IngredientDto[]>(`${this.api.baseUrl}/admin/ingredients`, { params: { brandId } });
   }
 
-  createIngredient(input: { brandId: string; name: string; priceCents?: number }): Observable<IngredientDto> {
+  createIngredient(input: {
+    brandId: string;
+    name: string;
+    priceCents?: number;
+    group?: string | null;
+  }): Observable<IngredientDto> {
     return this.http.post<IngredientDto>(`${this.api.baseUrl}/admin/ingredients`, input);
   }
 
-  /** A new name or price also reaches every option that still carries the old one. */
+  /** Add-on groups the brand uses, for suggestions. */
+  listOptionGroups(brandId: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.api.baseUrl}/admin/ingredients/groups`, { params: { brandId } });
+  }
+
+  /** A new name, price or group also reaches every option that still carries the old one. */
   updateIngredient(
     id: string,
-    input: { name?: string; priceCents?: number; isAvailable?: boolean },
+    input: { name?: string; priceCents?: number; isAvailable?: boolean; group?: string | null },
   ): Observable<IngredientDto> {
     return this.http.patch<IngredientDto>(`${this.api.baseUrl}/admin/ingredients/${id}`, input);
   }
