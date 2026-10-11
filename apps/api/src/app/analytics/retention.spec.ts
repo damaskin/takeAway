@@ -1,5 +1,7 @@
 import {
+  CHURN_WINDOWS,
   type CustomerTotals,
+  INACTIVE_MIN_ORDERS,
   churnBounds,
   lapsedBefore,
   percentChange,
@@ -45,7 +47,7 @@ describe('summarizeChurn', () => {
     const summary = summarizeChurn(
       [
         customer('regular', '2026-09-10', 10, 50_000), // avg 5 000, gone since the 10th
-        customer('once', '2026-08-25', 1, 3_333), // avg 3 333
+        customer('thrice', '2026-08-25', 3, 9_999), // avg 3 333
         customer('recent', '2026-09-30', 4, 20_000), // came within the last 14 days: not lost
         customer('long-gone', '2026-08-01', 3, 9_000), // was lost before the period
       ],
@@ -53,8 +55,27 @@ describe('summarizeChurn', () => {
     );
     expect(summary.count).toBe(2);
     expect(summary.lostRevenueCents).toBe(5_000 + 3_333);
-    expect(summary.customers.map((c) => c.userId)).toEqual(['regular', 'once']);
+    expect(summary.customers.map((c) => c.userId)).toEqual(['regular', 'thrice']);
     expect(summary.customers[0]?.daysSinceLastOrder).toBe(24);
+  });
+
+  it('does not count somebody who ordered fewer than 3 times as inactive', () => {
+    const summary = summarizeChurn(
+      [customer('once', '2026-09-10', 1, 3_000), customer('twice', '2026-09-10', 2, 6_000)],
+      bounds,
+    );
+    expect(INACTIVE_MIN_ORDERS).toBe(3);
+    expect(summary).toEqual({ count: 0, lostRevenueCents: 0, customers: [] });
+  });
+
+  it('works with the 3-day window too', () => {
+    const short = churnBounds(new Date('2026-10-01T00:00:00Z'), new Date('2026-10-08T00:00:00Z'), 3, day('2026-12-01'));
+    expect(CHURN_WINDOWS).toEqual([3, 7, 14]);
+    const summary = summarizeChurn(
+      [customer('a', '2026-10-02', 5, 5_000), customer('b', '2026-10-06', 5, 5_000)],
+      short,
+    );
+    expect(summary.customers.map((c) => c.userId)).toEqual(['a']);
   });
 
   it('rounds each average check to the cent before summing', () => {

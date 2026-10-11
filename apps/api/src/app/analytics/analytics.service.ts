@@ -33,6 +33,7 @@ import {
 import {
   type ChurnWindow,
   type CustomerTotals,
+  INACTIVE_MIN_ORDERS,
   type ReturnedCustomer,
   type WinBackSummary,
   churnBounds,
@@ -604,7 +605,7 @@ export class AnalyticsService {
     };
   }
 
-  /** Lost customers who came back during the range, against the period before. */
+  /** Inactive customers who came back during the range, against the period before. */
   async winBack(
     scope: AnalyticsScope,
     range: DateRange,
@@ -655,8 +656,9 @@ export class AnalyticsService {
 
   /**
    * Each customer's last order before `asOf`, with their order count and
-   * spend, for the customers whose last order falls in the churn bounds.
-   * Deleted accounts are left out: they cannot come back.
+   * spend, for the regulars (enough orders to count as inactive) whose last
+   * order falls in the churn bounds. Deleted accounts are left out: they
+   * cannot come back.
    */
   private async lastOrders(
     scope: AnalyticsScope,
@@ -680,6 +682,7 @@ export class AnalyticsService {
       ])}
       GROUP BY o."userId"
       HAVING MAX(o."createdAt") >= ${utc(bounds.lastOrderFrom)} AND MAX(o."createdAt") < ${utc(bounds.lastOrderBefore)}
+         AND COUNT(*) >= ${INACTIVE_MIN_ORDERS}
     `;
     return rows.map((r) => ({
       userId: r.userId,
@@ -710,7 +713,7 @@ export class AnalyticsService {
         Prisma.sql`u."blockedAt" IS NULL`,
       ])}
       GROUP BY o."userId"
-      HAVING MAX(o."createdAt") < ${utc(lapsedLine)}
+      HAVING MAX(o."createdAt") < ${utc(lapsedLine)} AND COUNT(*) >= ${INACTIVE_MIN_ORDERS}
     `;
     const [pool, returned] = await Promise.all([
       this.prisma.$queryRaw<Array<{ lapsed: number }>>`SELECT COUNT(*)::int AS "lapsed" FROM (${lapsed}) l`,

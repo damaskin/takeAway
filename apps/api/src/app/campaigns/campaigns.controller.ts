@@ -17,8 +17,15 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { RequiresPlanFeature } from '../plans/plan-feature.guard';
+import { INACTIVE_DAYS } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
-import { type CampaignStats, CampaignsService, emptyCampaignStats, isSendable } from './campaigns.service';
+import {
+  type AudienceSpec,
+  type CampaignStats,
+  CampaignsService,
+  emptyCampaignStats,
+  isSendable,
+} from './campaigns.service';
 import {
   CAMPAIGN_AUDIENCES,
   CAMPAIGN_CHANNELS,
@@ -57,19 +64,25 @@ export class CampaignsController {
   @ApiQuery({ name: 'brandId', required: false, type: String })
   @ApiQuery({ name: 'audience', required: false, enum: CAMPAIGN_AUDIENCES })
   @ApiQuery({ name: 'channel', required: false, enum: CAMPAIGN_CHANNELS })
+  @ApiQuery({ name: 'inactiveDays', required: false, enum: [...INACTIVE_DAYS] })
+  @ApiQuery({ name: 'storeId', required: false, type: String })
   @ApiOkResponse({ type: CampaignPreviewDto })
   async preview(
     @CurrentUser() user: AuthenticatedUser,
     @Query('brandId') brandId?: string,
     @Query('audience') audience?: string,
     @Query('channel') channel?: string,
+    @Query('inactiveDays') inactiveDays?: string,
+    @Query('storeId') storeId?: string,
   ): Promise<CampaignPreviewDto> {
     const resolved = await this.resolveBrandId(user, brandId);
     const a = audience ?? 'ALL';
     const c = channel ?? 'PUSH';
     if (!(CAMPAIGN_AUDIENCES as readonly string[]).includes(a)) throw new BadRequestException('Unknown audience');
     if (!(CAMPAIGN_CHANNELS as readonly string[]).includes(c)) throw new BadRequestException('Unknown channel');
-    return this.service.preview(resolved, a as CampaignAudience, c as CampaignChannel);
+    const days = inactiveDays === undefined ? undefined : Number(inactiveDays);
+    const spec = await this.audienceSpec(resolved, a as CampaignAudience, days, storeId);
+    return this.service.preview(resolved, spec, c as CampaignChannel);
   }
 
   /** Sends the copy to the signed-in admin only — their app, browser or Telegram. */
@@ -90,12 +103,18 @@ export class CampaignsController {
     @Query('brandId') brandId?: string,
   ): Promise<CampaignDto> {
     const resolved = await this.resolveBrandId(user, brandId);
+    const spec = await this.audienceSpec(
+      resolved,
+      (dto.audience ?? 'ALL') as CampaignAudience,
+      dto.inactiveDays,
+      dto.storeId,
+    );
     const row = await this.service.create({
       brandId: resolved,
       title: dto.title,
       body: dto.body,
       channel: dto.channel as CampaignChannel,
-      audience: (dto.audience ?? 'ALL') as CampaignAudience,
+      ...spec,
     });
     return toCampaignDto(row);
   }
@@ -136,6 +155,27 @@ export class CampaignsController {
     return first;
   }
 
+  /**
+   * The INACTIVE segment's days and store, checked: one of the windows, and
+   * a store of this brand. Other audiences carry neither.
+   */
+  private async audienceSpec(
+    brandId: string,
+    audience: CampaignAudience,
+    inactiveDays?: number,
+    storeId?: string,
+  ): Promise<AudienceSpec> {
+    if (audience !== 'INACTIVE') return { audience };
+    if (inactiveDays !== undefined && !(INACTIVE_DAYS as readonly number[]).includes(inactiveDays)) {
+      throw new BadRequestException(`inactiveDays must be one of ${INACTIVE_DAYS.join(', ')}`);
+    }
+    if (storeId) {
+      const store = await this.prisma.store.findFirst({ where: { id: storeId, brandId }, select: { id: true } });
+      if (!store) throw new NotFoundException('Store not found');
+    }
+    return { audience, inactiveDays: inactiveDays ?? null, segmentStoreId: storeId || null };
+  }
+
   private async resolveBrandIdForCampaign(user: AuthenticatedUser, id: string): Promise<string> {
     const campaign = await this.prisma.campaign.findUnique({ where: { id }, select: { brandId: true } });
     if (!campaign) throw new NotFoundException('Campaign not found');
@@ -152,6 +192,8 @@ function toCampaignDto(c: Campaign, stats: CampaignStats = emptyCampaignStats())
     body: c.body,
     channel: c.channel as CampaignDto['channel'],
     audience: c.audience as CampaignDto['audience'],
+    inactiveDays: c.inactiveDays,
+    storeId: c.segmentStoreId,
     status: c.status as CampaignDto['status'],
     targetCount: c.targetCount,
     sentCount: c.sentCount,

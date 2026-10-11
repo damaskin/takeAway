@@ -201,6 +201,17 @@ describe('DashboardPage', () => {
     expect(orderStatuses).toHaveBeenLastCalledWith('b1', { from: '2026-09-01', to: '2026-09-15', storeId: null });
   });
 
+  it('puts the inactive customers right under the KPIs, once', async () => {
+    const fixture = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    const widget = el.querySelector('app-churn-widget');
+    const kpis = el.querySelector('.ov-kpis-sm');
+    const panels = el.querySelector('.ov-panels');
+    expect(el.querySelectorAll('app-churn-widget')).toHaveLength(1);
+    expect(kpis?.compareDocumentPosition(widget as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(widget?.compareDocumentPosition(panels as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it('writes the KPIs with their change against the period before', async () => {
     const fixture = await render();
     const cards = [...(fixture.nativeElement as HTMLElement).querySelectorAll('app-kpi-card')];
@@ -309,9 +320,9 @@ describe('DashboardPage', () => {
 
   it('offers a new promo code only on a plan that has them', async () => {
     const pro = await render(PRO, ['promo']);
-    expect((pro.nativeElement as HTMLElement).querySelector('a[href="/promo/new"]')).not.toBeNull();
+    expect((pro.nativeElement as HTMLElement).querySelector('a[href="/promotions/promo/new"]')).not.toBeNull();
     TestBed.resetTestingModule();
     const basic = await render(PRO, []);
-    expect((basic.nativeElement as HTMLElement).querySelector('a[href="/promo/new"]')).toBeNull();
+    expect((basic.nativeElement as HTMLElement).querySelector('a[href="/promotions/promo/new"]')).toBeNull();
   });
 });

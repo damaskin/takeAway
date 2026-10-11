@@ -1,8 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+import { INACTIVE_DAYS } from '../../customers/customer-segment';
 
 const CHANNELS = ['PUSH', 'TELEGRAM', 'EMAIL'] as const;
-const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D'] as const;
+const AUDIENCES = ['ALL', 'HAS_ORDERED', 'INACTIVE_30D', 'INACTIVE'] as const;
 const STATUSES = ['DRAFT', 'SCHEDULED', 'SENDING', 'SENT', 'FAILED'] as const;
 
 export class CreateCampaignDto {
@@ -28,6 +31,19 @@ export class CreateCampaignDto {
   @IsOptional()
   @IsEnum(AUDIENCES)
   audience?: (typeof AUDIENCES)[number];
+
+  @ApiPropertyOptional({ enum: INACTIVE_DAYS, default: 14, description: 'INACTIVE: days without an order' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn([...INACTIVE_DAYS])
+  inactiveDays?: number;
+
+  @ApiPropertyOptional({
+    description: "INACTIVE: only orders at this store of the brand count; the brand's when omitted",
+  })
+  @IsOptional()
+  @IsString()
+  storeId?: string;
 }
 
 /** The copy of a campaign that is not saved yet, sent to the admin themselves. */
@@ -95,6 +111,12 @@ export class CampaignDto {
 
   @ApiProperty({ enum: AUDIENCES })
   audience!: (typeof AUDIENCES)[number];
+
+  @ApiPropertyOptional({ nullable: true, type: Number, description: 'INACTIVE: days without an order' })
+  inactiveDays!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'INACTIVE: the store whose orders count' })
+  storeId!: string | null;
 
   @ApiProperty({ enum: STATUSES })
   status!: (typeof STATUSES)[number];

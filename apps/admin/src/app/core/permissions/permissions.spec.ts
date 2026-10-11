@@ -83,6 +83,21 @@ describe('permissions map', () => {
       expect(canAccess('MENU_EDITOR', 'telegramLink')).toBe(false);
     });
 
+    it('puts promo codes and gift cards under «Акции» without changing who sees them', () => {
+      const roles: AdminRole[] = ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'];
+      for (const role of roles) {
+        expect(canAccess(role, 'promotions')).toBe(canAccess(role, 'promo') || canAccess(role, 'giftCards'));
+      }
+      expect(ADMIN_ROLES.promo).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(ADMIN_ROLES.giftCards).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
+      expect(navLink('promotions')).toBe('/promotions');
+      expect(navLink('promo')).toBe('/promotions/promo');
+      expect(navLink('giftCards')).toBe('/promotions/gift-cards');
+      // Promo codes stay PRO, gift cards stay on every plan; the section itself is not gated.
+      expect(NAV_PLAN_FEATURE.promo).toBe('promo');
+      expect(NAV_PLAN_FEATURE.promotions).toBeUndefined();
+    });
+
     it('denies RIDER the admin panel entirely', () => {
       for (const key of ALL_KEYS) {
         expect(canAccess('RIDER', key)).toBe(false);

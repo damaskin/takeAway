@@ -46,10 +46,12 @@ interface DashboardOrder {
  *
  *   KPI cards with the period's days — revenue, orders, customers, check —
  *   and a row of smaller ones (new customers, cancellations, expired…)
+ *   Inactive customers: the revenue missed first, then how many, and the
+ *   way to the win-back tab
  *   Revenue by store with share and change; order statuses
  *   Load by hour and weekday (PRO)
  *   Stores table, sortable; a row filters the whole page to that store
- *   Right now: kitchen window, live orders, shifts, lost customers, menu
+ *   Right now: kitchen window, live orders, shifts, menu
  *
  * Every plan gets the KPIs, revenue and orders per store with shares and the
  * statuses; the per-store comparison and the load charts are PRO.
@@ -97,7 +99,7 @@ interface DashboardOrder {
           </select>
         }
         @if (plans.has('promo')) {
-          <a routerLink="/promo/new" class="ov-new-promo">{{ 'admin.dashboard.newPromo' | translate }}</a>
+          <a routerLink="/promotions/promo/new" class="ov-new-promo">{{ 'admin.dashboard.newPromo' | translate }}</a>
         }
       </app-overview-header>
 
@@ -276,6 +278,12 @@ interface DashboardOrder {
             />
           </app-kpi-card>
         </div>
+
+        <!-- Inactive customers right under the KPIs: the revenue walking away
+             is the first problem a business should see. -->
+        @if (activeBrand.activeId(); as brandId) {
+          <app-churn-widget [brandId]="brandId" [period]="period()" [currency]="currency()" />
+        }
 
         @if (d.current.placed + d.previous.placed === 0) {
           <article class="dash-card ov-state">
@@ -471,7 +479,6 @@ interface DashboardOrder {
             </div>
           </article>
           <app-store-shifts-widget [brandId]="brandId" [canToggle]="canToggleShifts()" />
-          <app-churn-widget [brandId]="brandId" [period]="period()" [currency]="currency()" />
           @if (canSeeMenu()) {
             <app-menu-summary-widget [brandId]="brandId" />
           }

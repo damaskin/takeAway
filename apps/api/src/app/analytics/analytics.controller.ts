@@ -144,8 +144,9 @@ export class AnalyticsController {
   }
 
   /**
-   * Customers lost in the period: how many and what their average checks
-   * add up to on every plan; who they are with `churnList` (PRO).
+   * Regulars who became inactive in the period (3+ orders, then `window`
+   * days without one): how many and what their average checks add up to on
+   * every plan; who they are with `churnList` (PRO).
    */
   @Get('churn')
   @ApiOkResponse({ type: ChurnDto })

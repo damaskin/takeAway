@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { CHURN_WINDOWS } from '../retention';
+
 export class RevenuePointDto {
   @ApiProperty() date!: string;
   @ApiProperty() revenueCents!: number;
@@ -111,12 +113,13 @@ export class ChurnPeriodDto {
 }
 
 /**
- * Customers lost in the period: `window` days went by after their last
- * order without another one. Money is the sum of their average checks,
- * roughly what one more visit from each would have brought.
+ * Customers who became inactive in the period: at least 3 orders, then
+ * `window` days went by after the last one without another. Money is the
+ * sum of their average checks, roughly what one more visit from each would
+ * have brought.
  */
 export class ChurnDto extends AnalyticsPeriodDto {
-  @ApiProperty({ enum: [7, 14] }) window!: number;
+  @ApiProperty({ enum: CHURN_WINDOWS }) window!: number;
   @ApiProperty() count!: number;
   @ApiProperty() lostRevenueCents!: number;
   @ApiProperty({ type: () => ChurnPeriodDto }) previous!: ChurnPeriodDto;
@@ -148,7 +151,7 @@ export class WinBackCustomerDto {
 }
 
 export class WinBackDto extends AnalyticsPeriodDto {
-  @ApiProperty({ enum: [7, 14] }) window!: number;
+  @ApiProperty({ enum: CHURN_WINDOWS }) window!: number;
   @ApiProperty({ type: () => WinBackPeriodDto }) current!: WinBackPeriodDto;
   @ApiProperty({ type: () => WinBackPeriodDto }) previous!: WinBackPeriodDto;
   @ApiProperty({ nullable: true, type: Number }) returnedDeltaPercent!: number | null;
