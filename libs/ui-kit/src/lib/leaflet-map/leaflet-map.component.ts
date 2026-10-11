@@ -37,8 +37,9 @@ const FALLBACK_CENTER: LatLng = { lat: 47.0105, lng: 28.8638 };
  *  - default (`pickable=false`) — renders `markers` + an optional
  *    `userPosition` dot. Set `interactive=false` for static thumbnails
  *    (order-status mini-map).
- *  - `pickable=true` — renders a single draggable marker; dragging it or
- *    clicking the map emits `markerMoved`. Used by the admin store picker.
+ *  - `pickable=true` — renders a single draggable marker at `markers[0]`;
+ *    dragging it or clicking the map emits `markerMoved`. Without a marker,
+ *    `center` just moves the view. Used by the admin store picker.
  *
  * Leaflet touches the DOM directly, so init runs in `afterNextRender`.
  */
@@ -123,8 +124,15 @@ export class LeafletMapComponent {
 
   private syncContent(): void {
     if (this.pickable()) {
-      const first = this.markers()[0] ?? this.center();
-      if (first) this.placePickMarker(first.lat, first.lng, false);
+      const first = this.markers()[0];
+      if (first) {
+        this.placePickMarker(first.lat, first.lng, false);
+        return;
+      }
+      // No pin yet: `center` only moves the view (the admin opens the map on
+      // the city it found), so the owner still puts the pin down themselves.
+      const center = this.center();
+      if (center) this.map?.setView([center.lat, center.lng], this.zoom());
       return;
     }
     this.renderMarkers();
