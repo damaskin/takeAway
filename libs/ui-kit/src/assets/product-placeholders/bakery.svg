@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Bakery">
+  <ellipse cx="100" cy="166" rx="58" ry="6" fill="#000" opacity=".08"/>
+  <g stroke="#B5722A" stroke-width="2">
+    <ellipse cx="46" cy="140" rx="10" ry="17" transform="rotate(-62 46 140)" fill="#D58F3B"/>
+    <ellipse cx="154" cy="140" rx="10" ry="17" transform="rotate(62 154 140)" fill="#D58F3B"/>
+    <ellipse cx="70" cy="124" rx="17" ry="26" transform="rotate(-38 70 124)" fill="#DC9842"/>
+    <ellipse cx="130" cy="124" rx="17" ry="26" transform="rotate(38 130 124)" fill="#DC9842"/>
+    <ellipse cx="100" cy="114" rx="23" ry="32" fill="#E3A24C"/>
+  </g>
+  <g fill="#F2C27A" opacity=".7">
+    <ellipse cx="94" cy="104" rx="7" ry="12"/>
+    <ellipse cx="66" cy="118" rx="5" ry="9" transform="rotate(-38 66 118)"/>
+    <ellipse cx="126" cy="118" rx="5" ry="9" transform="rotate(38 126 118)"/>
+  </g>
+</svg>
