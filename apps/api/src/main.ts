@@ -8,10 +8,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app/app.module';
+import { resolveTrustProxy } from './app/common/http/trust-proxy';
 import { SentryExceptionFilter } from './app/common/observability/sentry-exception.filter';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ trustProxy: true }), {
+  // Exactly the proxy hops we run (our nginx), not every address in
+  // X-Forwarded-For — see common/http/trust-proxy.ts.
+  const adapter = new FastifyAdapter({ trustProxy: resolveTrustProxy(process.env['TRUST_PROXY']) });
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
     bufferLogs: true,
   });
 

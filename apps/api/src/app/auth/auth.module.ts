@@ -3,13 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AppThrottlerGuard } from './guards/app-throttler.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AccountDeletionService } from './services/account-deletion.service';
@@ -37,8 +38,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         secret: config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access',
       }),
     }),
-    // Global throttler: per-IP coarse defense across the whole API. Dev gets a
-    // much more generous default so iterating on the login flow doesn't keep
+    // Global throttler: coarse defense across the whole API, per account when
+    // signed in and per client address otherwise (AppThrottlerGuard). Dev gets
+    // a much more generous default so iterating on the login flow doesn't keep
     // hitting 429 — production keeps the conservative 100/min.
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -66,7 +68,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // After the JWT guard on purpose: it keys signed-in requests on the user.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
   exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, KdsPinService, TokensService],
 })
