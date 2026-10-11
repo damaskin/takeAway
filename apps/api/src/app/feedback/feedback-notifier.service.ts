@@ -9,7 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { type FeedbackDigest, feedbackChatText, feedbackDigest, feedbackMail, feedbackPush } from './feedback-messages';
 
 /**
- * Tells the platform team that a customer has written in.
+ * Tells the platform team that a customer — or a business, from the admin
+ * panel's «Написать в поддержку» and «Перейти на PRO» — has written in.
  *
  * Telegram is what reaches them: the ops chat when the deployment has one,
  * otherwise — or when the chat refused the message — each platform admin's
@@ -43,6 +44,7 @@ export class FeedbackNotifier {
           message: true,
           contact: true,
           user: { select: { name: true, email: true, phone: true } },
+          brand: { select: { name: true, contactPhone: true, plan: true, requestedPlan: true } },
         },
       });
       if (!feedback) return;
@@ -56,6 +58,7 @@ export class FeedbackNotifier {
         authorName: feedback.user?.name ?? null,
         authorEmail: feedback.user?.email ?? null,
         authorPhone: feedback.user?.phone ?? null,
+        brand: feedback.brand ?? null,
         adminUrl: this.adminUrl,
       });
       const admins = await this.prisma.user.findMany({

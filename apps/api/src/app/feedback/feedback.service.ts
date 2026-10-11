@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
-import { FeedbackStatus, type Prisma } from '@prisma/client';
+import { type FeedbackKind, FeedbackSource, FeedbackStatus, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import type {
@@ -34,6 +34,7 @@ const ADMIN_FEEDBACK_SELECT = {
   createdAt: true,
   readAt: true,
   user: { select: { id: true, name: true, email: true, phone: true, telegramUserId: true, blockedAt: true } },
+  brand: { select: { id: true, name: true, contactPhone: true } },
 } satisfies Prisma.FeedbackSelect;
 
 type AdminFeedbackRow = Prisma.FeedbackGetPayload<{ select: typeof ADMIN_FEEDBACK_SELECT }>;
@@ -54,20 +55,7 @@ export class FeedbackService {
    * `FEEDBACK_TOO_MANY` past {@link FEEDBACK_PER_HOUR} messages an hour.
    */
   async create(userId: string, dto: CreateFeedbackDto, now = new Date()): Promise<FeedbackReceiptDto> {
-    const recent = await this.prisma.feedback.count({
-      where: { userId, createdAt: { gte: new Date(now.getTime() - HOUR_MS) } },
-    });
-    if (recent >= FEEDBACK_PER_HOUR) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          error: 'Too Many Requests',
-          code: FEEDBACK_TOO_MANY,
-          message: 'Too many messages in an hour, try again later',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    await this.assertUnderHourlyCap(userId, now);
 
     const saved = await this.prisma.feedback.create({
       data: {
@@ -84,6 +72,51 @@ export class FeedbackService {
     return { id: saved.id, createdAt: saved.createdAt.toISOString() };
   }
 
+  /**
+   * A message from a brand's staff in the business admin — «Написать в
+   * поддержку», or the plan-change request behind «Перейти на PRO». Lands
+   * in the same inbox and pings the platform team the same way, with the
+   * brand and its phone attached. Same hourly cap as customers.
+   */
+  async createFromBusiness(
+    userId: string,
+    brandId: string,
+    input: { kind: FeedbackKind; message: string },
+    now = new Date(),
+  ): Promise<FeedbackReceiptDto> {
+    await this.assertUnderHourlyCap(userId, now);
+    const saved = await this.prisma.feedback.create({
+      data: {
+        userId,
+        brandId,
+        kind: input.kind,
+        message: input.message.trim(),
+        source: FeedbackSource.BUSINESS,
+      },
+      select: { id: true, createdAt: true },
+    });
+    void this.notifier.feedbackReceived(saved.id);
+    return { id: saved.id, createdAt: saved.createdAt.toISOString() };
+  }
+
+  /** 429 `FEEDBACK_TOO_MANY` past {@link FEEDBACK_PER_HOUR} messages from one account in an hour. */
+  private async assertUnderHourlyCap(userId: string, now: Date): Promise<void> {
+    const recent = await this.prisma.feedback.count({
+      where: { userId, createdAt: { gte: new Date(now.getTime() - HOUR_MS) } },
+    });
+    if (recent >= FEEDBACK_PER_HOUR) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: 'Too Many Requests',
+          code: FEEDBACK_TOO_MANY,
+          message: 'Too many messages in an hour, try again later',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   /** Newest first. Without a status filter, everything that is not archived. */
   async list(query: AdminFeedbackQueryDto): Promise<AdminFeedbackPageDto> {
     const page = query.page ?? 1;
@@ -91,6 +124,7 @@ export class FeedbackService {
     const where: Prisma.FeedbackWhereInput = {
       status: query.status ?? { not: FeedbackStatus.ARCHIVED },
       ...(query.kind ? { kind: query.kind } : {}),
+      ...(query.source ? { source: query.source } : {}),
     };
     const [rows, total, newCount] = await Promise.all([
       this.prisma.feedback.findMany({
@@ -152,5 +186,6 @@ function toAdminFeedback(row: AdminFeedbackRow): AdminFeedbackDto {
           deleted: user.blockedAt !== null,
         }
       : null,
+    brand: row.brand,
   };
 }

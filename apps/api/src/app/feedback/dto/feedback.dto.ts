@@ -1,8 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FeedbackKind, FeedbackSource, FeedbackStatus } from '@prisma/client';
-import { FEEDBACK_CONTACT_MAX_LENGTH, FEEDBACK_MESSAGE_MAX_LENGTH } from '@takeaway/shared-types';
+import {
+  FEEDBACK_CONTACT_MAX_LENGTH,
+  FEEDBACK_KINDS,
+  FEEDBACK_MESSAGE_MAX_LENGTH,
+  FEEDBACK_SOURCES,
+  SUPPORT_TOPICS,
+} from '@takeaway/shared-types';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 /** Optional text: blank is the same as left out. */
@@ -12,9 +18,10 @@ const trimOrDrop = ({ value }: { value: unknown }) => {
   return trimmed === '' ? undefined : trimmed;
 };
 
+/** A customer's own feedback: the customer kinds, from a customer client. */
 export class CreateFeedbackDto {
-  @ApiProperty({ enum: FeedbackKind })
-  @IsEnum(FeedbackKind)
+  @ApiProperty({ enum: FEEDBACK_KINDS })
+  @IsIn(FEEDBACK_KINDS)
   kind!: FeedbackKind;
 
   @ApiProperty({ maxLength: FEEDBACK_MESSAGE_MAX_LENGTH })
@@ -34,8 +41,8 @@ export class CreateFeedbackDto {
   @MaxLength(FEEDBACK_CONTACT_MAX_LENGTH)
   contact?: string;
 
-  @ApiProperty({ enum: FeedbackSource })
-  @IsEnum(FeedbackSource)
+  @ApiProperty({ enum: FEEDBACK_SOURCES })
+  @IsIn(FEEDBACK_SOURCES)
   source!: FeedbackSource;
 
   @ApiPropertyOptional({ example: '1.2.0 (3)' })
@@ -44,6 +51,20 @@ export class CreateFeedbackDto {
   @IsString()
   @MaxLength(40)
   appVersion?: string;
+}
+
+/** «Написать в поддержку» from the business admin: a topic and the message. */
+export class CreateSupportDto {
+  @ApiProperty({ enum: SUPPORT_TOPICS })
+  @IsIn(SUPPORT_TOPICS)
+  kind!: FeedbackKind;
+
+  @ApiProperty({ maxLength: FEEDBACK_MESSAGE_MAX_LENGTH })
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(FEEDBACK_MESSAGE_MAX_LENGTH)
+  message!: string;
 }
 
 export class FeedbackReceiptDto {
@@ -61,6 +82,11 @@ export class AdminFeedbackQueryDto {
   @IsOptional()
   @IsEnum(FeedbackKind)
   kind?: FeedbackKind;
+
+  @ApiPropertyOptional({ enum: FeedbackSource, description: 'BUSINESS: only what businesses wrote from the admin.' })
+  @IsOptional()
+  @IsEnum(FeedbackSource)
+  source?: FeedbackSource;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
@@ -105,6 +131,18 @@ export class AdminFeedbackDto {
   @ApiProperty() createdAt!: string;
   @ApiProperty({ nullable: true, type: String }) readAt!: string | null;
   @ApiProperty({ nullable: true, type: () => FeedbackAuthorDto }) author!: FeedbackAuthorDto | null;
+  @ApiProperty({
+    nullable: true,
+    type: () => FeedbackBrandDto,
+    description: 'Set on messages from the business admin.',
+  })
+  brand!: FeedbackBrandDto | null;
+}
+
+export class FeedbackBrandDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty({ nullable: true, type: String, description: 'E.164' }) contactPhone!: string | null;
 }
 
 export class AdminFeedbackPageDto {
