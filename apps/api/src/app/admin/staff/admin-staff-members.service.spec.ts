@@ -376,6 +376,7 @@ describe('AdminStaffMembersService — staff as people', () => {
         newAccount: true,
       });
       expect(member.inviteEmail).toBe('NOT_CONFIGURED');
+      expect(member.accountCreated).toBe(true);
     });
 
     it('does not email anyone when the invite is refused', async () => {

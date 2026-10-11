@@ -221,7 +221,7 @@ export class AdminStaffMembersService {
       storeIds: input.storeIds,
       newAccount: !existing,
     });
-    return { ...member, inviteEmail };
+    return { ...member, inviteEmail, accountCreated: !existing };
   }
 
   private async reach(user: AuthenticatedUser, brandId?: string): Promise<Reach> {

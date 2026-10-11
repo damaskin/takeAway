@@ -69,6 +69,12 @@ export type StaffInviteEmailStatus = 'SENT' | 'NOT_CONFIGURED' | 'FAILED';
 /** `POST /admin/staff` — the person as the list shows them, plus the invite email's fate. */
 export interface StaffInviteResult extends StaffMember {
   inviteEmail: StaffInviteEmailStatus;
+  /**
+   * The invite created the account, so the temporary password is its
+   * password. False when the email already had a staff account: that
+   * person keeps their own password and the temporary one was not used.
+   */
+  accountCreated: boolean;
 }
 
 /** A kitchen tablet bound to the brand, as the Staff page lists it. */

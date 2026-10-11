@@ -187,7 +187,7 @@ describe('KitchenDeviceService', () => {
     const { service } = harness();
     const { deviceToken } = await service.bindForUser(person(Role.STAFF), 'store-1');
     const [device] = await service.list(person(Role.BRAND_ADMIN), 'brand-1');
-    await service.revoke(person(Role.BRAND_ADMIN), 'brand-1', device!.id);
+    await service.revoke(person(Role.BRAND_ADMIN), 'brand-1', device?.id ?? '');
 
     for (const token of [undefined, 'made-up-token', deviceToken]) {
       const error = (await service.storesFor(token).catch((e: unknown) => e)) as HttpException;

@@ -61,7 +61,7 @@ describe('StaffInviteMailer', () => {
     const link = /https:\/\/admin\.takeaway\.md\/reset-password\?token=([A-Za-z0-9_-]+)&invite=1/.exec(message.text);
     expect(link).not.toBeNull();
     // The link carries the raw token; only its hash is stored.
-    expect(passwords.hashResetToken(link![1] as string)).toBe(data.tokenHash);
+    expect(passwords.hashResetToken(link?.[1] ?? '')).toBe(data.tokenHash);
     expect(message.text).toContain('«NoName Coffee»');
     expect(message.text).toContain('https://admin.takeaway.md/login');
   });
