@@ -13,6 +13,7 @@ import type { StoreAvailabilityChangedEvent, StoreAvailabilityChangedEventName }
 import type { Server, Socket } from 'socket.io';
 
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
+import { corsOriginCheck } from '../common/http/cors-origins';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface OrderStatusPayload {
@@ -54,10 +55,33 @@ interface DispatchChangedPayload {
   orderId: string;
 }
 
+/**
+ * The biggest message a client may send. Clients only ever send
+ * `{orderId}` / `{storeId}` and a JWT in the handshake; socket.io's default of
+ * 1 MB let any socket, signed in or not, make the API buffer and parse a
+ * megabyte per message.
+ */
+export const REALTIME_MAX_MESSAGE_BYTES = 16 * 1024;
+
+/** Anonymous sockets open at once before new ones are turned away (`REALTIME_MAX_ANONYMOUS_SOCKETS`). */
+const DEFAULT_MAX_ANONYMOUS_SOCKETS = 5000;
+/** How long one anonymous socket may stay before it is recycled (`REALTIME_ANONYMOUS_MAX_AGE_SECONDS`). */
+const DEFAULT_ANONYMOUS_MAX_AGE_SECONDS = 30 * 60;
+
 @Injectable()
-@WebSocketGateway({ namespace: 'ws', cors: { origin: true, credentials: true } })
+@WebSocketGateway({
+  namespace: 'ws',
+  // Only matters for long-polling (browsers do not apply CORS to WebSocket);
+  // the same origins as the HTTP API instead of reflecting any.
+  cors: { origin: corsOriginCheck(), credentials: true },
+  maxHttpBufferSize: REALTIME_MAX_MESSAGE_BYTES,
+  // A connection that opened the transport but never joined the namespace
+  // is dropped after 10 s rather than socket.io's 45.
+  connectTimeout: 10_000,
+})
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RealtimeGateway.name);
+  private readonly anonymous = new Map<string, ReturnType<typeof setTimeout>>();
 
   @WebSocketServer() private server!: Server;
 
@@ -86,12 +110,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleConnection(client: Socket): Promise<void> {
     const token = this.extractToken(client);
     if (!token) {
-      this.logger.debug(`WS connected: ${client.id} (anonymous)`);
+      this.acceptAnonymous(client);
       return;
     }
     try {
-      const secret = this.config.get<string>('JWT_ACCESS_SECRET') ?? 'change-me-in-prod-access';
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token, { secret });
+      // RealtimeModule configures JwtService with the access secret.
+      const payload = await this.jwt.verifyAsync<{ sub: string }>(token);
       // Same rule as the HTTP JWT strategy: a blocked or deleted account's
       // access token is still signed and unexpired for a few minutes, and
       // must not open a socket in that window.
@@ -109,7 +133,49 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   handleDisconnect(client: Socket): void {
+    const timer = this.anonymous.get(client.id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.anonymous.delete(client.id);
+    }
     this.logger.debug(`WS disconnected: ${client.id}`);
+  }
+
+  /**
+   * Anonymous sockets cost us memory and get nothing private, so they are
+   * bounded twice. Past `REALTIME_MAX_ANONYMOUS_SOCKETS` open at once a new
+   * one is turned away (nginx already caps sockets per address). And each is
+   * recycled after `REALTIME_ANONYMOUS_MAX_AGE_SECONDS` (minus up to a
+   * quarter, so sockets opened together do not all come back together) by
+   * closing its transport: every socket.io client takes that as a dropped
+   * connection and reconnects on its own within a second or two, so the
+   * public `store.availabilityChanged` broadcast keeps reaching it — and the
+   * apps re-read their stores every minute regardless.
+   */
+  private acceptAnonymous(client: Socket): void {
+    const max = this.positiveSetting('REALTIME_MAX_ANONYMOUS_SOCKETS', DEFAULT_MAX_ANONYMOUS_SOCKETS);
+    if (this.anonymous.size >= max) {
+      this.logger.warn(`WS anonymous socket refused: ${this.anonymous.size} already open (limit ${max})`);
+      client.disconnect(true);
+      return;
+    }
+    const maxAgeMs =
+      this.positiveSetting('REALTIME_ANONYMOUS_MAX_AGE_SECONDS', DEFAULT_ANONYMOUS_MAX_AGE_SECONDS) * 1000;
+    const timer = setTimeout(
+      () => {
+        this.anonymous.delete(client.id);
+        client.conn?.close();
+      },
+      Math.round(maxAgeMs * (0.75 + Math.random() * 0.25)),
+    );
+    timer.unref?.();
+    this.anonymous.set(client.id, timer);
+    this.logger.debug(`WS connected: ${client.id} (anonymous)`);
+  }
+
+  private positiveSetting(key: string, fallback: number): number {
+    const raw = Number(this.config.get<string>(key));
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallback;
   }
 
   @SubscribeMessage('order.subscribe')

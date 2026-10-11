@@ -112,6 +112,71 @@ describe('RealtimeGateway anonymous sockets', () => {
   });
 });
 
+describe('RealtimeGateway anonymous socket limits', () => {
+  function gatewayWith(env: Record<string, string> = {}) {
+    const config = { get: jest.fn((key: string) => env[key]) } as unknown as ConfigService;
+    const gw = new RealtimeGateway({} as JwtService, config, {} as PrismaService, {} as UserStoreScopeService);
+    let n = 0;
+    const open = () => {
+      const client = {
+        id: `anon-${++n}`,
+        handshake: { auth: {}, headers: {}, query: {} },
+        data: {} as Record<string, unknown>,
+        join: jest.fn(),
+        disconnect: jest.fn(),
+        conn: { close: jest.fn() },
+      };
+      return { client, socket: client as unknown as Socket };
+    };
+    return { gw, open };
+  }
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('recycles an anonymous socket by dropping its transport, so the client reconnects on its own', async () => {
+    jest.useFakeTimers();
+    const { gw, open } = gatewayWith({ REALTIME_ANONYMOUS_MAX_AGE_SECONDS: '600' });
+    const { client, socket } = open();
+    await gw.handleConnection(socket);
+
+    jest.advanceTimersByTime(600 * 0.75 * 1000 - 1000);
+    expect(client.conn.close).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(600 * 0.25 * 1000 + 2000);
+    expect(client.conn.close).toHaveBeenCalledTimes(1);
+    // A transport close, not a server kick: socket.io clients do not retry
+    // after `disconnect(true)` by themselves.
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('forgets a socket that left, so it neither counts nor gets closed later', async () => {
+    jest.useFakeTimers();
+    const { gw, open } = gatewayWith({ REALTIME_MAX_ANONYMOUS_SOCKETS: '1' });
+    const first = open();
+    await gw.handleConnection(first.socket);
+    gw.handleDisconnect(first.socket);
+
+    const second = open();
+    await gw.handleConnection(second.socket);
+    expect(second.client.disconnect).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(31 * 60 * 1000);
+    expect(first.client.conn.close).not.toHaveBeenCalled();
+  });
+
+  it('turns new anonymous sockets away past REALTIME_MAX_ANONYMOUS_SOCKETS', async () => {
+    const { gw, open } = gatewayWith({ REALTIME_MAX_ANONYMOUS_SOCKETS: '2' });
+    const sockets = [open(), open(), open()];
+    for (const s of sockets) await gw.handleConnection(s.socket);
+
+    expect(sockets[0]?.client.disconnect).not.toHaveBeenCalled();
+    expect(sockets[1]?.client.disconnect).not.toHaveBeenCalled();
+    expect(sockets[2]?.client.disconnect).toHaveBeenCalledWith(true);
+    for (const s of sockets) gw.handleDisconnect(s.socket);
+  });
+});
+
 describe('RealtimeGateway store.availabilityChanged', () => {
   it('broadcasts exactly {storeId, brandId, acceptingOrders} to the whole namespace', () => {
     const gw = new RealtimeGateway(
