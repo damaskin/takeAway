@@ -35,13 +35,17 @@ if [ -f .env.production ]; then
   # Names only. Never print values from this file.
   for v in POSTGRES_PASSWORD JWT_ACCESS_SECRET JWT_REFRESH_SECRET POS_CREDENTIALS_KEY \
            KDS_PIN_SECRET BACKUP_ENCRYPTION_KEY SENTRY_DSN GOOGLE_OAUTH_CLIENT_IDS \
-           APPLE_OAUTH_CLIENT_IDS SUPER_ADMIN_EMAIL; do
+           APPLE_OAUTH_CLIENT_IDS SUPER_ADMIN_EMAIL ADMIN_APP_URL SMTP_HOST; do
     val="$(grep -E "^${v}=" .env.production 2>/dev/null | head -1 | cut -d= -f2-)"
     if [ -z "$val" ] || [ "$val" = "CHANGE_ME" ]; then
       bad "$v is empty or still CHANGE_ME"
       if [ "$v" = "KDS_PIN_SECRET" ]; then
         info "kitchen PIN sign-in and PIN setup are OFF (API answers 503 KDS_PIN_NOT_CONFIGURED)"
         info "fix: openssl rand -hex 32 -> KDS_PIN_SECRET in .env.production, redeploy, re-issue PINs on the Staff page"
+      fi
+      if [ "$v" = "ADMIN_APP_URL" ] || [ "$v" = "SMTP_HOST" ]; then
+        info "forgot password answers 503 PASSWORD_RESET_UNAVAILABLE and staff invites are not emailed"
+        info "fix: ADMIN_APP_URL=https://admin.takeaway.md; SMTP_HOST/PORT/USER/PASS/FROM of a provider on port 587"
       fi
     else
       ok "$v is set (${#val} chars)"
