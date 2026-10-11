@@ -385,7 +385,14 @@ export class AuthController {
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data['name'] = dto.name;
     if (dto.phone !== undefined) data['phone'] = dto.phone;
-    if (dto.email !== undefined) data['email'] = dto.email.toLowerCase();
+    if (dto.email !== undefined) {
+      const email = dto.email.toLowerCase();
+      data['email'] = email;
+      // A typed-in address is a claim, not a proof: it must not let a Google
+      // or Apple sign-in join this profile (see AuthService.finalizeOAuthSignIn).
+      const current = await this.prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
+      if (current?.email !== email) data['emailVerifiedAt'] = null;
+    }
     if (dto.dateOfBirth !== undefined) data['dateOfBirth'] = new Date(dto.dateOfBirth);
     if (dto.locale !== undefined) data['locale'] = dto.locale;
     if (dto.currency !== undefined) data['currency'] = dto.currency;

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Locale, OAuthProvider, Role, type User } from '@prisma/client';
+import { Locale, OAuthProvider, Prisma, Role, type User } from '@prisma/client';
 
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -312,22 +312,33 @@ export class AuthService {
    * order:
    *
    *   1. We have seen this provider subject before — sign that user in.
-   *   2. The provider vouches for an email we already know — link the
-   *      social account to it, so a customer who started on Telegram and
-   *      later taps "Continue with Google" lands in the same profile
-   *      instead of a duplicate with an empty order history.
+   *   2. The provider vouches for an email that a profile here has *also
+   *      proven* (`emailVerifiedAt`) — link the social account to it, so a
+   *      customer who signed up with Google and later taps "Continue with
+   *      Apple" lands in the same profile instead of a duplicate with an
+   *      empty order history.
    *   3. Otherwise create a fresh customer.
    *
    * Case 2 deliberately refuses staff and admin accounts. Those sign in
    * with email + password on purpose, and letting a social login walk into
    * one would mean anyone who can create a Google account on the brand's
    * domain inherits its privileges.
+   *
+   * Case 2 also refuses an address that was only typed into a profile
+   * (PATCH /auth/me). It used to accept it, so anyone could put a victim's
+   * address on their own profile and wait: the victim's first Google sign-in
+   * then landed in the attacker's profile, which the attacker still controls
+   * through Telegram. The verified sign-in now gets a profile of its own and
+   * takes the address with it — the provider has just proven who owns it,
+   * the other profile never did.
    */
   private async finalizeOAuthSignIn(identity: OAuthIdentity, fallbackName: string | null): Promise<AuthSessionDto> {
     const provider = OAuthProvider[identity.provider];
     const name = identity.name ?? fallbackName;
     const email = identity.email?.toLowerCase() ?? null;
+    const verifiedEmail = email && identity.emailVerified ? email : null;
     const locale = identity.locale?.toLowerCase().startsWith('ru') ? Locale.RU : Locale.EN;
+    const now = new Date();
 
     const user = await this.prisma.$transaction(async (tx) => {
       const link = await tx.oAuthAccount.findUnique({
@@ -337,30 +348,50 @@ export class AuthService {
         include: { user: true },
       });
       if (link) {
+        const data: Prisma.UserUpdateInput = {};
         // Backfill a name only while we have none — never overwrite one the
         // customer edited in their profile.
-        if (name && !link.user.name) {
-          return tx.user.update({ where: { id: link.userId }, data: { name } });
+        if (name && !link.user.name) data.name = name;
+        // The provider vouches for the address on the profile: from now on
+        // it counts as proven.
+        if (verifiedEmail && link.user.email === verifiedEmail && !link.user.emailVerifiedAt) {
+          data.emailVerifiedAt = now;
         }
-        return link.user;
+        return Object.keys(data).length > 0 ? tx.user.update({ where: { id: link.userId }, data }) : link.user;
       }
 
-      if (email && identity.emailVerified) {
-        const byEmail = await tx.user.findUnique({ where: { email } });
+      let storedEmail: string | null = null;
+      if (verifiedEmail) {
+        const byEmail = await tx.user.findUnique({ where: { email: verifiedEmail } });
         if (byEmail) {
           if (byEmail.role !== Role.CUSTOMER) {
             throw new UnauthorizedException('This email belongs to a staff account — sign in with your password');
           }
-          await tx.oAuthAccount.create({
-            data: { userId: byEmail.id, provider, providerUserId: identity.providerUserId },
-          });
-          return name && !byEmail.name ? tx.user.update({ where: { id: byEmail.id }, data: { name } }) : byEmail;
+          if (byEmail.emailVerifiedAt) {
+            await tx.oAuthAccount.create({
+              data: { userId: byEmail.id, provider, providerUserId: identity.providerUserId },
+            });
+            return name && !byEmail.name ? tx.user.update({ where: { id: byEmail.id }, data: { name } }) : byEmail;
+          }
+          // Only typed in over there, never proven: release it.
+          await tx.user.update({ where: { id: byEmail.id }, data: { email: null } });
+          this.logger.warn(
+            `${identity.provider} sign-in proved an email that profile ${byEmail.id} had only typed in; ` +
+              'the address moved to a new profile instead of joining that one',
+          );
         }
+        storedEmail = verifiedEmail;
+      } else if (email) {
+        // An address the provider does not vouch for is kept for receipts
+        // when nobody else has it, and never counts as proven.
+        const taken = await tx.user.findUnique({ where: { email }, select: { id: true } });
+        if (!taken) storedEmail = email;
       }
 
       return tx.user.create({
         data: {
-          email,
+          email: storedEmail,
+          emailVerifiedAt: verifiedEmail ? now : null,
           name,
           locale,
           oauthAccounts: { create: { provider, providerUserId: identity.providerUserId } },
