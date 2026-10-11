@@ -44,7 +44,9 @@ served=""
 for i in $(seq 1 "$ATTEMPTS"); do
   body="$(fetch_url https://api.takeaway.md/api/health)"
   served="$(printf '%s' "$body" | sed -n 's/.*"commit":"\([0-9a-f]\{7,40\}\)".*/\1/p')"
-  if [ "$served" = "$EXPECTED" ]; then
+  # The public answer carries a short commit (the full one needs
+  # X-Health-Token), so it is matched as a prefix of what we deployed.
+  if [ -n "$served" ] && [ "${EXPECTED#"$served"}" != "$EXPECTED" ]; then
     echo "api: serving $served"
     printf '%s\n' "$body"
     break

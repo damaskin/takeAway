@@ -130,14 +130,16 @@ export class AuthController {
   /**
    * Self-service password change. Used by the admin / KDS 'change your
    * temp password' flow after an invited staff signs in for the first
-   * time. Requires the current password and replaces the stored hash.
+   * time. Requires the current password and replaces the stored hash, then
+   * signs out every other session of the account (the one making the change
+   * stays when it sends its `refreshToken`).
    */
   @Post('password/change')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiNoContentResponse()
   async passwordChangeSelf(@CurrentUser() user: AuthenticatedUser, @Body() dto: PasswordChangeSelfDto): Promise<void> {
-    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword);
+    await this.auth.changeOwnPassword(user.id, dto.currentPassword, dto.newPassword, dto.refreshToken);
   }
 
   @Public()
@@ -387,7 +389,14 @@ export class AuthController {
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data['name'] = dto.name;
     if (dto.phone !== undefined) data['phone'] = dto.phone;
-    if (dto.email !== undefined) data['email'] = dto.email.toLowerCase();
+    if (dto.email !== undefined) {
+      const email = dto.email.toLowerCase();
+      data['email'] = email;
+      // A typed-in address is a claim, not a proof: it must not let a Google
+      // or Apple sign-in join this profile (see AuthService.finalizeOAuthSignIn).
+      const current = await this.prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
+      if (current?.email !== email) data['emailVerifiedAt'] = null;
+    }
     if (dto.dateOfBirth !== undefined) data['dateOfBirth'] = new Date(dto.dateOfBirth);
     if (dto.locale !== undefined) data['locale'] = dto.locale;
     if (dto.currency !== undefined) data['currency'] = dto.currency;
