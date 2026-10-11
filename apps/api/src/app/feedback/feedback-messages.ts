@@ -22,6 +22,12 @@ export interface FeedbackNews {
   authorName: string | null;
   authorEmail: string | null;
   authorPhone: string | null;
+  /**
+   * A visitor without an account, from the site's support form: there is no
+   * account to name, `contact` is how to answer, and this is the name they
+   * gave, if any.
+   */
+  guest?: { name: string | null } | null;
   /** Set on messages from the business admin (`source` BUSINESS). */
   brand?: FeedbackBrand | null;
   /** Admin panel base URL, without a trailing slash. */
@@ -71,7 +77,9 @@ export function feedbackDigest(locale: Locale, n: FeedbackNews): FeedbackDigest 
   if (n.brand) return businessDigest(locale, n, n.brand);
   const ru = locale === Locale.RU;
   const kind = KIND[ru ? Locale.RU : Locale.EN][n.kind];
-  const author = [n.authorName, n.authorEmail, n.authorPhone].filter(Boolean).join(', ') || '—';
+  const author = n.guest
+    ? `${n.guest.name || '—'} (${ru ? 'без аккаунта' : 'no account'})`
+    : [n.authorName, n.authorEmail, n.authorPhone].filter(Boolean).join(', ') || '—';
   const platform = n.appVersion ? `${SOURCE[n.source]} ${n.appVersion}` : SOURCE[n.source];
   const lines = [
     `${ru ? 'От' : 'From'}: ${author} · ${platform}`,

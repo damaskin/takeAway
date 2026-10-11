@@ -43,6 +43,8 @@ export class FeedbackNotifier {
           appVersion: true,
           message: true,
           contact: true,
+          name: true,
+          userId: true,
           user: { select: { name: true, email: true, phone: true } },
           brand: { select: { name: true, contactPhone: true, plan: true, requestedPlan: true } },
         },
@@ -58,6 +60,7 @@ export class FeedbackNotifier {
         authorName: feedback.user?.name ?? null,
         authorEmail: feedback.user?.email ?? null,
         authorPhone: feedback.user?.phone ?? null,
+        guest: feedback.userId === null ? { name: feedback.name } : null,
         brand: feedback.brand ?? null,
         adminUrl: this.adminUrl,
       });

@@ -5,9 +5,11 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 import { FEEDBACK_MESSAGE_MAX_LENGTH } from '@takeaway/shared-types';
 
+import { AppThrottlerGuard } from '../auth/guards/app-throttler.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
@@ -15,7 +17,7 @@ import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { UsersService } from '../users/users.service';
 import { AdminFeedbackController } from './admin-feedback.controller';
 import { BusinessSupportController } from './business-support.controller';
-import { FeedbackController } from './feedback.controller';
+import { FeedbackController, SITE_SUPPORT_PER_HOUR } from './feedback.controller';
 import { FeedbackService } from './feedback.service';
 
 const SECRET = 'test-access-secret';
@@ -35,6 +37,7 @@ describe('feedback endpoints', () => {
   const service = {
     create: jest.fn(async () => ({ id: 'fb-1', createdAt: '2026-10-07T10:00:00.000Z' })),
     createFromBusiness: jest.fn(async () => ({ id: 'fb-2', createdAt: '2026-10-07T10:00:00.000Z' })),
+    createFromSite: jest.fn(async () => undefined),
     list: jest.fn(async () => ({ items: [], total: 0, page: 1, pageSize: 25, newCount: 0 })),
     newCount: jest.fn(async () => ({ count: 3 })),
     setStatus: jest.fn(async () => ({ id: 'fb-1', status: 'READ' })),
@@ -146,6 +149,60 @@ describe('feedback endpoints', () => {
     });
   });
 
+  describe('POST /feedback/support', () => {
+    const site = (payload: Record<string, unknown>, authorization?: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/feedback/support',
+        headers: authorization ? { authorization } : {},
+        payload,
+      });
+
+    it('takes a visitor’s message without an account', async () => {
+      const res = await site({ kind: 'QUESTION', message: '  Где заказ?  ', name: ' Ион ', contact: ' ion@mail.md ' });
+
+      expect(res.statusCode).toBe(204);
+      expect(res.body).toBe('');
+      expect(service.createFromSite).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ kind: 'QUESTION', message: 'Где заказ?', name: 'Ион', contact: 'ion@mail.md' }),
+      );
+    });
+
+    it('files a signed-in customer’s message under the account', async () => {
+      const res = await site({ kind: 'PROBLEM', message: 'Не пришёл возврат' }, `Bearer ${await tokenFor('ana')}`);
+      expect(res.statusCode).toBe(204);
+      expect(service.createFromSite).toHaveBeenCalledWith('ana', expect.objectContaining({ kind: 'PROBLEM' }));
+    });
+
+    it('refuses a bad token instead of writing as a stranger, so the client refreshes its session', async () => {
+      const res = await site({ kind: 'QUESTION', message: 'Hi', contact: 'ion@mail.md' }, 'Bearer not-a-token');
+      expect(res.statusCode).toBe(401);
+      expect(service.createFromSite).not.toHaveBeenCalled();
+    });
+
+    it('lets the honeypot field through to the service, which drops it', async () => {
+      const res = await site({ kind: 'QUESTION', message: 'Hi', contact: 'bot@spam.io', website: 'spam' });
+      expect(res.statusCode).toBe(204);
+      expect(service.createFromSite).toHaveBeenCalledWith(null, expect.objectContaining({ website: 'spam' }));
+    });
+
+    it.each([
+      ['an empty message', { kind: 'QUESTION', message: '  ', contact: 'ion@mail.md' }],
+      [
+        'a message over the limit',
+        { kind: 'QUESTION', message: 'x'.repeat(FEEDBACK_MESSAGE_MAX_LENGTH + 1), contact: 'ion@mail.md' },
+      ],
+      ['a name over the limit', { kind: 'QUESTION', message: 'Hi', name: 'x'.repeat(81), contact: 'ion@mail.md' }],
+      ['a contact over the limit', { kind: 'QUESTION', message: 'Hi', contact: `${'x'.repeat(200)}@mail.md` }],
+      ['a topic that is not a support topic', { kind: 'PLAN_CHANGE', message: 'Hi', contact: 'ion@mail.md' }],
+      ['an unknown field', { kind: 'QUESTION', message: 'Hi', contact: 'ion@mail.md', userId: 'ana' }],
+    ])('refuses %s with 400', async (_, payload) => {
+      expect((await site(payload)).statusCode).toBe(400);
+      expect(service.createFromSite).not.toHaveBeenCalled();
+    });
+  });
+
   describe('POST /admin/support', () => {
     const support = async (payload: Record<string, unknown>, as: string, query = '') =>
       app.inject({
@@ -221,5 +278,43 @@ describe('feedback endpoints', () => {
       expect(service.setStatus).toHaveBeenCalledWith('fb-1', 'ARCHIVED');
       expect((await patch('DELETED')).statusCode).toBe(400);
     });
+  });
+});
+
+/** The per-client cap on the site's support form, through the real throttler guard. */
+describe('POST /feedback/support throttling', () => {
+  let app: NestFastifyApplication;
+  const service = { createFromSite: jest.fn(async () => undefined) };
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1000 }])],
+      controllers: [FeedbackController],
+      providers: [
+        { provide: APP_GUARD, useClass: AppThrottlerGuard },
+        { provide: FeedbackService, useValue: service },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('lets one address send a few messages an hour, then answers 429', async () => {
+    const post = () =>
+      app.inject({
+        method: 'POST',
+        url: '/feedback/support',
+        payload: { kind: 'QUESTION', message: 'Hi', contact: 'ion@mail.md' },
+      });
+
+    for (let i = 0; i < SITE_SUPPORT_PER_HOUR; i++) expect((await post()).statusCode).toBe(204);
+    expect((await post()).statusCode).toBe(429);
+    expect(service.createFromSite).toHaveBeenCalledTimes(SITE_SUPPORT_PER_HOUR);
   });
 });
