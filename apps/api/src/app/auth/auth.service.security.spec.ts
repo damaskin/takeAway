@@ -7,6 +7,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import type { KdsPinService } from './services/kds-pin.service';
+import type { KitchenDeviceService } from './services/kitchen-device.service';
 import type { OAuthIdentity, OAuthIdentityService } from './services/oauth-identity.service';
 import type { PasswordService } from './services/password.service';
 import type { TelegramService } from './services/telegram.service';
@@ -124,6 +125,7 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
     {} as KdsPinService,
     {} as MailService,
     { get: () => undefined } as unknown as ConfigService,
+    {} as KitchenDeviceService,
   );
   return { auth, users, accounts, prisma, tokens, oauth };
 }
