@@ -231,6 +231,7 @@ takeaway/
 | Firebase FCM      | Mobile push                | ✅ HTTP v1, `FIREBASE_*`; Android и iOS старых версий приложения |
 | Apple APNs        | iOS push                   | ✅ напрямую по HTTP/2, ключ `APNS_*` (или `APPLE_*`)             |
 | Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока)     |
+| OSM Nominatim     | Геокодинг адреса точки     | ✅ через прокси API `/admin/geocode`, `GEOCODER_URL`, без ключа  |
 | Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия                  |
 | Mixpanel          | Product analytics          | ❌ запланировано на M7                                           |
 
@@ -293,7 +294,9 @@ takeaway/
 - **Busy meter** (0–100%) — индикатор загрузки кухни, визуализируется цветом (зелёный / жёлтый / красный)
 - **Pickup point type** для UI: counter / locker / shelf — определяет инструкции на экране готовности
 - Привязка меню (не все точки имеют одинаковый ассортимент)
-- Фото интерьера / витрины / pickup-зоны
+- Фото интерьера / витрины / pickup-зоны. **Обложка (`heroImageUrl`) — картинка самой точки** в клиентских приложениях; бренд — это юрлицо, его логотип (`logoUrl`) показывается только у точки без своего фото: `heroImageUrl ?? logoUrl`. Правила загрузки — `libs/shared-types/src/lib/images.ts`, их же проверяют API и админка: фото точки — JPG/PNG/WebP до 5 МБ, рекомендуется 1200×800 (3:2); логотип бренда — JPG/PNG/WebP до 2 МБ, квадрат 512×512. AVIF для них не принимается (Flutter его не рисует); ошибки — 413 `IMAGE_TOO_LARGE` (`maxBytes`, `maxMb`) и 415 `IMAGE_TYPE`
+- **Что продаёт точка** (`kinds`: `COFFEE`, `FOOD`, можно оба; не пусто) — от этого зависит маркер на карте и фильтр `GET /stores?kind=`. Пустой или отсутствующий список читается как кофе
+- **Адрес → карта** в форме точки: адрес, город и страна геокодируются через `GET /admin/geocode` (OSM Nominatim за прокси API) с паузой после ввода и при уходе из поля, метка ставится сама и остаётся перетаскиваемой; поставленную вручную метку ввод адреса больше не двигает — только «Найти по адресу». Метка, поставленная до адреса, подставляет адрес (`GET /admin/geocode/reverse`)
 
 ### 3.4. Pre-order и чекаут (core flow)
 
@@ -507,6 +510,8 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        plan[BASIC|PRO] = BASIC, commissionBps = 1000)   // тариф и комиссия платформы, меняет SUPER_ADMIN
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
+       kinds[COFFEE|FOOD] = [COFFEE],          // что продаёт точка: маркер и фильтр на карте; не пусто
+       heroImageUrl?, galleryUrls[],            // обложка — фото самой точки (логотип бренда — запасной)
        busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,
        taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
@@ -672,8 +677,10 @@ POST   /feedback                     { kind: REVIEW|SUGGESTION|PROBLEM, message 
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
-GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена)
+GET    /stores?lat=&lng=&radius=&kind=  // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName,
+                                     //   heroImageUrl (фото точки), logoUrl (логотип бренда — показывать, когда фото нет),
+                                     //   kinds: ['COFFEE'|'FOOD'] (никогда не пусто); ?kind=FOOD|COFFEE — только такие точки (COFFEE включает точки без kinds)
+GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена); те же heroImageUrl, logoUrl, kinds + brand.logoUrl
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
                                      //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке
@@ -755,7 +762,7 @@ PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVE
 POST   /business/register            { brand, contact, currency, locale, phone? } → { brand: { moderationStatus: PENDING } }
 GET    /my-brand[?brandId=]          (BRAND_ADMIN → свой бренд; SUPER_ADMIN → бренд из brandId)
 PATCH  /my-brand[?brandId=]          (название, логотип, цвета, язык; валюта — до первого заказа, иначе 409 CURRENCY_LOCKED)
-POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO)
+POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO; JPG/PNG/WebP до 2 МБ, 413 IMAGE_TOO_LARGE / 415 IMAGE_TYPE)
 GET    /my-brand/onboarding[?brandId=]  → чек-лист запуска бренда
 POST   /my-brand/resubmit[?brandId=]    REJECTED → PENDING, уведомляет платформу
 ```
@@ -784,8 +791,16 @@ GET                    /admin/products/stores?brandId=   точки бренда
 GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     библиотека добавок бренда (GET ?brandId=), PATCH { isAvailable } — «закончилось/появилось»
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
-POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
+                                                    //   + kinds[] (COFFEE|FOOD, не пусто) в create/update
+POST/DELETE            /admin/stores/:id/images?kind=hero|gallery   // JPG/PNG/WebP до 5 МБ; 413 IMAGE_TOO_LARGE, 415 IMAGE_TYPE
 PUT                    /admin/stores/:id/working-hours
+GET                    /admin/geocode?address=&city=&country=   // SUPER_ADMIN/BRAND_ADMIN/STORE_MANAGER: { result: { lat, lng, displayName, approximate } | null }
+                                                    //   approximate = нашёлся только город (карта открывается там, метку не ставим);
+                                                    //   503 GEOCODER_UNAVAILABLE — геокодер не ответил/занят. OSM Nominatim (GEOCODER_URL),
+                                                    //   структурный поиск, затем город латиницей, затем один город; не чаще 1 запроса/с на всё
+                                                    //   приложение (токен в Redis), кеш в Redis 14 дней (промах — 1 день), после 429/403 пауза 60 с,
+                                                    //   User-Agent с контактом GEOCODER_CONTACT (или SUPPORT_EMAIL), accept-language=ru,en
+GET                    /admin/geocode/reverse?lat=&lng=   // { result: { lat, lng, displayName, addressLine, city, country } | null }
 GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]     // + STAFF своей точки; товар должен быть из бренда точки
 GET                    /admin/stores/:id/availability                // стоп-лист точки: её товары и добавки с остановками (+ STAFF)
 PUT/DELETE             /admin/stores/:id/ingredient-stops/:ingredientId   // { expiresAt? } — добавка закончилась в этой точке (+ STAFF)
