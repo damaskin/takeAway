@@ -13,7 +13,13 @@ import { FeatureFlagsStore } from '../core/config/feature-flags.store';
 import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
 import { PwaService } from '../core/pwa/pwa.service';
 
-import { ADMIN_ROLES, type AdminRole, NAV_PLAN_FEATURE } from '../core/permissions/permissions';
+import {
+  ADMIN_ROLES,
+  type AdminRole,
+  KITCHEN_SESSION_NAV,
+  NAV_PLAN_FEATURE,
+  navLink,
+} from '../core/permissions/permissions';
 import { PlanAccess } from '../core/plans/plan-access.service';
 
 interface NavItem {
@@ -301,7 +307,11 @@ export class AdminSidebarComponent {
   readonly visibleItems = computed(() => {
     const flags = this.flags.flags();
     const role = this.authStore.user()?.role;
+    // A kitchen PIN session sees the board and the stop-list only.
+    const kitchenOnly = this.authStore.kdsStoreId() !== null;
+    const kitchenLinks = KITCHEN_SESSION_NAV.map(navLink);
     return this.navItems.filter((item) => {
+      if (kitchenOnly && !kitchenLinks.includes(item.link)) return false;
       if (item.requires && !flags[item.requires]) return false;
       if (item.roles && (!role || !item.roles.includes(role as never))) return false;
       return true;

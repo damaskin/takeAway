@@ -536,6 +536,7 @@ model Brand {
   campaigns       Campaign[]
   commissionRates BrandCommissionRate[]
   payouts         BrandPayout[]
+  kitchenDevices  KitchenDevice[]
 
   @@index([moderationStatus])
   @@index([ownerId])
@@ -796,6 +797,30 @@ model Store {
   @@index([brandId])
   @@index([country, city])
   @@index([latitude, longitude])
+}
+
+/// A kitchen tablet bound to one brand. The PIN screen lists only that
+/// brand's stores, and PIN sign-in is accepted only from a bound tablet —
+/// it used to list every store of every brand to anyone. A tablet is bound
+/// by a signed-in employee of the brand opening the kitchen board on it, or
+/// by a one-time link from the Staff page; the raw token stays in the
+/// tablet's localStorage and only its SHA-256 is kept here.
+model KitchenDevice {
+  id          String    @id @default(cuid())
+  brandId     String
+  tokenHash   String    @unique
+  /// Who bound the tablet (the signed-in employee or the link's author).
+  /// Kept for the Staff page; not a relation, so removing the person keeps the row.
+  createdById String?
+  createdAt   DateTime  @default(now())
+  /// Last successful PIN sign-in from this tablet.
+  lastUsedAt  DateTime?
+  /// Unbound from the Staff page: the token no longer opens anything.
+  revokedAt   DateTime?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
 }
 
 /// Pivot table scoping a staff user to one or more stores. Used by the

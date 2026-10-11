@@ -10,6 +10,8 @@ interface StoredSession {
   refreshTokenExpiresInSeconds: number;
   user: AuthUser;
   mustChangePassword?: boolean;
+  /** Set for a kitchen PIN session: the one store it works. */
+  kdsStoreId?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -21,6 +23,12 @@ export class AuthStore {
   readonly isAuthenticated = computed(() => this._session() !== null);
   readonly accessToken = computed<string | null>(() => this._session()?.accessToken ?? null);
   readonly mustChangePassword = computed<boolean>(() => !!this._session()?.mustChangePassword);
+  /**
+   * The store of a kitchen PIN session, null for an email + password one.
+   * The API lets a PIN session reach only that store's kitchen board and
+   * stop-list, so the cabinet shows nothing else.
+   */
+  readonly kdsStoreId = computed<string | null>(() => this._session()?.kdsStoreId ?? null);
 
   set(session: AuthSession): void {
     const stored: StoredSession = {
@@ -30,6 +38,7 @@ export class AuthStore {
       refreshTokenExpiresInSeconds: session.refreshTokenExpiresInSeconds,
       user: session.user,
       mustChangePassword: session.mustChangePassword,
+      kdsStoreId: session.kdsStoreId,
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));

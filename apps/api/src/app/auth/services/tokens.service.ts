@@ -18,6 +18,19 @@ interface RefreshSession {
   userId: string;
   deviceId: string | null;
   issuedAt: number;
+  /** Set for a kitchen PIN session — kept across refreshes, see {@link SessionScope}. */
+  kdsStoreId?: string;
+}
+
+/**
+ * Narrows what a session may do. A session opened with a kitchen PIN works
+ * one store's kitchen board and nothing else: the PIN is short and typed on
+ * a shared tablet, so it must not open a manager's menu, staff or refunds.
+ * The access token carries the store as the `kds` claim, and a refresh
+ * keeps it — a PIN session never widens into a full one.
+ */
+export interface SessionScope {
+  kdsStoreId: string;
 }
 
 @Injectable()
@@ -37,9 +50,10 @@ export class TokensService {
     this.refreshSecret = config.get<string>('JWT_REFRESH_SECRET') ?? 'change-me-in-prod-refresh';
   }
 
-  async issue(userId: string, deviceId: string | null): Promise<IssuedTokens> {
+  async issue(userId: string, deviceId: string | null, scope?: SessionScope): Promise<IssuedTokens> {
     const jti = randomUUID();
-    const accessToken = await this.jwt.signAsync({ sub: userId, jti }, { expiresIn: this.accessTtlSeconds });
+    const claims = scope ? { sub: userId, jti, kds: scope.kdsStoreId } : { sub: userId, jti };
+    const accessToken = await this.jwt.signAsync(claims, { expiresIn: this.accessTtlSeconds });
 
     const refreshTokenId = randomUUID();
     const refreshToken = await this.jwt.signAsync(
@@ -48,6 +62,7 @@ export class TokensService {
     );
 
     const session: RefreshSession = { userId, deviceId, issuedAt: Date.now() };
+    if (scope) session.kdsStoreId = scope.kdsStoreId;
     await this.redis.set(this.refreshKey(userId, refreshTokenId), JSON.stringify(session), this.refreshTtlSeconds);
 
     return {
@@ -75,7 +90,11 @@ export class TokensService {
     if (!user || user.blockedAt) {
       throw new UnauthorizedException('User not found or blocked');
     }
-    return this.issue(parsed.userId, parsed.deviceId);
+    return this.issue(
+      parsed.userId,
+      parsed.deviceId,
+      parsed.kdsStoreId ? { kdsStoreId: parsed.kdsStoreId } : undefined,
+    );
   }
 
   async revokeRefresh(refreshToken: string): Promise<void> {

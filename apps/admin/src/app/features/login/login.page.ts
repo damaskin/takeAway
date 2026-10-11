@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -87,7 +87,15 @@ import { AuthService } from '../../core/auth/auth.service';
 export class LoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly translate = inject(TranslateService);
+
+  /**
+   * Where to go after signing in — the PIN screen of an unbound tablet sends
+   * `?next=/kitchen`, and opening the board binds the tablet. Only a path
+   * inside the cabinet is followed.
+   */
+  private readonly next = safeNext(this.route.snapshot.queryParamMap.get('next'));
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -115,7 +123,7 @@ export class LoginPage {
       .subscribe({
         next: () => {
           this.loading.set(false);
-          void this.router.navigate(['/']);
+          void this.router.navigateByUrl(this.next);
         },
         error: (err) => {
           this.loading.set(false);
@@ -130,4 +138,10 @@ export class LoginPage {
     if (typeof maybe.message === 'string') return maybe.message;
     return this.translate.instant('common.genericError');
   }
+}
+
+/** An in-app path to continue to, or `/`. Never another origin (`//evil`, `/\evil`, `https:`). */
+export function safeNext(next: string | null): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/';
+  return next;
 }

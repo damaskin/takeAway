@@ -620,19 +620,27 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle: "Enter your email — we'll send you a reset link.",
       sendLink: 'Send reset link',
       sending: 'Sending…',
-      sent: 'If the address exists, a reset link is on its way.',
+      sent: 'If the address exists, an email with a reset link is on its way. The link works for 1 hour — check your spam folder too.',
       backToLogin: '← Back to sign in',
+      unavailable:
+        'Password reset by email is not available right now: this server cannot send email. Ask your business owner or takeAway support.',
+      tooMany: 'Too many requests. Wait a minute and try again.',
     },
     reset: {
       title: 'Set a new password',
-      subtitle: 'Pick a password of at least 8 characters.',
+      subtitle: 'Choose a new password for the business cabinet.',
+      inviteTitle: 'Set your password',
+      inviteSubtitle: 'You have been invited to a team on takeAway. Choose a password for the business cabinet.',
       newPasswordLabel: 'New password',
+      rule: 'At least {{min}} characters (up to {{max}}).',
       save: 'Save password',
       saving: 'Saving…',
       done: 'Password updated. Redirecting to sign-in…',
       signIn: 'Sign in',
       missingToken: 'This reset link is missing a token. Request a new one.',
       requestNewLink: 'Request a new link',
+      linkInvalid: 'This link no longer works: it was already used or has expired.',
+      invalidField: 'Check the «{{field}}» field.',
     },
     layout: {
       wholeProject: 'Whole project',
@@ -739,7 +747,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     staff: {
       title: 'Staff roster',
       subtitle:
-        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with the email and temporary password you set, and on the kitchen tablet with a PIN.",
+        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with their email and password (the temporary one you set, or their own from the invite email link), and on the kitchen tablet with a PIN.",
       noStores: 'Create a store first to invite staff.',
       empty: 'Nobody on the team yet.',
       count: 'Showing {{count}}',
@@ -751,11 +759,48 @@ export const TRANSLATIONS_EN: TranslationTree = {
       roleLabel: 'Role',
       storesLabel: 'Works at',
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
+      roleHint: {
+        STORE_MANAGER:
+          'runs their stores: orders, the kitchen and shifts, the menu and stop-list, opening hours, kitchen staff and their PINs. Does not see analytics, promotions or brand settings.',
+        STAFF:
+          'works the kitchen: accepts and prepares orders (signs in on the tablet with a PIN), opens the shift, keeps the stop-list. Does not change the menu or settings.',
+        MENU_EDITOR: 'edits the menu only: items, prices, photos, add-ins. Does not see orders or the kitchen.',
+      },
       blocked: 'Blocked',
       tempPassword: 'Temporary password',
+      tempPasswordRule: 'At least {{min}} characters (up to {{max}}): any letters, digits and symbols.',
       tempPasswordHint:
-        'Give this to the user privately — they should change it via /forgot-password on first sign-in.',
+        'The person changes the temporary password on first sign-in. They also get an email with a link to set their own right away — the temporary password is never put in the email.',
+      generate: 'Generate',
       addCta: 'Invite',
+      invited: {
+        title: 'Invite sent',
+        sentNew:
+          'An invite went to {{email}} with a link to set their own password. The temporary password below works too.',
+        sentExisting:
+          '{{email}} already has an account — we told them they were added to the team. They sign in with their own password.',
+        notConfigured: 'No email was sent: this server has no mail set up. Pass the sign-in details on yourself.',
+        failed: 'No email was sent: the mail server refused it. Pass the sign-in details on yourself.',
+        cabinet: 'Cabinet',
+        login: 'Login',
+        ownPassword: 'their current password',
+        toList: 'Back to the team',
+        another: 'Invite another',
+      },
+      tablets: {
+        title: 'Kitchen tablets',
+        hint: "A tablet's PIN screen shows only your business's stores. Bind a tablet once: sign in on it with your account and open «Kitchen» — or open a one-time link from here on it, with no password typed.",
+        makeLink: 'Link for a tablet',
+        copy: 'Copy',
+        copied: 'Copied',
+        linkNote: 'Works once, until {{until}}. Open it in the kitchen tablet’s browser.',
+        none: 'No tablet is bound yet.',
+        bound: 'Bound {{date}} · {{name}}',
+        lastUsed: 'last PIN sign-in {{date}}',
+        neverUsed: 'no PIN sign-in yet',
+        unbind: 'Unbind',
+        unbindConfirm: 'Unbind this tablet? PIN sign-in on it stops until it is bound again.',
+      },
       filters: {
         search: 'Search',
         searchPlaceholder: 'Name, email or phone',
@@ -1022,6 +1067,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
         storeClosed:
           'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
+      },
+      busy: {
+        off: 'Busy',
+        on: 'Busy · on',
+        offHint: 'Mark the kitchen as busy: customers see the store as busy, orders keep coming.',
+        onHint: 'Clear the «Busy» mark',
+        note: 'Marked «Busy»: customers see the store as busy. Clear it with the same button, or it clears itself when the shift ends.',
       },
       arrival: {
         here: 'Customer is here',
@@ -1703,6 +1755,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         OVERLOADED: 'Busy',
         CLOSED: 'Closed',
       },
+      busyHint:
+        'The kitchen marked the store «Busy»: customers see it as busy, orders still come in. The kitchen sets and clears the mark.',
       readiness: {
         titleClosed: 'Left to do before opening',
         titleReady: 'All set — the store can open',
@@ -1841,14 +1895,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         empty: 'No photos yet.',
       },
       kitchen: {
-        hint: "Staff unlock this store's kitchen tablet with a 4–6 digit PIN. A PIN works at this store only.",
+        hint: "Staff unlock this store's kitchen tablet with a 6-digit PIN (4–5 digit PINs given out earlier keep working). A PIN works at this store only.",
         where: 'On the tablet, open',
         empty: 'No kitchen staff or managers are assigned to this store yet.',
         toStaff: 'Add them under Staff',
         pin: 'PIN',
         pinSet: 'PIN set',
         pinUnset: 'No PIN',
-        pinPlaceholder: '4–6 digits',
+        pinPlaceholder: '6 digits',
         setPin: 'Set PIN',
         changePin: 'Change PIN',
         resetPin: 'Reset',
@@ -1867,7 +1921,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         pinTaken: 'Another staff member of this store already uses this PIN — choose a different one.',
         pinNotConfigured:
           'Kitchen PIN sign-in is not set up on the server. Ask the administrator to set KDS_PIN_SECRET — PINs cannot be saved until then.',
-        pinFormat: 'A PIN is 4 to 6 digits.',
+        pinFormat: 'A new PIN is exactly 6 digits.',
+        pinTooSimple: 'This PIN is too easy to guess: no repeated digits (111111) or runs (123456).',
         timezone: 'Choose a time zone from the list.',
         hoursDuplicate: 'Each weekday can have only one row of hours.',
         notFound: 'Store not found — it may have been deleted.',
@@ -2633,8 +2688,26 @@ export const TRANSLATIONS_EN: TranslationTree = {
       wrong: 'Wrong PIN',
       notConfigured: 'PIN sign-in is not set up yet. Sign in with email and password.',
       locked: 'Too many wrong attempts. Wait a few minutes or sign in with email and password.',
+      lockedFor: 'Too many wrong attempts. Try again in {{minutes}} min or sign in with email and password.',
+      rule: 'A PIN is 4 to 6 digits. Type it and press «Sign in».',
+      signIn: 'Sign in',
       delete: 'Delete',
       usePassword: 'Sign in with email and password',
+    },
+    device: {
+      pairing: 'Binding the tablet…',
+      unboundTitle: 'This tablet is not bound to a business',
+      unboundBody: 'To show only your stores here, bind the tablet once, either way:',
+      stepSignIn:
+        'The owner, a manager or kitchen staff signs in on this tablet with email and password and opens «Kitchen».',
+      stepLink: 'Or the owner opens a one-time link from Staff → Kitchen tablets on this tablet.',
+      signInToBind: 'Sign in with email and password',
+      unboundNow: 'This tablet was unbound from the business — bind it again.',
+      linkInvalid:
+        'This tablet link no longer works: it was already used or has expired. Make a new one on the Staff page.',
+      noPins: 'Nobody at this business has a PIN yet. Set PINs on the Staff page.',
+      unbind: 'Unbind this tablet',
+      unbindConfirm: 'Unbind this tablet from the business? PIN sign-in needs it bound again.',
     },
     topbar: {
       inQueue: 'in queue',

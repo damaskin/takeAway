@@ -32,6 +32,15 @@ describe('RealtimeGateway store rooms', () => {
     const { gw, client } = gateway('SUPER_ADMIN', '*');
     await expect(gw.subscribeToDispatch(client, { storeId: 'any' })).resolves.toEqual({ ok: true });
   });
+
+  it('keeps a kitchen PIN socket on its own store’s board and off the delivery queue', async () => {
+    const { gw, client } = gateway('STORE_MANAGER', ['store-1', 'store-2']);
+    (client.data as Record<string, unknown>)['kdsStoreId'] = 'store-1';
+
+    await expect(gw.subscribeToKds(client, { storeId: 'store-2' })).resolves.toEqual({ ok: false });
+    await expect(gw.subscribeToKds(client, { storeId: 'store-1' })).resolves.toEqual({ ok: true });
+    await expect(gw.subscribeToDispatch(client, { storeId: 'store-1' })).resolves.toEqual({ ok: false });
+  });
 });
 
 describe('RealtimeGateway handshake', () => {
@@ -54,6 +63,17 @@ describe('RealtimeGateway handshake', () => {
     await gw.handleConnection(socket);
     expect(client.join).toHaveBeenCalledWith('user:u1');
     expect(client.disconnect).not.toHaveBeenCalled();
+    expect(client.data['kdsStoreId']).toBeUndefined();
+  });
+
+  it('remembers the store of a kitchen PIN session from its token', async () => {
+    const { gw, client, socket } = connect({ blockedAt: null });
+    (gw as unknown as { jwt: { verifyAsync: jest.Mock } }).jwt.verifyAsync.mockResolvedValue({
+      sub: 'u1',
+      kds: 'store-1',
+    });
+    await gw.handleConnection(socket);
+    expect(client.data['kdsStoreId']).toBe('store-1');
   });
 
   it.each([

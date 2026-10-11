@@ -61,4 +61,38 @@ describe('MailService logs', () => {
     expect(logged).not.toContain('ion.popescu');
     expect(logged).not.toContain('token=');
   });
+
+  describe('sendStaffInvite', () => {
+    const invite = {
+      subject: 'Приглашение в команду NoName',
+      text: 'Задайте пароль: https://admin.takeaway.md/reset-password?token=secret-invite-token&invite=1',
+      html: '<p>secret-invite-token</p>',
+    };
+
+    it('says false without SMTP and logs only the template, domain and subject', async () => {
+      await expect(build().sendStaffInvite('anna@noname.md', invite)).resolves.toBe(false);
+      const logged = lines(warn);
+      expect(logged).toContain('template=staff-invite');
+      expect(logged).toContain('to=*@noname.md');
+      expect(logged).not.toContain('secret-invite-token');
+      expect(logged).not.toContain('anna');
+    });
+
+    it('says true once the server took it and false when it refused', async () => {
+      const sendMail = jest.fn().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('550 relay denied'));
+      const svc = build(sendMail);
+
+      await expect(svc.sendStaffInvite('anna@noname.md', invite)).resolves.toBe(true);
+      expect(sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'anna@noname.md',
+          subject: invite.subject,
+          text: invite.text,
+          html: invite.html,
+        }),
+      );
+      await expect(svc.sendStaffInvite('anna@noname.md', invite)).resolves.toBe(false);
+      expect(`${lines(log)}\n${lines(error)}`).not.toContain('secret-invite-token');
+    });
+  });
 });

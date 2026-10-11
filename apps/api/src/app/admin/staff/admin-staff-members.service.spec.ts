@@ -6,6 +6,7 @@ import type { PasswordService } from '../../auth/services/password.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import type { PrismaService } from '../../prisma/prisma.service';
 import { AdminStaffMembersService } from './admin-staff-members.service';
+import type { StaffInviteMailer } from './staff-invite-mailer.service';
 
 interface FakeUser {
   id: string;
@@ -179,18 +180,20 @@ function world() {
     }),
   };
   const passwords = { hash: jest.fn(async () => 'bcrypt') };
+  const inviteMailer = { send: jest.fn(async () => 'SENT' as const) };
 
   const svc = new AdminStaffMembersService(
     prisma as unknown as PrismaService,
     passwords as unknown as PasswordService,
     scope as unknown as BrandScopeService,
+    inviteMailer as unknown as StaffInviteMailer,
   );
   const storesOf = (userId: string) =>
     pivot
       .filter((p) => p.userId === userId)
       .map((p) => p.storeId)
       .sort();
-  return { svc, prisma, users, storesOf };
+  return { svc, prisma, users, storesOf, inviteMailer };
 }
 
 const owner = { id: 'owner', role: Role.BRAND_ADMIN } as AuthenticatedUser;
@@ -358,6 +361,28 @@ describe('AdminStaffMembersService — staff as people', () => {
       );
       expect(storesOf(member.userId)).toEqual(['store-centre', 'store-station']);
       expect(member.stores).toHaveLength(2);
+    });
+
+    it('emails a new account its invite and reports how that went', async () => {
+      const { svc, inviteMailer } = world();
+      inviteMailer.send.mockResolvedValueOnce('NOT_CONFIGURED' as never);
+      const member = await svc.invite(invite(['store-centre']), owner, 'brand-1');
+      expect(inviteMailer.send).toHaveBeenCalledWith({
+        userId: member.userId,
+        email: 'new.person@noname.md',
+        name: 'New',
+        role: 'STAFF',
+        storeIds: ['store-centre'],
+        newAccount: true,
+      });
+      expect(member.inviteEmail).toBe('NOT_CONFIGURED');
+      expect(member.accountCreated).toBe(true);
+    });
+
+    it('does not email anyone when the invite is refused', async () => {
+      const { svc, inviteMailer } = world();
+      await svc.invite(invite(['store-centre', 'store-other']), owner, 'brand-1').catch(() => undefined);
+      expect(inviteMailer.send).not.toHaveBeenCalled();
     });
 
     it('refuses stores outside the reach before creating anyone', async () => {

@@ -112,9 +112,12 @@ interface CardError {
                   >{{ s.city }} · {{ s.country }}</span
                 >
               </div>
+              <!-- OVERLOADED is the kitchen's «Загружены» switch: shown here read-only, set on the board. -->
               <span
                 [style.background]="statusBg(s.status)"
                 [style.color]="statusColor(s.status)"
+                [attr.title]="s.status === 'OVERLOADED' ? ('admin.stores.busyHint' | translate) : null"
+                [attr.data-testid]="'store-status-' + s.id"
                 style="flex: none; padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700"
                 >{{ 'admin.stores.status.' + s.status | translate }}</span
               >

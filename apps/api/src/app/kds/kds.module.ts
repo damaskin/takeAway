@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module';
+import { KitchenModule } from '../kitchen/kitchen.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PaymentHoldsModule } from '../payments/agroprombank/payment-holds.module';
@@ -14,7 +15,16 @@ import { StoreShiftService } from './store-shift.service';
   // PaymentsModule is here so accepting an order can capture the hold taken at
   // checkout, OrdersModule so rejecting one cancels it the way the customer's
   // cancel does. Neither imports KdsModule, so the graph stays acyclic.
-  imports: [RealtimeModule, AuthModule, NotificationsModule, PaymentsModule, PaymentHoldsModule, OrdersModule],
+  // KitchenModule quotes the current ETA when the kitchen marks itself busy.
+  imports: [
+    RealtimeModule,
+    AuthModule,
+    NotificationsModule,
+    PaymentsModule,
+    PaymentHoldsModule,
+    OrdersModule,
+    KitchenModule,
+  ],
   controllers: [KdsController],
   providers: [KdsService, StoreShiftService],
 })

@@ -9,6 +9,9 @@ import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
+import { KitchenDeviceController } from './kitchen-device.controller';
+import { KdsSessionGuard } from './guards/kds-session.guard';
+import { KitchenDeviceService } from './services/kitchen-device.service';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -50,13 +53,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, KitchenDeviceController],
   providers: [
     AuthService,
     AccountDeletionService,
     AppleTokenRevocationService,
     PasswordService,
     KdsPinService,
+    KitchenDeviceService,
     OAuthIdentityService,
     SignInMethodsService,
     TokensService,
@@ -65,9 +69,20 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     BrandScopeService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Right after authentication: a kitchen PIN session stops here unless
+    // the route is marked for the kitchen (and is about its own store).
+    { provide: APP_GUARD, useClass: KdsSessionGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [AuthService, UserStoreScopeService, BrandScopeService, PasswordService, KdsPinService, TokensService],
+  exports: [
+    AuthService,
+    UserStoreScopeService,
+    BrandScopeService,
+    PasswordService,
+    KdsPinService,
+    KitchenDeviceService,
+    TokensService,
+  ],
 })
 export class AuthModule {}
