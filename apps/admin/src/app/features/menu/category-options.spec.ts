@@ -70,9 +70,9 @@ describe('product fields by kind', () => {
 
 describe('allergen checklist', () => {
   it('reads codes, free text naming an allergen, and the rest', () => {
-    expect(splitAllergens(['MILK', 'орехи', 'следы горчицы', 'Milk'])).toEqual({
-      codes: ['MILK', 'NUTS'],
-      legacy: { NUTS: ['орехи'], MILK: ['Milk'] },
+    expect(splitAllergens(['MILK', 'орехи', 'следы горчицы', 'Milk', 'Eggs', 'лактоза'])).toEqual({
+      codes: ['MILK', 'NUTS', 'EGGS', 'LACTOSE'],
+      legacy: { NUTS: ['орехи'], MILK: ['Milk'], EGGS: ['Eggs'], LACTOSE: ['лактоза'] },
       other: ['следы горчицы'],
     });
   });
@@ -80,7 +80,7 @@ describe('allergen checklist', () => {
   it('writes ticked allergens in checklist order — typed ones as typed — then the rest, once each', () => {
     expect(
       joinAllergens({ codes: ['NUTS', 'GLUTEN', 'MILK'], legacy: { NUTS: ['орехи'] } }, ['соль', 'Орехи']),
-    ).toEqual(['MILK', 'GLUTEN', 'орехи', 'соль']);
+    ).toEqual(['GLUTEN', 'MILK', 'орехи', 'соль']);
   });
 });
 

@@ -1,5 +1,6 @@
-import { ALLERGENS, type AllergenCode, type CategoryKind } from '@takeaway/shared-types';
-import { allergenCodeOf } from '@takeaway/utils';
+import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
+import type { CategoryKind } from '@takeaway/shared-types';
+import { ALLERGEN_CODES, type AllergenCode, allergenCode } from '@takeaway/utils';
 
 import type { DietTag, VariationType } from '../../core/catalog/admin-catalog.service';
 
@@ -61,6 +62,24 @@ export function hiddenProductData(
   };
 }
 
+/** Each allergen's name as the apps print it, in both languages, lower case → its code. */
+const ALLERGEN_NAMES: ReadonlyMap<string, AllergenCode> = new Map(
+  ALLERGEN_CODES.flatMap((code) =>
+    [TRANSLATIONS_RU.common.allergens[code], TRANSLATIONS_EN.common.allergens[code]].map(
+      (name) => [name.toLocaleLowerCase(), code] as const,
+    ),
+  ),
+);
+
+/**
+ * The checklist allergen an entry of `Product.allergens` stands for: a
+ * code (or another spelling of one, `allergenCode`), or free text that is
+ * its name in Russian or English («молоко», «Eggs»). Null for anything else.
+ */
+export function checklistAllergen(value: string): AllergenCode | null {
+  return allergenCode(value) ?? ALLERGEN_NAMES.get(value.trim().toLocaleLowerCase()) ?? null;
+}
+
 /**
  * A product's allergens as the checklist reads them: the boxes ticked
  * (codes), the free-text entries that name one of them (kept as typed
@@ -76,7 +95,7 @@ export interface AllergenState {
 export function splitAllergens(values: readonly string[]): AllergenState {
   const state: AllergenState = { codes: [], legacy: {}, other: [] };
   for (const value of values) {
-    const code = allergenCodeOf(value);
+    const code = checklistAllergen(value);
     if (!code) {
       state.other.push(value);
       continue;
@@ -94,7 +113,7 @@ export function splitAllergens(values: readonly string[]): AllergenState {
  */
 export function joinAllergens(state: Pick<AllergenState, 'codes' | 'legacy'>, other: readonly string[]): string[] {
   const out: string[] = [];
-  for (const { code } of ALLERGENS) {
+  for (const code of ALLERGEN_CODES) {
     if (!state.codes.includes(code)) continue;
     out.push(...(state.legacy[code]?.length ? (state.legacy[code] ?? []) : [code]));
   }

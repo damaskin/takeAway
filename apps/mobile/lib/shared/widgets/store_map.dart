@@ -243,12 +243,22 @@ class UserDot extends StatelessWidget {
 
 /// Small non-interactive map centred on one store.
 class StaticStoreMap extends StatelessWidget {
-  const StaticStoreMap({required this.lat, required this.lng, this.user, this.height = 160, super.key});
+  const StaticStoreMap({
+    required this.lat,
+    required this.lng,
+    this.user,
+    this.height = 160,
+    this.kinds = const {StoreKind.coffee},
+    super.key,
+  });
 
   final double lat;
   final double lng;
   final LatLng? user;
   final double height;
+
+  /// What the store sells, for its pin (see [StorePin]).
+  final Set<StoreKind> kinds;
 
   @override
   Widget build(BuildContext context) {
@@ -272,7 +282,13 @@ class StaticStoreMap extends StatelessWidget {
             MarkerLayer(
               markers: [
                 if (fitBoth) Marker(point: user!, width: 24, height: 24, child: const UserDot()),
-                Marker(point: store, width: 44, height: 52, alignment: Alignment.topCenter, child: const StorePin()),
+                Marker(
+                  point: store,
+                  width: 44,
+                  height: 52,
+                  alignment: Alignment.topCenter,
+                  child: StorePin(kinds: kinds),
+                ),
               ],
             ),
           ],

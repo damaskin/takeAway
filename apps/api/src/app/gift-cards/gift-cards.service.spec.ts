@@ -67,14 +67,15 @@ function store(balanceCents: number) {
   };
   const prisma = {
     giftCard: {
-      findUnique: jest.fn(async () => {
+      findUnique: jest.fn(async (): Promise<Card | null> => {
         await tick();
         return { ...card };
       }),
+      update: jest.fn(async ({ data }: { data: Partial<Card> }) => Object.assign(card, data)),
     },
   };
   const service = new GiftCardsService(prisma as unknown as PrismaService);
-  return { service, card, redemptions, tx: tx as unknown as Prisma.TransactionClient, raw: tx };
+  return { service, card, prisma, redemptions, tx: tx as unknown as Prisma.TransactionClient, raw: tx };
 }
 
 describe('GiftCardsService redemption', () => {
@@ -128,5 +129,53 @@ describe('GiftCardsService redemption', () => {
       service.applyRedemption(tx, { giftCardId: card.id, orderId: 'order-1', amountCents: validated.amountCents }),
     ).rejects.toBeInstanceOf(HttpException);
     expect(redemptions).toHaveLength(0);
+  });
+});
+
+describe('GiftCardsService refusals at checkout', () => {
+  const checkout = { code: 'gift-2026-abcd', brandId: 'brand-a', subtotalCents: 1000, currency: 'MDL' as const };
+
+  async function refusal(service: GiftCardsService, input = checkout): Promise<Record<string, unknown>> {
+    const error = await service.validateForOrder(input).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(HttpException);
+    return (error as HttpException).getResponse() as Record<string, unknown>;
+  }
+
+  it('names each reason with a code and keeps the English message older apps match on', async () => {
+    const missing = store(1000);
+    missing.prisma.giftCard.findUnique.mockResolvedValueOnce(null);
+    expect(await refusal(missing.service)).toMatchObject({ code: 'GIFT_CARD_UNKNOWN', message: 'Gift card not found' });
+
+    const { service, card } = store(1000);
+    expect(await refusal(service, { ...checkout, brandId: 'brand-b' })).toMatchObject({
+      code: 'GIFT_CARD_OTHER_BRAND',
+      message: 'Gift card is not valid at this brand',
+    });
+    expect(await refusal(service, { ...checkout, currency: 'RUP' as never })).toMatchObject({
+      code: 'GIFT_CARD_CURRENCY',
+    });
+
+    card.status = 'REDEEMED';
+    expect(await refusal(service)).toMatchObject({ code: 'GIFT_CARD_USED_UP', message: 'Gift card is redeemed' });
+    card.status = 'CANCELLED';
+    expect(await refusal(service)).toMatchObject({ code: 'GIFT_CARD_CANCELLED', message: 'Gift card is cancelled' });
+    card.status = 'EXPIRED';
+    expect(await refusal(service)).toMatchObject({ code: 'GIFT_CARD_EXPIRED' });
+
+    card.status = 'ACTIVE';
+    card.expiresAt = new Date(Date.now() - 60_000);
+    expect(await refusal(service)).toMatchObject({ code: 'GIFT_CARD_EXPIRED', message: 'Gift card has expired' });
+
+    // The expired card was marked EXPIRED in passing; bring it back.
+    card.status = 'ACTIVE';
+    card.expiresAt = null;
+    card.balanceCents = 0;
+    expect(await refusal(service)).toMatchObject({
+      code: 'GIFT_CARD_USED_UP',
+      message: 'Gift card has no remaining balance',
+    });
   });
 });

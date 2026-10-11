@@ -37,11 +37,6 @@ export const CATEGORY_KIND_PREP_SECONDS: Readonly<Record<CategoryKind, number | 
   OTHER: null,
 };
 
-/** Drinks: the kinds whose products have caffeine, milk and cup options. */
-export function isDrinkKind(kind: CategoryKind | null | undefined): boolean {
-  return kind === 'HOT_DRINKS' || kind === 'COLD_DRINKS';
-}
-
 export type { PickupPointType };
 
 export interface StoreListItem {

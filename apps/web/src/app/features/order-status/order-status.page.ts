@@ -1,12 +1,14 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import type { CategoryKind, StoreMenu } from '@takeaway/shared-types';
+import { LeafletMapComponent, ProductImageComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
+import { buildDirectionsUrl, describeOrderItemOptions, productKind, readOrderItemSnapshot } from '@takeaway/utils';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { interval, take, timer, type Subscription } from 'rxjs';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import {
   OrdersApi,
@@ -50,7 +52,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
 @Component({
   selector: 'app-order-status',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LeafletMapComponent],
+  imports: [RouterLink, TranslatePipe, LeafletMapComponent, ProductImageComponent],
   host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     @if (order(); as o) {
@@ -324,28 +326,36 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               {{ 'web.orderStatus.yourOrder' | translate }}
             </span>
             @for (line of lines(); track line.id) {
-              <div class="flex flex-col" style="gap: 2px">
-                <div class="flex items-start justify-between" style="gap: 12px">
-                  <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
-                    {{ line.quantity }} × {{ line.name }}
-                  </span>
-                  <span
-                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso); white-space: nowrap"
-                  >
-                    {{ price(line.totalCents) }}
-                  </span>
+              <div class="flex items-start" style="gap: 12px">
+                <lib-product-image
+                  [src]="line.imageUrl"
+                  [kind]="line.kind"
+                  alt=""
+                  style="flex: none; width: 40px; height: 40px; border-radius: 10px"
+                />
+                <div class="flex flex-col flex-1" style="gap: 2px; min-width: 0">
+                  <div class="flex items-start justify-between" style="gap: 12px">
+                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)">
+                      {{ line.quantity }} × {{ line.name }}
+                    </span>
+                    <span
+                      style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso); white-space: nowrap"
+                    >
+                      {{ price(line.totalCents) }}
+                    </span>
+                  </div>
+                  @if (line.options) {
+                    <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                      line.options
+                    }}</span>
+                  }
+                  @if (line.notes) {
+                    <span
+                      style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); font-style: italic"
+                      >“{{ line.notes }}”</span
+                    >
+                  }
                 </div>
-                @if (line.options) {
-                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-                    line.options
-                  }}</span>
-                }
-                @if (line.notes) {
-                  <span
-                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); font-style: italic"
-                    >“{{ line.notes }}”</span
-                  >
-                }
               </div>
             }
             <div style="height: 1px; background: var(--color-border-light)"></div>
@@ -382,6 +392,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly flags = inject(FeatureFlagsStore);
+  private readonly catalog = inject(CatalogService);
   private readonly webPayments = inject(WebPaymentApi);
 
   readonly order = signal<OrderView | null>(null);
@@ -564,13 +575,42 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     return Math.max(0, Math.ceil(diff / 60_000));
   });
 
+  /**
+   * The store's menu, for each line's photo or placeholder: an order line
+   * keeps no picture of its own. A product gone from the menu since gets
+   * the neutral placeholder.
+   */
+  private readonly menu = signal<StoreMenu | null>(null);
+  private readonly storeId = computed(() => this.order()?.storeId ?? null);
+  private readonly loadMenu = effect(() => {
+    const storeId = this.storeId();
+    if (!storeId) return;
+    untracked(() =>
+      this.catalog.getMenu(storeId).subscribe({ next: (menu) => this.menu.set(menu), error: () => undefined }),
+    );
+  });
+
+  /** Each product's photo and kind, by product id. */
+  private readonly looks = computed(() => {
+    const looks = new Map<string, { src: string | null; kind: CategoryKind }>();
+    for (const category of this.menu()?.categories ?? []) {
+      for (const product of category.products) {
+        looks.set(product.id, { src: product.imageUrls[0] ?? null, kind: productKind(product, category) });
+      }
+    }
+    return looks;
+  });
+
   /** The order's lines with their size, milk and extras spelled out. */
   readonly lines = computed(() =>
     (this.order()?.items ?? []).map((item) => {
       const snap = readOrderItemSnapshot(item.productSnapshot);
+      const look = this.looks().get(snap.id);
       return {
         id: item.id,
         name: snap.name,
+        imageUrl: look?.src ?? null,
+        kind: look?.kind ?? null,
         quantity: item.quantity,
         totalCents: item.totalCents,
         options: describeOrderItemOptions(snap),

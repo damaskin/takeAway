@@ -202,7 +202,7 @@ Modifier _$ModifierFromJson(Map<String, dynamic> json) => Modifier(
   minCount: (json['minCount'] as num?)?.toInt() ?? 0,
   maxCount: (json['maxCount'] as num?)?.toInt() ?? 1,
   sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
-  group: json['group'] as String?,
+  group: _labelFromJson(json['group']),
 );
 
 Map<String, dynamic> _$ModifierToJson(Modifier instance) => <String, dynamic>{
@@ -235,7 +235,7 @@ Product _$ProductFromJson(Map<String, dynamic> json) => Product(
   fatsGrams: (json['fatsGrams'] as num?)?.toDouble(),
   carbsGrams: (json['carbsGrams'] as num?)?.toDouble(),
   onStopList: json['onStopList'] as bool? ?? false,
-  categoryKind: json['categoryKind'] as String?,
+  categoryKind: _labelFromJson(json['categoryKind']),
 );
 
 Map<String, dynamic> _$ProductToJson(Product instance) => <String, dynamic>{
@@ -282,7 +282,7 @@ ProductDetail _$ProductDetailFromJson(Map<String, dynamic> json) => ProductDetai
   fatsGrams: (json['fatsGrams'] as num?)?.toDouble(),
   carbsGrams: (json['carbsGrams'] as num?)?.toDouble(),
   onStopList: json['onStopList'] as bool? ?? false,
-  categoryKind: json['categoryKind'] as String?,
+  categoryKind: _labelFromJson(json['categoryKind']),
 );
 
 Map<String, dynamic> _$ProductDetailToJson(ProductDetail instance) => <String, dynamic>{
@@ -320,7 +320,7 @@ MenuCategory _$MenuCategoryFromJson(Map<String, dynamic> json) => MenuCategory(
   iconUrl: json['iconUrl'] as String?,
   availableFrom: (json['availableFrom'] as num?)?.toInt(),
   availableTo: (json['availableTo'] as num?)?.toInt(),
-  kind: json['kind'] as String?,
+  kind: _labelFromJson(json['kind']),
 );
 
 Map<String, dynamic> _$MenuCategoryToJson(MenuCategory instance) => <String, dynamic>{
@@ -332,8 +332,8 @@ Map<String, dynamic> _$MenuCategoryToJson(MenuCategory instance) => <String, dyn
   'sortOrder': instance.sortOrder,
   'availableFrom': instance.availableFrom,
   'availableTo': instance.availableTo,
-  'kind': instance.kind,
   'products': instance.products.map((e) => e.toJson()).toList(),
+  'kind': instance.kind,
 };
 
 Menu _$MenuFromJson(Map<String, dynamic> json) => Menu(

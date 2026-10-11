@@ -18,6 +18,11 @@
           {
             "glob": "**/*",
             "input": "apps/web/public"
+          },
+          {
+            "glob": "*.svg",
+            "input": "libs/ui-kit/src/assets/product-placeholders",
+            "output": "ui-kit/product-placeholders"
           }
         ],
         "styles": ["node_modules/leaflet/dist/leaflet.css", "apps/web/src/styles.css"],

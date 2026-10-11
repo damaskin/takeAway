@@ -2395,6 +2395,300 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Couldn\'t tell where you are. Try again in a moment.'**
   String get locationUnavailable;
+
+  /// No description provided for @productNoteFood.
+  ///
+  /// In en, this message translates to:
+  /// **'Order comment'**
+  String get productNoteFood;
+
+  /// No description provided for @productNoteFoodHint.
+  ///
+  /// In en, this message translates to:
+  /// **'E.g. warm it up, no sauce…'**
+  String get productNoteFoodHint;
+
+  /// No description provided for @productContains.
+  ///
+  /// In en, this message translates to:
+  /// **'Contains: {list}'**
+  String productContains(String list);
+
+  /// No description provided for @productAddonsNone.
+  ///
+  /// In en, this message translates to:
+  /// **'none'**
+  String get productAddonsNone;
+
+  /// No description provided for @productRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'required'**
+  String get productRequired;
+
+  /// No description provided for @productPairsWith.
+  ///
+  /// In en, this message translates to:
+  /// **'Often ordered together'**
+  String get productPairsWith;
+
+  /// No description provided for @cartUpsellTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to your order'**
+  String get cartUpsellTitle;
+
+  /// No description provided for @allergenGluten.
+  ///
+  /// In en, this message translates to:
+  /// **'gluten'**
+  String get allergenGluten;
+
+  /// No description provided for @allergenMilk.
+  ///
+  /// In en, this message translates to:
+  /// **'milk'**
+  String get allergenMilk;
+
+  /// No description provided for @allergenLactose.
+  ///
+  /// In en, this message translates to:
+  /// **'lactose'**
+  String get allergenLactose;
+
+  /// No description provided for @allergenEggs.
+  ///
+  /// In en, this message translates to:
+  /// **'eggs'**
+  String get allergenEggs;
+
+  /// No description provided for @allergenNuts.
+  ///
+  /// In en, this message translates to:
+  /// **'nuts'**
+  String get allergenNuts;
+
+  /// No description provided for @allergenPeanuts.
+  ///
+  /// In en, this message translates to:
+  /// **'peanuts'**
+  String get allergenPeanuts;
+
+  /// No description provided for @allergenSoy.
+  ///
+  /// In en, this message translates to:
+  /// **'soy'**
+  String get allergenSoy;
+
+  /// No description provided for @allergenFish.
+  ///
+  /// In en, this message translates to:
+  /// **'fish'**
+  String get allergenFish;
+
+  /// No description provided for @allergenShellfish.
+  ///
+  /// In en, this message translates to:
+  /// **'shellfish'**
+  String get allergenShellfish;
+
+  /// No description provided for @allergenSesame.
+  ///
+  /// In en, this message translates to:
+  /// **'sesame'**
+  String get allergenSesame;
+
+  /// No description provided for @allergenCelery.
+  ///
+  /// In en, this message translates to:
+  /// **'celery'**
+  String get allergenCelery;
+
+  /// No description provided for @allergenMustard.
+  ///
+  /// In en, this message translates to:
+  /// **'mustard'**
+  String get allergenMustard;
+
+  /// No description provided for @allergenSulphites.
+  ///
+  /// In en, this message translates to:
+  /// **'sulphites'**
+  String get allergenSulphites;
+
+  /// No description provided for @errCartEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Your cart is empty'**
+  String get errCartEmpty;
+
+  /// No description provided for @errStoreNotTakingOrders.
+  ///
+  /// In en, this message translates to:
+  /// **'This store is not taking orders right now'**
+  String get errStoreNotTakingOrders;
+
+  /// No description provided for @errStoreClosedAtTime.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closed at that time — pick another time'**
+  String get errStoreClosedAtTime;
+
+  /// No description provided for @errPickupSlotFull.
+  ///
+  /// In en, this message translates to:
+  /// **'That time has just been taken — pick another one'**
+  String get errPickupSlotFull;
+
+  /// No description provided for @errPickupTimeOutOfRange.
+  ///
+  /// In en, this message translates to:
+  /// **'A scheduled pickup must be {minMinutes} min to {maxHours} h from now'**
+  String errPickupTimeOutOfRange(int minMinutes, int maxHours);
+
+  /// No description provided for @errItemsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not available right now: {items}'**
+  String errItemsUnavailable(String items);
+
+  /// No description provided for @errItemsUnavailableGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'Some items are not available right now'**
+  String get errItemsUnavailableGeneric;
+
+  /// No description provided for @errBelowMinOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'The minimum order is {amount}'**
+  String errBelowMinOrder(String amount);
+
+  /// No description provided for @errBelowMinOrderGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'The order is below the minimum'**
+  String get errBelowMinOrderGeneric;
+
+  /// No description provided for @errDeliveryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Delivery is not available right now'**
+  String get errDeliveryUnavailable;
+
+  /// No description provided for @errDeliveryAddressRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a delivery address'**
+  String get errDeliveryAddressRequired;
+
+  /// No description provided for @errDeliveryOutOfRange.
+  ///
+  /// In en, this message translates to:
+  /// **'That address is outside the delivery area'**
+  String get errDeliveryOutOfRange;
+
+  /// No description provided for @errPromoUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no such promo code'**
+  String get errPromoUnknown;
+
+  /// No description provided for @errPromoInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo code is not active right now'**
+  String get errPromoInactive;
+
+  /// No description provided for @errPromoNotStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo code has not started yet'**
+  String get errPromoNotStarted;
+
+  /// No description provided for @errPromoExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo code has expired'**
+  String get errPromoExpired;
+
+  /// No description provided for @errPromoMinOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo code needs an order of {amount} or more'**
+  String errPromoMinOrder(String amount);
+
+  /// No description provided for @errPromoMinOrderGeneric.
+  ///
+  /// In en, this message translates to:
+  /// **'The order is too small for this promo code'**
+  String get errPromoMinOrderGeneric;
+
+  /// No description provided for @errPromoLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo code has run out'**
+  String get errPromoLimitReached;
+
+  /// No description provided for @errPromoAlreadyUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'You have already used this promo code'**
+  String get errPromoAlreadyUsed;
+
+  /// No description provided for @errPromoNotEligible.
+  ///
+  /// In en, this message translates to:
+  /// **'This code is for customers who haven\'t ordered in a while'**
+  String get errPromoNotEligible;
+
+  /// No description provided for @errGiftCardUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no such gift card'**
+  String get errGiftCardUnknown;
+
+  /// No description provided for @errGiftCardOtherBrand.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is not valid here'**
+  String get errGiftCardOtherBrand;
+
+  /// No description provided for @errGiftCardCurrency.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card is in another currency'**
+  String get errGiftCardCurrency;
+
+  /// No description provided for @errGiftCardExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card has expired'**
+  String get errGiftCardExpired;
+
+  /// No description provided for @errGiftCardUsedUp.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card has no balance left'**
+  String get errGiftCardUsedUp;
+
+  /// No description provided for @errGiftCardCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'This gift card has been cancelled'**
+  String get errGiftCardCancelled;
+
+  /// Checkout refused: another order spent the gift card while this one was being placed (GIFT_CARD_BALANCE_CHANGED).
+  ///
+  /// In en, this message translates to:
+  /// **'The gift card balance has just changed — check the card and try again'**
+  String get errGiftCardBalanceChanged;
+
+  /// Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS).
+  ///
+  /// In en, this message translates to:
+  /// **'You already have unpaid orders — pay for or cancel one before placing a new one'**
+  String get errTooManyUnpaidOrders;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -2,8 +2,9 @@ import { Component, computed, effect, inject, input, output, signal, untracked }
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { ALLERGENS, type AllergenCode, type CategoryKind } from '@takeaway/shared-types';
-import { productPlaceholderUrl } from '@takeaway/utils';
+import type { CategoryKind } from '@takeaway/shared-types';
+import { ALLERGEN_CODES, type AllergenCode } from '@takeaway/utils';
+import { productPlaceholderSrc } from '@takeaway/ui-kit';
 
 import {
   AdminCatalogApi,
@@ -200,10 +201,10 @@ type ProductControls = ProductFormComponent['form']['controls'];
           <div class="field">
             <span class="label">{{ 'admin.menu.product.allergensChecklist' | translate }}</span>
             <div class="flex flex-wrap" style="gap: 8px 16px" data-testid="product-allergens">
-              @for (a of allergenOptions; track a.code) {
+              @for (code of allergenOptions; track code) {
                 <label class="check">
-                  <input type="checkbox" [checked]="hasAllergen(a.code)" (change)="toggleAllergen(a.code, $event)" />
-                  <span>{{ allergenName(a) }}</span>
+                  <input type="checkbox" [checked]="hasAllergen(code)" (change)="toggleAllergen(code, $event)" />
+                  <span>{{ 'common.allergens.' + code | translate }}</span>
                 </label>
               }
             </div>
@@ -352,7 +353,7 @@ export class ProductFormComponent {
   readonly imagesChanged = output<{ productId: string; imageUrls: string[] }>();
 
   readonly caffeineLevels = CAFFEINE_LEVELS;
-  readonly allergenOptions = ALLERGENS;
+  readonly allergenOptions = ALLERGEN_CODES;
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly submitted = signal(false);
@@ -407,7 +408,7 @@ export class ProductFormComponent {
   /** The kind of the category picked in the form: the fields follow it as soon as it changes. */
   readonly kind = computed<CategoryKind>(() => this.category()?.kind ?? 'OTHER');
   readonly fields = computed(() => productFieldsFor(this.kind()));
-  readonly placeholder = computed(() => productPlaceholderUrl(this.kind()));
+  readonly placeholder = computed(() => productPlaceholderSrc(this.kind()));
   readonly categoryOptionCount = computed(() => this.category()?._count?.options ?? 0);
   /** A new product's time was filled in from its category. */
   readonly prepFromCategory = signal(false);
@@ -492,10 +493,6 @@ export class ProductFormComponent {
       this.allergenLegacy = legacy;
     }
     this.allergenOverflow.set(false);
-  }
-
-  allergenName(allergen: { ru: string; en: string }): string {
-    return this.translate.getCurrentLang() === 'en' ? allergen.en : allergen.ru;
   }
 
   kindName(): string {

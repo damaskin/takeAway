@@ -2,7 +2,7 @@ import { HttpEventType } from '@angular/common/http';
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { type CategoryKind, PRODUCT_PHOTO_RULE } from '@takeaway/shared-types';
-import { productPlaceholderUrl } from '@takeaway/utils';
+import { productPlaceholderSrc } from '@takeaway/ui-kit';
 
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
 import { acceptFor, ruleParams } from '../../shared/image-rules';
@@ -155,7 +155,7 @@ export class ProductImagesComponent {
   readonly max = MAX_PRODUCT_IMAGES;
   readonly accept = acceptFor(PRODUCT_PHOTO_RULE);
   readonly rule = { ...ruleParams(PRODUCT_PHOTO_RULE), max: MAX_PRODUCT_IMAGES };
-  readonly placeholder = computed(() => productPlaceholderUrl(this.categoryKind()));
+  readonly placeholder = computed(() => productPlaceholderSrc(this.categoryKind()));
   readonly urls = linkedSignal(() => this.imageUrls());
   readonly busy = signal(false);
   readonly uploading = signal(false);

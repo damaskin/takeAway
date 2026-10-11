@@ -134,3 +134,29 @@ String dietTagLabel(AppLocalizations l10n, String tag) => switch (tag) {
   'SUGAR_FREE' => l10n.dietSugarFree,
   _ => tag,
 };
+
+/// Allergen label for the «Содержит: …» line. The admin stores codes
+/// (`GLUTEN`, `MILK`…, matched in any case); free text it may hold instead is
+/// shown as it is.
+String allergenLabel(AppLocalizations l10n, String raw) => switch (raw.trim().toUpperCase()) {
+  'GLUTEN' => l10n.allergenGluten,
+  'MILK' => l10n.allergenMilk,
+  'LACTOSE' => l10n.allergenLactose,
+  'EGGS' || 'EGG' => l10n.allergenEggs,
+  'NUTS' || 'TREE_NUTS' => l10n.allergenNuts,
+  'PEANUTS' || 'PEANUT' => l10n.allergenPeanuts,
+  'SOY' || 'SOYA' => l10n.allergenSoy,
+  'FISH' => l10n.allergenFish,
+  'SHELLFISH' || 'CRUSTACEANS' => l10n.allergenShellfish,
+  'SESAME' => l10n.allergenSesame,
+  'CELERY' => l10n.allergenCelery,
+  'MUSTARD' => l10n.allergenMustard,
+  'SULPHITES' || 'SULFITES' => l10n.allergenSulphites,
+  _ => raw.trim(),
+};
+
+/// «глютен, молоко» — [allergens] worded, blanks and repeats left out.
+String allergensText(AppLocalizations l10n, Iterable<String> allergens) => {
+  for (final raw in allergens)
+    if (raw.trim().isNotEmpty) allergenLabel(l10n, raw),
+}.join(', ');

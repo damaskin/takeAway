@@ -79,6 +79,35 @@ export const PRODUCT = {
   modifiers: [],
 };
 
+/**
+ * Something to eat from the same brand, in a bakery category. Only on the
+ * menu when a test asks for kinds (`menuKinds`): the menu of an API without
+ * them stays the one-category menu the other journeys were written against.
+ */
+export const CROISSANT = {
+  ...PRODUCT,
+  id: 'product-2',
+  categoryId: 'cat-2',
+  slug: 'croissant',
+  name: 'Croissant',
+  description: 'Butter croissant.',
+  basePriceCents: 1200,
+  caffeineLevel: null,
+  categoryKind: 'BAKERY',
+};
+
+/** A product as the fake serves it: what the cart prices, plus whatever else the detail carries. */
+export interface FakeProduct {
+  id: string;
+  slug: string;
+  name: string;
+  basePriceCents: number;
+  prepTimeSeconds: number;
+  variations: Array<{ id: string; priceDeltaCents: number }>;
+  modifiers: Array<{ id: string; priceDeltaCents: number }>;
+  [field: string]: unknown;
+}
+
 interface CartItem {
   id: string;
   productId: string;
@@ -111,6 +140,8 @@ function slots(): unknown[] {
 export interface FakeApi {
   /** Orders the app has created, newest last. */
   readonly orders: Array<Record<string, unknown>>;
+  /** What the app sent to add to the cart, in order. */
+  readonly cartAdds: Array<Record<string, unknown>>;
   /** Card payments the app asked for, as sent. */
   readonly payments: Array<Record<string, unknown>>;
 }
@@ -146,6 +177,10 @@ export async function installFakeApi(
     cardPayments?: boolean;
     /** The customer's bound cards; one by default. */
     cards?: Array<typeof CARD>;
+    /** The drink as the product endpoint and the menu describe it; `PRODUCT` by default. */
+    product?: FakeProduct;
+    /** The menu says what each category is, and has a bakery: the API with category kinds. */
+    menuKinds?: boolean;
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -154,7 +189,10 @@ export async function installFakeApi(
     acceptingOrders,
     openNow: acceptingOrders ? (opts.storeOpenNow ?? STORE.openNow) : false,
   };
+  const drink: FakeProduct = opts.product ?? PRODUCT;
+  const products: FakeProduct[] = opts.menuKinds ? [drink, CROISSANT] : [drink];
   const items: CartItem[] = [];
+  const cartAdds: Array<Record<string, unknown>> = [];
   const orders: Array<Record<string, unknown>> = [];
   const payments: Array<Record<string, unknown>> = [];
   let nextId = 1;
@@ -207,26 +245,35 @@ export async function installFakeApi(
     if (path === '/stores') return json(route, [store]);
     if (path.match(/^\/stores\/[^/]+\/pickup-slots$/)) return json(route, slots());
     if (path.match(/^\/stores\/[^/]+\/menu$/)) {
+      const coffee = {
+        id: 'cat-1',
+        slug: 'coffee',
+        name: 'Coffee',
+        description: null,
+        iconUrl: null,
+        sortOrder: 0,
+        availableFrom: null,
+        availableTo: null,
+        products: [drink],
+      };
+      const bakery = { ...coffee, id: 'cat-2', slug: 'bakery', name: 'Bakery', sortOrder: 1, products: [CROISSANT] };
       return json(route, {
         storeId: STORE.id,
         storeSlug: STORE.slug,
-        categories: [
-          {
-            id: 'cat-1',
-            slug: 'coffee',
-            name: 'Coffee',
-            description: null,
-            iconUrl: null,
-            sortOrder: 0,
-            availableFrom: null,
-            availableTo: null,
-            products: [PRODUCT],
-          },
-        ],
+        categories: opts.menuKinds
+          ? [
+              { ...coffee, kind: 'HOT_DRINKS' },
+              { ...bakery, kind: 'BAKERY' },
+            ]
+          : [coffee],
       });
     }
     if (path.match(/^\/stores\/[^/]+$/)) return json(route, store);
-    if (path.match(/^\/products\/[^/]+$/)) return json(route, PRODUCT);
+    const productPath = path.match(/^\/products\/([^/]+)$/);
+    if (productPath) {
+      const found = products.find((p) => p.slug === productPath[1] || p.id === productPath[1]);
+      return found ? json(route, found) : json(route, { statusCode: 404 }, 404);
+    }
 
     // ── Loyalty ─────────────────────────────────────────────────────────
     if (path === '/loyalty/me') {
@@ -286,23 +333,37 @@ export async function installFakeApi(
       return json(route, cart());
     }
     if (path === '/cart/items' && method === 'POST') {
-      const body = request.postDataJSON() as { productId: string; quantity: number };
+      const body = request.postDataJSON() as {
+        productId: string;
+        quantity: number;
+        variationIds?: string[];
+        modifiers?: Record<string, number>;
+        notes?: string;
+      };
+      cartAdds.push(body);
       // Like the server: the same product with the same options is one line.
       const same = items.find((i) => i.productId === body.productId);
       if (same) {
         same.quantity += body.quantity ?? 1;
         return json(route, cart());
       }
+      const product = products.find((p) => p.id === body.productId) ?? drink;
+      const variationIds = body.variationIds ?? [];
+      const modifiers = body.modifiers ?? {};
+      const unitPriceCents =
+        product.basePriceCents +
+        product.variations.filter((v) => variationIds.includes(v.id)).reduce((sum, v) => sum + v.priceDeltaCents, 0) +
+        product.modifiers.reduce((sum, m) => sum + (modifiers[m.id] ?? 0) * m.priceDeltaCents, 0);
       items.push({
         id: `item-${nextId++}`,
-        productId: body.productId,
-        productName: PRODUCT.name,
+        productId: product.id,
+        productName: product.name,
         quantity: body.quantity ?? 1,
-        unitPriceCents: PRODUCT.basePriceCents,
-        unitPrepSeconds: PRODUCT.prepTimeSeconds,
-        variationIds: [],
-        modifiers: {},
-        notes: null,
+        unitPriceCents,
+        unitPrepSeconds: product.prepTimeSeconds,
+        variationIds,
+        modifiers,
+        notes: body.notes ?? null,
       });
       return json(route, cart());
     }
@@ -347,5 +408,5 @@ export async function installFakeApi(
     return json(route, {});
   });
 
-  return { orders, payments };
+  return { orders, payments, cartAdds };
 }

@@ -759,5 +759,98 @@
     }
   },
   "storesShowAll": "Show all stores",
-  "locationUnavailable": "Couldn't tell where you are. Try again in a moment."
+  "locationUnavailable": "Couldn't tell where you are. Try again in a moment.",
+  "productNoteFood": "Order comment",
+  "productNoteFoodHint": "E.g. warm it up, no sauce…",
+  "productContains": "Contains: {list}",
+  "@productContains": {
+    "placeholders": {
+      "list": {
+        "type": "String"
+      }
+    }
+  },
+  "productAddonsNone": "none",
+  "productRequired": "required",
+  "productPairsWith": "Often ordered together",
+  "cartUpsellTitle": "Add to your order",
+  "allergenGluten": "gluten",
+  "allergenMilk": "milk",
+  "allergenLactose": "lactose",
+  "allergenEggs": "eggs",
+  "allergenNuts": "nuts",
+  "allergenPeanuts": "peanuts",
+  "allergenSoy": "soy",
+  "allergenFish": "fish",
+  "allergenShellfish": "shellfish",
+  "allergenSesame": "sesame",
+  "allergenCelery": "celery",
+  "allergenMustard": "mustard",
+  "allergenSulphites": "sulphites",
+  "errCartEmpty": "Your cart is empty",
+  "errStoreNotTakingOrders": "This store is not taking orders right now",
+  "errStoreClosedAtTime": "The store is closed at that time — pick another time",
+  "errPickupSlotFull": "That time has just been taken — pick another one",
+  "errPickupTimeOutOfRange": "A scheduled pickup must be {minMinutes} min to {maxHours} h from now",
+  "@errPickupTimeOutOfRange": {
+    "placeholders": {
+      "minMinutes": {
+        "type": "int"
+      },
+      "maxHours": {
+        "type": "int"
+      }
+    }
+  },
+  "errItemsUnavailable": "Not available right now: {items}",
+  "@errItemsUnavailable": {
+    "placeholders": {
+      "items": {
+        "type": "String"
+      }
+    }
+  },
+  "errItemsUnavailableGeneric": "Some items are not available right now",
+  "errBelowMinOrder": "The minimum order is {amount}",
+  "@errBelowMinOrder": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "errBelowMinOrderGeneric": "The order is below the minimum",
+  "errDeliveryUnavailable": "Delivery is not available right now",
+  "errDeliveryAddressRequired": "Enter a delivery address",
+  "errDeliveryOutOfRange": "That address is outside the delivery area",
+  "errPromoUnknown": "There is no such promo code",
+  "errPromoInactive": "This promo code is not active right now",
+  "errPromoNotStarted": "This promo code has not started yet",
+  "errPromoExpired": "This promo code has expired",
+  "errPromoMinOrder": "This promo code needs an order of {amount} or more",
+  "@errPromoMinOrder": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "errPromoMinOrderGeneric": "The order is too small for this promo code",
+  "errPromoLimitReached": "This promo code has run out",
+  "errPromoAlreadyUsed": "You have already used this promo code",
+  "errPromoNotEligible": "This code is for customers who haven't ordered in a while",
+  "errGiftCardUnknown": "There is no such gift card",
+  "errGiftCardOtherBrand": "This gift card is not valid here",
+  "errGiftCardCurrency": "This gift card is in another currency",
+  "errGiftCardExpired": "This gift card has expired",
+  "errGiftCardUsedUp": "This gift card has no balance left",
+  "errGiftCardCancelled": "This gift card has been cancelled",
+  "errGiftCardBalanceChanged": "The gift card balance has just changed — check the card and try again",
+  "@errGiftCardBalanceChanged": {
+    "description": "Checkout refused: another order spent the gift card while this one was being placed (GIFT_CARD_BALANCE_CHANGED)."
+  },
+  "errTooManyUnpaidOrders": "You already have unpaid orders — pay for or cancel one before placing a new one",
+  "@errTooManyUnpaidOrders": {
+    "description": "Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS)."
+  }
 }

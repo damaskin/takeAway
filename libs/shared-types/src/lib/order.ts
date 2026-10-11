@@ -292,7 +292,20 @@ export type CheckoutErrorCode =
   | 'DELIVERY_UNAVAILABLE'
   | 'DELIVERY_ADDRESS_REQUIRED'
   | 'DELIVERY_OUT_OF_RANGE'
-  | PromoErrorCode;
+  | PromoErrorCode
+  | GiftCardErrorCode;
+
+/**
+ * Why a gift card was refused at checkout. Sent beside the unchanged English
+ * message, which app builds from before the codes still match on.
+ */
+export type GiftCardErrorCode =
+  | 'GIFT_CARD_UNKNOWN'
+  | 'GIFT_CARD_OTHER_BRAND'
+  | 'GIFT_CARD_CURRENCY'
+  | 'GIFT_CARD_EXPIRED'
+  | 'GIFT_CARD_USED_UP'
+  | 'GIFT_CARD_CANCELLED';
 
 /**
  * Body of a 400 from the order path. The optional fields fill the gaps in the

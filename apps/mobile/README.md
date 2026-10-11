@@ -12,9 +12,13 @@ NestJS API as the web app and the Telegram Mini App.
   "coffee / food" and "open now" filters, pins that show what a store sells,
   route to the store in Apple / Google Maps.
 - **Menu** — categories with a scroll-spy bar, search, quick add for items
-  without options, product screen with sizes, milks and extras, allergens and
-  nutrition. Prices are always in the store's currency.
-- **Cart and checkout** — ASAP or a 15-minute pickup slot (full slots are
+  without options, product screen with sizes, milks and the like as chips
+  with their prices, add-ons by group opening in place, allergens and
+  nutrition, and something to eat suggested under a drink. A product without
+  a photo shows the illustration for its category kind. Prices are always in
+  the store's currency.
+- **Cart and checkout** — something to eat offered next to a drink, ASAP or a
+  15-minute pickup slot (full slots are
   shown struck through), delivery where the store offers it, promo code, gift
   card, loyalty points, pay with a bound Agroprombank card or at the counter.
   Outside working hours only a scheduled pickup can be chosen.
@@ -350,6 +354,9 @@ of ASAP.
   the iOS icon set and launch image, the Android launcher icons (legacy,
   adaptive, monochrome), splash mark and notification icon, in the brand
   colours. A new logo: replace that file and run it again.
+- **Product illustrations** — `assets/product-placeholders/*.svg` are copies
+  of `libs/ui-kit/src/assets/product-placeholders` (drawn with `flutter_svg`):
+  change them there, then copy them over.
 - **Map tiles** — OpenStreetMap through our cache at `takeaway.md/tiles`, with
   retries, a fallback to OSM and a 30-day disk cache on the phone; see
   [docs/map-tiles.md](../../docs/map-tiles.md). A commercial source, if ever

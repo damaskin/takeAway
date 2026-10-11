@@ -1270,4 +1270,162 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get locationUnavailable => 'Couldn\'t tell where you are. Try again in a moment.';
+
+  @override
+  String get productNoteFood => 'Order comment';
+
+  @override
+  String get productNoteFoodHint => 'E.g. warm it up, no sauce…';
+
+  @override
+  String productContains(String list) {
+    return 'Contains: $list';
+  }
+
+  @override
+  String get productAddonsNone => 'none';
+
+  @override
+  String get productRequired => 'required';
+
+  @override
+  String get productPairsWith => 'Often ordered together';
+
+  @override
+  String get cartUpsellTitle => 'Add to your order';
+
+  @override
+  String get allergenGluten => 'gluten';
+
+  @override
+  String get allergenMilk => 'milk';
+
+  @override
+  String get allergenLactose => 'lactose';
+
+  @override
+  String get allergenEggs => 'eggs';
+
+  @override
+  String get allergenNuts => 'nuts';
+
+  @override
+  String get allergenPeanuts => 'peanuts';
+
+  @override
+  String get allergenSoy => 'soy';
+
+  @override
+  String get allergenFish => 'fish';
+
+  @override
+  String get allergenShellfish => 'shellfish';
+
+  @override
+  String get allergenSesame => 'sesame';
+
+  @override
+  String get allergenCelery => 'celery';
+
+  @override
+  String get allergenMustard => 'mustard';
+
+  @override
+  String get allergenSulphites => 'sulphites';
+
+  @override
+  String get errCartEmpty => 'Your cart is empty';
+
+  @override
+  String get errStoreNotTakingOrders => 'This store is not taking orders right now';
+
+  @override
+  String get errStoreClosedAtTime => 'The store is closed at that time — pick another time';
+
+  @override
+  String get errPickupSlotFull => 'That time has just been taken — pick another one';
+
+  @override
+  String errPickupTimeOutOfRange(int minMinutes, int maxHours) {
+    return 'A scheduled pickup must be $minMinutes min to $maxHours h from now';
+  }
+
+  @override
+  String errItemsUnavailable(String items) {
+    return 'Not available right now: $items';
+  }
+
+  @override
+  String get errItemsUnavailableGeneric => 'Some items are not available right now';
+
+  @override
+  String errBelowMinOrder(String amount) {
+    return 'The minimum order is $amount';
+  }
+
+  @override
+  String get errBelowMinOrderGeneric => 'The order is below the minimum';
+
+  @override
+  String get errDeliveryUnavailable => 'Delivery is not available right now';
+
+  @override
+  String get errDeliveryAddressRequired => 'Enter a delivery address';
+
+  @override
+  String get errDeliveryOutOfRange => 'That address is outside the delivery area';
+
+  @override
+  String get errPromoUnknown => 'There is no such promo code';
+
+  @override
+  String get errPromoInactive => 'This promo code is not active right now';
+
+  @override
+  String get errPromoNotStarted => 'This promo code has not started yet';
+
+  @override
+  String get errPromoExpired => 'This promo code has expired';
+
+  @override
+  String errPromoMinOrder(String amount) {
+    return 'This promo code needs an order of $amount or more';
+  }
+
+  @override
+  String get errPromoMinOrderGeneric => 'The order is too small for this promo code';
+
+  @override
+  String get errPromoLimitReached => 'This promo code has run out';
+
+  @override
+  String get errPromoAlreadyUsed => 'You have already used this promo code';
+
+  @override
+  String get errPromoNotEligible => 'This code is for customers who haven\'t ordered in a while';
+
+  @override
+  String get errGiftCardUnknown => 'There is no such gift card';
+
+  @override
+  String get errGiftCardOtherBrand => 'This gift card is not valid here';
+
+  @override
+  String get errGiftCardCurrency => 'This gift card is in another currency';
+
+  @override
+  String get errGiftCardExpired => 'This gift card has expired';
+
+  @override
+  String get errGiftCardUsedUp => 'This gift card has no balance left';
+
+  @override
+  String get errGiftCardCancelled => 'This gift card has been cancelled';
+
+  @override
+  String get errGiftCardBalanceChanged => 'The gift card balance has just changed — check the card and try again';
+
+  @override
+  String get errTooManyUnpaidOrders =>
+      'You already have unpaid orders — pay for or cancel one before placing a new one';
 }

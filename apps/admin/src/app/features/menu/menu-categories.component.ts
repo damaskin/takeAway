@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CategoryKind } from '@takeaway/shared-types';
-import { productPlaceholderUrl } from '@takeaway/utils';
+import { productPlaceholderSrc } from '@takeaway/ui-kit';
 
 import { AdminCatalogApi, type CategoryAdminDto } from '../../core/catalog/admin-catalog.service';
 import { describeMenuError, menuErrorCode } from './menu-errors';
@@ -230,7 +230,7 @@ export class MenuCategoriesComponent {
 
   /** The kind's product placeholder doubles as its icon. */
   kindIcon(kind: CategoryKind): string {
-    return productPlaceholderUrl(kind);
+    return productPlaceholderSrc(kind);
   }
 
   move(index: number, delta: -1 | 1): void {

@@ -275,7 +275,7 @@ describe('ProductFormComponent', () => {
       component.submit();
       expect(updateProduct).toHaveBeenLastCalledWith(
         'p1',
-        expect.objectContaining({ allergens: ['молоко', 'GLUTEN', 'следы горчицы'] }),
+        expect.objectContaining({ allergens: ['GLUTEN', 'молоко', 'следы горчицы'] }),
       );
 
       component.toggleAllergen('MILK', tick(false));

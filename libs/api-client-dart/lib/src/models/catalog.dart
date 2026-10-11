@@ -275,9 +275,10 @@ class Modifier {
   @JsonKey(defaultValue: 0)
   final int sortOrder;
 
-  /// The group the add-on is shown under on the product screen («Сиропы»,
-  /// «Соусы», «Убрать»). Null — the generic «Добавки» group, and on API
-  /// versions that predate groups.
+  /// Display group of the add-on — «Сиропы», «Соусы», «Убрать». Null (or
+  /// blank, or from API versions that predate it) means the generic
+  /// «Добавки».
+  @JsonKey(fromJson: _labelFromJson)
   final String? group;
 }
 
@@ -333,8 +334,9 @@ class Product {
   final bool onStopList;
 
   /// Kind of the product's category: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`,
-  /// `BAKERY` or `OTHER` — picks the placeholder of a product without a
-  /// photo. Null from API versions that predate it (read as `OTHER`).
+  /// `BAKERY` or `OTHER`, as sent (values this client does not know pass
+  /// through). Null from API versions that predate it.
+  @JsonKey(fromJson: _labelFromJson)
   final String? categoryKind;
 
   String? get imageUrl => imageUrls.isEmpty ? null : imageUrls.first;
@@ -407,12 +409,13 @@ class MenuCategory {
   final int sortOrder;
   final int? availableFrom;
   final int? availableTo;
-
-  /// What the category holds: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY`
-  /// or `OTHER`. Null from API versions that predate it (read as `OTHER`).
-  final String? kind;
   @JsonKey(defaultValue: <Product>[])
   final List<Product> products;
+
+  /// What the category holds: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY`
+  /// or `OTHER`, as sent. Null from API versions that predate it.
+  @JsonKey(fromJson: _labelFromJson)
+  final String? kind;
 }
 
 @JsonSerializable(explicitToJson: true)
@@ -461,3 +464,7 @@ List<String>? _kindsFromJson(Object? raw) => raw is List
           if (kind is String) kind,
       ]
     : null;
+
+/// A text field that older APIs leave out and newer ones may send blank:
+/// anything but a non-blank string reads as null.
+String? _labelFromJson(Object? raw) => raw is String && raw.trim().isNotEmpty ? raw.trim() : null;

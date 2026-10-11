@@ -1,7 +1,4 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
@@ -10,22 +7,25 @@ import '../../app/router.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
+import '../../shared/product_kinds.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/state_views.dart';
-import '../auth/sign_in_sheet.dart';
-import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
+import 'quick_add.dart';
 
 /// Hero tag shared by the menu card and the product screen.
 String productHeroTag(String productId) => 'product-image-$productId';
 
 /// Menu grid card: photo, name, price and a one-tap add.
 class ProductCard extends ConsumerStatefulWidget {
-  const ProductCard({required this.product, required this.store, super.key});
+  const ProductCard({required this.product, required this.store, this.kind, super.key});
 
   final Product product;
   final Store store;
+
+  /// Picks the illustration when the product has no photo.
+  final ProductKind? kind;
 
   @override
   ConsumerState<ProductCard> createState() => _ProductCardState();
@@ -36,40 +36,12 @@ class _ProductCardState extends ConsumerState<ProductCard> {
 
   void _open() => context.push(Routes.product(widget.product.id), extra: widget.product);
 
-  /// Adds straight from the menu when there is nothing to choose; items with
-  /// sizes or milks open the product screen instead, so nobody orders a
-  /// latte without saying which one.
-  /// Whether the store takes orders now, from the live list: the card may
-  /// have been built (in search, say) before the store closed.
-  bool get _storeOpen => (ref.read(liveStoreProvider(widget.store.id)) ?? widget.store).isOpen;
-
+  /// Adds straight from the menu when there is nothing to choose (see
+  /// [quickAdd]); the cart bar acknowledges it, see CartAddition.
   Future<void> _quickAdd() async {
-    if (_adding || !_storeOpen) return;
-    if (!await ensureSignedIn(context, ref)) return;
-    setState(() => _adding = true);
+    if (_adding) return;
     try {
-      // Fetched afresh: a required add-in may have run out since the
-      // product was last opened, and the cart would refuse it.
-      final detail = await ref.refresh(
-        storeProductProvider((productId: widget.product.id, storeId: widget.store.id)).future,
-      );
-      if (!mounted) return;
-      if (detail.variations.isNotEmpty) {
-        setState(() => _adding = false);
-        _open();
-        return;
-      }
-      await ref
-          .read(cartProvider(widget.store.id).notifier)
-          .add(
-            productId: detail.id,
-            modifiers: {
-              for (final m in detail.modifiers)
-                if (m.minCount > 0) m.id: m.minCount,
-            },
-          );
-      // The cart bar acknowledges the add; see CartAddition.
-      unawaited(HapticFeedback.mediumImpact());
+      await quickAdd(context, ref, widget.product, widget.store, onBusy: () => setState(() => _adding = true));
     } on Object catch (error) {
       if (mounted) Snack.error(context, error);
     } finally {
@@ -87,7 +59,7 @@ class _ProductCardState extends ConsumerState<ProductCard> {
 
     Widget image = Hero(
       tag: productHeroTag(product.id),
-      child: ProductImage(url: product.imageUrl, seed: product.id),
+      child: ProductImage(url: product.imageUrl, kind: widget.kind, seed: product.id),
     );
     if (soldOut) {
       image = ColorFiltered(colorFilter: const ColorFilter.matrix(_grayscale), child: image);

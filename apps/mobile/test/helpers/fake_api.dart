@@ -54,6 +54,19 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// Replaces the two-category menu — see [categoryJson].
   List<Map<String, dynamic>>? menuCategories;
 
+  /// Product details by id, in place of the latte and the croissant.
+  final Map<String, ProductDetail> products = {};
+
+  /// What the default store sells (`kinds`); null leaves it out, as an
+  /// older API does.
+  List<String>? storeKinds;
+
+  /// Body of the next promo check; null = the code takes 2 MDL off.
+  Map<String, dynamic>? promoAnswer;
+
+  /// English message the gift-card check refuses with; null = it pays 5 MDL.
+  String? giftCardRefusal;
+
   static const storeJson = <String, dynamic>{
     'id': 'st_1',
     'brandId': 'br_1',
@@ -205,7 +218,12 @@ class FakeApi extends Fake implements TakeAwayApi {
     );
   }
 
-  static Order sampleOrder({String status = 'CREATED', Map<String, dynamic>? payment}) => Order.fromJson({
+  static Order sampleOrder({
+    String status = 'CREATED',
+    Map<String, dynamic>? payment,
+    double storeLatitude = 0,
+    double storeLongitude = 0,
+  }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
     'qrToken': 'qr_1',
@@ -220,8 +238,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     'currency': 'MDL',
     'storeId': 'st_1',
     'storeName': 'NoName — центр',
-    'storeLatitude': 0,
-    'storeLongitude': 0,
+    'storeLatitude': storeLatitude,
+    'storeLongitude': storeLongitude,
     'storeAddress': 'ул. 25 Октября, 94',
     'items': [
       {
@@ -278,7 +296,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
-    Store.fromJson({...storeJson, 'openNow': storeOpenNow}),
+    Store.fromJson({...storeJson, 'openNow': storeOpenNow, 'kinds': ?storeKinds}),
     for (final json in moreStores) Store.fromJson(json),
   ];
 
@@ -330,7 +348,7 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<ProductDetail> product(String idOrSlug, {String? store}) async {
     productStores.add(store);
-    final detail = idOrSlug == 'p_latte' ? latte() : croissant();
+    final detail = products[idOrSlug] ?? (idOrSlug == 'p_latte' ? latte() : croissant());
     final soldOut = {...this.soldOut, ...?soldOutAt[store]};
     if (soldOut.isEmpty) return detail;
     // What the API does for an add-in marked out of stock: the option is
@@ -534,6 +552,29 @@ class FakeApi extends Fake implements TakeAwayApi {
     'createdAt': '2026-09-01T10:00:00.000Z',
     'lastUsedAt': null,
   });
+
+  @override
+  Future<PromoValidation> validatePromo(Map<String, dynamic> body) async => PromoValidation.fromJson(
+    promoAnswer ?? {'valid': true, 'reason': null, 'reasonCode': null, 'discountCents': 200, 'pointsMultiplier': 1},
+  );
+
+  @override
+  Future<GiftCardValidation> validateGiftCard(Map<String, dynamic> body) async {
+    final refusal = giftCardRefusal;
+    if (refusal != null) {
+      final request = RequestOptions(path: '/gift-cards/validate', method: 'POST');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(
+          requestOptions: request,
+          statusCode: 400,
+          data: {'statusCode': 400, 'error': 'Bad Request', 'message': refusal},
+        ),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    return const GiftCardValidation(applicableCents: 500, remainingCents: 0, currency: 'MDL');
+  }
 
   @override
   Future<void> registerDevice(DeviceRegistration body) async {}

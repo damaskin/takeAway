@@ -1,13 +1,22 @@
 import { randomInt } from 'node:crypto';
 
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Currency, GiftCard, Prisma } from '@prisma/client';
+import type { Currency, GiftCard, GiftCardStatus, Prisma } from '@prisma/client';
+import type { GiftCardErrorCode } from '@takeaway/shared-types';
 
+import { checkoutError } from '../common/http/checkout-error';
 import { codedConflict } from '../common/http/coded-conflict';
 import { PrismaService } from '../prisma/prisma.service';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const DEFAULT_CODE_LENGTH = 12;
+
+/** The refusal code for a card that is no longer ACTIVE. */
+const GIFT_CARD_STATUS_CODES: Record<Exclude<GiftCardStatus, 'ACTIVE'>, GiftCardErrorCode> = {
+  REDEEMED: 'GIFT_CARD_USED_UP',
+  EXPIRED: 'GIFT_CARD_EXPIRED',
+  CANCELLED: 'GIFT_CARD_CANCELLED',
+};
 
 interface ValidatedGiftCard {
   giftCardId: string;
@@ -34,17 +43,24 @@ export class GiftCardsService {
   }): Promise<ValidatedGiftCard> {
     const code = normalizeCode(input.code);
     const card = await this.prisma.giftCard.findUnique({ where: { code } });
-    if (!card) throw new BadRequestException('Gift card not found');
-    if (card.brandId !== input.brandId) throw new BadRequestException('Gift card is not valid at this brand');
+    // The English messages stay word for word: app builds released before
+    // the codes tell the reasons apart by them.
+    if (!card) throw checkoutError('GIFT_CARD_UNKNOWN', 'Gift card not found');
+    if (card.brandId !== input.brandId)
+      throw checkoutError('GIFT_CARD_OTHER_BRAND', 'Gift card is not valid at this brand');
     if (card.currency !== input.currency)
-      throw new BadRequestException(`Gift card currency (${card.currency}) does not match the order currency`);
-    if (card.status !== 'ACTIVE') throw new BadRequestException(`Gift card is ${card.status.toLowerCase()}`);
+      throw checkoutError(
+        'GIFT_CARD_CURRENCY',
+        `Gift card currency (${card.currency}) does not match the order currency`,
+      );
+    if (card.status !== 'ACTIVE')
+      throw checkoutError(GIFT_CARD_STATUS_CODES[card.status], `Gift card is ${card.status.toLowerCase()}`);
     if (card.expiresAt && card.expiresAt < new Date()) {
       // Mark as expired in passing — saves a sweep cron.
       await this.prisma.giftCard.update({ where: { id: card.id }, data: { status: 'EXPIRED' } });
-      throw new BadRequestException('Gift card has expired');
+      throw checkoutError('GIFT_CARD_EXPIRED', 'Gift card has expired');
     }
-    if (card.balanceCents <= 0) throw new BadRequestException('Gift card has no remaining balance');
+    if (card.balanceCents <= 0) throw checkoutError('GIFT_CARD_USED_UP', 'Gift card has no remaining balance');
 
     const amountCents = Math.min(card.balanceCents, input.subtotalCents);
     return {

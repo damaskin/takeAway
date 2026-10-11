@@ -1,7 +1,14 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import type { CategoryWithProducts, StoreDetail, StoreMenu } from '@takeaway/shared-types';
-import { formatMinutesOfDay, isStoreInactive, todaysOpeningHours } from '@takeaway/utils';
+import type {
+  CategoryKind,
+  CategoryWithProducts,
+  ProductSummary,
+  StoreDetail,
+  StoreMenu,
+} from '@takeaway/shared-types';
+import { ProductImageComponent } from '@takeaway/ui-kit';
+import { formatMinutesOfDay, isStoreInactive, productKind, todaysOpeningHours } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
@@ -29,7 +36,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 @Component({
   selector: 'app-tma-menu',
   standalone: true,
-  imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
+  imports: [ProductImageComponent, RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
     @if (store(); as s) {
       <div
@@ -123,21 +130,13 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                   [class.opacity-50]="p.onStopList"
                   style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 16px; overflow: hidden"
                 >
-                  <!-- The warm gradient shows until the photo loads, and stays when there is none. -->
-                  <div
-                    style="aspect-ratio: 1 / 1; overflow: hidden; background: linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)"
-                  >
-                    @if (p.imageUrls[0]; as photo) {
-                      <img
-                        [src]="photo"
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        (error)="hideBrokenImage($event)"
-                        style="display: block; width: 100%; height: 100%; object-fit: cover"
-                      />
-                    }
-                  </div>
+                  <!-- The photo, or the placeholder for the product's kind — also when the photo fails. -->
+                  <lib-product-image
+                    [src]="p.imageUrls[0]"
+                    [kind]="kindOf(p, cat)"
+                    alt=""
+                    style="aspect-ratio: 1 / 1"
+                  />
                   <div class="flex flex-col" style="padding: 12px; gap: 4px">
                     <span
                       class="line-clamp-2"
@@ -253,9 +252,9 @@ export class TmaMenuPage implements OnInit, OnDestroy {
     return this.emojiByIndex[idx % this.emojiByIndex.length] ?? '☕';
   }
 
-  /** A photo that fails to load leaves the gradient behind it rather than a broken-image icon. */
-  hideBrokenImage(event: Event): void {
-    (event.target as HTMLImageElement).style.display = 'none';
+  /** Picks the placeholder of a product without a photo. */
+  kindOf(product: ProductSummary, cat: CategoryWithProducts): CategoryKind {
+    return productKind(product, cat);
   }
 
   price(cents: number): string {

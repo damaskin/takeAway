@@ -93,12 +93,26 @@ class PromoValidation {
     required this.discountCents,
     required this.pointsMultiplier,
     this.reason,
+    this.reasonCode,
+    this.minOrderCents,
+    this.currency,
   });
 
   factory PromoValidation.fromJson(Map<String, dynamic> json) => _$PromoValidationFromJson(json);
 
   final bool valid;
+
+  /// Why the code does not apply, in English — for logs; show [reasonCode].
   final String? reason;
+
+  /// Why the code does not apply, as a stable code (`PROMO_EXPIRED`,
+  /// `PROMO_NOT_ELIGIBLE`…) the app words itself. Null when valid, and from
+  /// API versions that predate it.
+  final String? reasonCode;
+
+  /// `PROMO_MIN_ORDER`: the promo's minimum subtotal, in [currency].
+  final int? minOrderCents;
+  final String? currency;
   @JsonKey(defaultValue: 0)
   final int discountCents;
   @JsonKey(defaultValue: 1)

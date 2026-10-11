@@ -1,25 +1,45 @@
-import { allergenCodeOf, allergenLabel } from './allergens';
+import { ALLERGEN_CODES, allergenChips, allergenCode } from './allergens';
 
-describe('allergens', () => {
-  it('reads a checklist code and the words a business typed for the same allergen', () => {
-    expect(allergenCodeOf('MILK')).toBe('MILK');
-    expect(allergenCodeOf('молоко')).toBe('MILK');
-    expect(allergenCodeOf(' Орехи ')).toBe('NUTS');
-    expect(allergenCodeOf('Gluten')).toBe('GLUTEN');
-    expect(allergenCodeOf('лактоза')).toBe('MILK');
+describe('allergenCode', () => {
+  it('knows every listed code, whatever the case', () => {
+    for (const code of ALLERGEN_CODES) {
+      expect(allergenCode(code)).toBe(code);
+      expect(allergenCode(code.toLowerCase())).toBe(code);
+    }
   });
 
-  it('leaves anything else as free text', () => {
-    expect(allergenCodeOf('следы горчичного масла')).toBeNull();
-    expect(allergenCodeOf('')).toBeNull();
-    expect(allergenCodeOf('milk ')).toBe('MILK');
+  it('reads other spellings of the same allergen', () => {
+    expect(allergenCode('egg')).toBe('EGGS');
+    expect(allergenCode('Tree nuts')).toBe('NUTS');
+    expect(allergenCode('tree-nuts')).toBe('NUTS');
+    expect(allergenCode('sulfites')).toBe('SULPHITES');
+    expect(allergenCode(' soya ')).toBe('SOY');
   });
 
-  it('prints a code in the customer language and free text as typed', () => {
-    expect(allergenLabel('MILK', 'ru')).toBe('Молоко');
-    expect(allergenLabel('MILK', 'en')).toBe('Milk');
-    expect(allergenLabel('MILK', 'ru-RU')).toBe('Молоко');
-    expect(allergenLabel('PEANUTS', null)).toBe('Peanuts');
-    expect(allergenLabel('молоко', 'en')).toBe('молоко');
+  it('does not guess at free text', () => {
+    expect(allergenCode('молоко')).toBeNull();
+    expect(allergenCode('lupin')).toBeNull();
+    expect(allergenCode('')).toBeNull();
+  });
+});
+
+describe('allergenChips', () => {
+  it('keeps known codes as codes and anything else as written', () => {
+    expect(allergenChips(['GLUTEN', 'орехи'])).toEqual([
+      { code: 'GLUTEN', text: 'GLUTEN' },
+      { code: null, text: 'орехи' },
+    ]);
+  });
+
+  it('drops blanks and repeats', () => {
+    expect(allergenChips(['milk', 'MILK', ' ', 'Орехи', 'орехи']).map((c) => c.code ?? c.text)).toEqual([
+      'MILK',
+      'Орехи',
+    ]);
+  });
+
+  it('copes with a product that lists none', () => {
+    expect(allergenChips([])).toEqual([]);
+    expect(allergenChips(null)).toEqual([]);
   });
 });

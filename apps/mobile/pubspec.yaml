@@ -47,6 +47,8 @@ dependencies:
 
   # UI
   cached_network_image: ^3.4.1
+  # Product placeholders: the ui-kit SVGs as they are, sharp at any size
+  flutter_svg: ^2.3.0
   google_fonts: ^8.2.1
   qr_flutter: ^4.1.0
   intl: ^0.20.2
@@ -67,3 +69,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  assets:
+    # Copies of libs/ui-kit/src/assets/product-placeholders — change them there first
+    - assets/product-placeholders/

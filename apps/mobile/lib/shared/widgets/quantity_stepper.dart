@@ -12,6 +12,7 @@ class QuantityStepper extends StatefulWidget {
     this.max = 99,
     this.compact = false,
     this.decrementIcon,
+    this.buttonSize,
     super.key,
   });
 
@@ -23,6 +24,9 @@ class QuantityStepper extends StatefulWidget {
 
   /// Replaces the minus sign — e.g. a bin when going below one removes.
   final IconData? decrementIcon;
+
+  /// Side of the − and + tap targets; by default 32 compact, 40 otherwise.
+  final double? buttonSize;
 
   @override
   State<QuantityStepper> createState() => _QuantityStepperState();
@@ -42,7 +46,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
-    final size = widget.compact ? 32.0 : 40.0;
+    final size = widget.buttonSize ?? (widget.compact ? 32.0 : 40.0);
     Widget button(IconData icon, VoidCallback? onTap, String label) => Semantics(
       button: true,
       label: label,

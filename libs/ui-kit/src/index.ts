@@ -12,3 +12,5 @@ export * from './lib/observability/sentry.providers';
 export * from './lib/version-badge/version-badge.component';
 export * from './lib/brand-logo/brand-logo.component';
 export * from './lib/store-logo/store-logo.component';
+export * from './lib/product-image/product-image.component';
+export * from './lib/product-image/product-placeholder';

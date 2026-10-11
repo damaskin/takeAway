@@ -20,6 +20,20 @@ void main() {
       expect(e.message, 'Store is closed');
     });
 
+    test('keeps the stable code and what the words for it need', () {
+      final e = ApiError.from(
+        response(400, {
+          'statusCode': 400,
+          'code': 'ITEMS_UNAVAILABLE',
+          'message': 'Currently unavailable at this store: Latte',
+          'items': ['Латте'],
+        }),
+      );
+      expect(e.code, 'ITEMS_UNAVAILABLE');
+      expect(e.details['items'], ['Латте']);
+      expect(ApiError.from(response(400, {'message': 'Gift card not found'})).code, isNull);
+    });
+
     test('joins validation messages', () {
       final e = ApiError.from(
         response(400, {

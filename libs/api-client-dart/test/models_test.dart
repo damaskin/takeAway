@@ -84,78 +84,54 @@ void main() {
       expect(copy.allProducts.first.basePriceCents, menu.allProducts.first.basePriceCents);
     });
 
-    test('reads category kinds and add-on groups, and null from an older API', () {
-      final menu = Menu.fromJson({
-        'storeId': 's1',
-        'storeSlug': 'shawarma',
-        'categories': [
-          {
-            'id': 'c-food',
-            'slug': 'shawarma',
-            'name': 'Шаурма',
-            'sortOrder': 0,
-            'kind': 'FOOD',
-            'products': [
-              {
-                'id': 'p1',
-                'categoryId': 'c-food',
-                'slug': 'classic',
-                'name': 'Классическая',
-                'basePriceCents': 9000,
-                'prepTimeSeconds': 900,
-                'allergens': ['GLUTEN'],
-                'dietTags': <String>[],
-                'imageUrls': <String>[],
-                'sortOrder': 0,
-                'categoryKind': 'FOOD',
-              },
-            ],
-          },
-        ],
-      });
-      expect(menu.categories.single.kind, 'FOOD');
-      expect(menu.allProducts.single.categoryKind, 'FOOD');
-
-      final product = ProductDetail.fromJson({
-        ...(fixture('product_detail.json')! as Map<String, dynamic>),
-        'categoryKind': 'HOT_DRINKS',
-        'modifiers': [
-          {
-            'id': 'm1',
-            'slug': 'vanil',
-            'name': 'Ваниль',
-            'priceDeltaCents': 500,
-            'prepTimeDeltaSeconds': 0,
-            'minCount': 0,
-            'maxCount': 2,
-            'sortOrder': 0,
-            'group': 'Сиропы',
-          },
-          {
-            'id': 'm2',
-            'slug': 'koritsa',
-            'name': 'Корица',
-            'priceDeltaCents': 0,
-            'prepTimeDeltaSeconds': 0,
-            'minCount': 0,
-            'maxCount': 1,
-            'sortOrder': 1,
-          },
-        ],
-      });
-      expect(product.categoryKind, 'HOT_DRINKS');
-      expect(product.modifiers.map((m) => m.group), ['Сиропы', null]);
-      expect(ProductDetail.fromJson(product.toJson()).modifiers.first.group, 'Сиропы');
-
-      final old = Menu.fromJson(fixture('menu.json')! as Map<String, dynamic>);
-      expect(old.categories.first.kind, isNull);
-    });
-
     test('parses a product with no options', () {
       final product = ProductDetail.fromJson(fixture('product_detail.json')! as Map<String, dynamic>);
       expect(product.variations, isEmpty);
       expect(product.modifiers, isEmpty);
       expect(product.brandId, isNotEmpty);
+    });
+
+    test('reads category kinds and add-on groups, and null from an API that predates them', () {
+      final raw = fixture('menu.json')! as Map<String, dynamic>;
+      final categories = (raw['categories'] as List).cast<Map<String, dynamic>>();
+      final category = categories.first;
+      final product = (category['products'] as List).first as Map<String, dynamic>;
+
+      final older = Menu.fromJson(raw);
+      expect(older.categories.first.kind, isNull);
+      expect(older.allProducts.first.categoryKind, isNull);
+
+      final menu = Menu.fromJson({
+        ...raw,
+        'categories': [
+          {
+            ...category,
+            'kind': 'BAKERY',
+            'products': [
+              {...product, 'categoryKind': 'BAKERY'},
+            ],
+          },
+          {...category, 'id': 'blank', 'kind': '  ', 'products': <Object>[]},
+          {...category, 'id': 'odd', 'kind': 7, 'products': <Object>[]},
+        ],
+      });
+      expect(menu.categories.map((c) => c.kind), ['BAKERY', null, null]);
+      expect(menu.allProducts.single.categoryKind, 'BAKERY');
+      final cached = Menu.fromJson(jsonDecode(jsonEncode(menu.toJson())) as Map<String, dynamic>);
+      expect(cached.categories.first.kind, 'BAKERY');
+      expect(cached.allProducts.single.categoryKind, 'BAKERY');
+
+      final detail = ProductDetail.fromJson({
+        ...fixture('product_detail.json')! as Map<String, dynamic>,
+        'categoryKind': 'HOT_DRINKS',
+        'modifiers': [
+          for (final (id, group) in [('m1', 'Сиропы'), ('m2', null), ('m3', ''), ('m4', 3)])
+            {'id': id, 'slug': id, 'name': id, 'priceDeltaCents': 500, 'minCount': 0, 'maxCount': 1, 'group': group},
+          {'id': 'm5', 'slug': 'm5', 'name': 'm5', 'priceDeltaCents': 0},
+        ],
+      });
+      expect(detail.categoryKind, 'HOT_DRINKS');
+      expect(detail.modifiers.map((m) => m.group), ['Сиропы', null, null, null, null]);
     });
 
     test('parses pickup slots as UTC instants', () {
@@ -393,6 +369,27 @@ void main() {
       });
       expect(account.tier, LoyaltyTier.signature);
       expect(account.nextTier, isNull);
+    });
+
+    test('reads why a promo code does not apply, with the minimum order when that is why', () {
+      final refused = PromoValidation.fromJson({
+        'valid': false,
+        'reason': 'Minimum order is 50.00 MDL',
+        'reasonCode': 'PROMO_MIN_ORDER',
+        'minOrderCents': 5000,
+        'currency': 'MDL',
+        'promo': null,
+        'discountCents': 0,
+        'pointsMultiplier': 1,
+      });
+      expect(refused.valid, isFalse);
+      expect(refused.reasonCode, 'PROMO_MIN_ORDER');
+      expect(refused.minOrderCents, 5000);
+      expect(refused.currency, 'MDL');
+
+      final older = PromoValidation.fromJson({'valid': false, 'reason': 'Promo has expired'});
+      expect(older.reasonCode, isNull);
+      expect(older.minOrderCents, isNull);
     });
 
     test('feature flags default to off', () {

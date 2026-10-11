@@ -19,6 +19,7 @@ import '../catalog/catalog_providers.dart';
 import '../stores/store_widgets.dart';
 import 'cart_controller.dart';
 import 'cart_line.dart';
+import 'upsell_row.dart';
 
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
@@ -170,6 +171,7 @@ class CartScreen extends ConsumerWidget {
                                 ),
                               ),
                             ),
+                          CartUpsell(store: store, cart: cart),
                           const SizedBox(height: 4),
                           Row(
                             children: [
