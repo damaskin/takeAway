@@ -375,6 +375,56 @@ export const TRANSLATIONS_EN: TranslationTree = {
       contents: 'Contents',
       related: 'Documents and help',
     },
+    support: {
+      formTitle: 'Write to us',
+      formHint:
+        'We reply by email or phone, whichever you leave. If it is about an order, include its code — the four digits on the order screen.',
+      formHintSignedIn:
+        "We reply to your account's email or phone — or leave another contact. If it is about an order, include its code.",
+      topic: 'Topic',
+      topics: {
+        QUESTION: 'Question',
+        PROBLEM: 'Problem with an order',
+        SUGGESTION: 'Suggestion',
+      },
+      name: 'Your name (optional)',
+      contact: 'Email or phone',
+      contactOptional: 'Email or phone (optional)',
+      contactPlaceholder: 'you@mail.md or +373 69 123 456',
+      contactRequired: 'Leave an email or a phone number — otherwise we cannot reply.',
+      contactInvalid: 'This does not look like an email or a phone number.',
+      message: 'Message',
+      messagePlaceholder: 'What happened? How can we help?',
+      honeypot: 'Website (leave empty)',
+      send: 'Send',
+      sending: 'Sending…',
+      sentTitle: 'Message sent',
+      sentBody: 'The takeAway team will reply as soon as they read it — usually within a working day.',
+      another: 'Write another',
+      tooMany: 'Too many messages in a row. Try again in an hour, or write to help@takeaway.md.',
+    },
+    appInstall: {
+      footerLink: 'App',
+      title: 'The takeAway app',
+      subtitle:
+        'Order coffee and food ahead from your phone: order status, a notification when it is ready, and your points — always at hand.',
+      redirecting: 'Opening {{store}}…',
+      appStore: 'Download on the App Store',
+      googlePlay: 'Get it on Google Play',
+      noIos: 'The iPhone app is not on the App Store yet — order on the website, it is just as quick.',
+      qrTitle: 'Point your phone camera here',
+      qrHint: 'Your phone opens takeaway.md/app, and from there its app store.',
+      qrAlt: 'QR code of takeaway.md/app',
+      orWeb: 'Or order right on the website',
+    },
+    social: {
+      label: 'takeAway on social media',
+      instagram: 'takeAway on Instagram',
+      telegram: 'takeAway on Telegram',
+      tiktok: 'takeAway on TikTok',
+      facebook: 'takeAway on Facebook',
+      vk: 'takeAway on VK',
+    },
     business: {
       title: 'List your business on takeAway',
       subtitle: 'Pre-ordering for your café: guests order ahead and pick up without queueing.',
@@ -843,6 +893,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pinHint:
         'A PIN works at one store: a new PIN for another store replaces the old one. Taking a store off the list resets its PIN.',
       pinStore: 'Store for the PIN',
+      password: {
+        title: 'Password',
+        hint: 'Forgot their password and cannot get to their email? Reset it: the old password stops working, they are signed out of the cabinet and the kitchen tablet, and you get a temporary password to pass on. They will be asked to change it when they sign in.',
+        reset: 'Reset password',
+        confirm: "Reset {{name}}'s password? The old one stops working and they are signed out on every device.",
+        done: 'Password reset; they were signed out on every device. Temporary password:',
+        showOnce: 'Copy it now — it is shown once and not kept anywhere.',
+        emailSent: 'We emailed {{email}} a link to set their own password. The temporary password works too.',
+        emailOff: 'No email was sent: mail is not set up on the server. Pass the temporary password on yourself.',
+        emailFailed: 'No email was sent: the mail server refused it. Pass the temporary password on yourself.',
+        notEditable: 'This person also works for another brand — only takeAway support can reset their password.',
+      },
       errors: {
         storeOutOfScope: 'One of the chosen stores is outside your access.',
         roleNotAllowed: 'A store manager cannot appoint managers — the brand owner does that.',
@@ -944,14 +1006,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       contactPhoneHint: 'The takeAway team calls this number about your brand.',
       errors: {
         CURRENCY_LOCKED: 'The currency cannot change: this brand already has orders.',
-      },
-      theme: {
-        title: 'Theme colors',
-        hint: 'These override the Telegram palette in TMA.',
-        caramel: 'Accent',
-        cream: 'Background',
-        foam: 'Surface',
-        espresso: 'Text',
       },
       saving: 'Saving…',
       saved: 'Saved',
@@ -2678,7 +2732,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     feedback: {
       title: 'Feedback',
       subtitle:
-        'Reviews, suggestions and problems customers send from their profile in the app, on the site and in Telegram — and what businesses write to support from the admin.',
+        'Reviews, suggestions and problems customers send from their profile in the app, on the site and in Telegram, messages from the Support form on the site (also without an account) — and what businesses write to support from the admin.',
       tabs: {
         inbox: 'Inbox',
         NEW: 'Unread',
@@ -2710,6 +2764,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       contact: 'How to reach',
       deletedAccount: 'account deleted',
       noAuthor: 'No account',
+      guestNamed: '{{name}} (no account)',
       telegramId: 'Telegram ID {{id}}',
       markRead: 'Mark read',
       markUnread: 'Mark unread',

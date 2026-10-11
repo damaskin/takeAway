@@ -7,13 +7,14 @@ import type {
   SetStaffStoresRequest,
   StaffInviteResult,
   StaffMember,
+  StaffPasswordReset,
   StaffRoleName,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
 
-export type { InviteStaffRequest, StaffInviteResult, StaffMember } from '@takeaway/shared-types';
+export type { InviteStaffRequest, StaffInviteResult, StaffMember, StaffPasswordReset } from '@takeaway/shared-types';
 
 export type StaffRole = StaffRoleName;
 
@@ -101,6 +102,18 @@ export class StaffService {
     return this.http.patch<StaffMember>(
       `${this.api.baseUrl}/admin/staff/${userId}/role`,
       { role },
+      { params: this.brandParams(brandId) },
+    );
+  }
+
+  /**
+   * «Сбросить пароль»: the person's sessions end and they get a generated
+   * temporary password — in the answer, once. Owners and platform admins only.
+   */
+  resetPassword(userId: string, brandId: string | null): Observable<StaffPasswordReset> {
+    return this.http.post<StaffPasswordReset>(
+      `${this.api.baseUrl}/admin/staff/${userId}/reset-password`,
+      {},
       { params: this.brandParams(brandId) },
     );
   }
