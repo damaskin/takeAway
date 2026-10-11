@@ -53,6 +53,14 @@ anonymous ones on that address. A whole café or mobile carrier behind one
 address no longer shares one budget for signed-in traffic, and an account
 cannot reset its budget by switching networks.
 
+Every API route, including ones added later, goes through that guard (it is
+global) and through nginx's `api` zone. Routes that reach the outside world —
+mail, push, Telegram, the geocoder — also get an explicit per-route
+`@Throttle`: address lookup `/admin/geocode` 30/min, campaign test send
+10/min and campaign send 5/min (per account), promo preview 20/min (per
+address). New routes of that kind (`POST /admin/support`, campaign
+moderation) should get one too when they land.
+
 **Limitation until Cloudflare Authenticated Origin Pulls are on** (see the
 TODO list): somebody who finds the origin's IP and talks to it directly,
 bypassing Cloudflare, can still put any address in `CF-Connecting-IP`. Nginx

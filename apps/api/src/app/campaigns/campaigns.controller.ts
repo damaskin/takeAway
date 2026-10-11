@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Campaign, CampaignAudience, CampaignChannel } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -35,6 +36,13 @@ import {
   CreateCampaignDto,
   TestCampaignDto,
 } from './dto/campaigns.dto';
+
+// Per account. Each call reaches real phones, inboxes and Telegram chats (and,
+// for a send, every customer of the brand), so a stolen or scripted session
+// must not be able to fire them in a loop. Dev gets 10x.
+const DEV_MULTIPLIER = process.env['NODE_ENV'] !== 'production' ? 10 : 1;
+const TESTS_PER_MINUTE = 10 * DEV_MULTIPLIER;
+const SENDS_PER_MINUTE = 5 * DEV_MULTIPLIER;
 
 @ApiTags('campaigns')
 @ApiBearerAuth()
@@ -88,6 +96,7 @@ export class CampaignsController {
   /** Sends the copy to the signed-in admin only — their app, browser or Telegram. */
   @Post('test')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @Throttle({ default: { limit: TESTS_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: CampaignTestResultDto })
   test(@CurrentUser() user: AuthenticatedUser, @Body() dto: TestCampaignDto): Promise<CampaignTestResultDto> {
     return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel });
@@ -125,6 +134,7 @@ export class CampaignsController {
    */
   @Post(':id/send')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
+  @Throttle({ default: { limit: SENDS_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: CampaignDto })
   async send(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<CampaignDto> {
     const brandId = await this.resolveBrandIdForCampaign(user, id);
