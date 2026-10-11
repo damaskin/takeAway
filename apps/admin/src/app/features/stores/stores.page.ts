@@ -8,6 +8,7 @@ import {
   AdminCatalogApi,
   type ReadinessCheck,
   type StoreAdminDto,
+  type StoreKind,
   type StoreStatus,
 } from '../../core/catalog/admin-catalog.service';
 import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
@@ -128,6 +129,16 @@ interface CardError {
                 style="height: 24px; padding: 0 8px; background: var(--color-cream); border: 1px solid var(--color-border-light); border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-secondary)"
                 >{{ s.currency }}</span
               >
+              @for (k of kindsOf(s); track k) {
+                <span
+                  [attr.data-testid]="'store-kind-' + s.id + '-' + k"
+                  class="flex items-center"
+                  [style.background]="k === 'FOOD' ? '#E9A84B26' : 'var(--color-caramel-light)'"
+                  [style.color]="k === 'FOOD' ? '#8A6720' : 'var(--color-caramel)'"
+                  style="height: 24px; padding: 0 8px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 600"
+                  >{{ 'admin.stores.kinds.chip.' + k | translate }}</span
+                >
+              }
               @if (s.timezone) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
                   s.timezone
@@ -375,6 +386,11 @@ export class StoresPage implements OnInit {
   fixReadiness(id: string, check: ReadinessCheck): void {
     const tab: EditorTab = check === 'hours' ? 'hours' : 'details';
     this.router.navigate(['/stores', id], { queryParams: { tab } });
+  }
+
+  /** What the store sells, for the chips; missing or empty reads as coffee. */
+  kindsOf(s: StoreAdminDto): readonly StoreKind[] {
+    return s.kinds?.length ? s.kinds : ['COFFEE'];
   }
 
   /** An open store still on the UTC placeholder: its hours are read hours off. */

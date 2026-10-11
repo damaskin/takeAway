@@ -13,6 +13,11 @@ import { swapped } from './menu-order';
  * category that still has products cannot simply go (the API answers 409),
  * so the rail offers to move them into another category first — in one
  * request — instead of leaving the owner staring at an error.
+ *
+ * The rail sits next to the products table, so it is narrow: only the
+ * selected category carries its reorder / edit / delete buttons (on a line
+ * of their own when they do not fit), and every name has the full width
+ * to wrap in instead of being cut down to «Д…».
  */
 @Component({
   selector: 'app-menu-categories',
@@ -50,7 +55,7 @@ import { swapped } from './menu-order';
 
       @for (cat of categories(); track cat.id; let i = $index, first = $first, last = $last) {
         <div
-          class="flex items-center"
+          class="flex items-center flex-wrap"
           [style.background]="selectedId() === cat.id ? 'var(--color-caramel-light)' : 'transparent'"
           style="border-radius: 10px; gap: 2px; min-width: 0"
         >
@@ -58,18 +63,23 @@ import { swapped } from './menu-order';
             type="button"
             (click)="selected.emit(cat.id)"
             class="flex items-center"
+            [attr.aria-current]="selectedId() === cat.id ? 'true' : null"
             [style.color]="selectedId() === cat.id ? 'var(--color-caramel)' : 'var(--color-text-primary)'"
-            style="flex: 1; min-width: 0; min-height: 40px; padding: 4px 8px 4px 12px; gap: 8px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left; background: transparent"
+            style="flex: 1 1 150px; min-width: 0; min-height: 40px; padding: 4px 8px 4px 12px; gap: 8px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; text-align: left; background: transparent"
           >
-            <span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{
-              cat.name
-            }}</span>
-            @if (!cat.visible) {
-              <span
-                style="font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px"
-                >{{ 'admin.menu.hidden' | translate }}</span
-              >
-            }
+            <span class="flex flex-col" style="flex: 1; min-width: 0; gap: 1px">
+              <span style="overflow-wrap: break-word; line-height: 1.25">{{ cat.name }}</span>
+              @if (!cat.visible) {
+                <span [style]="badgeStyle">{{ 'admin.menu.hidden' | translate }}</span>
+              } @else if (cat.addOnsOnly) {
+                <span
+                  [style]="badgeStyle"
+                  [title]="'admin.menu.category.addOnsOnlyHint' | translate"
+                  data-testid="category-add-ons-only"
+                  >{{ 'admin.menu.category.addOnsOnlyBadge' | translate }}</span
+                >
+              }
+            </span>
             @if (cat._count) {
               <span
                 [title]="'admin.menu.category.productCount' | translate: { count: cat._count.products }"
@@ -78,49 +88,53 @@ import { swapped } from './menu-order';
               >
             }
           </button>
-          <button
-            type="button"
-            (click)="move(i, -1)"
-            [disabled]="first || busy()"
-            [title]="'admin.menu.moveUp' | translate"
-            [attr.aria-label]="'admin.menu.moveUp' | translate"
-            class="disabled:opacity-30"
-            [style]="iconStyle"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            (click)="move(i, 1)"
-            [disabled]="last || busy()"
-            [title]="'admin.menu.moveDown' | translate"
-            [attr.aria-label]="'admin.menu.moveDown' | translate"
-            class="disabled:opacity-30"
-            [style]="iconStyle"
-          >
-            ↓
-          </button>
-          <a
-            class="flex items-center justify-center"
-            [routerLink]="['/menu/categories', cat.id]"
-            [title]="'common.change' | translate"
-            [attr.aria-label]="'common.change' | translate"
-            [style]="iconStyle"
-            style="text-decoration: none"
-          >
-            ✎
-          </a>
-          <button
-            type="button"
-            (click)="startDelete(cat)"
-            [disabled]="busy()"
-            [title]="'admin.menu.deleteCategory' | translate"
-            [attr.aria-label]="'admin.menu.deleteCategory' | translate"
-            class="disabled:opacity-30"
-            [style]="deleteIconStyle"
-          >
-            ×
-          </button>
+          @if (selectedId() === cat.id) {
+            <span class="flex items-center" style="margin-left: auto; gap: 2px" data-testid="category-actions">
+              <button
+                type="button"
+                (click)="move(i, -1)"
+                [disabled]="first || busy()"
+                [title]="'admin.menu.moveUp' | translate"
+                [attr.aria-label]="'admin.menu.moveUp' | translate"
+                class="disabled:opacity-30"
+                [style]="iconStyle"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                (click)="move(i, 1)"
+                [disabled]="last || busy()"
+                [title]="'admin.menu.moveDown' | translate"
+                [attr.aria-label]="'admin.menu.moveDown' | translate"
+                class="disabled:opacity-30"
+                [style]="iconStyle"
+              >
+                ↓
+              </button>
+              <a
+                class="flex items-center justify-center"
+                [routerLink]="['/menu/categories', cat.id]"
+                [title]="'common.change' | translate"
+                [attr.aria-label]="'common.change' | translate"
+                [style]="iconStyle"
+                style="text-decoration: none"
+              >
+                ✎
+              </a>
+              <button
+                type="button"
+                (click)="startDelete(cat)"
+                [disabled]="busy()"
+                [title]="'admin.menu.deleteCategory' | translate"
+                [attr.aria-label]="'admin.menu.deleteCategory' | translate"
+                class="disabled:opacity-30"
+                [style]="deleteIconStyle"
+              >
+                ×
+              </button>
+            </span>
+          }
         </div>
 
         @if (deleting()?.id === cat.id) {
@@ -194,6 +208,8 @@ export class MenuCategoriesComponent {
   readonly iconStyle =
     'width: 26px; height: 28px; flex: 0 0 auto; font-size: 14px; color: var(--color-text-tertiary); background: transparent';
   readonly deleteIconStyle = `${this.iconStyle}; color: var(--color-berry); margin-right: 4px`;
+  readonly badgeStyle =
+    'font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px';
 
   move(index: number, delta: -1 | 1): void {
     const list = swapped(this.categories(), index, index + delta);

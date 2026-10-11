@@ -21,6 +21,7 @@ import { DeliveryModule } from './delivery/delivery.module';
 import { DevicesModule } from './devices/devices.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { GeocodingModule } from './geocoding/geocoding.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
 import { ReferralsModule } from './referrals/referrals.module';
@@ -36,6 +37,7 @@ import { PromoModule } from './promo/promo.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { SettlementsModule } from './settlements/settlements.module';
 import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 
@@ -57,6 +59,7 @@ import { UsersModule } from './users/users.module';
     AdminCatalogModule,
     AdminRidersModule,
     AdminStaffModule,
+    GeocodingModule,
     KitchenModule,
     CartModule,
     PromoModule,
@@ -73,6 +76,7 @@ import { UsersModule } from './users/users.module';
     ReferralsModule,
     CampaignsModule,
     AnalyticsModule,
+    SettlementsModule,
     CustomersModule,
     FeedbackModule,
     HealthModule,

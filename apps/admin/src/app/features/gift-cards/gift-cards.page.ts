@@ -18,18 +18,18 @@ import type { GiftCardRow } from './gift-card.types';
   standalone: true,
   imports: [RouterLink, TranslatePipe],
   template: `
-    <section style="padding: 24px; max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
+    <section
+      style="padding: 16px clamp(16px, 4vw, 24px) 24px; max-width: 1080px; display: flex; flex-direction: column; gap: 24px"
+    >
       <header class="flex items-start justify-between flex-wrap" style="gap: 12px">
-        <div style="display: flex; flex-direction: column; gap: 4px">
-          <h1 style="font-family: var(--font-display); font-size: 24px; color: var(--color-espresso); margin: 0">
-            {{ 'admin.giftCards.title' | translate }}
-          </h1>
-          <p style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0">
-            {{ 'admin.giftCards.subtitle' | translate }}
-          </p>
-        </div>
+        <!-- The «Акции» section above carries the page title; this is its tab. -->
+        <p
+          style="flex: 1 1 280px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
+        >
+          {{ 'admin.giftCards.subtitle' | translate }}
+        </p>
         <a
-          routerLink="/gift-cards/new"
+          routerLink="/promotions/gift-cards/new"
           class="flex items-center"
           style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
         >

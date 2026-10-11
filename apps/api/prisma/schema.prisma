@@ -81,6 +81,13 @@ enum PickupPointType {
   SHELF
 }
 
+/// What a store sells, for the customer map's markers and filters. A café
+/// that also cooks has both.
+enum StoreKind {
+  COFFEE
+  FOOD
+}
+
 enum VariationType {
   SIZE
   TEMPERATURE
@@ -511,12 +518,14 @@ model Brand {
   /// New brands start on BASIC; only a SUPER_ADMIN changes it.
   plan             BrandPlan             @default(BASIC)
   /// Platform commission in basis points (1000 = 10 %). Follows the plan's
-  /// default unless a SUPER_ADMIN set another value for this brand.
+  /// default unless a SUPER_ADMIN set another value for this brand. The rate
+  /// valid now, mirrored from `BrandCommissionRate` — settlements read the
+  /// history, not this column.
   commissionBps    Int                   @default(1000)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
-  owner           User?            @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  owner           User?                 @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   stores          Store[]
   categories      Category[]
   products        Product[]
@@ -525,10 +534,90 @@ model Brand {
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
   campaigns       Campaign[]
+  commissionRates BrandCommissionRate[]
+  payouts         BrandPayout[]
   kitchenDevices  KitchenDevice[]
 
   @@index([moderationStatus])
   @@index([ownerId])
+}
+
+/// Where a brand's commission rate came from.
+enum CommissionRateSource {
+  /// The plan's default rate (BASIC 10 %, PRO 15 %) at the time it was set.
+  PLAN
+  /// Individual terms agreed with this brand.
+  INDIVIDUAL
+}
+
+/// The brand's platform commission over time. A row applies from its
+/// `effectiveFrom` until the next row's, so the validity ranges are contiguous
+/// by construction — no gaps or overlaps to keep consistent. An order is
+/// charged the rate valid at the moment it was settled (accepted by the store,
+/// or paid when it never was). `Brand.commissionBps` mirrors the row valid
+/// now. See docs/settlements.md.
+model BrandCommissionRate {
+  id            String               @id @default(cuid())
+  brandId       String
+  /// Basis points (1000 = 10 %).
+  bps           Int
+  source        CommissionRateSource
+  /// UTC instant the rate starts to apply, inclusive.
+  effectiveFrom DateTime
+  note          String?
+  /// The platform admin who set it. A plain id: the record outlives the account.
+  createdById   String?
+  createdAt     DateTime             @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, effectiveFrom])
+}
+
+/// A payout fixed for a brand or already sent to it.
+enum PayoutStatus {
+  /// Fixed by a platform admin; the transfer has not gone out yet.
+  PENDING
+  /// The money has been transferred.
+  PAID
+}
+
+/// Money the platform owes a brand for one settlement period: what it
+/// collected by card for the brand's orders, net of refunds, minus the
+/// commission. Periods follow each other without gaps or overlaps, and the
+/// amount is the whole balance owed at the end of the period, so a refund
+/// that lands after a payout is carried into the next one. See
+/// docs/settlements.md.
+model BrandPayout {
+  id              String       @id @default(cuid())
+  brandId         String
+  currency        Currency
+  /// First and last local day the payout settles, both included, in `timeZone`.
+  periodFrom      DateTime     @db.Date
+  periodTo        DateTime     @db.Date
+  timeZone        String
+  /// The instant `periodTo` ends at (local midnight after it). Balances are
+  /// matched on it: the payout settles everything settled before it.
+  periodEnd       DateTime
+  /// What the platform transfers.
+  amountCents     Int
+  /// The period's own figures when it was fixed, kept for the record: card
+  /// money net of refunds, and the commission on it.
+  cardNetCents    Int
+  commissionCents Int
+  status          PayoutStatus @default(PENDING)
+  paidAt          DateTime?
+  /// Bank transfer number or any other handle on the payment.
+  reference       String?
+  comment         String?
+  createdById     String?
+  paidById        String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Restrict)
+
+  @@index([brandId, currency, periodEnd])
 }
 
 /// Brand-driven outbound campaign. The admin composes copy in the dashboard;
@@ -543,6 +632,11 @@ model Campaign {
   body           String
   channel        CampaignChannel
   audience       CampaignAudience @default(ALL)
+  /// INACTIVE only: days without an order (3, 7 or 14) and, optionally, the
+  /// one store whose orders count. A plain id, not a relation: a store that
+  /// goes away leaves the audience empty instead of widening it to the brand.
+  inactiveDays   Int?
+  segmentStoreId String?
   status         CampaignStatus   @default(DRAFT)
   /// Target / sent / failed counters stamped during send.
   targetCount    Int              @default(0)
@@ -585,6 +679,10 @@ enum CampaignAudience {
   HAS_ORDERED
   /// Customers whose last paid order is older than 30 days.
   INACTIVE_30D
+  /// The inactive segment of the admin: at least 3 counted orders and none
+  /// for `Campaign.inactiveDays` days, at `segmentStoreId` when set. The
+  /// same customers as «Клиенты → Неактивные».
+  INACTIVE
 }
 
 enum CampaignStatus {
@@ -640,6 +738,9 @@ model Store {
   status                StoreStatus        @default(OPEN)
   fulfillmentTypes      StoreFulfillment[]
   pickupPointType       PickupPointType    @default(COUNTER)
+  /// Never empty: the admin requires at least one. Readers still treat an
+  /// empty list as coffee, which is what every store was before kinds.
+  kinds                 StoreKind[]        @default([COFFEE])
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
   /// Fixed overhead on every order here, in seconds: ringing it up, plating,
@@ -792,6 +893,12 @@ model Category {
   availableFrom    Int?
   availableTo      Int?
   visible          Boolean      @default(true)
+  /// Not sold on its own: the category and its products are left out of
+  /// every customer menu and the cart refuses them, while the admin, the
+  /// stop-list and a POS sync keep them. For a POS import's «Дополнительные
+  /// ингредиенты» — rows that exist to be added to a drink, not ordered.
+  /// A POS sync never writes it.
+  addOnsOnly       Boolean      @default(false)
   /// External-POS link. See {@link Store.externalProvider}.
   externalProvider PosProvider?
   externalId       String?
@@ -896,15 +1003,22 @@ model Modifier {
   @@index([ingredientId])
 }
 
-/// A brand's library of add-ins — oat milk, vanilla syrup, an extra shot —
-/// kept apart from the products so stock is switched in one place. Options
-/// of any number of products point here; while `isAvailable` is false those
-/// options are hidden from every client and refused by the cart, and they
-/// come back as soon as it is switched on again.
+/// A brand's library of add-ons («Добавки») — oat milk, vanilla syrup, an
+/// extra shot. The one place an add-on is defined: its name, its usual
+/// price and whether it is in stock. A product offers an add-on through an
+/// option (`Modifier`, or a milk `Variation`) that points here; deleting the
+/// option takes the add-on off that product only, deleting the entry takes
+/// it off every product. While `isAvailable` is false the options are
+/// hidden from every client and refused by the cart, and they come back as
+/// soon as it is switched on again.
 model Ingredient {
   id          String   @id @default(cuid())
   brandId     String
   name        String
+  /// The usual surcharge, in minor units. An option put on a product from
+  /// the library starts at it, and changing it moves every option that
+  /// still charges the old price (a product given its own price keeps it).
+  priceCents  Int      @default(0)
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1369,6 +1483,11 @@ model Promo {
   endsAt           DateTime
   status           PromoStatus @default(DRAFT)
   currency         Currency    @default(USD)
+  /// Only for inactive customers: set, the code works for someone with at
+  /// least 3 counted orders and none for this many days (3, 7 or 14) — at
+  /// `segmentStoreId` when that is set. Null: anyone.
+  inactiveDays     Int?
+  segmentStoreId   String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 

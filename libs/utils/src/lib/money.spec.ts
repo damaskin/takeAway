@@ -1,4 +1,4 @@
-import { formatMoney, isRussian } from './money';
+import { defaultCurrency, formatMoney, isRussian } from './money';
 
 // Intl separates groups and the unit with no-break spaces; spelled out here
 // so a failing assertion shows where the difference is.
@@ -74,5 +74,22 @@ describe('isRussian', () => {
     expect(isRussian('RU-ru')).toBe(true);
     expect(isRussian('en')).toBe(false);
     expect(isRussian(null)).toBe(false);
+  });
+});
+
+describe('defaultCurrency', () => {
+  it("opens on the brand's currency when one of its stores uses it", () => {
+    expect(defaultCurrency(['MDL', 'MDL', 'RUP'], 'RUP')).toBe('RUP');
+    expect(defaultCurrency(['RUP'], 'RUP')).toBe('RUP');
+  });
+
+  it('else on the currency most stores use, a tie going alphabetically', () => {
+    expect(defaultCurrency(['RUP', 'MDL', 'RUP'], 'EUR')).toBe('RUP');
+    expect(defaultCurrency(['RUP', 'MDL'], null)).toBe('MDL');
+  });
+
+  it("falls back to the brand's currency without stores, and to nothing without either", () => {
+    expect(defaultCurrency([], 'RUP')).toBe('RUP');
+    expect(defaultCurrency([null, undefined])).toBeNull();
   });
 });

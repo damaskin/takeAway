@@ -4,18 +4,14 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import { isStoreInactive, sortStoresByAvailability } from '@takeaway/utils';
 import { TranslatePipe } from '@ngx-translate/core';
+import { LocaleFormatService } from '@takeaway/i18n';
 import { BrandLogoComponent, StoreLogoComponent } from '@takeaway/ui-kit';
+import { catchError, forkJoin, map, of } from 'rxjs';
 
-import { categoryIcon } from '../../core/catalog/category-icon';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
+import { mixMenuPicks, storesToSample, type MenuPick } from '../../core/catalog/menu-picks';
 import { storeAddress } from '../../core/catalog/store-place';
-
-interface HomeCategory {
-  id: string;
-  name: string;
-  icon: string;
-}
 
 interface HowStep {
   icon: string;
@@ -97,7 +93,12 @@ interface FooterLink {
             [attr.data-inactive]="closed(store) || null"
             style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); padding: 20px; gap: 16px"
           >
-            <lib-store-logo [url]="store.logoUrl" [name]="store.brandName ?? store.name" [size]="52" />
+            <lib-store-logo
+              [photo]="store.heroImageUrl"
+              [url]="store.logoUrl"
+              [name]="store.brandName ?? store.name"
+              [size]="52"
+            />
             <div class="flex flex-col flex-1" style="gap: 4px">
               <span
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
@@ -126,7 +127,7 @@ interface FooterLink {
       </div>
     </section>
 
-    <!-- Menu highlights — pencil HjOL8 -->
+    <!-- Menu highlights — pencil HjOL8. A mix from several places, each card naming its place. -->
     <section
       style="background: var(--color-cream); padding: clamp(40px, 8vw, 64px) clamp(16px, 5vw, 80px); display: flex; flex-direction: column; gap: 32px"
     >
@@ -149,29 +150,49 @@ interface FooterLink {
         >
       </div>
 
-      @if (menuStore(); as slug) {
-        <div
-          class="grid"
-          style="grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 24px 16px; justify-items: center"
-        >
-          @for (cat of categories(); track cat.id; let i = $index) {
+      @if (picks().length > 0) {
+        <!-- Eight cards: two full rows on a desktop, four on a phone. -->
+        <div class="grid grid-cols-2 md:grid-cols-4" style="gap: clamp(12px, 2vw, 20px)">
+          @for (pick of picks(); track pick.store.id + pick.product.id) {
             <a
-              [routerLink]="['/stores', slug]"
-              [fragment]="'cat-' + cat.id"
-              class="flex flex-col items-center text-center"
-              style="gap: 12px"
+              [routerLink]="['/products', pick.product.slug]"
+              [queryParams]="{ store: pick.store.slug }"
+              class="flex flex-col"
+              data-testid="menu-pick"
+              style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-card); overflow: hidden"
             >
-              <div
-                class="flex items-center justify-center"
-                [style.background]="tileColors[i % tileColors.length]"
-                style="width: 80px; height: 80px; border-radius: 999px; font-size: 32px"
-              >
-                {{ cat.icon }}
+              <img
+                [src]="pick.product.imageUrls[0]"
+                [alt]="pick.product.name"
+                loading="lazy"
+                decoding="async"
+                style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--color-latte)"
+              />
+              <div class="flex flex-1 flex-col" style="gap: 6px; padding: 12px 14px 14px">
+                <span
+                  class="line-clamp-2"
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--color-text-primary)"
+                  >{{ pick.product.name }}</span
+                >
+                <span
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--color-caramel)"
+                  >{{ price(pick) }}</span
+                >
+                <span class="flex items-center" style="gap: 8px; margin-top: auto; padding-top: 4px; min-width: 0">
+                  <lib-store-logo
+                    [photo]="pick.store.heroImageUrl"
+                    [url]="pick.store.logoUrl"
+                    [name]="pick.store.brandName ?? pick.store.name"
+                    [size]="22"
+                  />
+                  <span
+                    class="truncate"
+                    data-testid="menu-pick-store"
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                    >{{ pick.store.name }}</span
+                  >
+                </span>
               </div>
-              <span
-                style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--color-text-primary)"
-                >{{ cat.name }}</span
-              >
             </a>
           }
         </div>
@@ -348,15 +369,16 @@ export class HomePage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly scroller = inject(ViewportScroller);
   private readonly injector = inject(Injector);
+  private readonly fmt = inject(LocaleFormatService);
   readonly stores = signal<StoreListItem[]>([]);
 
   /**
-   * The categories of the menu the header's "Меню" opens — the first store's
-   * — so a tile leads to a section that exists. `menuStore` is its slug.
+   * «Из меню»: items from the menus of several places taking orders, each
+   * card naming its place and opening that place's product — the site is a
+   * marketplace, not one café. Built from the public store menus (one
+   * request per business, cached for the menu page), so no new endpoint.
    */
-  readonly categories = signal<HomeCategory[]>([]);
-  readonly menuStore = signal<string | null>(null);
-  readonly tileColors = ['var(--color-caramel-light)', '#9DB87E33', '#8E5FB033', '#F5C95C33', '#C86A4B33', '#E8A0B433'];
+  readonly picks = signal<MenuPick[]>([]);
 
   readonly howSteps: HowStep[] = [
     { icon: '📱', title: 'web.home.howItWorks.step1Title', desc: 'web.home.howItWorks.step1Body' },
@@ -402,9 +424,8 @@ export class HomePage implements OnInit {
   ngOnInit(): void {
     this.catalog.listStores().subscribe({
       next: (list) => {
-        const sorted = this.showStores(list);
-        const first = sorted[0];
-        if (first) this.loadCategories(first.slug);
+        this.showStores(list);
+        this.loadPicks(list);
       },
     });
   }
@@ -414,10 +435,8 @@ export class HomePage implements OnInit {
   }
 
   /** Open stores first, closed ones after them; the first six. */
-  private showStores(list: StoreListItem[]): StoreListItem[] {
-    const sorted = sortStoresByAvailability(list);
-    this.stores.set(sorted.slice(0, 6));
-    return sorted;
+  private showStores(list: StoreListItem[]): void {
+    this.stores.set(sortStoresByAvailability(list).slice(0, 6));
   }
 
   address(store: StoreListItem): string {
@@ -434,22 +453,27 @@ export class HomePage implements OnInit {
     return 'var(--color-mint)';
   }
 
-  private loadCategories(slug: string): void {
-    this.catalog.getMenu(slug).subscribe({
-      next: (menu) => {
-        this.menuStore.set(slug);
-        // The tiles push the sections below them down: a link to one of those
-        // ("О нас", "Лояльность") has to land on it again once they are in.
-        const fragment = this.route.snapshot.fragment;
-        if (fragment) afterNextRender(() => this.scroller.scrollToAnchor(fragment), { injector: this.injector });
-        this.categories.set(
-          menu.categories
-            .filter((c) => c.products.length > 0)
-            .slice(0, 12)
-            .map((c) => ({ id: c.id, name: c.name, icon: categoryIcon(c.name) })),
-        );
-      },
-      error: () => this.categories.set([]),
+  price(pick: MenuPick): string {
+    return this.fmt.money(pick.product.basePriceCents, pick.store.currency);
+  }
+
+  /** A menu that fails to load just leaves its place out of the mix. */
+  private loadPicks(list: StoreListItem[]): void {
+    const sampled = storesToSample(list);
+    if (sampled.length === 0) return;
+    forkJoin(
+      sampled.map((store) =>
+        this.catalog.getMenu(store.slug).pipe(
+          map((menu) => ({ store, menu })),
+          catchError(() => of(null)),
+        ),
+      ),
+    ).subscribe((entries) => {
+      this.picks.set(mixMenuPicks(entries.filter((e) => e !== null)));
+      // The cards push the sections below them down: a link to one of those
+      // ("О нас", "Лояльность") has to land on it again once they are in.
+      const fragment = this.route.snapshot.fragment;
+      if (fragment) afterNextRender(() => this.scroller.scrollToAnchor(fragment), { injector: this.injector });
     });
   }
 }

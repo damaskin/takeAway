@@ -17,7 +17,13 @@ function user(role: Role, id = 'u1'): AuthenticatedUser {
 interface Fixture {
   brands: string[] | null;
   stores: '*' | string[];
-  storeRows?: Array<{ id: string; brandId: string; timezone: string }>;
+  storeRows?: Array<{
+    id: string;
+    brandId: string;
+    timezone: string;
+    currency?: string;
+    brand?: { currency: string };
+  }>;
   plans?: Record<string, 'BASIC' | 'PRO'>;
 }
 
@@ -113,6 +119,84 @@ describe('AnalyticsScopeResolver', () => {
     expect(ctx.range.start.toISOString()).toBe('2026-09-30T21:00:00.000Z');
     expect(ctx.features.has('churn')).toBe(true);
     expect(ctx.features.has('storeComparison')).toBe(false);
+  });
+
+  it("keeps the brand's days when a store in another zone is picked", async () => {
+    const storeRows = [
+      { id: 'center', brandId: 'own', timezone: 'Europe/Chisinau' },
+      { id: 'test', brandId: 'own', timezone: 'Europe/Moscow' },
+      { id: 'test2', brandId: 'own', timezone: 'Europe/Chisinau' },
+    ];
+    const r = resolver({ brands: ['own'], stores: '*', storeRows });
+    // December: Chișinău is UTC+2, Moscow UTC+3.
+    const ctx = await r.context(user(Role.BRAND_ADMIN), { storeId: 'test', from: '2026-12-01', to: '2026-12-01' }, 7);
+    expect(ctx.range.timeZone).toBe('Europe/Chisinau');
+    expect(ctx.range.start.toISOString()).toBe('2026-11-30T22:00:00.000Z');
+    expect(ctx.scope).toEqual({ brandIds: ['own'], storeIds: ['test'] });
+    expect(ctx.parent).toEqual({ brandIds: ['own'], storeIds: null });
+    expect(ctx.storeId).toBe('test');
+  });
+
+  it("reads a store still on the UTC placeholder in the brand's zone, not in UTC", async () => {
+    const storeRows = [
+      { id: 'center', brandId: 'own', timezone: 'Europe/Chisinau' },
+      { id: 'mall', brandId: 'own', timezone: 'UTC' },
+    ];
+    const manager = resolver({ brands: ['own'], stores: ['mall'], storeRows });
+    const ctx = await manager.context(user(Role.STORE_MANAGER), { from: '2026-10-01', to: '2026-10-01' }, 7);
+    expect(ctx.range.timeZone).toBe('Europe/Chisinau');
+    expect(ctx.scope).toEqual({ brandIds: ['own'], storeIds: ['mall'] });
+  });
+
+  describe('currency', () => {
+    const storeRows = [
+      { id: 'c1', brandId: 'own', timezone: 'Europe/Chisinau', currency: 'RUP', brand: { currency: 'RUP' } },
+      { id: 'c2', brandId: 'own', timezone: 'Europe/Chisinau', currency: 'RUP', brand: { currency: 'RUP' } },
+      { id: 'm1', brandId: 'own', timezone: 'Europe/Chisinau', currency: 'MDL', brand: { currency: 'RUP' } },
+    ];
+    const owner = () => resolver({ brands: ['own'], stores: '*', storeRows });
+
+    it("narrows a brand selling in two currencies to the brand's own by default", async () => {
+      const m = await owner().money(user(Role.BRAND_ADMIN), {});
+      expect(m).toEqual({
+        scope: { brandIds: ['own'], storeIds: ['c1', 'c2'] },
+        parent: { brandIds: ['own'], storeIds: ['c1', 'c2'] },
+        storeId: null,
+        currency: 'RUP',
+        currencies: ['MDL', 'RUP'],
+      });
+    });
+
+    it('switches to another currency on request, and ignores one no store uses', async () => {
+      await expect(owner().money(user(Role.BRAND_ADMIN), { currency: 'MDL' })).resolves.toMatchObject({
+        scope: { storeIds: ['m1'] },
+        currency: 'MDL',
+      });
+      await expect(owner().money(user(Role.BRAND_ADMIN), { currency: 'EUR' })).resolves.toMatchObject({
+        currency: 'RUP',
+      });
+    });
+
+    it("takes a picked store's own currency, whatever was asked", async () => {
+      const m = await owner().money(user(Role.BRAND_ADMIN), { storeId: 'm1', currency: 'RUP' });
+      expect(m).toMatchObject({
+        scope: { brandIds: ['own'], storeIds: ['m1'] },
+        parent: { brandIds: ['own'], storeIds: ['m1'] },
+        storeId: 'm1',
+        currency: 'MDL',
+      });
+    });
+
+    it('leaves a brand in one currency as it is', async () => {
+      const single = resolver({ brands: ['own'], stores: '*', storeRows: storeRows.slice(0, 2) });
+      await expect(single.money(user(Role.BRAND_ADMIN), {})).resolves.toEqual({
+        scope: { brandIds: ['own'], storeIds: null },
+        parent: { brandIds: ['own'], storeIds: null },
+        storeId: null,
+        currency: 'RUP',
+        currencies: ['RUP'],
+      });
+    });
   });
 
   it('counts the whole platform in UTC with every feature', async () => {

@@ -44,9 +44,14 @@ export interface Promo {
   perUserLimit: number;
   startsAt: string;
   endsAt: string;
+  /** The status in effect now: an active promo past its dates reads SCHEDULED or EXPIRED. */
   status: PromoStatus;
   currency: string;
   redemptionsCount: number;
+  /** Set: only for customers with 3+ orders and none for this many days (3, 7 or 14). */
+  inactiveDays: number | null;
+  /** With `inactiveDays`: only orders at this store count. */
+  segmentStoreId: string | null;
 }
 
 export interface ValidatePromoInput {
@@ -82,4 +87,9 @@ export interface CreatePromoInput {
   endsAt: string;
   status?: PromoStatus;
   currency?: string;
+  inactiveDays?: number | null;
+  segmentStoreId?: string | null;
 }
+
+/** Every field of a promo but its brand and status; status moves through its own endpoint. */
+export type UpdatePromoInput = Partial<Omit<CreatePromoInput, 'brandId' | 'status'>>;

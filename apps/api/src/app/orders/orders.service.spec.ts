@@ -73,6 +73,7 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     createdAt: new Date('2026-09-01T00:00:00Z'),
     updatedAt: new Date('2026-09-01T00:00:00Z'),
     stores: [{ storeId: 'store-1' }],
+    category: { visible: true, addOnsOnly: false },
     variations: [
       variation({ id: 'v-m', type: 'SIZE', name: 'M', sortOrder: 1, isDefault: true }),
       variation({ id: 'v-l', type: 'SIZE', name: 'L', priceDeltaCents: 140, sortOrder: 2 }),

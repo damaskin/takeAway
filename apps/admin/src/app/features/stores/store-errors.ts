@@ -14,6 +14,8 @@ const STORE_ERRORS: ApiErrorWording = {
     KDS_PIN_FORMAT: 'admin.stores.errors.pinFormat',
     KDS_PIN_TOO_SIMPLE: 'admin.stores.errors.pinTooSimple',
     STAFF_NOT_EDITABLE: 'admin.staff.errors.notEditable',
+    IMAGE_TOO_LARGE: 'admin.images.errors.tooLarge',
+    IMAGE_TYPE: 'admin.images.errors.type',
   },
   messages: {
     'timezone must be an IANA time zone such as Europe/Chisinau': 'admin.stores.errors.timezone',

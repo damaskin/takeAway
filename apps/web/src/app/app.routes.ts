@@ -41,9 +41,12 @@ export const appRoutes: Route[] = [
         path: 'stores/:slug',
         loadComponent: () => import('./features/menu/menu.page').then((m) => m.MenuPage),
       },
+      // «Меню» opens the choice of places, not one café's menu: the site is a
+      // marketplace. The same page as /stores, headed for choosing.
       {
         path: 'menu',
-        loadComponent: () => import('./features/menu/menu.page').then((m) => m.MenuPage),
+        data: { intent: 'menu' },
+        loadComponent: () => import('./features/stores/stores-list.page').then((m) => m.StoresListPage),
       },
       {
         path: 'products/:slug',

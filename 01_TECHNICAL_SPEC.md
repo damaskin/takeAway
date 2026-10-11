@@ -231,6 +231,7 @@ takeaway/
 | Firebase FCM      | Mobile push                | ✅ HTTP v1, `FIREBASE_*`; Android и iOS старых версий приложения |
 | Apple APNs        | iOS push                   | ✅ напрямую по HTTP/2, ключ `APNS_*` (или `APPLE_*`)             |
 | Mapbox            | Карты / геокодинг          | ❌ не подключено (используем нативные браузерные карты пока)     |
+| OSM Nominatim     | Геокодинг адреса точки     | ✅ через прокси API `/admin/geocode`, `GEOCODER_URL`, без ключа  |
 | Sentry            | Errors + performance       | ✅ API + все четыре SPA, release = build-версия                  |
 | Mixpanel          | Product analytics          | ❌ запланировано на M7                                           |
 
@@ -293,7 +294,9 @@ takeaway/
 - **Busy meter** (0–100%) — индикатор загрузки кухни, визуализируется цветом (зелёный / жёлтый / красный)
 - **Pickup point type** для UI: counter / locker / shelf — определяет инструкции на экране готовности
 - Привязка меню (не все точки имеют одинаковый ассортимент)
-- Фото интерьера / витрины / pickup-зоны
+- Фото интерьера / витрины / pickup-зоны. **Обложка (`heroImageUrl`) — картинка самой точки** в клиентских приложениях; бренд — это юрлицо, его логотип (`logoUrl`) показывается только у точки без своего фото: `heroImageUrl ?? logoUrl`. Правила загрузки — `libs/shared-types/src/lib/images.ts`, их же проверяют API и админка: фото точки — JPG/PNG/WebP до 5 МБ, рекомендуется 1200×800 (3:2); логотип бренда — JPG/PNG/WebP до 2 МБ, квадрат 512×512. AVIF для них не принимается (Flutter его не рисует); ошибки — 413 `IMAGE_TOO_LARGE` (`maxBytes`, `maxMb`) и 415 `IMAGE_TYPE`
+- **Что продаёт точка** (`kinds`: `COFFEE`, `FOOD`, можно оба; не пусто) — от этого зависит маркер на карте и фильтр `GET /stores?kind=`. Пустой или отсутствующий список читается как кофе
+- **Адрес → карта** в форме точки: адрес, город и страна геокодируются через `GET /admin/geocode` (OSM Nominatim за прокси API) с паузой после ввода и при уходе из поля, метка ставится сама и остаётся перетаскиваемой; поставленную вручную метку ввод адреса больше не двигает — только «Найти по адресу». Метка, поставленная до адреса, подставляет адрес (`GET /admin/geocode/reverse`)
 
 ### 3.4. Pre-order и чекаут (core flow)
 
@@ -374,7 +377,8 @@ takeaway/
 
 - **Баллы**: `LoyaltyAccount.pointsBalance` + append-only `PointsLedger` (типы: `EARN` / `SPEND` / `EXPIRE` / `ADJUST`)
 - **Уровни** (фактический enum): `SILVER` / `GOLD` / `PLATINUM` (Bronze в реализации нет — упрощено)
-- **Промокоды**: `Promo` с типами `PERCENT` / `FIXED` / `BOGO` / `POINTS_MULTIPLIER`, лимиты на total/per-user
+- **Промокоды**: `Promo` с типами `PERCENT` / `FIXED` / `BOGO` / `POINTS_MULTIPLIER`, лимиты на total/per-user. Статусы — черновик → активен → пауза → завершён (`PROMO_TRANSITIONS` в `libs/shared-types`): запущенный промокод хранится как `SCHEDULED` до `startsAt` и `RUNNING` после, на чекауте работают оба внутри дат; API отдаёт статус «по факту» (активный после `endsAt` — `EXPIRED`). `Promo.inactiveDays` (3/7/14) + `segmentStoreId` — код только для неактивных клиентов (сегмент ниже), остальным чекаут отвечает `PROMO_NOT_ELIGIBLE`; гостевой `/promo/preview` этого не проверяет.
+- **Уровни лояльности в кабинете бизнеса**: только статичные карточки Silver/Gold/Platinum/Signature на вкладке «Промокоды» (число участников «—», бонусы — текст без логики). Уровни платформенные (`LoyaltyAccount` на пользователя, не на бренд) и влияют только на прогресс в профиле клиента.
 - **Рефералка**: реализовано — каждый юзер получает уникальный код, бонус обеим сторонам начисляется на первом PAID-заказе реферала
 - **Подписки (Coffeepass)**: НЕ реализовано — кандидат на v1.x
 - **Геймификация**: НЕ реализовано — далёкий backlog
@@ -396,7 +400,7 @@ takeaway/
 - **Telegram bot**: пуши rider при назначении, brand staff при новом PAID-заказе; customer — статусы заказов и рассылки, когда app/web push недоступен.
 - **Обратная связь → платформа** (`FeedbackNotifier`): о каждом новом `Feedback` — сообщение в ops-чат (`OPS_ALERT_TELEGRAM_CHAT_ID`); если чата нет или Telegram его не принял — каждому SUPER_ADMIN с привязанным Telegram от бота; плюс email всем SUPER_ADMIN, только если настроен SMTP. Язык — `PLATFORM_LOCALE` (ru по умолчанию), ссылка — `ADMIN_APP_URL/feedback`. Best-effort: сбой доставки только логируется.
 - **Per-user prefs**: `notifyOrderUpdates` + `notifyPromotions` через `PATCH /me/notifications`. Operational push (rider/brand staff) prefs не учитывает.
-- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D. Учитывается `notifyPromotions`. Список рассылок (`GET /admin/campaigns`) отдаёт по каждой `via` — сколько людей дошло через каждый транспорт (`apns`, `fcm`, `webpush`, `telegram`, `email`) — и `errors` — до трёх самых частых ошибок доставки с числом получателей (в том числе app push, который не дошёл перед Telegram-фолбэком).
+- **Marketing campaigns**: brand admin рассылает push/Telegram/email через `Campaign` (см. 3.9), audience: ALL / HAS_ORDERED / INACTIVE_30D / INACTIVE (сегмент неактивных с днями и точкой). Учитывается `notifyPromotions`. Список рассылок (`GET /admin/campaigns`) отдаёт по каждой `via` — сколько людей дошло через каждый транспорт (`apns`, `fcm`, `webpush`, `telegram`, `email`) — и `errors` — до трёх самых частых ошибок доставки с числом получателей (в том числе app push, который не дошёл перед Telegram-фолбэком).
 
 ### 3.9. Admin panel
 
@@ -407,15 +411,18 @@ takeaway/
 - **Staff roster**: страница «Сотрудники» — по людям, а не по точкам (`/admin/staff`): у сотрудника одна роль (`User.role`) и список точек, где он работает (pivot `UserStore`); точки отмечаются в карточке сотрудника, приглашение сразу на несколько точек. Досягаемость: SUPER_ADMIN — все точки (бренда из `brandId`), BRAND_ADMIN — точки своих брендов, STORE_MANAGER — только назначенные ему; точки вне досягаемости вызывающего не показываются и не меняются. STORE_MANAGER не назначает менеджеров и не меняет других менеджеров, свои роль и точки не меняет никто. Без последней точки сотрудник выбывает из команды; PIN кухни, привязанный к снятой точке, сбрасывается. Старые per-store `/admin/stores/:id/staff` остались для других клиентов; курьеры — `/admin/stores/:id/riders`. Invite — через временный пароль с force-rotate (правило 8–128 символов показано у поля, кнопка «Сгенерировать», под выбором роли — описание Менеджер / Кухня / Редактор меню, по умолчанию Кухня) и письмо-приглашение с одноразовой ссылкой задать свой пароль (72 ч); без SMTP форма показывает, что передать лично. На странице — «Планшеты кухни»: привязанные планшеты, одноразовая ссылка для нового, отвязка. «Забыл пароль» и ссылки в письмах ведут на `ADMIN_APP_URL`; без SMTP или (в проде) без `ADMIN_APP_URL` восстановление отвечает 503 `PASSWORD_RESET_UNAVAILABLE`, а не обещает письмо.
 - **Меню по точкам и стоп-лист**: в форме товара — «Продаётся в точках» (галочки, по умолчанию все; у бренда с одной точкой блок скрыт и точка назначается сама), в таблице меню — чипы точек и «—» в колонке наличия для точки, где товар не продаётся. Страница «Стоп-лист» (`/stop-list`, роли SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER / STAFF, ссылка в меню и в шапке «Кухни»): выбор из своих точек, блюда и напитки точки и добавки, которыми пользуются её товары, переключатель «В наличии / В стопе» (до отмены или до конца дня), поиск и фильтр «только в стопе». STAFF только переключает — создавать, менять и удалять товары и добавки он не может (API-роли).
 - **Orders**: `/admin/orders` живой фид. **Refund**: `POST /admin/orders/:id/refund` — full/partial Stripe refund, обновляет `Payment.refundedCents` + `PaymentStatus`, эмитит `REFUND_ISSUED` event с `actorId`. RBAC: SUPER_ADMIN — всё, BRAND_ADMIN — только свои бренды, STORE_MANAGER — только свои store-scope.
-- **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: `/promo`, `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список ушедших, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет.
-- **Promo / Gift cards**: CRUD + статусы.
+- **Тарифы (BrandPlan)**: `BASIC` (10 %) и `PRO` (15 %), `Brand.plan` + `Brand.commissionBps`. Что входит в тариф — `PLAN_FEATURES` в `libs/shared-types` (единый источник для админки и API). API: `@RequiresPlanFeature(feature)` → 403 `PLAN_FEATURE_REQUIRED` `{ feature, requiredPlan }`, бренд берётся из `brandId` запроса или из всех брендов пользователя, SUPER_ADMIN проходит всегда. Админка: `PlanAccess` по активному бренду, `planGated()` — на том же пути вместо раздела страница апселла, в меню значок PRO. PRO-разделы: промокоды (`/promotions/promo`), `/campaigns`, `/customers`, глубокая аналитика (top-products, cohort), сравнение точек, сотрудники, список неактивных, win-back. Подарочные карты, интеграции — на всех тарифах. Существующие на момент миграции бренды — PRO, новые — BASIC; тариф меняет SUPER_ADMIN (`PATCH /admin/brands/:id/plan`), оплаты нет. Смена тарифа или ставки пишется в историю ставок `BrandCommissionRate` (с этого момента), `Brand.commissionBps` — ставка, действующая сейчас.
+- **Расчёты с брендами** (`/settlements`; SUPER_ADMIN — «Расчёты с брендами», любой бренд; BRAND_ADMIN — «Расчёты», только свои, без правок): бренд, валюта (не суммируются), период в поясе точек бренда (прошлая/эта неделя, прошлый/этот месяц, свои даты). Заказ учитывается, если по нему захвачена оплата картой (даже возвращённая) или точка его приняла; день и ставка — по моменту принятия (если не принят — по первой захваченной оплате). Карточки: «Всего оплачено картами» (сумма захваченных `Payment.amountCents` без чаевых), «Комиссия takeAway» (ставка × (оплачено − возвраты), округление до копейки вверх от половины по каждому заказу), «К выплате бренду» (база − комиссия), «Уже выплачено», «Остаток» (на начало + к выплате − выплачено; возврат после выплаты уменьшает следующую). Отдельно — заказы на 0 (всё покрыли промокод/баллы/подарочная карта) и принятые без оплаты через платформу. Таблица по дням (продажи, промокоды, баллы, подарочные карты, доставка, оплачено, возвраты, база, комиссия, к выплате) и CSV. SUPER_ADMIN: «Зафиксировать выплату» (PENDING с дня после прошлой выплаты по конец выбранного завершённого периода, сумма — весь долг на конец периода), «Отметить выплаченной» с номером платёжки, удаление последней невыплаченной; индивидуальная ставка с даты (или возврат к ставке тарифа), история ставок с интервалами действия; ставка с будущей датой включается кроном `commission-rate-sync` (раз в час). Определения, пример и решения для владельца — `docs/settlements.md`.
+- **«Акции» (`/promotions`)**: один пункт меню (`NavKey` `promotions` = объединение ролей двух вкладок) с вкладками «Промокоды» (`/promotions/promo`, PRO, апселл внутри вкладки) и «Подарочные карты» (`/promotions/gift-cards`, все тарифы); у каждой вкладки свой `navKey` и guard, как раньше. Старые `/promo`, `/promo/new`, `/gift-cards`, `/gift-cards/new` редиректят на новые адреса.
+- **Промокоды**: в строке — статус и кнопки следующего шага (запустить / пауза / возобновить / завершить с подтверждением); черновик, а также запланированный или на паузе без единого использования — правятся целиком (`/promotions/promo/:id`, `PATCH /admin/promo/:id`, иначе 409 `PROMO_NOT_EDITABLE`); переходы вне схемы — 409 `PROMO_STATUS_NOT_ALLOWED`, занятый код — 409 `PROMO_CODE_TAKEN`, запуск после `endsAt` — 400 `PROMO_ENDED`. Форма задаёт лимиты на клиента и всего и «Кому доступен: всем / только неактивным (дни, точка)».
+- **Gift cards**: выпуск и отмена.
 - **Marketing campaigns**: composer + send (push/Telegram/email broadcast), тариф PRO (`@RequiresPlanFeature('campaigns')` на весь контроллер). Работают на бренде из переключателя (SUPER_ADMIN — любой бренд, `?brandId=`).
-  - **Аудитории**: `ALL` — все клиенты (`role = CUSTOMER`, не заблокированы), у которых есть связь с брендом: заказ в его точке в любом статусе, корзина в его точке или купленная подарочная карта бренда (бот и приложение у платформы общие, поэтому вход через них с брендом не связывает); `HAS_ORDERED` — хотя бы один оплаченный заказ; `INACTIVE_30D` — платили, но не за последние 30 дней.
+  - **Аудитории**: `ALL` — все клиенты (`role = CUSTOMER`, не заблокированы), у которых есть связь с брендом: заказ в его точке в любом статусе, корзина в его точке или купленная подарочная карта бренда (бот и приложение у платформы общие, поэтому вход через них с брендом не связывает); `HAS_ORDERED` — хотя бы один оплаченный заказ; `INACTIVE_30D` — платили, но не за последние 30 дней; `INACTIVE` — сегмент неактивных клиентов (`Campaign.inactiveDays` 3/7/14, `segmentStoreId` — только заказы этой точки, иначе весь бренд), состав считается в момент предпросмотра и отправки — те же люди, что «Клиенты → Неактивные». Вкладка «Возврат» и «Клиенты» открывают конструктор с этой аудиторией и готовым текстом (`?audience=INACTIVE&inactiveDays=&storeId=&code=`), а не списком id.
   - **Предпросмотр** до отправки (`GET /admin/campaigns/preview`): сколько человек в аудитории, сколько достижимо и через что (приложение / браузер / Telegram / email), сколько без канала и сколько отписались, и какие транспорты настроены на сервере.
   - **Тест себе** (`POST /admin/campaigns/test`): текст уходит только текущему админу по тем же правилам, без учёта его отписки.
   - **Отправка в фоне**: `POST /admin/campaigns/:id/send` сразу переводит рассылку в `SENDING` и отвечает; рассылка идёт пачками по 50, по каждому получателю пишется `CampaignDelivery` (SENT / FAILED / NO_CHANNEL / OPTED_OUT), счётчики обновляются после каждой пачки. Итог — `SENT`, если доставлено хоть одному, иначе `FAILED` с `lastError`. Падение рассылки → `FAILED` с текстом ошибки; `SENDING` без движения дольше 10 минут крон переводит в `FAILED`.
   - **Повтор**: можно отправить снова `FAILED`, зависшую `SENDING` и `SENT` с ошибками; получатели, которым уже доставлено, пропускаются. Пустая аудитория — 400 `CAMPAIGN_NO_RECIPIENTS`, повторный запуск во время отправки — 409 `CAMPAIGN_IN_PROGRESS`.
-- **Analytics**: summary, order-statuses, revenue, top-products, cohort, stores, staff, churn, winback и `/admin/customers`. Период — `from`/`to` (календарные дни в часовом поясе точки или преобладающем поясе бренда; `days` по-прежнему принимается), сравнение — с таким же отрезком до него; `storeId` сужает до точки в скоупе. Цифры бренда читаются из `Order` между локальными полуночами (индекс `Order(storeId, createdAt)`), выручка — без `CANCELLED` и `EXPIRED`. `mv_orders_daily` (UTC-дни, refresh каждые 5 минут через `AnalyticsRefreshService`) питает только экран «Весь проект». Отток: клиент потерян, когда после его последнего заказа прошло 7/14 дней без нового; «потерян в периоде» — этот порог пришёлся на период и клиент не вернулся к его концу; деньги — сумма их средних чеков. Возврат: клиенты, потерянные к началу периода, заказавшие в нём. Удалённые аккаунты (`User.blockedAt`) в оттоке и списке клиентов не участвуют, их заказы остаются в выручке.
+- **Analytics**: summary, order-statuses, revenue, top-products, cohort, stores, staff, churn, winback и `/admin/customers`. Период — `from`/`to` (календарные дни в часовом поясе точки или преобладающем поясе бренда; `days` по-прежнему принимается), сравнение — с таким же отрезком до него; `storeId` сужает до точки в скоупе. Цифры бренда читаются из `Order` между локальными полуночами (индекс `Order(storeId, createdAt)`), выручка — без `CANCELLED` и `EXPIRED`. `mv_orders_daily` (UTC-дни, refresh каждые 5 минут через `AnalyticsRefreshService`) питает только экран «Весь проект». Неактивные (отток): клиент неактивен, когда он сделал минимум 3 засчитанных заказа (`INACTIVE_MIN_ORDERS`) и после последнего прошло 3/7/14 дней без нового; «стал неактивным в периоде» — этот порог пришёлся на период и клиент не вернулся к его концу; упущенная выручка — сумма их средних чеков. Возврат: клиенты, неактивные к началу периода (тот же порог 3 заказов), заказавшие в нём. Сегменты клиентов (`customers/customer-segment.ts`, одно правило для списка «Клиенты», аудитории `INACTIVE` и промокодов): постоянные — 3+ заказа; неактивные — 3+ заказа и ни одного за N дней (сейчас, без периода). Любимое клиента — позиции из 5+ штук по засчитанным заказам (по id товара из снимка позиции), напиток или блюдо — по кофеину, опциям напитка (температура, молоко, стакан) и названию категории/товара, иначе без типа. Удалённые аккаунты (`User.blockedAt`) в оттоке и списке клиентов не участвуют, их заказы остаются в выручке.
 - **POS integrations**: connect (с шифрованными credentials AES-256-GCM), sync stores/menu/stop-list, мониторинг jobs.
 - **Обратная связь** (`/feedback`, только SUPER_ADMIN, пункт меню с бейджем непрочитанных): отзывы, предложения и проблемы, которые клиенты пишут из профиля в приложении, на сайте и в Mini App. Новые сверху; вкладки «Входящие» (всё, кроме архива) / «Непрочитанные» / «Архив», фильтр по типу; у карточки — тип, текст, клиент (имя, email, телефон, Telegram ID; «аккаунт удалён»), оставленный контакт, платформа и версия приложения, дата. «Прочитано» / «Непрочитано», «В архив» / «Вернуть из архива».
 - **Brand theme overrides**: `themeOverrides` JSON с CSS-переменными (применяется в TMA, опционально на web).
@@ -513,6 +520,8 @@ Brand (id, slug, name, currency, locale, logoUrl?, themeOverrides?, ownerId?,
        plan[BASIC|PRO] = BASIC, commissionBps = 1000)   // тариф и комиссия платформы, меняет SUPER_ADMIN
 Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        status[OPEN|CLOSED|BUSY|PAUSED], fulfillmentTypes[], pickupPointType[COUNTER|SHELF|LOCKER],
+       kinds[COFFEE|FOOD] = [COFFEE],          // что продаёт точка: маркер и фильтр на карте; не пусто
+       heroImageUrl?, galleryUrls[],            // обложка — фото самой точки (логотип бренда — запасной)
        busyMeter, baseEtaSeconds, kitchenParallelism, slotCapacity, minOrderCents,   // OVERLOADED = «Загружены» с кухни; в API busyMeter у неё 100
        taxRateBps, taxIncludedInPrice,
        deliveryFeeBaseCents?, deliveryFeePerKmCents?, deliveryFreeRadiusM?, deliveryMaxRadiusM?,
@@ -525,7 +534,7 @@ StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не б
 ### 5.3. Catalog
 
 ```
-Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible,
+Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visible, addOnsOnly,
           externalProvider?, externalId?)
 Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
          caffeineLevel?, calories?, P/F/C, allergens[], dietTags[VEGAN|GLUTEN_FREE|...],
@@ -535,7 +544,7 @@ Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
            prepTimeDeltaSeconds, isDefault, ingredientId?)
 Modifier (id, productId, slug, name, priceDeltaCents, prepTimeDeltaSeconds,
           minCount, maxCount, externalProvider?, externalId?, ingredientId?)
-Ingredient (id, brandId, name, isAvailable)   -- библиотека добавок бренда, (brandId, name) уникально
+Ingredient (id, brandId, name, priceCents, isAvailable)   -- справочник «Добавки» бренда, (brandId, name) уникально
 ProductStore (productId, storeId)              -- точки, где товар продаётся; PK (productId, storeId)
 StopListEntry (id, storeId, productId, reason?, expiresAt?)
 StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка закончилась в одной точке; PK (storeId, ingredientId)
@@ -543,7 +552,9 @@ StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка за�
 
 **Меню по точкам.** Товар есть в меню точки и заказывается в ней, только если для пары (товар, точка) есть строка `ProductStore`; без строк товар не продаётся нигде. Миграция `20261004000000_store_menu_availability` заполнила каждую пару «товар × точка его бренда», так что после выкатки ничего не пропало. Новый товар без `storeIds` получает все точки бренда (так же — импорт из POS); новая точка (кабинет или импорт из POS) получает все товары бренда. `GET /stores/:id/menu` отдаёт только товары точки и пропускает категории, где их нет; `GET /products/:idOrSlug?store=` отвечает 404 для товара, который эта точка не продаёт. Корзина отвечает 400 `ITEMS_UNAVAILABLE` (с названием) на товар не этой точки, оформление снимает такую строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`).
 
-**Добавки и наличие.** Добавки (modifiers) и молоко (MILK-варианты) ссылаются на запись библиотеки `Ingredient` бренда; новая добавка или молоко привязывается к записи с тем же названием (создаётся при отсутствии), `ingredientId: null` — не отслеживать. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
+**Справочник «Добавки» — единственный источник добавки.** Запись `Ingredient` хранит название добавки, её обычную цену (`priceCents`) и наличие. Добавки (modifiers) и молоко (MILK-варианты) товара — это ссылки на запись справочника: опцию можно создать по одному `ingredientId` (название и доплата берутся из справочника, введённая доплата важнее), а новая добавка или молоко, введённые по названию, привязываются к записи с тем же названием (создаётся при отсутствии — с доплатой, указанной для опции), `ingredientId: null` — не отслеживать. Новое название или цена записи (`PATCH /admin/ingredients/:id`) переносятся во все опции, где ещё стоят прежние название или цена; опция со своим названием или ценой в каком-то товаре их сохраняет. Удаление опции убирает добавку только из этого товара — запись остаётся в справочнике. Удаление записи (`DELETE /admin/ingredients/:id`) убирает её опции из всех товаров вместе со строками корзин, где они выбраны (корзины пересчитываются, оформленные заказы не меняются). Миграция `20261010120000_ingredient_price` заполнила `priceCents` самой частой доплатой опций каждой записи. Пока `isAvailable = false`, все опции с этой добавкой скрыты во всех клиентах (`GET /products/:idOrSlug`), корзина их не принимает, а строка корзины с ней снимается при оформлении (`CART_CHANGED`, `OPTION_UNAVAILABLE`); сам товар остаётся в меню. Если скрыт вариант по умолчанию, по умолчанию выбирается первый оставшийся того же типа. Кроме общего для бренда `isAvailable` точка может остановить добавку у себя (`StoreIngredientStop`, с `expiresAt` или до отмены): её опции скрыты в `GET /products/:idOrSlug?store=` этой точки, а корзина и оформление этой точки их не принимают — с 400 `ITEMS_UNAVAILABLE` и названием опции при добавлении. Опции без привязки к справочнику (размер, температура, стакан или явно «не отслеживать») по точкам не останавливаются.
+
+**Категории «только как добавка».** `Category.addOnsOnly = true` — товары категории не продаются отдельно (например, «Дополнительные ингредиенты», пришедшие из Poster как обычные товары). Такая категория остаётся в кабинете, стоп-листе и синхронизации с POS, но `GET /stores/:id/menu` её не отдаёт, `GET /products/:idOrSlug` отвечает 404 на её товары, `POST /cart/items` — 404, а оформление снимает уже лежащую в корзине строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`). Так же теперь обрабатывается товар скрытой категории (`visible = false`). Синхронизация с POS пишет в категорию только название и порядок, поэтому флаг переживает повторный импорт. Дальше такую категорию можно превратить в источник справочника: связать её товары с записями `Ingredient` (например, `Ingredient.productId`), чтобы цена добавки и её стоп-лист шли из POS.
 
 ### 5.4. Cart / Order / Payment
 
@@ -583,14 +594,15 @@ PointsLedger (id, loyaltyAccountId, userId, orderId?, type[EARN|SPEND|EXPIRE|ADJ
               amount (signed), reason, metadata?)
 Promo (id, brandId, code, label, type[PERCENT|FIXED|BOGO|POINTS_MULTIPLIER],
        value, minSubtotalCents?, maxRedemptions, perUserLimit, startsAt, endsAt,
-       status[DRAFT|ACTIVE|PAUSED|EXPIRED])
+       status[DRAFT|SCHEDULED|RUNNING|PAUSED|EXPIRED],
+       inactiveDays?, segmentStoreId?)   // код только для неактивных клиентов
 PromoRedemption (id, promoId, userId, orderId unique, discountCents)
 GiftCard (id, code unique, brandId, initialAmountCents, balanceCents, currency,
           status[ACTIVE|REDEEMED|EXPIRED|CANCELLED], purchaserUserId?, recipientEmail?,
           expiresAt?)
 GiftCardRedemption (id, giftCardId, orderId unique, amountCents)
 Campaign (id, brandId, title, body, channel[PUSH|TELEGRAM|EMAIL],
-          audience[ALL|HAS_ORDERED|INACTIVE_30D],
+          audience[ALL|HAS_ORDERED|INACTIVE_30D|INACTIVE], inactiveDays?, segmentStoreId?,
           status[DRAFT|SCHEDULED|SENDING|SENT|FAILED],
           targetCount, sentCount, failedCount, noChannelCount, optedOutCount,
           lastError?, scheduledAt?, startedAt?, sentAt?)
@@ -598,6 +610,18 @@ CampaignDelivery (id, campaignId, userId, outcome[SENT|FAILED|NO_CHANNEL|OPTED_O
                   via? ("apns,fcm,webpush" | "telegram" | "email"),
                   error?)   // также у SENT: что не сработало по дороге (app push перед Telegram)
   unique (campaignId, userId) — повтор рассылки пропускает уже доставленных
+```
+
+### 5.5a. Settlements (расчёты с брендами)
+
+```
+BrandCommissionRate (id, brandId, bps, source[PLAN|INDIVIDUAL], effectiveFrom, note?, createdById?, createdAt)
+  unique (brandId, effectiveFrom); строка действует до effectiveFrom следующей (интервалы без дыр и наложений),
+  первая — и до себя; Brand.commissionBps = строка, действующая сейчас; миграция завела каждому бренду текущую ставку с его создания
+BrandPayout (id, brandId, currency, periodFrom DATE, periodTo DATE, timeZone, periodEnd (момент конца periodTo),
+             amountCents (> 0), cardNetCents, commissionCents (цифры периода на момент фиксации),
+             status[PENDING|PAID], paidAt?, reference?, comment?, createdById?, paidById?)
+  periods идут подряд без наложений; Brand → payouts ON DELETE RESTRICT
 ```
 
 ### 5.6. Analytics (materialized views)
@@ -609,9 +633,15 @@ mv_orders_daily (brandId, storeId, day, orderCount, revenueCents,
   refreshed every 5 min via REFRESH MATERIALIZED VIEW CONCURRENTLY
 ```
 
-Источник: `Order` join `Store` для заказов кроме `CANCELLED` и `EXPIRED`, агрегация по UTC-дню. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает только `/admin/analytics/brands` (платформа); аналитика бренда считается по `Order` в его часовом поясе.
+Источник: `Order` join `Store` для заказов кроме `CANCELLED` и `EXPIRED`, агрегация по UTC-дню; `revenueCents` — выручка (см. ниже), с миграции `20261010120000_analytics_revenue_basis`. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает только `/admin/analytics/brands` (платформа; точки в валюте, отличной от валюты бренда, не суммируются); аналитика бренда считается по `Order` в его часовом поясе.
 
-**Дашборды (`overview`).** Пять сгруппированных запросов по `Order ⋈ Store ⋈ Brand` идут параллельно, без выборки заказов по одному: (1) итоги текущего и прошлого отрезка по точке/бренду и по всему скоупу (`GROUPING SETS`, чтобы клиенты считались уникальными по скоупу, а не суммой по точкам); (2) дни текущего отрезка в поясе скоупа; (3) первые засчитанные заказы клиентов в скоупе (новый клиент — первый заказ в этом бизнесе/на платформе попал в отрезок); (4) загрузка по часу и дню недели (ISO, Пн = 1) в поясе каждой точки — точка на UTC-заглушке берёт пояс отрезка; (5) статусы заказов отрезка. Правила как во всей аналитике: выручка, заказы и клиенты — без `CANCELLED`/`EXPIRED`; `placed` — все заказы; доля отмен = (отменённые + истекшие) / placed. Мгновения передаются как `timestamp` (`utc()`), чтобы TimeZone сессии Postgres ничего не сдвигал. Комиссия = Σ totalCents × текущий `commissionBps` бренда / 10 000.
+**Деньги — одно определение на всех экранах** (`apps/api/src/app/analytics/money.ts`, SQL-двойники `SALES`/`DISCOUNTS`/`REVENUE`/`GIFT_CARDS` в `analytics-sql.ts`): **продажи** = `subtotalCents` (позиции по ценам меню); **скидки** = `min(discountCents, subtotalCents)` (промокоды + баллы — их даёт бизнес); **выручка** = `max(subtotalCents − discountCents, 0)` — независимо от того, оплачено картой или подарочной картой; **подарочные карты** = `min(giftCardCents, выручка)` — часть выручки. `totalCents` (списание с карты) выручкой не является: в нём нет оплаченного подарочной картой, зато есть доставка и налог сверху цены. Подарочные карты выпускаются в админке и продаются (если продаются) вне takeAway, поэтому продажа карты нигде не считается, а покупка по ней — один раз, в выручке. Топ позиций — на той же базе: скидка заказа раскладывается по позициям пропорционально цене, сумма по позиции округляется вниз, поэтому Σ позиций ≤ выручки; `salesCents` — та же позиция до скидок. Клиенты: новые — первый засчитанный заказ в скоупе попал в период; постоянные — заказывали в скоупе и раньше (`returningCustomers = customers − newCustomers`); `cohort.repeatRatePercent` — другая метрика: доля клиентов с ≥ 2 заказами внутри периода. Изменение к прошлому периоду — `null`, если прошлый период без выручки (экран пишет «новое за период»).
+
+**Валюта.** Деньги в разных валютах не складываются: если точки бренда в нескольких валютах, все эндпоинты аналитики и `/admin/customers` сужаются до точек одной (`currency` в запросе; выбранная точка — её валюта; по умолчанию `defaultCurrency()` из `libs/utils`: валюта бренда, если она есть у точек, иначе валюта большинства точек). `revenue` и `overview` возвращают `currency` и `currencies[]`, строки `stores` — `currency`. Платформа (`/admin/platform/overview`) берёт только точки в валюте бренда.
+
+**Фильтр по точке.** `storeId` сужает цифры до точки, но дни считаются в поясе всего видимого скоупа (`parent`), а не в поясе точки — строка, по которой кликнули, и итоги после клика совпадают. В `overview` с `storeId` итоги берутся из строки этой точки, а `byStore` по-прежнему перечисляет все точки скоупа. Точка на UTC-заглушке считается в преобладающем поясе бренда.
+
+**Дашборды (`overview`).** Пять сгруппированных запросов по `Order ⋈ Store ⋈ Brand` идут параллельно, без выборки заказов по одному: (1) итоги текущего и прошлого отрезка по точке/бренду и по всему скоупу (`GROUPING SETS`, чтобы клиенты считались уникальными по скоупу, а не суммой по точкам); (2) дни текущего отрезка в поясе скоупа; (3) первые засчитанные заказы клиентов в скоупе (новый клиент — первый заказ в этом бизнесе/на платформе попал в отрезок); (4) загрузка по часу и дню недели (ISO, Пн = 1) в поясе каждой точки — точка на UTC-заглушке берёт пояс отрезка; (5) статусы заказов отрезка. Правила как во всей аналитике: выручка, заказы и клиенты — без `CANCELLED`/`EXPIRED`; `placed` — все заказы; доля отмен = (отменённые + истекшие) / placed. Итоги несут `salesCents`, `discountCents`, `revenueCents`, `giftCardCents` и `returningCustomers`. Мгновения передаются как `timestamp` (`utc()`), чтобы TimeZone сессии Postgres ничего не сдвигал. Комиссия = Σ (выручка − оплачено подарочными картами) × текущий `commissionBps` бренда / 10 000 — оценка по текущей ставке; точные суммы с историей ставок и возвратами — в «Расчётах с брендами». Проверка SQL на настоящем Postgres — `analytics.db.spec.ts`, запускается только с `ANALYTICS_IT_DATABASE_URL` (одноразовая база с применёнными миграциями).
 
 ### 5.7. POS integrations
 
@@ -685,8 +715,10 @@ POST   /feedback                     { kind: REVIEW|SUGGESTION|PROBLEM, message 
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=     // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName, logoUrl (логотип бренда для карточки точки)
-GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена)
+GET    /stores?lat=&lng=&radius=&kind=  // включает currentEtaSeconds, busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName,
+                                     //   heroImageUrl (фото точки), logoUrl (логотип бренда — показывать, когда фото нет),
+                                     //   kinds: ['COFFEE'|'FOOD'] (никогда не пусто); ?kind=FOOD|COFFEE — только такие точки (COFFEE включает точки без kinds)
+GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена); те же heroImageUrl, logoUrl, kinds + brand.logoUrl
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
                                      //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке
@@ -768,7 +800,7 @@ PATCH  /delivery/orders/:id/status   { status }   // OUT_FOR_DELIVERY → DELIVE
 POST   /business/register            { brand, contact, currency, locale, phone? } → { brand: { moderationStatus: PENDING } }
 GET    /my-brand[?brandId=]          (BRAND_ADMIN → свой бренд; SUPER_ADMIN → бренд из brandId)
 PATCH  /my-brand[?brandId=]          (название, логотип, цвета, язык; валюта — до первого заказа, иначе 409 CURRENCY_LOCKED)
-POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO)
+POST   /my-brand/logo[?brandId=]     (multipart → S3/MinIO; JPG/PNG/WebP до 2 МБ, 413 IMAGE_TOO_LARGE / 415 IMAGE_TYPE)
 GET    /my-brand/onboarding[?brandId=]  → чек-лист запуска бренда
 POST   /my-brand/resubmit[?brandId=]    REJECTED → PENDING, уведомляет платформу
 ```
@@ -794,11 +826,23 @@ GET                    /admin/products/stores?brandId=   точки бренда
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
-GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     библиотека добавок бренда (GET ?brandId=), PATCH { isAvailable } — «закончилось/появилось»
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (GET ?brandId=, ответы несут priceCents и products[]); POST/PATCH { name, priceCents?, isAvailable? },
+                                                    PATCH { isAvailable } — «закончилось/появилось», новое name/priceCents переносится в опции с прежними значениями;
+                                                    DELETE убирает добавку из всех товаров
+#   POST /admin/products/:id/modifiers и /variations принимают { ingredientId } без name/priceDeltaCents — берутся из справочника
+#   /admin/categories: create/update принимают addOnsOnly (категория «только как добавка»)
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
-POST/DELETE            /admin/stores/:id/images?kind=hero|gallery
+                                                    //   + kinds[] (COFFEE|FOOD, не пусто) в create/update
+POST/DELETE            /admin/stores/:id/images?kind=hero|gallery   // JPG/PNG/WebP до 5 МБ; 413 IMAGE_TOO_LARGE, 415 IMAGE_TYPE
 PUT                    /admin/stores/:id/working-hours
+GET                    /admin/geocode?address=&city=&country=   // SUPER_ADMIN/BRAND_ADMIN/STORE_MANAGER: { result: { lat, lng, displayName, approximate } | null }
+                                                    //   approximate = нашёлся только город (карта открывается там, метку не ставим);
+                                                    //   503 GEOCODER_UNAVAILABLE — геокодер не ответил/занят. OSM Nominatim (GEOCODER_URL),
+                                                    //   структурный поиск, затем город латиницей, затем один город; не чаще 1 запроса/с на всё
+                                                    //   приложение (токен в Redis), кеш в Redis 14 дней (промах — 1 день), после 429/403 пауза 60 с,
+                                                    //   User-Agent с контактом GEOCODER_CONTACT (или SUPPORT_EMAIL), accept-language=ru,en
+GET                    /admin/geocode/reverse?lat=&lng=   // { result: { lat, lng, displayName, addressLine, city, country } | null }
 GET/POST/DELETE        /admin/stores/:id/stop-list[/:productId]     // + STAFF своей точки; товар должен быть из бренда точки
 GET                    /admin/stores/:id/availability                // стоп-лист точки: её товары и добавки с остановками (+ STAFF)
 PUT/DELETE             /admin/stores/:id/ingredient-stops/:ingredientId   // { expiresAt? } — добавка закончилась в этой точке (+ STAFF)
@@ -833,30 +877,41 @@ GET/POST/DELETE        /admin/stores/:storeId/riders[/:userId]   // POST: 409 RI
 GET    /admin/orders/:id             → состав, платежи, возвраты, лента событий (scope как у списка; 404 вне scope)
 GET                    /admin/orders                     (фильтрация по store/brand/status)
 POST                   /admin/orders/:id/refund          { amountCents?, reason?, note? } → Stripe refund (full/partial)
-GET/POST/PATCH         /admin/promo[/:id/status]         // PRO (promo)
+GET/POST               /admin/promo                      // PRO (promo); статус в ответе — «по факту»
+GET/PATCH              /admin/promo/:id                  // PRO: правка черновика / запланированного или на паузе без использований
+PATCH                  /admin/promo/:id/status           // { status: RUNNING|PAUSED|EXPIRED } — черновик → активен → пауза → завершён
 GET/POST/DELETE        /admin/gift-cards[/:id]
 GET/POST               /admin/campaigns                  ?brandId= (SUPER_ADMIN — обязательно) // PRO (campaigns) — весь контроллер
-GET                    /admin/campaigns/preview          ?brandId=&audience=&channel= → охват по каналам + настроенные транспорты
+GET                    /admin/campaigns/preview          ?brandId=&audience=&channel=[&inactiveDays=3|7|14&storeId=] → охват по каналам + настроенные транспорты
 POST                   /admin/campaigns/test             { title, body, channel } → { outcome, via[], error? } — только себе
 POST                   /admin/campaigns/:id/send         → SENDING сразу, рассылка в фоне; также «Повторить» для FAILED/зависших/с ошибками
 DELETE                 /admin/campaigns/:id              (только DRAFT)
 
 # Аналитика (всё скоупится на бренды пользователя; ?brandId= — бренд из переключателя)
 # Период у всех: ?from=YYYY-MM-DD&to=YYYY-MM-DD (дни в поясе бренда/точки) или ?days=N; ?storeId= — одна точка
-GET                    /admin/analytics/overview           // дашборд бизнеса одним запросом: period, current/previous (выручка, заказы, placed, клиенты, новые, чек, отмены, истекшие, доля отмен, выдача, точек с заказами, комиссия), daily[], statuses{}, byStore[] (все: выручка/заказы/доли; PRO storeComparison: + previous*, Δ, чек, клиенты, отмены, выдача), byHour[24]/byWeekday[7] (PRO deepAnalytics, иначе null; час — по поясу каждой точки)
+GET                    /admin/analytics/overview           // дашборд бизнеса одним запросом: period, currency, currencies[], current/previous (продажи, скидки, выручка, из неё подарочными картами, заказы, placed, клиенты, новые, постоянные, чек, отмены, истекшие, доля отмен, выдача, точек с заказами, комиссия), daily[], statuses{}, byStore[] (все точки скоупа, и при storeId тоже: выручка/заказы/доли; PRO storeComparison: + previous*, Δ, чек, клиенты, отмены, выдача), byHour[24]/byWeekday[7] (PRO deepAnalytics, иначе null; час — по поясу каждой точки). Все эндпоинты аналитики принимают currency=
 GET                    /admin/platform/overview?currency=  // SUPER_ADMIN: тот же формат по брендам одной валюты (byBrand[]: + тариф, commissionBps, commissionCents, точки, модерация); currencies[] — все валюты, по умолчанию та, где выручка больше; дни — в преобладающем поясе точек этих брендов
 GET                    /admin/analytics/summary            // выручка, заказы, средний чек, время выдачи + изменения к предыдущему отрезку
 GET                    /admin/analytics/order-statuses     // открытые заказы по статусам сейчас + итог заказов периода (выданы / отменены / истекли)
 GET                    /admin/analytics/brands?days=       // SUPER_ADMIN: все бренды рядом (тариф, комиссия, точки, заказы, выручка) — «Весь проект»
-GET                    /admin/analytics/revenue            // по дням периода
-GET                    /admin/analytics/top-products?take= // PRO (deepAnalytics)
-GET                    /admin/analytics/cohort             // PRO (deepAnalytics)
+GET                    /admin/analytics/revenue            // по дням периода + salesCents, discountCents, giftCardCents, currency, currencies[]; revenueDeltaPercent = null без выручки в прошлом периоде
+GET                    /admin/analytics/top-products?take= // PRO (deepAnalytics): revenueCents после скидок (Σ ≤ выручки), salesCents до скидок
+GET                    /admin/analytics/cohort             // PRO (deepAnalytics): customers, newCustomers, returningCustomers, repeatRatePercent (≥ 2 заказов в периоде), avgBasketCents, pickupSlaPercent
 GET                    /admin/analytics/stores             // все точки скоупа; BASIC: выручка/заказы/доля, PRO: + доли заказов, чек, выдача, готовка, отмены, сотрудники, дельта (detailed=true)
 GET                    /admin/analytics/staff              // PRO: по сотруднику — принял/приготовил/выдал/заказов, смены и часы (часы — тому, кто открыл смену)
-GET                    /admin/analytics/churn?window=7|14&take=   // все: count, lostRevenueCents (сумма средних чеков), previous; PRO: customers[]
-GET                    /admin/analytics/winback?window=7|14&take= // PRO: потерянные к началу периода → вернулись (кол-во, заказы, выручка, доля) против прошлого
-GET                    /admin/customers?search=&sort=lastOrderAt|firstOrderAt|orders|totalCents|avgCheckCents|frequency&dir=&page=&pageSize=  // PRO
-GET                    /admin/customers/:id                // PRO: итоги, точки, последние 100 заказов; 404 для удалённых и чужих
+GET                    /admin/analytics/churn?window=3|7|14&take=   // все: count, lostRevenueCents (сумма средних чеков), previous — только клиенты с 3+ заказами; PRO: customers[]
+GET                    /admin/analytics/winback?window=3|7|14&take= // PRO: неактивные к началу периода → вернулись (кол-во, заказы, выручка, доля) против прошлого
+GET                    /admin/customers?search=&segment=all|regular|inactive&inactiveDays=3|7|14&storeId=&sort=lastOrderAt|firstOrderAt|orders|totalCents|avgCheckCents|frequency&dir=&page=&pageSize=  // PRO; у клиента favouriteProduct (5+ шт.)
+GET                    /admin/customers/:id                // PRO: итоги, точки, favourites[] (name, quantity, kind DRINK|FOOD|null), последние 100 заказов; 404 для удалённых и чужих
+
+# Расчёты с брендами (SUPER_ADMIN — любой бренд, brandId обязателен; BRAND_ADMIN — только свои, чтение). См. docs/settlements.md
+GET                    /admin/settlements?brandId=&currency=&from=&to=   // brand {plan, currentBps, planBps}, currency, currencies[], period, totals, days[] (все дни периода), rates[] (ставки периода), balance {opening, payable, paid, pending, closing, closingPending}, nextPayout {periodFrom, periodTo, amountCents, cardNetCents, commissionCents, blocked: PERIOD_OPEN|OVERLAP|NOTHING_DUE|null}, payouts[]
+GET                    /admin/settlements/rates?brandId=   // история ставок: { plan, planBps, currentBps, timeZone, rates[{ bps, source, effectiveFrom, effectiveTo, note }] }
+POST                   /admin/settlements/rates          { brandId, bps (0–5000) | null — ставка тарифа, effectiveFrom: YYYY-MM-DD (полночь в поясе бренда), note? }  // SUPER_ADMIN
+DELETE                 /admin/settlements/rates/:id      // SUPER_ADMIN
+POST                   /admin/settlements/payouts        { brandId, currency, to, reference?, comment? } → PENDING  // SUPER_ADMIN; 409 PAYOUT_PERIOD_OPEN / PAYOUT_OVERLAP / PAYOUT_NOTHING_DUE
+PATCH                  /admin/settlements/payouts/:id/paid  { reference?, comment?, paidAt? } → PAID  // SUPER_ADMIN; 409 PAYOUT_ALREADY_PAID
+DELETE                 /admin/settlements/payouts/:id    // SUPER_ADMIN, только последняя PENDING; 409 PAYOUT_PAID / PAYOUT_NOT_LATEST
 
 # Обратная связь клиентов (только SUPER_ADMIN)
 GET                    /admin/feedback?status=NEW|READ|ARCHIVED&kind=&page=&pageSize=   // новые сверху; без status — всё, кроме ARCHIVED

@@ -7,6 +7,12 @@
  *
  * Counting rules are the analytics module's: revenue, orders and customers
  * leave out cancelled and expired orders; `placed` counts every order.
+ *
+ * Money, the same on every screen: sales are the items at menu price,
+ * discounts are promo codes and loyalty points, revenue is sales less
+ * discounts — whether the customer paid by card or with a gift card — and
+ * `giftCardCents` is the part of the revenue gift cards paid for. The card
+ * charge (`Order.totalCents`) is not revenue: it leaves gift cards out.
  */
 
 /** The days the figures cover and the days they are compared with, both ends included. */
@@ -21,7 +27,14 @@ export interface OverviewPeriod {
 
 /** One period's figures. */
 export interface OverviewTotals {
+  /** Items at menu price, before discounts («Продажи»). */
+  salesCents: number;
+  /** Promo codes and loyalty points («Скидки»): salesCents − revenueCents. */
+  discountCents: number;
+  /** Sales less discounts («Выручка»), however it was paid. */
   revenueCents: number;
+  /** The part of the revenue gift cards paid for. */
+  giftCardCents: number;
   /** Orders that count: not cancelled, not expired. */
   orders: number;
   /** Every order placed, whatever became of it. */
@@ -30,6 +43,8 @@ export interface OverviewTotals {
   customers: number;
   /** Customers whose first counted order in the scope falls in the period. */
   newCustomers: number;
+  /** Customers who had ordered in the scope before the period: customers − newCustomers. */
+  returningCustomers: number;
   /** Null without a counted order. */
   avgCheckCents: number | null;
   cancelled: number;
@@ -98,15 +113,27 @@ export interface OverviewRow {
   avgPickupSeconds: number | null;
 }
 
-/** What a business sees on its dashboard. */
+/**
+ * What a business sees on its dashboard. Narrowed to one store, the totals,
+ * days and statuses are that store's, while `byStore` still lists every
+ * store, so the store can be compared and another one picked.
+ */
 export interface BusinessOverview {
   period: OverviewPeriod;
+  /**
+   * The currency of every amount. A brand whose stores price in several
+   * covers the stores of this one (`currency` in the query picks another);
+   * null before any store or brand currency exists.
+   */
+  currency: string | null;
+  /** Every currency the brand's stores price in, alphabetically. */
+  currencies: string[];
   current: OverviewTotals;
   previous: OverviewTotals;
   daily: OverviewDay[];
   /** Orders placed in the period per `OrderStatus`, every status present. */
   statuses: Record<string, number>;
-  /** Every store in scope, idle ones too, highest revenue first. */
+  /** Every store in scope (in `currency`), idle ones too, highest revenue first. */
   byStore: OverviewRow[];
   /** True when `byStore` carries the PRO comparison. */
   storeComparison: boolean;

@@ -1,21 +1,34 @@
-import { Component, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { CustomersApi, type CustomerDetail } from '../../core/customers/customers.service';
+import { CustomersApi, type CustomerDetail, type FavouriteProduct } from '../../core/customers/customers.service';
 import { apiErrorMessage } from '../../core/http/api-error';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 
-/** One customer's history with the brand: totals, stores, and their latest orders. */
+/** A group of favourites under its heading: drinks, food, or neither. */
+interface FavouriteGroup {
+  title: string;
+  kind: FavouriteProduct['kind'];
+  items: FavouriteProduct[];
+}
+
+/**
+ * One customer's history with the brand: totals, what they keep ordering
+ * (5 units and more — drinks and food apart when the menu says which),
+ * stores, and their latest orders.
+ */
 @Component({
   selector: 'app-customer-detail',
   standalone: true,
   imports: [RouterLink, TranslatePipe],
   template: `
     <section class="cd">
-      <a routerLink="/customers" class="dash-link">← {{ 'admin.customers.back' | translate }}</a>
+      <a routerLink="/customers" queryParamsHandling="preserve" class="dash-link"
+        >← {{ 'admin.customers.back' | translate }}</a
+      >
 
       @if (error(); as e) {
         <p class="dash-error" role="alert">{{ e }}</p>
@@ -60,6 +73,25 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
             <em>{{ 'admin.churn.daysAgo' | translate: { days: c.daysSinceLastOrder } }}</em>
           </div>
         </div>
+
+        @if (favouriteGroups().length > 0) {
+          <article class="dash-card">
+            @for (g of favouriteGroups(); track g.title) {
+              <div class="cd-fav-group">
+                <h2>{{ g.title | translate }}</h2>
+                <ul class="cd-favs">
+                  @for (f of g.items; track f.name) {
+                    <li class="cd-fav" [attr.data-kind]="f.kind">
+                      <span>{{ f.name }}</span>
+                      <strong>{{ 'admin.customers.favourites.count' | translate: { count: f.quantity } }}</strong>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+            <p class="dash-hint">{{ 'admin.customers.favourites.hint' | translate }}</p>
+          </article>
+        }
 
         <article class="dash-card">
           <header class="dash-card-head">
@@ -160,6 +192,53 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-size: 12px;
         color: var(--color-text-tertiary);
       }
+      .cd-fav-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .cd-fav-group h2 {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 16px;
+        color: var(--color-espresso);
+      }
+      .cd-favs {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .cd-fav {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 9999px;
+        background: var(--color-surface-variant);
+        color: var(--color-text-primary);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .cd-fav strong {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--color-text-secondary);
+      }
+      .cd-fav[data-kind='DRINK'] {
+        background: var(--color-caramel-light);
+      }
+      .cd-fav[data-kind='DRINK'] strong {
+        color: var(--color-caramel);
+      }
+      .cd-fav[data-kind='FOOD'] {
+        background: color-mix(in srgb, var(--chart-customers) 16%, transparent);
+      }
+      .cd-fav[data-kind='FOOD'] strong {
+        color: var(--color-positive);
+      }
       .cd-list {
         list-style: none;
         margin: 0;
@@ -229,6 +308,18 @@ export class CustomerDetailPage {
   readonly customer = signal<CustomerDetail | null>(null);
   readonly error = signal<string | null>(null);
 
+  /** «Любимые напитки», «Любимые блюда», and «Любимое» for what the menu does not say. */
+  readonly favouriteGroups = computed<FavouriteGroup[]>(() => {
+    const favourites = this.customer()?.favourites ?? [];
+    const groups: FavouriteGroup[] = [
+      { title: 'admin.customers.favourites.drinks', kind: 'DRINK', items: [] },
+      { title: 'admin.customers.favourites.food', kind: 'FOOD', items: [] },
+      { title: 'admin.customers.favourites.other', kind: null, items: [] },
+    ];
+    for (const f of favourites) groups.find((g) => g.kind === f.kind)?.items.push(f);
+    return groups.filter((g) => g.items.length > 0);
+  });
+
   constructor() {
     effect(() => {
       const brandId = this.activeBrand.activeId();
@@ -256,7 +347,7 @@ export class CustomerDetailPage {
   }
 
   price(cents: number): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency, { round: true });
+    return this.fmt.money(cents, this.activeBrand.active()?.currency);
   }
 
   frequency(days: number | null): string {

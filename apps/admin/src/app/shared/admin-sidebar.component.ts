@@ -63,7 +63,7 @@ interface NavItem {
         >
       </div>
 
-      @for (item of visibleItems(); track item.link) {
+      @for (item of visibleItems(); track item.label) {
         <a
           [routerLink]="item.link"
           routerLinkActive="admin-nav-active"
@@ -237,6 +237,8 @@ export class AdminSidebarComponent {
 
   readonly navItems: NavItem[] = [
     { icon: '🌐', label: 'admin.nav.platform', link: '/platform', roles: ADMIN_ROLES.platform },
+    // The same page under two names: the platform's «Расчёты с брендами», the owner's «Расчёты».
+    { icon: '💸', label: 'admin.nav.settlements', link: '/settlements', roles: ['SUPER_ADMIN'] },
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores', roles: ADMIN_ROLES.stores },
     {
@@ -265,14 +267,9 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.riders,
     },
     { icon: '👥', label: 'admin.nav.staff', link: '/staff', roles: ADMIN_ROLES.staff },
-    {
-      icon: '🎟',
-      label: 'admin.nav.promo',
-      link: '/promo',
-      roles: ADMIN_ROLES.promo,
-      planFeature: NAV_PLAN_FEATURE.promo,
-    },
-    { icon: '🎁', label: 'admin.nav.giftCards', link: '/gift-cards', roles: ADMIN_ROLES.giftCards },
+    // Promo codes (PRO) and gift cards (every plan) as tabs of one section;
+    // the promo tab carries the PRO lock, so the item itself has none.
+    { icon: '🎟', label: 'admin.nav.promotions', link: '/promotions', roles: ADMIN_ROLES.promotions },
     {
       icon: '📣',
       label: 'admin.nav.campaigns',
@@ -281,6 +278,7 @@ export class AdminSidebarComponent {
       planFeature: NAV_PLAN_FEATURE.campaigns,
     },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
+    { icon: '💸', label: 'admin.nav.settlementsOwn', link: '/settlements', roles: ['BRAND_ADMIN'] },
     {
       icon: '🧑‍🤝‍🧑',
       label: 'admin.nav.customers',

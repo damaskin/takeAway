@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
 
 /**
- * Square logo tile for a store card: the business's own logo, whole and
- * centred on a light tile, when it has uploaded one; otherwise a quiet
- * storefront icon. A logo that fails to load falls back to the icon too, so
- * a card never shows a broken image.
+ * Square image tile for a store card: the store's own photo (`photo`, its
+ * hero image) filling the tile when it has one; else the business's logo,
+ * whole and centred on a light tile; else a quiet storefront icon. An image
+ * that fails to load falls back to the next one, so a card never shows a
+ * broken image.
  *
  * The logo is fitted (`contain`), not cropped: wide wordmarks used to lose
  * their ends to `cover`. The tile stays light in every theme — logos are
@@ -19,9 +20,12 @@ import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } fro
     class: 'lib-store-logo',
     '[style.--lib-store-logo-size.px]': 'size()',
     '[class.lib-store-logo--image]': 'showsImage()',
+    '[class.lib-store-logo--photo]': 'showsPhoto()',
   },
   template: `
-    @if (showsImage()) {
+    @if (showsPhoto()) {
+      <img class="photo" [src]="photo()" [alt]="name()" loading="lazy" (error)="photoFailed.set(true)" />
+    } @else if (showsImage()) {
       <img [src]="url()" [alt]="name()" loading="lazy" (error)="failed.set(true)" />
     } @else {
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -58,6 +62,9 @@ import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } fro
         object-fit: contain;
         display: block;
       }
+      img.photo {
+        object-fit: cover;
+      }
       svg {
         width: 50%;
         height: 50%;
@@ -66,11 +73,16 @@ import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } fro
   ],
 })
 export class StoreLogoComponent {
+  /** The business's logo. */
   readonly url = input<string | null | undefined>(null);
+  /** The store's own photo (its hero image); shown in place of the logo when it loads. */
+  readonly photo = input<string | null | undefined>(null);
   /** Business name, used as the image's alt text. */
   readonly name = input('');
   readonly size = input(44);
   /** Reset when the url changes, so a new logo gets its own chance to load. */
   protected readonly failed = linkedSignal({ source: this.url, computation: () => false });
-  protected readonly showsImage = computed(() => !!this.url() && !this.failed());
+  protected readonly photoFailed = linkedSignal({ source: this.photo, computation: () => false });
+  protected readonly showsPhoto = computed(() => !!this.photo() && !this.photoFailed());
+  protected readonly showsImage = computed(() => !this.showsPhoto() && !!this.url() && !this.failed());
 }

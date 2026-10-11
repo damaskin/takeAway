@@ -5,7 +5,9 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
+import { SOLD_ON_ITS_OWN } from './product-listing';
 import { acceptingOrders, busyMeterOf, openNow } from './store-availability';
+import { storeKinds, storeKindWhere } from './store-kinds';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
 import type { MenuDto } from './dto/product.dto';
@@ -41,6 +43,7 @@ export class CatalogService {
       where: {
         status: { not: 'CLOSED' },
         brand: { moderationStatus: 'APPROVED' },
+        ...storeKindWhere(query.kind),
       },
       include: {
         workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
@@ -85,6 +88,7 @@ export class CatalogService {
           currency: s.currency,
           timezone: s.timezone,
           heroImageUrl: s.heroImageUrl,
+          kinds: storeKinds(s.kinds),
           distanceMeters: hasPoint ? haversineMeters(query.lat!, query.lng!, s.latitude, s.longitude) : null,
         };
       })
@@ -160,6 +164,7 @@ export class CatalogService {
       taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,
       heroImageUrl: store.heroImageUrl,
+      kinds: storeKinds(store.kinds),
       distanceMeters: null,
       timezone: store.timezone,
       phone: store.phone,
@@ -201,9 +206,10 @@ export class CatalogService {
     // Equal positions (everything created before ordering existed sits at 0)
     // fall back to creation order, the same tie-break the admin editor shows.
     // Only the products this store sells (ProductStore); a category left
-    // with none of them is not shown in this store at all.
+    // with none of them is not shown in this store at all. Nor is one that
+    // holds add-ons, which are not ordered on their own.
     const categories = await this.prisma.category.findMany({
-      where: { brandId: store.brandId, visible: true },
+      where: { brandId: store.brandId, ...SOLD_ON_ITS_OWN },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       include: {
         products: {
@@ -269,11 +275,13 @@ export class CatalogService {
     }
     const now = new Date();
     // With a store: only a product that store sells, and without the
-    // options made of what that store has run out of.
+    // options made of what that store has run out of. Never one the menu
+    // leaves out with its category (hidden, or add-ons only).
     const product = await this.prisma.product.findFirst({
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         visible: true,
+        category: SOLD_ON_ITS_OWN,
         brand: { moderationStatus: 'APPROVED' },
         ...(store ? { brandId: store.brandId, stores: { some: { storeId: store.id } } } : {}),
       },

@@ -29,8 +29,15 @@ type StockUntil = 'manual' | 'endOfDay';
  *
  * mainArea (cream):
  *   top bar (foam, 64px, border-bottom) — title + brand name + actions
- *   content area — 320px category rail (foam, caramel-light active) +
+ *   content area — category rail (foam, caramel-light active, collapsible) +
  *     product table (foam card, inline visibility / stock toggles, ordering)
+ *
+ * The table has to fit next to the 260px sidebar and the rail on a 1280px
+ * laptop, where «Опции» / «Изменить» used to be cut off at the right edge.
+ * It answers to its own width (a container query), not the window's: below
+ * 820px the row actions turn into icon buttons, below 720px price and time
+ * move under the name. The actions column stays pinned to the right edge
+ * if a row is still too wide, and the rail can be folded away.
  */
 @Component({
   selector: 'app-menu',
@@ -102,18 +109,17 @@ type StockUntil = 'manual' | 'endOfDay';
       </p>
     }
 
-    <section
-      class="menu-shell"
-      style="padding: clamp(16px, 3vw, 24px); display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start"
-    >
-      <app-menu-categories
-        [categories]="categories()"
-        [selectedId]="selectedCategoryId()"
-        [brandId]="brand()?.id ?? null"
-        (selected)="selectCategory($event)"
-        (changed)="reloadCategories()"
-        (deleted)="onCategoryDeleted($event)"
-      />
+    <section class="menu-shell" [class.rail-folded]="railFolded()">
+      @if (!railFolded()) {
+        <app-menu-categories
+          [categories]="categories()"
+          [selectedId]="selectedCategoryId()"
+          [brandId]="brand()?.id ?? null"
+          (selected)="selectCategory($event)"
+          (changed)="reloadCategories()"
+          (deleted)="onCategoryDeleted($event)"
+        />
+      }
 
       <!-- Products -->
       <section
@@ -121,7 +127,32 @@ type StockUntil = 'manual' | 'endOfDay';
         style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: 20px; gap: 16px; min-width: 0"
       >
         <header class="flex items-center justify-between flex-wrap" style="gap: 8px 12px">
-          <div class="flex items-baseline flex-wrap" style="gap: 4px 12px; min-width: 0">
+          <div class="flex items-center flex-wrap" style="gap: 4px 12px; min-width: 0">
+            <button
+              type="button"
+              class="rail-toggle"
+              (click)="toggleRail()"
+              [attr.aria-expanded]="!railFolded()"
+              [title]="(railFolded() ? 'admin.menu.showCategories' : 'admin.menu.hideCategories') | translate"
+              data-testid="menu-rail-toggle"
+            >
+              {{ railFolded() ? '☰' : '‹' }}
+              <span class="rail-toggle-label">{{
+                (railFolded() ? 'admin.menu.showCategories' : 'admin.menu.hideCategories') | translate
+              }}</span>
+            </button>
+            @if (railFolded() && categories().length > 0) {
+              <select
+                [style]="selectStyle"
+                [value]="selectedCategoryId() ?? ''"
+                (change)="pickCategory($event)"
+                [attr.aria-label]="'admin.menu.categories' | translate"
+              >
+                @for (c of categories(); track c.id) {
+                  <option [value]="c.id" [selected]="c.id === selectedCategoryId()">{{ c.name }}</option>
+                }
+              </select>
+            }
             <h2
               style="font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--color-espresso); margin: 0; overflow-wrap: anywhere"
             >
@@ -152,6 +183,13 @@ type StockUntil = 'manual' | 'endOfDay';
           }
         </header>
 
+        @if (selectedCategory()?.addOnsOnly) {
+          <p class="addons-note" data-testid="menu-add-ons-only-note">
+            {{ 'admin.menu.category.addOnsOnlyNote' | translate }}
+            <a routerLink="/ingredients">{{ 'admin.menu.category.addOnsOnlyLink' | translate }}</a>
+          </p>
+        }
+
         @if (!selectedCategoryId()) {
           <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-secondary); margin: 0">
             {{ 'admin.menu.select' | translate }}
@@ -169,66 +207,55 @@ type StockUntil = 'manual' | 'endOfDay';
         }
 
         @if (products().length > 0) {
-          <div style="overflow-x: auto; margin: 0 -4px; padding: 0 4px">
-            <table style="width: 100%; border-collapse: collapse; font-family: var(--font-sans)">
+          <div class="table-wrap">
+            <table class="pt">
               <thead>
                 <tr>
-                  <th [style]="thStyle" style="width: 52px">
+                  <th class="col-photo">
                     <span class="sr-only">{{ 'admin.menu.headers.photo' | translate }}</span>
                   </th>
-                  <th [style]="thStyle" style="text-align: left">{{ 'admin.menu.headers.name' | translate }}</th>
-                  <th [style]="thStyle" style="text-align: right">{{ 'admin.menu.headers.price' | translate }}</th>
-                  <th [style]="thStyle" style="text-align: right">{{ 'admin.menu.headers.prep' | translate }}</th>
-                  <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.visible' | translate }}</th>
+                  <th style="text-align: left">{{ 'admin.menu.headers.name' | translate }}</th>
+                  <th class="col-price" style="text-align: right">{{ 'admin.menu.headers.price' | translate }}</th>
+                  <th class="col-prep" style="text-align: right">{{ 'admin.menu.headers.prep' | translate }}</th>
+                  <th class="narrow">{{ 'admin.menu.headers.visible' | translate }}</th>
                   @if (stockStore()) {
-                    <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.stock' | translate }}</th>
+                    <th class="narrow">{{ 'admin.menu.headers.stock' | translate }}</th>
                   }
-                  <th [style]="thStyle" style="text-align: center">{{ 'admin.menu.headers.order' | translate }}</th>
-                  <th [style]="thStyle"></th>
+                  <th class="narrow">{{ 'admin.menu.headers.order' | translate }}</th>
+                  <th class="col-actions">
+                    <span class="sr-only">{{ 'admin.menu.headers.actions' | translate }}</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 @for (p of products(); track p.id; let first = $first, last = $last, i = $index) {
-                  <tr style="border-bottom: 1px solid var(--color-border-light)">
-                    <td style="padding: 8px 12px">
-                      <div
-                        style="width: 40px; height: 40px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%)"
-                      >
+                  <tr>
+                    <td class="col-photo">
+                      <div class="thumb">
                         @if (p.imageUrls[0]; as photo) {
-                          <img
-                            [src]="photo"
-                            alt=""
-                            loading="lazy"
-                            style="display: block; width: 100%; height: 100%; object-fit: cover"
-                          />
+                          <img [src]="photo" alt="" loading="lazy" />
                         }
                       </div>
                     </td>
-                    <td style="padding: 12px; font-size: 14px; color: var(--color-text-primary); font-weight: 500">
+                    <td class="col-name">
                       {{ p.name }}
+                      <div class="inline-meta">
+                        {{ price(p.basePriceCents) }} · {{ minutes(p.prepTimeSeconds) }}
+                        {{ 'common.units.min' | translate }}
+                      </div>
                       @if (listing(p); as l) {
                         <div class="flex flex-wrap" style="gap: 4px; margin-top: 4px" data-testid="product-listing">
                           @for (label of l.labels; track label) {
-                            <span
-                              [style]="l.none ? listingNoneStyle : listingChipStyle"
-                              style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 11px; font-weight: 500"
-                              >{{ label }}</span
-                            >
+                            <span [style]="l.none ? listingNoneStyle : listingChipStyle" class="chip">{{ label }}</span>
                           }
                         </div>
                       }
                     </td>
-                    <td
-                      style="padding: 12px; font-size: 14px; color: var(--color-text-primary); text-align: right; white-space: nowrap"
-                    >
-                      {{ price(p.basePriceCents) }}
-                    </td>
-                    <td
-                      style="padding: 12px; font-size: 13px; color: var(--color-text-secondary); text-align: right; white-space: nowrap"
-                    >
+                    <td class="col-price num">{{ price(p.basePriceCents) }}</td>
+                    <td class="col-prep num muted">
                       {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}
                     </td>
-                    <td style="padding: 12px; text-align: center">
+                    <td class="narrow">
                       <input
                         type="checkbox"
                         [checked]="p.visible"
@@ -237,7 +264,7 @@ type StockUntil = 'manual' | 'endOfDay';
                       />
                     </td>
                     @if (stockStore(); as store) {
-                      <td style="padding: 12px; text-align: center">
+                      <td class="narrow">
                         @if (!p.storeIds.includes(store.id)) {
                           <span
                             style="font-size: 12px; color: var(--color-text-tertiary)"
@@ -263,15 +290,14 @@ type StockUntil = 'manual' | 'endOfDay';
                         }
                       </td>
                     }
-                    <td style="padding: 12px; text-align: center; white-space: nowrap">
+                    <td class="narrow">
                       <button
                         type="button"
                         (click)="moveProduct(i, -1)"
                         [disabled]="first || reordering()"
                         [title]="'admin.menu.moveUp' | translate"
                         [attr.aria-label]="'admin.menu.moveUp' | translate"
-                        class="disabled:opacity-30"
-                        [style]="arrowStyle"
+                        class="arrow disabled:opacity-30"
                       >
                         ↑
                       </button>
@@ -281,31 +307,40 @@ type StockUntil = 'manual' | 'endOfDay';
                         [disabled]="last || reordering()"
                         [title]="'admin.menu.moveDown' | translate"
                         [attr.aria-label]="'admin.menu.moveDown' | translate"
-                        class="disabled:opacity-30"
-                        [style]="arrowStyle"
+                        class="arrow disabled:opacity-30"
                       >
                         ↓
                       </button>
                     </td>
-                    <td style="padding: 12px; text-align: right; white-space: nowrap">
+                    <td class="col-actions">
                       <a
+                        class="act"
                         [routerLink]="['/menu/products', p.id, 'options']"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); font-weight: 500; margin-right: 12px; text-decoration: none"
+                        [title]="'admin.menu.product.options' | translate"
+                        [attr.aria-label]="'admin.menu.product.options' | translate"
+                        data-testid="product-options-link"
                       >
-                        {{ 'admin.menu.product.options' | translate }}
+                        <span class="act-text">{{ 'admin.menu.product.options' | translate }}</span>
+                        <span class="act-icon" aria-hidden="true">⚙&#xFE0E;</span>
                       </a>
                       <a
+                        class="act edit"
                         [routerLink]="['/menu/products', p.id]"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); font-weight: 500; margin-right: 12px; text-decoration: none"
+                        [title]="'common.change' | translate"
+                        [attr.aria-label]="'common.change' | translate"
                       >
-                        {{ 'common.change' | translate }}
+                        <span class="act-text">{{ 'common.change' | translate }}</span>
+                        <span class="act-icon" aria-hidden="true">✎</span>
                       </a>
                       <button
                         type="button"
+                        class="act danger"
                         (click)="deleteProduct(p)"
-                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry); font-weight: 500"
+                        [title]="'admin.menu.product.deleteCta' | translate"
+                        [attr.aria-label]="'admin.menu.product.deleteCta' | translate"
                       >
-                        {{ 'admin.menu.product.deleteCta' | translate }}
+                        <span class="act-text">{{ 'admin.menu.product.deleteCta' | translate }}</span>
+                        <span class="act-icon" aria-hidden="true">×</span>
                       </button>
                     </td>
                   </tr>
@@ -319,9 +354,191 @@ type StockUntil = 'manual' | 'endOfDay';
   `,
   styles: [
     `
+      .menu-shell {
+        display: grid;
+        grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+        padding: clamp(16px, 3vw, 24px);
+      }
+      .menu-shell.rail-folded {
+        grid-template-columns: minmax(0, 1fr);
+      }
       @media (max-width: 1200px) {
         .menu-shell {
-          grid-template-columns: 1fr !important;
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .rail-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--color-border-light);
+        border-radius: 8px;
+        font: 600 12px var(--font-sans);
+        color: var(--color-text-secondary);
+      }
+      @media (max-width: 1200px) {
+        .rail-toggle-label {
+          display: none;
+        }
+      }
+      .addons-note {
+        margin: 0;
+        padding: 10px 12px;
+        border-left: 3px solid var(--color-amber);
+        border-radius: 8px;
+        background: var(--color-cream);
+        font: 13px var(--font-sans);
+        color: var(--color-text-primary);
+      }
+      .addons-note a {
+        color: var(--color-caramel);
+        font-weight: 600;
+      }
+      .table-wrap {
+        container-type: inline-size;
+        overflow-x: auto;
+      }
+      .pt {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--font-sans);
+      }
+      .pt th {
+        padding: 8px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-text-tertiary);
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--color-border-light);
+      }
+      .pt td {
+        padding: 10px;
+        border-bottom: 1px solid var(--color-border-light);
+      }
+      .pt .col-photo {
+        width: 40px;
+        padding-right: 4px;
+      }
+      .thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        overflow: hidden;
+        background: linear-gradient(135deg, var(--color-latte) 0%, var(--color-cream) 100%);
+      }
+      .thumb img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .col-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--color-text-primary);
+        overflow-wrap: anywhere;
+      }
+      .num {
+        font-size: 14px;
+        text-align: right;
+        white-space: nowrap;
+        color: var(--color-text-primary);
+      }
+      .num.muted {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+      }
+      .pt .narrow {
+        width: 1%;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .pt .col-actions {
+        position: sticky;
+        right: 0;
+        width: 1%;
+        text-align: right;
+        white-space: nowrap;
+        background: var(--color-foam);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .arrow {
+        width: 26px;
+        height: 28px;
+        font-size: 14px;
+        color: var(--color-text-secondary);
+      }
+      .act {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 12px;
+        font: 500 12px var(--font-sans);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+      }
+      .act.edit {
+        color: var(--color-caramel);
+      }
+      .act.danger {
+        color: var(--color-berry);
+      }
+      .inline-meta,
+      .act-icon {
+        display: none;
+      }
+      @container (max-width: 820px) {
+        .pt th,
+        .pt td {
+          padding-left: 6px;
+          padding-right: 6px;
+        }
+        .pt th {
+          letter-spacing: 0;
+        }
+        .act {
+          width: 30px;
+          height: 30px;
+          margin-left: 2px;
+          border-radius: 8px;
+          font-size: 16px;
+        }
+        .act:hover {
+          background: var(--color-cream);
+        }
+        .act-text {
+          display: none;
+        }
+        .act-icon {
+          display: inline;
+        }
+      }
+      @container (max-width: 720px) {
+        .col-price,
+        .col-prep {
+          display: none;
+        }
+        .inline-meta {
+          display: block;
+          margin-top: 2px;
+          font-size: 12px;
+          font-weight: 400;
+          color: var(--color-text-secondary);
+          white-space: nowrap;
         }
       }
     `,
@@ -367,10 +584,8 @@ export class MenuPage {
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
 
-  // No text-align here: a [style] binding outranks the static style that sets it per column.
-  readonly thStyle =
-    'padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid var(--color-border-light)';
-  readonly arrowStyle = 'width: 26px; height: 28px; font-size: 14px; color: var(--color-text-secondary)';
+  /** The category rail folded away, to give the table the whole width; remembered per browser. */
+  readonly railFolded = signal(readRailFolded());
   readonly smallLabelStyle = 'font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)';
   readonly selectStyle =
     'height: 32px; max-width: 220px; padding: 0 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-sans); font-size: 13px';
@@ -414,6 +629,18 @@ export class MenuPage {
       const storeId = this.stockStoreId();
       untracked(() => this.loadStopList(storeId));
     });
+  }
+
+  toggleRail(): void {
+    const folded = !this.railFolded();
+    this.railFolded.set(folded);
+    writeRailFolded(folded);
+  }
+
+  /** The category picker that stands in for the folded rail. */
+  pickCategory(event: Event): void {
+    const id = (event.target as HTMLSelectElement).value;
+    if (id && id !== this.selectedCategoryId()) this.selectCategory(id);
   }
 
   selectCategory(id: string): void {
@@ -636,6 +863,26 @@ export class MenuPage {
       },
       error: (err: unknown) => this.tableError.set(describeMenuError(err, this.translate)),
     });
+  }
+}
+
+const RAIL_FOLDED_KEY = 'takeaway.admin.menu.railFolded';
+
+/** Storage can be missing or refuse access (private mode); the rail is then simply open. */
+function readRailFolded(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(RAIL_FOLDED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeRailFolded(folded: boolean): void {
+  try {
+    if (folded) localStorage.setItem(RAIL_FOLDED_KEY, '1');
+    else localStorage.removeItem(RAIL_FOLDED_KEY);
+  } catch {
+    // Not remembered; the toggle still works for this visit.
   }
 }
 

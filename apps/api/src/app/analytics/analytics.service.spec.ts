@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import { resolveDateRange } from './analytics-range';
@@ -118,9 +118,9 @@ describe('AnalyticsService.storePerformance', () => {
       $queryRaw,
       store: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 's1', name: 'Center' },
-          { id: 's2', name: 'Mall' },
-          { id: 's3', name: 'New' },
+          { id: 's1', name: 'Center', currency: 'RUP' },
+          { id: 's2', name: 'Mall', currency: 'RUP' },
+          { id: 's3', name: 'New', currency: 'RUP' },
         ]),
       },
     } as unknown as PrismaService;
@@ -165,7 +165,7 @@ describe('AnalyticsService.storePerformance', () => {
       ['Mall', 10_000, 10, 10, false],
       ['New', 0, 0, 0, false],
     ]);
-    expect(result[0]).toMatchObject({ avgCheckCents: null, staff: null, cancelRatePercent: null });
+    expect(result[0]).toMatchObject({ avgCheckCents: null, staff: null, cancelRatePercent: null, currency: 'RUP' });
   });
 
   it('compares the stores on PRO', async () => {
@@ -222,5 +222,139 @@ describe('AnalyticsService.churn', () => {
     expect(churn.customers).toEqual([
       expect.objectContaining({ userId: 'u1', name: 'Ира', phone: '+37377', avgCheckCents: 5_000 }),
     ]);
+  });
+});
+
+/** The SQL and the bound values of one `$queryRaw` tagged-template call. */
+function sqlOf(call: unknown[]): Prisma.Sql {
+  const [strings, ...values] = call as [TemplateStringsArray, ...unknown[]];
+  return Prisma.sql(strings, ...values);
+}
+
+describe('AnalyticsService.revenueSeries', () => {
+  function day(date: string, revenue: number, orders: number, sales = revenue, discounts = 0, giftCards = 0) {
+    return {
+      day: date,
+      orders,
+      revenue: BigInt(revenue),
+      sales: BigInt(sales),
+      discounts: BigInt(discounts),
+      giftCards: BigInt(giftCards),
+    };
+  }
+
+  function service(rows: unknown[]) {
+    const $queryRaw = jest.fn().mockResolvedValue(rows);
+    return { svc: new AnalyticsService({ $queryRaw } as unknown as PrismaService), $queryRaw };
+  }
+
+  it('sums sales less discounts, gift cards included, never the card charge', async () => {
+    const { svc, $queryRaw } = service([
+      day('2026-09-25', 9_999, 3),
+      day('2026-09-29', 2_800, 2, 2_800),
+      day('2026-10-02', 4_300, 3, 7_600, 3_300, 1_400),
+    ]);
+    const r = await svc.revenueSeries({ brandIds: ['b1'], storeIds: null }, WEEK);
+
+    expect(r).toMatchObject({
+      totalRevenueCents: 7_100,
+      totalOrders: 5,
+      avgBasketCents: 1_420,
+      // Only the period's days: the 25th belongs to the period before.
+      salesCents: 10_400,
+      discountCents: 3_300,
+      giftCardCents: 1_400,
+      previousRevenueCents: 9_999,
+      revenueDeltaPercent: -29,
+    });
+    expect(r.salesCents - r.discountCents).toBe(r.totalRevenueCents);
+    const sql = sqlOf($queryRaw.mock.calls[0] as unknown[]).sql;
+    expect(sql).toContain('GREATEST(o."subtotalCents" - o."discountCents", 0)');
+    expect(sql).not.toContain('o."totalCents"');
+  });
+
+  it('has no percentage when the period before sold nothing', async () => {
+    const { svc } = service([day('2026-10-02', 6_300, 10)]);
+    const r = await svc.revenueSeries({ brandIds: ['b1'], storeIds: null }, WEEK);
+    expect(r.previousRevenueCents).toBe(0);
+    expect(r.revenueDeltaPercent).toBeNull();
+    expect(r.bestDay).toEqual({ date: '2026-10-02', revenueCents: 6_300, orderCount: 10 });
+  });
+});
+
+describe('AnalyticsService.topProducts', () => {
+  it('ranks products by their share of the revenue and keeps the menu-price sum beside it', async () => {
+    const $queryRaw = jest.fn().mockResolvedValue([
+      { name: 'Американо', units: 5, sales: 7_000n, revenue: 5_394n },
+      { name: 'Круассан', units: 1, sales: 2_000n, revenue: 1_705n },
+    ]);
+    const svc = new AnalyticsService({ $queryRaw } as unknown as PrismaService);
+    const top = await svc.topProducts({ brandIds: ['b1'], storeIds: null }, WEEK, 6);
+
+    expect(top).toEqual([
+      { name: 'Американо', unitsSold: 5, revenueCents: 5_394, salesCents: 7_000 },
+      { name: 'Круассан', unitsSold: 1, revenueCents: 1_705, salesCents: 2_000 },
+    ]);
+    const sql = sqlOf($queryRaw.mock.calls[0] as unknown[]);
+    // Each line's share of its order's revenue, by price, rounded down per product.
+    expect(sql.sql).toContain(
+      'FLOOR(SUM(oi."totalCents"::numeric * GREATEST(o."subtotalCents" - o."discountCents", 0) / NULLIF(o."subtotalCents", 0)))',
+    );
+    expect(sql.sql).toContain(`o."status" NOT IN ('CANCELLED', 'EXPIRED')`);
+    expect(sql.sql).toContain('ORDER BY 4 DESC');
+    expect(sql.values).toContain(6);
+  });
+});
+
+describe('AnalyticsService.cohort', () => {
+  const at = (iso: string) => new Date(iso);
+
+  function service(orders: unknown[], firstOrders: Array<{ userId: string; first: string }>) {
+    const findMany = jest.fn().mockResolvedValue(orders);
+    const groupBy = jest
+      .fn()
+      .mockResolvedValue(firstOrders.map((f) => ({ userId: f.userId, _min: { createdAt: at(f.first) } })));
+    const prisma = { order: { findMany, groupBy } } as unknown as PrismaService;
+    return { svc: new AnalyticsService(prisma), findMany, groupBy };
+  }
+
+  function o(userId: string, subtotalCents: number, discountCents = 0, giftCardCents = 0) {
+    const createdAt = at('2026-10-01T09:00:00Z');
+    return { userId, subtotalCents, discountCents, giftCardCents, createdAt, acceptedAt: createdAt, readyAt: null };
+  }
+
+  it('splits the customers into new and returning, the way the dashboard does', async () => {
+    const { svc, findMany } = service(
+      [
+        // The tester: a first order ever, then three more in the same week.
+        o('tester', 2_800),
+        o('tester', 1_400, 1_400),
+        o('tester', 1_400, 0, 1_400),
+        o('tester', 3_400, 500),
+        // A regular from September, once this week.
+        o('regular', 2_000),
+      ],
+      [
+        { userId: 'tester', first: '2026-09-29T08:00:00Z' },
+        { userId: 'regular', first: '2026-09-02T08:00:00Z' },
+      ],
+    );
+    const c = await svc.cohort({ brandIds: ['b1'], storeIds: null }, WEEK);
+
+    expect(c).toMatchObject({ customers: 2, newCustomers: 1, returningCustomers: 1 });
+    expect(c.newCustomers + c.returningCustomers).toBe(c.customers);
+    // A different question: who ordered more than once inside the period.
+    expect(c.repeatRatePercent).toBe(50);
+    // (2 800 + 0 + 1 400 + 2 900 + 2 000) / 5: revenue per order, the gift card included.
+    expect(c.avgBasketCents).toBe(1_820);
+    expect(findMany.mock.calls[0]?.[0].where.status).toEqual({ notIn: ['CANCELLED', 'EXPIRED'] });
+  });
+
+  it('calls a lone first-time customer new, not returning, even after ten orders', async () => {
+    const tenOrders = Array.from({ length: 10 }, () => o('tester', 630));
+    const { svc } = service(tenOrders, [{ userId: 'tester', first: '2026-09-30T08:00:00Z' }]);
+    const c = await svc.cohort({ brandIds: ['b1'], storeIds: null }, WEEK);
+    expect(c).toMatchObject({ customers: 1, newCustomers: 1, returningCustomers: 0, repeatRatePercent: 100 });
+    expect(c.avgBasketCents).toBe(630);
   });
 });

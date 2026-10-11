@@ -151,6 +151,7 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     updatedAt: new Date('2026-09-01T00:00:00Z'),
     // Sold in the store the tests order from.
     stores: [{ storeId: 'store-1' }],
+    category: { visible: true, addOnsOnly: false },
     variations: [
       variation({ id: 'v-s', type: 'SIZE', name: 'S', sortOrder: 1 }),
       variation({ id: 'v-m', type: 'SIZE', name: 'M', priceDeltaCents: 70, sortOrder: 2, isDefault: true }),
@@ -345,6 +346,28 @@ describe('CartService option rules on add-to-cart', () => {
     await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
   });
 
+  // NoName's «Дополнительные ингредиенты» came in from Poster as products:
+  // a shot of syrup is added to a drink, never bought on its own.
+  it('answers 404 for a product of an add-ons-only category, as the catalog does', async () => {
+    prisma.product.findUnique.mockResolvedValue(latte({ category: { visible: true, addOnsOnly: true } }));
+
+    await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
+    expect(prisma.cartItem.create).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for a product whose category is hidden from the menu', async () => {
+    prisma.product.findUnique.mockResolvedValue(latte({ category: { visible: false, addOnsOnly: false } }));
+
+    await expect(add({})).rejects.toMatchObject({ status: 404, message: 'Product not found' });
+  });
+
+  it("loads the product's category with it, to know whether it is sold on its own", async () => {
+    await add({});
+
+    const include = prisma.product.findUnique.mock.calls[0]?.[0]?.include;
+    expect(include.category).toEqual({ select: { visible: true, addOnsOnly: true } });
+  });
+
   // The brand's burger is not sold in its pizzeria: the menu there never
   // shows it, and a shared link or a direct call must not order it either.
   it('refuses a product the store does not sell, with the coded "unavailable" error', async () => {
@@ -508,6 +531,13 @@ describe('CartService.repriceForCheckout', () => {
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
   });
 
+  it('takes out a line whose category became add-ons only after it went in', async () => {
+    const err = await conflictOf(reprice(row({ product: latte({ category: { visible: true, addOnsOnly: true } }) })));
+
+    expect(err.items).toEqual([expect.objectContaining({ reason: 'PRODUCT_UNAVAILABLE', unitPriceCents: null })]);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['ci-1'] } } });
+  });
+
   it('takes out a line whose product the store stopped selling', async () => {
     const err = await conflictOf(reprice(row({ product: latte({ stores: [] }) })));
 
@@ -556,6 +586,7 @@ describe('CartService.addItem guards', () => {
     basePriceCents: 500,
     prepTimeSeconds: 60,
     stores: [{ storeId: 'store-1' }],
+    category: { visible: true, addOnsOnly: false },
     variations: [],
     modifiers: [],
   };

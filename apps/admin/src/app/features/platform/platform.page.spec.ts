@@ -13,11 +13,15 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { PlatformPage } from './platform.page';
 
 const totals = (over: Partial<OverviewTotals> = {}): OverviewTotals => ({
+  salesCents: 1_050_000,
+  discountCents: 50_000,
   revenueCents: 1_000_000,
+  giftCardCents: 0,
   orders: 100,
   placed: 104,
   customers: 80,
   newCustomers: 20,
+  returningCustomers: 60,
   avgCheckCents: 10_000,
   cancelled: 3,
   expired: 1,

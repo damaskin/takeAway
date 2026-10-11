@@ -48,6 +48,7 @@ const TABS: EditorTab[] = ['details', 'hours', 'photos', 'kitchen'];
       <app-store-editor
         [storeId]="storeId()"
         [initialTab]="initialTab()"
+        [photoError]="photoError"
         (closed)="back()"
         (saveCompleted)="seen($event)"
       />
@@ -63,6 +64,8 @@ export class StoreEditPage {
   private readonly router = inject(Router);
 
   readonly name = signal<string | null>(null);
+  /** Set by the create form when the store was created but its photo did not upload. */
+  readonly photoError = photoErrorFromNavigation();
   readonly initialTab = computed<EditorTab>(() => {
     const wanted = this.tab();
     return TABS.find((t) => t === wanted) ?? 'details';
@@ -85,4 +88,10 @@ export class StoreEditPage {
   back(): void {
     this.router.navigate(['/stores']);
   }
+}
+
+/** The router keeps `navigate(…, { state })` in the history entry. */
+function photoErrorFromNavigation(): string | null {
+  const state = (typeof history !== 'undefined' ? history.state : null) as { photoError?: unknown } | null;
+  return typeof state?.photoError === 'string' ? state.photoError : null;
 }

@@ -5,8 +5,21 @@ import type { BusinessOverview, PlatformBrandRow, PlatformOverview } from '@take
 import { canonicalTimeZone, isLocalTimeZone, prevailingTimeZone } from '../common/time/time-zone';
 import { PrismaService } from '../prisma/prisma.service';
 import { type DateRange, type RangeInput, resolveDateRange } from './analytics-range';
-import type { AnalyticsScope } from './analytics-scope';
-import { COUNTED, PICKUP_DONE, createdBetween, num, scopeConditions, storeWhere, utc, whereAll } from './analytics-sql';
+import type { AnalyticsContext, AnalyticsScope } from './analytics-scope';
+import {
+  COUNTED,
+  DISCOUNTS,
+  GIFT_CARDS,
+  PICKUP_DONE,
+  REVENUE,
+  SALES,
+  createdBetween,
+  num,
+  scopeConditions,
+  storeWhere,
+  utc,
+  whereAll,
+} from './analytics-sql';
 import {
   type DailyRow,
   type FirstOrderRow,
@@ -56,22 +69,27 @@ export class OverviewService {
 
   /**
    * A business's dashboard. `storeComparison` adds the per-store comparison,
-   * `deep` the hourly and weekday load.
+   * `deep` the hourly and weekday load. Narrowed to one store (`storeId`),
+   * the figures are that store's while the breakdown still lists every store
+   * of `parent`: the row a manager clicks and the totals it opens are the
+   * same numbers, and the next store is one click away.
    */
   async business(
-    scope: AnalyticsScope,
-    range: DateRange,
+    ctx: Pick<AnalyticsContext, 'scope' | 'parent' | 'storeId' | 'range' | 'currency' | 'currencies'>,
     features: { storeComparison: boolean; deep: boolean },
   ): Promise<BusinessOverview> {
+    const { scope, parent, storeId, range } = ctx;
     const stores = await this.prisma.store.findMany({
-      where: storeWhere(scope),
+      where: storeWhere(parent),
       select: { id: true, name: true, timezone: true },
     });
-    const raw = await this.collect(scope, range, 'store', features.deep ? stores : null);
+    const raw = await this.collect(scope, range, 'store', features.deep ? stores : null, parent);
     const units: Unit[] = stores.map((s) => ({ id: s.id, name: s.name }));
-    const result = this.totals(range, raw);
+    const result = this.totals(range, raw, storeId);
     return {
       ...result,
+      currency: ctx.currency,
+      currencies: ctx.currencies,
       byStore: breakdown(units, raw.groups, features.storeComparison),
       storeComparison: features.storeComparison,
       byHour: raw.load ? loadByHour(raw.load) : null,
@@ -93,7 +111,7 @@ export class OverviewService {
         plan: true,
         commissionBps: true,
         moderationStatus: true,
-        stores: { select: { id: true, timezone: true } },
+        stores: { select: { id: true, timezone: true, currency: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -105,10 +123,11 @@ export class OverviewService {
     if (!currency && currencies.length > 1) {
       const rough = resolveDateRange(input, 'UTC', 30, now);
       const sold = await this.prisma.$queryRaw<Array<{ brandId: string; revenue: Num }>>`
-        SELECT s."brandId" AS "brandId", COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue"
+        SELECT s."brandId" AS "brandId", COALESCE(SUM(${REVENUE}), 0)::bigint AS "revenue"
         FROM "Order" o
         JOIN "Store" s ON s.id = o."storeId"
-        ${whereAll([COUNTED, ...createdBetween(rough.start, rough.end)])}
+        JOIN "Brand" b ON b.id = s."brandId"
+        ${whereAll([COUNTED, Prisma.sql`s."currency" = b."currency"`, ...createdBetween(rough.start, rough.end)])}
         GROUP BY 1
       `;
       const revenue = new Map(sold.map((r) => [r.brandId, num(r.revenue)]));
@@ -116,11 +135,13 @@ export class OverviewService {
     }
     currency ??= currencies[0] ?? null;
 
+    // A brand's store that prices in another currency than the brand is
+    // left out, not added to the brand's money.
     const inCurrency = brands.filter((b) => b.currency === currency);
-    const stores = inCurrency.flatMap((b) => b.stores);
+    const stores = inCurrency.flatMap((b) => b.stores.filter((s) => s.currency === currency));
     const timeZone = prevailingTimeZone(stores.map((s) => s.timezone)) ?? 'UTC';
     const range = resolveDateRange(input, timeZone, 30, now);
-    const scope: AnalyticsScope = { brandIds: inCurrency.map((b) => b.id), storeIds: null };
+    const scope: AnalyticsScope = { brandIds: inCurrency.map((b) => b.id), storeIds: stores.map((s) => s.id) };
 
     const raw = await this.collect(scope, range, 'brand', stores);
     const rows = breakdown(
@@ -142,7 +163,7 @@ export class OverviewService {
         commissionBps: brand?.commissionBps ?? 0,
         commissionCents: Math.round(commissionNow.get(row.id) ?? 0),
         previousCommissionCents: Math.round(commissionBefore.get(row.id) ?? 0),
-        stores: brand?.stores.length ?? 0,
+        stores: brand?.stores.filter((s) => s.currency === currency).length ?? 0,
         moderationStatus: brand?.moderationStatus ?? 'PENDING',
       };
     });
@@ -157,13 +178,16 @@ export class OverviewService {
     };
   }
 
-  private totals(range: DateRange, raw: Raw) {
+  /** The totals of the whole scope, or of the one store (`focus`) the page is narrowed to. */
+  private totals(range: DateRange, raw: Raw, focus: string | null = null) {
     const fresh = newCustomerTotals(range, raw.firstOrders);
-    const scopeRow = (current: boolean) => raw.groups.find((g) => g.key === null && g.current === current);
+    const scopeRow = (current: boolean) => raw.groups.find((g) => g.key === focus && g.current === current);
+    const active = (current: boolean) =>
+      focus ? Number((scopeRow(current)?.orders ?? 0) > 0) : countActive(raw.groups, current);
     return {
       period: overviewPeriod(range),
-      current: totalsFrom(scopeRow(true), fresh.current, countActive(raw.groups, true)),
-      previous: totalsFrom(scopeRow(false), fresh.previous, countActive(raw.groups, false)),
+      current: totalsFrom(scopeRow(true), fresh.current, active(true)),
+      previous: totalsFrom(scopeRow(false), fresh.previous, active(false)),
       daily: dailySeries(range, raw.daily, raw.firstOrders),
       statuses: raw.statuses,
     };
@@ -171,21 +195,26 @@ export class OverviewService {
 
   /**
    * The grouped queries behind both views. `zones` are the stores whose own
-   * time zone buckets the hourly load; null skips that query.
+   * time zone buckets the hourly load; null skips that query. The per-unit
+   * totals cover `groupScope` — the wider view a single store is part of —
+   * and everything else `scope`.
    */
   private async collect(
     scope: AnalyticsScope,
     range: DateRange,
     groupBy: GroupBy,
     zones: readonly StoreZone[] | null,
+    groupScope: AnalyticsScope = scope,
   ): Promise<Raw> {
     const key = groupBy === 'store' ? Prisma.raw('o."storeId"') : Prisma.raw('s."brandId"');
     const scoped = scopeConditions(scope);
     const tz = range.timeZone;
     const localDay = (column: Prisma.Sql) =>
       Prisma.sql`to_char((${column} AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD')`;
-    // Commission at each brand's current rate, in cents with fractions.
-    const commission = Prisma.sql`o."totalCents"::numeric * b."commissionBps" / 10000`;
+    // Commission at each brand's current rate on the part of the revenue paid
+    // through the platform — gift cards are sold by the brand itself and stay
+    // out, as in the settlements report. Cents with fractions.
+    const commission = Prisma.sql`(${REVENUE} - ${GIFT_CARDS})::numeric * b."commissionBps" / 10000`;
 
     const [groups, daily, firstOrders, load, statuses] = await Promise.all([
       this.prisma.$queryRaw<
@@ -194,6 +223,9 @@ export class OverviewService {
           current: boolean;
           orders: Num;
           revenue: Num;
+          sales: Num;
+          discounts: Num;
+          giftCards: Num;
           commission: Num;
           placed: Num;
           cancelled: Num;
@@ -206,7 +238,10 @@ export class OverviewService {
         SELECT x."key" AS "key",
                x."current" AS "current",
                COUNT(*) FILTER (WHERE x."counted")::int AS "orders",
-               COALESCE(SUM(x."totalCents") FILTER (WHERE x."counted"), 0)::bigint AS "revenue",
+               COALESCE(SUM(x."revenue") FILTER (WHERE x."counted"), 0)::bigint AS "revenue",
+               COALESCE(SUM(x."sales") FILTER (WHERE x."counted"), 0)::bigint AS "sales",
+               COALESCE(SUM(x."discounts") FILTER (WHERE x."counted"), 0)::bigint AS "discounts",
+               COALESCE(SUM(x."giftCards") FILTER (WHERE x."counted"), 0)::bigint AS "giftCards",
                COALESCE(SUM(x."commission") FILTER (WHERE x."counted"), 0)::float8 AS "commission",
                COUNT(*)::int AS "placed",
                COUNT(*) FILTER (WHERE x."status" = 'CANCELLED')::int AS "cancelled",
@@ -219,7 +254,10 @@ export class OverviewService {
                  o."createdAt" >= ${utc(range.start)} AS "current",
                  ${COUNTED} AS "counted",
                  o."status"::text AS "status",
-                 o."totalCents" AS "totalCents",
+                 ${REVENUE} AS "revenue",
+                 ${SALES} AS "sales",
+                 ${DISCOUNTS} AS "discounts",
+                 ${GIFT_CARDS} AS "giftCards",
                  ${commission} AS "commission",
                  o."userId" AS "userId",
                  (${PICKUP_DONE}) AS "pickedUp",
@@ -227,7 +265,7 @@ export class OverviewService {
           FROM "Order" o
           JOIN "Store" s ON s.id = o."storeId"
           JOIN "Brand" b ON b.id = s."brandId"
-          ${whereAll([...scoped, ...createdBetween(range.previous.start, range.end)])}
+          ${whereAll([...scopeConditions(groupScope), ...createdBetween(range.previous.start, range.end)])}
         ) x
         GROUP BY GROUPING SETS ((x."current", x."key"), (x."current"))
       `,
@@ -236,7 +274,7 @@ export class OverviewService {
       >`
         SELECT ${localDay(Prisma.raw('o."createdAt"'))} AS "day",
                COUNT(*) FILTER (WHERE ${COUNTED})::int AS "orders",
-               COALESCE(SUM(o."totalCents") FILTER (WHERE ${COUNTED}), 0)::bigint AS "revenue",
+               COALESCE(SUM(${REVENUE}) FILTER (WHERE ${COUNTED}), 0)::bigint AS "revenue",
                COALESCE(SUM(${commission}) FILTER (WHERE ${COUNTED}), 0)::float8 AS "commission",
                COUNT(DISTINCT o."userId") FILTER (WHERE ${COUNTED})::int AS "customers",
                COUNT(*) FILTER (WHERE o."status" = 'CANCELLED')::int AS "cancelled",
@@ -277,6 +315,9 @@ export class OverviewService {
         current: g.current,
         orders: num(g.orders),
         revenue: num(g.revenue),
+        sales: num(g.sales),
+        discounts: num(g.discounts),
+        giftCards: num(g.giftCards),
         commission: num(g.commission),
         placed: num(g.placed),
         cancelled: num(g.cancelled),
@@ -314,7 +355,7 @@ export class OverviewService {
       SELECT EXTRACT(HOUR FROM ${local})::int AS "hour",
              EXTRACT(ISODOW FROM ${local})::int AS "weekday",
              COUNT(*)::int AS "orders",
-             COALESCE(SUM(o."totalCents"), 0)::bigint AS "revenue"
+             COALESCE(SUM(${REVENUE}), 0)::bigint AS "revenue"
       FROM "Order" o
       JOIN "Store" s ON s.id = o."storeId"
       JOIN unnest(${ids}::text[], ${zones}::text[]) AS z("storeId", "tz") ON z."storeId" = o."storeId"

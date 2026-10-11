@@ -33,7 +33,10 @@ export class AdminIngredientsController {
     return this.ingredients.create(dto, scope);
   }
 
-  /** `{ isAvailable: false }` is "ran out": its options disappear from the menu until it is back. */
+  /**
+   * `{ isAvailable: false }` is "ran out": its options disappear from the menu until it is back.
+   * A new name or price reaches every option that still carries the old one.
+   */
   @Patch(':id')
   async update(
     @CurrentUser() user: AuthenticatedUser,
@@ -44,6 +47,7 @@ export class AdminIngredientsController {
     return this.ingredients.update(id, dto, scope);
   }
 
+  /** Takes the add-on off every product that offers it, then out of the library. */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {

@@ -16,6 +16,7 @@ export type MenuErrorCode =
   | 'IMAGES_CHANGED'
   | 'INGREDIENT_UNKNOWN'
   | 'INGREDIENT_NAME_TAKEN'
+  | 'OPTION_NAME_REQUIRED'
   | 'STORE_UNKNOWN';
 
 export function menuConflict(

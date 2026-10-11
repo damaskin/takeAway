@@ -87,7 +87,13 @@ const POLL_MS = 3000;
                   </div>
                 </td>
                 <td style="padding: 10px 14px">{{ 'admin.campaigns.channels.' + c.channel | translate }}</td>
-                <td style="padding: 10px 14px">{{ 'admin.campaigns.audiences.' + c.audience | translate }}</td>
+                <td style="padding: 10px 14px">
+                  @if (c.audience === 'INACTIVE') {
+                    {{ 'admin.campaigns.audienceInactive' | translate: { days: c.inactiveDays ?? 14 } }}
+                  } @else {
+                    {{ 'admin.campaigns.audiences.' + c.audience | translate }}
+                  }
+                </td>
                 <td style="padding: 10px 14px">
                   <span
                     style="padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap"
