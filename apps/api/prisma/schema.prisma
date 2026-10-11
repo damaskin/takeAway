@@ -343,6 +343,8 @@ model User {
   referralsAsReferee  Referral[]         @relation("ReferralsAsReferee")
   campaignDeliveries  CampaignDelivery[]
   feedback            Feedback[]
+  campaignsCreated    Campaign[]         @relation("CampaignCreatedBy")
+  campaignsReviewed   Campaign[]         @relation("CampaignReviewedBy")
 
   @@index([createdAt])
   @@index([referredByUserId])
@@ -388,6 +390,8 @@ enum ReferralStatus {
 model Feedback {
   id         String         @id @default(cuid())
   userId     String?
+  /// The brand a BUSINESS message is about; null for customer feedback.
+  brandId    String?
   kind       FeedbackKind
   /// Trimmed, 1–2000 characters.
   message    String
@@ -402,7 +406,8 @@ model Feedback {
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -413,6 +418,10 @@ enum FeedbackKind {
   REVIEW
   SUGGESTION
   PROBLEM
+  /// A business asking the platform team something («Написать в поддержку»).
+  QUESTION
+  /// A business asking to move to another plan («Перейти на PRO»).
+  PLAN_CHANGE
 }
 
 enum FeedbackSource {
@@ -420,6 +429,8 @@ enum FeedbackSource {
   ANDROID
   WEB
   TMA
+  /// The business admin panel: a brand's staff writing to platform support.
+  BUSINESS
 }
 
 enum FeedbackStatus {
@@ -513,6 +524,13 @@ model Brand {
   /// Platform commission in basis points (1000 = 10 %). Follows the plan's
   /// default unless a SUPER_ADMIN set another value for this brand.
   commissionBps    Int                   @default(1000)
+  /// The number the platform team calls the business on, E.164. Required at
+  /// sign-up; null on brands created before it was asked for.
+  contactPhone     String?
+  /// The plan the owner asked to move to («Перейти на PRO»). Cleared when a
+  /// SUPER_ADMIN sets the plan or dismisses the request.
+  requestedPlan    BrandPlan?
+  planRequestedAt  DateTime?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -525,16 +543,20 @@ model Brand {
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
   campaigns       Campaign[]
+  feedback        Feedback[]
 
   @@index([moderationStatus])
   @@index([ownerId])
 }
 
-/// Brand-driven outbound campaign. The admin composes copy in the dashboard;
-/// "send" flips the row to SENDING and a background run fans it out via
-/// push (app → web → Telegram fallback) / Telegram / email. Counters are
-/// refreshed after every batch from the per-recipient CampaignDelivery rows,
-/// so a retry only reaches the people who did not get it the first time.
+/// Brand-driven outbound campaign. The admin composes copy in the dashboard
+/// and submits it for review; nothing goes out until a SUPER_ADMIN approves
+/// it (`approvedAt`), and a SUPER_ADMIN's own campaign is approved on submit.
+/// Approval starts a background run — at once, or at `scheduledAt` — that
+/// fans it out via push (app → web → Telegram fallback) / Telegram / email.
+/// Counters are refreshed after every batch from the per-recipient
+/// CampaignDelivery rows, so a retry only reaches the people who did not get
+/// it the first time.
 model Campaign {
   id             String           @id @default(cuid())
   brandId        String
@@ -554,7 +576,19 @@ model Campaign {
   optedOutCount  Int              @default(0)
   /// Last delivery error or the reason the whole run failed. Diagnostic text.
   lastError      String?
+  /// Send no earlier than this. Null: as soon as it is approved.
   scheduledAt    DateTime?
+  /// Who composed it — a SUPER_ADMIN's campaign skips review.
+  createdById    String?
+  /// Last time it went into the review queue.
+  submittedAt    DateTime?
+  /// The moderator's last decision, either way.
+  reviewedAt     DateTime?
+  reviewedById   String?
+  /// Why it was rejected, shown to the business. Cleared on resubmit.
+  reviewNote     String?
+  /// Set once, by approval. No run starts without it.
+  approvedAt     DateTime?
   /// When the current (or last) run started — a SENDING row whose
   /// `updatedAt` stops moving is treated as stuck and may be retried.
   startedAt      DateTime?
@@ -563,10 +597,13 @@ model Campaign {
   updatedAt      DateTime         @updatedAt
 
   brand      Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  createdBy  User?              @relation("CampaignCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedBy User?              @relation("CampaignReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   deliveries CampaignDelivery[]
 
   @@index([brandId, status])
   @@index([brandId, createdAt])
+  @@index([status, submittedAt])
 }
 
 enum CampaignChannel {
@@ -586,9 +623,14 @@ enum CampaignAudience {
   INACTIVE_30D
 }
 
+/// DRAFT → PENDING_REVIEW → APPROVED (waits for `scheduledAt`, if any) →
+/// SENDING → SENT / FAILED; or PENDING_REVIEW → REJECTED → (edit) →
+/// PENDING_REVIEW again.
 enum CampaignStatus {
   DRAFT
-  SCHEDULED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
   SENDING
   SENT
   FAILED
