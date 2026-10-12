@@ -38,9 +38,7 @@ abstract final class Env {
   static const _telegramAndroidAppLink = String.fromEnvironment('TELEGRAM_ANDROID_APP_LINK');
   static String get telegramAndroidAppLink {
     if (_telegramAndroidAppLink.isNotEmpty) return _telegramAndroidAppLink;
-    return kReleaseMode
-        ? 'https://app3387643188-login.tg.dev/tglogin'
-        : 'https://app3004048938-login.tg.dev/tglogin';
+    return kReleaseMode ? 'https://app3387643188-login.tg.dev/tglogin' : 'https://app3004048938-login.tg.dev/tglogin';
   }
 
   /// Map tiles, as a `{z}/{x}/{y}` URL template. By default our own caching

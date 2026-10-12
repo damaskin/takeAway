@@ -3,11 +3,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:takeaway_mobile/features/stores/map_focus.dart';
 
 void main() {
-  const tiraspol = [
-    LatLng(46.838149, 29.624371),
-    LatLng(46.837116, 29.586988),
-    LatLng(46.838096, 29.660323),
-  ];
+  const tiraspol = [LatLng(46.838149, 29.624371), LatLng(46.837116, 29.586988), LatLng(46.838096, 29.660323)];
   const dubai = LatLng(25.078, 55.141);
   const london = LatLng(51.525, -0.087);
   final all = [dubai, london, ...tiraspol];
