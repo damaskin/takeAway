@@ -116,12 +116,14 @@ const USER = {
   telegramUserId: null,
 };
 
-/** One add-in of the library, used by the latte. */
+/** One add-on of the library, used by the latte, at its usual price. */
 export const OAT_MILK = {
   id: 'ing-oat',
   brandId: BRAND.id,
   name: 'Овсяное молоко',
   isAvailable: true,
+  priceCents: 500,
+  group: null,
   products: [{ id: PRODUCT.id, name: PRODUCT.name }],
 };
 
@@ -152,13 +154,21 @@ const PERIOD = {
   previousTo: '2026-09-27',
 };
 
+/** Revenue is sales at menu prices less discounts; new and returning customers add up. */
 function totals(revenueCents: number, orders: number) {
+  const discountCents = Math.round(revenueCents * 0.05);
+  const customers = Math.round(orders * 0.8);
+  const newCustomers = Math.round(orders * 0.2);
   return {
+    salesCents: revenueCents + discountCents,
+    discountCents,
     revenueCents,
+    giftCardCents: 0,
     orders,
     placed: orders + 2,
-    customers: Math.round(orders * 0.8),
-    newCustomers: Math.round(orders * 0.2),
+    customers,
+    newCustomers,
+    returningCustomers: customers - newCustomers,
     avgCheckCents: orders ? Math.round(revenueCents / orders) : null,
     cancelled: 1,
     expired: 1,
@@ -206,6 +216,8 @@ function storeRow(id: string, name: string, revenueCents: number, orders: number
 /** A PRO brand with three stores: Center earns most, Mall takes most orders. */
 export const BUSINESS_OVERVIEW = {
   period: PERIOD,
+  currency: 'MDL',
+  currencies: ['MDL'],
   current: totals(420_000, 77),
   previous: totals(380_000, 70),
   daily: DAILY,
@@ -218,6 +230,30 @@ export const BUSINESS_OVERVIEW = {
   storeComparison: true,
   byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: hour >= 7 && hour <= 21 ? 5 : 0, revenueCents: 0 })),
   byWeekday: Array.from({ length: 7 }, (_, i) => ({ weekday: i + 1, orders: 10 + i, revenueCents: 0 })),
+};
+
+/** Regulars who stopped ordering: two now, one in the period before. */
+export const CHURN = {
+  from: PERIOD.from,
+  to: PERIOD.to,
+  timeZone: PERIOD.timeZone,
+  window: 14,
+  count: 2,
+  lostRevenueCents: 9_000,
+  previous: { count: 1, lostRevenueCents: 4_000 },
+  countDeltaPercent: 100,
+  customers: [
+    {
+      userId: 'customer-1',
+      name: 'Анна',
+      phone: null,
+      orders: 6,
+      totalCents: 27_000,
+      avgCheckCents: 4_500,
+      lastOrderAt: '2026-09-12T08:30:00.000Z',
+      daysSinceLastOrder: 22,
+    },
+  ],
 };
 
 export const PLATFORM_OVERVIEW = {
@@ -320,6 +356,7 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
     }
 
     if (path === '/admin/analytics/overview') return json(route, BUSINESS_OVERVIEW);
+    if (path === '/admin/analytics/churn') return json(route, CHURN);
     if (path === '/admin/platform/overview') return json(route, PLATFORM_OVERVIEW);
     if (path === '/admin/analytics/order-statuses') {
       return json(route, {
@@ -329,7 +366,7 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
         period: { total: 4, completed: 3, cancelled: 1, expired: 0, completionRatePercent: 75, byStatus: {} },
       });
     }
-    if (path.startsWith('/admin/orders')) return json(route, { items: [], total: 0 });
+    if (path === '/admin/orders') return json(route, []);
     if (path.startsWith('/admin/pos/status')) return json(route, { connections: [] });
 
     // Every remaining list endpoint answers empty rather than hanging.

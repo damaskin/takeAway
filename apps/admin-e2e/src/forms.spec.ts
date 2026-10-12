@@ -31,8 +31,8 @@ const LIST_ROUTES = [
   'dispatch',
   'riders',
   'staff',
-  'promo',
-  'gift-cards',
+  'promotions/promo',
+  'promotions/gift-cards',
   'campaigns',
   'analytics',
   'brands',
@@ -52,8 +52,8 @@ const FORM_ROUTES = [
   'menu/products/new',
   `menu/products/${PRODUCT.id}`,
   `menu/products/${PRODUCT.id}/options`,
-  'promo/new',
-  'gift-cards/new',
+  'promotions/promo/new',
+  'promotions/gift-cards/new',
   'campaigns/new',
   'brands/new',
   'staff/add',
@@ -165,8 +165,8 @@ test.describe('forms are reachable from the lists that own them', () => {
     ['stores', '/stores/new'],
     ['menu', '/menu/categories/new'],
     ['menu', '/menu/products/new'],
-    ['promo', '/promo/new'],
-    ['gift-cards', '/gift-cards/new'],
+    ['promotions/promo', '/promotions/promo/new'],
+    ['promotions/gift-cards', '/promotions/gift-cards/new'],
     ['campaigns', '/campaigns/new'],
     ['brands', '/brands/new'],
   ];
@@ -180,6 +180,29 @@ test.describe('forms are reachable from the lists that own them', () => {
       await settled(page);
 
       await expect(page.locator(`a[href^="${form}"]`).first()).toBeVisible();
+    });
+  }
+});
+
+/**
+ * Promo codes and gift cards live under «Акции» now; the addresses from
+ * before — bookmarks, links already sent — still open the same pages.
+ */
+test.describe('the addresses from before «Акции» still work', () => {
+  const MOVED: Array<[old: string, now: string]> = [
+    ['promo', '/promotions/promo'],
+    ['promo/new', '/promotions/promo/new'],
+    ['gift-cards', '/promotions/gift-cards'],
+    ['gift-cards/new', '/promotions/gift-cards/new'],
+  ];
+
+  for (const [old, now] of MOVED) {
+    test(`/${old} opens ${now}`, async ({ page, context }) => {
+      await signIn(context);
+      await installFakeApi(context);
+
+      await page.goto(`/${old}`);
+      await expect(page).toHaveURL(new RegExp(`${now}$`));
     });
   }
 });

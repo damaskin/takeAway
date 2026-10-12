@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 import { installFakeApi, signIn } from './support/fake-api';
 
 /**
- * A business's home: KPIs against the period before, stores side by side,
+ * A business's home: KPIs against the period before, how the revenue is made
+ * up, inactive customers right under the KPIs, stores side by side,
  * statuses, load by hour and weekday, and a stores table that sorts and
  * narrows the whole page to one store.
  */
@@ -21,11 +22,20 @@ test('the dashboard shows its blocks and the stores table sorts and filters', as
   await expect(page.getByRole('heading', { name: 'Главная', level: 1 })).toBeVisible();
   await expect(page.getByText('сравнение с предыдущими 7 днями')).toBeVisible();
   await expect(page.locator('app-kpi-card')).toHaveCount(9);
+  // Revenue is sales less discounts, and the page says so under the KPIs.
+  await expect(page.locator('.ov-money')).toHaveText('Продажи 4 410 MDL − скидки 210 MDL = выручка 4 200 MDL');
   await expect(page.getByRole('heading', { name: 'Выручка по точкам' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Статусы заказов' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Загрузка по часам' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'По дням недели' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Сейчас в работе' })).toBeVisible();
+  // Inactive customers come right after the KPIs, before the stores.
+  const churn = page.locator('app-churn-widget');
+  await expect(churn.getByRole('heading', { name: 'Неактивные клиенты' })).toBeVisible();
+  await expect(churn).toContainText('90 MDL');
+  const churnBox = await churn.boundingBox();
+  const storesBox = await page.getByRole('heading', { name: 'Выручка по точкам' }).boundingBox();
+  expect(churnBox?.y).toBeLessThan(storesBox?.y ?? 0);
 
   const table = page.locator('.ov-table');
   const names = table.locator('tbody tr .ov-name');
@@ -52,6 +62,10 @@ test('the dashboard shows its blocks and the stores table sorts and filters', as
   await table.locator('tbody tr').filter({ hasText: 'Молл' }).click();
   await expect(page.locator('.ov-chip')).toContainText('Молл');
   await expect.poll(() => requests.at(-1) ?? '').toContain('storeId=store-2');
+  // Every store stays pickable while one is picked.
+  const storeFilter = page.getByRole('combobox', { name: 'Точка' });
+  await expect(storeFilter).toHaveValue('store-2');
+  await expect(storeFilter.locator('option')).toHaveText(['Все точки', 'Центр', 'Молл', 'Аэропорт']);
   await page.locator('.ov-chip button').click();
   await expect(page.locator('.ov-chip')).toHaveCount(0);
 });
