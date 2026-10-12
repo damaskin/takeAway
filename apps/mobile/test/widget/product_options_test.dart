@@ -1,13 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/app/router.dart';
+import 'package:takeaway_mobile/features/cart/cart_line.dart';
+import 'package:takeaway_mobile/features/menu/menu_search_screen.dart';
+import 'package:takeaway_mobile/features/menu/product_card.dart';
 import 'package:takeaway_mobile/features/product/option_widgets.dart';
 import 'package:takeaway_mobile/features/product/product_screen.dart';
 import 'package:takeaway_mobile/shared/store_kinds.dart';
+import 'package:takeaway_mobile/shared/widgets/product_image.dart';
 import 'package:takeaway_mobile/shared/widgets/store_map.dart';
 
 import '../helpers/fake_api.dart';
@@ -43,20 +46,27 @@ Map<String, dynamic> _addon(
 };
 
 /// A coffee shop menu with kinds: a cappuccino with every kind of option,
-/// bakery (one item sold out) and a sandwich with a required sauce.
-FakeApi _api() {
+/// bakery (one item sold out) and a sandwich with a required sauce. With
+/// [photos] the cappuccino and the croissant have one; nothing else does.
+FakeApi _api({bool photos = false}) {
+  Map<String, dynamic> pictured(Map<String, dynamic> json) => photos
+      ? {
+          ...json,
+          'imageUrls': ['https://cdn.takeaway.md/products/${json['id']}.jpg'],
+        }
+      : json;
   final api = FakeApi();
   api.menuCategories = [
     {
       ...FakeApi.categoryJson('cat_coffee', 'Кофе', [
-        FakeApi.productJson('p_capp', 'Капучино', 3000),
+        pictured(FakeApi.productJson('p_capp', 'Капучино', 3000)),
         FakeApi.productJson('p_latte', 'Латте', 2000),
       ]),
       'kind': 'HOT_DRINKS',
     },
     {
       ...FakeApi.categoryJson('cat_bakery', 'Выпечка', [
-        FakeApi.productJson('p_croissant', 'Круассан', 1500, category: 'cat_bakery'),
+        pictured(FakeApi.productJson('p_croissant', 'Круассан', 1500, category: 'cat_bakery')),
         {...FakeApi.productJson('p_eclair', 'Эклер', 1700, category: 'cat_bakery'), 'onStopList': true},
         FakeApi.productJson('p_muffin', 'Маффин', 1800, category: 'cat_bakery'),
       ], sortOrder: 1),
@@ -70,7 +80,7 @@ FakeApi _api() {
     },
   ];
   api.products['p_capp'] = ProductDetail.fromJson({
-    ...FakeApi.productJson('p_capp', 'Капучино', 3000),
+    ...pictured(FakeApi.productJson('p_capp', 'Капучино', 3000)),
     'categoryKind': 'HOT_DRINKS',
     'brandId': 'br_1',
     'allergens': ['MILK'],
@@ -128,12 +138,12 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   await settle(tester, const Duration(milliseconds: 400));
 }
 
-Finder _svg(String file) => find.byWidgetPredicate(
-  (w) =>
-      w is SvgPicture &&
-      w.bytesLoader is SvgAssetLoader &&
-      (w.bytesLoader as SvgAssetLoader).assetName == 'assets/product-placeholders/$file.svg',
-);
+/// Any SVG picture. The app draws none: stand-in art for a product without a
+/// photo got it rejected by App Review (Guideline 2.1(a)).
+final _anySvg = find.byWidgetPredicate((w) => w.runtimeType.toString().contains('Svg'));
+
+Finder _menuItem(String name) =>
+    find.ancestor(of: find.text(name), matching: find.byWidgetPredicate((w) => w is ProductCard || w is ProductRow));
 
 void main() {
   testWidgets('a drink: compact choices with prices, add-ons by group that open in place, live price', (tester) async {
@@ -223,22 +233,101 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('a product without a photo shows the illustration for its kind', (tester) async {
+  testWidgets('the menu grids the products with a photo and lists the rest under them as text rows', (tester) async {
     _phone(tester);
-    final h = await pumpApp(tester, api: _api());
-    expect(_svg('hot-drink'), findsWidgets);
-    await tester.dragUntilVisible(find.text('Круассан'), find.byType(CustomScrollView).first, const Offset(0, -200));
+    final h = await pumpApp(tester, api: _api(photos: true));
+
+    expect(tester.widget(_menuItem('Капучино')), isA<ProductCard>());
+    final latte = _menuItem('Латте');
+    expect(tester.widget(latte), isA<ProductRow>());
+    expect(find.descendant(of: latte, matching: find.byType(ProductImage)), findsNothing);
+    expect(find.descendant(of: latte, matching: find.text('Двойной эспрессо и молоко.')), findsOneWidget);
+    expect(find.descendant(of: latte, matching: find.text('20 MDL')), findsOneWidget);
+    expect(find.descendant(of: latte, matching: find.byIcon(Icons.add_rounded)), findsOneWidget);
+    expect(
+      tester.getTopLeft(latte).dy,
+      greaterThan(tester.getBottomLeft(_menuItem('Капучино')).dy),
+      reason: 'rows come after the grid of photos',
+    );
+    expect(tester.getSize(latte).width, greaterThan(tester.getSize(_menuItem('Капучино')).width * 1.5));
+
+    // A sold-out row says so instead of offering the «+».
+    await tester.dragUntilVisible(find.text('Эклер'), find.byType(CustomScrollView).first, const Offset(0, -200));
     await settle(tester, const Duration(milliseconds: 300));
-    expect(_svg('bakery'), findsWidgets);
-    expect(_svg('other'), findsNothing);
+    final eclair = _menuItem('Эклер');
+    expect(tester.widget(eclair), isA<ProductRow>());
+    expect(find.descendant(of: eclair, matching: find.text('Закончилось')), findsOneWidget);
+    expect(find.descendant(of: eclair, matching: find.byIcon(Icons.add_rounded)), findsNothing);
+
+    // A category without a single photo is rows only.
+    await tester.dragUntilVisible(find.text('Сэндвич'), find.byType(CustomScrollView).first, const Offset(0, -200));
+    await settle(tester, const Duration(milliseconds: 300));
+    expect(tester.widget(_menuItem('Сэндвич')), isA<ProductRow>());
+    expect(_anySvg, findsNothing);
+
+    // A row opens its product like a card does.
+    await tester.tap(find.text('Сэндвич'));
+    await settle(tester);
+    expect(find.byType(ProductScreen), findsOneWidget);
     await h.unmount(tester);
   });
 
-  testWidgets('a menu from an API without kinds shows the generic illustration', (tester) async {
+  testWidgets('a menu with no photos at all is rows only, with no stand-in art', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester);
-    expect(_svg('other'), findsWidgets);
-    expect(_svg('hot-drink'), findsNothing);
+    expect(find.byType(ProductRow), findsWidgets);
+    expect(find.byType(ProductCard), findsNothing);
+    expect(find.byType(ProductImage), findsNothing);
+    expect(_anySvg, findsNothing);
+    await h.unmount(tester);
+  });
+
+  testWidgets('search shows a thumbnail only for a product with a photo', (tester) async {
+    _phone(tester);
+    final h = await pumpApp(tester, api: _api(photos: true));
+    await tester.tap(find.byIcon(Icons.search_rounded));
+    await settle(tester);
+    expect(find.byType(MenuSearchScreen), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Капучино');
+    await settle(tester, const Duration(milliseconds: 300));
+    expect(find.byType(ProductImage), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Латте');
+    await settle(tester, const Duration(milliseconds: 300));
+    expect(find.descendant(of: find.byType(ListView), matching: find.text('Латте')), findsOneWidget);
+    expect(find.byType(ProductImage), findsNothing);
+    expect(_anySvg, findsNothing);
+    await h.unmount(tester);
+  });
+
+  testWidgets('a product without a photo opens on its name, with no picture block', (tester) async {
+    _phone(tester);
+    final h = await pumpApp(tester, api: _api());
+    await _openProduct(tester, h, 'p_capp');
+
+    expect(find.byType(FlexibleSpaceBar), findsNothing);
+    expect(find.byType(ProductImage), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is Hero && w.tag == productHeroTag('p_capp')), findsNothing);
+    final title = tester.getRect(find.text('Капучино').last);
+    final close = tester.getRect(find.byIcon(Icons.close_rounded));
+    expect(title.top, greaterThanOrEqualTo(close.bottom), reason: 'the name is not under the close button');
+    expect(title.top, lessThan(140), reason: 'and starts right under the bar, not after an empty block');
+    await h.unmount(tester);
+  });
+
+  testWidgets('a product with a photo opens on the photo, carried over from the menu card', (tester) async {
+    _phone(tester);
+    final h = await pumpApp(tester, api: _api(photos: true));
+    await tester.tap(find.text('Капучино'));
+    await settle(tester);
+
+    expect(find.byType(ProductScreen), findsOneWidget);
+    expect(find.byType(FlexibleSpaceBar), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is Hero && w.tag == productHeroTag('p_capp')), findsOneWidget);
+    expect(find.descendant(of: find.byType(FlexibleSpaceBar), matching: find.byType(ProductImage)), findsOneWidget);
+    final title = find.descendant(of: find.byType(ProductScreen), matching: find.text('Капучино'));
+    expect(tester.getTopLeft(title).dy, greaterThan(300), reason: 'the photo comes first');
     await h.unmount(tester);
   });
 
@@ -260,6 +349,8 @@ void main() {
       expect(find.text('Сэндвич'), findsOneWidget);
       expect(find.text('Эклер'), findsNothing, reason: 'sold out');
       expect(find.text('Латте'), findsOneWidget, reason: 'only the cart line, not a suggestion');
+      expect(find.byType(ProductImage), findsNothing, reason: 'no photos here: lines and cards are text only');
+      expect(_anySvg, findsNothing);
 
       await tester.tap(
         find.descendant(of: find.byKey(const ValueKey('p_croissant')), matching: find.byIcon(Icons.add_rounded)),
@@ -267,6 +358,31 @@ void main() {
       await settle(tester);
       expect(api.added.single.productId, 'p_croissant');
       expect(find.text('К заказу'), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('suggestions and cart lines show a photo only when the product has one', (tester) async {
+      _phone(tester);
+      final api = _api(photos: true)..seedCart(FakeApi.latte());
+      final h = await pumpApp(tester, api: api);
+      await openCart(tester);
+
+      final croissant = find.byKey(const ValueKey('p_croissant'));
+      final muffin = find.byKey(const ValueKey('p_muffin'));
+      expect(find.descendant(of: croissant, matching: find.byType(ProductImage)), findsOneWidget);
+      expect(find.descendant(of: muffin, matching: find.byType(ProductImage)), findsNothing);
+      expect(
+        find.descendant(of: muffin, matching: find.text('Двойной эспрессо и молоко.')),
+        findsOneWidget,
+        reason: 'a text card says what it is instead',
+      );
+      Finder lineOf(String name) => find.ancestor(of: find.text(name), matching: find.byType(CartLine));
+      expect(find.descendant(of: lineOf('Латте'), matching: find.byType(ProductImage)), findsNothing);
+
+      await tester.tap(find.descendant(of: croissant, matching: find.byIcon(Icons.add_rounded)));
+      await settle(tester);
+      expect(find.descendant(of: lineOf('Круассан'), matching: find.byType(ProductImage)), findsOneWidget);
+      expect(_anySvg, findsNothing);
       await h.unmount(tester);
     });
 
@@ -371,25 +487,31 @@ void main() {
     });
   });
 
-  testWidgets('the order screen pictures its lines and pins the store by what it sells', (tester) async {
+  testWidgets('the order screen pictures its lines when they have photos and pins the store by what it sells', (
+    tester,
+  ) async {
     _phone(tester);
-    final api = _api()
-      ..storeKinds = ['FOOD']
-      ..currentOrder = FakeApi.sampleOrder(storeLatitude: 46.84, storeLongitude: 29.63);
-    final h = await pumpApp(tester, api: api);
-    unawaited(h.container.read(routerProvider).push(Routes.order('ord_1')));
-    await settle(tester);
+    Finder lineOf(String name) => find.ancestor(of: find.text(name), matching: find.byType(Row)).first;
+    for (final photos in [true, false]) {
+      final api = _api(photos: photos)
+        ..storeKinds = ['FOOD']
+        ..currentOrder = FakeApi.sampleOrder(storeLatitude: 46.84, storeLongitude: 29.63);
+      final h = await pumpApp(tester, api: api);
+      unawaited(h.container.read(routerProvider).push(Routes.order('ord_1')));
+      await settle(tester);
 
-    await _reveal(tester, find.text('Круассан'));
-    expect(
-      find.descendant(
-        of: find.ancestor(of: find.text('Круассан'), matching: find.byType(Row)).first,
-        matching: _svg('bakery'),
-      ),
-      findsOneWidget,
-    );
-    await _reveal(tester, find.byType(StorePin));
-    expect(tester.widget<StorePin>(find.byType(StorePin)).kinds, {StoreKind.food});
-    await h.unmount(tester);
+      await _reveal(tester, find.text('Круассан'));
+      expect(
+        find.descendant(of: lineOf('Круассан'), matching: find.byType(ProductImage)),
+        photos ? findsOneWidget : findsNothing,
+        reason: photos ? 'the photo from the menu' : 'no photo, no thumbnail — and no stand-in',
+      );
+      expect(_anySvg, findsNothing);
+      if (photos) {
+        await _reveal(tester, find.byType(StorePin));
+        expect(tester.widget<StorePin>(find.byType(StorePin)).kinds, {StoreKind.food});
+      }
+      await h.unmount(tester);
+    }
   });
 }

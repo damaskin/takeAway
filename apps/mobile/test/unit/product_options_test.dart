@@ -157,8 +157,6 @@ void main() {
       expect(productKindOf(wrap, categoryKind: 'BAKERY'), ProductKind.bakery);
       expect(productKindOf(detail(kind: 'HOT_DRINKS'), categoryKind: 'FOOD'), ProductKind.hotDrinks);
       expect(productKindOf(m.allProducts.last, menu: m), isNull, reason: 'an API without kinds');
-      expect(ProductKind.food.placeholderAsset, 'assets/product-placeholders/food.svg');
-      expect(ProductKind.coldDrinks.placeholderAsset, 'assets/product-placeholders/cold-drink.svg');
     });
   });
 

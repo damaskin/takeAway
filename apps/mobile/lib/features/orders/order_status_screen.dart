@@ -20,7 +20,6 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/directions.dart';
 import '../../shared/money_text.dart';
-import '../../shared/product_kinds.dart';
 import '../../shared/store_kinds.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
@@ -794,6 +793,14 @@ class _ItemsCard extends ConsumerWidget {
     final brand = context.brand;
     final currency = order.currency;
     final discount = order.discountCents;
+    // Lines show their photos only when every line has one: a receipt with a
+    // picture on some lines and not others reads as images gone missing, and
+    // the quantities would not line up.
+    final photos = [
+      for (final item in order.items)
+        item.productId == null ? null : productPhotoFor(ref, order.storeId, item.productId!),
+    ];
+    final showPhotos = photos.isNotEmpty && photos.every((photo) => photo != null);
 
     Widget line(String label, int cents, {bool strong = false, bool minus = false}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -822,14 +829,23 @@ class _ItemsCard extends ConsumerWidget {
         children: [
           Text(l10n.orderItems, style: context.text.titleMedium),
           const SizedBox(height: 8),
-          for (final item in order.items)
+          for (final (index, item) in order.items.indexed)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ItemImage(storeId: order.storeId, productId: item.productId),
-                  const SizedBox(width: 12),
+                  if (showPhotos) ...[
+                    SizedBox.square(
+                      dimension: 44,
+                      child: ProductImage(
+                        url: photos[index],
+                        seed: item.productId ?? '',
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Text('${item.quantity}×', style: context.text.titleSmall?.copyWith(color: brand.caramel)),
                   const SizedBox(width: 8),
                   Expanded(
@@ -876,37 +892,6 @@ class _ItemOptions extends ConsumerWidget {
     ].where((part) => part.isNotEmpty);
     if (parts.isEmpty) return const SizedBox.shrink();
     return Text(parts.join(' · '), style: context.text.bodySmall);
-  }
-}
-
-/// A line's photo, or the illustration for its kind. The order keeps only
-/// the product id: the store's menu has the rest, and the product details
-/// when the menu no longer lists it.
-class _ItemImage extends ConsumerWidget {
-  const _ItemImage({required this.storeId, required this.productId});
-
-  final String storeId;
-  final String? productId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final id = productId;
-    ({String? imageUrl, ProductKind? kind}) visual = (imageUrl: null, kind: null);
-    if (id != null) {
-      visual = productVisualFor(ref, storeId, id);
-      if (visual.imageUrl == null && visual.kind == null && ref.watch(menuProvider(storeId)).hasValue) {
-        visual = productVisualFor(ref, storeId, id, detail: ref.watch(productDetailProvider(id)).valueOrNull);
-      }
-    }
-    return SizedBox.square(
-      dimension: 44,
-      child: ProductImage(
-        url: visual.imageUrl,
-        kind: visual.kind,
-        seed: id ?? '',
-        borderRadius: BorderRadius.circular(10),
-      ),
-    );
   }
 }
 

@@ -1,23 +1,19 @@
 import 'package:takeaway_api/takeaway_api.dart';
 
-/// What a product is, by the kind of its menu category. Picks the
-/// illustration for a product without a photo, whether the caffeine chip and
-/// «Пожелание бариста» make sense, and what the cart suggests next to a drink.
+/// What a product is, by the kind of its menu category. Decides whether the
+/// caffeine chip and «Пожелание бариста» make sense, and what the cart
+/// suggests next to a drink.
 enum ProductKind {
-  hotDrinks('HOT_DRINKS', 'hot-drink'),
-  coldDrinks('COLD_DRINKS', 'cold-drink'),
-  food('FOOD', 'food'),
-  bakery('BAKERY', 'bakery'),
-  other('OTHER', 'other');
+  hotDrinks('HOT_DRINKS'),
+  coldDrinks('COLD_DRINKS'),
+  food('FOOD'),
+  bakery('BAKERY'),
+  other('OTHER');
 
-  const ProductKind(this.wire, this._file);
+  const ProductKind(this.wire);
 
   /// The value in the API's `kind` / `categoryKind`.
   final String wire;
-  final String _file;
-
-  /// Copies of `libs/ui-kit/src/assets/product-placeholders`.
-  String get placeholderAsset => 'assets/product-placeholders/$_file.svg';
 
   bool get isDrink => this == hotDrinks || this == coldDrinks;
 
@@ -37,8 +33,7 @@ enum ProductKind {
 
 /// [product]'s kind: its own `categoryKind`, else the `kind` of its category
 /// — given as [categoryKind], or looked up in [menu]. Null when nothing says
-/// (API versions that predate kinds); placeholders then use
-/// [ProductKind.other].
+/// (API versions that predate kinds).
 ProductKind? productKindOf(Product product, {Menu? menu, String? categoryKind}) =>
     ProductKind.tryParse(product.categoryKind) ??
     ProductKind.tryParse(categoryKind) ??
