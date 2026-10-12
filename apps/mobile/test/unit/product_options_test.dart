@@ -211,6 +211,34 @@ void main() {
       expect(foodSuggestions(m).first.kind, ProductKind.bakery);
     });
 
+    test('suggests only products with a photo once any has one', () {
+      final pictured = menu([
+        ('cat_coffee', 'HOT_DRINKS', [p('latte', category: 'cat_coffee')]),
+        (
+          'cat_bakery',
+          'BAKERY',
+          [
+            p('croissant', category: 'cat_bakery'),
+            {
+              ...p('muffin', category: 'cat_bakery'),
+              'imageUrls': ['https://cdn.takeaway.md/products/muffin.jpg'],
+            },
+          ],
+        ),
+        (
+          'cat_food',
+          'FOOD',
+          [
+            {
+              ...p('wrap', category: 'cat_food'),
+              'imageUrls': ['https://cdn.takeaway.md/products/wrap.jpg'],
+            },
+          ],
+        ),
+      ]);
+      expect(foodSuggestions(pictured).map((s) => s.product.id), ['muffin', 'wrap']);
+    });
+
     test('wants food only for a cart with a drink and nothing to eat', () {
       expect(wantsFood(cart(['latte']), m), isTrue);
       expect(wantsFood(cart(['latte', 'croissant']), m), isFalse);

@@ -350,6 +350,11 @@ void main() {
       expect(find.text('Эклер'), findsNothing, reason: 'sold out');
       expect(find.text('Латте'), findsOneWidget, reason: 'only the cart line, not a suggestion');
       expect(find.byType(ProductImage), findsNothing, reason: 'no photos here: lines and cards are text only');
+      expect(
+        find.descendant(of: find.byKey(const ValueKey('p_muffin')), matching: find.text('Двойной эспрессо и молоко.')),
+        findsOneWidget,
+        reason: 'a text card says what it is instead',
+      );
       expect(_anySvg, findsNothing);
 
       await tester.tap(
@@ -361,21 +366,18 @@ void main() {
       await h.unmount(tester);
     });
 
-    testWidgets('suggestions and cart lines show a photo only when the product has one', (tester) async {
+    testWidgets('with any photo only pictured products are suggested; cart lines show a photo when there is one', (
+      tester,
+    ) async {
       _phone(tester);
       final api = _api(photos: true)..seedCart(FakeApi.latte());
       final h = await pumpApp(tester, api: api);
       await openCart(tester);
 
       final croissant = find.byKey(const ValueKey('p_croissant'));
-      final muffin = find.byKey(const ValueKey('p_muffin'));
       expect(find.descendant(of: croissant, matching: find.byType(ProductImage)), findsOneWidget);
-      expect(find.descendant(of: muffin, matching: find.byType(ProductImage)), findsNothing);
-      expect(
-        find.descendant(of: muffin, matching: find.text('Двойной эспрессо и молоко.')),
-        findsOneWidget,
-        reason: 'a text card says what it is instead',
-      );
+      expect(find.byKey(const ValueKey('p_muffin')), findsNothing, reason: 'no photo, next to one with a photo');
+      expect(find.text('Сэндвич'), findsNothing);
       Finder lineOf(String name) => find.ancestor(of: find.text(name), matching: find.byType(CartLine));
       expect(find.descendant(of: lineOf('Латте'), matching: find.byType(ProductImage)), findsNothing);
 
