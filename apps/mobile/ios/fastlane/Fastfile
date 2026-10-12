@@ -1,5 +1,6 @@
 require 'json'
 require 'tmpdir'
+require 'fileutils'
 
 # iOS build and TestFlight delivery, run on the Mac that builds iOS —
 # normally through scripts/ios-testflight.sh (see README → "iOS release").
@@ -182,6 +183,11 @@ platform :ios do
     number = next_build_number(name)
     UI.message("Building #{APP_NAME} #{name} (#{number})")
 
+    # Native assets (the objective_c framework) left by a simulator run, such
+    # as scripts/app-store-screenshots.sh, end up in the archive as they are:
+    # App Store Connect then refuses the IPA (91169, simulator platform).
+    FileUtils.rm_rf(File.join(MOBILE_DIR, "build", "native_assets"))
+
     # Flutter writes the version, the build number and the dart-defines into
     # Generated.xcconfig; the archive below compiles the Dart code with them.
     # --config-only skips a build that the archive would repeat.
@@ -244,7 +250,12 @@ platform :ios do
                                        .map { |need| "#{File.basename(bin)} → #{need}.framework" }
       end
       UI.user_error!("Frameworks linked but not in the bundle:\n  #{missing.uniq.join("\n  ")}") unless missing.empty?
-      UI.success("Every link resolves; #{present.size} frameworks in the bundle")
+
+      # App Store Connect takes device binaries only; a simulator build of a
+      # framework is refused at upload (91169).
+      simulator = binaries.select { |bin| `xcrun vtool -show-build "#{bin}" 2>/dev/null` =~ /platform\s+(IOSSIMULATOR|7)\b/ }
+      UI.user_error!("Simulator binaries in the IPA:\n  #{simulator.map { |b| File.basename(b) }.join("\n  ")}") unless simulator.empty?
+      UI.success("Every link resolves; #{present.size} frameworks in the bundle, all built for iOS devices")
     end
   end
 
