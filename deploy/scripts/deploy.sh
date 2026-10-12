@@ -118,9 +118,30 @@ echo "==> [3/4] applying prisma migrations"
 bash "$DEPLOY_DIR/scripts/migrate.sh"
 
 echo "==> [4/4] bringing up api + nginx, reloading config"
-compose up -d api nginx minio
-# Reload our own nginx first, so it picks up vhost / snippet changes.
-compose exec -T nginx nginx -s reload 2>/dev/null || true
+compose up -d api minio
+# Test the checked-out nginx config before the live nginx sees it, in a
+# throwaway container of the same service (same image, mounts, networks —
+# so upstream names resolve). A reload of a broken config used to fail
+# silently and leave the old config running; a restart would then not
+# come up at all.
+echo "==> testing the nginx config"
+if ! compose run --rm --no-deps -T nginx nginx -t; then
+  echo "ERROR: the nginx config in this checkout fails nginx -t; the live nginx keeps its current config." >&2
+  exit 1
+fi
+# nginx.conf is bind-mounted as a single file. git replaces the file on
+# checkout and the running container keeps the old one, while conf.d/ and
+# snippets/ are directory mounts and follow — so a reload alone pairs new
+# vhosts with an old nginx.conf. When nginx.conf changed, recreate.
+live_conf=$(compose exec -T nginx sha1sum /etc/nginx/nginx.conf 2>/dev/null | cut -d' ' -f1 || true)
+repo_conf=$(sha1sum nginx/nginx.conf | cut -d' ' -f1)
+if [ "$live_conf" != "$repo_conf" ]; then
+  echo "==> nginx.conf changed — recreating the nginx container"
+  compose up -d --no-deps --force-recreate nginx
+else
+  compose up -d nginx
+  compose exec -T nginx nginx -s reload
+fi
 
 if [ "$SHARED_EDGE" = "1" ]; then
   # The edge fronts us with SNI passthrough and caches the upstream address,
