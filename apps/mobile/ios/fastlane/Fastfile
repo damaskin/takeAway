@@ -183,17 +183,19 @@ platform :ios do
     number = next_build_number(name)
     UI.message("Building #{APP_NAME} #{name} (#{number})")
 
-    # Native assets (the objective_c framework) left by a simulator run, such
-    # as scripts/app-store-screenshots.sh, end up in the archive as they are:
-    # App Store Connect then refuses the IPA (91169, simulator platform).
-    FileUtils.rm_rf(File.join(MOBILE_DIR, "build", "native_assets"))
-
     # Flutter writes the version, the build number and the dart-defines into
     # Generated.xcconfig; the archive below compiles the Dart code with them.
-    # --config-only skips a build that the archive would repeat.
+    #
+    # It has to be a full build, not --config-only: only `flutter build ios`
+    # builds the native assets (the objective_c framework) into
+    # build/native_assets/ios, and the archive just copies whatever is there.
+    # A leftover from a simulator run (scripts/app-store-screenshots.sh) made
+    # App Store Connect refuse the IPA (91169); without the directory the IPA
+    # shipped no objective_c at all. So: clear it, then build it for devices.
+    FileUtils.rm_rf(File.join(MOBILE_DIR, "build", "native_assets"))
     Dir.chdir(MOBILE_DIR) do
       sh(FLUTTER, "pub", "get")
-      sh(FLUTTER, "build", "ios", "--config-only", "--release",
+      sh(FLUTTER, "build", "ios", "--release", "--no-codesign",
          "--dart-define-from-file=#{DART_DEFINES_FILE}", "--build-name=#{name}", "--build-number=#{number}")
     end
     cocoapods(podfile: File.join(IOS_DIR, "Podfile"), try_repo_update_on_error: true)
@@ -250,6 +252,16 @@ platform :ios do
                                        .map { |need| "#{File.basename(bin)} → #{need}.framework" }
       end
       UI.user_error!("Frameworks linked but not in the bundle:\n  #{missing.uniq.join("\n  ")}") unless missing.empty?
+
+      # Native assets are opened at run time, not linked, so otool does not
+      # see them: check every framework Flutter's manifest points at.
+      manifest = Dir["#{app}/Frameworks/App.framework/flutter_assets/NativeAssetsManifest.json"].first
+      if manifest
+        wanted = JSON.parse(File.read(manifest)).fetch("native-assets", {}).values.flat_map(&:values)
+                     .filter_map { |kind, path| path if kind == "absolute" }.uniq
+        absent = wanted.reject { |path| File.exist?(File.join(app, "Frameworks", path)) }
+        UI.user_error!("Native assets missing from the bundle:\n  #{absent.join("\n  ")}") unless absent.empty?
+      end
 
       # App Store Connect takes device binaries only; a simulator build of a
       # framework is refused at upload (91169).
