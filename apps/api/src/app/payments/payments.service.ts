@@ -49,10 +49,12 @@ export interface RefundOptions {
   /** Optional partial amount in cents. Omit to refund the remaining balance. */
   amountCents?: number;
   reason?: RefundReason;
-  /** Caller (admin) — recorded on the OrderEvent for audit. */
-  actorId: string;
+  /** Caller (admin) — recorded on the OrderEvent for audit. None for the system's own refunds. */
+  actorId?: string;
   /** Free-form note from the admin UI. Stored on the event payload. */
   note?: string;
+  /** Who asked, for the audit trail: `admin` (default) or `sla` — the order was not accepted in time. */
+  source?: 'admin' | 'sla';
 }
 
 export interface RefundResult {
@@ -179,7 +181,7 @@ export class PaymentsService {
         payment_intent: payment.providerRef!,
         amount,
         reason: opts.reason,
-        metadata: { orderId, actorId: opts.actorId },
+        metadata: { orderId, actorId: opts.actorId ?? opts.source ?? 'admin' },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'unknown Stripe error';
@@ -207,7 +209,7 @@ export class PaymentsService {
             note: opts.note ?? null,
             providerRef: payment.providerRef,
             stripeRefundId: stripeRefund.id,
-            source: 'admin',
+            source: opts.source ?? 'admin',
           } satisfies Prisma.InputJsonValue,
         },
       }),
@@ -255,7 +257,7 @@ export class PaymentsService {
         actorId: opts.actorId,
         reason: opts.reason ?? null,
         note: opts.note ?? null,
-        source: 'admin',
+        source: opts.source ?? 'admin',
       });
     } catch (err) {
       if (err instanceof AgroprombankError) {

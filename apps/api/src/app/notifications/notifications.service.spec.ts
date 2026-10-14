@@ -400,3 +400,58 @@ describe('NotificationsService.notifyOrderStatus', () => {
     expect(h.sent()?.message.body).toBe('Заведение не подтвердило заказ вовремя.');
   });
 });
+
+describe('NotificationsService — kitchen policy messages', () => {
+  it('tells a customer whose paid order was refunded that the money is on its way back', async () => {
+    const h = setup();
+    await h.service.notifyOrderStatus(order, 'EXPIRED', {
+      expiry: { reason: 'not_accepted', holdReleased: false, refunded: true },
+    });
+    expect(h.sent()?.message.body).toBe('Заведение не подтвердило заказ вовремя. Деньги вернутся на карту.');
+  });
+
+  it('sends «Немного задерживаемся» as an order_delayed push with the order id, honouring the opt-out', async () => {
+    const h = setup();
+    await h.service.notifyOrderDelayed(order);
+    expect(h.sent()?.message).toEqual({
+      kind: 'order_delayed',
+      title: 'Немного задерживаемся',
+      body: 'Заказ #A42 почти готов.',
+      orderId: 'order-1',
+    });
+
+    const optedOut = setup({ notifyOrderUpdates: false });
+    await optedOut.service.notifyOrderDelayed(order);
+    expect(optedOut.fcm.attempt).not.toHaveBeenCalled();
+  });
+
+  it('messages the staff of a store, the owner, or both, through the bot only', async () => {
+    const h = setup();
+    const prisma = (h.service as unknown as { prisma: { store: unknown; user: { findMany: jest.Mock } } }).prisma;
+    prisma.store = { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-1' }) };
+    prisma.user.findMany = jest.fn().mockResolvedValue([{ id: 'staff-1', locale: 'RU', telegramUserId: BigInt(42) }]);
+
+    await expect(
+      h.service.notifyStoreTeam(
+        'store-1',
+        { title: 'T', body: 'B', orderId: 'order-1' },
+        { staff: true, owner: false },
+      ),
+    ).resolves.toBe(1);
+    expect(prisma.user.findMany.mock.calls[0]?.[0]?.where.OR).toEqual([
+      { userStores: { some: { storeId: 'store-1' } } },
+    ]);
+    expect(h.telegram.send).toHaveBeenCalledWith(expect.objectContaining({ userId: 'staff-1', pushTokens: [] }), {
+      kind: 'order_status',
+      title: 'T',
+      body: 'B',
+      orderId: 'order-1',
+    });
+
+    await h.service.notifyStoreTeam('store-1', { title: 'T', body: 'B' }, { staff: false, owner: true });
+    expect(prisma.user.findMany.mock.calls[1]?.[0]?.where.OR).toEqual([
+      { role: 'BRAND_ADMIN', ownedBrands: { some: { id: 'brand-1' } } },
+    ]);
+    expect(h.fcm.attempt).not.toHaveBeenCalled();
+  });
+});

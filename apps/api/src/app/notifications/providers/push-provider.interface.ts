@@ -23,8 +23,11 @@ export interface PushMessage {
   body: string;
   /** Optional deep-link back to the order. */
   orderId?: string;
-  /** Machine-readable tag so each provider can route correctly. */
-  kind: 'order_status' | 'order_ready' | 'order_out_for_delivery' | 'order_delivered' | 'generic';
+  /**
+   * Machine-readable tag so each provider can route correctly. `order_delayed`:
+   * the order ran past its promised time (`data.orderId`), sent once.
+   */
+  kind: 'order_status' | 'order_ready' | 'order_out_for_delivery' | 'order_delivered' | 'order_delayed' | 'generic';
 }
 
 /**

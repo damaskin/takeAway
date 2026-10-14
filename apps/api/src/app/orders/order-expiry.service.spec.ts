@@ -23,7 +23,7 @@ function orderRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 interface Harness {
   service: OrderExpiryService;
-  tx: { order: { updateMany: jest.Mock; update: jest.Mock } };
+  tx: { order: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock } };
   prisma: { order: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
@@ -38,8 +38,9 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
 
   const tx = {
     order: {
-      // The claim only matches an order that is still CREATED.
-      updateMany: jest.fn().mockResolvedValue({ count: current?.['status'] === 'CREATED' ? 1 : 0 }),
+      findUnique: jest.fn().mockResolvedValue(current ? { status: current['status'] } : null),
+      // The claim matches the status read just before it.
+      updateMany: jest.fn().mockResolvedValue({ count: current ? 1 : 0 }),
       update: jest.fn().mockResolvedValue(orderRow({ status: 'EXPIRED' })),
     },
     promoRedemption: { deleteMany: jest.fn() },
@@ -188,8 +189,33 @@ describe('OrderExpiryService', () => {
       expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'order-1' }),
         'EXPIRED',
-        { expiry: { reason: 'payment_timeout', holdReleased: false, notCharged: false } },
+        { expiry: { reason: 'payment_timeout', holdReleased: false, notCharged: false, refunded: false } },
       );
+    });
+
+    // The acceptance SLA lets a paid order go once its payment was refunded.
+    it('expires a paid order when asked to, saying the money is on its way back', async () => {
+      const h = harness({ current: orderRow({ status: 'PAID' }) });
+
+      await expect(
+        h.service.expire('order-1', 'not_accepted', {
+          from: ['PAID'],
+          refunded: true,
+          details: { rule: 'accept_timeout' },
+        }),
+      ).resolves.toBe(true);
+
+      expect(h.tx.order.updateMany.mock.calls[0]?.[0]?.where).toEqual({ id: 'order-1', status: 'PAID' });
+      expect(h.tx.order.update.mock.calls[0]?.[0]?.data.events.create.payload).toMatchObject({
+        from: 'PAID',
+        reason: 'not_accepted',
+        refunded: true,
+        rule: 'accept_timeout',
+      });
+      expect(h.promo.releaseForOrder).toHaveBeenCalled();
+      expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(expect.anything(), 'EXPIRED', {
+        expiry: expect.objectContaining({ reason: 'not_accepted', refunded: true }),
+      });
     });
   });
 

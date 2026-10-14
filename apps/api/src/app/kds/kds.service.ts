@@ -6,12 +6,14 @@ import {
   type StoreRejectionInfo,
   type StoreRejectReason,
 } from '../notifications/notifications.service';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { CARD_PROVIDERS, isCardProvider, isDeferredCharge } from '../payments/card-providers';
 import { CardPaymentsService } from '../payments/card-payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { BOARD_INCLUDE, type BoardRow, toBoardRow } from './kds-row';
 
 const OPEN_STATUSES: OrderStatus[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY'];
 
@@ -25,52 +27,6 @@ const ALLOWED_TRANSITIONS: Record<string, OrderStatus[]> = {
   pickedUp: ['READY'],
 };
 
-/** What a board row needs beyond the order itself: its lines and the customer's arrival pings. */
-const BOARD_INCLUDE = {
-  items: true,
-  events: {
-    where: { type: { in: ['CUSTOMER_NEARBY', 'CUSTOMER_HERE'] } },
-    select: { type: true, createdAt: true },
-    orderBy: { createdAt: 'asc' },
-  },
-} satisfies Prisma.OrderInclude;
-
-type BoardOrder = Prisma.OrderGetPayload<{ include: typeof BOARD_INCLUDE }>;
-
-/**
- * Where the customer is, from the pings their app sends: HERE once they
- * tapped "I'm here" (or walked into the store), NEARBY when they are close.
- * The latest-reached level wins, so HERE is never downgraded.
- */
-export function customerArrival(events: readonly { type: string; createdAt: Date }[]): {
-  customerArrival: 'NEARBY' | 'HERE' | null;
-  customerArrivedAt: string | null;
-} {
-  const here = events.find((e) => e.type === 'CUSTOMER_HERE');
-  if (here) return { customerArrival: 'HERE', customerArrivedAt: here.createdAt.toISOString() };
-  const nearby = events.find((e) => e.type === 'CUSTOMER_NEARBY');
-  if (nearby) return { customerArrival: 'NEARBY', customerArrivedAt: nearby.createdAt.toISOString() };
-  return { customerArrival: null, customerArrivedAt: null };
-}
-
-function toBoardRow(o: BoardOrder) {
-  return {
-    id: o.id,
-    orderCode: o.orderCode,
-    status: o.status,
-    pickupMode: o.pickupMode,
-    pickupAt: o.pickupAt.toISOString(),
-    createdAt: o.createdAt.toISOString(),
-    customerName: o.customerName,
-    notes: o.notes,
-    ...customerArrival(o.events),
-    items: o.items.map((i) => ({
-      productSnapshot: i.productSnapshot,
-      quantity: i.quantity,
-    })),
-  };
-}
-
 @Injectable()
 export class KdsService {
   private readonly logger = new Logger(KdsService.name);
@@ -82,9 +38,10 @@ export class KdsService {
     private readonly cards: CardPaymentsService,
     private readonly holds: PaymentHoldsService,
     private readonly orders: OrdersService,
+    private readonly kitchen: KitchenLoadService,
   ) {}
 
-  async listOpen(storeId: string) {
+  async listOpen(storeId: string): Promise<BoardRow[]> {
     const orders = await this.prisma.order.findMany({
       where: { storeId, status: { in: OPEN_STATUSES } },
       orderBy: { pickupAt: 'asc' },
@@ -102,7 +59,8 @@ export class KdsService {
     const payable = orders.filter(
       (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
     );
-    return payable.map(toBoardRow);
+    const acceptance = this.kitchen.acceptance;
+    return payable.map((o) => toBoardRow(o, acceptance));
   }
 
   /**
@@ -380,11 +338,12 @@ export class KdsService {
 
   /** Same mapping as listOpen() but filtered by specific ids — used to get a
    *  fresh row after a transition so the KDS socket payload is ready-to-paint. */
-  private async listOpenByIds(storeId: string, ids: string[]) {
+  private async listOpenByIds(storeId: string, ids: string[]): Promise<BoardRow[]> {
     const orders = await this.prisma.order.findMany({
       where: { storeId, id: { in: ids } },
       include: BOARD_INCLUDE,
     });
-    return orders.map(toBoardRow);
+    const acceptance = this.kitchen.acceptance;
+    return orders.map((o) => toBoardRow(o, acceptance));
   }
 }

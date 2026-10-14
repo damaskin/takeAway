@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Order, OrderEventType, Prisma } from '@prisma/client';
 
+import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PosService } from '../pos/pos.service';
@@ -41,6 +43,7 @@ export class OrderSettlementService {
     private readonly orders: OrdersService,
     private readonly notifications: NotificationsService,
     private readonly pos: PosService,
+    private readonly kitchen: KitchenLoadService,
   ) {}
 
   /**
@@ -54,10 +57,14 @@ export class OrderSettlementService {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order) return null;
 
+    const becomesPaid = order.status === 'CREATED';
     const orderUpdate = this.prisma.order.update({
       where: { id: order.id },
       data: {
-        status: order.status === 'CREATED' ? 'PAID' : order.status,
+        status: becomesPaid ? 'PAID' : order.status,
+        // A paid order is on the board: the acceptance clock starts here
+        // unless its hold already started it.
+        ...(becomesPaid && !order.kitchenVisibleAt ? { kitchenVisibleAt: new Date() } : {}),
         events: { create: { type: options.event.type, payload: options.event.payload } },
       },
     });
@@ -112,6 +119,12 @@ export class OrderSettlementService {
    * should hear about it; the capture on accept then stays quiet.
    */
   async announceHeld(orderId: string): Promise<void> {
+    // The acceptance clock starts with the hold; a second hold on the same
+    // order (a retried payment) does not restart it.
+    await this.prisma.order.updateMany({
+      where: { id: orderId, status: 'CREATED', kitchenVisibleAt: null },
+      data: { kitchenVisibleAt: new Date() },
+    });
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.status !== 'CREATED') return;
     await this.pushToKds(order);
@@ -123,23 +136,13 @@ export class OrderSettlementService {
    * 5s polling tick, so we load the fresh row (with items) and broadcast it.
    */
   private async pushToKds(order: Order): Promise<void> {
-    const kdsRow = await this.prisma.order.findUnique({ where: { id: order.id }, include: { items: true } });
+    const kdsRow = await this.prisma.order.findUnique({ where: { id: order.id }, include: BOARD_INCLUDE });
     if (!kdsRow) return;
     this.realtime.emitKdsOrderChanged({
       storeId: order.storeId,
       kind: 'created',
       orderId: order.id,
-      order: {
-        id: kdsRow.id,
-        orderCode: kdsRow.orderCode,
-        status: kdsRow.status,
-        pickupMode: kdsRow.pickupMode,
-        pickupAt: kdsRow.pickupAt.toISOString(),
-        createdAt: kdsRow.createdAt.toISOString(),
-        customerName: kdsRow.customerName,
-        notes: kdsRow.notes,
-        items: kdsRow.items.map((i) => ({ productSnapshot: i.productSnapshot, quantity: i.quantity })),
-      },
+      order: toBoardRow(kdsRow, this.kitchen.acceptance),
     });
   }
 
