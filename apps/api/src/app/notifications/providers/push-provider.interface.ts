@@ -23,8 +23,44 @@ export interface PushMessage {
   body: string;
   /** Optional deep-link back to the order. */
   orderId?: string;
-  /** Machine-readable tag so each provider can route correctly. */
-  kind: 'order_status' | 'order_ready' | 'order_out_for_delivery' | 'order_delivered' | 'generic';
+  /**
+   * Machine-readable tag so each provider can route correctly. `campaign` —
+   * a brand's campaign, `announcement` — a platform announcement: both have
+   * an item in the customer's «Уведомления», and a tap opens it.
+   */
+  kind:
+    | 'order_status'
+    | 'order_ready'
+    | 'order_out_for_delivery'
+    | 'order_delivered'
+    | 'generic'
+    | 'campaign'
+    | 'announcement';
+  /** The inbox item a `campaign` / `announcement` push stands for. */
+  notificationId?: string;
+  /** Where the announcement links: a store's menu, or a brand's. */
+  storeId?: string;
+  brandId?: string;
+}
+
+/** Inbox kinds: the push stands for an item of «Уведомления». */
+export function isInboxPush(message: Pick<PushMessage, 'kind'>): boolean {
+  return message.kind === 'campaign' || message.kind === 'announcement';
+}
+
+/** Marketing, not order news: Android files it in the quiet channel. */
+export function isPromotionalPush(message: Pick<PushMessage, 'kind'>): boolean {
+  return message.kind === 'generic' || isInboxPush(message);
+}
+
+/** The ids a push carries next to the alert, for the app to route a tap (FCM data, APNs custom keys, web push). */
+export function pushData(message: PushMessage): Record<string, string> {
+  const data: Record<string, string> = { kind: message.kind };
+  if (message.orderId) data['orderId'] = message.orderId;
+  if (message.notificationId) data['notificationId'] = message.notificationId;
+  if (message.storeId) data['storeId'] = message.storeId;
+  if (message.brandId) data['brandId'] = message.brandId;
+  return data;
 }
 
 /**

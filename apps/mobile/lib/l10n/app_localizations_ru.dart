@@ -95,6 +95,22 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get timeJustNow => 'Только что';
+
+  @override
+  String timeMinutesAgo(int count) {
+    return '$count мин назад';
+  }
+
+  @override
+  String timeHoursAgo(int count) {
+    return '$count ч назад';
+  }
+
+  @override
+  String get timeYesterday => 'Вчера';
+
+  @override
   String itemsCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -979,7 +995,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get profileReferrals => 'Пригласить друга';
 
   @override
-  String get profileNotifications => 'Уведомления';
+  String get profileInbox => 'Уведомления';
+
+  @override
+  String get profileNotifications => 'Настройки уведомлений';
 
   @override
   String get profileLanguage => 'Язык';
@@ -1138,7 +1157,38 @@ class AppLocalizationsRu extends AppLocalizations {
   String get phoneInvalid => 'В международном формате, например +37377712345';
 
   @override
-  String get notificationsTitle => 'Уведомления';
+  String get inboxTitle => 'Уведомления';
+
+  @override
+  String get inboxReadAll => 'Прочитать все';
+
+  @override
+  String get inboxEmptyTitle => 'Пока пусто';
+
+  @override
+  String get inboxEmptyBody => 'Здесь появятся новости от заведений и takeAway.';
+
+  @override
+  String get inboxUnread => 'Не прочитано';
+
+  @override
+  String get inboxOpen => 'Открыть';
+
+  @override
+  String inboxOpenMenu(String name) {
+    return 'Открыть меню $name';
+  }
+
+  @override
+  String inboxShowPlaces(String name) {
+    return 'Показать заведения $name';
+  }
+
+  @override
+  String get inboxGone => 'Это уведомление больше недоступно.';
+
+  @override
+  String get notificationsTitle => 'Настройки уведомлений';
 
   @override
   String get notificationsSubtitle => 'Выберите, о чём сообщать. Настройки можно менять в любой момент.';

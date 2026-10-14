@@ -14,10 +14,24 @@ import '../core/theme/tokens.dart';
 import '../features/cart/cart_controller.dart';
 import '../features/catalog/catalog_providers.dart';
 import '../features/checkout/web_payment.dart';
+import '../features/inbox/inbox_providers.dart';
 import '../features/orders/orders_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../shared/widgets/state_views.dart';
 import 'router.dart';
+
+/// What a tapped push opens, bottom to top: the order it is about; the
+/// inbox item over «Уведомления», so back leads to the rest of them; the
+/// list alone for a campaign push without an item (an admin's test push).
+/// Empty for anything else.
+@visibleForTesting
+List<String> pushRoutes(PushMessage message) {
+  final orderId = message.orderId;
+  if (orderId != null) return [Routes.order(orderId)];
+  if (!message.isInbox) return const [];
+  final id = message.notificationId;
+  return [Routes.inbox, if (id != null) Routes.inboxItem(id)];
+}
 
 /// Bottom-tab frame around the four main sections (stores, menu, orders,
 /// profile — in the order of the branches in `router.dart`). Also the one place that
@@ -92,8 +106,29 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _openFromPush(PushMessage message) {
-    final orderId = message.orderId;
-    if (orderId != null && ref.read(isSignedInProvider)) GoRouter.of(context).push(Routes.order(orderId));
+    final routes = pushRoutes(message);
+    if (routes.isEmpty || !ref.read(isSignedInProvider)) return;
+    final router = GoRouter.of(context);
+    // Already on «Уведомления»: the message opens over it.
+    final top = router.routerDelegate.currentConfiguration.lastOrNull?.matchedLocation;
+    _pushInTurn(router, routes.length > 1 && top == routes.first ? routes.sublist(1) : routes);
+  }
+
+  /// Pushes [locations] one frame apart: a push builds on the stack as the
+  /// router last settled it.
+  void _pushInTurn(GoRouter router, List<String> locations) {
+    if (locations.isEmpty || !mounted) return;
+    unawaited(router.push(locations.first));
+    if (locations.length > 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pushInTurn(router, locations.sublist(1)));
+    }
+  }
+
+  /// A message came in or was read elsewhere: the badges and, when it is on
+  /// screen, the list are read again.
+  void _refreshInbox() {
+    unawaited(ref.read(inboxUnreadProvider.notifier).refresh());
+    ref.invalidate(inboxProvider);
   }
 
   /// `takeaway://pay?orderId=…&status=…`: the bank is done with the
@@ -120,17 +155,24 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _showForegroundPush(PushMessage message) {
+    if (message.isInbox) _refreshInbox();
     // A push about an order that is already on screen would be noise.
     final location = GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
     if (message.orderId != null && location == '/order/${message.orderId}') return;
     final text = [message.title, message.body].whereType<String>().join(' · ');
     if (text.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
+    final actionLabel = message.orderId != null
+        ? l10n.viewCart
+        : message.isInbox
+        ? l10n.inboxOpen
+        : null;
     Snack.show(
       context,
       text,
       icon: Icons.notifications_active_outlined,
-      actionLabel: message.orderId == null ? null : AppLocalizations.of(context).viewCart,
-      onAction: message.orderId == null ? null : () => _openFromPush(message),
+      actionLabel: actionLabel,
+      onAction: actionLabel == null ? null : () => _openFromPush(message),
     );
   }
 
@@ -147,6 +189,8 @@ class _AppShellState extends ConsumerState<AppShell> {
       ..invalidate(storesProvider);
     final storeId = ref.read(activeStoreProvider)?.id;
     if (storeId != null) unawaited(ref.read(cartProvider(storeId).notifier).reload());
+    // Campaigns that arrived while the app slept.
+    _refreshInbox();
     // A token iOS could not hand out at the first try is asked for again;
     // notifications turned on or off in the phone's settings register or
     // detach the device.

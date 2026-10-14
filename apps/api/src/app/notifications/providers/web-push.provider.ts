@@ -3,7 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import webpush, { type PushSubscription } from 'web-push';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
+import {
+  pushData,
+  type PushAttempt,
+  type PushMessage,
+  type PushProvider,
+  type PushRecipient,
+} from './push-provider.interface';
 
 /**
  * Browser push via the Web Push API (VAPID).
@@ -52,12 +58,8 @@ export class WebPushProvider implements PushProvider {
     if (webTokens.length === 0) return { status: 'skipped', reason: 'no_target' };
     if (!this.enabled) return { status: 'skipped', reason: 'not_configured' };
 
-    const payload = JSON.stringify({
-      title: message.title,
-      body: message.body,
-      orderId: message.orderId,
-      kind: message.kind,
-    });
+    // The service worker opens the order, or «Уведомления» for a campaign / announcement.
+    const payload = JSON.stringify({ title: message.title, body: message.body, ...pushData(message) });
 
     const results = await Promise.allSettled(
       webTokens.map((t) => {

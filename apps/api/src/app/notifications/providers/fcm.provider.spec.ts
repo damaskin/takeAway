@@ -99,6 +99,34 @@ describe('FcmPushProvider', () => {
     expect(first?.[1].message['data']).toEqual({ kind: 'order_ready', orderId: 'ord_1' });
   });
 
+  it('sends a campaign quietly with the inbox item it stands for, and an announcement with its link', async () => {
+    post.mockImplementation((url: string) =>
+      Promise.resolve(url.includes('oauth2') ? { data: { access_token: 't', expires_in: 3600 } } : { data: {} }),
+    );
+    const { provider } = make(configured);
+    const to = recipient([{ token: 'a', deviceType: 'ANDROID' }]);
+    await provider.send(to, { kind: 'campaign', title: 'NoName: −20%', body: 'x', notificationId: 'n1' });
+    await provider.send(to, {
+      kind: 'announcement',
+      title: 'takeAway: Новый партнёр',
+      body: 'y',
+      notificationId: 'n2',
+      storeId: 's1',
+    });
+
+    const sends = post.mock.calls.filter(([url]) => !String(url).includes('oauth2')) as Array<
+      [string, { message: { data: unknown; android: { notification: Record<string, unknown> } } }]
+    >;
+    expect(sends.map(([, body]) => body.message.data)).toEqual([
+      { kind: 'campaign', notificationId: 'n1' },
+      { kind: 'announcement', notificationId: 'n2', storeId: 's1' },
+    ]);
+    expect(sends.map(([, body]) => body.message.android.notification['channel_id'])).toEqual([
+      'promotions',
+      'promotions',
+    ]);
+  });
+
   it('reuses the OAuth token across sends', async () => {
     post.mockImplementation((url: string) =>
       Promise.resolve(url.includes('oauth2') ? { data: { access_token: 'cached', expires_in: 3600 } } : { data: {} }),

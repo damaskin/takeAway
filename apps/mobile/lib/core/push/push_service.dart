@@ -13,11 +13,44 @@ import '../providers.dart';
 
 /// A push the user tapped, or one that arrived while the app was open.
 class PushMessage {
-  const PushMessage({this.title, this.body, this.orderId});
+  const PushMessage({this.title, this.body, this.orderId, this.kind, this.notificationId, this.storeId, this.brandId});
+
+  /// From the push's data (FCM data, APNs custom keys): `kind` and the ids
+  /// next to the alert, all strings; anything else is ignored.
+  factory PushMessage.fromData(Map<String, dynamic> data, {String? title, String? body}) {
+    String? read(String key) => switch (data[key]) {
+      final String value when value.isNotEmpty => value,
+      _ => null,
+    };
+    return PushMessage(
+      title: title,
+      body: body,
+      orderId: read('orderId'),
+      kind: read('kind'),
+      notificationId: read('notificationId'),
+      storeId: read('storeId'),
+      brandId: read('brandId'),
+    );
+  }
+
+  /// The pushes that stand for an item of «Уведомления».
+  static const inboxKinds = {'campaign', 'announcement'};
 
   final String? title;
   final String? body;
   final String? orderId;
+
+  /// What the push is about: `order_status`, `campaign`, `announcement`…
+  final String? kind;
+
+  /// The inbox item a campaign or an announcement push stands for.
+  final String? notificationId;
+  final String? storeId;
+  final String? brandId;
+
+  /// A brand campaign or a platform announcement, not order news: a tap
+  /// opens «Уведомления».
+  bool get isInbox => orderId == null && (inboxKinds.contains(kind) || notificationId != null);
 }
 
 /// What a sync should do with this device's registration on the API.
@@ -81,7 +114,8 @@ class PushService {
     return Platform.isIOS ? Env.firebaseIosAppId.isNotEmpty : Env.firebaseAndroidAppId.isNotEmpty;
   }
 
-  /// Taps on notifications — the shell routes them to the order screen.
+  /// Taps on notifications — the shell routes them to the order screen or
+  /// to «Уведомления».
   Stream<PushMessage> get opened => _opened.stream;
 
   /// Pushes received while the app is in the foreground.
@@ -295,11 +329,8 @@ class PushService {
     );
   }
 
-  static PushMessage _toMessage(RemoteMessage message) => PushMessage(
-    title: message.notification?.title,
-    body: message.notification?.body,
-    orderId: message.data['orderId'] as String?,
-  );
+  static PushMessage _toMessage(RemoteMessage message) =>
+      PushMessage.fromData(message.data, title: message.notification?.title, body: message.notification?.body);
 }
 
 final pushServiceProvider = Provider<PushService>((ref) => PushService(ref));

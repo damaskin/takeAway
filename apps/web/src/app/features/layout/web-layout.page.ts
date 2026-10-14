@@ -1,6 +1,6 @@
 import { ViewportScroller } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { BrandLogoComponent } from '@takeaway/ui-kit';
@@ -9,6 +9,7 @@ import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
+import { InboxService } from '../../core/inbox/inbox.service';
 import { stickyTopInset } from '../../core/layout/sticky-inset';
 
 /**
@@ -46,6 +47,9 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
               [attr.aria-label]="'common.menu' | translate"
             >
               <span style="font-size: 22px; line-height: 1">{{ mobileNavOpen() ? '✕' : '☰' }}</span>
+              @if (unread() > 0 && !mobileNavOpen()) {
+                <span class="unread-dot" aria-hidden="true"></span>
+              }
             </button>
             <a routerLink="/" class="flex items-center gap-2" (click)="closeMobileNav()">
               <lib-brand-logo class="web-brand-logo" [size]="24" />
@@ -74,9 +78,16 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
               <a
                 routerLink="/profile"
                 class="web-nav-account flex items-center justify-center"
-                style="height: 42px; padding: 0 16px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap"
-                >{{ userName() }}</a
-              >
+                style="position: relative; height: 42px; padding: 0 16px; border: 1.5px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap"
+                >{{ userName() }}
+                @if (unread() > 0) {
+                  <span
+                    class="unread-badge"
+                    [attr.aria-label]="'web.profile.inbox.unreadBadge' | translate: { count: unread() }"
+                    >{{ unread() > 99 ? '99+' : unread() }}</span
+                  >
+                }
+              </a>
             } @else {
               <a
                 routerLink="/login"
@@ -126,6 +137,16 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
                 >{{ 'web.orders.title' | translate }}</a
               >
               <a
+                routerLink="/profile/inbox"
+                (click)="closeMobileNav()"
+                class="flex items-center"
+                style="gap: 8px; padding: 12px 8px; font-family: var(--font-sans); font-size: 16px; font-weight: 500; color: var(--color-text-primary); border-radius: 10px"
+                >{{ 'web.profile.sections.inbox' | translate }}
+                @if (unread() > 0) {
+                  <span class="unread-count">{{ unread() > 99 ? '99+' : unread() }}</span>
+                }
+              </a>
+              <a
                 routerLink="/profile"
                 (click)="closeMobileNav()"
                 style="padding: 12px 8px; font-family: var(--font-sans); font-size: 16px; font-weight: 500; color: var(--color-text-primary); border-radius: 10px"
@@ -156,6 +177,43 @@ import { stickyTopInset } from '../../core/layout/sticky-inset';
       }
       .web-nav-burger {
         display: none;
+        position: relative;
+      }
+      .unread-dot {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        width: 9px;
+        height: 9px;
+        border-radius: 9999px;
+        background: var(--color-caramel);
+      }
+      .unread-badge {
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 9999px;
+        background: var(--color-caramel);
+        color: white;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 20px;
+        text-align: center;
+      }
+      .unread-count {
+        min-width: 22px;
+        height: 22px;
+        padding: 0 7px;
+        border-radius: 9999px;
+        background: var(--color-caramel);
+        color: white;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 22px;
+        text-align: center;
       }
       .web-nav-link {
         position: relative;
@@ -218,8 +276,11 @@ export class WebLayoutPage {
   private readonly translate = inject(TranslateService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly inbox = inject(InboxService);
 
   readonly mobileNavOpen = signal(false);
+  /** Unread messages of «Уведомления» — the badge on the profile entry. */
+  readonly unread = this.inbox.unreadCount;
 
   private readonly url = toSignal(
     this.router.events.pipe(
@@ -246,6 +307,30 @@ export class WebLayoutPage {
     // "О нас" and "Лояльность" jump to home-page sections: land them below
     // the header instead of under it.
     inject(ViewportScroller).setOffset(() => [0, stickyTopInset() + 16]);
+
+    // The badge follows the session; a new message shows up on the next page
+    // change or when the tab comes back into view.
+    effect(() => {
+      if (this.store.isAuthenticated()) this.inbox.refreshUnread();
+      else this.inbox.reset();
+    });
+    this.router.events
+      .pipe(
+        filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => this.refreshUnreadIfSignedIn());
+    if (typeof document !== 'undefined') {
+      const onVisible = (): void => {
+        if (document.visibilityState === 'visible') this.refreshUnreadIfSignedIn();
+      };
+      document.addEventListener('visibilitychange', onVisible);
+      inject(DestroyRef).onDestroy(() => document.removeEventListener('visibilitychange', onVisible));
+    }
+  }
+
+  private refreshUnreadIfSignedIn(): void {
+    if (this.store.isAuthenticated()) this.inbox.refreshUnread();
   }
 
   isAuthed(): boolean {

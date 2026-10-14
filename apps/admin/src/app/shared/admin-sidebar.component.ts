@@ -339,6 +339,7 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.campaignModeration,
       badge: 'pendingCampaigns',
     },
+    { icon: '📢', label: 'admin.nav.announcements', link: '/announcements', roles: ADMIN_ROLES.announcements },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
     { icon: '💸', label: 'admin.nav.settlementsOwn', link: '/settlements', roles: ['BRAND_ADMIN'] },
     {

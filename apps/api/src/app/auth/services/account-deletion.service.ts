@@ -72,6 +72,9 @@ export class AccountDeletionService {
    *   cardBindings        deleted — pending card-binding attempts (last four
    *                       digits and the phone the OTP went to).
    *   passwordResetTokens deleted.
+   *   inboxNotifications  deleted — «Уведомления»: marketing copy addressed
+   *                       to the person, nothing to keep. The campaign and
+   *                       announcement delivery rows stay (run statistics).
    *   userStores          deleted — staff store scope; a customer has none,
    *                       cleared for completeness.
    *   loyaltyAccount      kept and zeroed. Deleting it is not an option:
@@ -162,6 +165,7 @@ export class AccountDeletionService {
       await tx.cardBindingRequest.deleteMany({ where: { userId } });
       await tx.cardToken.deleteMany({ where: { userId } });
       await tx.passwordResetToken.deleteMany({ where: { userId } });
+      await tx.customerNotification.deleteMany({ where: { userId } });
       await tx.userStore.deleteMany({ where: { userId } });
 
       await tx.order.updateMany({

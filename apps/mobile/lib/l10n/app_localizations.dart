@@ -248,6 +248,30 @@ abstract class AppLocalizations {
   /// **'Ready by {time}'**
   String readyBy(String time);
 
+  /// No description provided for @timeJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get timeJustNow;
+
+  /// No description provided for @timeMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} min ago'**
+  String timeMinutesAgo(int count);
+
+  /// No description provided for @timeHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} h ago'**
+  String timeHoursAgo(int count);
+
+  /// No description provided for @timeYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get timeYesterday;
+
   /// No description provided for @itemsCount.
   ///
   /// In en, this message translates to:
@@ -1808,10 +1832,16 @@ abstract class AppLocalizations {
   /// **'Invite a friend'**
   String get profileReferrals;
 
-  /// No description provided for @profileNotifications.
+  /// No description provided for @profileInbox.
   ///
   /// In en, this message translates to:
   /// **'Notifications'**
+  String get profileInbox;
+
+  /// No description provided for @profileNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings'**
   String get profileNotifications;
 
   /// No description provided for @profileLanguage.
@@ -2090,10 +2120,64 @@ abstract class AppLocalizations {
   /// **'Use the international format, e.g. +37377712345'**
   String get phoneInvalid;
 
-  /// No description provided for @notificationsTitle.
+  /// No description provided for @inboxTitle.
   ///
   /// In en, this message translates to:
   /// **'Notifications'**
+  String get inboxTitle;
+
+  /// No description provided for @inboxReadAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark all read'**
+  String get inboxReadAll;
+
+  /// No description provided for @inboxEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here yet'**
+  String get inboxEmptyTitle;
+
+  /// No description provided for @inboxEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'News from cafés and takeAway will appear here.'**
+  String get inboxEmptyBody;
+
+  /// No description provided for @inboxUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get inboxUnread;
+
+  /// No description provided for @inboxOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get inboxOpen;
+
+  /// No description provided for @inboxOpenMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Open {name} menu'**
+  String inboxOpenMenu(String name);
+
+  /// No description provided for @inboxShowPlaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {name} places'**
+  String inboxShowPlaces(String name);
+
+  /// No description provided for @inboxGone.
+  ///
+  /// In en, this message translates to:
+  /// **'This notification is no longer available.'**
+  String get inboxGone;
+
+  /// No description provided for @notificationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings'**
   String get notificationsTitle;
 
   /// No description provided for @notificationsSubtitle.

@@ -17,6 +17,7 @@ import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/state_views.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
+import '../inbox/inbox_widgets.dart';
 import '../orders/orders_providers.dart';
 import '../stores/store_widgets.dart';
 
@@ -65,6 +66,7 @@ class MenuHeader extends ConsumerWidget {
                   style: IconButton.styleFrom(backgroundColor: brand.foam),
                   icon: const Icon(Icons.search_rounded),
                 ),
+              const InboxBell(),
             ],
           ),
           const SizedBox(height: 10),

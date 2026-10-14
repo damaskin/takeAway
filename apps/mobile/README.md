@@ -25,8 +25,12 @@ NestJS API as the web app and the Telegram Mini App.
   Outside working hours only a scheduled pickup can be chosen.
 - **Live order** — Socket.IO with polling as a fallback, ETA ring, steps,
   pickup code and QR, "I'm here", cancel, order again, receipt by email.
+- **Notifications («Уведомления»)** — brand campaigns and takeAway's own
+  announcements, behind a bell with the unread count on the stores and menu
+  headers and in the profile; a message opens the store's menu it links to,
+  or the list of places for a brand with several.
 - **Profile** — loyalty tier and history, referrals, gift cards, payment
-  cards, notification preferences, personal details, language (RU / EN).
+  cards, notification settings, personal details, language (RU / EN).
 - **Offline** — stores and menus are cached on the device, so the app opens on
   the last menu instead of an empty screen when the network is gone.
 - Light and dark theme from the design tokens in `libs/ui-kit`.
@@ -198,6 +202,12 @@ sign-in, after the first order and from the notifications screen — never at
 launch. Android posts order news to the `orders` channel (heads-up) and
 campaigns to `promotions` (MainActivity.kt). Tokens Firebase or Apple report
 as dead are pruned by the API.
+
+A tap on an order push opens the order. A tap on a campaign or announcement
+push (`kind` `campaign` / `announcement`, or any push with a
+`notificationId`) opens that message over «Уведомления», the list alone when
+the push has no `notificationId`; in the foreground the in-app notice offers
+«Открыть» and the unread badges are read again.
 
 ## Building releases
 

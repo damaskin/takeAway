@@ -5,6 +5,7 @@ import 'models/auth.dart';
 import 'models/cart.dart';
 import 'models/catalog.dart';
 import 'models/feedback.dart';
+import 'models/inbox.dart';
 import 'models/loyalty.dart';
 import 'models/misc.dart';
 import 'models/order.dart';
@@ -178,6 +179,28 @@ abstract class TakeAwayApi {
   /// messages an hour.
   @POST('/feedback')
   Future<FeedbackReceipt> sendFeedback(@Body() CreateFeedbackRequest body);
+
+  // ── Inbox («Уведомления») ──────────────────────────────────────────────
+
+  /// The signed-in customer's messages, newest first. [cursor] is the
+  /// previous page's `nextCursor`; [limit] 1..50, 20 when left out.
+  @GET('/inbox')
+  Future<InboxPage> inbox({@Query('cursor') String? cursor, @Query('limit') int? limit});
+
+  @GET('/inbox/unread-count')
+  Future<InboxUnreadCount> inboxUnreadCount();
+
+  /// 404 when it is not one of the caller's messages.
+  @GET('/inbox/{id}')
+  Future<InboxItem> inboxItem(@Path('id') String id);
+
+  /// 204; reading one already read is fine.
+  @POST('/inbox/{id}/read')
+  Future<void> markInboxItemRead(@Path('id') String id);
+
+  /// «Прочитать все».
+  @POST('/inbox/read-all')
+  Future<void> markInboxRead();
 
   // ── Delivery ───────────────────────────────────────────────────────────
 
