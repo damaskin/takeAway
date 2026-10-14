@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../l10n/app_localizations.dart';
 
 /// Clock time in the device's convention (24 h unless the user chose 12 h).
 String formatClock(BuildContext context, DateTime time) {
@@ -42,4 +45,18 @@ bool isSameDay(DateTime a, DateTime b) {
   final x = a.toLocal();
   final y = b.toLocal();
   return x.year == y.year && x.month == y.month && x.day == y.day;
+}
+
+/// How long ago [time] was, as a list of messages says it: just now, minutes
+/// or hours ago today, yesterday, then the date — with the year once it is
+/// not this one. A time slightly ahead of the phone's clock is "just now".
+String formatAgo(AppLocalizations l10n, DateTime time, {required String locale, DateTime? now}) {
+  final local = time.toLocal();
+  final current = (now ?? DateTime.now()).toLocal();
+  final elapsed = current.difference(local);
+  if (elapsed < const Duration(minutes: 1)) return l10n.timeJustNow;
+  if (elapsed < const Duration(hours: 1)) return l10n.timeMinutesAgo(elapsed.inMinutes);
+  if (isSameDay(local, current)) return l10n.timeHoursAgo(elapsed.inHours);
+  if (isSameDay(local, DateTime(current.year, current.month, current.day - 1))) return l10n.timeYesterday;
+  return (local.year == current.year ? DateFormat.MMMd(locale) : DateFormat.yMMMd(locale)).format(local);
 }

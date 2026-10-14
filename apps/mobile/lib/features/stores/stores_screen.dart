@@ -15,6 +15,7 @@ import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../catalog/catalog_providers.dart';
+import '../inbox/inbox_widgets.dart';
 import 'map_focus.dart';
 import 'nearby.dart';
 import 'store_widgets.dart';
@@ -335,22 +336,29 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Material(
-                    color: Colors.transparent,
-                    child: TextField(
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        hintText: l10n.storesSearchHint,
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        suffixIcon: _search.text.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.close_rounded),
-                                onPressed: () => setState(_search.clear),
-                              ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: TextField(
+                            controller: _search,
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              hintText: l10n.storesSearchHint,
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              suffixIcon: _search.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(Icons.close_rounded),
+                                      onPressed: () => setState(_search.clear),
+                                    ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const InboxBell(overMap: true),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   _FilterBar(

@@ -1,6 +1,9 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:takeaway_mobile/core/format/money.dart';
 import 'package:takeaway_mobile/core/format/time.dart';
+import 'package:takeaway_mobile/l10n/app_localizations.dart';
 
 void main() {
   group('Money.format', () {
@@ -45,6 +48,25 @@ void main() {
       expect(formatDistance(1234), '1.2 km');
       expect(formatDistance(1234, locale: 'ru'), '1,2 км');
       expect(formatDistance(15200), '15 km');
+    });
+
+    test('says how long ago a message came, then its date', () async {
+      await initializeDateFormatting('ru');
+      final ru = lookupAppLocalizations(const Locale('ru'));
+      final en = lookupAppLocalizations(const Locale('en'));
+      final now = DateTime(2026, 10, 14, 15, 30);
+      String ago(DateTime time, [AppLocalizations? l10n]) =>
+          formatAgo(l10n ?? ru, time, locale: l10n == en ? 'en' : 'ru', now: now);
+
+      expect(ago(now.add(const Duration(seconds: 20))), 'Только что', reason: 'a clock slightly behind the server');
+      expect(ago(now.subtract(const Duration(seconds: 40))), 'Только что');
+      expect(ago(now.subtract(const Duration(minutes: 5))), '5 мин назад');
+      expect(ago(now.subtract(const Duration(hours: 3))), '3 ч назад');
+      expect(ago(DateTime(2026, 10, 13, 23, 50)), 'Вчера');
+      expect(ago(DateTime(2026, 10, 2, 9)), '2 окт.');
+      expect(ago(DateTime(2025, 12, 31, 9), en), 'Dec 31, 2025', reason: 'with the year once it is not this one');
+      expect(ago(now.subtract(const Duration(minutes: 5)), en), '5 min ago');
+      expect(ago(DateTime(2026, 10, 13, 8), en), 'Yesterday');
     });
   });
 }

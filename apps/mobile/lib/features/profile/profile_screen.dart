@@ -18,6 +18,8 @@ import '../../shared/widgets/state_views.dart';
 import '../auth/auth_service.dart';
 import '../auth/sign_in_sheet.dart';
 import '../catalog/catalog_providers.dart';
+import '../inbox/inbox_providers.dart';
+import '../inbox/inbox_widgets.dart';
 import 'loyalty_widgets.dart';
 import 'profile_providers.dart';
 import 'settings_list.dart';
@@ -30,6 +32,7 @@ class ProfileScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final user = ref.watch(currentUserProvider);
     final flags = ref.watch(featureFlagsProvider).valueOrNull ?? FeatureFlags.off;
+    final unread = ref.watch(inboxUnreadProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.profileTitle)),
@@ -56,6 +59,12 @@ class ProfileScreen extends ConsumerWidget {
                     icon: Icons.receipt_long_outlined,
                     title: l10n.ordersTitle,
                     onTap: () => context.go(Routes.orders),
+                  ),
+                  SettingsTile(
+                    icon: Icons.notifications_none_rounded,
+                    title: l10n.profileInbox,
+                    trailing: unread > 0 ? InboxCountPill(count: unread) : null,
+                    onTap: () => context.push(Routes.inbox),
                   ),
                   SettingsTile(
                     icon: Icons.badge_outlined,
@@ -86,7 +95,7 @@ class ProfileScreen extends ConsumerWidget {
                     onTap: () => context.push(Routes.signInMethods),
                   ),
                   SettingsTile(
-                    icon: Icons.notifications_none_rounded,
+                    icon: Icons.tune_rounded,
                     title: l10n.profileNotifications,
                     onTap: () => context.push(Routes.notifications),
                   ),

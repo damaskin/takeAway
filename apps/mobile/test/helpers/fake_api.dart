@@ -603,4 +603,103 @@ class FakeApi extends Fake implements TakeAwayApi {
     }
     return FeedbackReceipt(id: 'fb_${feedback.length}', createdAt: DateTime.utc(2026, 10, 7, 10));
   }
+
+  // ── Inbox ──────────────────────────────────────────────────────────────
+
+  /// «Уведомления» on the server, newest first, as API JSON — see
+  /// [inboxItemJson].
+  List<Map<String, dynamic>> inboxItems = [];
+
+  /// Page size the fake answers with, whatever the app asks for.
+  int? inboxPageSize;
+
+  /// The cursor of every page the app asked for.
+  final inboxCursors = <String?>[];
+
+  /// True = every page after the first fails.
+  bool inboxNextPagesFail = false;
+
+  /// Every message the app marked read, and how many times it read them all.
+  final inboxReads = <String>[];
+  var inboxReadAlls = 0;
+
+  /// Status the read calls fail with; null means they go through.
+  int? inboxReadStatus;
+
+  static Map<String, dynamic> inboxItemJson(
+    String id, {
+    String kind = 'BRAND_CAMPAIGN',
+    String title = '−20% на капучино',
+    String body = 'Только до воскресенья, в любом нашем заведении.',
+    bool read = false,
+    Map<String, dynamic>? link,
+    DateTime? createdAt,
+  }) => {
+    'id': id,
+    'kind': kind,
+    'title': title,
+    'body': body,
+    'sender': kind == 'PLATFORM_ANNOUNCEMENT'
+        ? {'kind': 'PLATFORM', 'name': 'takeAway', 'logoUrl': null, 'brandId': null}
+        : {'kind': 'BRAND', 'name': 'NoName Coffee', 'logoUrl': null, 'brandId': 'br_1'},
+    'link': link,
+    'createdAt': (createdAt ?? DateTime.now().toUtc().subtract(const Duration(minutes: 5))).toIso8601String(),
+    'readAt': read ? '2026-10-14T10:00:00.000Z' : null,
+  };
+
+  int get inboxUnread => inboxItems.where((item) => item['readAt'] == null).length;
+
+  @override
+  Future<InboxPage> inbox({String? cursor, int? limit}) async {
+    inboxCursors.add(cursor);
+    if (cursor != null && inboxNextPagesFail) throw _inboxError('/inbox', 503);
+    final start = cursor == null ? 0 : inboxItems.indexWhere((item) => item['id'] == cursor) + 1;
+    final page = inboxItems.skip(start).take(inboxPageSize ?? limit ?? 20).toList();
+    return InboxPage(
+      items: page.map(InboxItem.fromJson).toList(),
+      nextCursor: start + page.length < inboxItems.length ? page.last['id'] as String : null,
+      unreadCount: inboxUnread,
+    );
+  }
+
+  @override
+  Future<InboxUnreadCount> inboxUnreadCount() async => InboxUnreadCount(count: inboxUnread);
+
+  @override
+  Future<InboxItem> inboxItem(String id) async {
+    final json = inboxItems.where((item) => item['id'] == id).firstOrNull;
+    if (json == null) throw _inboxError('/inbox/$id', 404);
+    return InboxItem.fromJson(json);
+  }
+
+  @override
+  Future<void> markInboxItemRead(String id) async {
+    inboxReads.add(id);
+    final status = inboxReadStatus;
+    if (status != null) throw _inboxError('/inbox/$id/read', status);
+    inboxItems = [
+      for (final item in inboxItems) item['id'] == id ? {...item, 'readAt': item['readAt'] ?? _readAt()} : item,
+    ];
+  }
+
+  @override
+  Future<void> markInboxRead() async {
+    inboxReadAlls++;
+    final status = inboxReadStatus;
+    if (status != null) throw _inboxError('/inbox/read-all', status);
+    inboxItems = [
+      for (final item in inboxItems) {...item, 'readAt': item['readAt'] ?? _readAt()},
+    ];
+  }
+
+  static String _readAt() => DateTime.now().toUtc().toIso8601String();
+
+  static DioException _inboxError(String path, int status) {
+    final request = RequestOptions(path: path);
+    return DioException(
+      requestOptions: request,
+      response: Response<Object?>(requestOptions: request, statusCode: status, data: {'statusCode': status}),
+      type: DioExceptionType.badResponse,
+    );
+  }
 }

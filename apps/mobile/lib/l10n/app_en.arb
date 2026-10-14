@@ -54,6 +54,24 @@
       }
     }
   },
+  "timeJustNow": "Just now",
+  "timeMinutesAgo": "{count} min ago",
+  "@timeMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursAgo": "{count} h ago",
+  "@timeHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeYesterday": "Yesterday",
   "itemsCount": "{count, plural, =1{1 item} other{{count} items}}",
   "@itemsCount": {
     "placeholders": {
@@ -511,7 +529,8 @@
   "profileGiftCards": "Gift cards",
   "profileLoyalty": "Loyalty",
   "profileReferrals": "Invite a friend",
-  "profileNotifications": "Notifications",
+  "profileInbox": "Notifications",
+  "profileNotifications": "Notification settings",
   "profileLanguage": "Language",
   "profileAbout": "About the app",
   "profileFeedback": "Feedback",
@@ -581,7 +600,30 @@
   "nameRequired": "Enter your name",
   "emailInvalid": "Enter a valid email",
   "phoneInvalid": "Use the international format, e.g. +37377712345",
-  "notificationsTitle": "Notifications",
+  "inboxTitle": "Notifications",
+  "inboxReadAll": "Mark all read",
+  "inboxEmptyTitle": "Nothing here yet",
+  "inboxEmptyBody": "News from cafés and takeAway will appear here.",
+  "inboxUnread": "Unread",
+  "inboxOpen": "Open",
+  "inboxOpenMenu": "Open {name} menu",
+  "@inboxOpenMenu": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxShowPlaces": "Show {name} places",
+  "@inboxShowPlaces": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxGone": "This notification is no longer available.",
+  "notificationsTitle": "Notification settings",
   "notificationsSubtitle": "Choose what we may tell you about. You can change it any time.",
   "notifOrderUpdates": "Order updates",
   "notifOrderUpdatesHint": "When your order is accepted, ready or on its way.",
