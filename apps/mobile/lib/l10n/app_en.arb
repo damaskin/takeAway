@@ -98,6 +98,61 @@
   "signInAgreementPrivacy": "Privacy Policy",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
+  "emailSignIn": "Continue with email",
+  "emailSignInOtherMethods": "Other ways to sign in",
+  "emailSignInEmailLabel": "Email",
+  "emailSignInEmailHint": "you@example.com",
+  "emailSignInGetCode": "Get a code",
+  "emailSignInSentTo": "We sent a code to {email}. It is valid for 10 minutes.",
+  "@emailSignInSentTo": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignInAlreadySent": "A code was already sent to {email} — check your inbox.",
+  "@emailSignInAlreadySent": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignInCodeLabel": "Code from the email",
+  "emailSignInResend": "Send the code again",
+  "emailSignInResendIn": "Send again in {seconds} s",
+  "@emailSignInResendIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "emailSignInChangeEmail": "Change email",
+  "emailSignInInvalidEmail": "Check the address — it needs an @ and a domain, like ivan@mail.ru.",
+  "emailCodeInvalid": "Wrong code. Attempts left: {left}.",
+  "@emailCodeInvalid": {
+    "placeholders": {
+      "left": {
+        "type": "int"
+      }
+    }
+  },
+  "emailCodeExpired": "The code has expired or was already used. Ask for a new one.",
+  "emailCodeTooManyAttempts": "Too many wrong attempts — this code no longer works. Ask for a new one.",
+  "emailCodeLimit": "Too many codes were sent to this address. Try again in {minutes} min.",
+  "@emailCodeLimit": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "emailCodeNotSent": "We could not send the email. Try again in a few minutes.",
+  "emailSignInUnavailable": "Sign-in with email is unavailable right now. Choose another way.",
+  "emailSignInStaffAccount": "This address belongs to a staff account. Sign in with your password in the business cabinet.",
+  "emailSignInTooManyRequests": "Too many attempts in a row. Wait a minute and try again.",
   "signInMethodsTitle": "Sign-in methods",
   "signInMethodsSubtitle": "Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.",
   "signInMethodLinked": "Connected",
@@ -122,6 +177,15 @@
   },
   "signInMethodSwitched": "That account already had orders, so you are now in that profile.",
   "signInMethodIosOnly": "On iPhone",
+  "signInMethodEmail": "Email",
+  "signInMethodEmailHint": "Sign-in codes go to {email}",
+  "@signInMethodEmailHint": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
   "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
   "storesTitle": "Stores",
   "storesSearchHint": "Search by name or address",
@@ -578,6 +642,7 @@
   "personalPhone": "Phone",
   "personalBirthday": "Date of birth",
   "personalSaved": "Saved",
+  "emailIsSignInMethod": "You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.",
   "nameRequired": "Enter your name",
   "emailInvalid": "Enter a valid email",
   "phoneInvalid": "Use the international format, e.g. +37377712345",

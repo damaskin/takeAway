@@ -185,6 +185,77 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signInFailed => 'Не удалось войти. Попробуйте ещё раз.';
 
   @override
+  String get emailSignIn => 'Войти по почте';
+
+  @override
+  String get emailSignInOtherMethods => 'Другие способы входа';
+
+  @override
+  String get emailSignInEmailLabel => 'Электронная почта';
+
+  @override
+  String get emailSignInEmailHint => 'you@mail.ru';
+
+  @override
+  String get emailSignInGetCode => 'Получить код';
+
+  @override
+  String emailSignInSentTo(String email) {
+    return 'Отправили код на $email. Он действует 10 минут.';
+  }
+
+  @override
+  String emailSignInAlreadySent(String email) {
+    return 'Код уже отправлен на $email — проверьте почту.';
+  }
+
+  @override
+  String get emailSignInCodeLabel => 'Код из письма';
+
+  @override
+  String get emailSignInResend => 'Отправить код ещё раз';
+
+  @override
+  String emailSignInResendIn(int seconds) {
+    return 'Отправить ещё раз через $seconds с';
+  }
+
+  @override
+  String get emailSignInChangeEmail => 'Изменить почту';
+
+  @override
+  String get emailSignInInvalidEmail => 'Проверьте адрес — в нём должны быть @ и домен, например ivan@mail.ru.';
+
+  @override
+  String emailCodeInvalid(int left) {
+    return 'Неверный код. Осталось попыток: $left.';
+  }
+
+  @override
+  String get emailCodeExpired => 'Код истёк или уже использован. Запросите новый.';
+
+  @override
+  String get emailCodeTooManyAttempts =>
+      'Слишком много неверных попыток — этот код больше не действует. Запросите новый.';
+
+  @override
+  String emailCodeLimit(int minutes) {
+    return 'На этот адрес отправлено слишком много кодов. Попробуйте через $minutes мин.';
+  }
+
+  @override
+  String get emailCodeNotSent => 'Не удалось отправить письмо. Попробуйте через несколько минут.';
+
+  @override
+  String get emailSignInUnavailable => 'Вход по почте сейчас недоступен. Выберите другой способ.';
+
+  @override
+  String get emailSignInStaffAccount => 'Этот адрес принадлежит сотруднику. Войдите с паролем в кабинете бизнеса.';
+
+  @override
+  String get emailSignInTooManyRequests => 'Слишком много попыток подряд. Подождите минуту и попробуйте снова.';
+
+  @override
   String get signInMethodsTitle => 'Способы входа';
 
   @override
@@ -218,6 +289,14 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get signInMethodIosOnly => 'На iPhone';
+
+  @override
+  String get signInMethodEmail => 'Почта';
+
+  @override
+  String signInMethodEmailHint(String email) {
+    return 'Код для входа приходит на $email';
+  }
 
   @override
   String get telegramSignInFailed => 'Telegram не подтвердил вход. Попробуйте ещё раз.';
@@ -959,6 +1038,10 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get personalSaved => 'Сохранено';
+
+  @override
+  String get emailIsSignInMethod =>
+      'Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».';
 
   @override
   String get nameRequired => 'Укажите имя';

@@ -42,7 +42,7 @@ TypeScript monorepo (pnpm + Nx):
 - **Frontend (web/PWA, Telegram Mini App, admin, KDS)**: Angular 21 standalone + signals + Tailwind CSS 4
 - **Mobile (v2)**: Flutter 3 + Riverpod + Dio
 - **Payments**: Stripe
-- **Auth**: OTP + OAuth (Google, Apple, Telegram)
+- **Auth**: customers — Google, Apple, Telegram or a one-time code by email; staff — email + password
 - **Third-party**: Twilio, Mailgun, Firebase FCM, Mapbox, Mixpanel, Sentry
 
 ## Monorepo layout

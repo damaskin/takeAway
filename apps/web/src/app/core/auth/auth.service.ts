@@ -1,6 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { AuthSession, AuthTokens, AuthUser, LinkSignInMethodResult, SignInMethods } from '@takeaway/shared-types';
+import type {
+  AuthMethods,
+  AuthSession,
+  AuthTokens,
+  AuthUser,
+  LinkSignInMethodResult,
+  SignInMethods,
+} from '@takeaway/shared-types';
 import { map, Observable, tap } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -63,7 +70,30 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
-  /** Which of Telegram, Google and Apple lead into the signed-in profile. */
+  /**
+   * Which customer sign-in methods the server can complete. Email sign-in
+   * is off until the server has SMTP, so its button waits for this.
+   */
+  authMethods(): Observable<AuthMethods> {
+    return this.http.get<AuthMethods>(`${this.api.baseUrl}/auth/methods`);
+  }
+
+  /**
+   * Mail a one-time sign-in code to `email`. The answer is the same whether
+   * the address has a profile or not; `locale` picks the letter's language.
+   */
+  startEmailSignIn(email: string, locale: string): Observable<void> {
+    return this.http.post<void>(`${this.api.baseUrl}/auth/email/start`, { email, locale });
+  }
+
+  /** Exchange the six digits from the letter for a session. */
+  verifyEmailCode(email: string, code: string): Observable<AuthSession> {
+    return this.http
+      .post<AuthSession>(`${this.api.baseUrl}/auth/email/verify`, { email, code })
+      .pipe(tap((session) => this.store.set(session)));
+  }
+
+  /** Which of Telegram, Google, Apple and email lead into the signed-in profile. */
   signInMethods(): Observable<SignInMethods> {
     return this.http.get<SignInMethods>(`${this.api.baseUrl}/auth/me/sign-in-methods`);
   }

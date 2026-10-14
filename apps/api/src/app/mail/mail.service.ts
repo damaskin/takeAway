@@ -171,6 +171,15 @@ export class MailService implements OnModuleInit {
     return this.deliver('staff-password-reset', to, reset.subject, reset.text, reset.html);
   }
 
+  /**
+   * A customer's sign-in code (composed by `loginCodeMail`); true when the
+   * SMTP server accepted it, so the API can tell the customer the letter
+   * did not go out instead of leaving them waiting for it.
+   */
+  sendLoginCode(to: string, mail: OutgoingMail): Promise<boolean> {
+    return this.deliver('login-code', to, mail.subject, mail.text, mail.html);
+  }
+
   /** Public helper so other services can queue transactional messages through the same transport. */
   async send(to: string, subject: string, text: string, html?: string, attachments?: MailAttachment[]): Promise<void> {
     await this.deliver('custom', to, subject, text, html, attachments);

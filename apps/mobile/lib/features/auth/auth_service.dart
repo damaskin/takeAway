@@ -31,19 +31,38 @@ final telegramConfigProvider = FutureProvider<TelegramAuthConfig?>((ref) async {
   }
 });
 
-/// The three ways a customer can sign in.
+/// Which customer sign-in methods the API can complete; none when it cannot
+/// be asked (offline, or an API from before the route).
+final authMethodsProvider = FutureProvider<AuthMethods>((ref) async {
+  try {
+    return await ref.watch(apiProvider).authMethods();
+  } on Object {
+    return AuthMethods.none;
+  }
+});
+
+/// The three providers a customer can link to a profile.
 enum SignInProvider { telegram, google, apple }
 
 /// Which sign-in buttons this build can offer.
 class SignInOptions {
-  const SignInOptions({required this.telegram, required this.google, required this.apple, required this.dev});
+  const SignInOptions({
+    required this.telegram,
+    required this.google,
+    required this.apple,
+    required this.dev,
+    this.email = false,
+  });
 
   final bool telegram;
   final bool google;
   final bool apple;
   final bool dev;
 
-  bool get any => telegram || google || apple || dev;
+  /// A code by email: offered once the API says it can mail one (it has SMTP).
+  final bool email;
+
+  bool get any => telegram || google || apple || dev || email;
 
   bool offers(SignInProvider provider) => switch (provider) {
     SignInProvider.telegram => telegram,
@@ -53,12 +72,16 @@ class SignInOptions {
 }
 
 final signInOptionsProvider = FutureProvider<SignInOptions>((ref) async {
-  final telegram = await ref.watch(telegramConfigProvider.future);
+  final (telegram, methods) = await (
+    ref.watch(telegramConfigProvider.future),
+    ref.watch(authMethodsProvider.future),
+  ).wait;
   return SignInOptions(
     telegram: telegram != null,
     google: Env.googleSignInConfigured,
     apple: ref.watch(appleAuthorizationProvider).available,
     dev: Env.devSignIn,
+    email: methods.email,
   );
 });
 
@@ -80,8 +103,9 @@ final appleAuthorizationProvider = Provider<AppleAuthorization>((ref) => const A
 /// Customer sign-in and sign-out.
 ///
 /// Customers never have a password: they come in through Telegram, Google or
-/// Apple, exactly as on the web. Each provider hands us a signed assertion
-/// that the API verifies before issuing our own token pair.
+/// Apple, exactly as on the web — each provider hands us a signed assertion
+/// that the API verifies before issuing our own token pair — or with a
+/// one-time code the API mails them.
 class AuthService {
   AuthService(this._ref);
 
@@ -104,6 +128,15 @@ class AuthService {
 
   Future<void> signInWithApple() async {
     await _complete(await _api.signInWithApple(await _appleCredential()));
+  }
+
+  /// Mails a six-digit sign-in code to [email], in the [locale] language.
+  Future<void> startEmailSignIn(String email, String locale) =>
+      _api.startEmailSignIn(EmailSignInStartRequest(email: email, locale: locale));
+
+  /// Exchanges the code from the letter for a session.
+  Future<void> verifyEmailCode(String email, String code) async {
+    await _complete(await _api.verifyEmailCode(EmailSignInVerifyRequest(email: email, code: code)));
   }
 
   // ── Linking ───────────────────────────────────────────────────────────

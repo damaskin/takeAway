@@ -9,6 +9,7 @@ import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
+import { EmailLoginController } from './email-login.controller';
 import { KitchenDeviceController } from './kitchen-device.controller';
 import { KdsSessionGuard } from './guards/kds-session.guard';
 import { KitchenDeviceService } from './services/kitchen-device.service';
@@ -19,6 +20,8 @@ import { RolesGuard } from './guards/roles.guard';
 import { AccountDeletionService } from './services/account-deletion.service';
 import { AppleTokenRevocationService } from './services/apple-token-revocation.service';
 import { BrandScopeService } from './services/brand-scope.service';
+import { EmailCodeService } from './services/email-code.service';
+import { EmailLoginService } from './services/email-login.service';
 import { KdsPinService } from './services/kds-pin.service';
 import { OAuthIdentityService } from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
@@ -56,11 +59,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
   ],
-  controllers: [AuthController, KitchenDeviceController],
+  controllers: [AuthController, EmailLoginController, KitchenDeviceController],
   providers: [
     AuthService,
     AccountDeletionService,
     AppleTokenRevocationService,
+    EmailCodeService,
+    EmailLoginService,
     PasswordService,
     KdsPinService,
     KitchenDeviceService,

@@ -32,7 +32,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((err: HttpErrorResponse) => {
       if (err.status !== 401) return throwError(() => err);
       if (!store.session()) return throwError(() => err);
-      if (req.url.includes('/auth/refresh') || req.url.includes('/auth/otp/')) {
+      if (req.url.includes('/auth/refresh')) {
         store.clear();
         void router.navigate(['/login']);
         return throwError(() => err);

@@ -405,6 +405,33 @@ export const TRANSLATIONS_RU = {
       noProviders: 'Для этого окружения не настроен ни один способ входа.',
       or: 'или',
       signingIn: 'Входим…',
+      // Sign-in with a one-time code mailed to the customer (shown only when the server has SMTP).
+      email: {
+        open: 'Войти по почте',
+        emailLabel: 'Электронная почта',
+        emailPlaceholder: 'you@mail.ru',
+        getCode: 'Получить код',
+        sending: 'Отправляем…',
+        sentTo: 'Отправили код на {{email}}. Он действует 10 минут.',
+        alreadySent: 'Код уже отправлен на {{email}} — проверьте почту.',
+        codeLabel: 'Код из письма',
+        signIn: 'Войти',
+        checking: 'Проверяем…',
+        resend: 'Отправить код ещё раз',
+        resendIn: 'Отправить ещё раз через {{seconds}} с',
+        changeEmail: 'Изменить почту',
+        errors: {
+          invalidEmail: 'Проверьте адрес — в нём должны быть @ и домен, например ivan@mail.ru.',
+          invalid: 'Неверный код. Осталось попыток: {{left}}.',
+          expired: 'Код истёк или уже использован. Запросите новый.',
+          tooManyAttempts: 'Слишком много неверных попыток — этот код больше не действует. Запросите новый.',
+          limit: 'На этот адрес отправлено слишком много кодов. Попробуйте через {{minutes}} мин.',
+          notSent: 'Не удалось отправить письмо. Попробуйте через несколько минут.',
+          unavailable: 'Вход по почте сейчас недоступен. Выберите другой способ.',
+          staffAccount: 'Этот адрес принадлежит сотруднику. Войдите с паролем в кабинете бизнеса.',
+          tooManyRequests: 'Слишком много попыток подряд. Подождите минуту и попробуйте снова.',
+        },
+      },
       // «Продолжая, вы принимаете <Условия использования> и <Политику конфиденциальности>.»
       // Split so each document can be a link.
       agreementLead: 'Продолжая, вы принимаете',
@@ -535,6 +562,8 @@ export const TRANSLATIONS_RU = {
         unlink: 'Отключить',
         unlinkConfirm: 'Отключить {{provider}}? Входить через него больше не получится.',
         switched: 'У этого аккаунта уже были заказы, поэтому вы перешли в тот профиль.',
+        email: 'Почта',
+        emailHint: 'Код для входа приходит на {{email}}',
       },
       personalInfo: {
         title: 'Личные данные',
@@ -545,6 +574,8 @@ export const TRANSLATIONS_RU = {
         dob: 'Дата рождения',
         saving: 'Сохраняем…',
         saved: 'Сохранено.',
+        emailIsSignIn:
+          'Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».',
       },
       signOut: 'Выйти',
       initials: 'Г',

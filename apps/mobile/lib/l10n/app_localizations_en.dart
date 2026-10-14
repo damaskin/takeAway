@@ -178,6 +178,77 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInFailed => 'Could not sign in. Please try again.';
 
   @override
+  String get emailSignIn => 'Continue with email';
+
+  @override
+  String get emailSignInOtherMethods => 'Other ways to sign in';
+
+  @override
+  String get emailSignInEmailLabel => 'Email';
+
+  @override
+  String get emailSignInEmailHint => 'you@example.com';
+
+  @override
+  String get emailSignInGetCode => 'Get a code';
+
+  @override
+  String emailSignInSentTo(String email) {
+    return 'We sent a code to $email. It is valid for 10 minutes.';
+  }
+
+  @override
+  String emailSignInAlreadySent(String email) {
+    return 'A code was already sent to $email — check your inbox.';
+  }
+
+  @override
+  String get emailSignInCodeLabel => 'Code from the email';
+
+  @override
+  String get emailSignInResend => 'Send the code again';
+
+  @override
+  String emailSignInResendIn(int seconds) {
+    return 'Send again in $seconds s';
+  }
+
+  @override
+  String get emailSignInChangeEmail => 'Change email';
+
+  @override
+  String get emailSignInInvalidEmail => 'Check the address — it needs an @ and a domain, like ivan@mail.ru.';
+
+  @override
+  String emailCodeInvalid(int left) {
+    return 'Wrong code. Attempts left: $left.';
+  }
+
+  @override
+  String get emailCodeExpired => 'The code has expired or was already used. Ask for a new one.';
+
+  @override
+  String get emailCodeTooManyAttempts => 'Too many wrong attempts — this code no longer works. Ask for a new one.';
+
+  @override
+  String emailCodeLimit(int minutes) {
+    return 'Too many codes were sent to this address. Try again in $minutes min.';
+  }
+
+  @override
+  String get emailCodeNotSent => 'We could not send the email. Try again in a few minutes.';
+
+  @override
+  String get emailSignInUnavailable => 'Sign-in with email is unavailable right now. Choose another way.';
+
+  @override
+  String get emailSignInStaffAccount =>
+      'This address belongs to a staff account. Sign in with your password in the business cabinet.';
+
+  @override
+  String get emailSignInTooManyRequests => 'Too many attempts in a row. Wait a minute and try again.';
+
+  @override
   String get signInMethodsTitle => 'Sign-in methods';
 
   @override
@@ -211,6 +282,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signInMethodIosOnly => 'On iPhone';
+
+  @override
+  String get signInMethodEmail => 'Email';
+
+  @override
+  String signInMethodEmailHint(String email) {
+    return 'Sign-in codes go to $email';
+  }
 
   @override
   String get telegramSignInFailed => 'Telegram didn\'t confirm the sign-in. Please try again.';
@@ -944,6 +1023,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get personalSaved => 'Saved';
+
+  @override
+  String get emailIsSignInMethod =>
+      'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.';
 
   @override
   String get nameRequired => 'Enter your name';

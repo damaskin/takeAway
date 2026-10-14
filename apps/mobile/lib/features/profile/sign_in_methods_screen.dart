@@ -18,7 +18,8 @@ final signInMethodsProvider = FutureProvider.autoDispose<SignInMethods>(
 );
 
 /// Profile → Sign-in methods: which of Telegram, Google and Apple lead into
-/// this profile, with a button to connect the rest.
+/// this profile, with a button to connect the rest, and the proven email a
+/// sign-in code goes to.
 class SignInMethodsScreen extends ConsumerStatefulWidget {
   const SignInMethodsScreen({super.key});
 
@@ -134,6 +135,15 @@ class _SignInMethodsScreenState extends ConsumerState<SignInMethodsScreen> {
                       busy: _busy == provider,
                       onLink: () => _link(provider),
                       onUnlink: () => _unlink(provider),
+                    ),
+                  ],
+                  if (m.email case final email?) ...[
+                    Divider(indent: 72, color: brand.borderLight),
+                    ListTile(
+                      leading: Icon(Icons.mail_outline_rounded, color: brand.caramel, size: 28),
+                      title: Text(l10n.signInMethodEmail),
+                      subtitle: Text(l10n.signInMethodEmailHint(email)),
+                      trailing: Icon(Icons.check_circle_rounded, color: brand.caramel),
                     ),
                   ],
                 ],

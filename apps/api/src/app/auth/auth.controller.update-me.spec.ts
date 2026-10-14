@@ -9,11 +9,19 @@ import type { SignInMethodsService } from './services/sign-in-methods.service';
 import type { TelegramService } from './services/telegram.service';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
+interface Current {
+  email: string | null;
+  emailVerifiedAt?: Date | null;
+  telegramUserId?: bigint | null;
+  _count?: { oauthAccounts: number };
+}
+
 describe('PATCH /auth/me and the proven email', () => {
-  function controller(currentEmail: string | null) {
+  function controller(currentEmail: string | null, extra: Omit<Current, 'email'> = {}) {
     const update = jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ana', ...data }));
+    const current: Current = { email: currentEmail, emailVerifiedAt: null, telegramUserId: null, ...extra };
     const prisma = {
-      user: { findUnique: jest.fn(async () => ({ email: currentEmail })), update },
+      user: { findUnique: jest.fn(async () => current), update },
     };
     const auth = { toAuthUser: jest.fn((u: unknown) => u) };
     const ctrl = new AuthController(
@@ -45,5 +53,31 @@ describe('PATCH /auth/me and the proven email', () => {
     const { ctrl, update } = controller('ana@gmail.com');
     await ctrl.updateMe(ana, { name: 'Ana P.' });
     expect(update.mock.calls[0]?.[0].data).toEqual({ name: 'Ana P.' });
+  });
+
+  it('will not replace the proven address a customer signs in with by code when nothing else leads in', async () => {
+    const { ctrl, update } = controller('ana@mail.ru', { emailVerifiedAt: new Date(), _count: { oauthAccounts: 0 } });
+
+    await expect(ctrl.updateMe(ana, { email: 'ana.new@mail.ru' })).rejects.toMatchObject({
+      response: { code: 'EMAIL_IS_SIGN_IN_METHOD' },
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('lets staff change their address — they sign in with a password', async () => {
+    const { ctrl, update } = controller('chef@cafe.md', { emailVerifiedAt: new Date(), _count: { oauthAccounts: 0 } });
+    await ctrl.updateMe({ ...ana, role: Role.STAFF }, { email: 'chef2@cafe.md' });
+    expect(update).toHaveBeenCalled();
+  });
+
+  it('lets the proven address change once Telegram or Google also leads in', async () => {
+    const proven = { emailVerifiedAt: new Date(), _count: { oauthAccounts: 1 } };
+    const { ctrl, update } = controller('ana@mail.ru', proven);
+    await ctrl.updateMe(ana, { email: 'ana.new@mail.ru' });
+    expect(update.mock.calls[0]?.[0].data).toEqual({ email: 'ana.new@mail.ru', emailVerifiedAt: null });
+
+    const viaTelegram = controller('ana@mail.ru', { emailVerifiedAt: new Date(), telegramUserId: 777n });
+    await viaTelegram.ctrl.updateMe(ana, { email: 'ana.new@mail.ru' });
+    expect(viaTelegram.update).toHaveBeenCalled();
   });
 });
