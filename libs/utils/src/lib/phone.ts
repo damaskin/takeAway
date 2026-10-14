@@ -63,3 +63,15 @@ export function formatPhone(e164: string): string {
   if (ru) return `+7 ${ru[1]} ${ru[2]}-${ru[3]}-${ru[4]}`;
   return e164;
 }
+
+/**
+ * A `tel:` link for a phone number as a business typed it — «Позвонить в
+ * точку». Normalised to E.164 when it reads as one, otherwise the digits
+ * (and a leading plus) as they are; null when there is no number to dial.
+ */
+export function phoneHref(phone: string | null | undefined): string | null {
+  const raw = phone?.trim();
+  if (!raw) return null;
+  const dial = normalizePhone(raw) ?? raw.replace(/(?!^\+)[^\d]/g, '');
+  return dial.replace(/\D/g, '').length >= 3 ? `tel:${dial}` : null;
+}
