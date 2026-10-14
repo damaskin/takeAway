@@ -404,6 +404,126 @@ abstract class AppLocalizations {
   /// **'Could not sign in. Please try again.'**
   String get signInFailed;
 
+  /// No description provided for @emailSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with email'**
+  String get emailSignIn;
+
+  /// No description provided for @emailSignInOtherMethods.
+  ///
+  /// In en, this message translates to:
+  /// **'Other ways to sign in'**
+  String get emailSignInOtherMethods;
+
+  /// No description provided for @emailSignInEmailLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get emailSignInEmailLabel;
+
+  /// No description provided for @emailSignInEmailHint.
+  ///
+  /// In en, this message translates to:
+  /// **'you@example.com'**
+  String get emailSignInEmailHint;
+
+  /// No description provided for @emailSignInGetCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a code'**
+  String get emailSignInGetCode;
+
+  /// No description provided for @emailSignInSentTo.
+  ///
+  /// In en, this message translates to:
+  /// **'We sent a code to {email}. It is valid for 10 minutes.'**
+  String emailSignInSentTo(String email);
+
+  /// No description provided for @emailSignInAlreadySent.
+  ///
+  /// In en, this message translates to:
+  /// **'A code was already sent to {email} — check your inbox.'**
+  String emailSignInAlreadySent(String email);
+
+  /// No description provided for @emailSignInCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Code from the email'**
+  String get emailSignInCodeLabel;
+
+  /// No description provided for @emailSignInResend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send the code again'**
+  String get emailSignInResend;
+
+  /// No description provided for @emailSignInResendIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Send again in {seconds} s'**
+  String emailSignInResendIn(int seconds);
+
+  /// No description provided for @emailSignInChangeEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Change email'**
+  String get emailSignInChangeEmail;
+
+  /// No description provided for @emailSignInInvalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the address — it needs an @ and a domain, like ivan@mail.ru.'**
+  String get emailSignInInvalidEmail;
+
+  /// No description provided for @emailCodeInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong code. Attempts left: {left}.'**
+  String emailCodeInvalid(int left);
+
+  /// No description provided for @emailCodeExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'The code has expired or was already used. Ask for a new one.'**
+  String get emailCodeExpired;
+
+  /// No description provided for @emailCodeTooManyAttempts.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many wrong attempts — this code no longer works. Ask for a new one.'**
+  String get emailCodeTooManyAttempts;
+
+  /// No description provided for @emailCodeLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many codes were sent to this address. Try again in {minutes} min.'**
+  String emailCodeLimit(int minutes);
+
+  /// No description provided for @emailCodeNotSent.
+  ///
+  /// In en, this message translates to:
+  /// **'We could not send the email. Try again in a few minutes.'**
+  String get emailCodeNotSent;
+
+  /// No description provided for @emailSignInUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in with email is unavailable right now. Choose another way.'**
+  String get emailSignInUnavailable;
+
+  /// No description provided for @emailSignInStaffAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'This address belongs to a staff account. Sign in with your password in the business cabinet.'**
+  String get emailSignInStaffAccount;
+
+  /// No description provided for @emailSignInTooManyRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts in a row. Wait a minute and try again.'**
+  String get emailSignInTooManyRequests;
+
   /// No description provided for @signInMethodsTitle.
   ///
   /// In en, this message translates to:
@@ -463,6 +583,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On iPhone'**
   String get signInMethodIosOnly;
+
+  /// No description provided for @signInMethodEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get signInMethodEmail;
+
+  /// No description provided for @signInMethodEmailHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in codes go to {email}'**
+  String signInMethodEmailHint(String email);
 
   /// No description provided for @telegramSignInFailed.
   ///

@@ -25,6 +25,23 @@ class FakeApi extends Fake implements TakeAwayApi {
   SignInMethods methods = const SignInMethods(telegram: true, google: false, apple: false);
   final unlinked = <String>[];
 
+  /// What `GET /auth/methods` answers; email sign-in is off by default, as
+  /// on a server without SMTP.
+  AuthMethods authMethodsAnswer = AuthMethods.none;
+
+  /// Every sign-in code the app asked to mail, and every code it sent back.
+  final emailStarts = <EmailSignInStartRequest>[];
+  final emailVerifications = <EmailSignInVerifyRequest>[];
+
+  /// The code the next verification accepts; anything else is refused.
+  String emailCode = '042917';
+
+  /// Error body (with its status) the next code request fails with; null = 204.
+  (int, Map<String, Object?>)? emailStartFailure;
+
+  /// Error body (with its status) the next wrong code is refused with.
+  (int, Map<String, Object?>) wrongCodeFailure = (400, {'code': 'EMAIL_CODE_INVALID', 'attemptsLeft': 4});
+
   /// Every account deletion the app asked for, with its body.
   final deleteRequests = <DeleteAccountRequest?>[];
 
@@ -268,6 +285,39 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<TelegramAuthConfig> telegramConfig() async => const TelegramAuthConfig();
 
   @override
+  Future<AuthMethods> authMethods() async => authMethodsAnswer;
+
+  @override
+  Future<void> startEmailSignIn(EmailSignInStartRequest body) async {
+    emailStarts.add(body);
+    final failure = emailStartFailure;
+    emailStartFailure = null;
+    if (failure != null) throw _apiError('/auth/email/start', failure.$1, failure.$2);
+  }
+
+  @override
+  Future<AuthSessionResponse> verifyEmailCode(EmailSignInVerifyRequest body) async {
+    emailVerifications.add(body);
+    if (body.code != emailCode) throw _apiError('/auth/email/verify', wrongCodeFailure.$1, wrongCodeFailure.$2);
+    return AuthSessionResponse(
+      accessToken: 'email-access',
+      refreshToken: 'email-refresh',
+      accessTokenExpiresInSeconds: 900,
+      refreshTokenExpiresInSeconds: 604800,
+      user: AuthUser(id: 'u_email', locale: 'RU', currency: 'MDL', role: 'CUSTOMER', email: body.email),
+    );
+  }
+
+  static DioException _apiError(String path, int status, Map<String, Object?> body) {
+    final request = RequestOptions(path: path, method: 'POST');
+    return DioException(
+      requestOptions: request,
+      response: Response<Object?>(requestOptions: request, statusCode: status, data: {'statusCode': status, ...body}),
+      type: DioExceptionType.badResponse,
+    );
+  }
+
+  @override
   Future<SignInMethods> signInMethods() async => methods;
 
   @override
@@ -277,6 +327,7 @@ class FakeApi extends Fake implements TakeAwayApi {
       telegram: methods.telegram,
       google: methods.google && provider != 'google',
       apple: methods.apple && provider != 'apple',
+      email: methods.email,
     );
   }
 
