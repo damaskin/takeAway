@@ -94,6 +94,7 @@ const STAFF = {
 export const STAFF_MEMBER = {
   userId: STAFF.userId,
   email: STAFF.email,
+  login: null,
   phone: null,
   name: STAFF.name,
   role: 'STAFF',

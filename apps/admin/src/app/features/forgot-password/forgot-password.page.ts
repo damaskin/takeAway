@@ -22,6 +22,10 @@ import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
         <p class="text-sm mb-6" style="color: var(--color-espresso); opacity: 0.7">
           {{ 'admin.forgot.subtitle' | translate }}
         </p>
+        <!-- A login-only account has no address for the link: only the owner resets it. -->
+        <p class="text-sm mb-6" style="color: var(--color-espresso); opacity: 0.7" data-testid="forgot-login-hint">
+          {{ 'admin.forgot.loginHint' | translate }}
+        </p>
 
         @if (sent()) {
           <p class="text-sm" style="color: var(--color-espresso)">{{ 'admin.forgot.sent' | translate }}</p>

@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { StaffInviteResult } from '@takeaway/shared-types';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -15,6 +15,7 @@ import { StaffFormPage } from './staff-form.page';
 const invited = (overrides: Partial<StaffInviteResult> = {}): StaffInviteResult => ({
   userId: 'u-new',
   email: 'anna@noname.md',
+  login: null,
   phone: null,
   name: 'Анна',
   role: 'STAFF',
@@ -95,7 +96,7 @@ describe('StaffFormPage', () => {
   it('tells the owner to hand the password over when no email went out', () => {
     const { page, element, detect } = make();
     invite.mockReturnValue(of(invited({ inviteEmail: 'NOT_CONFIGURED' })));
-    page.form.patchValue({ email: 'Anna@NoName.md', tempPassword: 'Temp-pass-42' });
+    page.form.patchValue({ identifier: 'Anna@NoName.md', tempPassword: 'Temp-pass-42' });
     page.submit();
     detect();
 
@@ -111,10 +112,58 @@ describe('StaffFormPage', () => {
 
   it('confirms the email when it went out', () => {
     const { page, element, detect } = make();
-    page.form.patchValue({ email: 'anna@noname.md', tempPassword: 'Temp-pass-42' });
+    page.form.patchValue({ identifier: 'anna@noname.md', tempPassword: 'Temp-pass-42' });
     page.submit();
     detect();
     expect(element.querySelector('[data-testid="invite-sent"]')?.textContent).toContain('anna@noname.md');
+  });
+
+  it('invites someone without an email by a login and shows what to hand over', () => {
+    const { page, element, detect } = make();
+    invite.mockReturnValue(of(invited({ email: null, login: 'anna.k', inviteEmail: 'NO_EMAIL' })));
+    page.form.patchValue({ identifier: ' Anna.K ', tempPassword: 'Temp-pass-42' });
+    detect();
+    expect(page.byLogin()).toBe(true);
+    expect(element.querySelector('[data-testid="temp-password-hint"]')?.textContent).toContain('лично');
+
+    page.submit();
+    detect();
+
+    expect(invite).toHaveBeenCalledWith(
+      { login: 'anna.k', role: 'STAFF', tempPassword: 'Temp-pass-42', storeIds: ['store-1'] },
+      'brand-1',
+    );
+    expect(element.querySelector('[data-testid="invite-no-email"]')?.textContent).toContain('Почты у сотрудника нет');
+    expect(element.querySelector('[data-testid="invite-not-sent"]')).toBeNull();
+    expect(element.querySelector('[data-testid="invite-login"]')?.textContent).toContain('anna.k');
+    expect(element.querySelector('[data-testid="invite-result"]')?.textContent).toContain('Temp-pass-42');
+  });
+
+  it('takes an email or a login, and nothing else', () => {
+    const { page, element, detect } = make();
+    const rule = () => element.querySelector('[data-testid="identifier-rule"]') as HTMLElement;
+    for (const value of ['anna@noname.md', 'anna.k', 'ANNA_K-2']) {
+      page.form.controls.identifier.setValue(value);
+      expect(page.form.controls.identifier.valid).toBe(true);
+    }
+    for (const value of ['an', 'anna k', 'анна', 'anna@', 'a'.repeat(33)]) {
+      page.form.controls.identifier.setValue(value);
+      detect();
+      expect(page.form.controls.identifier.valid).toBe(false);
+      expect(rule().classList).toContain('rule-bad');
+    }
+  });
+
+  it('says so when the login is taken', () => {
+    const { page, element, detect } = make();
+    invite.mockReturnValue(
+      throwError(() => ({ status: 409, error: { statusCode: 409, code: 'LOGIN_IN_USE', field: 'login' } })),
+    );
+    page.form.patchValue({ identifier: 'anna.k', tempPassword: 'Temp-pass-42' });
+    page.submit();
+    detect();
+    expect(page.error()).toBe('Этот логин уже занят. Придумайте другой.');
+    expect(element.querySelector('[data-testid="invite-result"]')).toBeNull();
   });
 
   it('does not offer a store manager the manager role', () => {

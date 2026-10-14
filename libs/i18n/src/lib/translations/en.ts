@@ -655,12 +655,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       kitchenPin: 'Kitchen sign-in with a PIN',
       title: 'Sign in to admin',
       subtitle: 'Staff access only',
-      passwordPrompt: 'Sign in with your work email and password',
+      passwordPrompt: 'Sign in with your work email or login and password',
       emailLabel: 'Email',
       emailPlaceholder: 'you@example.com',
+      identifierLabel: 'Email or login',
+      identifierPlaceholder: 'you@example.com or login',
       passwordLabel: 'Password',
       signIn: 'Sign in',
       signingIn: 'Signing in…',
+      invalid: 'Wrong email, login or password.',
       forgot: 'Forgot password?',
       signupCta: 'Register a business →',
     },
@@ -716,6 +719,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     forgot: {
       title: 'Forgot password',
       subtitle: "Enter your email — we'll send you a reset link.",
+      loginHint:
+        'Sign in with a login and no email? There is nowhere to send a link — ask your business owner to reset your password under «Staff».',
       sendLink: 'Send reset link',
       sending: 'Sending…',
       sent: 'If the address exists, an email with a reset link is on its way. The link works for 1 hour — check your spam folder too.',
@@ -859,13 +864,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
     staff: {
       title: 'Staff roster',
       subtitle:
-        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with their email and password (the temporary one you set, or their own from the invite email link), and on the kitchen tablet with a PIN.",
+        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with their email or login and password (the temporary one you set, or their own from the invite email link), and on the kitchen tablet with a PIN.",
       noStores: 'Create a store first to invite staff.',
       empty: 'Nobody on the team yet.',
       count: 'Showing {{count}}',
       addTitle: 'Invite new staff',
       memberTitle: 'Staff member',
       email: 'Email',
+      login: 'Login',
+      identifier: 'Email or login',
+      identifierHint:
+        'No email? Make up a login: {{min}} to {{max}} latin letters, digits and . _ - characters. No email is sent — you pass the sign-in details on yourself.',
       phone: 'Phone',
       name: 'Name',
       roleLabel: 'Role',
@@ -883,6 +892,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       tempPasswordRule: 'At least {{min}} characters (up to {{max}}): any letters, digits and symbols.',
       tempPasswordHint:
         'The person changes the temporary password on first sign-in. They also get an email with a link to set their own right away — the temporary password is never put in the email.',
+      tempPasswordHintLogin:
+        'Without an email nothing is sent: pass the login and temporary password on in person. They will be asked to change the password on first sign-in, and if they forget it, only the owner can reset it.',
       generate: 'Generate',
       addCta: 'Invite',
       invited: {
@@ -893,6 +904,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
           '{{email}} already has an account — we told them they were added to the team. They sign in with their own password.',
         notConfigured: 'No email was sent: this server has no mail set up. Pass the sign-in details on yourself.',
         failed: 'No email was sent: the mail server refused it. Pass the sign-in details on yourself.',
+        noEmail:
+          'This person has no email, so nothing was sent. Pass the login and temporary password on in person — the password is shown only here, and they will be asked to change it on first sign-in.',
         cabinet: 'Cabinet',
         login: 'Login',
         ownPassword: 'their current password',
@@ -915,7 +928,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       filters: {
         search: 'Search',
-        searchPlaceholder: 'Name, email or phone',
+        searchPlaceholder: 'Name, email, login or phone',
         store: 'Store',
         allStores: 'All stores',
         allRoles: 'All roles',
@@ -931,7 +944,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         '{{name}} will no longer work at any of your stores and leaves the list. Their kitchen PIN at those stores is reset. Continue?',
       kitchenPin: 'Kitchen PIN',
       pinOpens: 'The PIN opens the kitchen tablet of "{{store}}".',
-      pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email and password.',
+      pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email or login and password.',
       pinHint:
         'A PIN works at one store: a new PIN for another store replaces the old one. Taking a store off the list resets its PIN.',
       pinStore: 'Store for the PIN',
@@ -945,6 +958,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         emailSent: 'We emailed {{email}} a link to set their own password. The temporary password works too.',
         emailOff: 'No email was sent: mail is not set up on the server. Pass the temporary password on yourself.',
         emailFailed: 'No email was sent: the mail server refused it. Pass the temporary password on yourself.',
+        noEmail: 'This person has no email — pass the temporary password on in person.',
         notEditable: 'This person also works for another brand — only takeAway support can reset their password.',
       },
       errors: {
@@ -953,6 +967,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         notEditable: "You can't change this person's role or stores.",
         alreadyOnTeam: 'This person is already on the team — open them in the list and tick the stores there.',
         emailTaken: 'This email is already in use. Ask the employee to use a different email.',
+        loginTaken: 'This login is already taken. Pick another one.',
         notFound: 'Staff member not found — they may have been taken off the team already.',
         forbidden: "You don't have permission for this.",
         invalidField: 'Check the field "{{field}}".',

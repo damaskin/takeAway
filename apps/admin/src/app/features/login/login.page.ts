@@ -5,6 +5,8 @@ import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { emailOrLoginValidator, signInIdentifier } from '../../core/auth/sign-in-identifier';
+import { apiErrorMessage } from '../../core/http/api-error';
 
 @Component({
   selector: 'app-login',
@@ -28,14 +30,15 @@ import { AuthService } from '../../core/auth/auth.service';
 
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-4">
           <label class="flex flex-col gap-1">
-            <span class="text-sm font-medium">{{ 'admin.login.emailLabel' | translate }}</span>
+            <span class="text-sm font-medium">{{ 'admin.login.identifierLabel' | translate }}</span>
             <input
-              formControlName="email"
-              type="email"
+              formControlName="identifier"
+              type="text"
+              inputmode="email"
               autocomplete="username"
               autocapitalize="none"
               spellcheck="false"
-              [placeholder]="'admin.login.emailPlaceholder' | translate"
+              [placeholder]="'admin.login.identifierPlaceholder' | translate"
               class="px-3 py-2 border outline-none"
               style="border-color: var(--color-latte); border-radius: var(--radius-input)"
             />
@@ -100,10 +103,11 @@ export class LoginPage {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
+  /** An email or a staff login; one with an '@' is an email. */
   readonly form = new FormGroup({
-    email: new FormControl('', {
+    identifier: new FormControl('', {
       nonNullable: true,
-      validators: [Validators.required, Validators.email],
+      validators: [Validators.required, emailOrLoginValidator],
     }),
     password: new FormControl('', {
       nonNullable: true,
@@ -112,31 +116,29 @@ export class LoginPage {
   });
 
   submit(): void {
-    if (this.form.invalid) return;
+    const identifier = signInIdentifier(this.form.controls.identifier.value);
+    if (this.form.invalid || !identifier) return;
     this.loading.set(true);
     this.error.set(null);
-    this.auth
-      .login({
-        email: this.form.controls.email.value.trim().toLowerCase(),
-        password: this.form.controls.password.value,
-      })
-      .subscribe({
-        next: () => {
-          this.loading.set(false);
-          void this.router.navigateByUrl(this.next);
-        },
-        error: (err) => {
-          this.loading.set(false);
-          this.error.set(this.extractMessage(err));
-        },
-      });
+    this.auth.login({ identifier: identifier.value, password: this.form.controls.password.value }).subscribe({
+      next: () => {
+        this.loading.set(false);
+        void this.router.navigateByUrl(this.next);
+      },
+      error: (err) => {
+        this.loading.set(false);
+        this.error.set(this.extractMessage(err));
+      },
+    });
   }
 
+  /** A failed sign-in in the admin's language: a wrong email, login or password, no network, too many tries. */
   private extractMessage(err: unknown): string {
-    const maybe = err as { error?: { message?: unknown }; message?: unknown };
-    if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
-    if (typeof maybe.message === 'string') return maybe.message;
-    return this.translate.instant('common.genericError');
+    return apiErrorMessage(err, this.translate, {
+      messages: { 'Invalid email, login or password': 'admin.login.invalid' },
+      network: 'common.networkError',
+      statuses: { 429: 'admin.forgot.tooMany' },
+    });
   }
 }
 
