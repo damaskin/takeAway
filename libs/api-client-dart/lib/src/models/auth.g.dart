@@ -60,6 +60,23 @@ Map<String, dynamic> _$NotificationPrefsToJson(NotificationPrefs instance) => <S
   'notifyPromotions': instance.notifyPromotions,
 };
 
+AuthMethods _$AuthMethodsFromJson(Map<String, dynamic> json) => AuthMethods(
+  email: json['email'] as bool? ?? false,
+  google: json['google'] as bool? ?? false,
+  apple: json['apple'] as bool? ?? false,
+  telegram: json['telegram'] as bool? ?? false,
+);
+
+Map<String, dynamic> _$EmailSignInStartRequestToJson(EmailSignInStartRequest instance) => <String, dynamic>{
+  'email': instance.email,
+  'locale': instance.locale,
+};
+
+Map<String, dynamic> _$EmailSignInVerifyRequestToJson(EmailSignInVerifyRequest instance) => <String, dynamic>{
+  'email': instance.email,
+  'code': instance.code,
+};
+
 TelegramAuthConfig _$TelegramAuthConfigFromJson(Map<String, dynamic> json) => TelegramAuthConfig(
   botId: json['botId'] as String?,
   botUsername: json['botUsername'] as String?,
@@ -83,8 +100,12 @@ Map<String, dynamic> _$DeleteAccountRequestToJson(DeleteAccountRequest instance)
   'appleAuthorizationCode': ?instance.appleAuthorizationCode,
 };
 
-SignInMethods _$SignInMethodsFromJson(Map<String, dynamic> json) =>
-    SignInMethods(telegram: json['telegram'] as bool, google: json['google'] as bool, apple: json['apple'] as bool);
+SignInMethods _$SignInMethodsFromJson(Map<String, dynamic> json) => SignInMethods(
+  telegram: json['telegram'] as bool,
+  google: json['google'] as bool,
+  apple: json['apple'] as bool,
+  email: json['email'] as String?,
+);
 
 LinkSignInMethodResult _$LinkSignInMethodResultFromJson(Map<String, dynamic> json) => LinkSignInMethodResult(
   methods: SignInMethods.fromJson(json['methods'] as Map<String, dynamic>),

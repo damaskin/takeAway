@@ -314,6 +314,36 @@ void main() {
       expect(const DeleteAccountRequest(appleAuthorizationCode: 'c1').toJson(), {'appleAuthorizationCode': 'c1'});
       expect(const DeleteAccountRequest().toJson(), isEmpty);
     });
+
+    test('reads which sign-in methods the server offers, none from an API that predates the route', () {
+      final methods = AuthMethods.fromJson({'email': true, 'google': true, 'apple': false, 'telegram': true});
+      expect([methods.email, methods.google, methods.apple, methods.telegram], [true, true, false, true]);
+      expect(AuthMethods.fromJson(const {}).email, isFalse);
+    });
+
+    test('counts a proven email as a way into the profile', () {
+      final withEmail = SignInMethods.fromJson({
+        'telegram': false,
+        'google': true,
+        'apple': false,
+        'email': 'ivan@mail.ru',
+      });
+      expect(withEmail.email, 'ivan@mail.ru');
+      expect(withEmail.count, 2);
+      // An API from before email sign-in leaves the field out.
+      expect(SignInMethods.fromJson({'telegram': true, 'google': false, 'apple': false}).count, 1);
+    });
+
+    test('sends the address and the code as they are', () {
+      expect(const EmailSignInStartRequest(email: 'ivan@mail.ru', locale: 'ru').toJson(), {
+        'email': 'ivan@mail.ru',
+        'locale': 'ru',
+      });
+      expect(const EmailSignInVerifyRequest(email: 'ivan@mail.ru', code: '042917').toJson(), {
+        'email': 'ivan@mail.ru',
+        'code': '042917',
+      });
+    });
   });
 
   group('devices', () {

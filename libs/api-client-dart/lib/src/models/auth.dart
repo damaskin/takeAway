@@ -100,6 +100,46 @@ class NotificationPrefs {
   Map<String, dynamic> toJson() => _$NotificationPrefsToJson(this);
 }
 
+/// `GET /auth/methods`: which customer sign-in methods the server can
+/// complete. An API without the route counts as offering none of these.
+@JsonSerializable(createToJson: false)
+class AuthMethods {
+  const AuthMethods({this.email = false, this.google = false, this.apple = false, this.telegram = false});
+
+  factory AuthMethods.fromJson(Map<String, dynamic> json) => _$AuthMethodsFromJson(json);
+
+  static const none = AuthMethods();
+
+  /// Sign-in with a code mailed to the customer; off until the server has SMTP.
+  final bool email;
+  final bool google;
+  final bool apple;
+  final bool telegram;
+}
+
+/// Body of `POST /auth/email/start`: mail a sign-in code to [email], in the
+/// language of [locale].
+@JsonSerializable(createFactory: false)
+class EmailSignInStartRequest {
+  const EmailSignInStartRequest({required this.email, required this.locale});
+
+  final String email;
+  final String locale;
+
+  Map<String, dynamic> toJson() => _$EmailSignInStartRequestToJson(this);
+}
+
+/// Body of `POST /auth/email/verify`: the six digits from the letter.
+@JsonSerializable(createFactory: false)
+class EmailSignInVerifyRequest {
+  const EmailSignInVerifyRequest({required this.email, required this.code});
+
+  final String email;
+  final String code;
+
+  Map<String, dynamic> toJson() => _$EmailSignInVerifyRequestToJson(this);
+}
+
 /// Public bits of the Telegram bot the API signs sessions for.
 @JsonSerializable(createToJson: false)
 class TelegramAuthConfig {
@@ -159,10 +199,10 @@ class DeleteAccountRequest {
   Map<String, dynamic> toJson() => _$DeleteAccountRequestToJson(this);
 }
 
-/// Which of Telegram, Google and Apple lead into the signed-in profile.
+/// Which of Telegram, Google, Apple and email lead into the signed-in profile.
 @JsonSerializable(createToJson: false)
 class SignInMethods {
-  const SignInMethods({required this.telegram, required this.google, required this.apple});
+  const SignInMethods({required this.telegram, required this.google, required this.apple, this.email});
 
   factory SignInMethods.fromJson(Map<String, dynamic> json) => _$SignInMethodsFromJson(json);
 
@@ -170,7 +210,11 @@ class SignInMethods {
   final bool google;
   final bool apple;
 
-  int get count => [telegram, google, apple].where((linked) => linked).length;
+  /// The proven address a sign-in code goes to; null when there is none
+  /// (an address only typed into the profile does not count).
+  final String? email;
+
+  int get count => [telegram, google, apple, email != null].where((linked) => linked).length;
 }
 
 /// Result of linking a sign-in method. [session] is set when the customer

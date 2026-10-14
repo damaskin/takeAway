@@ -26,6 +26,10 @@ abstract class TakeAwayApi {
   @GET('/auth/telegram/config')
   Future<TelegramAuthConfig> telegramConfig();
 
+  /// Which customer sign-in methods the server can complete.
+  @GET('/auth/methods')
+  Future<AuthMethods> authMethods();
+
   // ── Auth ───────────────────────────────────────────────────────────────
 
   /// Telegram Login (OpenID Connect): the ID token Telegram signed for our bot.
@@ -41,6 +45,13 @@ abstract class TakeAwayApi {
 
   @POST('/auth/apple')
   Future<AuthSessionResponse> signInWithApple(@Body() OAuthLoginRequest body);
+
+  /// Mails a sign-in code (204 for any well-formed address).
+  @POST('/auth/email/start')
+  Future<void> startEmailSignIn(@Body() EmailSignInStartRequest body);
+
+  @POST('/auth/email/verify')
+  Future<AuthSessionResponse> verifyEmailCode(@Body() EmailSignInVerifyRequest body);
 
   @POST('/auth/logout')
   Future<void> logout(@Body() RefreshRequest body);
