@@ -95,7 +95,9 @@ address:
 So a customer who signed up with a code and later taps «Continue with Google»
 with the same address lands in the same profile, and the other way round. The
 proven address shows in Profile → Sign-in methods as «Почта» and counts as a
-way in when Google or Apple is unlinked. There is no «link an email» button
+way in when Google or Apple is unlinked. While it is the profile's only way in,
+`PATCH /auth/me` refuses to replace it (409 `EMAIL_IS_SIGN_IN_METHOD`): a newly
+typed address is unproven, and the customer would lose the way back. There is no «link an email» button
 yet: a Telegram customer who wants codes to lead into their profile links
 Google with that address first.
 
