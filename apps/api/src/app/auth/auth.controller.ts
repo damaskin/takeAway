@@ -296,7 +296,7 @@ export class AuthController {
     await this.accountDeletion.deleteOwnAccount(user.id, { appleAuthorizationCode: dto.appleAuthorizationCode });
   }
 
-  /** Which of Telegram, Google and Apple lead into the signed-in customer's profile. */
+  /** Which of Telegram, Google, Apple and a proven email lead into the signed-in customer's profile. */
   @Get('me/sign-in-methods')
   @ApiBearerAuth()
   @ApiOkResponse({ type: SignInMethodsDto })

@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
+import { loginCodeMail } from './login-code.mail';
 import { MailService } from './mail.service';
 
 describe('MailService logs', () => {
@@ -60,6 +61,22 @@ describe('MailService logs', () => {
     expect(logged).toContain('relay down');
     expect(logged).not.toContain('ion.popescu');
     expect(logged).not.toContain('token=');
+  });
+
+  it('logs neither the sign-in code nor the address, and says whether the letter went out', async () => {
+    const letter = loginCodeMail({ code: '731905', language: 'ru', ttlMinutes: 10 });
+
+    await expect(build().sendLoginCode('ivan.petrov@mail.ru', letter)).resolves.toBe(false);
+    const sendMail = jest.fn().mockResolvedValueOnce({});
+    await expect(build(sendMail).sendLoginCode('ivan.petrov@mail.ru', letter)).resolves.toBe(true);
+
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'ivan.petrov@mail.ru', text: letter.text }));
+    const logged = `${lines(warn)}
+${lines(log)}`;
+    expect(logged).toContain('template=login-code');
+    expect(logged).toContain('to=*@mail.ru');
+    expect(logged).not.toContain('731905');
+    expect(logged).not.toContain('ivan.petrov');
   });
 
   describe('sendStaffInvite', () => {

@@ -304,9 +304,10 @@ model User {
   phone              String?   @unique
   email              String?   @unique
   /// When `email` was last proven to belong to this account — a Google or
-  /// Apple sign-in that vouched for the same verified address. Null for an
-  /// address typed into the profile. Only a verified address lets a social
-  /// sign-in join an existing profile by email; editing the email clears it.
+  /// Apple sign-in that vouched for the same verified address, or a sign-in
+  /// code mailed to it. Null for an address typed into the profile. Only a
+  /// verified address lets a social or email-code sign-in join an existing
+  /// profile by email; editing the email clears it.
   emailVerifiedAt    DateTime?
   /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never

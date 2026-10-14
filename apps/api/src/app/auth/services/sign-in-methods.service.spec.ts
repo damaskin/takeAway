@@ -11,6 +11,7 @@ interface FakeUser {
   id: string;
   role: Role;
   email: string | null;
+  emailVerifiedAt: Date | null;
   name: string | null;
   telegramUserId: bigint | null;
   blockedAt: Date | null;
@@ -39,7 +40,12 @@ function fakeDb(users: FakeUser[], accounts: FakeAccount[], orders: Record<strin
       findUnique: jest.fn(async ({ where, select }: { where: never; select?: unknown }) => {
         const u = findUser(where);
         if (!u || !select) return u;
-        return { telegramUserId: u.telegramUserId, oauthAccounts: accounts.filter((a) => a.userId === u.id) };
+        return {
+          telegramUserId: u.telegramUserId,
+          email: u.email,
+          emailVerifiedAt: u.emailVerifiedAt,
+          oauthAccounts: accounts.filter((a) => a.userId === u.id),
+        };
       }),
       findUniqueOrThrow: jest.fn(async ({ where }: { where: never }) => findUser(where)),
       update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<FakeUser> }) => {
@@ -88,6 +94,7 @@ function customer(id: string, extra: Partial<FakeUser> = {}): FakeUser {
     id,
     role: Role.CUSTOMER,
     email: null,
+    emailVerifiedAt: null,
     name: null,
     telegramUserId: null,
     blockedAt: null,
@@ -132,7 +139,8 @@ describe('SignInMethodsService', () => {
   it('adds Google to a Telegram-only customer and fills in the missing email', async () => {
     const { svc, users } = setup([customer('tg', { telegramUserId: 777n })]);
     const result = await svc.linkOAuth('tg', 'GOOGLE', 'token');
-    expect(result).toEqual({ methods: { telegram: true, google: true, apple: false } });
+    // Google vouched for the address, so a mailed code now leads here too.
+    expect(result).toEqual({ methods: { telegram: true, google: true, apple: false, email: 'ana@example.com' } });
     expect(users[0]?.email).toBe('ana@example.com');
     expect(users[0]?.name).toBe('Ana');
   });
@@ -160,7 +168,8 @@ describe('SignInMethodsService', () => {
     );
     const result = await svc.linkTelegram('apple-new', 'token');
     expect(result.session?.user).toEqual({ id: 'tg-history' });
-    expect(result.methods).toEqual({ telegram: true, google: false, apple: true });
+    // The relay address moved over unproven, so it is no way in by itself.
+    expect(result.methods).toEqual({ telegram: true, google: false, apple: true, email: null });
     expect(accounts[0]?.userId).toBe('tg-history');
     expect(users.find((u) => u.id === 'tg-history')?.email).toBe('relay@privaterelay.appleid.com');
     expect(users.find((u) => u.id === 'apple-new')?.email).toBeNull();
@@ -198,6 +207,33 @@ describe('SignInMethodsService', () => {
       [customer('g', { telegramUserId: 777n })],
       [{ userId: 'g', provider: 'GOOGLE', providerUserId: 'google-sub' }],
     );
-    await expect(svc.unlink('g', 'GOOGLE')).resolves.toEqual({ telegram: true, google: false, apple: false });
+    await expect(svc.unlink('g', 'GOOGLE')).resolves.toEqual({
+      telegram: true,
+      google: false,
+      apple: false,
+      email: null,
+    });
+  });
+
+  it('counts a proven email as a way in, so Google can go', async () => {
+    const { svc } = setup(
+      [customer('g', { email: 'ana@mail.ru', emailVerifiedAt: new Date() })],
+      [{ userId: 'g', provider: 'GOOGLE', providerUserId: 'google-sub' }],
+    );
+    await expect(svc.unlink('g', 'GOOGLE')).resolves.toEqual({
+      telegram: false,
+      google: false,
+      apple: false,
+      email: 'ana@mail.ru',
+    });
+  });
+
+  it('does not count an address that was only typed in', async () => {
+    const { svc } = setup(
+      [customer('g', { email: 'ana@mail.ru' })],
+      [{ userId: 'g', provider: 'GOOGLE', providerUserId: 'google-sub' }],
+    );
+    await expect(svc.list('g')).resolves.toMatchObject({ email: null });
+    await expect(svc.unlink('g', 'GOOGLE')).rejects.toBeInstanceOf(BadRequestException);
   });
 });
