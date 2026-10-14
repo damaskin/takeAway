@@ -1,13 +1,16 @@
 import {
+  calendarDaysFrom,
   formatMinutesOfDay,
+  groupSlotsByDay,
   isStoreInactive,
   sortStoresByAvailability,
   storeAvailability,
+  storeHoursNote,
   todaysOpeningHours,
 } from './store';
 
 describe('isStoreInactive', () => {
-  it('is inactive while no shift is open', () => {
+  it('is inactive while nothing can be booked', () => {
     expect(isStoreInactive({ status: 'OPEN', acceptingOrders: false })).toBe(true);
   });
 
@@ -30,11 +33,11 @@ describe('storeAvailability', () => {
     expect(storeAvailability({ status: 'OPEN', acceptingOrders: true, openNow: true })).toBe('open');
   });
 
-  it('takes orders for later only with a shift running after hours', () => {
+  it('takes pre-orders only while closed for an order now (after hours, overnight)', () => {
     expect(storeAvailability({ status: 'OPEN', acceptingOrders: true, openNow: false })).toBe('scheduledOnly');
   });
 
-  it('is closed without a shift, whatever the hours say', () => {
+  it('is closed when nothing can be booked, whatever the hours say', () => {
     expect(storeAvailability({ status: 'OPEN', acceptingOrders: false, openNow: false })).toBe('closed');
     expect(storeAvailability({ status: 'CLOSED', acceptingOrders: true, openNow: true })).toBe('closed');
   });
@@ -108,5 +111,103 @@ describe('formatMinutesOfDay', () => {
     expect(formatMinutesOfDay(1305)).toBe('21:45');
     expect(formatMinutesOfDay(0)).toBe('00:00');
     expect(formatMinutesOfDay(1440)).toBe('00:00');
+  });
+});
+
+describe('calendarDaysFrom', () => {
+  // 22:30 UTC on the 14th is already 01:30 on the 15th in Tiraspol (UTC+3).
+  const now = new Date('2026-10-14T22:30:00Z');
+
+  it("counts days on the store's clock, not the viewer's", () => {
+    expect(calendarDaysFrom('2026-10-15T06:00:00Z', now, 'Europe/Chisinau')).toBe(0);
+    expect(calendarDaysFrom('2026-10-15T06:00:00Z', now, 'UTC')).toBe(1);
+    expect(calendarDaysFrom('2026-10-16T06:00:00Z', now, 'Europe/Chisinau')).toBe(1);
+    expect(calendarDaysFrom('2026-10-14T10:00:00Z', now, 'Europe/Chisinau')).toBe(-1);
+  });
+
+  it('reads a bad date as today', () => {
+    expect(calendarDaysFrom('soon', now, 'UTC')).toBe(0);
+  });
+});
+
+describe('storeHoursNote', () => {
+  // 01:00 in Tiraspol on Thursday 15 October.
+  const now = new Date('2026-10-14T22:00:00Z');
+  const base = { status: 'OPEN', timezone: 'Europe/Chisinau' };
+
+  it('names the opening time while closed and taking pre-orders', () => {
+    expect(
+      storeHoursNote(
+        {
+          ...base,
+          acceptingOrders: true,
+          openNow: false,
+          asapBlockedReason: 'OUTSIDE_HOURS',
+          opensAt: '2026-10-15T06:00:00Z',
+        },
+        now,
+      ),
+    ).toEqual({ kind: 'opens', at: '2026-10-15T06:00:00Z', days: 0 });
+  });
+
+  it('says tomorrow when the store opens on the next calendar day', () => {
+    const evening = new Date('2026-10-14T19:30:00Z');
+    expect(
+      storeHoursNote(
+        {
+          ...base,
+          acceptingOrders: true,
+          openNow: false,
+          asapBlockedReason: 'OUTSIDE_HOURS',
+          opensAt: '2026-10-15T06:00:00Z',
+        },
+        evening,
+      ),
+    ).toEqual({ kind: 'opens', at: '2026-10-15T06:00:00Z', days: 1 });
+  });
+
+  it('offers pre-orders when the queue is full, and without an opening time', () => {
+    expect(
+      storeHoursNote({ ...base, acceptingOrders: true, openNow: false, asapBlockedReason: 'QUEUE_FULL' }, now),
+    ).toEqual({
+      kind: 'queueFull',
+    });
+    expect(
+      storeHoursNote({ ...base, acceptingOrders: true, openNow: false, asapBlockedReason: 'SHIFT_CLOSED' }, now),
+    ).toEqual({
+      kind: 'preorder',
+    });
+  });
+
+  it('says until when while open, and nothing without a closing time', () => {
+    expect(
+      storeHoursNote({ ...base, acceptingOrders: true, openNow: true, closesAt: '2026-10-15T18:00:00Z' }, now),
+    ).toEqual({
+      kind: 'until',
+      at: '2026-10-15T18:00:00Z',
+    });
+    expect(storeHoursNote({ ...base, acceptingOrders: true, openNow: true, closesAt: null }, now)).toBeNull();
+    expect(storeHoursNote({ ...base, openNow: true }, now)).toBeNull();
+  });
+
+  it('adds nothing for a store that takes no orders at all', () => {
+    expect(
+      storeHoursNote({ ...base, acceptingOrders: false, openNow: false, opensAt: '2026-10-17T06:00:00Z' }, now),
+    ).toBeNull();
+    expect(storeHoursNote({ status: 'CLOSED', acceptingOrders: true, openNow: false }, now)).toBeNull();
+  });
+});
+
+describe('groupSlotsByDay', () => {
+  it("splits the 24-hour window at midnight on the store's clock", () => {
+    const now = new Date('2026-10-14T19:00:00Z'); // 22:00 in Tiraspol
+    const slots = ['2026-10-14T19:30:00Z', '2026-10-14T20:45:00Z', '2026-10-15T06:00:00Z', '2026-10-15T06:15:00Z'].map(
+      (startsAt) => ({ startsAt }),
+    );
+    expect(groupSlotsByDay(slots, now, 'Europe/Chisinau').map((d) => [d.days, d.slots.length])).toEqual([
+      [0, 2],
+      [1, 2],
+    ]);
+    expect(groupSlotsByDay([], now, 'UTC')).toEqual([]);
   });
 });

@@ -198,6 +198,45 @@
   "storeStatusBusy": "Busy",
   "storeStatusClosed": "Closed",
   "storeStatusNotWorking": "Not working",
+  "storeOpensAt": "Closed now · opens at {time} · order ahead",
+  "@storeOpensAt": {
+    "description": "Store card / menu header: closed for orders now, taking pre-orders.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeOpensTomorrowAt": "Closed now · opens tomorrow at {time} · order ahead",
+  "@storeOpensTomorrowAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeOpensOnAt": "Closed now · opens {date} at {time} · order ahead",
+  "@storeOpensOnAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeClosedPreorder": "Closed now · order ahead",
+  "storeQueueFullPreorder": "Long queue — order ahead only",
+  "storeOpenUntil": "until {time}",
+  "@storeOpenUntil": {
+    "description": "Beside the wait of an open store: when it closes.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "orderHere": "Order here",
   "distanceAway": "{distance} away",
   "@distanceAway": {
@@ -223,7 +262,7 @@
   "openingHours": "Opening hours",
   "closedAllDay": "Closed",
   "buildRoute": "Build route",
-  "callStore": "Call",
+  "callStore": "Call the store",
   "menuSearchHint": "Search the menu",
   "menuEmpty": "The menu is empty for now.",
   "menuNoResults": "Nothing found for “{query}”",
@@ -330,8 +369,54 @@
   "pickupAsap": "As soon as possible",
   "pickupLater": "Later",
   "pickupLaterHint": "Choose a time",
-  "noSlots": "No free windows in the next few hours. Try ASAP.",
+  "noSlots": "No free windows in the next 24 hours. Try ASAP.",
+  "noSlotsClosed": "No free windows in the next 24 hours.",
   "slotsHint": "Only windows this store can still keep up with.",
+  "asapBlockedOpensAt": "The store opens at {time} — pick a time for your order.",
+  "@asapBlockedOpensAt": {
+    "description": "Why ASAP is off at checkout.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedOpensTomorrowAt": "The store opens tomorrow at {time} — pick a time for your order.",
+  "@asapBlockedOpensTomorrowAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedOpensOnAt": "The store opens {date} at {time} — pick a time for your order.",
+  "@asapBlockedOpensOnAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedShiftClosed": "The store has not started work yet — pick a time for your order.",
+  "asapBlockedQueueFull": "There is a long queue right now — pick a time for your order.",
+  "asapBlockedClosed": "The store is closed right now — pick a time for your order.",
+  "slotDayToday": "Today",
+  "@slotDayToday": {
+    "description": "Heading over today's pickup windows."
+  },
+  "slotDayTomorrow": "Tomorrow",
+  "timeTomorrow": "{time} tomorrow",
+  "@timeTomorrow": {
+    "description": "A pickup time on the next calendar day.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "fulfillmentPickup": "Pickup",
   "fulfillmentDelivery": "Delivery",
   "deliveryAddress": "Address",
@@ -480,7 +565,19 @@
   "statusOutForDelivery": "On the way",
   "statusDelivered": "Delivered",
   "statusCancelled": "Cancelled",
-  "statusExpired": "Cancelled — payment did not arrive in time",
+  "statusExpired": "Did not go through",
+  "orderAwaitingAcceptance": "Waiting for the store to confirm",
+  "@orderAwaitingAcceptance": {
+    "description": "Order screen: on the kitchen board, not accepted yet."
+  },
+  "orderPreorderAwaitingOpening": "The store will confirm your pre-order when it opens",
+  "orderRunningLate": "Running a little late",
+  "@orderRunningLate": {
+    "description": "Accepted or being made, and past its pickup time."
+  },
+  "orderExpiredNotAccepted": "The store did not confirm the order — you were not charged",
+  "orderExpiredNotAcceptedRefunded": "The store did not confirm the order — the money is on its way back",
+  "orderExpiredPaymentNotCompleted": "The payment did not go through — the order is cancelled",
   "statusUnknown": "Updating…",
   "stepReceived": "Received",
   "stepPreparing": "Preparing",
@@ -494,6 +591,10 @@
   "paymentStatePending": "Checking your payment",
   "paymentStateFailed": "Payment did not go through",
   "paymentStateRefunded": "Money returned",
+  "paymentStateNotCharged": "You were not charged",
+  "@paymentStateNotCharged": {
+    "description": "A cancelled or expired order whose card was never charged."
+  },
   "paymentStateAtCounter": "Paying at the counter",
   "paymentStateAwaiting": "Awaiting payment",
   "pickupCode": "Pickup code",
@@ -856,6 +957,7 @@
   "errStoreNotTakingOrders": "This store is not taking orders right now",
   "errStoreClosedAtTime": "The store is closed at that time — pick another time",
   "errPickupSlotFull": "That time has just been taken — pick another one",
+  "errAsapUnavailable": "The store can no longer take an order for now — pick a time for it",
   "errPickupTimeOutOfRange": "A scheduled pickup must be {minMinutes} min to {maxHours} h from now",
   "@errPickupTimeOutOfRange": {
     "placeholders": {

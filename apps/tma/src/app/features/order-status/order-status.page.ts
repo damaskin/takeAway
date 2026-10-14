@@ -1,8 +1,17 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import type { CategoryKind, StoreMenu } from '@takeaway/shared-types';
+import type { CategoryKind, StoreDetail, StoreMenu } from '@takeaway/shared-types';
 import { LeafletMapComponent, ProductImageComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
-import { buildDirectionsUrl, describeOrderItemOptions, productKind, readOrderItemSnapshot } from '@takeaway/utils';
+import {
+  buildDirectionsUrl,
+  describeOrderItemOptions,
+  expiredOutcome,
+  formatCountdown,
+  orderWaitNote,
+  phoneHref,
+  productKind,
+  readOrderItemSnapshot,
+} from '@takeaway/utils';
 import { interval, take, timer, type Subscription } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
@@ -14,6 +23,7 @@ import {
 } from '../../core/orders/orders.service';
 import { LocaleFormatService } from '@takeaway/i18n';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
@@ -72,7 +82,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
         >
           {{ headline(o.status) | translate }}
         </h1>
-        @if (slogan(o.status); as line) {
+        @if (slogan(); as line) {
           <p
             data-testid="order-slogan"
             style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-secondary); text-align: center; margin: -12px 0 0 0"
@@ -136,15 +146,37 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               'tma.orderStatus.orderClosed' | translate
             }}</span>
           } @else {
-            <span
-              style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
-              >{{ countdown() }}</span
-            >
+            @if (waitNote() === 'late') {
+              <!-- Past its time: a frozen 0:00 reads like a broken screen. -->
+              <span
+                data-testid="order-late"
+                style="font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--color-caramel)"
+                >{{ 'web.orderStatus.wait.late' | translate }}</span
+              >
+            } @else {
+              <span
+                style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
+                >{{ countdown() }}</span
+              >
+            }
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
               'web.orderStatus.codeLabel' | translate: { code: o.orderCode }
             }}</span>
           }
         </div>
+
+        <!-- The customer may already be at the counter: a way to reach the store. -->
+        @if (storePhoneHref(); as tel) {
+          @if (!isTerminal(o.status)) {
+            <a
+              [href]="tel"
+              data-testid="call-store"
+              class="w-full flex items-center justify-center"
+              style="gap: 8px; height: 48px; border-radius: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); color: var(--color-text-primary); font-family: var(--font-sans); font-size: 15px; font-weight: 600; text-decoration: none"
+              >📞 {{ 'web.orderStatus.callStore' | translate }}</a
+            >
+          }
+        }
 
         <!-- Timeline -->
         <div class="flex flex-col w-full" style="gap: 12px">
@@ -379,12 +411,16 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
         return 'web.orderStatus.payment.failed';
       case 'REFUNDED':
         return 'web.orderStatus.payment.refunded';
-      default:
-        // Nothing on a new order yet means its card has not gone through;
-        // only orders from before card-only checkout were paid at the counter.
-        return this.order()?.status === 'CREATED'
-          ? 'web.orderStatus.payment.awaiting'
-          : 'web.orderStatus.payment.atCounter';
+      default: {
+        // Nothing on a new order yet means its card has not gone through; on
+        // one that ended without being made, that nothing was taken (a hold
+        // is released to nothing). Only orders from before card-only checkout
+        // were paid at the counter.
+        const status = this.order()?.status;
+        if (status === 'CREATED') return 'web.orderStatus.payment.awaiting';
+        if (status === 'EXPIRED' || status === 'CANCELLED') return 'web.orderStatus.payment.notCharged';
+        return 'web.orderStatus.payment.atCounter';
+      }
     }
   });
 
@@ -432,14 +468,48 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.paymentState() === 'PAID' ? 'var(--color-mint-light, var(--color-foam))' : 'var(--color-foam)',
   );
 
+  /** «4:05»; «13:05:00» for a pre-order hours away. */
   readonly countdown = computed(() => {
     const o = this.order();
-    if (!o) return '0:00';
-    const diff = Math.max(0, new Date(o.pickupAt).getTime() - this.now());
-    const min = Math.floor(diff / 60_000);
-    const sec = Math.floor((diff % 60_000) / 1000);
-    return `${min}:${String(sec).padStart(2, '0')}`;
+    return o ? formatCountdown(new Date(o.pickupAt).getTime() - this.now()) : '0:00';
   });
+
+  /**
+   * The store as it is now: its phone for «Позвонить в точку», and whether
+   * it is open, for a pre-order waiting on the morning.
+   */
+  readonly store = signal<StoreDetail | null>(null);
+  private readonly loadStore = effect(() => {
+    const storeId = this.storeId();
+    if (storeId) untracked(() => this.fetchStore(storeId));
+  });
+
+  /** A `tel:` link to the store, when it gave a phone number. */
+  readonly storePhoneHref = computed(() => phoneHref(this.store()?.phone));
+
+  /** «Ждём подтверждения точки», «Немного задерживаемся» … — see `orderWaitNote`. */
+  readonly waitNote = computed(() => {
+    const o = this.order();
+    return o ? orderWaitNote(o, this.store(), new Date(this.now())) : null;
+  });
+
+  constructor() {
+    // A store that opens (or closes) while the customer watches changes what
+    // a pre-order is waiting for.
+    refreshStoresWhileVisible((event) => {
+      const storeId = this.storeId();
+      if (storeId && (!event || event.storeId === storeId)) this.fetchStore(storeId);
+    });
+  }
+
+  private fetchStore(storeId: string): void {
+    this.catalog.getStore(storeId).subscribe({
+      next: (store) => {
+        if (store.id === this.storeId()) this.store.set(store);
+      },
+      error: () => undefined,
+    });
+  }
 
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
@@ -621,10 +691,19 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     return this.statusLabel(status);
   }
 
-  slogan(status: OrderStatusString): string | null {
-    if (status === 'READY') return 'common.orderDone.readySlogan';
-    if (status === 'PICKED_UP') return 'common.orderDone.pickedUpSlogan';
-    return null;
+  /**
+   * The line under the headline: the zero-minute queue once ready, why an
+   * expired order ended, or what the wait is for («Ждём подтверждения
+   * точки», «Немного задерживаемся»). A translation key.
+   */
+  slogan(): string | null {
+    const order = this.order();
+    if (!order) return null;
+    if (order.status === 'READY') return 'common.orderDone.readySlogan';
+    if (order.status === 'PICKED_UP') return 'common.orderDone.pickedUpSlogan';
+    if (order.status === 'EXPIRED') return `web.orderStatus.expired.${expiredOutcome(order)}`;
+    const wait = this.waitNote();
+    return wait ? `web.orderStatus.wait.${wait}` : null;
   }
 
   isReady(): boolean {

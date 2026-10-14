@@ -22,12 +22,16 @@ String formatMinutesOfDay(BuildContext context, int minutes) {
 /// Whole minutes, never below one — "ready in 0 min" reads like a bug.
 int minutesCeil(int seconds) => seconds <= 0 ? 1 : (seconds / 60).ceil();
 
-/// `m:ss` countdown label.
+/// `m:ss` countdown label; `h:mm:ss` from an hour up — a pre-order for
+/// tomorrow morning is not «780:00».
 String formatCountdown(Duration remaining) {
   final clamped = remaining.isNegative ? Duration.zero : remaining;
-  final minutes = clamped.inMinutes;
   final seconds = clamped.inSeconds.remainder(60).toString().padLeft(2, '0');
-  return '$minutes:$seconds';
+  if (clamped.inHours > 0) {
+    final minutes = clamped.inMinutes.remainder(60).toString().padLeft(2, '0');
+    return '${clamped.inHours}:$minutes:$seconds';
+  }
+  return '${clamped.inMinutes}:$seconds';
 }
 
 /// Metres to a short label: 850 m, 1.2 km.

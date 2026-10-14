@@ -2,14 +2,31 @@ import { Component, OnInit, computed, effect, inject, signal, untracked } from '
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { CartChangedError, CategoryKind, PickupSlot, StoreListItem, StoreMenu } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError, isStoreInactive, productKind, suggestFood } from '@takeaway/utils';
-import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import type {
+  AsapBlockedReason,
+  CartChangedError,
+  CategoryKind,
+  PickupSlot,
+  StoreListItem,
+  StoreMenu,
+} from '@takeaway/shared-types';
+import {
+  calendarDaysFrom,
+  computeTax,
+  groupSlotsByDay,
+  isCartChangedError,
+  isStoreInactive,
+  productKind,
+  suggestFood,
+  type PickupSlotDay,
+} from '@takeaway/utils';
+import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
@@ -152,10 +169,12 @@ interface Step {
                   {{ 'web.checkout.pickupScheduled' | translate }}
                 </button>
               </div>
-              @if (!storeOpen()) {
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-                  'web.checkout.closedNow' | translate
-                }}</span>
+              @if (!storeOpen() && !storeInactive()) {
+                <span
+                  data-testid="asap-blocked"
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                  >{{ asapBlockedLine() ?? ('web.checkout.closedNow' | translate) }}</span
+                >
               }
 
               <!-- Delivery address form -->
@@ -253,32 +272,42 @@ interface Step {
                       (storeOpen() ? 'web.checkout.noSlots' : 'web.checkout.noSlotsClosed') | translate
                     }}</span>
                   } @else {
-                    <div class="flex flex-wrap" style="gap: 8px">
-                      @for (slot of slots(); track slot.startsAt) {
-                        <button
-                          type="button"
-                          [disabled]="!slot.available"
-                          (click)="selectSlot(slot)"
-                          [title]="slot.available ? '' : ('web.checkout.slotFull' | translate)"
-                          [style.background]="
-                            scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-cream)'
-                          "
-                          [style.color]="
-                            slot.available
-                              ? scheduledAt() === slot.startsAt
-                                ? 'var(--color-foam)'
-                                : 'var(--color-espresso)'
-                              : 'var(--color-text-tertiary)'
-                          "
-                          [style.borderColor]="scheduledAt() === slot.startsAt ? 'transparent' : 'var(--color-border)'"
-                          [style.cursor]="slot.available ? 'pointer' : 'not-allowed'"
-                          [style.textDecoration]="slot.available ? 'none' : 'line-through'"
-                          style="padding: 8px 14px; border: 1px solid; border-radius: 999px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
-                        >
-                          {{ slotLabel(slot) }}
-                        </button>
-                      }
-                    </div>
+                    <!-- 24 hours of windows: each day under its own heading. -->
+                    @for (day of slotDays(); track day.days) {
+                      <span
+                        data-testid="slot-day"
+                        style="margin-top: 6px; font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-text-secondary)"
+                        >{{ dayLabel(day) }}</span
+                      >
+                      <div class="flex flex-wrap" style="gap: 8px">
+                        @for (slot of day.slots; track slot.startsAt) {
+                          <button
+                            type="button"
+                            [disabled]="!slot.available"
+                            (click)="selectSlot(slot)"
+                            [title]="slot.available ? '' : ('web.checkout.slotFull' | translate)"
+                            [style.background]="
+                              scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-cream)'
+                            "
+                            [style.color]="
+                              slot.available
+                                ? scheduledAt() === slot.startsAt
+                                  ? 'var(--color-foam)'
+                                  : 'var(--color-espresso)'
+                                : 'var(--color-text-tertiary)'
+                            "
+                            [style.borderColor]="
+                              scheduledAt() === slot.startsAt ? 'transparent' : 'var(--color-border)'
+                            "
+                            [style.cursor]="slot.available ? 'pointer' : 'not-allowed'"
+                            [style.textDecoration]="slot.available ? 'none' : 'line-through'"
+                            style="padding: 8px 14px; border: 1px solid; border-radius: 999px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
+                          >
+                            {{ slotLabel(slot) }}
+                          </button>
+                        }
+                      </div>
+                    }
                   }
 
                   <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
@@ -745,12 +774,13 @@ export class CheckoutPage implements OnInit {
   /** Pickup times are the store's clock, wherever the customer is browsing from. */
   readonly storeTimezone = signal<string | null>(null);
   /**
-   * Whether the store takes an ASAP order right now — its switch and its
-   * working hours, as the API computes them. After hours only a scheduled
-   * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
+   * Whether the store takes an ASAP order right now — its switch, its
+   * working hours, its shift and its queue, as the API computes them. When it
+   * does not, only a pickup time later on is offered: overnight that is a
+   * pre-order for the morning, with the shift still closed.
    */
   readonly storeOpen = signal(true);
-  /** The store takes no orders at all right now: no shift started, or switched off. */
+  /** The store takes no orders at all right now, not even for later: switched off, or nothing bookable. */
   readonly storeInactive = signal(false);
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   readonly cardPaymentsEnabled = this.flags.cardPaymentsEnabled;
@@ -776,6 +806,8 @@ export class CheckoutPage implements OnInit {
   /** ISO start of the chosen slot; empty until the customer picks one. */
   readonly scheduledAt = signal<string>('');
   readonly slots = signal<PickupSlot[]>([]);
+  /** The windows by calendar day on the store's clock, for the «Сегодня» / «Завтра» headings. */
+  readonly slotDays = computed(() => groupSlotsByDay(this.slots(), new Date(), this.storeTimezone()));
   readonly slotsLoading = signal(false);
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
@@ -869,11 +901,11 @@ export class CheckoutPage implements OnInit {
     return iso ? new Date(iso) : new Date(Date.now() + 30 * 60_000);
   });
 
-  readonly readyTimeLabel = computed(() => this.formatTime(this.readyAt()));
+  readonly readyTimeLabel = computed(() => this.formatPickupTime(this.readyAt()));
 
   readonly prepStartLabel = computed(() => {
     const at = new Date(this.readyAt().getTime() - (this.cart()?.etaSeconds ?? 0) * 1000);
-    return this.formatTime(at);
+    return this.formatPickupTime(at);
   });
 
   readonly steps = computed<Step[]>(() => [
@@ -911,6 +943,24 @@ export class CheckoutPage implements OnInit {
     () => this.webPaymentsEnabled() || (this.boundCardsEnabled() && this.selectedCardId() !== null),
   );
 
+  constructor() {
+    // The store opening, closing or filling up while the customer is here
+    // turns «Сейчас» on or off without a reload.
+    refreshStoresWhileVisible((event) => {
+      const storeId = this.activeStoreId();
+      if (!storeId || this.placedOrder() || (event && event.storeId !== storeId)) return;
+      this.catalog.getStore(storeId).subscribe({
+        next: (store) => {
+          if (store.id !== this.activeStoreId()) return;
+          const wasScheduled = this.mode() === 'SCHEDULED';
+          this.applyAvailability(store);
+          if (!wasScheduled && this.mode() === 'SCHEDULED') this.loadSlots();
+        },
+        error: () => undefined,
+      });
+    });
+  }
+
   ngOnInit(): void {
     this.flags.load();
 
@@ -945,14 +995,43 @@ export class CheckoutPage implements OnInit {
     this.taxIncludedInPrice.set(store.taxIncludedInPrice);
     this.currency.set(store.currency);
     this.storeTimezone.set(store.timezone ?? null);
+    this.applyAvailability(store);
+    // The windows wait for the cart: the API fits them to its work.
+    this.cartService.load(store.id).subscribe({
+      next: (c) => {
+        this.cart.set(c);
+        if (this.mode() === 'SCHEDULED') this.loadSlots();
+      },
+      error: () => {
+        if (this.mode() === 'SCHEDULED') this.loadSlots();
+      },
+    });
+    this.loadMenu(store.slug);
+    this.refreshFeeQuote();
+  }
+
+  /**
+   * Whether «Сейчас» can be ordered, as the store says now. When it cannot —
+   * closed for the night, no shift yet, a full queue — a time later is
+   * preselected; the caller loads the windows.
+   */
+  private applyAvailability(store: StoreListItem): void {
     // `!== false`: an API that predates the field keeps ASAP available.
     this.storeOpen.set(store.openNow !== false);
     this.storeInactive.set(isStoreInactive(store));
-    if (!this.storeOpen()) this.selectMode('SCHEDULED');
     this.servingStore.set(store);
-    this.cartService.load(store.id).subscribe((c) => this.cart.set(c));
-    this.loadMenu(store.slug);
-    this.refreshFeeQuote();
+    if (!this.storeOpen() && this.mode() === 'ASAP') this.mode.set('SCHEDULED');
+  }
+
+  /** Why «Сейчас» is off: «Точка откроется завтра в 9:00 — …»; null for the general line. */
+  asapBlockedLine(): string | null {
+    const store = this.servingStore();
+    return store ? asapBlockedText(store, this.translate, this.fmt) : null;
+  }
+
+  /** «Сегодня», «Завтра» over a day of windows. */
+  dayLabel(day: PickupSlotDay<PickupSlot>): string {
+    return pickupDayLabel(day.days, day.slots[0]?.startsAt ?? '', this.translate, this.fmt, this.storeTimezone());
   }
 
   /** The copy the menu page left behind, else a fresh one; without it the lines just show placeholders. */
@@ -972,6 +1051,8 @@ export class CheckoutPage implements OnInit {
   onUpsellAdded(cart: CartView): void {
     this.cart.set(cart);
     this.onCartQuantityChanged();
+    // More work for the kitchen: a busy window may no longer fit it.
+    if (this.mode() === 'SCHEDULED') this.loadSlots();
   }
 
   requestLocation(): void {
@@ -1227,13 +1308,18 @@ export class CheckoutPage implements OnInit {
   /**
    * Slots are only fetched when the customer actually asks to schedule —
    * they are the store's live occupancy, so there is no point holding a
-   * stale copy behind an ASAP order.
+   * stale copy behind an ASAP order. They cover the next 24 hours and are
+   * fitted to this cart's work.
+   *
+   * `preselect`: pick the earliest window when the chosen one is gone. Off
+   * after the chosen window filled up at payment, so the customer picks the
+   * new time themselves rather than paying for one they did not see.
    */
-  private loadSlots(): void {
+  private loadSlots(preselect = true): void {
     const storeId = this.activeStoreId();
     if (!storeId) return;
     this.slotsLoading.set(true);
-    this.catalog.getPickupSlots(storeId).subscribe({
+    this.catalog.getPickupSlots(storeId, this.cart()?.id).subscribe({
       next: (slots) => {
         this.slots.set(slots);
         this.slotsLoading.set(false);
@@ -1241,7 +1327,7 @@ export class CheckoutPage implements OnInit {
         const current = this.scheduledAt();
         const stillValid = slots.some((s) => s.startsAt === current && s.available);
         if (!stillValid) {
-          this.scheduledAt.set(slots.find((s) => s.available)?.startsAt ?? '');
+          this.scheduledAt.set(preselect ? (slots.find((s) => s.available)?.startsAt ?? '') : '');
         }
       },
       error: () => {
@@ -1330,9 +1416,35 @@ export class CheckoutPage implements OnInit {
           this.onCartChanged(c.storeId, body);
           return;
         }
+        this.onTimeRefused(body);
         this.error.set(this.errorText(err));
       },
     });
+  }
+
+  /**
+   * The API turned the order down for its time. «Сейчас» is gone — the store
+   * closed, or its queue filled up, a moment ago: switch to a time later and
+   * say why. Or the chosen window filled up meanwhile: show the windows
+   * again and let the customer pick.
+   */
+  private onTimeRefused(body: unknown): void {
+    const refusal = (body ?? {}) as { code?: unknown; reason?: unknown; opensAt?: unknown };
+    if (refusal.code === 'ASAP_UNAVAILABLE') {
+      const store = this.servingStore();
+      if (store) {
+        this.servingStore.set({
+          ...store,
+          openNow: false,
+          asapBlockedReason: typeof refusal.reason === 'string' ? (refusal.reason as AsapBlockedReason) : null,
+          opensAt: typeof refusal.opensAt === 'string' ? refusal.opensAt : (store.opensAt ?? null),
+        });
+      }
+      this.storeOpen.set(false);
+      this.selectMode('SCHEDULED');
+    } else if (refusal.code === 'PICKUP_SLOT_FULL') {
+      this.loadSlots(false);
+    }
   }
 
   /**
@@ -1457,6 +1569,7 @@ export class CheckoutPage implements OnInit {
         this.cart.set(cart);
         this.changingItemId.set(null);
         this.onCartQuantityChanged();
+        if (this.mode() === 'SCHEDULED') this.loadSlots();
       },
       error: (err) => {
         this.changingItemId.set(null);
@@ -1484,6 +1597,14 @@ export class CheckoutPage implements OnInit {
 
   private formatTime(date: Date): string {
     return this.fmt.time(date, this.storeTimezone());
+  }
+
+  /** «09:15», or «09:15 завтра» for a time on the store's next calendar day. */
+  private formatPickupTime(date: Date): string {
+    const time = this.formatTime(date);
+    return calendarDaysFrom(date, new Date(), this.storeTimezone()) === 1
+      ? this.translate.instant('common.pickupDay.timeTomorrow', { time })
+      : time;
   }
 
   formatKm(metres: number): string {

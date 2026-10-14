@@ -648,9 +648,13 @@ class _TakeAwayApi implements TakeAwayApi {
   }
 
   @override
-  Future<List<PickupSlot>> pickupSlots(String idOrSlug) async {
+  Future<List<PickupSlot>> pickupSlots(
+    String idOrSlug, {
+    String? cartId,
+  }) async {
     final _extra = <String, dynamic>{};
-    final queryParameters = <String, dynamic>{};
+    final queryParameters = <String, dynamic>{r'cartId': cartId};
+    queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};
     const Map<String, dynamic>? _data = null;
     final _options = _setStreamType<List<PickupSlot>>(

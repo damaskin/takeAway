@@ -21,7 +21,7 @@ import type {
   StoreMenu,
 } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import { formatMinutesOfDay, isStoreInactive, productKind, todaysOpeningHours } from '@takeaway/utils';
 import { Subscription, filter, map } from 'rxjs';
@@ -53,11 +53,13 @@ import { categoryIcon } from '../../core/catalog/category-icon';
  * The category being read is highlighted in the rail and the chips as the
  * page scrolls; clicking one scrolls to it.
  *
- * A store that takes no orders (no shift, or switched off) shows "Точка
- * закрыта" with today's hours and a way to another store instead of its
- * menu. A store open for orders later only (after hours, shift running)
- * keeps its menu; checkout then offers a pickup time. The store is
- * re-fetched while the tab is in view, so the page flips by itself.
+ * A store that takes no orders (switched off, or nothing bookable in the
+ * next 24 hours) shows "Точка закрыта" with today's hours and a way to
+ * another store instead of its menu. A store open for pre-orders only
+ * (overnight with the shift closed, before the shift starts, or with a full
+ * queue) keeps its menu and says when it opens; checkout then offers a
+ * pickup time. An open store says until when. The store is re-fetched while
+ * the tab is in view, so the page flips by itself.
  */
 @Component({
   selector: 'app-web-menu',
@@ -110,9 +112,14 @@ import { categoryIcon } from '../../core/catalog/category-icon';
               <path d="M12 7v5l3 2" />
             </svg>
             {{ 'common.readyIn' | translate: { min: etaMinutes(s) } }}
+            @if (hoursLine(s); as until) {
+              · {{ until }}
+            }
           </span>
         } @else {
-          <span class="store-eta is-closed">{{ 'web.menu.closedNow' | translate }}</span>
+          <span class="store-eta is-later" data-testid="store-preorder">{{
+            hoursLine(s) ?? ('web.menu.closedNow' | translate)
+          }}</span>
         }
       } @else if (!error()) {
         <span
@@ -377,6 +384,16 @@ import { categoryIcon } from '../../core/catalog/category-icon';
         background: #d94b5e1f;
         color: var(--color-berry);
       }
+      /* Closed now, open for pre-orders: a longer line that may wrap. */
+      .store-eta.is-later {
+        flex: 0 1 auto;
+        height: auto;
+        min-height: 32px;
+        padding: 6px 12px;
+        border-radius: 16px;
+        background: #e9a84b29;
+        color: var(--color-espresso);
+      }
       .menu-chips {
         display: none;
       }
@@ -579,6 +596,11 @@ export class MenuPage {
 
   inactive(store: StoreDetail): boolean {
     return isStoreInactive(store);
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени», or «до 21:00» while open. */
+  hoursLine(store: StoreDetail): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   /** The store takes no orders at all: its menu gives way to the closed state. */

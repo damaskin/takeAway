@@ -55,6 +55,17 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// False = switched on but outside working hours, as the API reports it.
   bool storeOpenNow = true;
 
+  /// More fields of the default store, as API JSON — `acceptingOrders`,
+  /// `asapBlockedReason`, `opensAt`, `closesAt`, `phone` (2026-10-14).
+  Map<String, dynamic> storeExtra = {};
+
+  /// The `cartId` each pickup-slots request was made with.
+  final slotCartIds = <String?>[];
+
+  /// Error body the next order is refused with (400), e.g.
+  /// `{'code': 'ASAP_UNAVAILABLE', 'reason': 'QUEUE_FULL'}`; null = placed.
+  Map<String, dynamic>? orderRefusal;
+
   /// Stores listed after the default one, as API JSON.
   List<Map<String, dynamic>> moreStores = [];
 
@@ -240,14 +251,16 @@ class FakeApi extends Fake implements TakeAwayApi {
     Map<String, dynamic>? payment,
     double storeLatitude = 0,
     double storeLongitude = 0,
+    String pickupMode = 'ASAP',
+    DateTime? pickupAt,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
     'qrToken': 'qr_1',
     'status': status,
-    'pickupMode': 'ASAP',
+    'pickupMode': pickupMode,
     'fulfillmentType': 'PICKUP',
-    'pickupAt': DateTime.now().toUtc().add(const Duration(minutes: 8)).toIso8601String(),
+    'pickupAt': (pickupAt ?? DateTime.now().add(const Duration(minutes: 8))).toUtc().toIso8601String(),
     'subtotalCents': 2000,
     'discountCents': 0,
     'taxCents': 0,
@@ -347,7 +360,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
-    Store.fromJson({...storeJson, 'openNow': storeOpenNow, 'kinds': ?storeKinds}),
+    Store.fromJson({...storeJson, 'openNow': storeOpenNow, 'kinds': ?storeKinds, ...storeExtra}),
     for (final json in moreStores) Store.fromJson(json),
   ];
 
@@ -362,6 +375,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'galleryUrls': <String>[],
     'workingHours': <Object>[],
     'brand': {'id': 'br_1', 'slug': 'noname', 'name': 'NoName Coffee', 'logoUrl': null, 'themeOverrides': null},
+    ...storeExtra,
   });
 
   @override
@@ -431,7 +445,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   }();
 
   @override
-  Future<List<PickupSlot>> pickupSlots(String idOrSlug) async {
+  Future<List<PickupSlot>> pickupSlots(String idOrSlug, {String? cartId}) async {
+    slotCartIds.add(cartId);
     final start = _slotsStart;
     return [
       for (var i = 0; i < 6; i++)
@@ -516,6 +531,16 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Order> createOrder(CreateOrderRequest body) async {
+    final refusal = orderRefusal;
+    if (refusal != null) {
+      orderRefusal = null;
+      final request = RequestOptions(path: '/orders', method: 'POST');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(requestOptions: request, statusCode: 400, data: {'statusCode': 400, ...refusal}),
+        type: DioExceptionType.badResponse,
+      );
+    }
     created.add(body);
     _cartItems.clear();
     return currentOrder = sampleOrder();

@@ -24,6 +24,33 @@ export const TRANSLATIONS_EN: TranslationTree = {
     storeLater: {
       badge: 'Order ahead',
     },
+    /**
+     * The line beside a store's name on its card and the menu header while it
+     * takes pre-orders only, or while it is open (until when).
+     */
+    storeHours: {
+      opensAt: 'Closed now · opens at {{time}} · order ahead',
+      opensTomorrowAt: 'Closed now · opens tomorrow at {{time}} · order ahead',
+      opensOnAt: 'Closed now · opens {{date}} at {{time}} · order ahead',
+      closedPreorder: 'Closed now · order ahead',
+      queueFull: 'Long queue — order ahead only',
+      until: 'until {{time}}',
+    },
+    /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
+    asapBlocked: {
+      opensAt: 'The store opens at {{time}} — pick a time for your order.',
+      opensTomorrowAt: 'The store opens tomorrow at {{time}} — pick a time for your order.',
+      opensOnAt: 'The store opens {{date}} at {{time}} — pick a time for your order.',
+      shiftClosed: 'The store has not started work yet — pick a time for your order.',
+      queueFull: 'There is a long queue right now — pick a time for your order.',
+    },
+    /** Day headings over the pickup windows at checkout. */
+    pickupDay: {
+      today: 'Today',
+      tomorrow: 'Tomorrow',
+      /** A pickup time on the next calendar day, for «Готово к {{time}}». */
+      timeTomorrow: '{{time}} tomorrow',
+    },
     orderDone: {
       readyTitle: 'Your order is ready.',
       readySlogan: 'You spent 0 minutes in a queue. Enjoy!',
@@ -77,6 +104,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       STORE_NOT_TAKING_ORDERS: 'This store is not taking orders right now',
       STORE_CLOSED_AT_TIME: 'The store is closed at that time — pick another time',
       PICKUP_SLOT_FULL: 'That time has just been taken — pick another one',
+      ASAP_UNAVAILABLE: 'The store can no longer take an order for now — pick a time for it',
       PICKUP_TIME_OUT_OF_RANGE: 'A scheduled pickup must be {{minMinutes}} min to {{maxHours}} h from now',
       ITEMS_UNAVAILABLE: 'Not available right now: {{items}}',
       BELOW_MIN_ORDER: 'The minimum order is {{amount}}',
@@ -288,8 +316,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupScheduled: 'Later',
       pickupAtLabel: 'Pick up at',
       scheduledHint: 'Only windows this store can still keep up with.',
-      noSlots: 'No windows free in the next few hours. Try "Now".',
-      noSlotsClosed: 'No windows free in the next few hours.',
+      noSlots: 'No windows free in the next 24 hours. Try "Now".',
+      noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       slotFull: 'This window is fully booked',
       prepHint: "We'll start preparing at {{time}} so it's fresh when you arrive.",
@@ -372,10 +400,25 @@ export const TRANSLATIONS_EN: TranslationTree = {
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
         awaiting: 'Awaiting payment',
+        /** A cancelled or expired order that never had its card charged. */
+        notCharged: 'You were not charged',
         heldHint: 'If the store does not accept the order, your card is not charged.',
         retry: 'Pay by card',
         retryHint: 'You can try paying again.',
       },
+      /** Under the status while the customer waits — see orderWaitNote in @takeaway/utils. */
+      wait: {
+        awaitingAcceptance: 'Waiting for the store to confirm',
+        preorderAwaitingOpening: 'The store will confirm your pre-order when it opens',
+        late: 'Running a little late',
+      },
+      /** Why an EXPIRED order ended — see expiredOutcome in @takeaway/utils. */
+      expired: {
+        notAccepted: 'The store did not confirm the order — you were not charged',
+        notAcceptedRefunded: 'The store did not confirm the order — the money is on its way back',
+        paymentNotCompleted: 'The payment did not go through — the order is cancelled',
+      },
+      callStore: 'Call the store',
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
       cancelOrder: 'Cancel order',
@@ -3174,7 +3217,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       asap: 'ASAP · ~{{min}} min',
       schedule: 'Schedule',
       noSlots: 'No windows free — try ASAP.',
-      noSlotsClosed: 'No windows free in the next few hours.',
+      noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       location: 'Pickup location',
       readyIn: 'Ready in ~{{min}} min',

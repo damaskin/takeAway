@@ -8,6 +8,7 @@ import '../../core/location/location_service.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/store_hours.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
@@ -168,7 +169,13 @@ class StoreTile extends StatelessWidget {
                     children: [
                       if (store.isOpen)
                         EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter, dense: true),
-                      StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
+                      // Closed for an order now but taking pre-orders: when
+                      // it opens, in place of «Закрыто».
+                      if (store.preorderOnly)
+                        StoreHoursLine(store: store)
+                      else
+                        StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
+                      if (store.isOpen && store.closesAt != null) StoreHoursLine(store: store),
                       if (item.distanceMeters != null)
                         Text(
                           l10n.distanceAway(formatDistance(item.distanceMeters!, locale: locale)),
@@ -259,15 +266,18 @@ class StorePickerList extends ConsumerWidget {
                 child: EmptyState(icon: Icons.storefront_outlined, title: l10n.storesEmpty, compact: true),
               );
             }
-            // Only a store taking orders right now can be picked; the rest
-            // stay visible below so the customer knows they exist.
+            // Only a store taking orders can be picked — for now, or for a
+            // time later while it is closed (open ones first); the rest stay
+            // visible below so the customer knows they exist.
             final active = [
               for (final item in list)
                 if (item.store.isOpen) item,
+              for (final item in list)
+                if (item.store.preorderOnly) item,
             ];
             final inactive = [
               for (final item in list)
-                if (!item.store.isOpen) item,
+                if (!item.store.takesOrders) item,
             ];
             Widget tile(StoreWithDistance item, {required bool enabled}) {
               final chosen = item.store.id == activeId;
