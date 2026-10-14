@@ -23,6 +23,33 @@ export const TRANSLATIONS_RU = {
     storeLater: {
       badge: 'Заказ ко времени',
     },
+    /**
+     * The line beside a store's name on its card and the menu header while it
+     * takes pre-orders only, or while it is open (until when).
+     */
+    storeHours: {
+      opensAt: 'Сейчас закрыто · откроется в {{time}} · можно заказать ко времени',
+      opensTomorrowAt: 'Сейчас закрыто · откроется завтра в {{time}} · можно заказать ко времени',
+      opensOnAt: 'Сейчас закрыто · откроется {{date}} в {{time}} · можно заказать ко времени',
+      closedPreorder: 'Сейчас закрыто · можно заказать ко времени',
+      queueFull: 'Большая очередь — только ко времени',
+      until: 'до {{time}}',
+    },
+    /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
+    asapBlocked: {
+      opensAt: 'Точка откроется в {{time}} — выберите, к какому времени приготовить заказ.',
+      opensTomorrowAt: 'Точка откроется завтра в {{time}} — выберите, к какому времени приготовить заказ.',
+      opensOnAt: 'Точка откроется {{date}} в {{time}} — выберите, к какому времени приготовить заказ.',
+      shiftClosed: 'Точка ещё не начала работу — выберите, к какому времени приготовить заказ.',
+      queueFull: 'Сейчас большая очередь — выберите, к какому времени приготовить заказ.',
+    },
+    /** Day headings over the pickup windows at checkout. */
+    pickupDay: {
+      today: 'Сегодня',
+      tomorrow: 'Завтра',
+      /** A pickup time on the next calendar day, for «Готово к {{time}}». */
+      timeTomorrow: '{{time}} завтра',
+    },
     orderDone: {
       readyTitle: 'Ваш заказ готов.',
       readySlogan: 'Вы простояли в очереди 0 минут. Наслаждайтесь!',
@@ -76,6 +103,7 @@ export const TRANSLATIONS_RU = {
       STORE_NOT_TAKING_ORDERS: 'Эта точка сейчас не принимает заказы',
       STORE_CLOSED_AT_TIME: 'В это время точка закрыта — выберите другое время',
       PICKUP_SLOT_FULL: 'Это время только что заняли — выберите другое',
+      ASAP_UNAVAILABLE: 'На сейчас заказ уже не принять — выберите, к какому времени приготовить',
       PICKUP_TIME_OUT_OF_RANGE:
         'Ко времени можно заказать не раньше чем через {{minMinutes}} мин и не позже чем через {{maxHours}} ч',
       ITEMS_UNAVAILABLE: 'Сейчас нет в наличии: {{items}}',
@@ -291,8 +319,8 @@ export const TRANSLATIONS_RU = {
       pickupScheduled: 'Позже',
       pickupAtLabel: 'Забрать в',
       scheduledHint: 'Показаны окна, которые точка успевает обслужить.',
-      noSlots: 'На ближайшие часы свободных окон нет. Попробуйте «Сейчас».',
-      noSlotsClosed: 'На ближайшие часы свободных окон нет.',
+      noSlots: 'На ближайшие сутки свободных окон нет. Попробуйте «Сейчас».',
+      noSlotsClosed: 'На ближайшие сутки свободных окон нет.',
       closedNow: 'Точка сейчас закрыта — выберите время, к которому забрать заказ.',
       slotFull: 'Это окно уже занято',
       prepHint: 'Начнём готовить в {{time}}, чтобы всё было свежим.',
@@ -374,10 +402,25 @@ export const TRANSLATIONS_RU = {
         refunded: 'Деньги возвращены',
         atCounter: 'Оплата на месте',
         awaiting: 'Ждём оплату',
+        /** A cancelled or expired order that never had its card charged. */
+        notCharged: 'Деньги не списаны',
         heldHint: 'Если точка не примет заказ, деньги с карты не спишутся.',
         retry: 'Оплатить картой',
         retryHint: 'Можно попробовать оплатить ещё раз.',
       },
+      /** Under the status while the customer waits — see orderWaitNote in @takeaway/utils. */
+      wait: {
+        awaitingAcceptance: 'Ждём подтверждения точки',
+        preorderAwaitingOpening: 'Точка подтвердит предзаказ, когда откроется',
+        late: 'Немного задерживаемся',
+      },
+      /** Why an EXPIRED order ended — see expiredOutcome in @takeaway/utils. */
+      expired: {
+        notAccepted: 'Точка не подтвердила заказ — деньги не списаны',
+        notAcceptedRefunded: 'Точка не подтвердила заказ — деньги вернутся на карту',
+        paymentNotCompleted: 'Оплата не завершилась — заказ отменён',
+      },
+      callStore: 'Позвонить в точку',
       codeLabel: 'код {{code}}',
       iAmHere: 'Я на месте',
       cancelOrder: 'Отменить заказ',
@@ -3134,7 +3177,7 @@ export const TRANSLATIONS_RU = {
       asap: 'Сейчас · ~{{min}} мин',
       schedule: 'Запланировать',
       noSlots: 'Свободных окон нет — попробуйте «Сейчас».',
-      noSlotsClosed: 'На ближайшие часы свободных окон нет.',
+      noSlotsClosed: 'На ближайшие сутки свободных окон нет.',
       closedNow: 'Точка сейчас закрыта — выберите время, к которому забрать заказ.',
       location: 'Точка выдачи',
       readyIn: 'Готово через ~{{min}} мин',

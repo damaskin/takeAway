@@ -52,12 +52,14 @@ export class CatalogService {
   }
 
   /**
-   * Scheduled handover windows for the next twelve hours. Checkout offers
-   * these instead of a free time field, so a customer can only pick a time
-   * the kitchen can actually hit.
+   * Scheduled handover windows for the next 24 hours. Checkout offers these
+   * instead of a free time field, so a customer can only pick a time the
+   * kitchen can actually hit. With `cartId` a window too busy for that
+   * cart's work comes back unavailable.
    */
-  getPickupSlots(storeIdOrSlug: string): Observable<PickupSlot[]> {
-    return this.http.get<PickupSlot[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/pickup-slots`);
+  getPickupSlots(storeIdOrSlug: string, cartId?: string | null): Observable<PickupSlot[]> {
+    const params = cartId ? { cartId } : undefined;
+    return this.http.get<PickupSlot[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/pickup-slots`, { params });
   }
 
   getMenu(storeIdOrSlug: string): Observable<StoreMenu> {
