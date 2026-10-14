@@ -90,8 +90,10 @@ abstract class TakeAwayApi {
   @GET('/stores/{idOrSlug}/menu')
   Future<Menu> menu(@Path('idOrSlug') String idOrSlug);
 
+  /// 15-minute handover windows for the next 24 hours. With [cartId] a
+  /// window that cannot fit that cart's work comes back unavailable.
   @GET('/stores/{idOrSlug}/pickup-slots')
-  Future<List<PickupSlot>> pickupSlots(@Path('idOrSlug') String idOrSlug);
+  Future<List<PickupSlot>> pickupSlots(@Path('idOrSlug') String idOrSlug, {@Query('cartId') String? cartId});
 
   /// `store`: the store being browsed. With it the product is looked up as
   /// that store sells it — 404 when the store does not sell it, and without

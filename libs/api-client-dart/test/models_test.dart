@@ -37,6 +37,62 @@ void main() {
       expect(older.isInactive, isFalse);
     });
 
+    test('takes pre-orders while closed for ASAP, and reads when it opens and closes', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final night = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': false,
+        'acceptingOrders': true,
+        'asapBlockedReason': 'OUTSIDE_HOURS',
+        'opensAt': '2026-10-15T06:00:00.000Z',
+        'closesAt': null,
+      });
+      expect(night.isOpen, isFalse);
+      expect(night.isInactive, isFalse);
+      expect(night.takesOrders, isTrue);
+      expect(night.preorderOnly, isTrue);
+      expect(night.asapBlockedReason, AsapBlockedReason.outsideHours);
+      expect(night.opensAt, DateTime.utc(2026, 10, 15, 6));
+      expect(night.closesAt, isNull);
+
+      final open = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': true,
+        'acceptingOrders': true,
+        'asapBlockedReason': null,
+        'closesAt': '2026-10-14T18:00:00.000Z',
+      });
+      expect(open.takesOrders, isTrue);
+      expect(open.preorderOnly, isFalse);
+      expect(open.closesAt, DateTime.utc(2026, 10, 14, 18));
+
+      final idle = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': false, 'acceptingOrders': false});
+      expect(idle.takesOrders, isFalse);
+      expect(idle.preorderOnly, isFalse);
+
+      // A reason this build does not know still parses; the cache keeps it all.
+      final future = Store.fromJson({...raw, 'openNow': false, 'acceptingOrders': true, 'asapBlockedReason': 'NEW'});
+      expect(future.asapBlockedReason, AsapBlockedReason.unknown);
+      final cached = Store.fromJson(jsonDecode(jsonEncode(night.toJson())) as Map<String, dynamic>);
+      expect(cached.asapBlockedReason, AsapBlockedReason.outsideHours);
+      expect(cached.opensAt, night.opensAt);
+    });
+
+    test('an API without acceptingOrders knows ASAP only: closed for ASAP takes no order', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final older = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': false}..remove('acceptingOrders'));
+      expect(older.takesOrders, isFalse);
+      expect(older.preorderOnly, isFalse);
+      expect(older.asapBlockedReason, isNull);
+      expect(older.opensAt, isNull);
+
+      final shiftEra = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': true, 'acceptingOrders': true});
+      expect(shiftEra.takesOrders, isTrue);
+      expect(shiftEra.isOpen, isTrue);
+    });
+
     test('reads what a store sells, keeping only the string entries, and null from an older API', () {
       final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
       expect(

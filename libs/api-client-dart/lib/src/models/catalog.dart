@@ -13,6 +13,24 @@ enum StoreStatus {
   unknown,
 }
 
+/// Why a store cannot take an ASAP order right now; pre-orders for later may
+/// still work (see [Store.takesOrders]).
+@JsonEnum(alwaysCreate: true)
+enum AsapBlockedReason {
+  /// Outside working hours, and the kitchen did not extend them.
+  @JsonValue('OUTSIDE_HOURS')
+  outsideHours,
+
+  /// Within working hours, but nobody has started the shift.
+  @JsonValue('SHIFT_CLOSED')
+  shiftClosed,
+
+  /// The queue would push the handover past the longest acceptable wait.
+  @JsonValue('QUEUE_FULL')
+  queueFull,
+  unknown,
+}
+
 @JsonEnum(alwaysCreate: true)
 enum VariationType {
   @JsonValue('SIZE')
@@ -48,6 +66,9 @@ class Store {
     required this.currency,
     this.openNow,
     this.acceptingOrders,
+    this.asapBlockedReason,
+    this.opensAt,
+    this.closesAt,
     this.brandName,
     this.logoUrl,
     this.heroImageUrl,
@@ -76,16 +97,28 @@ class Store {
   final int busyMeter;
   final int currentEtaSeconds;
 
-  /// Whether an ASAP order placed now would be accepted. Since 2026-10-04 the
-  /// API decides it by the shift alone, so it equals [acceptingOrders]
-  /// (shift open and not switched off); working hours no longer veto it. Null
-  /// from API versions that predate it.
+  /// Whether an ASAP order placed now would be accepted: not switched off, a
+  /// shift is running, within working hours (or the kitchen extended them)
+  /// and the queue is not full. Working hours win over the shift (owner
+  /// decision 2026-10-14). Null from API versions that predate it.
   final bool? openNow;
 
-  /// Whether the store takes orders at all right now: staff have started a
-  /// shift ("Start work") and it is not switched off. Null from API versions
-  /// that predate shifts.
+  /// Whether the store takes some order right now: an ASAP one ([openNow]) or
+  /// a pre-order for a time in the next 24 hours, even while the shift is
+  /// closed. False means not working at all; checkout is refused. Null from
+  /// API versions that predate shifts.
   final bool? acceptingOrders;
+
+  /// Why [openNow] is false; null while it is true and from older APIs.
+  @JsonKey(unknownEnumValue: AsapBlockedReason.unknown)
+  final AsapBlockedReason? asapBlockedReason;
+
+  /// Start of the next working-hours window while outside hours, else null.
+  final DateTime? opensAt;
+
+  /// End of the current working-hours window while within hours; null outside
+  /// hours and for a store open around the clock.
+  final DateTime? closesAt;
   @JsonKey(defaultValue: 0)
   final int taxRateBps;
   @JsonKey(defaultValue: true)
@@ -116,9 +149,18 @@ class Store {
   /// the API does not send [openNow].
   bool get isOpen => status != StoreStatus.closed && !isInactive && (openNow ?? true);
 
-  /// Takes no orders at all right now — no shift started, or switched off.
-  /// Shown as "not working"; checkout is refused.
+  /// Takes no orders at all right now — switched off, or nothing bookable in
+  /// the next 24 hours. Shown as "not working"; checkout is refused.
   bool get isInactive => status == StoreStatus.closed || acceptingOrders == false;
+
+  /// Takes some order right now: ASAP, or a pre-order for later while it is
+  /// closed for ASAP. The menu, the cart and checkout stay usable. An API
+  /// without [acceptingOrders] knows ASAP only, so [isOpen] decides there.
+  bool get takesOrders => acceptingOrders == null ? isOpen : !isInactive;
+
+  /// Takes orders for a time later only: closed now (after hours, no shift
+  /// yet, or a full queue), open for pre-orders.
+  bool get preorderOnly => takesOrders && !isOpen;
 
   /// [status] as customers see it: a store that does not take ASAP orders
   /// right now (see [isOpen]) reads as closed.
@@ -191,6 +233,9 @@ class StoreDetail extends Store {
     required this.brand,
     super.openNow,
     super.acceptingOrders,
+    super.asapBlockedReason,
+    super.opensAt,
+    super.closesAt,
     super.heroImageUrl,
     super.kinds,
     super.distanceMeters,
