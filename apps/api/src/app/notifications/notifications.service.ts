@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { OrderStatus } from '@prisma/client';
+import type { OrderStatus, Prisma } from '@prisma/client';
 import type { PushTransport } from '@takeaway/shared-types';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -30,6 +30,23 @@ export interface OrderExpiryInfo {
   holdReleased: boolean;
   /** The charge was waiting for the accept and was called off — the card was never touched. */
   notCharged?: boolean;
+  /** A captured payment was refunded before the order was let go. */
+  refunded?: boolean;
+}
+
+/** Who on a store's side hears about a kitchen event. */
+export interface StoreTeamAudience {
+  /** Everyone assigned to the store (UserStore). */
+  staff: boolean;
+  /** The BRAND_ADMIN who owns the store's brand. */
+  owner: boolean;
+}
+
+/** A Telegram message to a store's team: Russian first, then English, like the other staff messages. */
+export interface StoreTeamMessage {
+  title: string;
+  body: string;
+  orderId?: string;
 }
 
 /** Why a store turned an order down — picked on the kitchen board. */
@@ -230,42 +247,19 @@ export class NotificationsService {
    * the rest are silently skipped (they rely on the in-app realtime UI).
    */
   async notifyBrandStaffNewOrder(order: OrderLike, payment: { paid: boolean } = { paid: true }): Promise<void> {
-    const store = await this.prisma.store.findUnique({
-      where: { id: order.storeId },
-      select: { brandId: true, name: true },
-    });
+    const store = await this.prisma.store.findUnique({ where: { id: order.storeId }, select: { name: true } });
     if (!store) return;
-
-    const recipients = await this.prisma.user.findMany({
-      where: {
-        telegramUserId: { not: null },
-        blockedAt: null,
-        OR: [
-          { role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } },
-          { userStores: { some: { storeId: order.storeId } } },
-        ],
+    await this.notifyStoreTeam(
+      order.storeId,
+      {
+        title: `Новый заказ #${order.orderCode} · ${store.name}`,
+        // Unpaid means the card is charged when the kitchen accepts the order.
+        body: payment.paid
+          ? `Оплачено, ждёт принятия на кухне. / New paid order awaiting the kitchen.`
+          : `Ждёт принятия на кухне, оплата спишется при принятии. / Awaiting the kitchen; the card is charged on accept.`,
+        orderId: order.id,
       },
-      select: { id: true, locale: true, telegramUserId: true },
-    });
-    if (recipients.length === 0) return;
-
-    const message: PushMessage = {
-      kind: 'order_status',
-      title: `Новый заказ #${order.orderCode} · ${store.name}`,
-      // Unpaid means the card is charged when the kitchen accepts the order.
-      body: payment.paid
-        ? `Оплачено, ждёт принятия на кухне. / New paid order awaiting the kitchen.`
-        : `Ждёт принятия на кухне, оплата спишется при принятии. / Awaiting the kitchen; the card is charged on accept.`,
-      orderId: order.id,
-    };
-
-    await Promise.allSettled(
-      recipients.map((u) =>
-        this.telegram.send(
-          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
-          message,
-        ),
-      ),
+      { staff: true, owner: true },
     );
   }
 
@@ -277,40 +271,81 @@ export class NotificationsService {
    * (one-shot CUSTOMER_HERE event), so this just fans out.
    */
   async notifyStaffCustomerHere(order: OrderLike): Promise<void> {
-    const store = await this.prisma.store.findUnique({
-      where: { id: order.storeId },
-      select: { brandId: true, name: true },
-    });
-    if (!store) return;
-
-    const recipients = await this.prisma.user.findMany({
-      where: {
-        telegramUserId: { not: null },
-        blockedAt: null,
-        OR: [
-          { role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } },
-          { userStores: { some: { storeId: order.storeId } } },
-        ],
+    await this.notifyStoreTeam(
+      order.storeId,
+      {
+        title: `Клиент приехал · #${order.orderCode}`,
+        body: `Гость на месте, заберите готовый заказ. / Customer is at the store — hand off the order.`,
+        orderId: order.id,
       },
+      { staff: true, owner: true },
+    );
+  }
+
+  /**
+   * A Telegram message to the people of one store: everyone assigned to it
+   * on the Staff page, the brand owner, or both. Only people with a linked
+   * Telegram account and an unblocked account receive it; the rest rely on
+   * the cabinet. Returns how many Telegram accepted it for.
+   */
+  async notifyStoreTeam(storeId: string, message: StoreTeamMessage, audience: StoreTeamAudience): Promise<number> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
+    if (!store || (!audience.staff && !audience.owner)) return 0;
+
+    const who: Prisma.UserWhereInput[] = [];
+    if (audience.owner) who.push({ role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } });
+    if (audience.staff) who.push({ userStores: { some: { storeId } } });
+    const recipients = await this.prisma.user.findMany({
+      where: { telegramUserId: { not: null }, blockedAt: null, OR: who },
       select: { id: true, locale: true, telegramUserId: true },
     });
-    if (recipients.length === 0) return;
+    if (recipients.length === 0) return 0;
 
-    const message: PushMessage = {
+    const push: PushMessage = {
       kind: 'order_status',
-      title: `Клиент приехал · #${order.orderCode}`,
-      body: `Гость на месте, заберите готовый заказ. / Customer is at the store — hand off the order.`,
-      orderId: order.id,
+      title: message.title,
+      body: message.body,
+      orderId: message.orderId,
     };
-
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       recipients.map((u) =>
-        this.telegram.send(
-          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
-          message,
-        ),
+        this.telegram.send({ userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] }, push),
       ),
     );
+    return results.filter((r) => r.status === 'fulfilled' && r.value).length;
+  }
+
+  /**
+   * «Немного задерживаемся»: the order is accepted but ran past the time the
+   * customer was promised. Sent once per order (Order.lateNotifiedAt), as
+   * an order push (`order_delayed`) honouring the order-updates opt-out.
+   */
+  async notifyOrderDelayed(order: OrderLike): Promise<void> {
+    const recipient = await this.loadRecipient(order.userId);
+    if (!recipient || !recipient.notifyOrderUpdates) return;
+    const code = `#${order.orderCode}`;
+    const message: PushMessage =
+      recipient.locale === 'EN'
+        ? {
+            kind: 'order_delayed',
+            title: 'Running a little late',
+            body: `Order ${code} is almost ready.`,
+            orderId: order.id,
+          }
+        : {
+            kind: 'order_delayed',
+            title: 'Немного задерживаемся',
+            body: `Заказ ${code} почти готов.`,
+            orderId: order.id,
+          };
+    const result = await this.deliver(recipient, message, 'push');
+    if (result.outcome !== 'sent') {
+      this.logger.warn(
+        `Order ${order.orderCode} delay push not delivered to user ${order.userId}: ${
+          result.outcome === 'no_channel' ? 'no push token or Telegram chat' : result.error
+        }`,
+      );
+    }
   }
 
   /**
@@ -597,6 +632,19 @@ export class NotificationsService {
     // A released card hold (or a called-off deferred charge) means the customer
     // paid and the store never took the order; without one, the payment itself
     // was never completed.
+    if (expiry?.refunded) {
+      return ru
+        ? message(
+            'order_status',
+            `Заказ ${code} не принят`,
+            'Заведение не подтвердило заказ вовремя. Деньги вернутся на карту.',
+          )
+        : message(
+            'order_status',
+            `Order ${code} was not accepted`,
+            'The store did not confirm it in time. The money is on its way back to your card.',
+          );
+    }
     if (expiry?.notCharged) {
       return ru
         ? message(

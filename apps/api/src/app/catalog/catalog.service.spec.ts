@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 import { AVAILABLE_OPTION } from './option-availability';
@@ -37,7 +38,7 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     brandId: 'brand-1',
     brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway Coffee', logoUrl: null, themeOverrides: null },
     workingHours: [],
-    shifts: [{ id: 'shift-1' }],
+    shifts: [{ extendedUntil: null }],
     ...overrides,
   };
 }
@@ -49,7 +50,8 @@ describe('CatalogService', () => {
     stopListEntry: { findMany: jest.Mock };
     category: { findMany: jest.Mock };
     product: { findFirst: jest.Mock };
-    order: { groupBy: jest.Mock };
+    order: { groupBy: jest.Mock; findMany: jest.Mock };
+    cart: { findUnique: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -58,8 +60,9 @@ describe('CatalogService', () => {
       stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
       category: { findMany: jest.fn().mockResolvedValue([]) },
       product: { findFirst: jest.fn() },
-      // No outstanding work, so the live ETA collapses to the store's base.
-      order: { groupBy: jest.fn().mockResolvedValue([]) },
+      // No outstanding work and empty slots, so the live ETA collapses to the store's base.
+      order: { groupBy: jest.fn().mockResolvedValue([]), findMany: jest.fn().mockResolvedValue([]) },
+      cart: { findUnique: jest.fn() },
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -71,6 +74,7 @@ describe('CatalogService', () => {
         // Real service against the mocked client — the ETA arithmetic is
         // part of what these assertions are checking.
         KitchenLoadService,
+        StoreAvailabilityService,
         // BUSY_EXTRA_WAIT_SECONDS unset: the 5-minute default.
         { provide: ConfigService, useValue: { get: () => undefined } },
       ],
@@ -203,7 +207,7 @@ describe('CatalogService', () => {
     expect(result[0]?.distanceMeters).toBeLessThan(5000);
   });
 
-  describe('openNow', () => {
+  describe('availability (kitchen policy 2026-10-14)', () => {
     // 07:00–22:00 every day, Dubai time (UTC+4, no DST).
     const dayShift = Array.from({ length: 7 }, (_, weekday) => ({
       weekday,
@@ -211,74 +215,97 @@ describe('CatalogService', () => {
       closesAt: 22 * 60,
       isClosed: false,
     }));
+    const clock = (iso: string) => jest.useFakeTimers({ now: new Date(iso), doNotFake: ['nextTick', 'setImmediate'] });
 
     afterEach(() => jest.useRealTimers());
 
-    it('is true inside working hours', async () => {
-      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 12:00 local
+    it('is open now inside working hours with a shift, and says when it closes', async () => {
+      clock('2026-09-22T08:00:00Z'); // 12:00 local
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store).toMatchObject({
+        openNow: true,
+        acceptingOrders: true,
+        asapBlockedReason: null,
+        opensAt: null,
+        closesAt: '2026-09-22T18:00:00.000Z',
+      });
+    });
+
+    it('is not open now after hours though a shift is running — the hours win — but takes pre-orders', async () => {
+      clock('2026-09-22T19:46:00Z'); // 23:46 local
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store).toMatchObject({
+        status: 'OPEN',
+        openNow: false,
+        acceptingOrders: true,
+        asapBlockedReason: 'OUTSIDE_HOURS',
+        opensAt: '2026-09-23T03:00:00.000Z',
+        closesAt: null,
+      });
+    });
+
+    it('is open now after hours while the kitchen extended the shift', async () => {
+      clock('2026-09-22T18:10:00Z'); // 22:10 local
+      prisma.store.findMany.mockResolvedValue([
+        storeFixture({ workingHours: dayShift, shifts: [{ extendedUntil: new Date('2026-09-22T18:30:00Z') }] }),
+      ]);
       const [store] = await service.listStores({});
       expect(store?.openNow).toBe(true);
     });
 
-    // The shift is the source of truth (owner decision 2026-10-04): hours no
-    // longer veto "open now" while staff have a shift running.
-    it('is true after hours while a shift is running', async () => {
-      jest.useFakeTimers({ now: new Date('2026-09-22T19:46:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 23:46 local
-      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
-      const [store] = await service.listStores({});
-      expect(store?.status).toBe('OPEN');
-      expect(store?.openNow).toBe(true);
-    });
-
-    it('is true when an ASAP order would only be ready after closing', async () => {
-      // 21:57 local; the 6-minute base ETA lands at 22:03.
-      jest.useFakeTimers({ now: new Date('2026-09-22T17:57:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
-      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
-      const [store] = await service.listStores({});
-      expect(store?.openNow).toBe(true);
-    });
-
-    it('is false inside working hours when no shift is open', async () => {
-      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }); // 12:00 local
+    it('takes pre-orders inside working hours when no shift is open', async () => {
+      clock('2026-09-22T08:00:00Z');
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift, shifts: [] })]);
       const [store] = await service.listStores({});
-      expect(store?.openNow).toBe(false);
+      expect(store).toMatchObject({ openNow: false, acceptingOrders: true, asapBlockedReason: 'SHIFT_CLOSED' });
     });
 
-    it('is false when the store is switched off, shift or not', async () => {
+    it('takes nothing when the store is switched off, shift or not', async () => {
       prisma.store.findMany.mockResolvedValue([storeFixture({ status: 'CLOSED', workingHours: dayShift })]);
       const [store] = await service.listStores({});
-      expect(store?.openNow).toBe(false);
+      expect(store).toMatchObject({ openNow: false, acceptingOrders: false, asapBlockedReason: null });
     });
 
-    it('treats a store with no hours on file as open, like order creation does', async () => {
+    it('treats a store with no hours on file as open around the clock', async () => {
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
       const [store] = await service.listStores({});
-      expect(store?.openNow).toBe(true);
+      expect(store).toMatchObject({ openNow: true, acceptingOrders: true, closesAt: null, opensAt: null });
     });
 
-    it('is false, and the store is not taking orders, while no shift is open', async () => {
-      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [], shifts: [] })]);
-      const [store] = await service.listStores({});
-      expect(store?.acceptingOrders).toBe(false);
-      expect(store?.openNow).toBe(false);
-    });
-
-    it('reports a store with an open shift as taking orders', async () => {
+    it('reports a queue too long for ASAP and keeps the store taking pre-orders', async () => {
+      // 6 minutes of base plus 6000 s of work due now over two hands: 56 minutes, past the 45-minute limit.
+      prisma.order.groupBy.mockResolvedValue([{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 6000 } }]);
       prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: [] })]);
       const [store] = await service.listStores({});
-      expect(store?.acceptingOrders).toBe(true);
+      expect(store).toMatchObject({ openNow: false, acceptingOrders: true, asapBlockedReason: 'QUEUE_FULL' });
     });
 
     it('is reported on the store page too', async () => {
-      jest.useFakeTimers({ now: new Date('2026-09-22T08:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] });
+      clock('2026-09-22T08:00:00Z');
       prisma.store.findFirst.mockResolvedValue({
         ...storeFixture({ workingHours: dayShift, shifts: [] }),
         brand: { id: 'brand-1', slug: 'takeaway', name: 'takeAway', logoUrl: null, themeOverrides: null },
       });
       const store = await service.getStore('store-1');
-      expect(store.openNow).toBe(false);
+      expect(store).toMatchObject({ openNow: false, acceptingOrders: true, asapBlockedReason: 'SHIFT_CLOSED' });
+    });
+  });
+
+  describe('pickup slots', () => {
+    it("counts the cart's kitchen work when a cart of this store is passed, and ignores another store's", async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 'store-1' });
+      const kitchen = (service as unknown as { kitchen: KitchenLoadService }).kitchen;
+      const slots = jest.spyOn(kitchen, 'pickupSlots').mockResolvedValue([]);
+
+      prisma.cart.findUnique.mockResolvedValue({ storeId: 'store-1', items: [{ quantity: 2, unitPrepSeconds: 150 }] });
+      await service.getPickupSlots('store-1', 'cart-1');
+      expect(slots).toHaveBeenLastCalledWith('store-1', { workSeconds: 300 });
+
+      prisma.cart.findUnique.mockResolvedValue({ storeId: 'store-2', items: [{ quantity: 2, unitPrepSeconds: 150 }] });
+      await service.getPickupSlots('store-1', 'cart-1');
+      expect(slots).toHaveBeenLastCalledWith('store-1', { workSeconds: 0 });
     });
   });
 

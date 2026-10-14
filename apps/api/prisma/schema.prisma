@@ -1041,19 +1041,25 @@ model UserStore {
   @@index([storeId])
 }
 
-/// A working shift at one store. The store takes orders only while it has a
-/// shift with `closedAt = null`: staff open it with "Start work" in the
-/// cabinet or on the kitchen tablet and close it with "Finish work". Working
-/// hours say when the store is meant to be open; the shift says someone is
-/// actually there. At most one open shift per store (partial unique index in
-/// the migration — Prisma cannot model it).
+/// A working shift at one store: staff open it with "Start work" in the
+/// cabinet or on the kitchen tablet and close it with "Finish work" (or the
+/// schedule closes it — see docs/kitchen-policy.md). ASAP orders need an
+/// open shift *and* working hours (or an extension past them); pre-orders
+/// for later are taken with the shift closed. At most one open shift per
+/// store (partial unique index in the migration — Prisma cannot model it).
 model StoreShift {
-  id         String    @id @default(cuid())
-  storeId    String
-  openedAt   DateTime  @default(now())
-  openedById String?
-  closedAt   DateTime?
-  closedById String?
+  id                  String    @id @default(cuid())
+  storeId             String
+  openedAt            DateTime  @default(now())
+  openedById          String?
+  closedAt            DateTime?
+  closedById          String?
+  /// The kitchen agreed to take ASAP orders past the working hours until
+  /// this moment («Продлить на 30 мин / 1 ч»). Null — no extension.
+  extendedUntil       DateTime?
+  /// Closed by the schedule after the working hours ended, not by a person
+  /// (closedById is null then).
+  closedAutomatically Boolean   @default(false)
 
   store    Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   openedBy User? @relation("ShiftOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
@@ -1507,6 +1513,20 @@ model Order {
   deliveredAt         DateTime?
   cancelledAt         DateTime?
   expiredAt           DateTime?
+  /// When the order became the kitchen's to accept — shown on the board:
+  /// at creation when nothing has to be paid by card, else when the card
+  /// hold (or the charge put off until the accept, or a captured payment)
+  /// landed. The acceptance clock runs from here. Null for orders still
+  /// waiting for their payment, and for orders from before 2026-10-14.
+  kitchenVisibleAt    DateTime?
+  /// Staff and the brand owner were told the order is still not accepted (once).
+  acceptAlertSentAt   DateTime?
+  /// «Пора готовить предзаказ» went to the staff (once).
+  startReminderSentAt DateTime?
+  /// The customer got «Немного задерживаемся» because the order ran past pickupAt (once).
+  lateNotifiedAt      DateTime?
+  /// Staff and the brand owner were told the order is five minutes late (once).
+  lateAlertSentAt     DateTime?
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)

@@ -8,7 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { OrderItemSnapshot } from '@takeaway/shared-types';
+import type { AsapBlockedReason, OrderItemSnapshot } from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
@@ -18,7 +18,9 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, storeProductInclude, type CheckoutLine } from '../cart/cart.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import type { StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
 import { ReceiptPdfService } from '../mail/receipt-pdf.service';
@@ -38,8 +40,6 @@ import { withoutCoordinates } from './order-event-payload';
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 /** Orders one customer may have waiting for payment at once (`ORDER_MAX_UNPAID_PER_USER`). */
 const DEFAULT_MAX_UNPAID_ORDERS = 2;
-const MIN_SCHEDULED_LEAD_MINUTES = 10;
-const MAX_SCHEDULED_LEAD_HOURS = 24;
 const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
 const RECEIPT_RESEND_STATUSES = new Set<string>([
   'PAID',
@@ -110,7 +110,9 @@ export class OrdersService {
     if (cart.userId !== userId) throw new ForbiddenException('Cart does not belong to the current user');
     if (cart.items.length === 0) throw checkoutError('CART_EMPTY', 'Cart is empty');
     await this.assertUnpaidOrdersBelowLimit(userId);
-    await this.cart.assertStoreTakesOrders(cart.storeId, { requireShift: true });
+    // Some order has to be possible at all (`acceptingOrders`); whether an
+    // ASAP one is, is decided with the pickup time below.
+    const { availability } = await this.cart.assertStoreTakesOrders(cart.storeId);
 
     const fulfillmentType = dto.fulfillmentType ?? 'PICKUP';
 
@@ -148,17 +150,8 @@ export class OrdersService {
     // 409 (and fixes the cart up) if the two have drifted apart.
     const lines = await this.cart.repriceForCheckout(cart);
 
-    const pickupAt = await this.resolvePickupAt(cart.storeId, lines, dto);
-    // The shift is the source of truth for "open now": while staff have a
-    // shift running (checked above), an ASAP order is taken even outside
-    // the posted hours. A scheduled pickup is for later, when nobody may be
-    // there, so it must still fall inside the working hours — a 3am
-    // pre-order used to land straight on the kitchen board.
-    if (dto.pickupMode !== 'ASAP') await this.kitchen.assertOpenAt(cart.storeId, pickupAt);
-    // Capacity applies to ASAP too. Without it a rush simply pushes every
-    // quoted ETA out, which is the failure this whole model exists to stop.
-    await this.kitchen.assertSlotAvailable(cart.storeId, pickupAt);
     const { prepSeconds, workSeconds } = this.kitchen.timings(lines);
+    const pickupAt = await this.resolvePickupAt(cart.storeId, availability, { prepSeconds, workSeconds }, dto);
 
     const subtotalCents = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
@@ -267,6 +260,9 @@ export class OrdersService {
             pickupAt,
             prepSeconds,
             workSeconds,
+            // Nothing to pay by card: the order is the kitchen's to accept
+            // right away. Otherwise the clock starts when the payment lands.
+            kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents }) ? null : new Date(),
             subtotalCents,
             discountCents,
             taxCents,
@@ -373,22 +369,15 @@ export class OrdersService {
     // announced straight away.
     if (this.holds.cardPaymentRequired(order)) return this.toOrderDto(order);
 
-    this.realtime.emitKdsOrderChanged({
-      storeId: order.storeId,
-      kind: 'created',
-      orderId: order.id,
-      order: {
-        id: order.id,
-        orderCode: order.orderCode,
-        status: order.status,
-        pickupMode: order.pickupMode,
-        pickupAt: order.pickupAt.toISOString(),
-        createdAt: order.createdAt.toISOString(),
-        customerName: order.customerName,
-        notes: order.notes,
-        items: order.items.map((i) => ({ productSnapshot: i.productSnapshot, quantity: i.quantity })),
-      },
-    });
+    const row = await this.prisma.order.findUnique({ where: { id: order.id }, include: BOARD_INCLUDE });
+    if (row) {
+      this.realtime.emitKdsOrderChanged({
+        storeId: order.storeId,
+        kind: 'created',
+        orderId: order.id,
+        order: toBoardRow(row, this.kitchen.acceptance),
+      });
+    }
 
     return this.toOrderDto(order);
   }
@@ -929,41 +918,52 @@ export class OrdersService {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
-  /**
-   * When we promise to hand the order over.
-   *
-   * ASAP is quoted against the store's live queue rather than the value
-   * cached on the cart — that number was right when the customer last
-   * touched their basket, and four orders may have landed since.
-   */
   /** The name on the customer's profile, trimmed; null when there is none. */
   private async profileName(userId: string): Promise<string | null> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
     return user?.name?.trim() || null;
   }
 
+  /**
+   * When we promise to hand the order over.
+   *
+   * ASAP needs the store open for ASAP right now — a shift, within the
+   * hours or an extension, a queue that clears within MAX_ASAP_WAIT_SECONDS
+   * — else 400 `ASAP_UNAVAILABLE` with the reason and the next opening, so
+   * the client can offer a pre-order instead. It is quoted against the live
+   * queue rather than the value cached on the cart (four orders may have
+   * landed since), and spills into the first slot with room for its work;
+   * an ASAP order is never refused for a full slot.
+   *
+   * A pre-order takes the slot the customer picked if the store hands over
+   * then and the slot has room for this order's work — with the shift
+   * closed too.
+   */
   private async resolvePickupAt(
     storeId: string,
-    lines: readonly { quantity: number; unitPrepSeconds: number }[],
+    availability: StoreAvailabilityView,
+    timings: { prepSeconds: number; workSeconds: number },
     dto: CreateOrderDto,
   ): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
-      const { prepSeconds } = this.kitchen.timings(lines);
-      const quote = await this.kitchen.quote(storeId, prepSeconds);
-      return new Date(Date.now() + quote.etaSeconds * 1000);
+      const unavailable = (reason: AsapBlockedReason | null) =>
+        checkoutError(
+          'ASAP_UNAVAILABLE',
+          'The store takes no orders for right now; a pre-order for later still works',
+          {
+            reason,
+            opensAt: availability.opensAt?.toISOString() ?? null,
+          },
+        );
+      if (!availability.openNow) throw unavailable(availability.asapBlockedReason);
+      const quote = await this.kitchen.quote(storeId, timings.prepSeconds, timings.workSeconds);
+      if (quote.queueFull) throw unavailable('QUEUE_FULL');
+      return quote.pickupAt;
     }
     if (!dto.pickupAt) {
       throw new BadRequestException('pickupAt is required for SCHEDULED pickup mode');
     }
-    const minAt = new Date(Date.now() + MIN_SCHEDULED_LEAD_MINUTES * 60_000);
-    const maxAt = new Date(Date.now() + MAX_SCHEDULED_LEAD_HOURS * 60 * 60_000);
-    if (dto.pickupAt < minAt || dto.pickupAt > maxAt) {
-      throw checkoutError(
-        'PICKUP_TIME_OUT_OF_RANGE',
-        `Scheduled pickup must be between ${MIN_SCHEDULED_LEAD_MINUTES} min and ${MAX_SCHEDULED_LEAD_HOURS} h from now`,
-        { minMinutes: MIN_SCHEDULED_LEAD_MINUTES, maxHours: MAX_SCHEDULED_LEAD_HOURS },
-      );
-    }
+    await this.kitchen.assertScheduledSlot(storeId, dto.pickupAt, timings.workSeconds);
     return dto.pickupAt;
   }
 

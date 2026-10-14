@@ -8,6 +8,7 @@ import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import type { GiftCardsService } from '../gift-cards/gift-cards.service';
 import type { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import type { StoreAvailabilityService, StoreAvailabilityView } from '../kitchen/store-availability.service';
 import type { LoyaltyService } from '../loyalty/loyalty.service';
 import type { MailService } from '../mail/mail.service';
 import type { ReceiptPdfService } from '../mail/receipt-pdf.service';
@@ -188,12 +189,7 @@ function harness() {
     cart: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}) },
     cartItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }), update: jest.fn().mockResolvedValue({}) },
     store: {
-      findUnique: jest.fn().mockResolvedValue({
-        brandId: 'brand-a',
-        status: 'OPEN',
-        brand: { moderationStatus: 'APPROVED' },
-        shifts: [{ id: 'shift-1' }],
-      }),
+      findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-a', brand: { moderationStatus: 'APPROVED' } }),
     },
     stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
     user: { findUnique: jest.fn().mockResolvedValue({ name: 'Иван Петров' }) },
@@ -207,10 +203,28 @@ function harness() {
 
   const kitchen = {
     timings: jest.fn().mockReturnValue({ prepSeconds: 180, workSeconds: 360 }),
-    quote: jest.fn().mockResolvedValue({ etaSeconds: 600 }),
-    assertOpenAt: jest.fn().mockResolvedValue(undefined),
-    assertSlotAvailable: jest.fn().mockResolvedValue(undefined),
+    quote: jest.fn().mockResolvedValue({
+      etaSeconds: 600,
+      pickupAt: new Date('2026-09-23T08:11:00Z'),
+      queueFull: false,
+    }),
+    assertScheduledSlot: jest.fn().mockResolvedValue(undefined),
+    acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 },
   };
+  // Open for ASAP unless a test says otherwise.
+  const view: StoreAvailabilityView & { brandId: string; status: string } = {
+    acceptingOrders: true,
+    openNow: true,
+    asapBlockedReason: null,
+    opensAt: null,
+    closesAt: null,
+    withinHours: true,
+    extendedUntil: null,
+    currentEtaSeconds: 600,
+    brandId: 'brand-a',
+    status: 'OPEN',
+  };
+  const availability = { forStore: jest.fn().mockResolvedValue(view) };
   const mail = { sendOrderReceipt: jest.fn().mockResolvedValue(undefined), sendWelcome: jest.fn() };
   const receiptPdf = { render: jest.fn().mockResolvedValue(null) };
   const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
@@ -220,7 +234,16 @@ function harness() {
   const holds = { cardPaymentRequired: jest.fn().mockReturnValue(false) };
   const config = { get: jest.fn() };
 
-  const cart = new CartService(prisma as unknown as PrismaService, kitchen as unknown as KitchenLoadService);
+  const cart = new CartService(
+    prisma as unknown as PrismaService,
+    kitchen as unknown as KitchenLoadService,
+    availability as unknown as StoreAvailabilityService,
+  );
+  // The board row of a new order is read back after it is written.
+  prisma.order.findUnique.mockImplementation(async () => {
+    const created = (await tx.order.create.mock.results[0]?.value) as Record<string, unknown> | undefined;
+    return created && { ...created, events: [], store: { kitchenParallelism: 2 } };
+  });
   const service = new OrdersService(
     prisma as unknown as PrismaService,
     realtime as unknown as RealtimeGateway,
@@ -239,7 +262,10 @@ function harness() {
     holds as unknown as PaymentHoldsService,
   );
 
-  return { service, prisma, tx, mail, realtime, holds, kitchen, config };
+  /** Makes the store answer differently for this test. */
+  const storeIs = (patch: Partial<typeof view>) => availability.forStore.mockResolvedValue({ ...view, ...patch });
+
+  return { service, prisma, tx, mail, realtime, holds, kitchen, config, storeIs };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -266,15 +292,10 @@ describe('OrdersService.create', () => {
   // A card order waits on the board as CREATED with a hold until the kitchen
   // accepts it, so the PAID-time push never fires for it; without this one
   // the kitchen learnt about the order only on its next poll.
-  it('refuses the order while nobody has started a shift at the store', async () => {
-    const { service, prisma, tx } = harness();
+  it('refuses any order while the store takes none at all', async () => {
+    const { service, prisma, tx, storeIs } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
-    prisma.store.findUnique.mockResolvedValueOnce({
-      brandId: 'brand-a',
-      status: 'OPEN',
-      brand: { moderationStatus: 'APPROVED' },
-      shifts: [],
-    });
+    storeIs({ acceptingOrders: false, openNow: false });
 
     await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
       status: 400,
@@ -283,30 +304,77 @@ describe('OrdersService.create', () => {
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 
-  // The shift is the source of truth for "open now": staff at work take an
-  // ASAP order even after the posted closing time.
-  it('takes an ASAP order during a shift even outside the working hours', async () => {
-    const { service, prisma, tx, kitchen } = harness();
+  // Working hours win over the shift (owner decision 2026-10-14).
+  it.each([
+    ['nobody is on shift', 'SHIFT_CLOSED' as const, null],
+    ['the hours are over though the shift is open', 'OUTSIDE_HOURS' as const, new Date('2026-09-24T06:00:00Z')],
+  ])('refuses an ASAP order while %s, saying why and when it opens', async (_label, reason, opensAt) => {
+    const { service, prisma, tx, storeIs } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
-    kitchen.assertOpenAt.mockRejectedValue(new Error('closed at that time'));
+    storeIs({ openNow: false, asapBlockedReason: reason, opensAt });
 
-    await service.create('user-1', placeOrder);
-
-    expect(kitchen.assertOpenAt).not.toHaveBeenCalled();
-    expect(tx.order.create).toHaveBeenCalled();
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({
+        code: 'ASAP_UNAVAILABLE',
+        reason,
+        opensAt: opensAt?.toISOString() ?? null,
+      }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
   });
 
-  it('still holds a scheduled pickup to the working hours', async () => {
+  it('hands an ASAP order over at the spilled time, and refuses it when the queue is past the longest wait', async () => {
     const { service, prisma, tx, kitchen } = harness();
     prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
-    kitchen.assertOpenAt.mockRejectedValue(new Error('closed at that time'));
+
+    await service.create('user-1', placeOrder);
+    // Quoted with its own prep and kitchen work.
+    expect(kitchen.quote).toHaveBeenCalledWith('store-1', 180, 360);
+    expect(tx.order.create.mock.calls[0]?.[0]?.data['pickupAt']).toEqual(new Date('2026-09-23T08:11:00Z'));
+    expect(kitchen.assertScheduledSlot).not.toHaveBeenCalled();
+
+    kitchen.quote.mockResolvedValue({ etaSeconds: 3600, pickupAt: new Date(), queueFull: true });
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'ASAP_UNAVAILABLE', reason: 'QUEUE_FULL' }),
+    });
+  });
+
+  it('takes a pre-order while the shift is closed — at 01:00 for the morning', async () => {
+    const { service, prisma, tx, kitchen, storeIs } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    storeIs({ openNow: false, asapBlockedReason: 'OUTSIDE_HOURS' });
+    const pickupAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+
+    await service.create('user-1', { cartId: 'cart-1', pickupMode: 'SCHEDULED', pickupAt });
+
+    expect(kitchen.assertScheduledSlot).toHaveBeenCalledWith('store-1', pickupAt, 360);
+    expect(tx.order.create.mock.calls[0]?.[0]?.data).toMatchObject({ pickupMode: 'SCHEDULED', pickupAt });
+  });
+
+  it('holds a pre-order to the slot rules', async () => {
+    const { service, prisma, tx, kitchen } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    kitchen.assertScheduledSlot.mockRejectedValue(new Error('closed at that time'));
     const pickupAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
     await expect(service.create('user-1', { cartId: 'cart-1', pickupMode: 'SCHEDULED', pickupAt })).rejects.toThrow(
       'closed at that time',
     );
-    expect(kitchen.assertOpenAt).toHaveBeenCalledWith('store-1', pickupAt);
     expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('starts the acceptance clock at once when nothing is paid by card, and not before the payment otherwise', async () => {
+    const paidLater = harness();
+    paidLater.holds.cardPaymentRequired.mockReturnValue(true);
+    paidLater.prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    await paidLater.service.create('user-1', placeOrder);
+    expect(paidLater.tx.order.create.mock.calls[0]?.[0]?.data['kitchenVisibleAt']).toBeNull();
+
+    const free = harness();
+    free.prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    await free.service.create('user-1', placeOrder);
+    expect(free.tx.order.create.mock.calls[0]?.[0]?.data['kitchenVisibleAt']).toBeInstanceOf(Date);
   });
 
   it('announces the new order to the store kitchen right away', async () => {
@@ -323,6 +391,9 @@ describe('OrdersService.create', () => {
           id: 'order-1',
           status: 'CREATED',
           items: [{ productSnapshot: LATTE_SNAPSHOT, quantity: 2 }],
+          // The full board row: the start time and the acceptance clock with it.
+          startBy: expect.any(String),
+          acceptDeadlineAt: expect.any(String),
         }),
       }),
     );
@@ -458,7 +529,7 @@ describe('OrdersService.create — unpaid orders', () => {
     expect(err).toBeInstanceOf(HttpException);
     expect((err as HttpException).getStatus()).toBe(409);
     expect((err as HttpException).getResponse()).toMatchObject({ code: 'TOO_MANY_UNPAID_ORDERS' });
-    expect(kitchen.assertSlotAvailable).not.toHaveBeenCalled();
+    expect(kitchen.quote).not.toHaveBeenCalled();
     expect(tx.order.create).not.toHaveBeenCalled();
   });
 

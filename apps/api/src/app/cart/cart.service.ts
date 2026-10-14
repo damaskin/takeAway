@@ -7,6 +7,7 @@ import { checkoutError } from '../common/http/checkout-error';
 import { activeStopWhere, availableOptionsIncludeAt } from '../catalog/option-availability';
 import { soldOnItsOwn } from '../catalog/product-listing';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
@@ -72,6 +73,7 @@ export class CartService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchen: KitchenLoadService,
+    private readonly availability: StoreAvailabilityService,
   ) {}
 
   async getForUserAndStore(userId: string, storeId: string): Promise<CartDto> {
@@ -95,10 +97,12 @@ export class CartService {
     // so does the cart, or checkout would only turn it away later. The same
     // goes for one the menu leaves out with its category.
     if (!product || !onTheMenu(product)) throw new NotFoundException('Product not found');
-    // A store with no shift running takes no orders, so it takes nothing into
-    // a basket either: the clients show it as closed, and an old tab, a QR
-    // code or a direct link must not fill a cart nobody can send.
-    if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId, { requireShift: true }))) {
+    // A store that takes no order at all — switched off, or no working hours
+    // in the next day — takes nothing into a basket either: the clients show
+    // it as inactive, and an old tab, a QR code or a direct link must not
+    // fill a cart nobody can send. With the shift closed it still takes
+    // pre-orders, so the basket fills as usual.
+    if (product.brandId !== (await this.assertStoreTakesOrders(dto.storeId)).brandId) {
       throw new BadRequestException('Product does not belong to this store brand');
     }
 
@@ -410,17 +414,19 @@ export class CartService {
   }
 
   /**
-   * ETA for what is in the cart right now, against the store's live queue.
-   * Zero for an empty cart — there is nothing to wait for, and quoting the
-   * queue wait alone would show a countdown for no order.
+   * ETA for what is in the cart right now, against the store's live queue
+   * and its slots: a basket with no room in the slot it would be ready in
+   * is quoted for the next one with room. Zero for an empty cart — there is
+   * nothing to wait for, and quoting the queue wait alone would show a
+   * countdown for no order.
    */
   private async quoteEta(
     storeId: string,
     items: readonly { quantity: number; unitPrepSeconds: number }[],
   ): Promise<number> {
     if (items.length === 0) return 0;
-    const { prepSeconds } = this.kitchen.timings(items);
-    const quote = await this.kitchen.quote(storeId, prepSeconds);
+    const { prepSeconds, workSeconds } = this.kitchen.timings(items);
+    const quote = await this.kitchen.quote(storeId, prepSeconds, workSeconds);
     return quote.etaSeconds;
   }
 
@@ -499,30 +505,26 @@ export class CartService {
   }
 
   /**
-   * The store exists, is not switched off, its brand passed moderation and,
-   * when `requireShift` is set, staff have started a shift there. Adding to
-   * the cart and placing the order both require the shift: a store nobody is
-   * working at is shown to customers as closed. Working hours are not checked
-   * here — a store inside its shift but outside its hours still takes orders
-   * scheduled for later. The catalog only hides the rest; a direct link, a QR code or an old cart
-   * could still order from a closed store or an unapproved brand. Returns
-   * the store's brand id.
+   * The store exists, its brand passed moderation and it takes some order
+   * (`acceptingOrders`: an ASAP one now, or a pre-order in the next 24
+   * hours — see catalog/store-availability.ts). Adding to the cart and
+   * placing the order both check it; the catalog only hides the rest, and a
+   * direct link, a QR code or an old cart could still order from a store
+   * that is switched off or from an unapproved brand. Returns the store's
+   * brand id and its availability, which the order path reads for ASAP.
    */
-  async assertStoreTakesOrders(storeId: string, { requireShift = false } = {}): Promise<string> {
+  async assertStoreTakesOrders(storeId: string): Promise<{ brandId: string; availability: StoreAvailabilityView }> {
     const store = await this.prisma.store.findUnique({
       where: { id: storeId },
-      select: {
-        brandId: true,
-        status: true,
-        brand: { select: { moderationStatus: true } },
-        shifts: { where: { closedAt: null }, select: { id: true }, take: 1 },
-      },
+      select: { brandId: true, brand: { select: { moderationStatus: true } } },
     });
     if (!store || store.brand.moderationStatus !== 'APPROVED') throw new NotFoundException('Store not found');
-    if (store.status === 'CLOSED' || (requireShift && store.shifts.length === 0)) {
+    const availability = await this.availability.forStore(storeId);
+    if (!availability) throw new NotFoundException('Store not found');
+    if (!availability.acceptingOrders) {
       throw checkoutError('STORE_NOT_TAKING_ORDERS', 'This store is not taking orders right now');
     }
-    return store.brandId;
+    return { brandId: store.brandId, availability };
   }
 
   private toDto(cart: {

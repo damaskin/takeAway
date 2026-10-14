@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PosService } from '../pos/pos.service';
@@ -87,6 +88,11 @@ describe('PaymentsService.handleWebhook', () => {
           createdAt: new Date(),
           customerName: 'Raynor',
           notes: null,
+          prepSeconds: 120,
+          workSeconds: 120,
+          kitchenVisibleAt: new Date(),
+          events: [],
+          store: { kitchenParallelism: 2 },
           items: [{ productSnapshot: { name: 'Caramel latte' }, quantity: 1 }],
         };
       }
@@ -139,6 +145,10 @@ describe('PaymentsService.handleWebhook', () => {
         },
         { provide: STRIPE_CLIENT, useValue: stripe },
         { provide: CardPaymentsService, useValue: { refund: jest.fn() } },
+        {
+          provide: KitchenLoadService,
+          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
+        },
       ],
     }).compile();
 

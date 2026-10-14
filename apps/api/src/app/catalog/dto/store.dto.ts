@@ -1,5 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
+import type { AsapBlockedReason } from '@takeaway/shared-types';
+
+const ASAP_BLOCKED_REASONS: readonly AsapBlockedReason[] = ['OUTSIDE_HOURS', 'SHIFT_CLOSED', 'QUEUE_FULL'];
 
 export class StoreWorkingHourDto {
   @ApiProperty({ description: '0 = Sunday, 6 = Saturday' })
@@ -67,23 +70,54 @@ export class StoreListItemDto {
   @ApiProperty({ description: '0..100' })
   busyMeter!: number;
 
-  @ApiProperty({ description: 'ETA for an ASAP order, in seconds. Store overhead plus the live queue.' })
+  @ApiProperty({
+    description:
+      'ETA for an ASAP order, in seconds: store overhead plus the queue due now, pushed to the first 15-minute ' +
+      'slot with room.',
+  })
   currentEtaSeconds!: number;
 
   @ApiProperty({
     description:
-      'True while the store takes orders at all: it is not closed and staff have started a shift ' +
-      '("Start work"). False means the store is shown as inactive and checkout is refused.',
+      'True while the store takes some order: an ASAP one now (openNow) or a pre-order for a bookable slot in ' +
+      'the next 24 hours — also while the shift is closed. False (store switched off, or no working hours in ' +
+      'the next day) means the store is shown as inactive and checkout is refused with STORE_NOT_TAKING_ORDERS.',
   })
   acceptingOrders!: boolean;
 
   @ApiProperty({
     description:
-      'True when an ASAP order placed now would be accepted. The shift is the source of truth: same as ' +
-      'acceptingOrders (not closed and a shift is open), whatever the working hours say. Working hours only ' +
-      'decide which pickup slots are offered for scheduled (later) orders.',
+      'True when an ASAP order placed now would be accepted: not switched off, a shift is open, within the ' +
+      'working hours (or the kitchen extended past them) and the queue hands it over within ' +
+      'MAX_ASAP_WAIT_SECONDS. Working hours win over the shift (kitchen policy 2026-10-14).',
   })
   openNow!: boolean;
+
+  @ApiProperty({
+    enum: [...ASAP_BLOCKED_REASONS],
+    nullable: true,
+    type: String,
+    description:
+      'Why openNow is false: OUTSIDE_HOURS (no extension), then SHIFT_CLOSED, then QUEUE_FULL. Null when ' +
+      'openNow, and for a store switched off (acceptingOrders says it).',
+  })
+  asapBlockedReason!: AsapBlockedReason | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'ISO UTC start of the next working-hours window while outside the hours (a week ahead), else null.',
+  })
+  opensAt!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'ISO UTC end of the current working-hours window while within the hours; null outside them and for a ' +
+      'store open around the clock.',
+  })
+  closesAt!: string | null;
 
   @ApiProperty({ description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 = no tax line.' })
   taxRateBps!: number;

@@ -24,7 +24,8 @@ export interface PushMessage {
   /** Optional deep-link back to the order. */
   orderId?: string;
   /**
-   * Machine-readable tag so each provider can route correctly. `campaign` —
+   * Machine-readable tag so each provider can route correctly. `order_delayed`:
+   * the order ran past its promised time (`data.orderId`), sent once. `campaign` —
    * a brand's campaign, `announcement` — a platform announcement: both have
    * an item in the customer's «Уведомления», and a tap opens it.
    */
@@ -33,6 +34,7 @@ export interface PushMessage {
     | 'order_ready'
     | 'order_out_for_delivery'
     | 'order_delivered'
+    | 'order_delayed'
     | 'generic'
     | 'campaign'
     | 'announcement';

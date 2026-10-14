@@ -1345,14 +1345,48 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       shift: {
         closedTitle: 'Shift not started',
-        closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
+        closedHint:
+          'While the shift is closed, no orders "for now" are taken. Pre-orders for later keep coming and wait on the board.',
         start: 'Start work',
         finish: 'Finish work',
-        finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
         openSince: 'Shift running since {{time}}, the store takes orders',
         openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
         storeClosed:
           'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
+        extendedUntil: 'extended until {{time}}',
+        autoClosed: 'The shift was closed automatically at {{time}}, after the working hours.',
+        closingSoon: 'The working hours end at {{time}} — orders "for now" stop then.',
+        closingSoonExtended: 'The extension ends at {{time}} — orders "for now" stop then.',
+        outsideHours: 'The store is closed by its working hours — no orders "for now".',
+        opensAt: 'Opens at {{time}}.',
+        extend30: 'Extend by 30 min',
+        extend60: 'Extend by 1 h',
+        extendLimit: 'It cannot be extended further: at most 4 hours past the closing time.',
+      },
+      shiftClose: {
+        title: 'Finish work?',
+        body: 'Orders "for now" stop. Pre-orders for later keep coming.',
+        bodyStore: '«{{store}}» stops taking orders "for now". Pre-orders for later keep coming.',
+        awaiting:
+          'Orders for the next 30 minutes not accepted: {{count}}. Accept or reject them on the kitchen board first — the customers are waiting.',
+        inProgress: 'Being made: {{count}}. They stay on the board — finish them.',
+        ready: 'Ready and waiting for the customer: {{count}}. They stay on the board until handed over.',
+        later: 'Pre-orders for later: {{count}}. They come to the board in the next shift.',
+        empty: 'No unfinished orders on the board.',
+      },
+      preorders: {
+        title: 'Pre-orders',
+        hint: 'move to «New» 15 minutes before cooking starts; they can be accepted now',
+        dueStart: 'for {{time}} · start at {{start}}',
+      },
+      card: {
+        awaiting: 'Waiting to be accepted for {{minutes}} min',
+        autoCancelIn: 'cancelled automatically in {{time}}',
+        late: '{{minutes}} min late',
+      },
+      reminders: {
+        start: 'Time to make #{{code}} for {{time}}',
+        startMany: 'Time to make: {{codes}}',
       },
       busy: {
         off: 'Busy',
@@ -2047,7 +2081,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       openBlocked: 'Finish the readiness checklist first',
       shift: {
         open: 'Shift running — the store takes orders',
-        closed: 'Shift not started — customers see the store as inactive',
+        closed: 'Shift not started — no orders "for now", pre-orders keep coming',
         storeClosed:
           'The store is closed in its settings, so a shift cannot start. The owner or a manager can open it.',
         storeClosedCanOpen:
@@ -2212,10 +2246,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         baseEta: 'Base time per order, min',
         baseEtaHint:
           "The store's time is only ringing up, packing and handing over. Cooking time is set on each item (and by default on its category in Menu); the queue comes on top.",
-        parallelism: 'Orders prepared at once',
-        parallelismHint: 'How many orders the kitchen really works in parallel — it sets how fast a rush drains.',
+        parallelism: 'Items made at once',
+        parallelismHint:
+          'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
         slotCapacity: 'Orders per 15 minutes',
-        slotCapacityHint: 'The store never promises more handovers in one 15-minute window — ASAP orders included.',
+        slotCapacityHint:
+          'How many orders the store hands over in 15 minutes. One window never promises more — for later or for now.',
+        capacitySummary:
+          'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks) and hands over up to {{orders}} orders. A window short of either shows as taken.',
       },
       delivery: {
         title: 'Delivery',

@@ -5,6 +5,7 @@ export * from './lib/order';
 export * from './lib/loyalty';
 export * from './lib/realtime';
 export * from './lib/staff';
+export * from './lib/kitchen';
 export * from './lib/plan';
 export * from './lib/analytics-overview';
 export * from './lib/feedback';

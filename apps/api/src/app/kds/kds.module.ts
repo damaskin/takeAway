@@ -9,13 +9,18 @@ import { PaymentsModule } from '../payments/payments.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { KdsController } from './kds.controller';
 import { KdsService } from './kds.service';
+import { KitchenSlaService } from './kitchen-sla.service';
+import { ShiftScheduleService } from './shift-schedule.service';
 import { StoreShiftService } from './store-shift.service';
 
 @Module({
   // PaymentsModule is here so accepting an order can capture the hold taken at
   // checkout, OrdersModule so rejecting one cancels it the way the customer's
   // cancel does. Neither imports KdsModule, so the graph stays acyclic.
-  // KitchenModule quotes the current ETA when the kitchen marks itself busy.
+  // KitchenModule quotes the current ETA when the kitchen marks itself busy
+  // and holds the availability rules the shift reports. The two crons — the
+  // shift schedule and the order SLA — expire orders through OrdersModule
+  // and refund captured payments through PaymentsModule.
   imports: [
     RealtimeModule,
     AuthModule,
@@ -26,6 +31,6 @@ import { StoreShiftService } from './store-shift.service';
     KitchenModule,
   ],
   controllers: [KdsController],
-  providers: [KdsService, StoreShiftService],
+  providers: [KdsService, StoreShiftService, ShiftScheduleService, KitchenSlaService],
 })
 export class KdsModule {}

@@ -1,4 +1,15 @@
-import { isOpenAt, localMoment, type WorkingHour } from './opening-hours';
+import {
+  closingAfter,
+  closingBefore,
+  hoursAround,
+  isOpenAt,
+  localMoment,
+  localToUtc,
+  openingAfter,
+  wallClock,
+  withinHours,
+  type WorkingHour,
+} from './opening-hours';
 
 /** 08:00–20:00 every day. */
 function daily(opensAt: number, closesAt: number): WorkingHour[] {
@@ -110,5 +121,69 @@ describe('isOpenAt', () => {
       const hours = nightly.map((h) => (h.weekday === 5 ? { ...h, isClosed: true } : h));
       expect(isOpenAt(hours, new Date('2026-08-22T01:00:00.000Z'), 'UTC')).toBe(false);
     });
+  });
+});
+
+describe('working-hours windows', () => {
+  const at = (iso: string) => new Date(iso);
+
+  it('says when the current window closes and the next one opens, in the store timezone', () => {
+    // 09:00–21:00 in Tiraspol (UTC+3 in October): 06:00–18:00 UTC.
+    const hours = daily(9 * 60, 21 * 60);
+    const noon = at('2026-10-14T09:00:00.000Z');
+    const around = hoursAround(hours, 'Europe/Chisinau', noon);
+
+    expect(withinHours(around, noon)).toBe(true);
+    expect(closingAfter(around, noon)?.toISOString()).toBe('2026-10-14T18:00:00.000Z');
+
+    const late = at('2026-10-14T20:50:00.000Z'); // 23:50 local — the manager's example
+    const night = hoursAround(hours, 'Europe/Chisinau', late);
+    expect(withinHours(night, late)).toBe(false);
+    expect(closingAfter(night, late)).toBeNull();
+    expect(openingAfter(night, late)?.toISOString()).toBe('2026-10-15T06:00:00.000Z');
+    expect(closingBefore(night, late)?.toISOString()).toBe('2026-10-14T18:00:00.000Z');
+  });
+
+  it('runs an overnight window into the next day and merges back-to-back days into one', () => {
+    const nightly = daily(22 * 60, 2 * 60);
+    const around = hoursAround(nightly, 'UTC', at('2026-08-22T23:30:00.000Z'));
+    expect(closingAfter(around, at('2026-08-22T23:30:00.000Z'))?.toISOString()).toBe('2026-08-23T02:00:00.000Z');
+
+    // Open until midnight and from midnight: one window, closing at 02:00.
+    const lateAndEarly: WorkingHour[] = [
+      { weekday: 6, opensAt: 9 * 60, closesAt: 0, isClosed: false },
+      { weekday: 0, opensAt: 0, closesAt: 2 * 60, isClosed: false },
+    ];
+    const saturday = at('2026-08-22T23:00:00.000Z');
+    expect(closingAfter(hoursAround(lateAndEarly, 'UTC', saturday), saturday)?.toISOString()).toBe(
+      '2026-08-23T02:00:00.000Z',
+    );
+  });
+
+  it('has no closing for a store open around the clock, by default or by its hours', () => {
+    const now = at('2026-08-22T12:00:00.000Z');
+    const none = hoursAround([], 'UTC', now);
+    expect(none.alwaysOpen).toBe(true);
+    expect(withinHours(none, now)).toBe(true);
+    expect(closingAfter(none, now)).toBeNull();
+
+    const allDay = hoursAround(daily(0, 0), 'UTC', now);
+    expect(withinHours(allDay, now)).toBe(true);
+    expect(closingAfter(allDay, now)).toBeNull();
+  });
+
+  it('agrees with isOpenAt across a daylight-saving change', () => {
+    const hours = daily(8 * 60, 20 * 60);
+    // London leaves summer time on 2026-10-25: 08:00 local is 07:00 UTC before, 08:00 UTC after.
+    const before = hoursAround(hours, 'Europe/London', at('2026-10-24T12:00:00.000Z'));
+    expect(openingAfter(before, at('2026-10-24T20:00:00.000Z'))?.toISOString()).toBe('2026-10-25T08:00:00.000Z');
+    for (const iso of ['2026-10-25T07:30:00.000Z', '2026-10-25T08:30:00.000Z', '2026-10-24T07:30:00.000Z']) {
+      expect(withinHours(before, at(iso))).toBe(isOpenAt(hours, at(iso), 'Europe/London'));
+    }
+  });
+
+  it('turns a local wall-clock time into an instant and back', () => {
+    expect(localToUtc(2026, 10, 14, 9 * 60 + 15, 'Asia/Dubai').toISOString()).toBe('2026-10-14T05:15:00.000Z');
+    expect(wallClock(at('2026-10-14T05:15:00.000Z'), 'Asia/Dubai')).toBe('09:15');
   });
 });

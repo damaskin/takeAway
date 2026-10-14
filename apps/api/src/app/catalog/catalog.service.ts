@@ -3,10 +3,11 @@ import type { StoreFulfillment } from '@prisma/client';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
-import { acceptingOrders, busyMeterOf, openNow } from './store-availability';
+import { busyMeterOf } from './store-availability';
 import { storeKinds, storeKindWhere } from './store-kinds';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
@@ -16,8 +17,19 @@ import type { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
 
 const EARTH_RADIUS_METERS = 6371000;
 
-/** Just enough of a store's open shift, if any, to tell whether it has one. */
-const OPEN_SHIFT = { where: { closedAt: null }, select: { id: true }, take: 1 } as const;
+/** A store's open shift, if any, with the extension past the working hours. */
+const OPEN_SHIFT = { where: { closedAt: null }, select: { extendedUntil: true }, take: 1 } as const;
+
+/** The availability fields of the store DTOs. */
+function availabilityFields(view: StoreAvailabilityView | undefined) {
+  return {
+    acceptingOrders: view?.acceptingOrders ?? false,
+    openNow: view?.openNow ?? false,
+    asapBlockedReason: view?.asapBlockedReason ?? null,
+    opensAt: view?.opensAt?.toISOString() ?? null,
+    closesAt: view?.closesAt?.toISOString() ?? null,
+  };
+}
 
 @Injectable()
 export class CatalogService {
@@ -25,6 +37,7 @@ export class CatalogService {
     private readonly prisma: PrismaService,
     private readonly flags: FeatureFlagsService,
     private readonly kitchen: KitchenLoadService,
+    private readonly availability: StoreAvailabilityService,
   ) {}
 
   /**
@@ -53,18 +66,20 @@ export class CatalogService {
       orderBy: [{ name: 'asc' }],
     });
 
-    // One grouped query for every store's live queue, rather than one per
-    // pin. `currentEtaSeconds` on the wire is now a computed figure: the
-    // store's fixed overhead plus what the queue owes (and the busy wait
-    // while the kitchen has pressed «Загружены»).
-    const waits = await this.kitchen.queueWaitByStore(stores);
+    // A couple of grouped queries for every store's live queue and slots,
+    // rather than a few per pin. `currentEtaSeconds` on the wire is a
+    // computed figure: the store's fixed overhead plus what the queue owes
+    // (and the busy wait while the kitchen has pressed «Загружены»), pushed
+    // to the first slot with room.
+    const availability = await this.availability.evaluate(stores);
 
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';
     const radius = query.radius ?? 5000;
 
     return stores
       .map((s) => {
-        const currentEtaSeconds = s.baseEtaSeconds + (waits.get(s.id) ?? 0);
+        const view = availability.get(s.id);
+        const currentEtaSeconds = view?.currentEtaSeconds ?? s.baseEtaSeconds;
         return {
           id: s.id,
           brandId: s.brandId,
@@ -82,8 +97,7 @@ export class CatalogService {
           pickupPointType: s.pickupPointType,
           busyMeter: busyMeterOf(s),
           currentEtaSeconds,
-          acceptingOrders: acceptingOrders(s),
-          openNow: openNow(s),
+          ...availabilityFields(view),
           taxRateBps: s.taxRateBps,
           taxIncludedInPrice: s.taxIncludedInPrice,
           currency: s.currency,
@@ -101,10 +115,12 @@ export class CatalogService {
   }
 
   /**
-   * Scheduled pickup windows a customer may actually choose. Resolves the
-   * slug first so the public API keeps taking either form.
+   * Scheduled pickup windows a customer may actually choose over the next
+   * 24 hours. Resolves the slug first so the public API keeps taking either
+   * form. With `cartId`, a slot counts as full when that cart's kitchen
+   * work would not fit it any more; a cart of another store is ignored.
    */
-  async getPickupSlots(idOrSlug: string): Promise<PickupSlotDto[]> {
+  async getPickupSlots(idOrSlug: string, cartId?: string): Promise<PickupSlotDto[]> {
     const store = await this.prisma.store.findFirst({
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
@@ -115,7 +131,16 @@ export class CatalogService {
     });
     if (!store) throw new NotFoundException('Store not found');
 
-    const slots = await this.kitchen.pickupSlots(store.id);
+    let workSeconds = 0;
+    if (cartId) {
+      const cart = await this.prisma.cart.findUnique({
+        where: { id: cartId },
+        select: { storeId: true, items: { select: { quantity: true, unitPrepSeconds: true } } },
+      });
+      if (cart?.storeId === store.id) workSeconds = this.kitchen.timings(cart.items).workSeconds;
+    }
+
+    const slots = await this.kitchen.pickupSlots(store.id, { workSeconds });
     return slots.map((slot) => ({
       startsAt: slot.startsAt.toISOString(),
       endsAt: slot.endsAt.toISOString(),
@@ -139,7 +164,8 @@ export class CatalogService {
     });
     if (!store) throw new NotFoundException('Store not found');
 
-    const currentEtaSeconds = store.baseEtaSeconds + (await this.kitchen.queueWaitSeconds(store));
+    const view = (await this.availability.evaluate([store])).get(store.id);
+    const currentEtaSeconds = view?.currentEtaSeconds ?? store.baseEtaSeconds;
 
     return {
       id: store.id,
@@ -158,8 +184,7 @@ export class CatalogService {
       pickupPointType: store.pickupPointType,
       busyMeter: busyMeterOf(store),
       currentEtaSeconds,
-      acceptingOrders: acceptingOrders(store),
-      openNow: openNow(store),
+      ...availabilityFields(view),
       taxRateBps: store.taxRateBps,
       taxIncludedInPrice: store.taxIncludedInPrice,
       currency: store.currency,

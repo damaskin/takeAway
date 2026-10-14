@@ -298,7 +298,7 @@ takeaway/
 - Список с картой (Mapbox)
 - Адрес, координаты, часы работы (per weekday)
 - Тип: takeaway / dine-in / drive-thru
-- Текущий статус: открыта/закрыта/перегружена (переключается вручную) и вычисляемый `openNow`. **Источник правды — смена** (решение владельца 2026-10-04): `openNow = acceptingOrders` = статус не `CLOSED` и открыта смена; часы работы на «открыто сейчас» не влияют — они показываются клиентам и задают слоты заказа ко времени. ASAP-заказ во время смены принимается и вне часов работы; заказ ко времени по-прежнему должен попадать в часы. Правило — одна функция в `apps/api/src/app/catalog/store-availability.ts`
+- Текущий статус: открыта/закрыта/перегружена (переключается вручную) и вычисляемая доступность. **Часы работы важнее смены** (решение владельца 2026-10-14, заменило правило 2026-10-04 «источник правды — смена»): `openNow` (ASAP сейчас) = статус не `CLOSED`, открыта смена, идут часы работы или кухня продлила работу (`StoreShift.extendedUntil`), и очередь выдаст заказ не позже `MAX_ASAP_WAIT_SECONDS` (2700 с); `acceptingOrders` = статус не `CLOSED` и (`openNow` или в ближайшие 24 часа есть слот для предзаказа) — предзаказ работает и при закрытой смене. Плюс `asapBlockedReason` (`OUTSIDE_HOURS` → `SHIFT_CLOSED` → `QUEUE_FULL`), `opensAt`, `closesAt`. Правило — одно место, `apps/api/src/app/catalog/store-availability.ts`; подробно — `docs/kitchen-policy.md`
 - **Live-ETA**: для каждой точки рассчитывается «готово через X мин для ASAP-заказа» — видно в store locator ещё до открытия меню
 - **Строка часов у точки** в клиентах (карточки точек, выбор точки, шапка меню; web, TMA, mobile): точка, закрытая для заказа «сейчас», но принимающая предзаказ (`openNow=false`, `acceptingOrders=true`), вместо ожидания пишет «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени» (`opensAt` на следующий день — «откроется завтра в 9:00»; `asapBlockedReason=QUEUE_FULL` — «Большая очередь — только ко времени»; без `opensAt` — «Сейчас закрыто · можно заказать ко времени»), её меню, корзина и чекаут работают. Открытая точка с `closesAt` — «до 21:00». Точка с `acceptingOrders=false` показывается закрытой, как раньше. Время — по часам точки в вебе и TMA (`storeHoursNote` в `@takeaway/utils`, тексты — `storeHoursText` в `@takeaway/i18n`), по часам устройства в мобильном приложении (`shared/store_hours.dart`). API без этих полей: поведение прежнее
 - **Busy meter** (0–100%) — индикатор загрузки кухни, визуализируется цветом (зелёный / жёлтый / красный)
@@ -325,17 +325,18 @@ takeaway/
   ```
 
   - `baseEtaSeconds` — постоянная накладная точки: пробить, собрать, выдать
-  - невыполненная работа — сумма `Order.workSeconds` по статусам `CREATED / PAID / ACCEPTED / IN_PROGRESS`; заказ `IN_PROGRESS` считается наполовину сделанным
+  - невыполненная работа — сумма `Order.workSeconds` по статусам `CREATED / PAID / ACCEPTED / IN_PROGRESS` у заказов со временем выдачи в ближайшие 30 минут, плюс все `IN_PROGRESS` (считаются наполовину сделанными); предзаказы на потом очередь «сейчас» не раздувают
   - `prepSeconds` — самая долгая позиция в заказе (не сумма): бариста тянет шот, пока взбивается молоко
   - `workSeconds` — сумма по позициям с учётом количества: сколько заказ стоит кухне. Заказ из четырёх напитков грузит бар вчетверо сильнее, чем заставляет ждать своего клиента, поэтому это два разных числа
   - Оба снимаются на заказ в момент создания — правка меню задним числом не переписывает историю
   - «Загружены» с кухни (`Store.status = OVERLOADED`): к очереди добавляется фиксированное ожидание `BUSY_EXTRA_WAIT_SECONDS` (по умолчанию 300 с, `0` выключает) — очередь у стойки, большой заказ, неполная смена, которых доска не видит. Одинаково в списке точек, на странице точки, в ETA корзины/чекаута, во времени выдачи ASAP-заказа и в `store.loadChanged`. Окна заказа ко времени (`pickup-slots`) не сдвигаются — их ограничивает вместимость окна
+  - ASAP-заказ переносится на ближайшее окно, где есть место (по количеству и по работе); ETA точки, корзины и `pickupAt` заказа показывают этот перенос. Если ждать дольше `MAX_ASAP_WAIT_SECONDS` — `openNow: false`, `QUEUE_FULL`, предзаказ по-прежнему можно
 
 - **Pickup time picker** — ключевой элемент чекаута:
   - `ASAP` (готово через ~X мин, таймер показывается крупно)
-  - `Scheduled` — выбор из 15-минутных окон, которые точка успевает обслужить (`GET /stores/:id/pickup-slots`, 12 часов вперёд)
-  - Вместимость окна — `Store.slotCapacity`. Заполненное окно приходит помеченным и рисуется вычеркнутым, а не пропадает
-  - Проверка вместимости повторяется при создании заказа, включая ASAP: экран чекаута успевает устареть, и двое клиентов могут выбрать последнее окно одновременно
+  - `Scheduled` — выбор из 15-минутных окон, которые точка успевает обслужить (`GET /stores/:id/pickup-slots?cartId=`, 24 часа вперёд, не раньше чем через 10 минут; при закрытой смене и для ещё не открывшегося окна — не раньше чем через `PREORDER_OPENING_LEAD_MINUTES` (15) после открытия по графику)
+  - Окно занято, когда в нём `Store.slotCapacity` заказов или когда их работа плюс работа нового заказа больше `900 с × Store.kitchenParallelism` (с `cartId` — с работой этой корзины). Заполненное окно приходит помеченным и рисуется вычеркнутым, а не пропадает
+  - Проверка вместимости повторяется при создании заказа ко времени (`PICKUP_SLOT_FULL`): экран чекаута успевает устареть, и двое клиентов могут выбрать последнее окно одновременно. ASAP из-за занятого окна не отклоняется, а переносится (см. выше); ASAP в закрытую для «сейчас» точку — `400 ASAP_UNAVAILABLE {reason, opensAt}`
   - **Клиенты (web, TMA, mobile).** «Сейчас» выключен, пока `openNow=false`, и под переключателем — причина по `asapBlockedReason`: «Точка откроется (завтра) в 9:00 — выберите, к какому времени приготовить заказ», «Точка ещё не начала работу — …», «Сейчас большая очередь — …»; «Ко времени» выбран сразу. Окна — на 24 часа, под заголовками «Сегодня» / «Завтра», запрашиваются с `?cartId=` и перезапрашиваются при изменении корзины; время на следующий день подписано «09:15 завтра». Чекаут блокируется только при `acceptingOrders=false` (`STORE_NOT_TAKING_ORDERS`). Ответ `ASAP_UNAVAILABLE` переключает на «Ко времени» с причиной из ответа; `PICKUP_SLOT_FULL` сбрасывает выбранное окно и обновляет окна — клиент выбирает новое сам. Веб и TMA следят за точкой, пока открыт чекаут (сокет + раз в минуту), и выключают «Сейчас», когда точка закрылась
 - Чекаут:
   1. Выбор точки (если не выбрана) — с показом «готово через X мин»
@@ -345,7 +346,7 @@ takeaway/
   5. Комментарий к заказу
   6. Оплата: только привязанная карта Агропромбанка, в одно нажатие; оплаты на месте нет. Сумма бронируется на чекауте и списывается, когда точка принимает заказ; новый заказ попадает на доску кухни, только когда бронь прошла, и принять его без брони нельзя. Заказ с нулевой суммой (всё покрыли баллы или подарочная карта) проходит без карты. Карты клиент привязывает в профиле («Способы оплаты») — в TMA и в вебе одинаково. Stripe Payment Intents остались в API запасным путём
 - Тип получения: `PICKUP` (default), `DINE_IN` (secondary, если точка поддерживает), **`DELIVERY` — реализовано** (см. 3.11) с per-store fee overrides
-- **Часы работы точки** проверяются при создании заказа и при выдаче слотов — в таймзоне точки (`Intl`, не фиксированный сдвиг), с поддержкой ночных смен. Точка без расписания считается работающей круглосуточно
+- **Часы работы точки** решают «открыто сейчас» для ASAP и проверяются при создании заказа ко времени и при выдаче слотов — в таймзоне точки (`Intl`, не фиксированный сдвиг), с поддержкой ночных смен и склейкой соседних дней. Точка без расписания считается работающей круглосуточно
 - **Стоп-лист** блокирует добавление в корзину, изменение позиции и создание заказа. Записи с истёкшим `expiresAt` не блокируют
 - Минимальная сумма заказа (конфигурируется per store)
 - Расчёт итога (`computeTax` в `@takeaway/utils`, общая функция для API и обоих чекаутов):
@@ -365,7 +366,7 @@ takeaway/
 - **Состояние платежа для клиента**: `GET /orders/:id` возвращает поле `payment` — `{ state: NONE | PENDING | HELD | PAID | FAILED | REFUNDED, amountCents, cardMask, paidAt }`. Считается по последней строке `Payment` заказа; `REQUIRES_ACTION` у преавторизации читается как `HELD`. Клиенты показывают его первым блоком на экране заказа
 - После оплаты: генерация **order code** (4-значный) и **QR-кода** для получения
 - **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15, считается и от последней попытки оплаты): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом и при отказе кухни
-- **TTL принятия оплаченного заказа**: заказ с бронью ждёт кухню `ORDER_ACCEPT_TTL_MINUTES` (30) от момента брони, а заказ ко времени — не меньше, чем до времени выдачи плюс `ORDER_ACCEPT_GRACE_MINUTES` (15); затем `EXPIRED` и бронь снимается
+- **Срок принятия заказа** (`docs/kitchen-policy.md`, раздел E): часы отсчитываются от `Order.kitchenVisibleAt` (заказ появился на доске — при создании, если платить картой нечего, иначе когда легла бронь, отложенное списание или оплата). Через `ORDER_ACCEPT_ALERT_SECONDS` (180) без принятия — Telegram сотрудникам и владельцу, карточка мигает; через `ORDER_ACCEPT_TIMEOUT_SECONDS` (480; предзаказ — не раньше чем за 10 минут до выдачи) — `EXPIRED` (`not_accepted`): бронь снимается, отложенное списание отменяется, промокод/баллы/подарочная карта возвращаются, пуш клиенту. Списанные деньги сначала возвращаются; не вышло — заказ остаётся, ops-чат, сотрудники и владелец получают сообщение. Старые `ORDER_ACCEPT_TTL_MINUTES` (30) и `ORDER_ACCEPT_GRACE_MINUTES` (15) остались страховкой
 
 ### 3.5. Заказы и live-статус
 
@@ -386,7 +387,7 @@ takeaway/
 - История заказов с фильтрами (`/me/orders`)
 - «Повторить заказ» — план (UI ещё не везде)
 - Отмена: `POST /orders/:id/cancel` (refund — отдельный flow, admin)
-- `EXPIRED` через job по `pickupAt`-таймеру
+- `EXPIRED` через job по `pickupAt`-таймеру и по сроку принятия (см. 3.4); опоздание после принятия — пуш клиенту `order_delayed` «Немного задерживаемся», через 5 минут — Telegram сотрудникам и владельцу
 - Чек по email — да, через nodemailer (welcome + receipt). **PDF attachment** через `pdfkit` (Helvetica, ASCII-only) — для receipt с Cyrillic/non-ASCII PDF не прикладывается, идёт только HTML (custom font для UTF-8 — backlog). `POST /me/orders/:id/resend-receipt` для повторной отправки.
 
 ### 3.6. Программа лояльности
@@ -464,7 +465,8 @@ takeaway/
 - **Защита от подбора**: per-IP throttle (8/мин) + счётчик в Redis на пару точка × планшет: 5 неверных PIN бесплатно, затем пауза 1, 2, 4 … 60 минут (429 `KDS_PIN_LOCKED` с `retryAfterSeconds`), успешный вход сбрасывает; общий потолок на точку — 100 неверных за час → пауза 15 минут. Планшет проверяется до подсчёта, поэтому посторонний не может заблокировать кухню. UI lockscreen — `/login/pin` в кабинете: 4–6 цифр, отправка кнопкой «Войти»/Enter (длину PIN экран не знает, автоотправка на 4-й цифре делала 5–6-значные PIN невозможными).
 - **«Загружены»**: кнопка в шапке доски при открытой смене (`PUT /kds/busy?storeId= { busy }`) переключает `Store.status` OPEN ⇄ OVERLOADED (тот же статус, что владелец видит значком в «Точках» и может выбрать в редакторе точки); закрытую точку (`CLOSED`) не трогает — 409 `STORE_SWITCHED_OFF`. Смена несёт `busy`, отметка снимается сама при «Закончить работу». Каталог отдаёт у загруженной точки `busyMeter = 100` (иначе сохранённое значение); ETA считается по очереди (`KitchenLoadService`) плюс `BUSY_EXTRA_WAIT_SECONDS` (по умолчанию 5 мин), пока точка загружена — см. 3.4. Оповещения: `kds.shiftChanged`, `store.availabilityChanged` (клиенты перечитывают точку) и `store.loadChanged`.
 - Колонки: фид через `GET /kds/orders` + статус-переходы `accept` → `start` → `ready` → `picked-up`
-- **Смена точки**: точка принимает заказы, только пока открыта смена (`StoreShift` с `closedAt = null`). Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках». Пока смена закрыта, `GET /stores` отдаёт `acceptingOrders: false` (и `openNow: false`; пока открыта — оба `true`, даже вне часов работы), клиенты показывают точку «Не работает», создание заказа отвечает `STORE_NOT_TAKING_ORDERS`. Корзину собрать можно. Смена открывается и закрывается только вручную; остальные планшеты узнают об этом по `kds.shiftChanged`
+- **Смена точки**: ASAP-заказы принимаются, только пока открыта смена (`StoreShift` с `closedAt = null`) и идут часы работы (или продление); предзаказы ко времени приходят и при закрытой смене. Над доской — «Начать работу» / «Закончить работу» (`POST /kds/shift/open|close`), те же кнопки на карточке точки в «Точках» и на панели. «Закончить работу» открывает диалог со сводкой (`GET /kds/shift/close-summary`): непринятые заказы на ближайшие 30 минут не дают закрыть (`409 SHIFT_HAS_UNACCEPTED_ORDERS {count}`), готовящиеся и готовые остаются на доске, предзаказы на потом придут в следующую смену. За 15 минут до конца графика (или продления) и вне часов работы — баннер с «Продлить на 30 мин / 1 ч» (`PUT /kds/shift/extend`, не дальше 4 часов после закрытия). Смену, которую забыли закончить, cron закрывает сам через `AUTO_CLOSE_GRACE_MINUTES` (10) после графика, если на ближайшие полчаса нет непринятых и готовящихся заказов (`closedAutomatically`). Остальные планшеты узнают об этом по `kds.shiftChanged`
+- **Предзаказы на доске**: строка несёт `startBy` (pickupAt − max(prep, работа ÷ параллельность) − 2 мин), `awaitingSince`, `acceptAlertAt`, `acceptDeadlineAt`. Предзаказ, до начала которого больше 15 минут, ждёт в группе «Предзаказы»; в момент начала — звук, «Пора готовить #1234 к 9:15» на доске и в Telegram сотрудникам (без смены или без принятия — и владельцу). Таймеры дольше часа — `h:mm:ss`; опоздание — «Опаздываем N мин»
 - **Клиент на месте**: строка доски несёт `customerArrival` (`NEARBY` | `HERE` | null) и `customerArrivedAt` из событий `CUSTOMER_NEARBY` / `CUSTOMER_HERE`; на карточке — плашка «Клиент рядом» / зелёная «Клиент на месте · N мин»
 - Звук при новом заказе — да
 - **Dual timer на карточке**:
@@ -561,7 +563,8 @@ Store (id, brandId, slug, name, address, lat, lng, timezone, currency,
        externalProvider?[POSTER|IIKO], externalId?)
 UserStore (userId, storeId)              // pivot: scope STAFF/RIDER/STORE_MANAGER на конкретные точки
 StoreWorkingHour (storeId, weekday[0..6], opensAt, closesAt, isClosed)
-StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?)   // не больше одной открытой на точку (частичный уникальный индекс)
+StoreShift (storeId, openedAt, openedById?, closedAt?, closedById?,   // не больше одной открытой на точку (частичный уникальный индекс)
+            extendedUntil?, closedAutomatically)                       // «Продлить»: ASAP после графика до extendedUntil; закрыта по графику
 ```
 
 ### 5.3. Catalog
@@ -618,7 +621,9 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        riderId?,                                                   // FK → User (RIDER)
        posExternalId?,                                             // iiko/Poster order id
        acceptedAt?, startedAt?, readyAt?, pickedUpAt?,
-       outForDeliveryAt?, deliveredAt?, cancelledAt?, expiredAt?)
+       outForDeliveryAt?, deliveredAt?, cancelledAt?, expiredAt?,
+       kitchenVisibleAt?,                                          // на доске кухни: отсюда срок принятия
+       acceptAlertSentAt?, startReminderSentAt?, lateNotifiedAt?, lateAlertSentAt?)  // одноразовые напоминания
 OrderItem (id, orderId, productSnapshot (json), quantity, unitPriceCents, totalCents)
 // productSnapshot: { id, slug, name, variationIds[], modifiers{id: count}, notes?, unitPrepSeconds,
 //                    variations: [{ id, type, name, priceDeltaCents }]  (размер → молоко → температура → стакан),
@@ -798,17 +803,17 @@ POST   /admin/support[?brandId=]     { kind: QUESTION|PROBLEM|SUGGESTION, messag
 ### 6.3. Catalog
 
 ```
-GET    /stores?lat=&lng=&radius=&kind=  // включает currentEtaSeconds (+ BUSY_EXTRA_WAIT_SECONDS у «Загруженной»), busyMeter, acceptingOrders (открыта смена), openNow, timezone, brandName,
+GET    /stores?lat=&lng=&radius=&kind=  // включает currentEtaSeconds (+ BUSY_EXTRA_WAIT_SECONDS у «Загруженной»), busyMeter, acceptingOrders (ASAP сейчас или предзаказ в ближайшие 24 ч), openNow, asapBlockedReason, opensAt, closesAt, timezone, brandName,
                                      //   heroImageUrl (фото точки), logoUrl (логотип бренда — показывать, когда фото нет),
                                      //   kinds: ['COFFEE'|'FOOD'] (никогда не пусто); ?kind=FOOD|COFFEE — только такие точки (COFFEE включает точки без kinds)
-GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (= acceptingOrders: статус не CLOSED и открыта смена); те же heroImageUrl, logoUrl, kinds + brand.logoUrl;
+GET    /stores/:idOrSlug             // openNow: примет ли точка ASAP-заказ сейчас (смена + часы работы или продление + очередь в пределах MAX_ASAP_WAIT_SECONDS); те же heroImageUrl, logoUrl, kinds + brand.logoUrl;
                                      //   brand.themeOverrides всегда null (цвета бренда отключены)
 GET    /stores/:idOrSlug/menu        (категории + продукты + variations + modifiers + stop-list)
                                      //   категория несёт kind (HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER), товар — categoryKind
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
                                      //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке;
                                      //   categoryKind товара, modifiers[].group (null = «Добавки»); allergens — коды чек-листа и/или свободный текст
-GET    /stores/:idOrSlug/pickup-slots  → 15-минутные окна выдачи на 12 часов вперёд
+GET    /stores/:idOrSlug/pickup-slots?cartId=  → 15-минутные окна выдачи на 24 часа вперёд (с cartId — занятость с работой корзины)
 ```
 
 ### 6.4. Cart / Order / Payment
@@ -1058,10 +1063,15 @@ GET                    /admin/pos/jobs/:provider
 ### 6.10. KDS (экран баристы)
 
 ```
-GET    /kds/orders                    // + customerArrival, customerArrivedAt
-GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName, busy }
+GET    /kds/orders                    // + customerArrival, customerArrivedAt, startBy, awaitingSince, acceptAlertAt, acceptDeadlineAt
+GET    /kds/shift?storeId=            → { open, openedAt, openedByName, closedAt, closedByName, busy,
+                                     //     extendedUntil, closesAt, opensAt, asapOpen, asapBlockedReason, closedAutomatically }
+GET    /kds/shift/close-summary?storeId= → { awaitingAcceptance, inProgress, ready, later }
 POST   /kds/shift/open?storeId=       «Начать работу», идемпотентно
-POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно; снимает «Загружены» (OVERLOADED → OPEN)
+POST   /kds/shift/close?storeId=      «Закончить работу», идемпотентно; снимает «Загружены» (OVERLOADED → OPEN);
+                                     //   409 SHIFT_HAS_UNACCEPTED_ORDERS { count }, пока непринятые заказы на ближайшие 30 мин
+PUT    /kds/shift/extend?storeId=     { minutes: 30|60 } → смена; extendedUntil = max(closesAt, extendedUntil, now) + minutes, не дальше 4 ч
+                                     //   после закрытия; 409 SHIFT_NOT_OPEN | SHIFT_EXTENSION_NOT_NEEDED | SHIFT_EXTENSION_LIMIT
 PUT    /kds/busy?storeId=             { busy } → смена с busy; Store.status OPEN ⇄ OVERLOADED, 409 STORE_SWITCHED_OFF у CLOSED
 // Весь /kds/* доступен PIN-сессии только для её точки (KdsSessionGuard)
 POST   /kds/orders/:id/accept
@@ -1099,7 +1109,7 @@ WS     /ws                          (события: order.statusChanged, order.
 ```
 
 - **Подключение**: токен (`auth.token`, `Authorization: Bearer` или `?token=`) необязателен. Без токена сокет подключается анонимно: не попадает ни в одну комнату, `order.subscribe` / `kds.subscribe` / `dispatch.subscribe` отвечают `{ok:false}`, приходят только публичные события. Невалидный или просроченный токен и заблокированный аккаунт — по-прежнему разрыв соединения (клиент обновляет токен и переподключается).
-- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busy, busyMeter, currentEtaSeconds}` — шлётся, когда кухня ставит или снимает «Загружены» (и когда отметку снимает конец смены); `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия и закрытия смены, смены статуса точки в админке, «Загружены» на кухне и удаления точки (`acceptingOrders: false`). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; при текущем правиле `openNow = acceptingOrders`, перезапрашивать точку ради `openNow` не нужно.
+- **Публичные события** (всем сокетам namespace `/ws`, включая анонимные): `store.loadChanged` `{storeId, busy, busyMeter, currentEtaSeconds}` — шлётся, когда кухня ставит или снимает «Загружены» (и когда отметку снимает конец смены); `store.availabilityChanged` — ровно `{storeId, brandId, acceptingOrders}` (тип `StoreAvailabilityChangedEvent` в `libs/shared-types`). Шлётся после открытия, закрытия и продления смены, смены статуса точки, её часов работы или таймзоны в админке, «Загружены» на кухне, удаления точки (`acceptingOrders: false`) и — из cron `kitchen-shift-schedule` раз в минуту — когда у точки сами собой поменялись `acceptingOrders` или `openNow` (начались/кончились часы или продление, заполнилась очередь). Состояние перечитывается из БД, поэтому событие совпадает с тем, что отдал бы каталог; за `openNow`, `asapBlockedReason`, `opensAt`, `closesAt` клиенты перезапрашивают точку.
 - **Комнатные события**: `order.statusChanged` (комнаты `order:<id>` и `user:<id>`), `kds.orderChanged` / `kds.shiftChanged` (`kds:<storeId>`: роль персонала и точка в скоупе), `dispatch.orderChanged` (`dispatch:<storeId>`, STORE_MANAGER и выше).
 
 OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, от него генерируется типизированный клиент `libs/api-client` для Angular. Для Flutter — `libs/api-client-dart` (Retrofit + json_serializable), модели проверяются тестами на ответах живого API.

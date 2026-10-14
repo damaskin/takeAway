@@ -27,6 +27,20 @@ const DEFAULT_ACCEPT_GRACE_MINUTES = 15;
 
 type ExpiryReason = 'payment_timeout' | 'not_accepted';
 
+/** How {@link OrderExpiryService.expire} lets an order go beyond the plain unpaid case. */
+export interface ExpireOptions {
+  /**
+   * Statuses the order may be claimed from; CREATED by default. The
+   * acceptance SLA (KitchenSlaService) also expires PAID orders — after it
+   * has refunded the captured payment.
+   */
+  from?: readonly OrderStatus[];
+  /** The captured payment was refunded before the expiry, so the push can say the money is on its way back. */
+  refunded?: boolean;
+  /** Extra fields for the STATUS_CHANGED event, e.g. which rule let the order go. */
+  details?: Record<string, Prisma.InputJsonValue>;
+}
+
 /**
  * Releases orders that were created but never paid for.
  *
@@ -163,10 +177,17 @@ export class OrderExpiryService {
    * and the points — twice the money back. Now exactly one claim wins and
    * the others match nothing.
    */
-  async expire(orderId: string, reason: ExpiryReason = 'payment_timeout'): Promise<boolean> {
+  async expire(
+    orderId: string,
+    reason: ExpiryReason = 'payment_timeout',
+    options: ExpireOptions = {},
+  ): Promise<boolean> {
+    const from = options.from ?? [OrderStatus.CREATED];
     const expired = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.order.findUnique({ where: { id: orderId }, select: { status: true } });
+      if (!before || !from.includes(before.status)) return null;
       const claimed = await tx.order.updateMany({
-        where: { id: orderId, status: OrderStatus.CREATED },
+        where: { id: orderId, status: before.status },
         data: { status: OrderStatus.EXPIRED, expiredAt: new Date() },
       });
       if (claimed.count === 0) return null;
@@ -182,7 +203,7 @@ export class OrderExpiryService {
             create: {
               type: 'STATUS_CHANGED',
               payload: {
-                from: OrderStatus.CREATED,
+                from: before.status,
                 to: OrderStatus.EXPIRED,
                 reason,
                 ...(reason === 'payment_timeout'
@@ -192,6 +213,8 @@ export class OrderExpiryService {
                       acceptTtlMinutes: this.acceptTtlMinutes,
                       acceptGraceMinutes: this.acceptGraceMinutes,
                     }),
+                ...(options.refunded ? { refunded: true } : {}),
+                ...options.details,
               } satisfies Prisma.InputJsonValue,
             },
           },
@@ -228,6 +251,7 @@ export class OrderExpiryService {
         reason,
         holdReleased: released !== null && !isDeferredCharge(released),
         notCharged: released !== null && isDeferredCharge(released),
+        refunded: options.refunded === true,
       },
     });
 

@@ -1,42 +1,159 @@
+import type { AsapBlockedReason } from '@takeaway/shared-types';
+
+import { closingAfter, type HoursAround, openingAfter, windowAt, withinHours } from '../kitchen/opening-hours';
+import { ceilToSlot } from '../kitchen/slots';
+
 /**
- * When a store counts as "open" for customers — the one place that decides.
+ * When a store takes orders — the one place that decides (kitchen policy of
+ * 2026-10-14, docs/kitchen-policy.md).
  *
- * The shift is the source of truth (owner decision, 2026-10-04): staff
- * pressed "Start work" → the store is open now and takes ASAP orders;
- * the shift is closed or the store is switched off (status CLOSED) → it is
- * closed. Working hours are only displayed and used to offer pre-order
- * slots for later (KitchenLoadService.pickupSlots / assertOpenAt on
- * scheduled orders); they no longer veto "open now".
+ * Working hours win over the shift for ASAP orders: an order "for now" is
+ * taken only while staff have a shift open *and* the store is within its
+ * hours — or the kitchen extended past them («Продлить») — *and* the queue
+ * would hand it over within `MAX_ASAP_WAIT_SECONDS`. Pre-orders for later
+ * do not need the shift: a customer at 01:00 can book 09:15 tomorrow.
  *
- * The catalog, the realtime `store.availabilityChanged` broadcast and the
- * admin all read these functions, so changing what "open" means is a
- * change here and nowhere else.
+ * The catalog, the realtime `store.availabilityChanged` broadcast, the cart,
+ * the order path and the kitchen board all read these functions, so
+ * changing what "open" means is a change here and nowhere else.
  */
 
-/** What {@link acceptingOrders} needs: the status and the open shift, if any. */
+/** The numbers the rules below run on; KitchenLoadService reads them from the environment. */
+export interface AvailabilityPolicy {
+  /** Longest wait an ASAP order may be quoted (`MAX_ASAP_WAIT_SECONDS`); past it the queue is full. */
+  maxAsapWaitSeconds: number;
+  /** A pre-order is for at least this far ahead (10 minutes). */
+  minScheduledLeadSeconds: number;
+  /** ...and at most this far (24 hours). */
+  preorderHorizonSeconds: number;
+  /**
+   * With nobody on shift, or for a window that has not opened yet, the first
+   * bookable slot is this long after the opening (`PREORDER_OPENING_LEAD_MINUTES`):
+   * whoever opens needs a moment before the first handover.
+   */
+  preorderOpeningLeadSeconds: number;
+}
+
+/** What {@link storeAvailability} needs to know about one store right now. */
 export interface AvailabilityFacts {
   status: string;
-  /** Open shifts only (`closedAt = null`); one row is enough. */
-  shifts: readonly unknown[];
+  /** The open shift (`closedAt = null`), if any. */
+  openShift: { extendedUntil: Date | null } | null;
+  /**
+   * Seconds until an ASAP order placed now would be handed over, the queue
+   * and full slots included (KitchenLoadService); null when no slot within
+   * reach fits one.
+   */
+  asapWaitSeconds: number | null;
+}
+
+/** The store's answer to "can I order?", on the catalog DTOs and the kitchen shift. */
+export interface StoreAvailability {
+  /** Some order can be placed: ASAP now, or a pre-order for a bookable slot in the next 24 hours. */
+  acceptingOrders: boolean;
+  /** An ASAP order placed now would be taken. */
+  openNow: boolean;
+  /** Why not, when `openNow` is false; null for a store switched off (CLOSED) — `acceptingOrders` says it. */
+  asapBlockedReason: AsapBlockedReason | null;
+  /** Start of the next working-hours window while outside the hours (a week ahead at most). */
+  opensAt: Date | null;
+  /** End of the current window while within the hours; null outside them and around the clock. */
+  closesAt: Date | null;
+  /** Within the working hours right now (a store with none on file always is). */
+  withinHours: boolean;
+  /** The kitchen takes ASAP orders past the hours until this moment; null with no extension running. */
+  extendedUntil: Date | null;
+}
+
+/** Why a pickup time cannot be booked, before capacity is even looked at. */
+export type SlotBlocker = 'TOO_SOON' | 'TOO_FAR' | 'OUTSIDE_HOURS' | 'BEFORE_OPENING_LEAD';
+
+export interface SlotContext {
+  now: Date;
+  hours: HoursAround;
+  /** A shift is open at the store right now. */
+  shiftOpen: boolean;
+  policy: AvailabilityPolicy;
 }
 
 /**
- * The store takes orders at all right now: it is not switched off and staff
- * have started a shift. False means the clients show it as inactive.
+ * Whether a pickup time may be booked as a pre-order, capacity aside: it is
+ * at least 10 minutes and at most 24 hours away, inside the working hours,
+ * and — while nobody is on shift, or for a window that has not opened yet —
+ * at least `PREORDER_OPENING_LEAD_MINUTES` after that window opens.
  */
-export function acceptingOrders(store: AvailabilityFacts): boolean {
-  return store.status !== 'CLOSED' && store.shifts.length > 0;
+export function slotBlocker(at: Date, { now, hours, shiftOpen, policy }: SlotContext): SlotBlocker | null {
+  const t = at.getTime();
+  if (t < now.getTime() + policy.minScheduledLeadSeconds * 1000) return 'TOO_SOON';
+  if (t > now.getTime() + policy.preorderHorizonSeconds * 1000) return 'TOO_FAR';
+  if (hours.alwaysOpen) return null;
+  const window = windowAt(hours, at);
+  if (!window) return 'OUTSIDE_HOURS';
+  if (
+    needsOpeningLead(window.start, now, shiftOpen) &&
+    t < window.start.getTime() + policy.preorderOpeningLeadSeconds * 1000
+  ) {
+    return 'BEFORE_OPENING_LEAD';
+  }
+  return null;
+}
+
+/** The opening lead applies unless the window is already running with a shift open. */
+function needsOpeningLead(windowStart: Date, now: Date, shiftOpen: boolean): boolean {
+  return !shiftOpen || windowStart > now;
 }
 
 /**
- * Whether an ASAP order placed now would be accepted. Since the shift is
- * the source of truth this is exactly {@link acceptingOrders}: a shift
- * running at 23:00 takes orders even if the posted hours end at 22:00.
- * Kept as its own function (and on the DTO) so the clients' "open now"
- * badge has one definition to follow if the rule changes again.
+ * The store's availability right now. Precedence of the ASAP reasons:
+ * outside the hours (no extension), then no shift, then a full queue.
  */
-export function openNow(store: AvailabilityFacts): boolean {
-  return acceptingOrders(store);
+export function storeAvailability(
+  facts: AvailabilityFacts,
+  now: Date,
+  policy: AvailabilityPolicy,
+  hours: HoursAround,
+): StoreAvailability {
+  const switchedOff = facts.status === 'CLOSED';
+  const inHours = withinHours(hours, now);
+  const shiftOpen = facts.openShift !== null;
+  const extension = facts.openShift?.extendedUntil ?? null;
+  const extendedUntil = extension && extension > now ? extension : null;
+
+  let reason: AsapBlockedReason | null = null;
+  if (!inHours && !extendedUntil) reason = 'OUTSIDE_HOURS';
+  else if (!shiftOpen) reason = 'SHIFT_CLOSED';
+  else if (facts.asapWaitSeconds === null || facts.asapWaitSeconds > policy.maxAsapWaitSeconds) reason = 'QUEUE_FULL';
+
+  const openNow = !switchedOff && reason === null;
+  return {
+    openNow,
+    acceptingOrders: !switchedOff && (openNow || hasBookableSlot({ now, hours, shiftOpen, policy })),
+    asapBlockedReason: switchedOff ? null : reason,
+    opensAt: inHours ? null : openingAfter(hours, now),
+    closesAt: inHours ? closingAfter(hours, now) : null,
+    withinHours: inHours,
+    extendedUntil,
+  };
+}
+
+/**
+ * Whether some pre-order slot in the next 24 hours passes {@link slotBlocker}.
+ * Capacity is left out — a store booked solid for a day is a store with
+ * customers, not a closed one, and checkout shows the full slots struck out.
+ */
+export function hasBookableSlot(ctx: SlotContext): boolean {
+  const { now, hours, shiftOpen, policy } = ctx;
+  const earliest = now.getTime() + policy.minScheduledLeadSeconds * 1000;
+  const latest = now.getTime() + policy.preorderHorizonSeconds * 1000;
+  if (hours.alwaysOpen) return true;
+  for (const window of hours.windows) {
+    if (window.end.getTime() <= earliest) continue;
+    if (window.start.getTime() > latest) break;
+    const lead = needsOpeningLead(window.start, now, shiftOpen) ? policy.preorderOpeningLeadSeconds * 1000 : 0;
+    const slot = ceilToSlot(new Date(Math.max(window.start.getTime() + lead, earliest))).getTime();
+    if (slot < window.end.getTime() && slot <= latest) return true;
+  }
+  return false;
 }
 
 /**
