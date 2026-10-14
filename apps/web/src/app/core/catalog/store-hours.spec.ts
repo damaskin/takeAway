@@ -1,13 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
-import {
-  LocaleFormatService,
-  TRANSLATIONS_EN,
-  TRANSLATIONS_RU,
-  asapBlockedText,
-  pickupDayLabel,
-  storeHoursText,
-} from '@takeaway/i18n';
+import { LocaleFormatService, TRANSLATIONS_RU, asapBlockedText, pickupDayLabel, storeHoursText } from '@takeaway/i18n';
+import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 
 /**
  * The hours lines both the site and the Mini App show (libs/i18n

@@ -3,7 +3,8 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
-import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { PRIVACY_RU } from './content/privacy.ru';

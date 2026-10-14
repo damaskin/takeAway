@@ -1,4 +1,5 @@
-import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 import type { CategoryKind } from '@takeaway/shared-types';
 import { ALLERGEN_CODES, type AllergenCode, allergenCode } from '@takeaway/utils';
 

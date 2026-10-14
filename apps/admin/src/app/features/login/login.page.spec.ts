@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
-import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 import { of, throwError } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';

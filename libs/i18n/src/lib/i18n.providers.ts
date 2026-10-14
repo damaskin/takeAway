@@ -1,21 +1,23 @@
 import { inject, provideAppInitializer } from '@angular/core';
 import { TranslateLoader, TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
-import { Observable, of } from 'rxjs';
+import { Observable, from, of } from 'rxjs';
 
 import { AVAILABLE_LOCALES, DEFAULT_LOCALE, LOCALE_STORAGE_KEY, type AppLocale } from './i18n.types';
-import { TRANSLATIONS_EN } from './translations/en';
 import { TRANSLATIONS_RU } from './translations/ru';
 
 /**
- * In-memory TranslateLoader — our translation bundles are plain TS objects
- * that ship inside the JS bundle. This avoids an HTTP round-trip for ~2-3 KB
- * gzipped per language and keeps the UI responsive even on cold cache /
- * offline Telegram WebApp sessions.
+ * TranslateLoader over the plain TS dictionaries. Russian, the default, ships
+ * inside the initial bundle, so the first paint needs no round-trip even on a
+ * cold cache in Telegram. English is a lazy chunk: only those who picked it
+ * (or a missing Russian key) need it, and both dictionaries in the initial
+ * bundle pushed the admin past its size budget.
  */
 class InlineTranslateLoader implements TranslateLoader {
   getTranslation(lang: string): Observable<Translation> {
-    const dict = lang === 'en' ? TRANSLATIONS_EN : TRANSLATIONS_RU;
-    return of(dict as unknown as Translation);
+    if (lang === 'en') {
+      return from(import('./translations/en').then((m) => m.TRANSLATIONS_EN as unknown as Translation));
+    }
+    return of(TRANSLATIONS_RU as unknown as Translation);
   }
 }
 
@@ -24,8 +26,8 @@ class InlineTranslateLoader implements TranslateLoader {
  * providers in one call:
  *   - TranslateService with ru/en bundles
  *   - sensible defaults (ru default, browser/localStorage override, en fallback)
- *   - an APP_INITIALIZER that resolves the picked locale BEFORE bootstrap
- *     so the very first paint is already localized.
+ *   - an APP_INITIALIZER that resolves the picked locale and waits for its
+ *     dictionary BEFORE bootstrap, so the very first paint is already localized.
  */
 export function provideTakeawayI18n() {
   return [
@@ -44,12 +46,13 @@ export function provideTakeawayI18n() {
       translate.setFallbackLang('en');
 
       const picked = resolveInitialLocale();
-      translate.use(picked);
       // Keep <html lang> in sync so screen readers / browser UI pick up
       // the right language.
       if (typeof document !== 'undefined') {
         document.documentElement.lang = picked;
       }
+      // Bootstrap waits for the picked dictionary: English is a lazy chunk.
+      return translate.use(picked);
     }),
   ];
 }
