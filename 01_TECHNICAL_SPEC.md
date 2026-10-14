@@ -13,7 +13,7 @@
 | Milestone                      | Статус | Комментарий                                                                                                                                                                                                                                         |
 | ------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **M0** Фундамент               | ✅     | Nx + pnpm 10, Node 22+, docker-compose (pg, redis, MinIO, mailhog), NestJS 11 + Prisma 6, Angular 21 (web/tma/admin/kds), CI                                                                                                                        |
-| **M1** Auth + Catalog          | ✅     | OTP + password + OAuth (Google/Apple/Telegram), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны                                                                                                                                         |
+| **M1** Auth + Catalog          | ✅     | Password (staff) + OAuth (Google/Apple/Telegram) + код на почту (клиенты), JWT + refresh, CRUD меню, публичный каталог, web/TMA-экраны                                                                                                              |
 | **M2** Pre-order core          | ✅     | Cart sync, чекаут с ASAP/scheduled, Stripe Payment Intents + webhook, order code + QR, live-status (Socket.io), KDS dual-timer, geofencing «I'm here»                                                                                               |
 | **M3** Лояльность              | ✅     | LoyaltyAccount + txn, промокоды, gift cards, рефералы (бонус с первого оплаченного заказа обеим сторонам)                                                                                                                                           |
 | **M4** Push / Email / Telegram | ✅     | Web push (VAPID) + `/devices`, transactional email через nodemailer/SMTP (welcome, receipt), Telegram push на rider/brand staff, операционные алерты в Telegram                                                                                     |
@@ -179,17 +179,17 @@ takeaway/
 - **Realtime**: `@nestjs/websockets` + Socket.io 4.8 (`@nestjs/platform-socket.io`)
 - **Auth**:
   - JWT через `@nestjs/jwt` + `passport-jwt` + `@nestjs/passport`
-  - **Password (bcrypt 6)** для staff/RIDER + **Telegram initData** для customer + OAuth (Google/Apple через `OAuthAccount`)
+  - **Password (bcrypt 6)** для staff/RIDER + **Telegram initData** для customer + OAuth (Google/Apple через `OAuthAccount`) + **одноразовый код на почту** для customer (`EmailCodeService`: шесть цифр в Redis как HMAC, 10 минут, 5 попыток)
   - Refresh tokens, force-rotate при инвайте (`passwordMustChange`); сброс пароля отзывает все сессии, смена — все, кроме текущей
   - JWT-секреты без фолбэка в production: без `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET` API не стартует
   - Telegram initData старше `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS` (сутки) не принимается
-  - **OTP / SMS** — не подключено (Twilio/MessageBird из ТЗ резерв на будущее)
+  - **SMS-коды** — не подключены (Twilio/MessageBird из ТЗ резерв на будущее); одноразовый код клиент получает на почту
 - **Validation**: `class-validator` + `class-transformer` + DTO
 - **OpenAPI**: `@nestjs/swagger` 11 — источник для `libs/api-client`
 - **Scheduling**: `@nestjs/schedule` для периодических джобов (POS pull, истечение gift-cards и т.п.)
 - **Payments**: **Stripe SDK 22** (Payment Intents + webhook)
 - **Storage**: `@aws-sdk/client-s3` 3.x — реально пишем в **MinIO** (dev/prod), CDN `cdn.takeaway.md`. Cloudflare R2 — потенциальная замена.
-- **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset). Mailgun/Postmark — резерв.
+- **Email**: **nodemailer 8** через SMTP (welcome, receipt, password reset, приглашения сотрудников, коды входа клиентов). Без `SMTP_HOST` вход по почте выключен. Mailgun/Postmark — резерв.
 - **Push**: **web-push 3.6** (VAPID) для web/PWA + **TMA**; **APNs напрямую** для iOS (встроенный `node:http2`, ES256-токен через `node:crypto`, ключ `APNS_*` или `APPLE_*`); **FCM HTTP v1** для Android и iOS старых версий приложения, сервис-аккаунт в `FIREBASE_*`. Без SDK — JWT подписываются сами.
 - **Telegram**: бот через прямые вызовы Telegram Bot API (push на rider, brand staff, customer)
 - **Logs**: Pino 10 structured logs
@@ -200,7 +200,7 @@ takeaway/
 - **Flutter 3.38** (Dart 3.10), iOS 15+, Android 7+ (minSdk 24). Android application id — `md.takeaway.app`, iOS bundle id — `md.takeaway.ios` (команда Apple `FGN8R2D6QW`)
 - **State**: Riverpod 2.6 (`flutter_riverpod`), навигация — go_router (`StatefulShellRoute`: меню, точки, заказы, профиль)
 - **Networking**: Dio + Retrofit; модели и клиент — отдельный чистый Dart-пакет `libs/api-client-dart` (json_serializable). В Flutter-приложении `build_runner` не работает из-за нативных хуков зависимостей, поэтому кодоген живёт в пакете, а сгенерированный код закоммичен
-- **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS). Сессия — `flutter_secure_storage`, single-flight refresh
+- **Auth**: Telegram Login (OIDC + PKCE, своя реализация по образцу официальных SDK: `oauth.telegram.org/crossapp` → приложение Telegram, иначе страница в системном браузере; возврат `takeaway://tglogin` через `app_links`), `google_sign_in` 7, `sign_in_with_apple` (iOS), код на почту («Войти по почте», только когда `GET /auth/methods` отвечает `email: true`). Сессия — `flutter_secure_storage`, single-flight refresh
 - **Realtime**: `socket_io_client` к `/ws` на API-хосте; без сокета — опрос раз в 5 с
 - **Storage**: `shared_preferences` для настроек, JSON-файлы в кеше для меню и точек (офлайн-открытие)
 - **Push**: `firebase_messaging` (включается dart-define'ами Firebase), регистрация в `/devices`: FCM-токен, на iOS ещё сырой APNs-токен и шлюз (release-сборка — `PRODUCTION`, debug — `SANDBOX`). Устройство регистрируется только при разрешённых уведомлениях и снимается, когда их выключили в настройках телефона (проверка при возврате в приложение). Разрешение спрашивается один раз сразу после входа, после первого заказа или с экрана уведомлений — не при запуске. Android-каналы: `orders` (баннер, по умолчанию) и `promotions` (тихо)
@@ -224,7 +224,7 @@ takeaway/
 | Сервис            | Назначение                 | Статус                                                           |
 | ----------------- | -------------------------- | ---------------------------------------------------------------- |
 | Stripe            | Платежи                    | ✅ Payment Intents + webhook                                     |
-| SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset                              |
+| SMTP (nodemailer) | Транзакционный email       | ✅ welcome, receipt, password reset, коды входа                  |
 | Web Push (VAPID)  | Push для web/PWA + TMA     | ✅ через `web-push`                                              |
 | Telegram Bot API  | Уведомления rider/staff/cu | ✅ TG push + TMA initData auth + Telegram Login (OIDC)           |
 | MinIO + CDN       | Object storage             | ✅ brand logo, product images через `@aws-sdk/client-s3`         |
@@ -244,8 +244,9 @@ takeaway/
 
 Реализовано не так, как в исходном ТЗ — заходов несколько, под разные роли:
 
-- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку.
-- **Customer в мобильном приложении**: Telegram, Google и Apple (только iOS). Telegram — Telegram Login (OpenID Connect): подтверждение в приложении Telegram или на странице `oauth.telegram.org`, обмен кода на ID-токен по PKCE прямо на устройстве (публичный клиент, без секрета), затем `POST /auth/telegram/oidc`. Client id (= id бота) приложение берёт из `GET /auth/telegram/config`, а не из сборки.
+- **Customer на web**: три провайдера на выбор — **Google**, **Apple** и **Telegram Login** — и **код на почту**. Пароля нет ни у одного. Каждый провайдер включается независимо: пустой client id в `index.html` просто прячет кнопку; «Войти по почте» видна, только пока `GET /auth/methods` отвечает `email: true` (на сервере есть SMTP).
+- **Customer по коду на почту** (для тех, у кого нет ни Telegram, ни Google, ни Apple): `POST /auth/email/start` шлёт шесть цифр на любой корректный адрес и всегда отвечает 204 — есть ли такой профиль, не сообщается; `POST /auth/email/verify` выдаёт ту же сессию, что Google. Код живёт 10 минут, пять неверных попыток его удаляют, на адрес — не чаще раза в минуту и не больше пяти в час, поверх — throttler по адресу клиента. Профиль ищется по правилам Google с подтверждённым email: подтверждённый адрес (`emailVerifiedAt`) → этот клиент; адрес, только вписанный в профиль, уходит в новый профиль; staff — отказ `EMAIL_LOGIN_STAFF_ACCOUNT`; иначе новый клиент с подтверждённым адресом. Подтверждённый адрес виден в «Способах входа» и считается способом входа. Подробности и коды ошибок — `docs/social-sign-in.md`.
+- **Customer в мобильном приложении**: Telegram, Google, Apple (только iOS) и код на почту. Telegram — Telegram Login (OpenID Connect): подтверждение в приложении Telegram или на странице `oauth.telegram.org`, обмен кода на ID-токен по PKCE прямо на устройстве (публичный клиент, без секрета), затем `POST /auth/telegram/oidc`. Client id (= id бота) приложение берёт из `GET /auth/telegram/config`, а не из сборки.
 - **Telegram Login на вебе и в админке**: новая библиотека `oauth.telegram.org/js/telegram-login.js` (попап → ID-токен) включается, когда в `index.html` задан `__TELEGRAM_CLIENT_ID`; без него работает прежний Login Widget с HMAC по токену бота. На проде включено 23.09.2026: бот @takaway_tgbot переключён в BotFather на OpenID Connect, старый виджет у него отключён навсегда. Redirect URI Telegram сверяет посимвольно, а библиотека передаёт адрес страницы с кнопкой, поэтому у бота перечислены `https://takeaway.md/login`, `https://www.takeaway.md/login`, `https://admin.takeaway.md/telegram-link` и `takeaway://tglogin` для приложения; Trusted Origins — три домена, Native Login — Android `md.takeaway.app` с отпечатками ключей подписи. ID-токены Telegram проверяются тем же `OAuthIdentityService`, что Google и Apple: JWKS `oauth.telegram.org/.well-known/jwks.json`, алгоритмы RS256/ES256, `iss = https://oauth.telegram.org`, `aud = client id`. Аккаунт ищется по `telegramUserId` (claim `id`, scope `profile`).
 - **Customer в TMA**: **экрана входа нет вообще**. `initData` меняется на сессию в app-initializer до первого рендера; на 401 интерсептор молча ротирует refresh или пересоздаёт сессию из того же `initData`. Пользователь ни разу не видит слова «войти».
 - **Staff** (`SUPER_ADMIN` / `BRAND_ADMIN` / `STORE_MANAGER` / `STAFF` / `RIDER`): **email + bcrypt password**. При инвайте админ выдаёт временный пароль, флаг `passwordMustChange = true` → forced /change-password при первом логине.
@@ -255,7 +256,7 @@ takeaway/
 - **Brand link**: `auth/telegram/link` — привязка TG к уже существующему staff-юзеру.
 - Профиль: имя, email, телефон, дата рождения, фото, язык, валюта, notify-prefs (`notifyOrderUpdates`, `notifyPromotions`)
 - Мультидевайсность через таблицу `Device` (push token, APNs-токен для iOS, locale, lastSeenAt)
-- **OTP / SMS**: не реализовано. Раньше это был единственный запасной путь для рынков без Telegram — Google и Apple его закрывают.
+- **SMS-коды**: не реализованы. Клиенту без Telegram, Google и Apple хватает кода на почту.
 
 ### 3.1a. PWA (web)
 
@@ -691,7 +692,7 @@ External-id pattern: `Store`, `Category`, `Product`, `Modifier` хранят `ex
 
 ## 6. API Contract (основные endpoints)
 
-> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. OTP-вход в исходном ТЗ заявлен, но в текущей реализации customer заходит через Google, Apple или Telegram (widget на web, initData в TMA), а staff/RIDER — через email + password (с force-rotate при инвайте).
+> Источник истины — контроллеры в `apps/api/src/app/**/*.controller.ts`. SMS-вход из исходного ТЗ не реализован: customer заходит через Google, Apple, Telegram (widget на web, initData в TMA) или по одноразовому коду на почту, а staff/RIDER — через email + password (с force-rotate при инвайте).
 
 ### 6.1. Auth & Identity
 
@@ -710,9 +711,14 @@ POST   /auth/password/reset          { token, password }
 POST   /auth/password/change         { currentPassword, newPassword, refreshToken? }    (auth; отзывает все сессии, кроме refreshToken)
 POST   /auth/google                  { idToken } → tokens              (Google Identity Services credential)
 POST   /auth/apple                   { idToken, name? } → tokens       (name — только при первом согласии)
-GET    /auth/me/sign-in-methods      → { telegram, google, apple }
+GET    /auth/methods                 → { email, google, apple, telegram }   (public; email — есть ли SMTP)
+POST   /auth/email/start             { email, locale? } → 204   (всегда, есть профиль или нет; 429 EMAIL_CODE_COOLDOWN |
+                                     //   EMAIL_CODE_LIMIT { retryAfterSeconds }; 503 EMAIL_LOGIN_UNAVAILABLE | EMAIL_CODE_NOT_SENT)
+POST   /auth/email/verify            { email, code } → tokens   (400 EMAIL_CODE_INVALID { attemptsLeft } | EMAIL_CODE_EXPIRED |
+                                     //   EMAIL_CODE_TOO_MANY_ATTEMPTS; 401 EMAIL_LOGIN_STAFF_ACCOUNT)
+GET    /auth/me/sign-in-methods      → { telegram, google, apple, email }   (email — подтверждённый адрес или null)
 POST   /auth/me/sign-in-methods/google|apple|telegram  { idToken, name? } → { methods, session? }  (session — если клиент перешёл в профиль с заказами)
-DELETE /auth/me/sign-in-methods/google|apple  → { telegram, google, apple }
+DELETE /auth/me/sign-in-methods/google|apple  → { telegram, google, apple, email }
 POST   /auth/telegram                { initData } → tokens           (TMA)
 POST   /auth/telegram/widget         { ...telegramAuthWidgetPayload } → tokens   (legacy Login Widget, HMAC)
 POST   /auth/telegram/oidc           { idToken } → tokens            (Telegram Login, OpenID Connect)
@@ -1064,7 +1070,7 @@ OpenAPI 3.1 (через `@nestjs/swagger`) — источник правды, о
 
 ### M1 — Auth + Catalog ✅
 
-- OTP auth, JWT ✅ (+ password auth, OAuth Google/Apple/Telegram)
+- Auth, JWT ✅ (password для персонала, OAuth Google/Apple/Telegram и код на почту для клиентов; SMS OTP не делали)
 - CRUD меню в admin ✅
 - Публичное API каталога ✅
 - Web: экраны каталога, карточки продукта ✅

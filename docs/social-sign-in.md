@@ -1,13 +1,14 @@
-# Customer sign-in: Telegram, Google, Apple
+# Customer sign-in: Telegram, Google, Apple, a code by email
 
-Customers never have a password. They sign in with one of three providers:
+Customers never have a password. They sign in with one of three providers, or
+with a one-time code mailed to them:
 
-| Client                | Telegram              | Google                   | Apple                         |
-| --------------------- | --------------------- | ------------------------ | ----------------------------- |
-| Telegram Mini App     | automatic (initData)  | —                        | —                             |
-| Website `takeaway.md` | Telegram Login popup  | Google Identity Services | Sign in with Apple JS (popup) |
-| iOS app (TestFlight)  | Telegram Login (PKCE) | `google_sign_in`         | native `sign_in_with_apple`   |
-| Android app           | Telegram Login (PKCE) | `google_sign_in`         | —                             |
+| Client                | Telegram              | Google                   | Apple                         | Code by email    |
+| --------------------- | --------------------- | ------------------------ | ----------------------------- | ---------------- |
+| Telegram Mini App     | automatic (initData)  | —                        | —                             | —                |
+| Website `takeaway.md` | Telegram Login popup  | Google Identity Services | Sign in with Apple JS (popup) | «Войти по почте» |
+| iOS app (TestFlight)  | Telegram Login (PKCE) | `google_sign_in`         | native `sign_in_with_apple`   | «Войти по почте» |
+| Android app           | Telegram Login (PKCE) | `google_sign_in`         | —                             | «Войти по почте» |
 
 Each client obtains a signed OpenID Connect ID token and posts it to the API
 (`/auth/telegram/oidc`, `/auth/google`, `/auth/apple`), which verifies the
@@ -38,7 +39,69 @@ provider already has its own profile:
 
 Telegram cannot be unlinked (the Mini App signs in by Telegram id without
 asking, so unlinking would quietly open an empty profile), and the last
-remaining method cannot be removed.
+remaining method cannot be removed. A proven email (below) counts as a method.
+
+## Sign-in with a code by email
+
+For customers with none of the three providers — a mail.ru address and no
+Telegram. It needs SMTP on the server: without `SMTP_HOST` the API answers 503
+`EMAIL_LOGIN_UNAVAILABLE` and the website and the app hide the button.
+
+```
+GET  /auth/methods                    → { email, google, apple, telegram }   (public)
+POST /auth/email/start  { email, locale? } → 204
+POST /auth/email/verify { email, code }    → the same session as /auth/google
+```
+
+- Clients show «Войти по почте» only while `GET /auth/methods` says
+  `email: true`, i.e. the server has SMTP.
+- `start` answers 204 for every well-formed address, whether a profile has it
+  or not, and never looks the address up. The letter is one short paragraph,
+  in Russian when `locale` starts with `ru` and in English otherwise:
+  «Код для входа в takeAway: 123456. Он действует 10 минут. Если вы не
+  запрашивали код — просто проигнорируйте письмо.» The subject carries no code
+  (MailService logs subjects).
+- A code lives 10 minutes; a new one replaces the previous one. Five wrong
+  tries delete it. One address gets a code once a minute and five an hour; on
+  top of that the throttler allows a client address 5 starts and 10 verifies a
+  minute. Redis keeps the code only as an HMAC keyed by a secret derived from
+  `JWT_ACCESS_SECRET`, and the address only as an HMAC in the key names.
+
+Refusals carry a stable `code`, which the clients word:
+
+| Status | `code`                         | When                                                                                                          |
+| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 503    | `EMAIL_LOGIN_UNAVAILABLE`      | no SMTP on the server                                                                                         |
+| 503    | `EMAIL_CODE_NOT_SENT`          | the mail server refused the letter; the address may ask again at once                                         |
+| 429    | `EMAIL_CODE_COOLDOWN`          | a code went to the address under a minute ago (`retryAfterSeconds`); the clients go straight to the code step |
+| 429    | `EMAIL_CODE_LIMIT`             | five codes to the address this hour (`retryAfterSeconds`)                                                     |
+| 400    | `EMAIL_CODE_INVALID`           | wrong code (`attemptsLeft`)                                                                                   |
+| 400    | `EMAIL_CODE_EXPIRED`           | no code, timed out or already used                                                                            |
+| 400    | `EMAIL_CODE_TOO_MANY_ATTEMPTS` | the fifth wrong try; the code is gone                                                                         |
+| 401    | `EMAIL_LOGIN_STAFF_ACCOUNT`    | the address belongs to a staff or admin account                                                               |
+
+The account is found by the same rules as a Google sign-in with a verified
+address:
+
+1. A customer whose address is **proven** (`emailVerifiedAt` — set by an
+   earlier code, by Google or by Apple) → that profile.
+2. An address that was only typed into a profile (`PATCH /auth/me`) is not
+   proof: the address moves to a new profile and the other one is not opened,
+   so nobody can plant a victim's address on their own profile and wait.
+3. A staff or admin account → refused; those sign in with a password.
+4. Otherwise a new customer with the address proven and the language of the
+   request.
+
+So a customer who signed up with a code and later taps «Continue with Google»
+with the same address lands in the same profile, and the other way round. The
+proven address shows in Profile → Sign-in methods as «Почта» and counts as a
+way in when Google or Apple is unlinked. There is no «link an email» button
+yet: a Telegram customer who wants codes to lead into their profile links
+Google with that address first.
+
+Turning it on: fill `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`,
+`SMTP_PASS` and `SMTP_FROM` in `deploy/.env.production` and redeploy the API.
+Set SPF and DKIM for the sender's domain, or mail.ru files the codes as spam.
 
 ## What to create
 
@@ -103,3 +166,6 @@ nothing in the repository needs editing.
 - The login page on the website shows a button for each configured provider.
 - In the TestFlight build, Profile → Sign-in methods lists all three and
   connects the missing ones.
+- `https://api.takeaway.md/api/auth/methods` says `"email": true` once SMTP is
+  set; then «Войти по почте» appears on the website and in the app, and a code
+  sent to your own address signs you in.
