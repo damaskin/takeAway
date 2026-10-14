@@ -22,6 +22,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { Role } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
@@ -394,8 +395,35 @@ export class AuthController {
       data['email'] = email;
       // A typed-in address is a claim, not a proof: it must not let a Google
       // or Apple sign-in join this profile (see AuthService.finalizeOAuthSignIn).
-      const current = await this.prisma.user.findUnique({ where: { id: user.id }, select: { email: true } });
-      if (current?.email !== email) data['emailVerifiedAt'] = null;
+      const current = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: {
+          email: true,
+          emailVerifiedAt: true,
+          telegramUserId: true,
+          _count: { select: { oauthAccounts: true } },
+        },
+      });
+      if (current && current.email !== email) {
+        // A customer who signs in only with codes mailed to the proven
+        // address would lose the way back into this profile. Staff sign in
+        // with a password, so their address is free to change.
+        const onlyWayIn =
+          user.role === Role.CUSTOMER &&
+          current.email !== null &&
+          current.emailVerifiedAt != null &&
+          current.telegramUserId == null &&
+          (current._count?.oauthAccounts ?? 0) === 0;
+        if (onlyWayIn) {
+          throw new ConflictException({
+            statusCode: HttpStatus.CONFLICT,
+            error: 'Conflict',
+            code: 'EMAIL_IS_SIGN_IN_METHOD',
+            message: 'You sign in with this email — connect Telegram, Google or Apple before changing it',
+          });
+        }
+        data['emailVerifiedAt'] = null;
+      }
     }
     if (dto.dateOfBirth !== undefined) data['dateOfBirth'] = new Date(dto.dateOfBirth);
     if (dto.locale !== undefined) data['locale'] = dto.locale;
