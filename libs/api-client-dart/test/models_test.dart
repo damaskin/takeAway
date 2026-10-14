@@ -5,8 +5,9 @@ import 'package:takeaway_api/takeaway_api.dart';
 import 'package:test/test.dart';
 
 /// Fixtures under `test/fixtures` are real responses captured from the
-/// public production API (stores, menu, slots, product, institutes); order
-/// and cart payloads are built from the API DTOs, since those need a login.
+/// public production API (stores, menu, slots, product, institutes); order,
+/// cart and inbox payloads are built from the API DTOs, since those need a
+/// login.
 Object? fixture(String name) => jsonDecode(File('test/fixtures/$name').readAsStringSync());
 
 void main() {
@@ -480,6 +481,57 @@ void main() {
       final receipt = FeedbackReceipt.fromJson({'id': 'fb_1', 'createdAt': '2026-10-07T10:00:00.000Z'});
       expect(receipt.id, 'fb_1');
       expect(receipt.createdAt.isUtc, isTrue);
+    });
+  });
+
+  group('inbox', () {
+    test('parses a page with a brand campaign and a platform announcement', () {
+      final page = InboxPage.fromJson(fixture('inbox_page.json')! as Map<String, dynamic>);
+      expect(page.nextCursor, 'inb_1');
+      expect(page.unreadCount, 1);
+
+      final campaign = page.items.first;
+      expect(campaign.kind, InboxItemKind.brandCampaign);
+      expect(campaign.sender.kind, InboxSenderKind.brand);
+      expect(campaign.sender.logoUrl, startsWith('https://'));
+      expect(campaign.link!.kind, InboxLinkKind.brand);
+      expect(campaign.link!.storeId, isNull, reason: 'a brand with several stores links to the list of places');
+      expect(campaign.isRead, isFalse);
+      expect(campaign.createdAt.isUtc, isTrue);
+
+      final announcement = page.items.last;
+      expect(announcement.kind, InboxItemKind.platformAnnouncement);
+      expect(announcement.sender.kind, InboxSenderKind.platform);
+      expect(announcement.sender.logoUrl, isNull);
+      expect(announcement.link!.storeId, 'st_1');
+      expect(announcement.isRead, isTrue);
+    });
+
+    test('reads the last page, an item without a link and kinds this build does not know', () {
+      final raw = (fixture('inbox_page.json')! as Map<String, dynamic>)['items'] as List<dynamic>;
+      final item = InboxItem.fromJson({
+        ...raw.first as Map<String, dynamic>,
+        'kind': 'SOMETHING_NEW',
+        'sender': {'kind': 'ROBOT', 'name': 'X', 'logoUrl': null, 'brandId': null},
+        'link': null,
+      });
+      expect(item.kind, InboxItemKind.unknown);
+      expect(item.sender.kind, InboxSenderKind.unknown);
+      expect(item.link, isNull);
+
+      final last = InboxPage.fromJson({'items': <Object>[], 'nextCursor': null, 'unreadCount': 0});
+      expect(last.items, isEmpty);
+      expect(last.nextCursor, isNull);
+      expect(InboxUnreadCount.fromJson({'count': 3}).count, 3);
+    });
+
+    test('marks a copy read without touching the rest', () {
+      final item = InboxPage.fromJson(fixture('inbox_page.json')! as Map<String, dynamic>).items.first;
+      final read = item.withReadAt(DateTime.utc(2026, 10, 14, 10));
+      expect(read.isRead, isTrue);
+      expect(read.id, item.id);
+      expect(read.link!.name, item.link!.name);
+      expect(read.withReadAt(null).isRead, isFalse);
     });
   });
 }
