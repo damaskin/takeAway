@@ -68,7 +68,8 @@ export class StoreAvailabilityService {
         },
         now,
         policy,
-        hoursAround(store.workingHours, store.timezone, now),
+        // A day back finds the window `now` is in; eight ahead find the next opening.
+        hoursAround(store.workingHours, store.timezone, now, { backDays: 1 }),
       );
       result.set(store.id, { ...availability, currentEtaSeconds: quote?.etaSeconds ?? store.baseEtaSeconds });
     }
