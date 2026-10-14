@@ -92,7 +92,24 @@ const SEEDS: Seed[] = [
     createdAt: '2026-10-03T08:00:00Z',
     lines: [americano(3)],
   },
-  // The regular first came in August: a returning customer this week.
+  // The regular came three times in August (the win-back threshold is three
+  // orders) and then stayed away: a returning customer this week.
+  {
+    id: 'it-o6a',
+    userId: 'it-regular',
+    storeId: CENTER,
+    status: 'PICKED_UP',
+    createdAt: '2026-08-07T07:00:00Z',
+    lines: [americano()],
+  },
+  {
+    id: 'it-o6b',
+    userId: 'it-regular',
+    storeId: CENTER,
+    status: 'PICKED_UP',
+    createdAt: '2026-08-11T07:00:00Z',
+    lines: [americano()],
+  },
   {
     id: 'it-o6',
     userId: 'it-regular',
@@ -109,6 +126,18 @@ const SEEDS: Seed[] = [
     createdAt: '2026-10-04T07:00:00Z',
     lines: [americano()],
   },
+  // The regular also went to test2 three times in August and never again:
+  // inactive there, active across the stores.
+  ...['2026-08-05', '2026-08-08', '2026-08-12'].map(
+    (day, i): Seed => ({
+      id: `it-t2-${i}`,
+      userId: 'it-regular',
+      storeId: TEST2,
+      status: 'PICKED_UP',
+      createdAt: `${day}T07:00:00Z`,
+      lines: [americano()],
+    }),
+  ),
   // Another currency: never added to the roubles.
   {
     id: 'it-o8',
@@ -307,8 +336,16 @@ suite('analytics money on Postgres', () => {
 
     await prisma.$executeRawUnsafe('REFRESH MATERIALIZED VIEW "mv_orders_daily"');
     const brands = await analytics.brandPerformance(3650);
-    // Every counted rouble order, August's too; the sale in lei stays out.
-    expect(brands.find((b) => b.brandId === BRAND)).toMatchObject({ revenueCents: 9_900, orders: 6 });
+    // Every counted rouble order, August's six too; the sale in lei stays out.
+    expect(brands.find((b) => b.brandId === BRAND)).toMatchObject({ revenueCents: 16_900, orders: 11 });
+  });
+
+  it('names who went quiet at one store but still orders at another', async () => {
+    const customers = new CustomersService(prisma as unknown as PrismaService);
+    const now = new Date('2026-10-10T00:00:00Z');
+    const page = await customers.list(roubles, { segment: 'inactive', inactiveDays: 14 } as CustomersQueryDto, now);
+    expect(page.items.map((c) => c.userId)).not.toContain('it-regular');
+    expect(page.activeElsewhere).toMatchObject({ count: 1, stores: [{ storeId: TEST2, count: 1 }] });
   });
 
   it("counts a customer's spend on the revenue basis", async () => {
