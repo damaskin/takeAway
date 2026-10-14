@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus } from '@prisma/client';
 
+import { DUE_SOON_SECONDS } from '../kitchen/kitchen-load.service';
 import { OpsChatService } from '../notifications/ops-chat.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -71,13 +72,19 @@ export class OpsAlertsService {
   /**
    * Paid orders the kitchen has not picked up. Usually means the KDS tablet
    * is asleep, logged out, or nobody is on shift — the customer is standing
-   * there with a countdown that will not be met.
+   * there with a countdown that will not be met. A pre-order paid at night
+   * for the morning is not stuck: only orders due within half an hour count.
    */
   private async checkUnacceptedOrders(): Promise<void> {
-    const cutoff = new Date(Date.now() - UNACCEPTED_GRACE_MINUTES * 60_000);
+    const now = Date.now();
+    const cutoff = new Date(now - UNACCEPTED_GRACE_MINUTES * 60_000);
     const stuck = await this.prisma.order.groupBy({
       by: ['storeId'],
-      where: { status: OrderStatus.PAID, createdAt: { lt: cutoff } },
+      where: {
+        status: OrderStatus.PAID,
+        createdAt: { lt: cutoff },
+        pickupAt: { lte: new Date(now + DUE_SOON_SECONDS * 1000) },
+      },
       _count: { _all: true },
     });
 

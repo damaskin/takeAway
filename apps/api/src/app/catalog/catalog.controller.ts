@@ -27,14 +27,19 @@ export class CatalogController {
   }
 
   /**
-   * Scheduled pickup windows for the next twelve hours. Checkout renders
-   * these instead of a free time field — a customer can only ask for a time
-   * the kitchen can actually hit.
+   * Scheduled pickup windows for the next 24 hours — also while the shift is
+   * closed. Checkout renders these instead of a free time field — a
+   * customer can only ask for a time the kitchen can actually hit.
    */
   @Get('stores/:idOrSlug/pickup-slots')
   @ApiOkResponse({ type: PickupSlotDto, isArray: true })
-  getPickupSlots(@Param('idOrSlug') idOrSlug: string): Promise<PickupSlotDto[]> {
-    return this.catalog.getPickupSlots(idOrSlug);
+  @ApiQuery({
+    name: 'cartId',
+    required: false,
+    description: "The customer's cart at this store: a slot without room for its kitchen work comes back unavailable",
+  })
+  getPickupSlots(@Param('idOrSlug') idOrSlug: string, @Query('cartId') cartId?: string): Promise<PickupSlotDto[]> {
+    return this.catalog.getPickupSlots(idOrSlug, cartId || undefined);
   }
 
   @Get('stores/:idOrSlug/menu')

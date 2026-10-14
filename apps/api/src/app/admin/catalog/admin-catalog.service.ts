@@ -391,9 +391,11 @@ export class AdminCatalogService {
     } catch (err) {
       throw storeWriteError(err);
     }
-    // Switching the store on or off changes whether it takes orders; open
-    // storefronts hear it at once instead of on their next reload.
-    if (status != null && status !== store.status) await this.availability.announce(id);
+    // Switching the store on or off changes whether it takes orders, and so
+    // can a new timezone (the hours move); open storefronts hear it at once
+    // instead of on their next reload.
+    const zoneChanged = timezone != null && updated.timezone !== store.timezone;
+    if ((status != null && status !== store.status) || zoneChanged) await this.availability.announce(id);
     return this.detail(updated);
   }
 
@@ -531,6 +533,8 @@ export class AdminCatalogService {
         })),
       }),
     ]);
+    // The hours decide whether ASAP orders are taken right now.
+    await this.availability.announce(storeId);
     return this.prisma.storeWorkingHour.findMany({ where: { storeId }, orderBy: { weekday: 'asc' } });
   }
 
