@@ -10,7 +10,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     storeInactive: {
       badge: 'Not working',
       title: 'This store is not taking orders right now',
-      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+      hint: 'The store takes neither orders for now nor pre-orders for the next 24 hours. Pick another store or check back later.',
     },
     storeClosed: {
       title: 'This store is closed',
