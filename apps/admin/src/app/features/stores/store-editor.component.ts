@@ -396,6 +396,11 @@ function toCents(units: number | null): number | null {
                     <span class="hint">{{ 'admin.stores.ops.slotCapacityHint' | translate }}</span>
                   </label>
                 </div>
+                @if (capacity(); as cap) {
+                  <p class="hint" data-testid="store-capacity-summary">
+                    {{ 'admin.stores.ops.capacitySummary' | translate: cap }}
+                  </p>
+                }
               </fieldset>
 
               @if (deliveryEnabled()) {
@@ -831,6 +836,19 @@ export class StoreEditorComponent implements OnInit {
   /** Form-control values the template reads outside of form bindings. */
   readonly currency = signal('MDL');
   readonly zoneName = signal('');
+  readonly parallelism = signal<number | null>(2);
+  readonly slotCapacity = signal<number | null>(8);
+  /**
+   * What the two capacity knobs mean for one 15-minute slot: minutes of
+   * kitchen work (15 per item made at once), how many three-minute drinks
+   * that is, and the handover ceiling.
+   */
+  readonly capacity = computed(() => {
+    const hands = this.parallelism();
+    const orders = this.slotCapacity();
+    if (!hands || hands < 1 || !orders || orders < 1) return null;
+    return { minutes: 15 * hands, drinks: 5 * hands, orders };
+  });
 
   readonly timezoneUnset = computed(() => isUnsetTimeZone(this.zoneName()));
   /** What the address and the map pin imply, for the one-click fix of an unset zone. */
@@ -849,6 +867,10 @@ export class StoreEditorComponent implements OnInit {
       .subscribe(() => this.syncMarker());
     c.currency.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.currency.set(v));
     c.timezone.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.zoneName.set(v));
+    c.kitchenParallelism.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((v) => this.parallelism.set(v));
+    c.slotCapacity.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.slotCapacity.set(v));
     merge(c.city.valueChanges, c.country.valueChanges, c.latitude.valueChanges, c.longitude.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.refreshSuggestedZone());

@@ -6,6 +6,7 @@ import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-ca
 import { apiErrorMessage } from '../../core/http/api-error';
 import { KitchenApi } from '../../core/kitchen/kitchen.api';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
+import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
 
 /**
  * Store management on the dashboard: every store with its shift and a
@@ -15,7 +16,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 @Component({
   selector: 'app-store-shifts-widget',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, ShiftCloseDialogComponent],
   template: `
     <article class="dash-card">
       <header class="dash-card-head">
@@ -57,6 +58,14 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         <p class="dash-error" role="alert">{{ e }}</p>
       }
     </article>
+    @if (closing(); as target) {
+      <app-shift-close-dialog
+        [storeId]="target.id"
+        [storeName]="target.name"
+        (closed)="closed(target.id, $event.open)"
+        (cancelled)="closing.set(null)"
+      />
+    }
   `,
   styles: [
     DASH_CARD_STYLES,
@@ -142,6 +151,8 @@ export class StoreShiftsWidgetComponent {
   readonly loaded = signal(false);
   readonly busyId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+  /** The store whose "Finish work" dialog is open. */
+  readonly closing = signal<StoreAdminDto | null>(null);
 
   constructor() {
     effect(() => {
@@ -162,9 +173,14 @@ export class StoreShiftsWidgetComponent {
     });
   }
 
+  /** "Start work" right away; "Finish work" through the dialog that says what stays on the board. */
   toggle(store: StoreAdminDto): void {
     const open = !store.shiftOpen;
-    if (!open && !confirm(this.translate.instant('admin.kitchen.shift.finishConfirm'))) return;
+    if (!open) {
+      this.error.set(null);
+      this.closing.set(store);
+      return;
+    }
     this.busyId.set(store.id);
     this.error.set(null);
     this.kitchen.setShift(store.id, open).subscribe({
@@ -177,5 +193,10 @@ export class StoreShiftsWidgetComponent {
         this.error.set(apiErrorMessage(err, this.translate, { network: 'common.networkError' }));
       },
     });
+  }
+
+  closed(storeId: string, open: boolean): void {
+    this.closing.set(null);
+    this.stores.update((list) => list.map((s) => (s.id === storeId ? { ...s, shiftOpen: open } : s)));
   }
 }

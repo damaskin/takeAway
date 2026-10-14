@@ -15,6 +15,7 @@ import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 import { KitchenApi } from '../../core/kitchen/kitchen.api';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
+import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
 import { type EditorTab } from './store-editor.component';
 import { storeErrorMessage } from './store-errors';
 import { storeNeedsTimeZone } from './store-options';
@@ -30,7 +31,7 @@ interface CardError {
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, StoreReadinessComponent, OnboardingReturnComponent],
+  imports: [RouterLink, TranslatePipe, StoreReadinessComponent, OnboardingReturnComponent, ShiftCloseDialogComponent],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -326,6 +327,15 @@ interface CardError {
         }
       </div>
     </section>
+
+    @if (closingShiftOf(); as target) {
+      <app-shift-close-dialog
+        [storeId]="target.id"
+        [storeName]="target.name"
+        (closed)="shiftClosed(target.id, $event.open)"
+        (cancelled)="closingShiftOf.set(null)"
+      />
+    }
   `,
 })
 export class StoresPage implements OnInit {
@@ -358,6 +368,8 @@ export class StoresPage implements OnInit {
   readonly listError = signal<string | null>(null);
   readonly busyId = signal<string | null>(null);
   readonly cardErrors = signal<Record<string, CardError>>({});
+  /** The store whose "Finish work" dialog is open. */
+  readonly closingShiftOf = signal<StoreAdminDto | null>(null);
 
   private listRequest = 0;
 
@@ -428,9 +440,17 @@ export class StoresPage implements OnInit {
     });
   }
 
-  /** "Start work" / "Finish work": the store takes orders only while a shift is open. */
+  /**
+   * "Start work" / "Finish work": ASAP orders need an open shift (and the
+   * working hours). Finishing asks through the dialog, which says what stays
+   * on the board and refuses while orders due soon wait to be accepted.
+   */
   setShift(store: StoreAdminDto, open: boolean): void {
-    if (!open && !confirm(this.translate.instant('admin.kitchen.shift.finishConfirm'))) return;
+    if (!open) {
+      this.clearCardError(store.id);
+      this.closingShiftOf.set(store);
+      return;
+    }
     this.busyId.set(store.id);
     this.clearCardError(store.id);
     this.kitchen.setShift(store.id, open).subscribe({
@@ -446,6 +466,12 @@ export class StoresPage implements OnInit {
         });
       },
     });
+  }
+
+  /** The dialog closed the shift. */
+  shiftClosed(storeId: string, open: boolean): void {
+    this.closingShiftOf.set(null);
+    this.stores.update((list) => list.map((s) => (s.id === storeId ? { ...s, shiftOpen: open } : s)));
   }
 
   remove(store: StoreAdminDto): void {

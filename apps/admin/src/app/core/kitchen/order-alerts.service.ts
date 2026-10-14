@@ -110,6 +110,16 @@ export class OrderAlertsService {
     });
   }
 
+  /**
+   * A kitchen reminder — an order nobody accepted in time, a pre-order whose
+   * start came, the end of the working hours: the chime when the sound is
+   * on, and an OS notification while the cabinet sits in a background tab.
+   */
+  remind(system?: { title: string; body: string; tag: string }): void {
+    if (this.soundOn()) this.chime();
+    if (system) this.showSystemNotification(system.title, system.body, system.tag);
+  }
+
   dismiss(orderId: string): void {
     this._alerts.update((list) => list.filter((a) => a.orderId !== orderId));
   }
@@ -255,13 +265,18 @@ export class OrderAlertsService {
 
   /** When the cabinet sits in a background tab, the OS notification is what gets noticed. */
   private notifySystem(order: PendingOrder): void {
+    this.showSystemNotification(
+      this.translate.instant('admin.kitchen.alerts.systemTitle', { code: order.orderCode }),
+      order.storeName,
+      `order-${order.orderId}`,
+    );
+  }
+
+  private showSystemNotification(title: string, body: string, tag: string): void {
     if (typeof document === 'undefined' || !document.hidden) return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     try {
-      new Notification(this.translate.instant('admin.kitchen.alerts.systemTitle', { code: order.orderCode }), {
-        body: order.storeName,
-        tag: `order-${order.orderId}`,
-      });
+      new Notification(title, { body, tag });
     } catch {
       // Some mobile browsers only allow notifications from a service worker.
     }
