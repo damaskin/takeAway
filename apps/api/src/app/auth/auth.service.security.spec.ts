@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
@@ -218,9 +218,24 @@ describe('AuthService password changes end other sessions', () => {
   it('a wrong current password changes nothing and revokes nothing', async () => {
     const { auth, tokens } = harness([row('barista', { role: Role.STAFF, passwordHash: 'old-hash' })]);
 
-    await expect(auth.changeOwnPassword('barista', 'guess', 'new-password-1')).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    const failure = auth.changeOwnPassword('barista', 'guess', 'new-password-1');
+
+    await expect(failure).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(failure).rejects.toMatchObject({ response: { code: 'CURRENT_PASSWORD_INCORRECT' } });
+    expect(tokens.revokeAll).not.toHaveBeenCalled();
+  });
+
+  it('refuses the current password as the new one: the temporary password typed twice is not a change', async () => {
+    const { auth, tokens, users } = harness([
+      row('barista', { role: Role.STAFF, passwordHash: 'old-hash', passwordMustChange: true }),
+    ]);
+
+    const failure = auth.changeOwnPassword('barista', 'old-password', 'old-password');
+
+    await expect(failure).rejects.toBeInstanceOf(BadRequestException);
+    await expect(failure).rejects.toMatchObject({ response: { code: 'PASSWORD_UNCHANGED' } });
+    expect(users.get('barista')?.passwordHash).toBe('old-hash');
+    expect(users.get('barista')?.passwordMustChange).toBe(true);
     expect(tokens.revokeAll).not.toHaveBeenCalled();
   });
 

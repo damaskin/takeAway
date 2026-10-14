@@ -174,6 +174,11 @@ export class AuthService {
    * every other session ends: their refresh tokens are revoked, and their
    * access tokens run out within minutes. `keepRefreshToken` (the session
    * making the change) stays valid, so that person is not signed out too.
+   *
+   * A wrong current password is a 401 `CURRENT_PASSWORD_INCORRECT`; a new
+   * password equal to the current one — the temporary password typed twice
+   * on the first sign-in — is a 400 `PASSWORD_UNCHANGED`, so it cannot pass
+   * for a change.
    */
   async changeOwnPassword(
     userId: string,
@@ -186,7 +191,22 @@ export class AuthService {
     if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw new UnauthorizedException('Account cannot change password here');
 
     const ok = await this.passwords.compare(currentPassword, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('Current password is incorrect');
+    if (!ok) {
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        error: 'Unauthorized',
+        code: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'Current password is incorrect',
+      });
+    }
+    if (newPassword === currentPassword) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        code: 'PASSWORD_UNCHANGED',
+        message: 'The new password has to differ from the current one',
+      });
+    }
 
     const hash = await this.passwords.hash(newPassword);
     await this.prisma.user.update({
