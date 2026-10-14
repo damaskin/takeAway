@@ -48,6 +48,12 @@ describe('permissions map', () => {
       expect(navLink('campaignModeration')).toBe('/campaign-moderation');
     });
 
+    it('keeps platform announcements SUPER_ADMIN-only', () => {
+      expect(ADMIN_ROLES.announcements).toEqual(['SUPER_ADMIN']);
+      expect(canAccess('BRAND_ADMIN', 'announcements')).toBe(false);
+      expect(navLink('announcements')).toBe('/announcements');
+    });
+
     it('opens settlements to the platform admin and the brand owner, and to nobody on the floor', () => {
       expect(ADMIN_ROLES.settlements).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN']);
       expect(canAccess('STORE_MANAGER', 'settlements')).toBe(false);

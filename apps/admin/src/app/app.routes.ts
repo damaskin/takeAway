@@ -335,6 +335,27 @@ export const appRoutes: Route[] = [
           import('./features/campaign-moderation/campaign-moderation.page').then((m) => m.CampaignModerationPage),
       },
       {
+        path: 'announcements',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'announcements' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/announcements/announcements.page').then((m) => m.AdminAnnouncementsPage),
+      },
+      {
+        path: 'announcements/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'announcements' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/announcements/announcement-form.page').then((m) => m.AnnouncementFormPage),
+      },
+      {
+        path: 'announcements/:id',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'announcements' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/announcements/announcement-form.page').then((m) => m.AnnouncementFormPage),
+      },
+      {
         path: 'analytics',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'analytics' satisfies NavKey },

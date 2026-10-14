@@ -30,6 +30,7 @@ export type NavKey =
   | 'promotions'
   | 'campaigns'
   | 'campaignModeration'
+  | 'announcements'
   | 'analytics'
   | 'customers'
   | 'brands'
@@ -75,6 +76,8 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   campaigns: [SA, BA],
   // Every brand's campaigns waiting for review — the platform team decides.
   campaignModeration: [SA],
+  // takeAway writing to every customer itself (a new partner) — the platform team only.
+  announcements: [SA],
   analytics: [SA, BA],
   customers: [SA, BA],
   brands: [SA],
@@ -132,6 +135,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   promotions: '/promotions',
   campaigns: '/campaigns',
   campaignModeration: '/campaign-moderation',
+  announcements: '/announcements',
   analytics: '/analytics',
   customers: '/customers',
   brands: '/brands',
