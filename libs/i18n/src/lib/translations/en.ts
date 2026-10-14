@@ -153,11 +153,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noteOther: 'Order note',
       noteDrinkPlaceholder: 'For example, extra hot or no sugar',
       noteOtherPlaceholder: 'For example, no onion or cut in half',
-      pairings: 'Goes well with',
+      /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
+      pairings: 'Goes well with it',
     },
-    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    /** «Добавить к напитку?»: something to eat offered next to the drinks in the cart (`suggestFood`). */
     upsell: {
-      title: 'Add to your order',
+      title: 'Something to go with it?',
       add: 'Add {{name}}',
     },
   },

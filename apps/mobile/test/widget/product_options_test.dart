@@ -191,7 +191,7 @@ void main() {
 
     await _reveal(tester, find.text('Пожелание бариста'));
     expect(find.text('Комментарий к заказу'), findsNothing);
-    await _reveal(tester, find.text('Часто берут вместе'));
+    await _reveal(tester, find.text('К этому напитку'));
     expect(find.text('Круассан'), findsOneWidget);
     expect(find.text('Эклер'), findsNothing, reason: 'nothing sold out is suggested');
 
@@ -225,7 +225,7 @@ void main() {
 
     await _reveal(tester, find.text('Комментарий к заказу'));
     expect(find.text('Пожелание бариста'), findsNothing);
-    expect(find.text('Часто берут вместе'), findsNothing, reason: 'pairing is offered under drinks');
+    expect(find.text('К этому напитку'), findsNothing, reason: 'pairing is offered under drinks');
 
     await tester.tap(find.text('В корзину'));
     await settle(tester);
@@ -343,7 +343,7 @@ void main() {
       final h = await pumpApp(tester, api: api);
       await openCart(tester);
 
-      expect(find.text('К заказу'), findsOneWidget);
+      expect(find.text('Добавить к напитку?'), findsOneWidget);
       expect(find.text('Круассан'), findsOneWidget);
       expect(find.text('Маффин'), findsOneWidget);
       expect(find.text('Сэндвич'), findsOneWidget);
@@ -362,7 +362,7 @@ void main() {
       );
       await settle(tester);
       expect(api.added.single.productId, 'p_croissant');
-      expect(find.text('К заказу'), findsNothing);
+      expect(find.text('Добавить к напитку?'), findsNothing);
       await h.unmount(tester);
     });
 
@@ -411,13 +411,13 @@ void main() {
         ..seedCart(FakeApi.croissant());
       var h = await pumpApp(tester, api: withFood);
       await openCart(tester);
-      expect(find.text('К заказу'), findsNothing);
+      expect(find.text('Добавить к напитку?'), findsNothing);
       await h.unmount(tester);
 
       h = await pumpApp(tester, api: FakeApi()..seedCart(FakeApi.latte()));
       await openCart(tester);
       expect(find.text('Латте'), findsOneWidget);
-      expect(find.text('К заказу'), findsNothing);
+      expect(find.text('Добавить к напитку?'), findsNothing);
       await h.unmount(tester);
     });
   });

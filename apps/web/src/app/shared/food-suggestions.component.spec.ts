@@ -76,7 +76,7 @@ describe('FoodSuggestionsComponent', () => {
   it('shows each product with its placeholder, price and a link to it', () => {
     const cards = Array.from(el().querySelectorAll('[data-testid="food-suggestion"]'));
     expect(cards).toHaveLength(2);
-    expect(el().querySelector('h2')?.textContent?.trim()).toBe('К заказу');
+    expect(el().querySelector('h2')?.textContent?.trim()).toBe('Добавить к напитку?');
     expect(cards[0]?.querySelector('img')?.getAttribute('src')).toBe('/ui-kit/product-placeholders/bakery.svg');
     expect(cards[0]?.querySelector('a')?.getAttribute('href')).toBe('/products/croissant?store=centre');
     expect(cards[0]?.textContent).toContain('25');

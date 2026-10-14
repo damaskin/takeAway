@@ -16,8 +16,8 @@ import { CatalogService } from '../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../core/telegram/telegram-bridge.service';
 
 /**
- * A row of things to eat next to the drinks — «К заказу» at checkout,
- * «Часто берут вместе» on a drink's screen (see `suggestFood`).
+ * A row of things to eat next to the drinks — «Добавить к напитку?» at
+ * checkout, «К этому напитку» on a drink's screen (see `suggestFood`).
  *
  * A card opens the product; its «+» adds one straight to the cart with the
  * default options, unless the product has an add-on that must be taken —

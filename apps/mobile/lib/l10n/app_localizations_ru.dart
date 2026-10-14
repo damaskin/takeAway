@@ -1309,10 +1309,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get productRequired => 'обязательно';
 
   @override
-  String get productPairsWith => 'Часто берут вместе';
+  String get productPairsWith => 'К этому напитку';
 
   @override
-  String get cartUpsellTitle => 'К заказу';
+  String get cartUpsellTitle => 'Добавить к напитку?';
 
   @override
   String get allergenGluten => 'глютен';

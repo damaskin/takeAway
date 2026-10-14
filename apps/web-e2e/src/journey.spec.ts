@@ -403,7 +403,7 @@ test.describe('customer journey', () => {
 
     await page.goto('/checkout?store=dubai-marina');
     const upsell = page.getByTestId('upsell');
-    await expect(upsell.getByRole('heading', { name: 'Add to your order' })).toBeVisible();
+    await expect(upsell.getByRole('heading', { name: 'Something to go with it?' })).toBeVisible();
     await upsell.getByRole('button', { name: 'Add Croissant' }).click();
 
     // In the order now — and with something to eat, nothing more is offered.

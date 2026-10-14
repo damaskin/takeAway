@@ -39,7 +39,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
  *   options — choice chips per size / temperature / milk / cup, add-on
  *     groups opening in place (see TmaProductOptionsComponent)
  *   note — «Пожелание бариста» for a drink, «Комментарий к заказу» else
- *   «Часто берут вместе» under a drink, when the store sells food
+ *   «К этому напитку» under a drink, when the store sells food
  *   choice bar — pinned above Telegram's button: the choice in one line
  *     and the price
  * MainButton (Telegram blue, 48px) handles add-to-cart action. It stays
@@ -267,7 +267,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
-  /** «Часто берут вместе»: food and bakery from the same menu, under a drink. */
+  /** «К этому напитку»: food and bakery from the same menu, under a drink. */
   readonly pairings = computed(() => {
     const p = this.product();
     return p ? suggestFood(this.menu(), [p.id], 6) : [];

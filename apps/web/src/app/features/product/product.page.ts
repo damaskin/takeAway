@@ -42,7 +42,7 @@ import { ProductOptionsComponent } from './product-options.component';
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
  *       add bar: the choice in one line, qty stepper + caramel pill button
  *         ("Add to cart — $X"); pinned to the bottom of a phone's screen
- *       «Часто берут вместе» under a drink, when the store sells food
+ *       «К этому напитку» under a drink, when the store sells food
  */
 @Component({
   selector: 'app-product',
@@ -453,7 +453,7 @@ export class ProductPage implements OnInit {
 
   readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
-  /** «Часто берут вместе»: food and bakery from the same menu, under a drink. */
+  /** «К этому напитку»: food and bakery from the same menu, under a drink. */
   readonly pairings = computed(() => {
     const product = this.product();
     return product ? suggestFood(this.menu(), [product.id], 6) : [];

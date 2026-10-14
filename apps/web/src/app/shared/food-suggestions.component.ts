@@ -15,8 +15,8 @@ import { CartService, type CartView } from '../core/cart/cart.service';
 import { CatalogService } from '../core/catalog/catalog.service';
 
 /**
- * A row of things to eat next to the drinks — «К заказу» at checkout,
- * «Часто берут вместе» on a drink's page (see `suggestFood`).
+ * A row of things to eat next to the drinks — «Добавить к напитку?» at
+ * checkout, «К этому напитку» on a drink's page (see `suggestFood`).
  *
  * A card opens the product; its «+» adds one straight to the cart with the
  * default size and milk, unless the product has an add-on that must be taken

@@ -1289,10 +1289,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get productRequired => 'required';
 
   @override
-  String get productPairsWith => 'Often ordered together';
+  String get productPairsWith => 'Goes well with it';
 
   @override
-  String get cartUpsellTitle => 'Add to your order';
+  String get cartUpsellTitle => 'Something to go with it?';
 
   @override
   String get allergenGluten => 'gluten';

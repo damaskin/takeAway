@@ -2429,13 +2429,13 @@ abstract class AppLocalizations {
   /// No description provided for @productPairsWith.
   ///
   /// In en, this message translates to:
-  /// **'Often ordered together'**
+  /// **'Goes well with it'**
   String get productPairsWith;
 
   /// No description provided for @cartUpsellTitle.
   ///
   /// In en, this message translates to:
-  /// **'Add to your order'**
+  /// **'Something to go with it?'**
   String get cartUpsellTitle;
 
   /// No description provided for @allergenGluten.

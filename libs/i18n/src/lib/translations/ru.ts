@@ -155,11 +155,12 @@ export const TRANSLATIONS_RU = {
       noteOther: 'Комментарий к заказу',
       noteDrinkPlaceholder: 'Например, погорячее или без сахара',
       noteOtherPlaceholder: 'Например, без лука или разрезать пополам',
-      pairings: 'Часто берут вместе',
+      /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
+      pairings: 'К этому напитку',
     },
-    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    /** «Добавить к напитку?»: something to eat offered next to the drinks in the cart (`suggestFood`). */
     upsell: {
-      title: 'К заказу',
+      title: 'Добавить к напитку?',
       add: 'Добавить: {{name}}',
     },
   },
