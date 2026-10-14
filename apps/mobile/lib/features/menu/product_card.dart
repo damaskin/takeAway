@@ -227,7 +227,7 @@ class _MenuAddButtonState extends ConsumerState<MenuAddButton> {
 
   @override
   Widget build(BuildContext context) {
-    final storeOpen = (ref.watch(liveStoreProvider(widget.store.id)) ?? widget.store).isOpen;
+    final storeOpen = (ref.watch(liveStoreProvider(widget.store.id)) ?? widget.store).takesOrders;
     if (widget.product.onStopList || !storeOpen) return const SizedBox.shrink();
     final brand = context.brand;
     return Semantics(

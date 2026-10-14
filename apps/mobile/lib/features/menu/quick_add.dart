@@ -42,7 +42,7 @@ Future<QuickAddResult> quickAdd(
   VoidCallback? onBusy,
 }) async {
   // From the live list: the card may have been built before the store closed.
-  if (!(ref.read(liveStoreProvider(store.id)) ?? store).isOpen) return QuickAddResult.skipped;
+  if (!(ref.read(liveStoreProvider(store.id)) ?? store).takesOrders) return QuickAddResult.skipped;
   if (!await ensureSignedIn(context, ref)) return QuickAddResult.skipped;
   if (!context.mounted) return QuickAddResult.skipped;
   onBusy?.call();

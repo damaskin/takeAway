@@ -30,6 +30,7 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     'STORE_NOT_TAKING_ORDERS' => l10n.errStoreNotTakingOrders,
     'STORE_CLOSED_AT_TIME' => l10n.errStoreClosedAtTime,
     'PICKUP_SLOT_FULL' => l10n.errPickupSlotFull,
+    'ASAP_UNAVAILABLE' => l10n.errAsapUnavailable,
     'PICKUP_TIME_OUT_OF_RANGE' => l10n.errPickupTimeOutOfRange(number('minMinutes', 15), number('maxHours', 24)),
     'ITEMS_UNAVAILABLE' => switch (details['items']) {
       final List<Object?> items when items.whereType<String>().isNotEmpty => l10n.errItemsUnavailable(

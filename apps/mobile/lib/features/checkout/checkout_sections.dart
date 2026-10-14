@@ -8,6 +8,7 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/error_message.dart';
 import '../../shared/money_text.dart';
+import '../../shared/store_hours.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../catalog/catalog_providers.dart';
@@ -120,20 +121,34 @@ class SegmentToggle<T> extends StatelessWidget {
   }
 }
 
-/// Horizontally scrolling 15-minute windows; full ones stay visible but
-/// struck through, so a busy morning reads as busy rather than broken.
+/// 15-minute windows over the next 24 hours, a scrolling row per day under
+/// «Сегодня» / «Завтра»; full ones stay visible but struck through, so a busy
+/// morning reads as busy rather than broken. Fetched for the cart, so a
+/// window too busy for its work shows as full.
 class SlotPicker extends ConsumerWidget {
-  const SlotPicker({required this.storeId, required this.selected, required this.onSelect, super.key});
+  const SlotPicker({
+    required this.storeId,
+    required this.selected,
+    required this.onSelect,
+    this.cartId,
+    this.asapOffered = true,
+    super.key,
+  });
 
   final String storeId;
+  final String? cartId;
   final DateTime? selected;
   final ValueChanged<PickupSlot> onSelect;
+
+  /// False while «as soon as possible» is off: the empty state then does not
+  /// suggest it.
+  final bool asapOffered;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
-    final slots = ref.watch(pickupSlotsProvider(storeId));
+    final slots = ref.watch(pickupSlotsProvider((storeId: storeId, cartId: cartId)));
 
     return slots.when(
       loading: () => const ShimmerScope(
@@ -150,63 +165,97 @@ class SlotPicker extends ConsumerWidget {
       error: (error, _) => Text(errorMessage(context, error), style: TextStyle(color: brand.berry)),
       data: (list) {
         if (list.isEmpty || list.every((s) => !s.available)) {
-          return Text(l10n.noSlots, style: context.text.bodyMedium?.copyWith(color: brand.berry));
+          return Text(
+            asapOffered ? l10n.noSlots : l10n.noSlotsClosed,
+            style: context.text.bodyMedium?.copyWith(color: brand.berry),
+          );
         }
-        final today = DateTime.now();
+        final now = DateTime.now();
+        final days = <(int, List<PickupSlot>)>[];
+        for (final slot in list) {
+          final day = calendarDaysBetween(now, slot.startsAt);
+          if (days.isNotEmpty && days.last.$1 == day) {
+            days.last.$2.add(slot);
+          } else {
+            days.add((day, [slot]));
+          }
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              height: 48,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: list.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, index) {
-                  final slot = list[index];
-                  final active = selected != null && slot.startsAt.isAtSameMomentAs(selected!);
-                  final label = formatClock(context, slot.startsAt);
-                  final otherDay = !isSameDay(slot.startsAt, today);
-                  return Pressable(
-                    onTap: slot.available
-                        ? () {
-                            HapticFeedback.selectionClick();
-                            onSelect(slot);
-                          }
-                        : null,
-                    child: AnimatedContainer(
-                      duration: Motion.medium,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: active ? brand.caramel : brand.foam,
-                        borderRadius: BorderRadius.circular(Radii.pill),
-                        border: Border.all(color: active ? brand.caramel : brand.border),
-                      ),
-                      child: Text(
-                        otherDay
-                            ? '${MaterialLocalizations.of(context).formatShortMonthDay(slot.startsAt.toLocal())} $label'
-                            : label,
-                        style: context.text.labelLarge?.copyWith(
-                          color: active
-                              ? Colors.white
-                              : slot.available
-                              ? brand.textPrimary
-                              : brand.textTertiary,
-                          decoration: slot.available ? null : TextDecoration.lineThrough,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+            for (final (day, daySlots) in days) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(switch (day) {
+                  <= 0 => l10n.slotDayToday,
+                  1 => l10n.slotDayTomorrow,
+                  _ => MaterialLocalizations.of(context).formatShortMonthDay(daySlots.first.startsAt.toLocal()),
+                }, style: context.text.labelMedium?.copyWith(color: brand.textSecondary)),
               ),
-            ),
-            const SizedBox(height: 8),
+              _SlotRow(slots: daySlots, selected: selected, onSelect: onSelect),
+              const SizedBox(height: 10),
+            ],
             Text(l10n.slotsHint, style: context.text.bodySmall),
           ],
         );
       },
+    );
+  }
+}
+
+/// One day of windows, scrolling sideways.
+class _SlotRow extends StatelessWidget {
+  const _SlotRow({required this.slots, required this.selected, required this.onSelect});
+
+  final List<PickupSlot> slots;
+  final DateTime? selected;
+  final ValueChanged<PickupSlot> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final brand = context.brand;
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: slots.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final slot = slots[index];
+          final active = selected != null && slot.startsAt.isAtSameMomentAs(selected!);
+          final label = formatClock(context, slot.startsAt);
+          return Pressable(
+            onTap: slot.available
+                ? () {
+                    HapticFeedback.selectionClick();
+                    onSelect(slot);
+                  }
+                : null,
+            child: AnimatedContainer(
+              duration: Motion.medium,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: active ? brand.caramel : brand.foam,
+                borderRadius: BorderRadius.circular(Radii.pill),
+                border: Border.all(color: active ? brand.caramel : brand.border),
+              ),
+              child: Text(
+                label,
+                style: context.text.labelLarge?.copyWith(
+                  color: active
+                      ? Colors.white
+                      : slot.available
+                      ? brand.textPrimary
+                      : brand.textTertiary,
+                  decoration: slot.available ? null : TextDecoration.lineThrough,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

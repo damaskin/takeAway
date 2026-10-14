@@ -32,7 +32,13 @@ void main() {
   group('time helpers', () {
     test('formats a countdown as m:ss and never goes negative', () {
       expect(formatCountdown(const Duration(minutes: 7, seconds: 5)), '7:05');
+      expect(formatCountdown(const Duration(minutes: 59, seconds: 59)), '59:59');
       expect(formatCountdown(const Duration(seconds: -10)), '0:00');
+    });
+
+    test('counts hours once a pre-order is an hour or more away', () {
+      expect(formatCountdown(const Duration(hours: 1)), '1:00:00');
+      expect(formatCountdown(const Duration(hours: 13, minutes: 5, seconds: 9)), '13:05:09');
     });
 
     test('rounds minutes up and never shows zero', () {

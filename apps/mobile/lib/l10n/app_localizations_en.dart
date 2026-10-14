@@ -249,6 +249,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeStatusNotWorking => 'Not working';
 
   @override
+  String storeOpensAt(String time) {
+    return 'Closed now · opens at $time · order ahead';
+  }
+
+  @override
+  String storeOpensTomorrowAt(String time) {
+    return 'Closed now · opens tomorrow at $time · order ahead';
+  }
+
+  @override
+  String storeOpensOnAt(String date, String time) {
+    return 'Closed now · opens $date at $time · order ahead';
+  }
+
+  @override
+  String get storeClosedPreorder => 'Closed now · order ahead';
+
+  @override
+  String get storeQueueFullPreorder => 'Long queue — order ahead only';
+
+  @override
+  String storeOpenUntil(String time) {
+    return 'until $time';
+  }
+
+  @override
   String get orderHere => 'Order here';
 
   @override
@@ -287,7 +313,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get buildRoute => 'Build route';
 
   @override
-  String get callStore => 'Call';
+  String get callStore => 'Call the store';
 
   @override
   String get menuSearchHint => 'Search the menu';
@@ -438,10 +464,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pickupLaterHint => 'Choose a time';
 
   @override
-  String get noSlots => 'No free windows in the next few hours. Try ASAP.';
+  String get noSlots => 'No free windows in the next 24 hours. Try ASAP.';
+
+  @override
+  String get noSlotsClosed => 'No free windows in the next 24 hours.';
 
   @override
   String get slotsHint => 'Only windows this store can still keep up with.';
+
+  @override
+  String asapBlockedOpensAt(String time) {
+    return 'The store opens at $time — pick a time for your order.';
+  }
+
+  @override
+  String asapBlockedOpensTomorrowAt(String time) {
+    return 'The store opens tomorrow at $time — pick a time for your order.';
+  }
+
+  @override
+  String asapBlockedOpensOnAt(String date, String time) {
+    return 'The store opens $date at $time — pick a time for your order.';
+  }
+
+  @override
+  String get asapBlockedShiftClosed => 'The store has not started work yet — pick a time for your order.';
+
+  @override
+  String get asapBlockedQueueFull => 'There is a long queue right now — pick a time for your order.';
+
+  @override
+  String get asapBlockedClosed => 'The store is closed right now — pick a time for your order.';
+
+  @override
+  String get slotDayToday => 'Today';
+
+  @override
+  String get slotDayTomorrow => 'Tomorrow';
+
+  @override
+  String timeTomorrow(String time) {
+    return '$time tomorrow';
+  }
 
   @override
   String get fulfillmentPickup => 'Pickup';
@@ -626,7 +690,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusCancelled => 'Cancelled';
 
   @override
-  String get statusExpired => 'Cancelled — payment did not arrive in time';
+  String get statusExpired => 'Did not go through';
+
+  @override
+  String get orderAwaitingAcceptance => 'Waiting for the store to confirm';
+
+  @override
+  String get orderPreorderAwaitingOpening => 'The store will confirm your pre-order when it opens';
+
+  @override
+  String get orderRunningLate => 'Running a little late';
+
+  @override
+  String get orderExpiredNotAccepted => 'The store did not confirm the order — you were not charged';
+
+  @override
+  String get orderExpiredNotAcceptedRefunded => 'The store did not confirm the order — the money is on its way back';
+
+  @override
+  String get orderExpiredPaymentNotCompleted => 'The payment did not go through — the order is cancelled';
 
   @override
   String get statusUnknown => 'Updating…';
@@ -666,6 +748,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paymentStateRefunded => 'Money returned';
+
+  @override
+  String get paymentStateNotCharged => 'You were not charged';
 
   @override
   String get paymentStateAtCounter => 'Paying at the counter';
@@ -1344,6 +1429,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errPickupSlotFull => 'That time has just been taken — pick another one';
+
+  @override
+  String get errAsapUnavailable => 'The store can no longer take an order for now — pick a time for it';
 
   @override
   String errPickupTimeOutOfRange(int minMinutes, int maxHours) {

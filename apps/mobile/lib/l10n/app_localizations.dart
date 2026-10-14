@@ -536,6 +536,42 @@ abstract class AppLocalizations {
   /// **'Not working'**
   String get storeStatusNotWorking;
 
+  /// Store card / menu header: closed for orders now, taking pre-orders.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens at {time} · order ahead'**
+  String storeOpensAt(String time);
+
+  /// No description provided for @storeOpensTomorrowAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens tomorrow at {time} · order ahead'**
+  String storeOpensTomorrowAt(String time);
+
+  /// No description provided for @storeOpensOnAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens {date} at {time} · order ahead'**
+  String storeOpensOnAt(String date, String time);
+
+  /// No description provided for @storeClosedPreorder.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · order ahead'**
+  String get storeClosedPreorder;
+
+  /// No description provided for @storeQueueFullPreorder.
+  ///
+  /// In en, this message translates to:
+  /// **'Long queue — order ahead only'**
+  String get storeQueueFullPreorder;
+
+  /// Beside the wait of an open store: when it closes.
+  ///
+  /// In en, this message translates to:
+  /// **'until {time}'**
+  String storeOpenUntil(String time);
+
   /// No description provided for @orderHere.
   ///
   /// In en, this message translates to:
@@ -605,7 +641,7 @@ abstract class AppLocalizations {
   /// No description provided for @callStore.
   ///
   /// In en, this message translates to:
-  /// **'Call'**
+  /// **'Call the store'**
   String get callStore;
 
   /// No description provided for @menuSearchHint.
@@ -875,14 +911,74 @@ abstract class AppLocalizations {
   /// No description provided for @noSlots.
   ///
   /// In en, this message translates to:
-  /// **'No free windows in the next few hours. Try ASAP.'**
+  /// **'No free windows in the next 24 hours. Try ASAP.'**
   String get noSlots;
+
+  /// No description provided for @noSlotsClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'No free windows in the next 24 hours.'**
+  String get noSlotsClosed;
 
   /// No description provided for @slotsHint.
   ///
   /// In en, this message translates to:
   /// **'Only windows this store can still keep up with.'**
   String get slotsHint;
+
+  /// Why ASAP is off at checkout.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens at {time} — pick a time for your order.'**
+  String asapBlockedOpensAt(String time);
+
+  /// No description provided for @asapBlockedOpensTomorrowAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens tomorrow at {time} — pick a time for your order.'**
+  String asapBlockedOpensTomorrowAt(String time);
+
+  /// No description provided for @asapBlockedOpensOnAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens {date} at {time} — pick a time for your order.'**
+  String asapBlockedOpensOnAt(String date, String time);
+
+  /// No description provided for @asapBlockedShiftClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The store has not started work yet — pick a time for your order.'**
+  String get asapBlockedShiftClosed;
+
+  /// No description provided for @asapBlockedQueueFull.
+  ///
+  /// In en, this message translates to:
+  /// **'There is a long queue right now — pick a time for your order.'**
+  String get asapBlockedQueueFull;
+
+  /// No description provided for @asapBlockedClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closed right now — pick a time for your order.'**
+  String get asapBlockedClosed;
+
+  /// Heading over today's pickup windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get slotDayToday;
+
+  /// No description provided for @slotDayTomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get slotDayTomorrow;
+
+  /// A pickup time on the next calendar day.
+  ///
+  /// In en, this message translates to:
+  /// **'{time} tomorrow'**
+  String timeTomorrow(String time);
 
   /// No description provided for @fulfillmentPickup.
   ///
@@ -1199,8 +1295,44 @@ abstract class AppLocalizations {
   /// No description provided for @statusExpired.
   ///
   /// In en, this message translates to:
-  /// **'Cancelled — payment did not arrive in time'**
+  /// **'Did not go through'**
   String get statusExpired;
+
+  /// Order screen: on the kitchen board, not accepted yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the store to confirm'**
+  String get orderAwaitingAcceptance;
+
+  /// No description provided for @orderPreorderAwaitingOpening.
+  ///
+  /// In en, this message translates to:
+  /// **'The store will confirm your pre-order when it opens'**
+  String get orderPreorderAwaitingOpening;
+
+  /// Accepted or being made, and past its pickup time.
+  ///
+  /// In en, this message translates to:
+  /// **'Running a little late'**
+  String get orderRunningLate;
+
+  /// No description provided for @orderExpiredNotAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'The store did not confirm the order — you were not charged'**
+  String get orderExpiredNotAccepted;
+
+  /// No description provided for @orderExpiredNotAcceptedRefunded.
+  ///
+  /// In en, this message translates to:
+  /// **'The store did not confirm the order — the money is on its way back'**
+  String get orderExpiredNotAcceptedRefunded;
+
+  /// No description provided for @orderExpiredPaymentNotCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment did not go through — the order is cancelled'**
+  String get orderExpiredPaymentNotCompleted;
 
   /// No description provided for @statusUnknown.
   ///
@@ -1279,6 +1411,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Money returned'**
   String get paymentStateRefunded;
+
+  /// A cancelled or expired order whose card was never charged.
+  ///
+  /// In en, this message translates to:
+  /// **'You were not charged'**
+  String get paymentStateNotCharged;
 
   /// No description provided for @paymentStateAtCounter.
   ///
@@ -2539,6 +2677,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'That time has just been taken — pick another one'**
   String get errPickupSlotFull;
+
+  /// No description provided for @errAsapUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The store can no longer take an order for now — pick a time for it'**
+  String get errAsapUnavailable;
 
   /// No description provided for @errPickupTimeOutOfRange.
   ///

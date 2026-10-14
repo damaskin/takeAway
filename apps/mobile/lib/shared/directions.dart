@@ -12,4 +12,6 @@ Future<bool> openDirections(double lat, double lng, {String? label}) async {
   return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-Future<bool> openPhone(String phone) => launchUrl(Uri(scheme: 'tel', path: phone));
+/// Dials [phone] as a business typed it: «+373 69 123 456» goes to the
+/// dialer as +37369123456.
+Future<bool> openPhone(String phone) => launchUrl(Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'[^0-9+]'), '')));

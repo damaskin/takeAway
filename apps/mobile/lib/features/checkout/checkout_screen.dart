@@ -15,6 +15,7 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/error_message.dart';
 import '../../shared/money_text.dart';
+import '../../shared/store_hours.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/state_views.dart';
 import '../cart/cart_controller.dart';
@@ -124,9 +125,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final breakdown = controller.breakdown(cart, store);
     final minOrder = ref.watch(storeDetailProvider(store.id)).valueOrNull?.minOrderCents ?? 0;
     final belowMinimum = minOrder > 0 && cart.subtotalCents < minOrder;
-    // A store that closed while the customer was choosing takes no new
-    // order; one already placed (card declined) can still be paid for.
-    final closed = !store.isOpen && state.placedOrderId == null;
+    // A store that stopped taking orders while the customer was choosing
+    // takes no new one; one already placed (card declined) can still be paid
+    // for. A store closed only for «as soon as possible» takes a pre-order.
+    final closed = !store.takesOrders && state.placedOrderId == null;
     final readyAt = state.mode == PickupMode.scheduled && state.slot != null
         ? state.slot!
         : DateTime.now().add(Duration(seconds: cart.etaSeconds));
@@ -235,7 +237,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ? l10n.placeOrderPay(context.money(breakdown.totalCents, store.currency))
                   : l10n.placeOrder(context.money(breakdown.totalCents, store.currency)),
               trailing: Text(
-                formatClock(context, readyAt),
+                pickupClock(context, readyAt),
                 style: context.text.labelLarge?.copyWith(color: Colors.white.withValues(alpha: 0.85)),
               ),
             ),
@@ -309,20 +311,31 @@ class _WhenSection extends ConsumerWidget {
               (PickupMode.asap, l10n.pickupAsap, Icons.bolt_rounded),
               (PickupMode.scheduled, l10n.pickupLater, Icons.event_rounded),
             ],
+            // Closed for an order now — after hours, no shift yet, a full
+            // queue: a time later only, and the reason under the toggle.
+            disabled: {if (!store.isOpen) PickupMode.asap},
             onChanged: controller.setMode,
           ),
           if (!store.isOpen && state.placedOrderId == null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: Row(
+                key: const ValueKey('asap-blocked'),
                 children: [
                   Icon(
-                    store.isInactive ? Icons.do_not_disturb_on_rounded : Icons.nightlight_round,
+                    !store.takesOrders ? Icons.do_not_disturb_on_rounded : Icons.nightlight_round,
                     size: 16,
-                    color: brand.berry,
+                    color: store.takesOrders ? brand.amber : brand.berry,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(l10n.storeClosedCheckout, style: context.text.bodySmall)),
+                  Expanded(
+                    child: Text(
+                      !store.takesOrders
+                          ? l10n.storeClosedCheckout
+                          : asapBlockedText(context, store) ?? l10n.asapBlockedClosed,
+                      style: context.text.bodySmall,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -332,7 +345,13 @@ class _WhenSection extends ConsumerWidget {
             child: state.mode == PickupMode.scheduled
                 ? Padding(
                     padding: const EdgeInsets.only(top: 14),
-                    child: SlotPicker(storeId: store.id, selected: state.slot, onSelect: controller.selectSlot),
+                    child: SlotPicker(
+                      storeId: store.id,
+                      cartId: cart.id,
+                      asapOffered: store.isOpen,
+                      selected: state.slot,
+                      onSelect: controller.selectSlot,
+                    ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
@@ -346,7 +365,7 @@ class _WhenSection extends ConsumerWidget {
             duration: Motion.medium,
             child: Text(
               key: ValueKey('${state.mode}${state.slot}$delivery'),
-              delivery ? l10n.deliveryAt(formatClock(context, readyAt)) : l10n.readyBy(formatClock(context, readyAt)),
+              delivery ? l10n.deliveryAt(pickupClock(context, readyAt)) : l10n.readyBy(pickupClock(context, readyAt)),
               style: context.text.headlineMedium?.copyWith(color: brand.caramel),
             ),
           ),

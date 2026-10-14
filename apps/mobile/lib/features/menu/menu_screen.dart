@@ -37,7 +37,7 @@ class MenuScreen extends ConsumerWidget {
         // be ordered only ends in a refused checkout.
         data: (_) => store == null
             ? const SafeArea(bottom: false, child: NoStoreState())
-            : !store.isOpen
+            : !store.takesOrders
             ? SafeArea(
                 bottom: false,
                 child: StoreClosedState(key: ValueKey('closed-${store.id}'), store: store),

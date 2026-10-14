@@ -28,7 +28,7 @@ class CartUpsell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final menu = ref.watch(menuProvider(store.id)).valueOrNull?.value;
-    final items = menu == null || !store.isOpen || !wantsFood(cart, menu)
+    final items = menu == null || !store.takesOrders || !wantsFood(cart, menu)
         ? const <Suggestion>[]
         : foodSuggestions(menu, exclude: {for (final item in cart.items) item.productId});
     return AnimatedSize(
