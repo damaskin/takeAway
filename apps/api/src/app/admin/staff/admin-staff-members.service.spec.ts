@@ -1,5 +1,12 @@
-import { ConflictException, ForbiddenException, HttpException, Logger, NotFoundException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 
 import type { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { PasswordService } from '../../auth/services/password.service';
@@ -12,6 +19,7 @@ import type { StaffInviteMailer } from './staff-invite-mailer.service';
 interface FakeUser {
   id: string;
   email: string | null;
+  login: string | null;
   phone: string | null;
   name: string | null;
   role: Role;
@@ -41,6 +49,7 @@ function world() {
   const user = (id: string, role: Role, extra: Partial<FakeUser> = {}): FakeUser => ({
     id,
     email: `${id}@noname.md`,
+    login: null,
     phone: null,
     name: id,
     role,
@@ -124,8 +133,18 @@ function world() {
           return found ? withStores(found, select) : null;
         },
       ),
-      create: jest.fn(async ({ data }: { data: Partial<FakeUser> & { email: string; role: Role } }) => {
-        const created = user(`new-${users.length}`, data.role, { email: data.email, name: data.name ?? null });
+      findFirst: jest.fn(async ({ where }: { where: { OR: { login?: string; email?: string }[] } }) => {
+        const hit = users.find((u) =>
+          where.OR.some((c) => (c.login !== undefined ? u.login === c.login : u.email === c.email)),
+        );
+        return hit ? { id: hit.id } : null;
+      }),
+      create: jest.fn(async ({ data }: { data: Partial<FakeUser> & { role: Role } }) => {
+        const created = user(`new-${users.length}`, data.role, {
+          email: data.email ?? null,
+          login: data.login ?? null,
+          name: data.name ?? null,
+        });
         users.push(created);
         return { id: created.id };
       }),
@@ -453,6 +472,113 @@ describe('AdminStaffMembersService — staff as people', () => {
     });
   });
 
+  describe('invite by login, for someone without an email', () => {
+    const byLogin = (login: string, storeIds: string[] = ['store-centre']) => ({
+      login,
+      name: 'Anna',
+      role: 'STAFF' as const,
+      tempPassword: 'temporary-1',
+      storeIds,
+    });
+
+    it('creates a new account with the login and a password to change, and mails nobody', async () => {
+      const { svc, prisma, storesOf, inviteMailer } = world();
+      const member = await svc.invite(byLogin('  Anna.K ', ['store-centre', 'store-station']), owner, 'brand-1');
+
+      expect(prisma.user.create).toHaveBeenCalledWith({
+        data: {
+          login: 'anna.k',
+          passwordHash: 'bcrypt(temporary-1)',
+          passwordMustChange: true,
+          name: 'Anna',
+          role: 'STAFF',
+        },
+        select: { id: true },
+      });
+      expect(member).toMatchObject({ login: 'anna.k', email: null, inviteEmail: 'NO_EMAIL', accountCreated: true });
+      expect(storesOf(member.userId)).toEqual(['store-centre', 'store-station']);
+      expect(inviteMailer.send).not.toHaveBeenCalled();
+    });
+
+    it('answers LOGIN_IN_USE for a login anyone already has, the same way, and attaches nobody', async () => {
+      const { svc, prisma, users, storesOf } = world();
+      const give = (id: string, login: string) => {
+        const target = users.find((u) => u.id === id);
+        if (target) target.login = login;
+      };
+      give('cook', 'cook');
+      give('foreign-barista', 'foreign');
+      give('customer', 'guest');
+
+      const own = await svc.invite(byLogin('Cook'), owner, 'brand-1').catch((e: unknown) => e);
+      const foreign = await svc.invite(byLogin('foreign'), owner, 'brand-1').catch((e: unknown) => e);
+      const customer = await svc.invite(byLogin('guest'), owner, 'brand-1').catch((e: unknown) => e);
+      // Not even a super admin links an account by its login.
+      const root = await svc.invite(byLogin('foreign'), superAdmin, 'brand-1').catch((e: unknown) => e);
+
+      for (const error of [own, foreign, customer, root]) {
+        expect(error).toBeInstanceOf(ConflictException);
+        expect((error as HttpException).getResponse()).toEqual({
+          statusCode: 409,
+          error: 'Conflict',
+          code: 'LOGIN_IN_USE',
+          message: 'This login is already taken. Pick another one.',
+          field: 'login',
+        });
+      }
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.userStore.createMany).not.toHaveBeenCalled();
+      expect(storesOf('cook')).toEqual(['store-station']);
+      expect(storesOf('foreign-barista')).toEqual(['store-other']);
+      expect(users.find((u) => u.id === 'foreign-barista')?.role).toBe(Role.STAFF);
+    });
+
+    it('refuses a login that some account has as its email', async () => {
+      const { svc, prisma, users } = world();
+      // An address from before every email was validated, without an '@'.
+      const customer = users.find((u) => u.id === 'customer');
+      if (customer) customer.email = 'legacy';
+
+      const error = await svc.invite(byLogin('legacy'), owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('LOGIN_IN_USE');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('answers LOGIN_IN_USE when a parallel invite took the login first', async () => {
+      const { svc, prisma } = world();
+      prisma.user.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`login`)', {
+          code: 'P2002',
+          clientVersion: '6.19.3',
+        }),
+      );
+      const error = await svc.invite(byLogin('anna.k'), owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('LOGIN_IN_USE');
+      expect(prisma.userStore.createMany).not.toHaveBeenCalled();
+    });
+
+    it('keeps the scope rules of an invite', async () => {
+      const { svc, prisma } = world();
+      const store = await svc.invite(byLogin('anna.k', ['store-other']), owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(store)).toBe('STAFF_STORE_OUT_OF_SCOPE');
+      const role = await svc
+        .invite({ ...byLogin('anna.k'), role: 'STORE_MANAGER' }, managerCentre)
+        .catch((e: unknown) => e);
+      expect(codeOf(role)).toBe('STAFF_ROLE_NOT_ALLOWED');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an email and a login together', async () => {
+      const { svc, prisma } = world();
+      const error = await svc
+        .invite({ ...byLogin('anna.k'), email: 'anna@noname.md' }, owner, 'brand-1')
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('someone who also works for another brand', () => {
     /** Links the other brand's barista to Centre, as a super admin could. */
     async function shared() {
@@ -570,6 +696,32 @@ describe('AdminStaffMembersService — staff as people', () => {
       expect(tokens.revokeAll).not.toHaveBeenCalled();
 
       await expect(svc.resetPassword('barista', superAdmin, 'brand-1')).resolves.toMatchObject({ resetEmail: 'SENT' });
+    });
+
+    it('hands over the password of someone without an email: there is nobody to mail', async () => {
+      const { svc, users, tokens, inviteMailer } = world();
+      const invited = await svc.invite(
+        { login: 'anna.k', role: 'STAFF', tempPassword: 'temporary-1', storeIds: ['store-centre'] },
+        owner,
+        'brand-1',
+      );
+      const account = users.find((u) => u.id === invited.userId);
+      if (account) account.passwordMustChange = false;
+
+      const result = await svc.resetPassword(invited.userId, owner, 'brand-1');
+
+      expect(result.resetEmail).toBe('NO_EMAIL');
+      expect(result.tempPassword).toHaveLength(12);
+      expect(users.find((u) => u.id === invited.userId)).toMatchObject({
+        passwordHash: `bcrypt(${result.tempPassword})`,
+        passwordMustChange: true,
+      });
+      expect(tokens.revokeAll).toHaveBeenCalledWith(invited.userId);
+      expect(inviteMailer.sendPasswordReset).not.toHaveBeenCalled();
+
+      // A store manager still cannot: only the owner gets them back in.
+      const manager = await svc.resetPassword(invited.userId, managerCentre).catch((e: unknown) => e);
+      expect(codeOf(manager)).toBe('STAFF_NOT_EDITABLE');
     });
 
     it('reaches only the brand’s own team', async () => {

@@ -82,6 +82,7 @@ export class BusinessService {
         id: user.id,
         phone: user.phone,
         email: user.email,
+        login: user.login,
         name: user.name,
         locale: user.locale,
         currency: user.currency,

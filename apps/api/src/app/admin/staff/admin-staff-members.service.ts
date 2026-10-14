@@ -1,4 +1,11 @@
-import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import type { StaffInviteResult, StaffMember, StaffPasswordReset, StaffRoleName } from '@takeaway/shared-types';
 import { generateTempPassword } from '@takeaway/utils';
@@ -10,6 +17,7 @@ import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StaffInviteMailer } from './staff-invite-mailer.service';
+import { createLoginAccount } from './staff-login';
 
 const STAFF_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
 
@@ -25,6 +33,7 @@ type Reach = Map<string, string>;
 const MEMBER_SELECT = {
   id: true,
   email: true,
+  login: true,
   phone: true,
   name: true,
   role: true,
@@ -84,7 +93,7 @@ export class AdminStaffMembersService {
         ...MEMBER_SELECT,
         userStores: { where: { storeId: { in: storeIds } }, select: { storeId: true, createdAt: true } },
       },
-      orderBy: [{ name: 'asc' }, { email: 'asc' }],
+      orderBy: [{ name: 'asc' }, { email: 'asc' }, { login: 'asc' }],
     });
     return rows.map((row) => this.toMember(row, reach, user));
   }
@@ -160,15 +169,31 @@ export class AdminStaffMembersService {
    * reach) joins with the requested role. Someone already on the team is
    * changed on their own page instead. Any other existing account — a
    * customer, an admin, staff of another brand — gets the same neutral 409.
+   *
+   * With a login instead of an email it is always a new account (see
+   * {@link createLoginAccount}): a taken login is 409 LOGIN_IN_USE, whoever
+   * has it. Nobody is mailed — the owner hands over the login and password.
    */
   async invite(
-    input: { email: string; name?: string; role: StaffRoleName; tempPassword: string; storeIds: string[] },
+    input: {
+      email?: string;
+      login?: string;
+      name?: string;
+      role: StaffRoleName;
+      tempPassword: string;
+      storeIds: string[];
+    },
     user: AuthenticatedUser,
     brandId?: string,
   ): Promise<StaffInviteResult> {
     const reach = await this.reach(user, brandId);
     this.assertWithinReach(input.storeIds, reach);
     this.assertRoleAllowed(input.role, user);
+    if (input.login !== undefined) {
+      if (input.email !== undefined) throw new BadRequestException('Send either email or login');
+      return this.inviteByLogin({ ...input, login: input.login }, reach, user);
+    }
+    if (input.email === undefined) throw new BadRequestException('Send either email or login');
     const email = input.email.toLowerCase();
 
     const existing = await this.prisma.user.findUnique({
@@ -229,6 +254,25 @@ export class AdminStaffMembersService {
     return { ...member, inviteEmail, accountCreated: !existing };
   }
 
+  private async inviteByLogin(
+    input: { login: string; name?: string; role: StaffRoleName; tempPassword: string; storeIds: string[] },
+    reach: Reach,
+    user: AuthenticatedUser,
+  ): Promise<StaffInviteResult> {
+    const { id: userId } = await createLoginAccount(this.prisma, {
+      login: input.login.trim().toLowerCase(),
+      passwordHash: await this.passwords.hash(input.tempPassword),
+      name: input.name ?? null,
+      role: input.role,
+    });
+    await this.prisma.userStore.createMany({
+      data: input.storeIds.map((storeId) => ({ userId, storeId })),
+      skipDuplicates: true,
+    });
+    const member = await this.reload(userId, reach, user);
+    return { ...member, inviteEmail: 'NO_EMAIL', accountCreated: true };
+  }
+
   /**
    * «Сбросить пароль» on the person's page, for an employee who forgot it
    * and has no access to their email, or one who left with it. Owners and
@@ -276,7 +320,9 @@ export class AdminStaffMembersService {
 
   /** The set-password link after a reset. The password has changed by now, so a failure here only says so. */
   private async mailReset(row: MemberRow): Promise<StaffPasswordReset['resetEmail']> {
-    if (!row.email) return 'NOT_CONFIGURED';
+    // Someone who signs in with a login has nowhere to get a link: the
+    // temporary password on the owner's screen is the only way back in.
+    if (!row.email) return 'NO_EMAIL';
     try {
       return await this.inviteMailer.sendPasswordReset({
         userId: row.id,
@@ -379,6 +425,7 @@ export class AdminStaffMembersService {
     return {
       userId: row.id,
       email: row.email,
+      login: row.login,
       phone: row.phone,
       name: row.name,
       role: row.role as StaffRoleName,
