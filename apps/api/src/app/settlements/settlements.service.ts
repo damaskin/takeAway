@@ -111,6 +111,18 @@ export class SettlementsService {
     );
     const ledger = payouts.map(toLedger);
 
+    // «Выплата бренду» proposes a period that has ended. A report reaching
+    // today would only offer «the period has not ended» — which is how the
+    // button went unnoticed — so the payout stops at yesterday instead.
+    const today = dayOf(now);
+    const payoutTo = range.to < today ? range.to : addDays(today, -1);
+    const payoutEnd = payoutTo === range.to ? range.end : startOfDay(addDays(payoutTo, 1), timeZone);
+    const accruedBeforePayoutEnd =
+      payoutTo === range.to
+        ? computed.accruedBeforeEndCents
+        : computeSettlement(rows, timeline, brand.commissionBps, { start: payoutEnd, end: payoutEnd, days: [] }, dayOf)
+            .accruedBeforeEndCents;
+
     return {
       brand: {
         id: brand.id,
@@ -139,14 +151,14 @@ export class SettlementsService {
         end: range.end,
       }),
       nextPayout: this.preview({
-        to: range.to,
-        today: dayOf(now),
+        to: payoutTo,
+        today,
         timeZone,
-        end: range.end,
+        end: payoutEnd,
         rows,
         timeline,
         fallbackBps: brand.commissionBps,
-        accruedBeforeEndCents: computed.accruedBeforeEndCents,
+        accruedBeforeEndCents: accruedBeforePayoutEnd,
         firstSettledDay: computed.firstSettledDay,
         payouts: ledger,
       }),

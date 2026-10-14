@@ -219,10 +219,17 @@ const ERROR_CODES = {
             <header class="dash-card-head">
               <h2>{{ 'admin.settlements.payout.title' | translate }}</h2>
             </header>
+            @if (payoutClosedEarly()) {
+              <p class="dash-hint" data-testid="payout-closed-days">
+                {{ 'admin.settlements.payout.closedDays' | translate: { day: day(r.nextPayout.periodTo) } }}
+              </p>
+            }
             @if (r.nextPayout.blocked; as reason) {
-              <p class="dash-muted">
+              <p class="dash-muted" data-testid="payout-blocked">
                 {{
-                  'admin.settlements.payout.blocked.' + reason | translate: { day: day(r.nextPayout.lastSettledDay) }
+                  'admin.settlements.payout.blocked.' +
+                    (reason === 'OVERLAP' && payoutClosedEarly() ? 'UP_TO_DATE' : reason)
+                    | translate: { day: day(r.nextPayout.lastSettledDay) }
                 }}
               </p>
             } @else {
@@ -317,7 +324,13 @@ const ERROR_CODES = {
             <h2>{{ 'admin.settlements.payouts.title' | translate }}</h2>
           </header>
           @if (r.payouts.length === 0) {
-            <p class="dash-muted">{{ 'admin.settlements.payouts.empty' | translate }}</p>
+            <p class="dash-muted" data-testid="payouts-empty">
+              {{ 'admin.settlements.payouts.empty' | translate }}
+              {{
+                (isPlatformAdmin() ? 'admin.settlements.payouts.emptyAdmin' : 'admin.settlements.payouts.emptyOwner')
+                  | translate
+              }}
+            </p>
           } @else {
             <div class="ov-table-wrap">
               <table class="ov-table st-table">
@@ -644,6 +657,16 @@ export class SettlementsPage {
     const hi = Math.max(...values);
     const pct = (bps: number) => this.fmt.percent(bps / 100, { maxDigits: 2 });
     return lo === hi ? pct(lo) : `${this.fmt.percent(lo / 100, { maxDigits: 2 }).replace(/\s?%$/, '')}–${pct(hi)}`;
+  });
+
+  /**
+   * The report reaches today, so the payout card stops at yesterday: the
+   * API proposes only days that have ended, and the card says why its
+   * period is shorter than the report's.
+   */
+  readonly payoutClosedEarly = computed(() => {
+    const r = this.report();
+    return !!r && r.nextPayout.periodTo < r.period.to;
   });
 
   /** What the next payout carries in from earlier periods (refunds after a payout, late orders). */

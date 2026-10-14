@@ -2690,9 +2690,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         fix: 'Fix the payout',
         fixing: 'Fixing…',
         fixed: 'Payout fixed: {{amount}}.',
+        closedDays:
+          "Today has not ended yet, so the payout covers the closed days, up to {{day}}. Today's orders go into the next one.",
         blocked: {
           PERIOD_OPEN: 'The period has not ended yet — pick a closed one, last week for instance.',
           OVERLAP: 'These days are already settled by a payout up to {{day}}. Pick a period that ends later.',
+          UP_TO_DATE:
+            'Every closed day is already in a payout — the latest runs to {{day}}. The next one can be fixed tomorrow.',
           NOTHING_DUE:
             'Nothing is owed to the brand at the end of the period. A negative balance reduces the next payout.',
         },
@@ -2729,6 +2733,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payouts: {
         title: 'Payouts',
         empty: 'No payouts yet.',
+        emptyAdmin: 'Fix one in the «Payout to the brand» card above — for a closed period, up to yesterday.',
+        emptyOwner: 'takeAway records the payouts — their history will show up here.',
         period: 'Period',
         amount: 'Amount',
         commission: 'Commission',
