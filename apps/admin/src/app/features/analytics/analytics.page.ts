@@ -418,7 +418,13 @@ interface ChartBar {
           @if (!plans.has('winBack')) {
             <app-plan-lock feature="winBack" />
           } @else if (brandId(); as id) {
-            <app-retention-tab [brandId]="id" [period]="period()" [currency]="currency()" [(window)]="churnWindow" />
+            <app-retention-tab
+              [brandId]="id"
+              [period]="period()"
+              [currency]="currency()"
+              [(window)]="churnWindow"
+              (storePicked)="storeId.set($event)"
+            />
           }
         }
       }

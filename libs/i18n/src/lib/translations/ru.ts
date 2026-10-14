@@ -2824,6 +2824,10 @@ export const TRANSLATIONS_RU = {
       daysAgo: '{{days}} дн. назад',
       toRetention: 'Возврат',
       none: 'За этот период никто не стал неактивным.',
+      activeElsewhere:
+        'Ещё {{count}} чел. перестали ходить в одну из точек, но заказывают в другой — по всем точкам они не неактивные.',
+      activeElsewhereStores: 'По точкам:',
+      activeElsewhereStore: '{{store}} — {{count}}',
     },
     customers: {
       title: 'Клиенты',
@@ -2884,7 +2888,13 @@ export const TRANSLATIONS_RU = {
       inactiveDays: 'Не заказывали',
       storeFilter: 'Точка',
       allStores: 'Все точки',
+      currencyLabel: 'Валюта сумм',
+      currencyNote: 'Клиенты — из всех точек; суммы — в {{currency}}, заказы в другой валюте в них не входят.',
       emptyInactive: 'Неактивных нет: все постоянные клиенты заказывали за последние {{days}} дн.',
+      activeElsewhere:
+        'Ещё {{count}} чел. перестали ходить в одну из точек, но заказывают в другой — по всем точкам они не неактивные, поэтому их нет в списке.',
+      activeElsewhereStores: 'Посмотреть по точке:',
+      activeElsewhereStore: '{{store}} — {{count}}',
       toBroadcast: 'Рассылка этим клиентам →',
       favouriteBadge: 'Любимое: {{name}}',
       favouriteTitle: 'Заказал {{count}} шт.',

@@ -8,7 +8,7 @@ import { BehaviorSubject, of } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
-import { CustomersApi, type CustomerSummary } from '../../core/customers/customers.service';
+import { CustomersApi, type CustomerPage, type CustomerSummary } from '../../core/customers/customers.service';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { CustomersPage } from './customers.page';
 
@@ -34,8 +34,12 @@ describe('CustomersPage', () => {
   let list: jest.Mock;
   let query: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
-  async function render(params: Record<string, string> = {}, features: PlanFeature[] = ['customers', 'campaigns']) {
-    list = jest.fn().mockReturnValue(of({ items: [customer], total: 1, page: 1, pageSize: 25 }));
+  async function render(
+    params: Record<string, string> = {},
+    features: PlanFeature[] = ['customers', 'campaigns'],
+    answer: Partial<CustomerPage> = {},
+  ) {
+    list = jest.fn().mockReturnValue(of({ items: [customer], total: 1, page: 1, pageSize: 25, ...answer }));
     query = new BehaviorSubject(convertToParamMap(params));
     TestBed.configureTestingModule({
       imports: [CustomersPage],
@@ -104,9 +108,51 @@ describe('CustomersPage', () => {
     ) as HTMLButtonElement;
     inactive.click();
     expect(navigate).toHaveBeenCalledWith([], {
-      queryParams: { segment: 'inactive', days: 14, storeId: null },
+      queryParams: { segment: 'inactive', days: 14, storeId: null, currency: null },
       replaceUrl: true,
     });
+  });
+
+  it('says who went quiet at one store but orders at another, and opens that store on a click', async () => {
+    const fixture = await render({ segment: 'inactive', days: '14' }, undefined, {
+      activeElsewhere: {
+        count: 3,
+        stores: [
+          { storeId: 's2', storeName: 'Балка', count: 2 },
+          { storeId: 's1', storeName: 'Центр', count: 1 },
+        ],
+      },
+    });
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="customers-active-elsewhere"]');
+
+    expect(text(note)).toContain('Ещё 3 чел. перестали ходить в одну из точек, но заказывают в другой');
+    const stores = [...(note?.querySelectorAll('button') ?? [])];
+    expect(stores.map(text)).toEqual(['Балка — 2', 'Центр — 1']);
+
+    stores[0]?.click();
+    expect(navigate).toHaveBeenCalledWith([], {
+      queryParams: { segment: 'inactive', days: 14, storeId: 's2', currency: null },
+      replaceUrl: true,
+    });
+  });
+
+  it('offers the currency of the amounts when the stores price in several, and shows them in it', async () => {
+    const fixture = await render({ currency: 'RUP' }, undefined, { currency: 'RUP', currencies: ['MDL', 'RUP'] });
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ currency: 'RUP' }));
+    const picker = el.querySelector<HTMLSelectElement>('[data-testid="customers-currency"]');
+    expect([...(picker?.options ?? [])].map((o) => o.value)).toEqual(['MDL', 'RUP']);
+    expect(text(el.querySelector('[data-testid="customers-currency-note"]'))).toContain('суммы — в RUP');
+    // Roubles of Pridnestrovie, not the lei of the brand in the header.
+    expect(fixture.componentInstance.price(90_000)).toMatch(/^900\s+руб\.$/);
+  });
+
+  it('has no currency to pick for a brand in one currency', async () => {
+    const fixture = await render({}, undefined, { currency: 'MDL', currencies: ['MDL'] });
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="customers-currency"]')).toBeNull();
   });
 
   it('marks the product a customer keeps ordering', async () => {

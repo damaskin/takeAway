@@ -2819,6 +2819,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       daysAgo: '{{days}} d ago',
       toRetention: 'Win-back',
       none: 'Nobody became inactive in this period.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive.',
+      activeElsewhereStores: 'By store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
     },
     customers: {
       title: 'Customers',
@@ -2879,7 +2883,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       inactiveDays: 'No order for',
       storeFilter: 'Store',
       allStores: 'All stores',
+      currencyLabel: 'Currency of the amounts',
+      currencyNote: 'Customers of every store; amounts in {{currency}} — orders in another currency are not in them.',
       emptyInactive: 'Nobody is inactive: every regular ordered within the last {{days}} days.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive, so they are not listed.',
+      activeElsewhereStores: 'See by store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
       toBroadcast: 'Message these customers →',
       favouriteBadge: 'Favourite: {{name}}',
       favouriteTitle: 'Ordered {{count}}',

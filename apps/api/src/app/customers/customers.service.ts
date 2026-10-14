@@ -7,7 +7,13 @@ import { COUNTED, REVENUE, num, orderWhere, scopeConditions, whereAll } from '..
 import { customerLabels } from '../analytics/customer-labels';
 import { orderMoney } from '../analytics/money';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_INACTIVE_DAYS, perCustomerSql, segmentSql } from './customer-segment';
+import {
+  DEFAULT_INACTIVE_DAYS,
+  inactiveAtOneStoreOnly,
+  inactiveBefore,
+  perCustomerSql,
+  segmentSql,
+} from './customer-segment';
 import {
   CustomerDetailDto,
   CustomerPageDto,
@@ -28,6 +34,8 @@ interface CustomerRow {
   userId: string;
   orders: number;
   totalCents: bigint;
+  /** Orders the spend adds up — those in the money currency, or all of them. */
+  moneyOrders?: number;
   firstOrderAt: Date;
   lastOrderAt: Date;
   total?: number;
@@ -49,13 +57,31 @@ const SORT_SQL: Record<CustomerSort, Prisma.Sql> = {
   firstOrderAt: Prisma.raw('p."firstOrderAt"'),
   orders: Prisma.raw('p."orders"'),
   totalCents: Prisma.raw('p."totalCents"'),
-  avgCheckCents: Prisma.raw('(p."totalCents"::float8 / p."orders")'),
+  avgCheckCents: Prisma.raw('(p."totalCents"::float8 / NULLIF(p."moneyOrders", 0))'),
   // Fewer days between orders is the more frequent customer; one-order
   // customers have no frequency and go last either way.
   frequency: Prisma.raw(
     'CASE WHEN p."orders" > 1 THEN EXTRACT(EPOCH FROM (p."lastOrderAt" - p."firstOrderAt")) / (p."orders" - 1) END',
   ),
 };
+
+/**
+ * The currency a customer's spend is shown in. People are counted over every
+ * store of the scope whatever it prices in; their spend cannot be, so when
+ * the stores price in several currencies (`currencies`), it adds up the
+ * orders in `currency` only.
+ */
+export interface CustomerMoney {
+  currency: string | null;
+  currencies: string[];
+}
+
+const NO_CURRENCY: CustomerMoney = { currency: null, currencies: [] };
+
+/** The currency the spend is filtered to: only when there is a choice to make. */
+function spendCurrency(money: CustomerMoney): string | null {
+  return money.currencies.length > 1 ? money.currency : null;
+}
 
 /**
  * The business's customers: everyone with a counted order in its stores,
@@ -67,7 +93,12 @@ const SORT_SQL: Record<CustomerSort, Prisma.Sql> = {
 export class CustomersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(scope: AnalyticsScope, query: CustomersQueryDto, now = new Date()): Promise<CustomerPageDto> {
+  async list(
+    scope: AnalyticsScope,
+    query: CustomersQueryDto,
+    now = new Date(),
+    money: CustomerMoney = NO_CURRENCY,
+  ): Promise<CustomerPageDto> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const sort = SORT_SQL[query.sort ?? 'lastOrderAt'];
@@ -85,11 +116,12 @@ export class CustomersService {
         )
       )`);
     }
-    const segment = segmentSql(query.segment ?? 'all', query.inactiveDays ?? DEFAULT_INACTIVE_DAYS, now);
+    const inactiveDays = query.inactiveDays ?? DEFAULT_INACTIVE_DAYS;
+    const segment = segmentSql(query.segment ?? 'all', inactiveDays, now);
     if (segment) conditions.push(segment);
 
     const rows = await this.prisma.$queryRaw<CustomerRow[]>`
-      WITH per_user AS (${perCustomerSql(scope)})
+      WITH per_user AS (${perCustomerSql(scope, undefined, spendCurrency(money))})
       SELECT p.*, COUNT(*) OVER ()::int AS "total"
       FROM per_user p
       JOIN "User" u ON u.id = p."userId"
@@ -98,15 +130,32 @@ export class CustomersService {
       LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
     `;
 
+    // «Все точки» counts a regular over every store: one who went quiet at
+    // a store but orders at another is not inactive here, only at that
+    // store. Say how many there are and where, so the list is not read as
+    // missing them.
+    const activeElsewhere =
+      query.segment === 'inactive' && !query.storeId
+        ? await inactiveAtOneStoreOnly(this.prisma, scope, { lastOrderBefore: inactiveBefore(inactiveDays, now) })
+        : null;
+
     return {
       items: await this.summaries(scope, rows, now),
       total: num(rows[0]?.total),
       page,
       pageSize,
+      currency: money.currency,
+      currencies: money.currencies,
+      activeElsewhere,
     };
   }
 
-  async detail(scope: AnalyticsScope, userId: string, now = new Date()): Promise<CustomerDetailDto> {
+  async detail(
+    scope: AnalyticsScope,
+    userId: string,
+    now = new Date(),
+    money: CustomerMoney = NO_CURRENCY,
+  ): Promise<CustomerDetailDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, blockedAt: true },
@@ -115,16 +164,22 @@ export class CustomersService {
     // and nothing to confirm about them either.
     if (!user || user.blockedAt) throw new NotFoundException('Customer not found');
 
+    // With stores in several currencies, a store's spend is its orders in
+    // the store's own currency, shown in it; otherwise every order counts.
+    const storeSpend = spendCurrency(money) ? Prisma.sql`o."currency" = s."currency"` : Prisma.sql`TRUE`;
     const [rows, stores, recent, cancelled, favourites] = await Promise.all([
-      this.prisma.$queryRaw<CustomerRow[]>`${perCustomerSql(scope, userId)}`,
-      this.prisma.$queryRaw<Array<{ storeId: string; storeName: string; orders: number; totalCents: bigint }>>`
-        SELECT o."storeId" AS "storeId", s."name" AS "storeName",
-               COUNT(*)::int AS "orders", COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents"
+      this.prisma.$queryRaw<CustomerRow[]>`${perCustomerSql(scope, userId, spendCurrency(money))}`,
+      this.prisma.$queryRaw<
+        Array<{ storeId: string; storeName: string; currency: string; orders: number; totalCents: bigint }>
+      >`
+        SELECT o."storeId" AS "storeId", s."name" AS "storeName", s."currency"::text AS "currency",
+               COUNT(*)::int AS "orders",
+               COALESCE(SUM(${REVENUE}) FILTER (WHERE ${storeSpend}), 0)::bigint AS "totalCents"
         FROM "Order" o
         JOIN "Store" s ON s.id = o."storeId"
         ${whereAll([...scopeConditions(scope), COUNTED, Prisma.sql`o."userId" = ${userId}`])}
-        GROUP BY 1, 2
-        ORDER BY 3 DESC, 4 DESC
+        GROUP BY 1, 2, 3
+        ORDER BY 4 DESC, 5 DESC
       `,
       this.prisma.order.findMany({
         where: { ...orderWhere(scope), userId },
@@ -155,11 +210,13 @@ export class CustomersService {
 
     return {
       ...summary,
+      currency: money.currency,
       email: user.email,
       cancelledOrders: cancelled,
       stores: stores.map((s) => ({
         storeId: s.storeId,
         storeName: s.storeName,
+        currency: s.currency,
         orders: num(s.orders),
         totalCents: num(s.totalCents),
       })),
@@ -202,6 +259,7 @@ export class CustomersService {
     return rows.map((r) => {
       const orders = num(r.orders);
       const total = num(r.totalCents);
+      const moneyOrders = r.moneyOrders === undefined ? orders : num(r.moneyOrders);
       const span = r.lastOrderAt.getTime() - r.firstOrderAt.getTime();
       return {
         userId: r.userId,
@@ -209,7 +267,7 @@ export class CustomersService {
         phone: labels.get(r.userId)?.phone ?? null,
         orders,
         totalCents: total,
-        avgCheckCents: orders > 0 ? Math.round(total / orders) : 0,
+        avgCheckCents: moneyOrders > 0 ? Math.round(total / moneyOrders) : 0,
         firstOrderAt: r.firstOrderAt.toISOString(),
         lastOrderAt: r.lastOrderAt.toISOString(),
         avgDaysBetweenOrders: orders > 1 ? Math.round((span / DAY_MS / (orders - 1)) * 10) / 10 : null,

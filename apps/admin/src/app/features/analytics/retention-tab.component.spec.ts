@@ -51,9 +51,12 @@ describe('RetentionTabComponent', () => {
   let list: jest.Mock;
   let churn: jest.Mock;
 
-  async function render(features: PlanFeature[] = ['winBack', 'customers', 'campaigns', 'promo']) {
+  async function render(
+    features: PlanFeature[] = ['winBack', 'customers', 'campaigns', 'promo'],
+    stats: ChurnStats = CHURN,
+  ) {
     list = jest.fn().mockReturnValue(of({ items: [], total: 17, page: 1, pageSize: 1 }));
-    churn = jest.fn().mockReturnValue(of(CHURN));
+    churn = jest.fn().mockReturnValue(of(stats));
     TestBed.configureTestingModule({
       imports: [RetentionTabComponent],
       providers: [
@@ -89,6 +92,20 @@ describe('RetentionTabComponent', () => {
     });
 
   beforeEach(() => TestBed.resetTestingModule());
+
+  it('across the stores, says who left one store but orders at another, and picks that store on a click', async () => {
+    const fixture = await render(undefined, {
+      ...CHURN,
+      activeElsewhere: { count: 1, stores: [{ storeId: 's2', storeName: 'Балка', count: 1 }] },
+    });
+    const picked: string[] = [];
+    fixture.componentInstance.storePicked.subscribe((id) => picked.push(id));
+    const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="retention-active-elsewhere"]');
+
+    expect(text(note)).toContain('Ещё 1 чел. перестали ходить в одну из точек, но заказывают в другой');
+    (note?.querySelector('button') as HTMLButtonElement).click();
+    expect(picked).toEqual(['s2']);
+  });
 
   it('says who counts as inactive in plain words', async () => {
     const fixture = await render();

@@ -121,6 +121,44 @@ describe('ChurnWidgetComponent', () => {
     expect(text(el.querySelector('.churn-list'))).toContain('Ира');
   });
 
+  it('across the stores, counts who left one store but orders at another, linking to that store', async () => {
+    const fixture = await render({
+      period: { days: 30 },
+      stats: {
+        ...STATS,
+        activeElsewhere: {
+          count: 2,
+          stores: [
+            { storeId: 's1', storeName: 'Центр', count: 2 },
+            { storeId: 's2', storeName: 'Балка', count: 1 },
+          ],
+        },
+      },
+    });
+    const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="churn-active-elsewhere"]');
+
+    expect(text(note)).toContain('Ещё 2 чел. перестали ходить в одну из точек, но заказывают в другой');
+    const links = [...(note?.querySelectorAll('a') ?? [])];
+    expect(links.map(text)).toEqual(['Центр — 2', 'Балка — 1']);
+    expect(new URL((links[1] as HTMLAnchorElement).href).searchParams.get('storeId')).toBe('s2');
+  });
+
+  it('names the stores without links on BASIC, where the win-back tab is locked', async () => {
+    const fixture = await render({
+      features: [],
+      period: { days: 30 },
+      stats: {
+        ...STATS,
+        customers: null,
+        activeElsewhere: { count: 1, stores: [{ storeId: 's1', storeName: 'Центр', count: 1 }] },
+      },
+    });
+    const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="churn-active-elsewhere"]');
+
+    expect(text(note)).toContain('Центр — 1');
+    expect(note?.querySelector('a')).toBeNull();
+  });
+
   it('shows the PRO lock instead of the names on BASIC', async () => {
     const fixture = await render({ features: [], stats: { ...STATS, customers: null } });
     const el = fixture.nativeElement as HTMLElement;

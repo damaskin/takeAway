@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 
+import { inactiveAtOneStoreOnly } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
 import { addDays, type DateRange } from './analytics-range';
 import type { AnalyticsScope } from './analytics-scope';
@@ -611,6 +612,11 @@ export class AnalyticsService {
   /**
    * Customers lost during the range — see `retention.ts` for the rule — with
    * the same for the period before. `withList` names them (PRO).
+   *
+   * Across several stores a customer is lost only when they stopped ordering
+   * at all of them. `activeElsewhere` counts the regulars lost at one store
+   * in the range who still order at another — they show only when that store
+   * is picked — and says where; null for a single store.
    */
   async churn(
     scope: AnalyticsScope,
@@ -622,9 +628,11 @@ export class AnalyticsService {
   ): Promise<ChurnDto> {
     const currentBounds = churnBounds(range.start, range.end, window, now);
     const previousBounds = churnBounds(range.previous.start, range.previous.end, window, now);
-    const [currentRows, previousRows] = await Promise.all([
+    const acrossStores = scope.storeIds === null || scope.storeIds.length > 1;
+    const [currentRows, previousRows, activeElsewhere] = await Promise.all([
       this.lastOrders(scope, currentBounds),
       this.lastOrders(scope, previousBounds),
+      acrossStores ? inactiveAtOneStoreOnly(this.prisma, scope, currentBounds) : Promise.resolve(null),
     ]);
     const current = summarizeChurn(currentRows, currentBounds);
     const previous = summarizeChurn(previousRows, previousBounds);
@@ -659,6 +667,7 @@ export class AnalyticsService {
       previous: { count: previous.count, lostRevenueCents: previous.lostRevenueCents },
       countDeltaPercent: percentChange(previous.count, current.count),
       customers,
+      activeElsewhere,
     };
   }
 

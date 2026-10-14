@@ -11,8 +11,11 @@ import { CustomerDetailDto, CustomerPageDto, CustomerScopeQueryDto, CustomersQue
 
 /**
  * The business's customers and each one's history with it — a PRO feature.
- * Spend is revenue as everywhere in analytics (sales less discounts), in the
- * brand's currency when its stores price in several.
+ * People are counted over every store of the brand, whatever it prices in —
+ * the segments mean the same people as the campaign audiences. Spend is
+ * revenue as everywhere in analytics (sales less discounts), in one
+ * currency: when the stores price in several, the one asked for (`currency`)
+ * or the brand's.
  */
 @ApiTags('customers')
 @ApiBearerAuth()
@@ -28,8 +31,12 @@ export class CustomersController {
   @Get()
   @ApiOkResponse({ type: CustomerPageDto })
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: CustomersQueryDto): Promise<CustomerPageDto> {
-    const { scope } = await this.scopes.money(user, { brandId: query.brandId, storeId: query.storeId });
-    return this.customers.list(scope, query);
+    const { scope, currency, currencies } = await this.scopes.people(user, {
+      brandId: query.brandId,
+      storeId: query.storeId,
+      currency: query.currency,
+    });
+    return this.customers.list(scope, query, new Date(), { currency, currencies });
   }
 
   @Get(':id')
@@ -39,7 +46,11 @@ export class CustomersController {
     @Param('id') id: string,
     @Query() query: CustomerScopeQueryDto,
   ): Promise<CustomerDetailDto> {
-    const { scope } = await this.scopes.money(user, { brandId: query.brandId, storeId: query.storeId });
-    return this.customers.detail(scope, id);
+    const { scope, currency, currencies } = await this.scopes.people(user, {
+      brandId: query.brandId,
+      storeId: query.storeId,
+      currency: query.currency,
+    });
+    return this.customers.detail(scope, id, new Date(), { currency, currencies });
   }
 }
