@@ -2,8 +2,13 @@
  * Auth transport types shared between apps/api, web, tma, admin.
  */
 
+/**
+ * `POST /auth/password/login`. `identifier` is an email or a staff login —
+ * one with an '@' is an email. Older clients send `email` instead; the API
+ * still takes it.
+ */
 export interface PasswordLoginRequest {
-  email: string;
+  identifier: string;
   password: string;
 }
 
@@ -50,6 +55,8 @@ export interface AuthUser {
   id: string;
   phone: string | null;
   email: string | null;
+  /** Staff sign-in name of an account without an email; null (or absent, from an older API) otherwise. */
+  login?: string | null;
   name: string | null;
   locale: 'EN' | 'RU';
   currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
