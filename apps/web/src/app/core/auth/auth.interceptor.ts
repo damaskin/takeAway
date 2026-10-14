@@ -44,7 +44,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       // try to refresh the refresh call itself (would recurse).
       if (err.status !== 401) return throwError(() => err);
       if (!store.session()) return throwError(() => err);
-      if (req.url.includes('/auth/refresh') || req.url.includes('/auth/otp/')) {
+      if (req.url.includes('/auth/refresh')) {
         store.clear();
         return throwError(() => err);
       }

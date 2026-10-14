@@ -403,6 +403,33 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
+      // Sign-in with a one-time code mailed to the customer (shown only when the server has SMTP).
+      email: {
+        open: 'Sign in with email',
+        emailLabel: 'Email',
+        emailPlaceholder: 'you@example.com',
+        getCode: 'Get a code',
+        sending: 'Sending…',
+        sentTo: 'We sent a code to {{email}}. It is valid for 10 minutes.',
+        alreadySent: 'A code was already sent to {{email}} — check your inbox.',
+        codeLabel: 'Code from the email',
+        signIn: 'Sign in',
+        checking: 'Checking…',
+        resend: 'Send the code again',
+        resendIn: 'Send again in {{seconds}} s',
+        changeEmail: 'Change email',
+        errors: {
+          invalidEmail: 'Check the address — it needs an @ and a domain, like ivan@mail.ru.',
+          invalid: 'Wrong code. Attempts left: {{left}}.',
+          expired: 'The code has expired or was already used. Ask for a new one.',
+          tooManyAttempts: 'Too many wrong attempts — this code no longer works. Ask for a new one.',
+          limit: 'Too many codes were sent to this address. Try again in {{minutes}} min.',
+          notSent: 'We could not send the email. Try again in a few minutes.',
+          unavailable: 'Sign-in with email is unavailable right now. Choose another way.',
+          staffAccount: 'This address belongs to a staff account. Sign in with your password in the business cabinet.',
+          tooManyRequests: 'Too many attempts in a row. Wait a minute and try again.',
+        },
+      },
       // "By continuing you agree to our <Terms of Service> and <Privacy Policy>."
       // Split so each document can be a link.
       agreementLead: 'By continuing you agree to our',
@@ -532,6 +559,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         unlink: 'Disconnect',
         unlinkConfirm: 'Disconnect {{provider}}? You will no longer be able to sign in with it.',
         switched: 'That account already had orders, so you are now in that profile.',
+        email: 'Email',
+        emailHint: 'Sign-in codes go to {{email}}',
       },
       personalInfo: {
         title: 'Personal info',

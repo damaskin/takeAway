@@ -22,7 +22,8 @@ const LABELS: Record<Provider, string> = { telegram: 'Telegram', google: 'Google
  * Profile → Sign-in methods. Shows which of Telegram, Google and Apple lead
  * into this profile and offers the same provider buttons as the login page
  * for the rest, so a customer who started in Telegram keeps one order
- * history when they later sign in with Google or Apple.
+ * history when they later sign in with Google or Apple. A proven email —
+ * the address a sign-in code goes to — is listed too.
  */
 @Component({
   selector: 'app-profile-sign-in-methods',
@@ -129,6 +130,20 @@ const LABELS: Record<Provider, string> = { telegram: 'Telegram', google: 'Google
                 }
               </div>
             }
+            @if (m.email) {
+              <div class="flex items-center" style="gap: 12px; padding: 12px 16px; border-radius: 12px">
+                <span class="flex-1 flex flex-col" style="gap: 2px; min-width: 0">
+                  <span
+                    style="font-family: var(--font-sans); font-size: 15px; font-weight: 500; color: var(--color-text-primary)"
+                    >{{ 'web.profile.signInMethods.email' | translate }}</span
+                  >
+                  <span
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-caramel); overflow-wrap: anywhere"
+                    >{{ 'web.profile.signInMethods.emailHint' | translate: { email: m.email } }}</span
+                  >
+                </span>
+              </div>
+            }
           </div>
         } @else if (!error()) {
           <p style="font-family: var(--font-sans); color: var(--color-text-secondary)">
@@ -174,7 +189,7 @@ export class ProfileSignInMethodsPage {
   }
 
   linkedCount(m: SignInMethods): number {
-    return [m.telegram, m.google, m.apple].filter(Boolean).length;
+    return [m.telegram, m.google, m.apple, m.email].filter(Boolean).length;
   }
 
   uiLocale(): string {
