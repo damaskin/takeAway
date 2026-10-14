@@ -111,6 +111,11 @@ type StockUntil = 'manual' | 'endOfDay';
     }
 
     <app-onboarding-return step="menu" [padded]="true" />
+    @if (withoutPhotoTotal() > 0) {
+      <p class="no-photo-summary" role="note" data-testid="menu-no-photo-summary">
+        {{ 'admin.menu.noPhoto.summary' | translate: { count: withoutPhotoTotal() } }}
+      </p>
+    }
     <section class="menu-shell" [class.rail-folded]="railFolded()">
       @if (!railFolded()) {
         <app-menu-categories
@@ -163,6 +168,18 @@ type StockUntil = 'manual' | 'endOfDay';
             <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-tertiary)">{{
               'admin.menu.itemsCount' | translate: { count: products().length }
             }}</span>
+            @if (withoutPhotoHere() > 0) {
+              <button
+                type="button"
+                class="no-photo-filter"
+                [class.no-photo-filter-on]="noPhotoOnly()"
+                [attr.aria-pressed]="noPhotoOnly()"
+                (click)="noPhotoOnly.set(!noPhotoOnly())"
+                data-testid="menu-no-photo-filter"
+              >
+                {{ 'admin.menu.noPhoto.filter' | translate: { count: withoutPhotoHere() } }}
+              </button>
+            }
           </div>
           @if (canManageStock() && stores().length > 0) {
             <div class="flex items-center flex-wrap" style="gap: 8px 16px">
@@ -230,7 +247,7 @@ type StockUntil = 'manual' | 'endOfDay';
                 </tr>
               </thead>
               <tbody>
-                @for (p of products(); track p.id; let first = $first, last = $last, i = $index) {
+                @for (p of shownProducts(); track p.id; let first = $first, last = $last, i = $index) {
                   <tr>
                     <td class="col-photo">
                       <div class="thumb">
@@ -241,6 +258,14 @@ type StockUntil = 'manual' | 'endOfDay';
                     </td>
                     <td class="col-name">
                       {{ p.name }}
+                      @if (lacksPhoto(p)) {
+                        <span
+                          class="no-photo-badge"
+                          [title]="'admin.menu.noPhoto.title' | translate"
+                          data-testid="product-no-photo"
+                          >{{ 'admin.menu.noPhoto.badge' | translate }}</span
+                        >
+                      }
                       <div class="inline-meta">
                         {{ price(p.basePriceCents) }} · {{ minutes(p.prepTimeSeconds) }}
                         {{ 'common.units.min' | translate }}
@@ -296,7 +321,7 @@ type StockUntil = 'manual' | 'endOfDay';
                       <button
                         type="button"
                         (click)="moveProduct(i, -1)"
-                        [disabled]="first || reordering()"
+                        [disabled]="first || reordering() || noPhotoOnly()"
                         [title]="'admin.menu.moveUp' | translate"
                         [attr.aria-label]="'admin.menu.moveUp' | translate"
                         class="arrow disabled:opacity-30"
@@ -306,7 +331,7 @@ type StockUntil = 'manual' | 'endOfDay';
                       <button
                         type="button"
                         (click)="moveProduct(i, 1)"
-                        [disabled]="last || reordering()"
+                        [disabled]="last || reordering() || noPhotoOnly()"
                         [title]="'admin.menu.moveDown' | translate"
                         [attr.aria-label]="'admin.menu.moveDown' | translate"
                         class="arrow disabled:opacity-30"
@@ -386,6 +411,42 @@ type StockUntil = 'manual' | 'endOfDay';
         .rail-toggle-label {
           display: none;
         }
+      }
+      .no-photo-summary {
+        margin: clamp(16px, 3vw, 24px) clamp(16px, 3vw, 24px) 0;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: var(--color-cream);
+        box-shadow: inset 3px 0 0 var(--color-amber);
+        font: 13px var(--font-sans);
+        line-height: 1.45;
+        color: var(--color-text-primary);
+      }
+      .no-photo-filter {
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 9999px;
+        border: 1px solid var(--color-border-light);
+        background: var(--color-foam);
+        font: 600 12px var(--font-sans);
+        color: var(--color-text-secondary);
+      }
+      .no-photo-filter-on {
+        background: var(--color-espresso);
+        border-color: transparent;
+        color: white;
+      }
+      .no-photo-badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 9999px;
+        background: #e8a33d26;
+        color: #8a5a12;
+        font-size: 11px;
+        font-weight: 600;
+        vertical-align: middle;
+        white-space: nowrap;
       }
       .addons-note {
         margin: 0;
@@ -586,6 +647,25 @@ export class MenuPage {
 
   readonly selectedCategory = computed(() => this.categories().find((c) => c.id === this.selectedCategoryId()) ?? null);
 
+  /**
+   * Products without a photo. The app shows them as a text row with no
+   * picture (App Review refused placeholder art), the website and Telegram
+   * with an illustration — and a product with a photo sells better, so the
+   * table marks them and can show only them. Add-ons-only categories are
+   * never shown to customers as products and are left out.
+   */
+  readonly noPhotoOnly = signal(false);
+  readonly withoutPhotoTotal = computed(() =>
+    this.categories()
+      .filter((c) => !c.addOnsOnly)
+      .reduce((sum, c) => sum + (c.productsWithoutPhoto ?? 0), 0),
+  );
+  readonly withoutPhotoHere = computed(() => this.products().filter((p) => this.lacksPhoto(p)).length);
+  readonly shownProducts = computed(() => {
+    const list = this.products();
+    return this.noPhotoOnly() ? list.filter((p) => this.lacksPhoto(p)) : list;
+  });
+
   /** The category rail folded away, to give the table the whole width; remembered per browser. */
   readonly railFolded = signal(readRailFolded());
   readonly smallLabelStyle = 'font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)';
@@ -648,7 +728,13 @@ export class MenuPage {
   selectCategory(id: string): void {
     this.selectedCategoryId.set(id);
     this.tableError.set(null);
+    this.noPhotoOnly.set(false);
     this.loadProducts(id);
+  }
+
+  /** No photo in a category customers order from. */
+  lacksPhoto(product: ProductAdminDto): boolean {
+    return product.imageUrls.length === 0 && !this.selectedCategory()?.addOnsOnly;
   }
 
   reloadCategories(): void {

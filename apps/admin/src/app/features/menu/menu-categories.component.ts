@@ -93,6 +93,14 @@ import { swapped } from './menu-order';
                     >{{ 'admin.menu.category.addOnsOnlyBadge' | translate }}</span
                   >
                 }
+                @if (cat.productsWithoutPhoto && !cat.addOnsOnly) {
+                  <span
+                    [style]="noPhotoBadgeStyle"
+                    [title]="'admin.menu.noPhoto.title' | translate"
+                    data-testid="category-no-photo"
+                    >{{ 'admin.menu.noPhoto.inCategory' | translate: { count: cat.productsWithoutPhoto } }}</span
+                  >
+                }
               </span>
             </span>
             @if (cat._count) {
@@ -227,6 +235,8 @@ export class MenuCategoriesComponent {
     'font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.5px';
 
   readonly kindBadgeStyle = `${this.badgeStyle}; gap: 3px`;
+  /** Products without a photo — a text row in the app; amber, like the mark in the products table. */
+  readonly noPhotoBadgeStyle = `${this.badgeStyle}; color: #8a5a12`;
 
   /** The kind's product placeholder doubles as its icon. */
   kindIcon(kind: CategoryKind): string {

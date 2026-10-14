@@ -246,6 +246,8 @@ export interface CategoryAdminDto {
   /** Preparation time a new product of the category starts with, seconds. */
   defaultPrepTimeSeconds?: number | null;
   _count?: { products: number; options?: number };
+  /** Its products with no photo — a text row with no picture in the app. Missing from older APIs. */
+  productsWithoutPhoto?: number;
 }
 
 export interface ProductAdminDto {

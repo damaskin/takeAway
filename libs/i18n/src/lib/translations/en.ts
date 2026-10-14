@@ -1041,7 +1041,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Up to {{max}} photos: JPEG, PNG, WebP or AVIF, {{maxMb}} MB each at most. Square works best ({{aspect}}, from {{width}}×{{height}} pixels), or 3:4 with the product in the middle. The first photo is the main one, shown in the menu.',
       productStyle:
         'How to shoot: the product cut out on white, a 3/4 angle, soft light, no third-party logos. Hot drinks in a paper cup, cold ones in a clear cup.',
-      placeholder: 'Until there is a photo, customers see this picture',
+      placeholder:
+        'Until there is a photo, the iOS and Android app shows the product as a text row with no picture (App Store rules), and the website and Telegram show this illustration',
+      photoSellsBetter: 'Products with a photo sell better — add at least one.',
       errors: {
         type: 'This file will not do: it has to be a JPG, PNG or WebP picture.',
         size: 'The file is {{size}} MB and the limit is {{maxMb}} MB. Make the picture smaller and upload it again.',
@@ -1562,6 +1564,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       moveDown: 'Move down',
       showCategories: 'Categories',
       hideCategories: 'Fold categories',
+      noPhoto: {
+        badge: 'no photo',
+        title:
+          'No photo: the app shows the product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+        summary:
+          'Products without a photo in the menu: {{count}}. The iOS and Android app shows them as text rows with no picture (App Store rules), the website and Telegram with an illustration. Products with a photo sell better.',
+        filter: 'Only without a photo: {{count}}',
+        inCategory: 'no photo: {{count}}',
+      },
       headers: {
         photo: 'Photo',
         name: 'Name',
@@ -1721,7 +1732,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         allergens: 'Allergens',
         allergensHint: 'Separated by commas, e.g. milk, nuts, gluten',
-        photosAfterCreate: 'Photos can be added right after the product is created.',
+        photosAfterCreate: 'Products with a photo sell better — add one right after creating the product.',
         stores: 'Sold in stores',
         storesHint: 'Same price in every store. New stores of the brand get the product automatically.',
         storesNone: 'No store is ticked — nobody will see the product.',

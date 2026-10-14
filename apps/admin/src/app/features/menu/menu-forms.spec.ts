@@ -209,10 +209,14 @@ describe('ProductFormComponent', () => {
       expect(foodEl.querySelector('[data-testid="product-diet-tags"]')?.textContent).not.toContain('Без кофеина');
       expect(foodEl.querySelector('[data-testid="product-diet-tags"]')?.textContent).toContain('Вегетарианское');
       expect(foodEl.querySelector('[data-testid="product-allergens"]')?.textContent).toContain('Кунжут');
-      // The placeholder customers see until there is a photo.
+      // The illustration the website and Telegram show until there is a
+      // photo; the app shows a text row, and the hint says both.
       expect(foodEl.querySelector('[data-testid="product-placeholder"] img')?.getAttribute('src')).toBe(
         '/ui-kit/product-placeholders/food.svg',
       );
+      const hint = foodEl.querySelector('[data-testid="product-placeholder"]')?.textContent ?? '';
+      expect(hint).toContain('строкой без картинки');
+      expect(hint).toContain('продаются лучше');
     });
 
     it("starts a new shawarma at the category's 15 minutes, with the category options unless unticked", () => {
