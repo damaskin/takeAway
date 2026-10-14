@@ -306,6 +306,7 @@
   "personalPhone": "Телефон",
   "personalBirthday": "Дата рождения",
   "personalSaved": "Сохранено",
+  "emailIsSignInMethod": "Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».",
   "nameRequired": "Укажите имя",
   "emailInvalid": "Проверьте email",
   "phoneInvalid": "В международном формате, например +37377712345",

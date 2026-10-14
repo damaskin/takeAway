@@ -1928,6 +1928,12 @@ abstract class AppLocalizations {
   /// **'Saved'**
   String get personalSaved;
 
+  /// No description provided for @emailIsSignInMethod.
+  ///
+  /// In en, this message translates to:
+  /// **'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.'**
+  String get emailIsSignInMethod;
+
   /// No description provided for @nameRequired.
   ///
   /// In en, this message translates to:

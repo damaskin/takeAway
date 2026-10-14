@@ -1025,6 +1025,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get personalSaved => 'Saved';
 
   @override
+  String get emailIsSignInMethod =>
+      'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.';
+
+  @override
   String get nameRequired => 'Enter your name';
 
   @override

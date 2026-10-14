@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_error.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shared/email_sign_in_errors.dart';
 import '../../shared/error_message.dart';
 import 'auth_service.dart';
 
@@ -14,25 +15,6 @@ import 'auth_service.dart';
 const emailCodeResendSeconds = 60;
 
 final _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-
-/// Words for a refusal of the email sign-in routes, by the stable `code`
-/// the API sends; null when the error carries none of them.
-String? emailSignInErrorText(AppLocalizations l10n, ApiError error) {
-  int? number(String key) => switch (error.details[key]) {
-    final num n => n.toInt(),
-    _ => null,
-  };
-  return switch (error.code) {
-    'EMAIL_CODE_INVALID' => l10n.emailCodeInvalid(number('attemptsLeft') ?? 0),
-    'EMAIL_CODE_EXPIRED' => l10n.emailCodeExpired,
-    'EMAIL_CODE_TOO_MANY_ATTEMPTS' => l10n.emailCodeTooManyAttempts,
-    'EMAIL_CODE_LIMIT' => l10n.emailCodeLimit(((number('retryAfterSeconds') ?? 3600) / 60).ceil().clamp(1, 60)),
-    'EMAIL_CODE_NOT_SENT' => l10n.emailCodeNotSent,
-    'EMAIL_LOGIN_UNAVAILABLE' => l10n.emailSignInUnavailable,
-    'EMAIL_LOGIN_STAFF_ACCOUNT' => l10n.emailSignInStaffAccount,
-    _ => error.kind == ApiErrorKind.rateLimited ? l10n.emailSignInTooManyRequests : null,
-  };
-}
 
 enum _Step { email, code }
 
@@ -191,7 +173,11 @@ class _EmailSignInFormState extends ConsumerState<EmailSignInForm> {
     final l10n = AppLocalizations.of(context);
     final apiError = ApiError.from(error);
     if (apiError.isNetwork) return l10n.networkError;
-    return emailSignInErrorText(l10n, apiError) ?? errorMessage(context, error);
+    final worded = emailSignInErrorText(l10n, apiError);
+    if (worded != null) return worded;
+    // The per-client throttle answers 429 without a code.
+    if (apiError.kind == ApiErrorKind.rateLimited) return l10n.emailSignInTooManyRequests;
+    return errorMessage(context, error);
   }
 
   @override

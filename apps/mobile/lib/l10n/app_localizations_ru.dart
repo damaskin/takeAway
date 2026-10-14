@@ -1040,6 +1040,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get personalSaved => 'Сохранено';
 
   @override
+  String get emailIsSignInMethod =>
+      'Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».';
+
+  @override
   String get nameRequired => 'Укажите имя';
 
   @override
