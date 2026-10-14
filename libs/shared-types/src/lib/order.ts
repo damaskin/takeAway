@@ -2,7 +2,7 @@
  * Order / Cart / Payment transport types shared across apps.
  */
 
-import type { VariationType } from './catalog';
+import type { AsapBlockedReason, VariationType } from './catalog';
 import type { Currency } from './shared-types';
 
 export type FulfillmentTypeEnum = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
@@ -284,6 +284,8 @@ export type PromoErrorCode =
 export type CheckoutErrorCode =
   | 'CART_EMPTY'
   | 'STORE_NOT_TAKING_ORDERS'
+  /** An ASAP order while the store does not take one now; `reason` and `opensAt` say why. Pre-orders still work. */
+  | 'ASAP_UNAVAILABLE'
   | 'STORE_CLOSED_AT_TIME'
   | 'PICKUP_SLOT_FULL'
   | 'PICKUP_TIME_OUT_OF_RANGE'
@@ -324,6 +326,10 @@ export interface CheckoutErrorBody {
   /** PICKUP_TIME_OUT_OF_RANGE: how far ahead a pickup may be booked. */
   minMinutes?: number;
   maxHours?: number;
+  /** ASAP_UNAVAILABLE: why the store takes no ASAP order now (the store's `asapBlockedReason`). */
+  reason?: AsapBlockedReason | null;
+  /** ASAP_UNAVAILABLE: ISO UTC start of the next working-hours window, when outside them. */
+  opensAt?: string | null;
 }
 
 export interface OrderStatusEvent {
