@@ -181,14 +181,18 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     final menu = menuStoreId == null ? null : ref.watch(menuProvider(menuStoreId)).valueOrNull?.value;
     final kind = preview == null ? null : productKindOf(preview, menu: menu);
     final summary = optionsSummary(product, _variations.values, _modifiers, onlyChoices: true);
+    // No photo, no picture: the screen starts with the name under a plain
+    // bar instead of a stand-in image.
+    final photo = preview?.imageUrl;
+    final hasPhoto = ProductImage.isUsable(photo);
 
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: MediaQuery.sizeOf(context).width * 0.92,
+            expandedHeight: hasPhoto ? MediaQuery.sizeOf(context).width * 0.92 : null,
             pinned: true,
-            stretch: true,
+            stretch: hasPhoto,
             backgroundColor: brand.cream,
             leading: Padding(
               padding: const EdgeInsets.all(8),
@@ -202,21 +206,26 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                 onPressed: () => context.pop(),
               ),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Hero(
-                tag: productHeroTag(widget.productId),
-                child: ProductImage(url: preview?.imageUrl, kind: kind, seed: widget.productId),
-              ),
-            ),
+            flexibleSpace: hasPhoto
+                ? FlexibleSpaceBar(
+                    background: Hero(
+                      tag: productHeroTag(widget.productId),
+                      child: ProductImage(url: photo, seed: widget.productId),
+                    ),
+                  )
+                : null,
           ),
           SliverToBoxAdapter(
             child: Container(
-              decoration: BoxDecoration(
-                color: brand.cream,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              transform: Matrix4.translationValues(0, -24, 0),
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              // Over a photo the details ride up onto it on a rounded sheet.
+              decoration: hasPhoto
+                  ? BoxDecoration(
+                      color: brand.cream,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                    )
+                  : null,
+              transform: hasPhoto ? Matrix4.translationValues(0, -24, 0) : null,
+              padding: EdgeInsets.fromLTRB(20, hasPhoto ? 24 : 8, 20, 0),
               child: async.hasError && preview == null
                   ? ErrorState(error: async.error!, onRetry: () => ref.invalidate(storeProductProvider(key)))
                   : _Details(

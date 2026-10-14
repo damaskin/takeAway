@@ -29,7 +29,7 @@ class CartLine extends ConsumerWidget {
     final brand = context.brand;
     final detail = ref.watch(productDetailProvider(item.productId)).valueOrNull;
     final options = optionsSummary(detail, item.variationIds, item.modifiers);
-    final visual = productVisualFor(ref, storeId, item.productId, detail: detail);
+    final photo = productPhotoFor(ref, storeId, item.productId, detail: detail);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -41,17 +41,14 @@ class CartLine extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 72,
-            height: 72,
-            child: ProductImage(
-              url: visual.imageUrl,
-              kind: visual.kind,
-              seed: item.productId,
-              borderRadius: BorderRadius.circular(16),
+          // A line without a photo is text only, from the card's edge.
+          if (photo != null) ...[
+            SizedBox.square(
+              dimension: 72,
+              child: ProductImage(url: photo, seed: item.productId, borderRadius: BorderRadius.circular(16)),
             ),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

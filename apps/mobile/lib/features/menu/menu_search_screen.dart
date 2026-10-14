@@ -6,7 +6,6 @@ import '../../app/router.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
-import '../../shared/product_kinds.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/state_views.dart';
@@ -90,13 +89,17 @@ class _MenuSearchScreenState extends State<MenuSearchScreen> {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final (product, category) = results[index];
+                // The photo, when there is one, sits at the end of the row,
+                // so names line up whether a result has one or not.
+                final photo = ProductImage.isUsable(product.imageUrl);
                 return Pressable(
                   onTap: () {
                     Navigator.of(context).pop();
                     context.push(Routes.product(product.id), extra: product);
                   },
                   child: Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                    constraints: const BoxConstraints(minHeight: 84),
                     decoration: BoxDecoration(
                       color: brand.foam,
                       borderRadius: BorderRadius.circular(Radii.card),
@@ -104,35 +107,43 @@ class _MenuSearchScreenState extends State<MenuSearchScreen> {
                     ),
                     child: Row(
                       children: [
-                        SizedBox(
-                          width: 64,
-                          height: 64,
-                          child: ProductImage(
-                            url: product.imageUrl,
-                            kind: productKindOf(product, categoryKind: category.kind),
-                            seed: product.id,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(product.name, style: context.text.titleSmall, maxLines: 2),
+                              Text(
+                                product.name,
+                                style: context.text.titleSmall,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                               const SizedBox(height: 2),
                               Text(category.name, style: context.text.bodySmall),
+                              const SizedBox(height: 4),
+                              Text(
+                                product.onStopList
+                                    ? l10n.soldOut
+                                    : context.money(product.basePriceCents, widget.store.currency),
+                                style: context.text.titleSmall?.copyWith(
+                                  color: product.onStopList ? brand.textTertiary : brand.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        Text(
-                          product.onStopList
-                              ? l10n.soldOut
-                              : context.money(product.basePriceCents, widget.store.currency),
-                          style: context.text.titleSmall?.copyWith(
-                            color: product.onStopList ? brand.textTertiary : brand.textPrimary,
+                        if (photo) ...[
+                          const SizedBox(width: 12),
+                          SizedBox.square(
+                            dimension: 64,
+                            child: ProductImage(
+                              url: product.imageUrl,
+                              seed: product.id,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

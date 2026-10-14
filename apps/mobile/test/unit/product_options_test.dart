@@ -157,8 +157,6 @@ void main() {
       expect(productKindOf(wrap, categoryKind: 'BAKERY'), ProductKind.bakery);
       expect(productKindOf(detail(kind: 'HOT_DRINKS'), categoryKind: 'FOOD'), ProductKind.hotDrinks);
       expect(productKindOf(m.allProducts.last, menu: m), isNull, reason: 'an API without kinds');
-      expect(ProductKind.food.placeholderAsset, 'assets/product-placeholders/food.svg');
-      expect(ProductKind.coldDrinks.placeholderAsset, 'assets/product-placeholders/cold-drink.svg');
     });
   });
 
@@ -211,6 +209,34 @@ void main() {
         'bun',
       ]);
       expect(foodSuggestions(m).first.kind, ProductKind.bakery);
+    });
+
+    test('suggests only products with a photo once any has one', () {
+      final pictured = menu([
+        ('cat_coffee', 'HOT_DRINKS', [p('latte', category: 'cat_coffee')]),
+        (
+          'cat_bakery',
+          'BAKERY',
+          [
+            p('croissant', category: 'cat_bakery'),
+            {
+              ...p('muffin', category: 'cat_bakery'),
+              'imageUrls': ['https://cdn.takeaway.md/products/muffin.jpg'],
+            },
+          ],
+        ),
+        (
+          'cat_food',
+          'FOOD',
+          [
+            {
+              ...p('wrap', category: 'cat_food'),
+              'imageUrls': ['https://cdn.takeaway.md/products/wrap.jpg'],
+            },
+          ],
+        ),
+      ]);
+      expect(foodSuggestions(pictured).map((s) => s.product.id), ['muffin', 'wrap']);
     });
 
     test('wants food only for a cart with a drink and nothing to eat', () {

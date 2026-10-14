@@ -99,7 +99,10 @@ void main() {
   });
 
   Finder addButtonOf(String product) => find.descendant(
-    of: find.ancestor(of: find.text(product), matching: find.byType(ProductCard)),
+    of: find.ancestor(
+      of: find.text(product),
+      matching: find.byWidgetPredicate((w) => w is ProductCard || w is ProductRow),
+    ),
     matching: find.byIcon(Icons.add_rounded),
   );
 
@@ -146,6 +149,7 @@ void main() {
     expect(find.text('Точка закрыта'), findsOneWidget);
     expect(find.text('Латте'), findsNothing, reason: 'nothing to browse that cannot be ordered');
     expect(find.byType(ProductCard), findsNothing);
+    expect(find.byType(ProductRow), findsNothing);
     expect(find.byType(CartBar), findsNothing);
     expect(find.byType(EtaChip), findsNothing, reason: 'no ETA promised for a closed store');
     expect(find.text('Закрыто'), findsOneWidget);

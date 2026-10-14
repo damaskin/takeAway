@@ -1,6 +1,7 @@
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../shared/product_kinds.dart';
+import '../../shared/widgets/product_image.dart';
 
 /// A product offered next to what the customer has chosen.
 typedef Suggestion = ({Product product, ProductKind kind});
@@ -9,6 +10,10 @@ typedef Suggestion = ({Product product, ProductKind kind});
 /// first (it goes with coffee), then food, each in menu order. Nothing sold
 /// out, nothing in [exclude]. Add-ons-only categories never reach the app —
 /// the API leaves them out of the menu.
+///
+/// Only products with a photo when any has one: a text card next to photo
+/// cards reads as a picture that failed to load. A menu with no photos at
+/// all still gets text cards.
 List<Suggestion> foodSuggestions(Menu menu, {int limit = 6, Set<String> exclude = const {}}) {
   final bakery = <Suggestion>[];
   final food = <Suggestion>[];
@@ -20,7 +25,9 @@ List<Suggestion> foodSuggestions(Menu menu, {int limit = 6, Set<String> exclude 
       if (kind == ProductKind.food) food.add((product: product, kind: ProductKind.food));
     }
   }
-  return [...bakery, ...food].take(limit).toList();
+  final all = [...bakery, ...food];
+  final pictured = all.where((s) => ProductImage.isUsable(s.product.imageUrl)).toList();
+  return (pictured.isEmpty ? all : pictured).take(limit).toList();
 }
 
 /// Whether [cart] holds a drink and nothing to eat yet, going by the kinds

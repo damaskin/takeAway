@@ -64,9 +64,16 @@ class UpsellRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
     // Room for the photo, two lines of name at the customer's text size and
-    // the price row with its 44-point «+».
-    final height = _imageHeight + 8 + MediaQuery.textScalerOf(context).scale(38) + 50;
+    // the price row with its 44-point «+». A row with no photos at all is
+    // text cards only: the name and, when there is one, a two-line
+    // description instead of the photo.
+    final anyPhoto = items.any((s) => ProductImage.isUsable(s.product.imageUrl));
+    final anyDescription = items.any((s) => (s.product.description?.trim() ?? '').isNotEmpty);
+    final height = anyPhoto
+        ? _imageHeight + 8 + scaler.scale(38) + 50
+        : 12 + scaler.scale(38) + (anyDescription ? 4 + scaler.scale(32) : 0) + 50;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -141,6 +148,11 @@ class _UpsellCardState extends ConsumerState<_UpsellCard> {
     final brand = context.brand;
     final l10n = AppLocalizations.of(context);
     final product = _product;
+    // Without a photo the card is text only: the name, then as much of the
+    // description as the card has room for.
+    final photo = ProductImage.isUsable(product.imageUrl);
+    final description = photo ? '' : product.description?.trim() ?? '';
+    final descriptionStyle = context.text.bodySmall?.copyWith(color: brand.textSecondary);
 
     return Pressable(
       onTap: _open,
@@ -156,13 +168,14 @@ class _UpsellCardState extends ConsumerState<_UpsellCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: UpsellRow._imageHeight,
-              child: ProductImage(url: product.imageUrl, kind: widget.suggestion.kind, seed: product.id),
-            ),
+            if (photo)
+              SizedBox(
+                height: UpsellRow._imageHeight,
+                child: ProductImage(url: product.imageUrl, seed: product.id),
+              ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 2, 2),
+                padding: EdgeInsets.fromLTRB(10, photo ? 8 : 12, 2, 2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -172,7 +185,29 @@ class _UpsellCardState extends ConsumerState<_UpsellCard> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const Spacer(),
+                    if (description.isEmpty)
+                      const Spacer()
+                    else
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 4, right: 8),
+                          child: LayoutBuilder(
+                            builder: (context, box) {
+                              final line = MediaQuery.textScalerOf(
+                                context,
+                              ).scale((descriptionStyle?.fontSize ?? 12) * (descriptionStyle?.height ?? 1.35));
+                              final lines = (box.maxHeight / line).floor();
+                              if (lines < 1) return const SizedBox.shrink();
+                              return Text(
+                                description,
+                                style: descriptionStyle,
+                                maxLines: lines,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     Row(
                       children: [
                         Expanded(

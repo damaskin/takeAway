@@ -97,8 +97,9 @@ void main() {
     // open (a shift running) — a closed store shows no menu.
     await tapWhenVisible(tester, find.text(_storeName));
     await tapWhenVisible(tester, find.textContaining(RegExp('Order here|Заказать здесь')));
-    if (find.byType(ProductCard).evaluate().isEmpty) container.read(routerProvider).go(Routes.menu);
-    await waitFor(tester, find.byType(ProductCard));
+    final menuItem = find.byWidgetPredicate((w) => w is ProductCard || w is ProductRow);
+    if (menuItem.evaluate().isEmpty) container.read(routerProvider).go(Routes.menu);
+    await waitFor(tester, menuItem);
     await pumpFor(tester, const Duration(seconds: 2));
     await tester.drag(find.byType(Scrollable).first, Offset(0, -_menuScroll.toDouble()));
     await shot(tester, '03_menu');
