@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AnnouncementsModule } from './announcements/announcements.module';
 import { AdminCatalogModule } from './admin/catalog/admin-catalog.module';
 import { AdminRidersModule } from './admin/riders/admin-riders.module';
 import { AdminStaffModule } from './admin/staff/admin-staff.module';
@@ -77,6 +78,7 @@ import { UsersModule } from './users/users.module';
     ReferralsModule,
     CampaignsModule,
     InboxModule,
+    AnnouncementsModule,
     AnalyticsModule,
     SettlementsModule,
     CustomersModule,
