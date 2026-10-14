@@ -56,7 +56,10 @@ function harness(seed: Row[]) {
     device: { create: jest.fn(async () => ({ id: 'device-1' })) },
   };
   const tokens = { issue: jest.fn(async () => ({ accessToken: 'a', refreshToken: 'r' })) };
-  const passwords = { compare: jest.fn(async (plain: string) => plain === 'right-password') };
+  const passwords = {
+    compare: jest.fn(async (plain: string) => plain === 'right-password'),
+    compareWithoutAccount: jest.fn(async () => undefined),
+  };
   const auth = new AuthService(
     prisma as unknown as PrismaService,
     {} as UsersService,
@@ -105,6 +108,14 @@ describe('AuthService.loginWithPassword — by email or by login', () => {
     const empty = await failure(auth.loginWithPassword('', 'right-password'));
     expect(new Set([unknownLogin, unknownEmail, wrongPassword, empty]).size).toBe(1);
     expect(tokens.issue).not.toHaveBeenCalled();
+  });
+
+  it('spends a bcrypt compare on an unknown account too, so timing does not reveal it', async () => {
+    const { auth, passwords } = harness([manager, barista]);
+    await failure(auth.loginWithPassword('nobody', 'some-password'));
+    await failure(auth.loginWithPassword('nobody@noname.md', 'some-password'));
+    expect(passwords.compareWithoutAccount).toHaveBeenCalledTimes(2);
+    expect(passwords.compare).not.toHaveBeenCalled();
   });
 
   it('never looks a login up among emails, nor an email among logins', async () => {

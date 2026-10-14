@@ -14,6 +14,18 @@ export class PasswordService {
     return bcrypt.compare(plain, hash);
   }
 
+  private dummyHash?: Promise<string>;
+
+  /**
+   * Spends the same bcrypt work as compare() when there is no account to
+   * check, so the response time does not tell whether an email or a login
+   * exists. Always resolves; the result is meaningless.
+   */
+  async compareWithoutAccount(plain: string): Promise<void> {
+    this.dummyHash ??= bcrypt.hash(randomBytes(16).toString('hex'), BCRYPT_ROUNDS);
+    await bcrypt.compare(plain, await this.dummyHash);
+  }
+
   /**
    * Generate a random password-reset token. Returns the raw token (mail this
    * to the user) and its SHA-256 hash (what we store — the raw value is not

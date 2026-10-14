@@ -72,8 +72,10 @@ export class AuthService {
     // Same error for "no user" and "bad password" to avoid enumerating
     // emails or logins.
     const generic = new UnauthorizedException('Invalid email, login or password');
-    if (!user || !user.passwordHash) throw generic;
-    if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw generic;
+    if (!user || !user.passwordHash || !PASSWORD_LOGIN_ROLES.has(user.role)) {
+      await this.passwords.compareWithoutAccount(password);
+      throw generic;
+    }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
 
     const ok = await this.passwords.compare(password, user.passwordHash);
