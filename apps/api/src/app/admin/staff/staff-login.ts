@@ -1,5 +1,6 @@
-import type { ConflictException } from '@nestjs/common';
+import { BadRequestException, type ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { STAFF_LOGIN_PATTERN } from '@takeaway/shared-types';
 
 import { codedConflict } from '../../common/http/coded-conflict';
 import type { PrismaService } from '../../prisma/prisma.service';
@@ -27,8 +28,12 @@ export function loginInUse(): ConflictException {
  *
  * The password is the owner's temporary one, to be changed at the first
  * sign-in. There is no email, so nothing is sent.
+ *
+ * The DTO already lowercases and checks the login; the format is checked
+ * again here because sign-in tells a login from an email by the '@' alone.
  */
 export async function createLoginAccount(prisma: PrismaService, input: NewLoginAccount): Promise<{ id: string }> {
+  if (!STAFF_LOGIN_PATTERN.test(input.login)) throw new BadRequestException('Invalid login');
   const taken = await prisma.user.findFirst({
     where: { OR: [{ login: input.login }, { email: input.login }] },
     select: { id: true },
