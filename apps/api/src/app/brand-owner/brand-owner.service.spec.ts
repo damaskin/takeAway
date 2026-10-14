@@ -249,7 +249,13 @@ describe('BrandOwnerService', () => {
 
   describe('onboarding checklist', () => {
     function brandState(logoUrl: string | null, moderationStatus: BrandModerationStatus) {
-      prisma.brand.findUniqueOrThrow.mockResolvedValue({ logoUrl, moderationStatus, moderationNote: null });
+      prisma.brand.findUniqueOrThrow.mockResolvedValue({ id: 'b1', logoUrl, moderationStatus, moderationNote: null });
+    }
+    /** Products customers can see, and how many of them have a photo. */
+    function products(listed: number, photographed: number) {
+      prisma.product.count.mockImplementation(({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve('imageUrls' in where ? photographed : listed),
+      );
     }
 
     it('reports a fresh brand as having everything still to do', async () => {
@@ -262,48 +268,63 @@ describe('BrandOwnerService', () => {
         brandProfile: false,
         store: false,
         menu: false,
+        photos: false,
         cardPayments: false,
+        hasOrders: false,
         complete: false,
       });
     });
 
-    it('counts only stores with an address and opening hours, and products with a photo', async () => {
+    it('counts stores with an address and hours, and products customers can see', async () => {
       brandState('https://cdn/logo.png', BrandModerationStatus.PENDING);
       prisma.store.count.mockResolvedValue(1);
-      prisma.category.count.mockResolvedValue(2);
-      prisma.product.count.mockResolvedValue(3);
+      products(3, 1);
 
       const result = await service.onboarding(owner);
 
       expect(prisma.store.count).toHaveBeenCalledWith({
         where: { brandId: 'b1', addressLine: { not: '' }, workingHours: { some: { isClosed: false } } },
       });
-      expect(prisma.product.count).toHaveBeenCalledWith({ where: { brandId: 'b1', imageUrls: { isEmpty: false } } });
-      expect(result).toEqual(expect.objectContaining({ brandProfile: true, store: true, menu: true }));
+      expect(prisma.product.count).toHaveBeenCalledWith({
+        where: { brandId: 'b1', visible: true, category: { visible: true, addOnsOnly: false } },
+      });
+      expect(result).toEqual(expect.objectContaining({ brandProfile: true, store: true, menu: true, photos: true }));
       // Everything is set up, but the brand is still waiting for review.
       expect(result.complete).toBe(false);
     });
 
-    it('is complete once every step is done and the brand is approved', async () => {
-      brandState('https://cdn/logo.png', BrandModerationStatus.APPROVED);
+    it('launches without a logo or a single photo — those are recommendations', async () => {
+      brandState(null, BrandModerationStatus.APPROVED);
       prisma.store.count.mockResolvedValue(1);
-      prisma.category.count.mockResolvedValue(1);
-      prisma.product.count.mockResolvedValue(1);
+      products(5, 0);
       flags.cardPaymentFlow = 'web';
 
       await expect(service.onboarding(owner)).resolves.toEqual(
-        expect.objectContaining({ cardPayments: true, complete: true }),
+        expect.objectContaining({ brandProfile: false, photos: false, menu: true, cardPayments: true, complete: true }),
       );
     });
 
-    it('does not count a menu with categories but no photographed product', async () => {
+    it('does not count a menu nobody can see', async () => {
       brandState('https://cdn/logo.png', BrandModerationStatus.APPROVED);
-      prisma.category.count.mockResolvedValue(4);
-      prisma.product.count.mockResolvedValue(0);
+      prisma.store.count.mockResolvedValue(1);
+      products(0, 2);
 
       await expect(service.onboarding(owner)).resolves.toEqual(
         expect.objectContaining({ menu: false, complete: false }),
       );
+    });
+
+    it('counts a brand that has sold as launched, whatever the checklist says', async () => {
+      brandState(null, BrandModerationStatus.APPROVED);
+      prisma.order.findFirst.mockResolvedValue({ id: 'o1' });
+
+      await expect(service.onboarding(owner)).resolves.toEqual(
+        expect.objectContaining({ store: false, menu: false, hasOrders: true, complete: true }),
+      );
+      expect(prisma.order.findFirst).toHaveBeenCalledWith({
+        where: { store: { brandId: 'b1' }, status: { notIn: ['CANCELLED', 'EXPIRED'] } },
+        select: { id: true },
+      });
     });
   });
 });

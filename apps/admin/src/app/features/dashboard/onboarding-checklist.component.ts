@@ -10,7 +10,7 @@ import { OnboardingFlowService, type OnboardingStep } from '../../core/onboardin
 import { type BrandOnboarding, OnboardingApi } from '../../core/onboarding/onboarding.service';
 
 interface ChecklistStep {
-  key: 'brand' | 'store' | 'menu' | 'payments' | 'moderation';
+  key: 'brand' | 'store' | 'menu' | 'photos' | 'payments' | 'moderation';
   done: boolean;
   /** Translation key of the line under the title. */
   text: string;
@@ -23,11 +23,13 @@ type ChecklistState = { data: BrandOnboarding } | { failed: true } | null;
 const FLASH_MS = 6000;
 
 /**
- * The launch checklist at the top of a new brand owner's dashboard: brand
- * details, a store, a menu, how customers pay, and moderation. Every tick
- * comes from the brand's real data (GET /my-brand/onboarding), so the list
- * cannot be "completed" without doing the work, and it goes away by itself
- * once everything is done and the brand is approved.
+ * The launch checklist at the top of a new brand owner's dashboard: the
+ * steps — a store, a menu customers can see, how customers pay, and
+ * moderation — and, beside them, what is recommended but does not hold the
+ * launch back: a logo and product photos. Every tick comes from the brand's
+ * real data (GET /my-brand/onboarding), so the list cannot be "completed"
+ * without doing the work, and it goes away by itself once the steps are
+ * done and the brand is approved, or once the brand has sold.
  *
  * A step opened from here comes back here once it is saved and done (see
  * {@link OnboardingFlowService}): a short note says so and the next step
@@ -127,6 +129,40 @@ const FLASH_MS = 6000;
               </li>
             }
           </ol>
+
+          @if (recommendations().length > 0) {
+            <section class="ob-recommended" data-testid="onboarding-recommended">
+              <h3>{{ 'admin.onboarding.checklist.recommended.title' | translate }}</h3>
+              <p>{{ 'admin.onboarding.checklist.recommended.hint' | translate }}</p>
+              <ul class="flex flex-col" style="gap: 8px; margin: 0; padding: 0; list-style: none">
+                @for (step of recommendations(); track step.key) {
+                  <li class="ob-step ob-step-optional flex items-center">
+                    <span class="step-mark" [attr.data-done]="step.done" aria-hidden="true">{{
+                      step.done ? '✓' : '☆'
+                    }}</span>
+                    <div class="flex flex-col flex-1" style="gap: 2px; min-width: 0">
+                      <span
+                        style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                        >{{ 'admin.onboarding.checklist.' + step.key + '.title' | translate }}</span
+                      >
+                      <span
+                        style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                        >{{ step.text | translate }}</span
+                      >
+                    </div>
+                    @if (step.link && !step.done) {
+                      <a
+                        [routerLink]="step.link"
+                        (click)="open(step.key)"
+                        style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel); white-space: nowrap"
+                        >{{ 'admin.onboarding.checklist.open' | translate }} →</a
+                      >
+                    }
+                  </li>
+                }
+              </ul>
+            </section>
+          }
         }
       </article>
     } @else if (failed()) {
@@ -147,6 +183,22 @@ const FLASH_MS = 6000;
         padding: 12px 14px;
         border: 1px solid var(--color-border-light);
         border-radius: 14px;
+      }
+      .ob-step-optional {
+        border-style: dashed;
+      }
+      .ob-recommended h3 {
+        margin: 0 0 2px;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--color-text-primary);
+      }
+      .ob-recommended p {
+        margin: 0 0 8px;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        color: var(--color-text-secondary);
       }
       .ob-step[data-next='true'] {
         border-color: var(--color-caramel);
@@ -287,12 +339,6 @@ export class OnboardingChecklistComponent {
     if (!d) return [];
     const base = 'admin.onboarding.checklist';
     return [
-      {
-        key: 'brand',
-        done: d.brandProfile,
-        text: `${base}.brand.${d.brandProfile ? 'done' : 'todo'}`,
-        link: '/settings',
-      },
       { key: 'store', done: d.store, text: `${base}.store.${d.store ? 'done' : 'todo'}`, link: '/stores' },
       { key: 'menu', done: d.menu, text: `${base}.menu.${d.menu ? 'done' : 'todo'}`, link: '/menu' },
       { key: 'payments', done: true, text: `${base}.payments.${d.cardPayments ? 'card' : 'onSite'}` },
@@ -304,9 +350,39 @@ export class OnboardingChecklistComponent {
     ];
   });
 
+  /**
+   * Recommended, never counted: a logo and product photos. A brand launches
+   * without them — a product without a photo is a text row in the app and
+   * an illustration on the website and in Telegram — but sells better with.
+   */
+  readonly recommendations = computed<ChecklistStep[]>(() => {
+    const d = this.data();
+    if (!d) return [];
+    const base = 'admin.onboarding.checklist';
+    return [
+      {
+        key: 'brand',
+        done: d.brandProfile,
+        text: `${base}.brand.${d.brandProfile ? 'done' : 'todo'}`,
+        link: '/settings',
+      },
+      // Older APIs did not say; nothing to recommend then.
+      ...(d.photos === undefined
+        ? []
+        : [
+            {
+              key: 'photos' as const,
+              done: d.photos,
+              text: `${base}.photos.${d.photos ? 'done' : 'todo'}`,
+              link: '/menu',
+            },
+          ]),
+    ];
+  });
+
   /** The first step the owner still has to do — highlighted as the next one. */
   readonly nextStep = computed(() => this.steps().find((s) => !s.done && s.link)?.key ?? null);
-  /** Brand, store and menu are done; only the moderator is left. */
+  /** Store and menu are done; only the moderator is left. */
   readonly ownerPartDone = computed(() => this.steps().length > 0 && this.nextStep() === null);
 
   readonly doneCount = computed(() => this.steps().filter((s) => s.done).length);

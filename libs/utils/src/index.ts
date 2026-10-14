@@ -14,4 +14,5 @@ export * from './lib/allergens';
 export * from './lib/upsell';
 export * from './lib/category-kind';
 export * from './lib/contact';
+export * from './lib/brand-launch';
 export * from './lib/temp-password';

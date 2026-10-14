@@ -800,13 +800,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       checklist: {
         title: 'Launch your brand',
-        subtitle: 'Five steps to your first orders. Finished steps tick themselves off.',
+        subtitle: 'Four steps to your first orders. Finished steps tick themselves off.',
         progress: '{{done}} of {{total}} done',
         open: 'Open',
         loadFailed: 'Could not load the launch checklist.',
         brand: {
-          title: 'Brand details and logo',
-          todo: 'Upload your logo — customers see it next to your menu.',
+          title: 'Brand logo',
+          todo: 'Upload your logo — customers see it next to your menu and at stores without a photo of their own.',
           done: 'Logo uploaded.',
         },
         store: {
@@ -815,9 +815,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
           done: 'A store with address and opening hours is set up.',
         },
         menu: {
-          title: 'Menu: a category and a product with a photo',
-          todo: 'Create a category and add at least one product with a photo.',
-          done: 'Your menu has products with photos.',
+          title: 'Menu: a category and a product',
+          todo: 'Create a category and add at least one product customers can see. Photos can come later.',
+          done: 'Your menu has products.',
+        },
+        photos: {
+          title: 'Product photos',
+          todo: 'Without a photo the app shows a product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+          done: 'Your products have photos.',
+        },
+        recommended: {
+          title: 'Recommended',
+          hint: 'Not required to launch, but you sell better with them.',
         },
         payments: {
           title: 'Payments',
@@ -1112,7 +1121,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       status: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' },
       empty: 'No brands in this bucket.',
       notLaunchedHint:
-        'Businesses that signed up and have not finished «Launch your brand» yet — call them and help them over the line.',
+        'Businesses that signed up, have not finished «Launch your brand» (a store, a menu, the review) and have not sold anything yet — call them and help them over the line. A logo and product photos are optional, and a brand with an order counts as launched.',
       waitingBadge: 'Waiting for review: {{brands}} · plan requests: {{plans}}',
       phone: 'Phone',
       launch: {
@@ -1124,7 +1133,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
           menu: 'menu',
           payments: 'payments',
           approved: 'review',
+          photos: 'product photos',
         },
+        recommended: 'recommended:',
+        hasOrders: 'has orders',
       },
       planRequest: {
         text: 'The owner asks to move to {{plan}} · {{date}}',

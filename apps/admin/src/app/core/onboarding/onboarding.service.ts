@@ -9,15 +9,19 @@ export interface BrandOnboarding {
   brandId: string;
   moderationStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
   moderationNote: string | null;
-  /** A logo is uploaded. */
+  /** Recommended, not required: a logo is uploaded. */
   brandProfile: boolean;
   /** A store with an address and opening hours exists. */
   store: boolean;
-  /** A category and a product with a photo exist. */
+  /** A product customers can see exists (with a photo or not). */
   menu: boolean;
+  /** Recommended, not required: a product has a photo. Missing from older APIs. */
+  photos?: boolean;
   /** Card payments are on for the platform; otherwise customers pay on pickup. */
   cardPayments: boolean;
-  /** Everything above is done and the brand is approved. */
+  /** The brand has an order that was not cancelled or expired. Missing from older APIs. */
+  hasOrders?: boolean;
+  /** Launched: the steps are done and the brand is approved — or it has sold already. */
   complete: boolean;
 }
 
