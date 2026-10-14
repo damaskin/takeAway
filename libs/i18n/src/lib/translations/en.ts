@@ -757,6 +757,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       adminTag: 'Admin',
       install: 'Install app',
       installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
+      pinSessionNote:
+        'Signed in with a PIN — kitchen and stop-list only. The other sections open after signing in with a password.',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
