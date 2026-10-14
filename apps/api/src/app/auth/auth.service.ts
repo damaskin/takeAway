@@ -58,14 +58,20 @@ export class AuthService {
   ) {}
 
   /**
-   * Staff / admin sign-in with email + password. Customer accounts are
-   * rejected even if a password hash is somehow present — they sign in with
-   * Telegram, Google or Apple.
+   * Staff / admin sign-in with an email or a staff login, and a password.
+   * An email always has an '@' and a login never does, so the identifier
+   * says which column to look in. Customer accounts are rejected even if a
+   * password hash is somehow present — they sign in with Telegram, Google
+   * or Apple.
    */
-  async loginWithPassword(email: string, password: string): Promise<AuthSessionDto> {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    // Same error for "no user" and "bad password" to avoid email-enumeration.
-    const generic = new UnauthorizedException('Invalid email or password');
+  async loginWithPassword(identifier: string, password: string): Promise<AuthSessionDto> {
+    const key = identifier.trim().toLowerCase();
+    const user = key
+      ? await this.prisma.user.findUnique({ where: key.includes('@') ? { email: key } : { login: key } })
+      : null;
+    // Same error for "no user" and "bad password" to avoid enumerating
+    // emails or logins.
+    const generic = new UnauthorizedException('Invalid email, login or password');
     if (!user || !user.passwordHash) throw generic;
     if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw generic;
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
@@ -489,6 +495,7 @@ export class AuthService {
       id: user.id,
       phone: user.phone,
       email: user.email,
+      login: user.login,
       name: user.name,
       locale: user.locale,
       currency: user.currency,

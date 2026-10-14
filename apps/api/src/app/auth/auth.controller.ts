@@ -87,7 +87,7 @@ export class AuthController {
   @Throttle({ default: { limit: limits.passwordLogin, ttl: 60_000 } })
   @ApiOkResponse({ type: AuthSessionDto })
   passwordLogin(@Body() dto: PasswordLoginDto): Promise<AuthSessionDto> {
-    return this.auth.loginWithPassword(dto.email, dto.password);
+    return this.auth.loginWithPassword(dto.identifier ?? dto.email ?? '', dto.password);
   }
 
   /**

@@ -450,7 +450,7 @@ export class AdminLayoutPage implements OnInit {
 
   userName(): string {
     const user = this.store.user();
-    return user?.name ?? user?.phone ?? this.translate.instant('common.user');
+    return user?.name ?? user?.login ?? user?.phone ?? this.translate.instant('common.user');
   }
 
   /** Translation key of the role under the user's name — "Владелец бренда", not "BRAND_ADMIN". */

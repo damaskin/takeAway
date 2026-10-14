@@ -36,7 +36,14 @@ export class AdminStaffMembersController {
     @Query('brandId') brandId?: string,
   ): Promise<StaffInviteResult> {
     return this.staff.invite(
-      { email: dto.email, name: dto.name, role: dto.role, tempPassword: dto.tempPassword, storeIds: dto.storeIds },
+      {
+        email: dto.email,
+        login: dto.login,
+        name: dto.name,
+        role: dto.role,
+        tempPassword: dto.tempPassword,
+        storeIds: dto.storeIds,
+      },
       user,
       brandId || undefined,
     );
@@ -66,7 +73,8 @@ export class AdminStaffMembersController {
   /**
    * «Сбросить пароль»: a generated temporary password, answered once, to be
    * changed at the next sign-in; the person's sessions end, and they are
-   * emailed a link to set their own when the server can send mail. Owners
+   * emailed a link to set their own when the server can send mail and they
+   * have an email (`NO_EMAIL` for someone signing in with a login). Owners
    * and platform admins only — not store managers.
    */
   @Post(':userId/reset-password')
@@ -77,7 +85,7 @@ export class AdminStaffMembersController {
     schema: {
       properties: {
         tempPassword: { type: 'string' },
-        resetEmail: { type: 'string', enum: ['SENT', 'NOT_CONFIGURED', 'FAILED'] },
+        resetEmail: { type: 'string', enum: ['SENT', 'NOT_CONFIGURED', 'FAILED', 'NO_EMAIL'] },
       },
     },
   })

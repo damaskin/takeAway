@@ -3,10 +3,16 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { STAFF_PASSWORD_MAX_LENGTH, STAFF_PASSWORD_MIN_LENGTH } from '@takeaway/shared-types';
+import {
+  STAFF_LOGIN_MAX_LENGTH,
+  STAFF_LOGIN_MIN_LENGTH,
+  STAFF_PASSWORD_MAX_LENGTH,
+  STAFF_PASSWORD_MIN_LENGTH,
+} from '@takeaway/shared-types';
 import { generateTempPassword, tempPasswordValid } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { emailOrLoginValidator, signInIdentifier } from '../../core/auth/sign-in-identifier';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import {
@@ -29,6 +35,10 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
  * The temporary password shows its rule (the API's: 8–128 characters) and
  * can be generated. After sending, the page says whether the invite email
  * went out — and if not, what to hand over in person.
+ *
+ * Someone without an email is invited by a login instead (the same field:
+ * no '@' makes it a login). Nothing is mailed then; the owner hands the
+ * login and the temporary password over, and only the owner can reset it.
  */
 @Component({
   selector: 'app-staff-form',
@@ -38,8 +48,11 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
     @if (result(); as r) {
       <section class="invited" data-testid="invite-result">
         <h1 class="invited-title">{{ 'admin.staff.invited.title' | translate }}</h1>
-        <p class="invited-text">{{ r.name || r.email }} · {{ 'admin.staff.role.' + r.role | translate }}</p>
+        <p class="invited-text">{{ r.name || r.email || r.login }} · {{ 'admin.staff.role.' + r.role | translate }}</p>
         @switch (r.inviteEmail) {
+          @case ('NO_EMAIL') {
+            <p class="invited-text" data-testid="invite-no-email">{{ 'admin.staff.invited.noEmail' | translate }}</p>
+          }
           @case ('SENT') {
             <p class="invited-text" data-testid="invite-sent">
               {{
@@ -65,7 +78,7 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
             </div>
             <div>
               <dt>{{ 'admin.staff.invited.login' | translate }}</dt>
-              <dd>{{ r.email }}</dd>
+              <dd data-testid="invite-login">{{ r.login || r.email }}</dd>
             </div>
             <div>
               <dt>{{ 'admin.staff.tempPassword' | translate }}</dt>
@@ -99,16 +112,28 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
       >
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col" style="gap: 14px">
           <div class="form-row">
-            <label class="field">
-              <span class="field-label">{{ 'admin.staff.email' | translate }}</span>
+            <div class="field">
+              <label class="field-label" for="staff-identifier">{{ 'admin.staff.identifier' | translate }}</label>
               <input
-                formControlName="email"
-                type="email"
+                id="staff-identifier"
+                formControlName="identifier"
+                type="text"
+                inputmode="email"
+                autocomplete="off"
                 autocapitalize="none"
                 spellcheck="false"
                 class="field-input"
+                [attr.aria-describedby]="'staff-identifier-hint'"
               />
-            </label>
+              <p
+                id="staff-identifier-hint"
+                class="rule"
+                [class.rule-bad]="identifierInvalid()"
+                data-testid="identifier-rule"
+              >
+                {{ 'admin.staff.identifierHint' | translate: loginRule }}
+              </p>
+            </div>
             <label class="field">
               <span class="field-label">{{ 'admin.staff.name' | translate }}</span>
               <input formControlName="name" type="text" autocomplete="name" class="field-input" />
@@ -160,7 +185,9 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
             </div>
           </div>
 
-          <p class="rule">{{ 'admin.staff.tempPasswordHint' | translate }}</p>
+          <p class="rule" data-testid="temp-password-hint">
+            {{ (byLogin() ? 'admin.staff.tempPasswordHintLogin' : 'admin.staff.tempPasswordHint') | translate }}
+          </p>
 
           <app-staff-store-picker [stores]="stores()" [(selected)]="storeIds" />
         </form>
@@ -295,6 +322,7 @@ export class StaffFormPage {
   readonly sentPassword = signal('');
 
   readonly rule = { min: STAFF_PASSWORD_MIN_LENGTH, max: STAFF_PASSWORD_MAX_LENGTH };
+  readonly loginRule = { min: STAFF_LOGIN_MIN_LENGTH, max: STAFF_LOGIN_MAX_LENGTH };
   readonly loginUrl = `${location.origin}/login`;
 
   /** A store manager hires kitchen staff and menu editors, not other managers. */
@@ -305,7 +333,8 @@ export class StaffFormPage {
   );
 
   readonly form = new FormGroup({
-    email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.email] }),
+    /** An email, or a login for someone without one — an '@' tells them apart. */
+    identifier: new FormControl('', { nonNullable: true, validators: [Validators.required, emailOrLoginValidator] }),
     name: new FormControl('', { nonNullable: true }),
     role: new FormControl<StaffRole>('STAFF', { nonNullable: true }),
     tempPassword: new FormControl('', {
@@ -340,6 +369,18 @@ export class StaffFormPage {
     });
   }
 
+  private readonly identifierValue = toSignal(this.form.controls.identifier.valueChanges, { initialValue: '' });
+  /** Typed something without an '@': the person is invited by a login, and gets no email. */
+  readonly byLogin = computed(() => {
+    const value = this.identifierValue().trim();
+    return value.length > 0 && !value.includes('@');
+  });
+  /** The hint turns red once something was typed that is neither an email nor a login. */
+  readonly identifierInvalid = computed(() => {
+    const value = this.identifierValue();
+    return value.trim().length > 0 && signInIdentifier(value) === null;
+  });
+
   private readonly passwordValue = toSignal(this.form.controls.tempPassword.valueChanges, { initialValue: '' });
   /** The rule turns red once something was typed that breaks it. */
   readonly passwordInvalid = computed(() => {
@@ -355,16 +396,14 @@ export class StaffFormPage {
 
   submit(): void {
     const storeIds = this.storeIds();
-    if (this.form.invalid || storeIds.length === 0) return;
     const v = this.form.getRawValue();
+    const identifier = signInIdentifier(v.identifier);
+    if (this.form.invalid || storeIds.length === 0 || !identifier) return;
     this.saving.set(true);
     this.error.set(null);
-    const body: InviteStaffRequest = {
-      email: v.email.trim().toLowerCase(),
-      role: v.role,
-      tempPassword: v.tempPassword,
-      storeIds,
-    };
+    const body: InviteStaffRequest = { role: v.role, tempPassword: v.tempPassword, storeIds };
+    if (identifier.kind === 'email') body.email = identifier.value;
+    else body.login = identifier.value;
     if (v.name.trim()) body.name = v.name.trim();
     this.staffApi.invite(body, this.brandCtx.activeId()).subscribe({
       next: (result) => {
@@ -383,6 +422,6 @@ export class StaffFormPage {
   inviteAnother(): void {
     this.result.set(null);
     this.sentPassword.set('');
-    this.form.reset({ email: '', name: '', role: 'STAFF', tempPassword: '' });
+    this.form.reset({ identifier: '', name: '', role: 'STAFF', tempPassword: '' });
   }
 }

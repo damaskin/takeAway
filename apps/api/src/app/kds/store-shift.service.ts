@@ -26,8 +26,8 @@ export interface StoreShiftDto {
 }
 
 const WITH_NAMES = {
-  openedBy: { select: { name: true, email: true } },
-  closedBy: { select: { name: true, email: true } },
+  openedBy: { select: { name: true, email: true, login: true } },
+  closedBy: { select: { name: true, email: true, login: true } },
 } as const;
 
 /**
@@ -172,8 +172,8 @@ export class StoreShiftService {
 
 type ShiftRow = Prisma.StoreShiftGetPayload<{ include: typeof WITH_NAMES }>;
 
-function personName(user: { name: string | null; email: string | null } | null): string | null {
-  return user?.name?.trim() || user?.email || null;
+function personName(user: { name: string | null; email: string | null; login: string | null } | null): string | null {
+  return user?.name?.trim() || user?.email || user?.login || null;
 }
 
 export function toDto(storeId: string, shift: ShiftRow | null, busy = false): StoreShiftDto {

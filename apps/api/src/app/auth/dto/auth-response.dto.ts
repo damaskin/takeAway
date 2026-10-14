@@ -11,6 +11,9 @@ export class AuthUserDto {
   @ApiProperty({ nullable: true, type: String })
   email!: string | null;
 
+  @ApiProperty({ nullable: true, type: String, description: 'Staff sign-in name of an account without an email' })
+  login!: string | null;
+
   @ApiProperty({ nullable: true, type: String })
   name!: string | null;
 

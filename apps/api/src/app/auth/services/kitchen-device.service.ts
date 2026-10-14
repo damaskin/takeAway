@@ -171,9 +171,12 @@ export class KitchenDeviceService {
     const ids = [...new Set(rows.map((r) => r.createdById).filter((id): id is string => !!id))];
     const people =
       ids.length > 0
-        ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } })
+        ? await this.prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true, email: true, login: true },
+          })
         : [];
-    const names = new Map(people.map((p) => [p.id, p.name?.trim() || p.email || null]));
+    const names = new Map(people.map((p) => [p.id, p.name?.trim() || p.email || p.login || null]));
     return rows.map((r) => ({
       id: r.id,
       createdAt: r.createdAt.toISOString(),

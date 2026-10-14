@@ -14,6 +14,8 @@ export interface StaffMemberStore {
 export interface StaffMember {
   userId: string;
   email: string | null;
+  /** The sign-in name of someone invited without an email; null otherwise. */
+  login: string | null;
   phone: string | null;
   name: string | null;
   role: StaffRoleName;
@@ -44,13 +46,28 @@ export interface StaffMember {
 export const STAFF_PASSWORD_MIN_LENGTH = 8;
 export const STAFF_PASSWORD_MAX_LENGTH = 128;
 
+/**
+ * A staff login — what someone without an email signs in with. Compared
+ * and stored lowercase: latin letters, digits, dot, underscore and hyphen.
+ * Never an '@', so a login can't be mistaken for an email or equal one.
+ */
+export const STAFF_LOGIN_MIN_LENGTH = 3;
+export const STAFF_LOGIN_MAX_LENGTH = 32;
+export const STAFF_LOGIN_PATTERN = /^[a-z0-9._-]{3,32}$/;
+
 /** A kitchen PIN: 4 to 6 digits, set on the Staff page and typed on the tablet. */
 export const KDS_PIN_MIN_LENGTH = 4;
 export const KDS_PIN_MAX_LENGTH = 6;
 export const KDS_PIN_PATTERN = /^[0-9]{4,6}$/;
 
+/**
+ * `POST /admin/staff` — exactly one of `email` and `login`. Someone invited
+ * by a login gets no email: the owner hands the login and the temporary
+ * password over in person.
+ */
 export interface InviteStaffRequest {
-  email: string;
+  email?: string;
+  login?: string;
   name?: string;
   role: StaffRoleName;
   tempPassword: string;
@@ -62,9 +79,11 @@ export interface InviteStaffRequest {
  * - `SENT` — handed to the mail server;
  * - `NOT_CONFIGURED` — the server has no SMTP (or no ADMIN_APP_URL for the
  *   links), nothing was sent — the owner passes the email and password on;
- * - `FAILED` — the mail server refused it; same advice.
+ * - `FAILED` — the mail server refused it; same advice;
+ * - `NO_EMAIL` — the person signs in with a login and has no email, so
+ *   there was nobody to write to — the owner passes the login and password on.
  */
-export type StaffInviteEmailStatus = 'SENT' | 'NOT_CONFIGURED' | 'FAILED';
+export type StaffInviteEmailStatus = 'SENT' | 'NOT_CONFIGURED' | 'FAILED' | 'NO_EMAIL';
 
 /** `POST /admin/staff` — the person as the list shows them, plus the invite email's fate. */
 export interface StaffInviteResult extends StaffMember {

@@ -21,6 +21,8 @@ export type StaffRole = StaffRoleName;
 export interface StaffRoster {
   userId: string;
   email: string | null;
+  /** Sign-in name of someone without an email. */
+  login: string | null;
   name: string | null;
   role: StaffRole;
   blocked: boolean;

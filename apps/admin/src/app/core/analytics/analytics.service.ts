@@ -102,6 +102,8 @@ export interface StaffPerformance {
   userId: string;
   name: string | null;
   email: string | null;
+  /** Sign-in name of someone without an email; absent from an older API. */
+  login?: string | null;
   role: string;
   accepted: number;
   ready: number;

@@ -478,7 +478,7 @@ export class AnalyticsService {
     if (userIds.length === 0) return [];
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds }, role: { not: 'CUSTOMER' } },
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, login: true, role: true },
     });
     const eventsBy = new Map(events.map((e) => [e.userId, e]));
     const shiftsBy = new Map(shifts.map((s) => [s.userId, s]));
@@ -493,6 +493,7 @@ export class AnalyticsService {
           userId: user.id,
           name: user.name,
           email: user.email,
+          login: user.login,
           role: user.role,
           accepted: num(e?.accepted),
           ready: num(e?.ready),

@@ -105,6 +105,8 @@ export class StaffPerformanceDto {
   @ApiProperty() userId!: string;
   @ApiProperty({ nullable: true, type: String }) name!: string | null;
   @ApiProperty({ nullable: true, type: String }) email!: string | null;
+  /** Sign-in name of someone without an email. */
+  @ApiProperty({ nullable: true, type: String }) login!: string | null;
   @ApiProperty() role!: string;
   /** Orders this person accepted. */
   @ApiProperty() accepted!: number;
