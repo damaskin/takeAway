@@ -1,8 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { isStoreInactive, sortStoresByAvailability } from '@takeaway/utils';
-import { TranslatePipe } from '@ngx-translate/core';
+import { isStoreInactive, sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 import { StoreLogoComponent } from '@takeaway/ui-kit';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -64,12 +65,26 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                   >{{ s.addressLine }}, {{ s.city }}</span
                 >
+                @if (preorderOnly(s)) {
+                  <span
+                    data-testid="store-hours"
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                    >{{ hoursLine(s) }}</span
+                  >
+                }
               </div>
               @if (closed(s)) {
                 <span
                   class="flex items-center justify-center"
                   style="height: 26px; padding: 0 10px; background: #d94b5e22; color: #8f2f3c; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 700"
                   >{{ 'common.storeClosed.badge' | translate }}</span
+                >
+              } @else if (preorderOnly(s)) {
+                <!-- Closed for an order now: a wait would be a promise nobody keeps. -->
+                <span
+                  class="flex items-center justify-center"
+                  style="height: 26px; padding: 0 10px; background: #e9a84b33; color: #8a6720; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 700; white-space: nowrap"
+                  >{{ 'common.storeLater.badge' | translate }}</span
                 >
               } @else {
                 <span
@@ -90,6 +105,8 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 })
 export class TmaHomePage implements OnInit {
   private readonly catalog = inject(CatalogService);
+  private readonly translate = inject(TranslateService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly stores = signal<StoreListItem[]>([]);
 
@@ -103,6 +120,16 @@ export class TmaHomePage implements OnInit {
 
   closed(store: StoreListItem): boolean {
     return isStoreInactive(store);
+  }
+
+  /** Closed for an order now, open for a pre-order (overnight, before the shift). */
+  preorderOnly(store: StoreListItem): boolean {
+    return storeAvailability(store) === 'scheduledOnly';
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени». */
+  hoursLine(store: StoreListItem): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   private load(): void {

@@ -9,8 +9,8 @@ import type {
 } from '@takeaway/shared-types';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import { formatMinutesOfDay, isStoreInactive, productKind, todaysOpeningHours } from '@takeaway/utils';
-import { TranslatePipe } from '@ngx-translate/core';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
@@ -26,11 +26,13 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
  *   tmaCats — horizontal emoji-prefixed category chips (scroll-x)
  *   tmaGrid — 2-column product cards (foam, 16px radius)
  *
- * A store that takes no orders (no shift, or switched off) shows "Точка
- * закрыта" with today's hours and a way to another store instead of its
- * menu: a menu the customer cannot order from reads as broken. A store
- * open for orders later only (after hours, shift still running) keeps its
- * menu — checkout then offers a pickup time.
+ * A store that takes no orders (switched off, or nothing bookable in the
+ * next 24 hours) shows "Точка закрыта" with today's hours and a way to
+ * another store instead of its menu: a menu the customer cannot order from
+ * reads as broken. A store open for pre-orders only (overnight with the
+ * shift closed, before the shift starts, or with a full queue) keeps its
+ * menu and says when it opens — checkout then offers a pickup time. An open
+ * store says until when.
  */
 @Component({
   selector: 'app-tma-menu',
@@ -43,11 +45,19 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
         style="background: var(--color-foam); padding: 12px 16px; gap: 10px; border-bottom: 1px solid var(--color-border-light)"
       >
         <span style="color: var(--color-caramel); font-size: 16px">📍</span>
-        <span
-          class="flex-1"
-          style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-          >{{ s.name }}</span
-        >
+        <span class="flex flex-col flex-1" style="min-width: 0; gap: 2px">
+          <span
+            style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ s.name }}</span
+          >
+          @if (hoursLine(s); as line) {
+            <span
+              data-testid="store-hours-line"
+              style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+              >{{ line }}</span
+            >
+          }
+        </span>
         <a
           routerLink="/stores"
           style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-caramel)"
@@ -165,6 +175,7 @@ export class TmaMenuPage implements OnInit, OnDestroy {
   private readonly tg = inject(TelegramBridgeService);
   private readonly activeStore = inject(ActiveStoreService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly store = signal<StoreDetail | null>(null);
   /** The store takes no orders at all: its menu gives way to the closed state. */
@@ -175,6 +186,11 @@ export class TmaMenuPage implements OnInit, OnDestroy {
 
   inactive(store: StoreDetail): boolean {
     return isStoreInactive(store);
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени», or «до 21:00» while open. */
+  hoursLine(store: StoreDetail): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   /** Today's hours on the store's clock, for the closed state; null when none are on file. */

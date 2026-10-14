@@ -9,8 +9,8 @@ import {
   type StoreKindFilter,
 } from '@takeaway/utils';
 import { LeafletMapComponent, STORE_KIND_GLYPHS, StoreLogoComponent, type MapMarker } from '@takeaway/ui-kit';
-import { TranslatePipe } from '@ngx-translate/core';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
@@ -31,9 +31,12 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
  *   "Nearby" section label
  *   store cards — caramel 2px stroke on selected, foam otherwise
  *
- * Closed stores (no shift, or switched off) come last, dimmed, and do not
- * open: there is nothing to order there. The list refreshes itself while on
- * screen, so a store that starts its shift lights up without a reload.
+ * Closed stores (switched off, or nothing bookable in the next 24 hours)
+ * come last, dimmed, and do not open: there is nothing to order there. A
+ * store closed for an order now but taking pre-orders (overnight, before the
+ * shift) opens as usual and says when it opens instead of the wait. The list
+ * refreshes itself while on screen, so a store that starts its shift lights
+ * up without a reload.
  *
  * The pins show what each place sells (cup, fork and knife, or both); the
  * «Все / Кофе / Еда» chips above the map narrow the map and the list.
@@ -131,10 +134,21 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
             <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
               {{ s.addressLine }}, {{ s.city }}
             </p>
-            <div class="flex items-center" style="gap: 14px">
-              <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}</span
-              >
+            <div class="flex items-center flex-wrap" style="gap: 4px 14px">
+              @if (preorderOnly(s)) {
+                <span
+                  data-testid="store-hours"
+                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                  >🕘 {{ hoursLine(s) }}</span
+                >
+              } @else {
+                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                  >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}
+                  @if (hoursLine(s); as until) {
+                    · {{ until }}
+                  }
+                </span>
+              }
               @if (s.distanceMeters !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                   >🚶 {{ distanceLabel(s.distanceMeters) }}</span
@@ -159,6 +173,7 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
 export class TmaStoresPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
 
   readonly stores = signal<StoreListItem[]>([]);
   readonly kind = signal<StoreKindFilter>('ALL');
@@ -211,6 +226,16 @@ export class TmaStoresPage implements OnInit {
 
   inactive(store: StoreListItem): boolean {
     return storeAvailability(store) === 'closed';
+  }
+
+  /** Closed for an order now, open for a pre-order: the card says when it opens instead of the wait. */
+  preorderOnly(store: StoreListItem): boolean {
+    return storeAvailability(store) === 'scheduledOnly';
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени», or «до 21:00» while open. */
+  hoursLine(store: StoreListItem): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   /** Returns a translation key — resolved via | translate in the template. */
