@@ -181,11 +181,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noteOther: 'Order note',
       noteDrinkPlaceholder: 'For example, extra hot or no sugar',
       noteOtherPlaceholder: 'For example, no onion or cut in half',
-      pairings: 'Goes well with',
+      /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
+      pairings: 'Goes well with it',
     },
-    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    /** «Добавить к напитку?»: something to eat offered next to the drinks in the cart (`suggestFood`). */
     upsell: {
-      title: 'Add to your order',
+      title: 'Something to go with it?',
       add: 'Add {{name}}',
     },
   },
@@ -801,8 +802,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle: 'You were invited with a temporary password. Please pick a new one before continuing.',
       current: 'Current password',
       next: 'New password',
+      rule: 'At least {{min}} characters (up to {{max}}), and not the current one.',
+      confirm: 'Repeat the new password',
       save: 'Save',
       saving: 'Saving…',
+      errors: {
+        tooShort: 'Too short: at least {{min}} characters.',
+        tooLong: 'Too long: at most {{max}} characters.',
+        unchanged: 'The new password is the same as the current one — pick another.',
+        mismatch: 'The passwords do not match.',
+        currentIncorrect: 'The current password is wrong. Enter the one you signed in with.',
+        cannotChange: 'This account cannot change its password here. Ask the business owner or support.',
+        tooMany: 'Too many attempts. Wait a minute and try again.',
+        invalidField: 'Check the «{{field}}» field.',
+      },
     },
     forgot: {
       title: 'Forgot password',
@@ -838,6 +851,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       adminTag: 'Admin',
       install: 'Install app',
       installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
+      pinSessionNote:
+        'Signed in with a PIN — kitchen and stop-list only. The other sections open after signing in with a password.',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
@@ -873,16 +888,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
         resubmitting: 'Sending…',
         confirmResubmit: "Send your brand for review again? Make sure you've addressed the reviewer's comments.",
         support: 'Support:',
+        phoneMissing: 'Your brand has no contact phone — the takeAway team has no number to call you on about it.',
+        phoneCta: 'Add a phone',
       },
       checklist: {
         title: 'Launch your brand',
-        subtitle: 'Five steps to your first orders. Finished steps tick themselves off.',
+        subtitle: 'Four steps to your first orders. Finished steps tick themselves off.',
         progress: '{{done}} of {{total}} done',
         open: 'Open',
         loadFailed: 'Could not load the launch checklist.',
         brand: {
-          title: 'Brand details and logo',
-          todo: 'Upload your logo — customers see it next to your menu.',
+          title: 'Brand logo',
+          todo: 'Upload your logo — customers see it next to your menu and at stores without a photo of their own.',
           done: 'Logo uploaded.',
         },
         store: {
@@ -891,9 +908,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
           done: 'A store with address and opening hours is set up.',
         },
         menu: {
-          title: 'Menu: a category and a product with a photo',
-          todo: 'Create a category and add at least one product with a photo.',
-          done: 'Your menu has products with photos.',
+          title: 'Menu: a category and a product',
+          todo: 'Create a category and add at least one product customers can see. Photos can come later.',
+          done: 'Your menu has products.',
+        },
+        photos: {
+          title: 'Product photos',
+          todo: 'Without a photo the app shows a product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+          done: 'Your products have photos.',
+        },
+        recommended: {
+          title: 'Recommended',
+          hint: 'Not required to launch, but you sell better with them.',
         },
         payments: {
           title: 'Payments',
@@ -1129,7 +1155,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Up to {{max}} photos: JPEG, PNG, WebP or AVIF, {{maxMb}} MB each at most. Square works best ({{aspect}}, from {{width}}×{{height}} pixels), or 3:4 with the product in the middle. The first photo is the main one, shown in the menu.',
       productStyle:
         'How to shoot: the product cut out on white, a 3/4 angle, soft light, no third-party logos. Hot drinks in a paper cup, cold ones in a clear cup.',
-      placeholder: 'Until there is a photo, customers see this picture',
+      placeholder:
+        'Until there is a photo, the iOS and Android app shows the product as a text row with no picture (App Store rules), and the website and Telegram show this illustration',
+      photoSellsBetter: 'Products with a photo sell better — add at least one.',
       errors: {
         type: 'This file will not do: it has to be a JPG, PNG or WebP picture.',
         size: 'The file is {{size}} MB and the limit is {{maxMb}} MB. Make the picture smaller and upload it again.',
@@ -1155,6 +1183,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       localeHint: "We write to you about your brand's review in this language.",
       contactPhone: 'Contact phone',
       contactPhoneHint: 'The takeAway team calls this number about your brand.',
+      contactPhoneMissing:
+        'Add a contact phone — the settings will not save without it. The takeAway team calls this number about your brand: the launch, payouts, customer complaints.',
       errors: {
         CURRENCY_LOCKED: 'The currency cannot change: this brand already has orders.',
       },
@@ -1195,7 +1225,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       status: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' },
       empty: 'No brands in this bucket.',
       notLaunchedHint:
-        'Businesses that signed up and have not finished «Launch your brand» yet — call them and help them over the line.',
+        'Businesses that signed up, have not finished «Launch your brand» (a store, a menu, the review) and have not sold anything yet — call them and help them over the line. A logo and product photos are optional, and a brand with an order counts as launched.',
       waitingBadge: 'Waiting for review: {{brands}} · plan requests: {{plans}}',
       phone: 'Phone',
       launch: {
@@ -1207,7 +1237,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
           menu: 'menu',
           payments: 'payments',
           approved: 'review',
+          photos: 'product photos',
         },
+        recommended: 'recommended:',
+        hasOrders: 'has orders',
       },
       planRequest: {
         text: 'The owner asks to move to {{plan}} · {{date}}',
@@ -1648,6 +1681,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       moveDown: 'Move down',
       showCategories: 'Categories',
       hideCategories: 'Fold categories',
+      noPhoto: {
+        badge: 'no photo',
+        title:
+          'No photo: the app shows the product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+        summary:
+          'Products without a photo in the menu: {{count}}. The iOS and Android app shows them as text rows with no picture (App Store rules), the website and Telegram with an illustration. Products with a photo sell better.',
+        filter: 'Only without a photo: {{count}}',
+        inCategory: 'no photo: {{count}}',
+      },
       headers: {
         photo: 'Photo',
         name: 'Name',
@@ -1807,7 +1849,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         allergens: 'Allergens',
         allergensHint: 'Separated by commas, e.g. milk, nuts, gluten',
-        photosAfterCreate: 'Photos can be added right after the product is created.',
+        photosAfterCreate: 'Products with a photo sell better — add one right after creating the product.',
         stores: 'Sold in stores',
         storesHint: 'Same price in every store. New stores of the brand get the product automatically.',
         storesNone: 'No store is ticked — nobody will see the product.',
@@ -2843,9 +2885,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         fix: 'Fix the payout',
         fixing: 'Fixing…',
         fixed: 'Payout fixed: {{amount}}.',
+        closedDays:
+          "Today has not ended yet, so the payout covers the closed days, up to {{day}}. Today's orders go into the next one.",
         blocked: {
           PERIOD_OPEN: 'The period has not ended yet — pick a closed one, last week for instance.',
           OVERLAP: 'These days are already settled by a payout up to {{day}}. Pick a period that ends later.',
+          UP_TO_DATE:
+            'Every closed day is already in a payout — the latest runs to {{day}}. The next one can be fixed tomorrow.',
           NOTHING_DUE:
             'Nothing is owed to the brand at the end of the period. A negative balance reduces the next payout.',
         },
@@ -2882,6 +2928,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payouts: {
         title: 'Payouts',
         empty: 'No payouts yet.',
+        emptyAdmin: 'Fix one in the «Payout to the brand» card above — for a closed period, up to yesterday.',
+        emptyOwner: 'takeAway records the payouts — their history will show up here.',
         period: 'Period',
         amount: 'Amount',
         commission: 'Commission',
@@ -2966,6 +3014,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       daysAgo: '{{days}} d ago',
       toRetention: 'Win-back',
       none: 'Nobody became inactive in this period.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive.',
+      activeElsewhereStores: 'By store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
     },
     customers: {
       title: 'Customers',
@@ -3026,7 +3078,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       inactiveDays: 'No order for',
       storeFilter: 'Store',
       allStores: 'All stores',
+      currencyLabel: 'Currency of the amounts',
+      currencyNote: 'Customers of every store; amounts in {{currency}} — orders in another currency are not in them.',
       emptyInactive: 'Nobody is inactive: every regular ordered within the last {{days}} days.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive, so they are not listed.',
+      activeElsewhereStores: 'See by store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
       toBroadcast: 'Message these customers →',
       favouriteBadge: 'Favourite: {{name}}',
       favouriteTitle: 'Ordered {{count}}',

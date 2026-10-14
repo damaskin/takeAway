@@ -35,11 +35,33 @@ export interface CustomerSummary {
   favouriteProduct: FavouriteProduct | null;
 }
 
+/** How many of the people below are customers of one store. */
+export interface StoreLapsedCount {
+  storeId: string;
+  storeName: string;
+  count: number;
+}
+
+/**
+ * Regulars who went quiet at one store but still order at another: inactive
+ * there, not across the brand, so the brand-wide list does not show them.
+ */
+export interface LapsedAtOneStore {
+  count: number;
+  stores: StoreLapsedCount[];
+}
+
 export interface CustomerPage {
   items: CustomerSummary[];
   total: number;
   page: number;
   pageSize: number;
+  /** The currency spend is in; missing from older APIs. */
+  currency?: string | null;
+  /** Every currency the stores price in; more than one — the page offers a choice. */
+  currencies?: string[];
+  /** On the brand-wide inactive list only. */
+  activeElsewhere?: LapsedAtOneStore | null;
 }
 
 export interface CustomerOrder {
@@ -54,9 +76,12 @@ export interface CustomerOrder {
 }
 
 export interface CustomerDetail extends CustomerSummary {
+  /** The currency of the spend and check above; missing from older APIs. */
+  currency?: string | null;
   email: string | null;
   cancelledOrders: number;
-  stores: Array<{ storeId: string; storeName: string; orders: number; totalCents: number }>;
+  /** `currency`: the store's own, which `totalCents` is in. */
+  stores: Array<{ storeId: string; storeName: string; currency?: string; orders: number; totalCents: number }>;
   /** Every product ordered 5 units or more, most ordered first. */
   favourites: FavouriteProduct[];
   recentOrders: CustomerOrder[];
@@ -65,6 +90,8 @@ export interface CustomerDetail extends CustomerSummary {
 export interface CustomersQuery {
   brandId?: string | null;
   storeId?: string | null;
+  /** The currency spend is shown in, when the stores price in several. */
+  currency?: string | null;
   search?: string;
   segment?: CustomerSegment;
   inactiveDays?: number;
@@ -84,9 +111,9 @@ export class CustomersApi {
     return this.http.get<CustomerPage>(`${this.api.baseUrl}/admin/customers`, { params: compact(query) });
   }
 
-  get(userId: string, brandId?: string | null): Observable<CustomerDetail> {
+  get(userId: string, brandId?: string | null, currency?: string | null): Observable<CustomerDetail> {
     return this.http.get<CustomerDetail>(`${this.api.baseUrl}/admin/customers/${encodeURIComponent(userId)}`, {
-      params: compact({ brandId }),
+      params: compact({ brandId, currency }),
     });
   }
 }

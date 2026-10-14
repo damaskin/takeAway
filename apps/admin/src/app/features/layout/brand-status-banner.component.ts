@@ -1,5 +1,8 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { filter, map } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -15,12 +18,22 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
  * queue. Approved: nothing — the brand is live and there is nothing to say.
  *
  * Owner-only: the copy speaks to the owner, and only the owner can resubmit.
+ *
+ * A brand from before sign-up asked for a phone has none, and the platform
+ * team has nobody to call: a strip asks for one, everywhere but /settings,
+ * which says so itself.
  */
 @Component({
   selector: 'app-brand-status-banner',
   standalone: true,
-  imports: [TranslatePipe, ConfirmDialogComponent],
+  imports: [TranslatePipe, RouterLink, ConfirmDialogComponent],
   template: `
+    @if (phoneMissing()) {
+      <div class="status-banner" data-status="PHONE" role="status" data-testid="phone-missing-banner">
+        <span class="flex-1" style="min-width: 0">{{ 'admin.onboarding.banner.phoneMissing' | translate }}</span>
+        <a routerLink="/settings" class="status-link">{{ 'admin.onboarding.banner.phoneCta' | translate }} →</a>
+      </div>
+    }
     @if (brand(); as b) {
       @if (b.moderationStatus === 'PENDING') {
         <div class="status-banner" data-status="PENDING" role="status">
@@ -102,6 +115,10 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
         background: var(--color-foam);
         box-shadow: inset 3px 0 0 var(--color-berry);
       }
+      .status-banner[data-status='PHONE'] {
+        background: var(--color-cream);
+        box-shadow: inset 3px 0 0 var(--color-amber);
+      }
       .status-dot {
         flex: 0 0 auto;
         width: 8px;
@@ -135,6 +152,14 @@ export class BrandStatusBannerComponent {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly onboarding = inject(OnboardingApi);
   private readonly translate = inject(TranslateService);
+  private readonly router = inject(Router);
+  private readonly url = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
 
   readonly support = this.flags.support;
   readonly confirming = signal(false);
@@ -147,6 +172,13 @@ export class BrandStatusBannerComponent {
     const brand = this.activeBrand.active();
     const status = brand?.moderationStatus;
     return brand && (status === 'PENDING' || status === 'REJECTED') ? brand : null;
+  });
+
+  /** The owner's brand in view has no contact phone (null; an older API that does not say is left alone). */
+  readonly phoneMissing = computed(() => {
+    if (this.auth.user()?.role !== 'BRAND_ADMIN') return false;
+    if (this.url().startsWith('/settings')) return false;
+    return this.activeBrand.active()?.contactPhone === null;
   });
 
   resubmit(): void {

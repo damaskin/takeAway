@@ -197,9 +197,16 @@ describe('AnalyticsService.churn', () => {
   const NOW = new Date('2026-10-10T00:00:00Z');
   const lost = { userId: 'u1', lastOrderAt: new Date('2026-09-15T08:00:00Z'), orders: 4, totalCents: 20_000n };
 
+  /** Lost at one store, still ordering at another: u2 left both Центр and Балка, u3 only Центр. */
+  const elsewhere = [
+    { userId: 'u2', storeId: 's1', storeName: 'Центр' },
+    { userId: 'u2', storeId: 's2', storeName: 'Балка' },
+    { userId: 'u3', storeId: 's1', storeName: 'Центр' },
+  ];
+
   function service() {
     const prisma = {
-      $queryRaw: jest.fn().mockResolvedValueOnce([lost]).mockResolvedValueOnce([]),
+      $queryRaw: jest.fn().mockResolvedValueOnce([lost]).mockResolvedValueOnce([]).mockResolvedValueOnce(elsewhere),
       user: { findMany: jest.fn().mockResolvedValue([{ id: 'u1', name: null, phone: null }]) },
       order: {
         findMany: jest.fn().mockResolvedValue([{ userId: 'u1', customerName: 'Ира', customerPhone: '+37377' }]),
@@ -214,6 +221,32 @@ describe('AnalyticsService.churn', () => {
     expect(churn).toMatchObject({ window: 14, count: 1, lostRevenueCents: 5_000, previous: { count: 0 } });
     expect(churn.customers).toBeNull();
     expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('says how many regulars left one store but still order at another, and where', async () => {
+    const { svc, prisma } = service();
+    const churn = await svc.churn({ brandIds: ['b1'], storeIds: null }, WEEK, 14, false, 20, NOW);
+
+    expect(churn.activeElsewhere).toEqual({
+      count: 2,
+      stores: [
+        { storeId: 's1', storeName: 'Центр', count: 2 },
+        { storeId: 's2', storeName: 'Балка', count: 1 },
+      ],
+    });
+    // Within the same churn bounds as the count: last order at the store in
+    // [period start − 14 days, end − 14 days), still ordering somewhere after.
+    const sql = sqlOf((prisma.$queryRaw as jest.Mock).mock.calls[2]);
+    expect(sql.sql).toContain('pu."lastOrderAt" >=');
+    expect(sql.values).toEqual(expect.arrayContaining([3]));
+  });
+
+  it('has nothing to say about other stores when one store is picked', async () => {
+    const { svc, prisma } = service();
+    const churn = await svc.churn({ brandIds: ['b1'], storeIds: ['s1'] }, WEEK, 14, false, 20, NOW);
+
+    expect(churn.activeElsewhere).toBeNull();
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('lists the lost customers by the name they gave at checkout on PRO', async () => {

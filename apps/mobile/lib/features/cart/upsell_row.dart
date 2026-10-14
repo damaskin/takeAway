@@ -16,9 +16,9 @@ import '../catalog/catalog_providers.dart';
 import '../menu/quick_add.dart';
 import 'upsell.dart';
 
-/// The cart's «К заказу»: when it holds a drink and nothing to eat, a row of
-/// the store's bakery and food. Gone once something to eat is in the cart,
-/// or when there is nothing to offer.
+/// The cart's «Добавить к напитку?»: when it holds a drink and nothing to
+/// eat, a row of the store's bakery and food. Gone once something to eat is
+/// in the cart, or when there is nothing to offer.
 class CartUpsell extends ConsumerWidget {
   const CartUpsell({required this.store, required this.cart, super.key});
 
@@ -45,10 +45,10 @@ class CartUpsell extends ConsumerWidget {
   }
 }
 
-/// A titled horizontal row of products to add — the cart's «К заказу», the
-/// drink screen's «Часто берут вместе». A card opens the product; its «+»
-/// adds it at once, or opens it when there is something to choose (see
-/// [quickAdd]).
+/// A titled horizontal row of products to add — the cart's «Добавить к
+/// напитку?», the drink screen's «К этому напитку». A card opens the
+/// product; its «+» adds it at once, or opens it when there is something to
+/// choose (see [quickAdd]).
 class UpsellRow extends StatelessWidget {
   const UpsellRow({required this.title, required this.items, required this.store, this.onAdded, super.key});
 

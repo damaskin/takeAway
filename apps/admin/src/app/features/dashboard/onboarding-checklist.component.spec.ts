@@ -18,7 +18,9 @@ const fresh: BrandOnboarding = {
   brandProfile: true,
   store: false,
   menu: false,
+  photos: false,
   cardPayments: false,
+  hasOrders: false,
   complete: false,
 };
 
@@ -61,13 +63,34 @@ describe('OnboardingChecklistComponent', () => {
     expect(checklist).toHaveBeenCalledWith('b1');
     expect(list.visible()).toBe(true);
     expect(list.steps().map((s) => [s.key, s.done])).toEqual([
-      ['brand', true],
       ['store', false],
       ['menu', false],
       ['payments', true],
       ['moderation', false],
     ]);
-    expect(list.doneCount()).toBe(2);
+    expect(list.doneCount()).toBe(1);
+  });
+
+  it('recommends a logo and photos beside the steps, without counting them', async () => {
+    const list = await render('BRAND_ADMIN', { ...fresh, brandProfile: false });
+
+    expect(list.recommendations().map((s) => [s.key, s.done, s.link])).toEqual([
+      ['brand', false, '/settings'],
+      ['photos', false, '/menu'],
+    ]);
+    expect(list.steps().some((s) => s.key === 'brand' || s.key === 'photos')).toBe(false);
+    expect(list.progressPercent()).toBe(25);
+  });
+
+  it('goes away once the brand has sold, even with steps left', async () => {
+    const list = await render('BRAND_ADMIN', {
+      ...fresh,
+      moderationStatus: 'APPROVED',
+      hasOrders: true,
+      complete: true,
+    });
+
+    expect(list.visible()).toBe(false);
   });
 
   it('describes payments as on-site until card payments are switched on', async () => {
@@ -105,8 +128,8 @@ describe('OnboardingChecklistComponent', () => {
     expect(list.ownerPartDone()).toBe(false);
   });
 
-  it('says only the review is left once brand, store and menu are done', async () => {
-    const list = await render('BRAND_ADMIN', { ...fresh, store: true, menu: true });
+  it('says only the review is left once store and menu are done, photos or not', async () => {
+    const list = await render('BRAND_ADMIN', { ...fresh, brandProfile: false, store: true, menu: true });
 
     expect(list.nextStep()).toBeNull();
     expect(list.ownerPartDone()).toBe(true);

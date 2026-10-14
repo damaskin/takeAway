@@ -97,6 +97,65 @@ describe('CustomersService.list', () => {
     expect(page.items[0]?.favouriteProduct).toEqual({ name: 'Латте', quantity: 7, kind: 'DRINK' });
   });
 
+  it('counts people over every store, and their spend in the currency picked when stores price in several', async () => {
+    const { svc, queries } = service([
+      [{ ...row, orders: 5, moneyOrders: 2, totalCents: 9_000n }],
+      [{ userId: 'u1', storeId: 's1', storeName: 'Center' }],
+    ]);
+    const page = await svc.list(scope, {}, NOW, { currency: 'RUP', currencies: ['MDL', 'RUP'] });
+
+    expect(queries[0]?.sql).toContain('FILTER (WHERE o."currency" = ?::"Currency")');
+    expect(queries[0]?.values).toContain('RUP');
+    // Five orders in all, two of them in roubles: the check is over those two.
+    expect(page.items[0]).toEqual(expect.objectContaining({ orders: 5, totalCents: 9_000, avgCheckCents: 4_500 }));
+    expect(page).toEqual(expect.objectContaining({ currency: 'RUP', currencies: ['MDL', 'RUP'] }));
+  });
+
+  it('adds every order up when the stores price in one currency', async () => {
+    const { svc, queries } = service([[]]);
+    const page = await svc.list(scope, {}, NOW, { currency: 'RUP', currencies: ['RUP'] });
+
+    expect(queries[0]?.sql).not.toContain('"currency" =');
+    expect(page).toEqual(expect.objectContaining({ currency: 'RUP', currencies: ['RUP'], activeElsewhere: null }));
+  });
+
+  it('on the brand-wide inactive list, counts who went quiet at one store but orders at another', async () => {
+    const { svc, queries } = service([
+      [],
+      [
+        { userId: 'u2', storeId: 's2', storeName: 'Балка' },
+        { userId: 'u3', storeId: 's1', storeName: 'Центр' },
+        { userId: 'u4', storeId: 's1', storeName: 'Центр' },
+      ],
+    ]);
+    const page = await svc.list(scope, { segment: 'inactive', inactiveDays: 7 }, NOW);
+
+    expect(page.activeElsewhere).toEqual({
+      count: 3,
+      stores: [
+        { storeId: 's1', storeName: 'Центр', count: 2 },
+        { storeId: 's2', storeName: 'Балка', count: 1 },
+      ],
+    });
+    // Inactive at the store (3+ orders there, none for 7 days), active across the stores.
+    expect(queries[1]?.sql).toContain('ps."orders" >= ?');
+    expect(queries[1]?.sql).toContain('ps."lastOrderAt" < ?');
+    expect(queries[1]?.sql).toContain('pu."lastOrderAt" >= ?');
+    expect(queries[1]?.values).toEqual(expect.arrayContaining([3, '2026-09-27T12:00:00.000Z']));
+  });
+
+  it('has nothing to add about other stores once a store is picked', async () => {
+    const { svc, queries } = service([[]]);
+    const page = await svc.list(
+      { brandIds: ['b1'], storeIds: ['s1'] },
+      { segment: 'inactive', inactiveDays: 7, storeId: 's1' },
+      NOW,
+    );
+
+    expect(page.activeElsewhere).toBeNull();
+    expect(queries).toHaveLength(1);
+  });
+
   it('sorts the most frequent customers first by default for frequency', async () => {
     const { svc, queries } = service([[]]);
     await svc.list(scope, { sort: 'frequency' }, NOW);
@@ -139,6 +198,27 @@ describe('CustomersService.detail', () => {
     expect(queries[2]?.sql).toContain('HAVING SUM(oi."quantity") >= ?');
     expect(queries[2]?.values).toContain(5);
     expect(queries).toHaveLength(4);
+  });
+
+  it("shows each store's spend in the store's own currency when the stores price in several", async () => {
+    const { svc, queries } = service([
+      [{ ...row, orders: 4, moneyOrders: 3 }],
+      [
+        { storeId: 's1', storeName: 'Center', currency: 'RUP', orders: 3, totalCents: 9_000n },
+        { storeId: 'm1', storeName: 'Moldova', currency: 'MDL', orders: 1, totalCents: 500n },
+      ],
+      [],
+      [{ userId: 'u1', storeId: 's1', storeName: 'Center' }],
+    ]);
+    const detail = await svc.detail(scope, 'u1', NOW, { currency: 'RUP', currencies: ['MDL', 'RUP'] });
+
+    expect(queries[1]?.sql).toContain('o."currency" = s."currency"');
+    expect(detail.currency).toBe('RUP');
+    expect(detail.avgCheckCents).toBe(3_000);
+    expect(detail.stores).toEqual([
+      { storeId: 's1', storeName: 'Center', currency: 'RUP', orders: 3, totalCents: 9_000 },
+      { storeId: 'm1', storeName: 'Moldova', currency: 'MDL', orders: 1, totalCents: 500 },
+    ]);
   });
 
   it('knows nobody who never ordered from the brand', async () => {

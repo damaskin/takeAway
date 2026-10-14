@@ -155,6 +155,15 @@ currency, to }`) creates a `PENDING` payout that starts the day after the
   settles that day (`PAYOUT_OVERLAP`) or when nothing is owed
   (`PAYOUT_NOTHING_DUE`). Serialised per brand and currency with a Postgres
   advisory lock, so a double click cannot fix the same money twice.
+- **The «Выплата бренду» card** shows the payout the report would fix
+  (`nextPayout`): up to the end of the report's period when that period has
+  ended, and **up to yesterday** in the brand's zone when the period reaches
+  today — the card then says today's orders go into the next payout. It never
+  proposes a period that is still open, so the button is there whenever
+  something is owed for the closed days; when every closed day is paid out it
+  says the next payout can be fixed tomorrow. While the brand has no payouts,
+  the «Выплаты» list tells the platform admin to fix one in that card, and the
+  brand owner that takeAway records them.
 - **«Отметить выплаченной»** (`PATCH …/payouts/:id/paid { reference? }`) once
   the transfer went out. A paid payout is final.
 - A pending payout fixed by mistake can be removed, but only the latest one

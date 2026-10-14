@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { provideTranslateService } from '@ngx-translate/core';
 import { of, throwError } from 'rxjs';
 
@@ -11,7 +12,11 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { OnboardingApi } from '../../core/onboarding/onboarding.service';
 import { BrandStatusBannerComponent } from './brand-status-banner.component';
 
-function brand(moderationStatus: BrandDto['moderationStatus'], moderationNote: string | null = null): BrandDto {
+function brand(
+  moderationStatus: BrandDto['moderationStatus'],
+  moderationNote: string | null = null,
+  contactPhone: string | null | undefined = '+37369123456',
+): BrandDto {
   return {
     id: 'b1',
     slug: 'b1',
@@ -21,6 +26,7 @@ function brand(moderationStatus: BrandDto['moderationStatus'], moderationNote: s
     logoUrl: null,
     moderationStatus,
     moderationNote,
+    contactPhone,
   };
 }
 
@@ -34,6 +40,7 @@ describe('BrandStatusBannerComponent', () => {
     TestBed.configureTestingModule({
       imports: [BrandStatusBannerComponent],
       providers: [
+        provideRouter([]),
         provideTranslateService(),
         { provide: AuthStore, useValue: { user: signal({ role }) } },
         { provide: ActiveBrandService, useValue: { active: signal(active), refresh } },
@@ -78,6 +85,17 @@ describe('BrandStatusBannerComponent', () => {
 
     expect(refresh).toHaveBeenCalled();
     expect(banner.error()).toBeNull();
+  });
+
+  it('asks an owner whose brand has no contact phone for one', () => {
+    expect(make('BRAND_ADMIN', brand('APPROVED', null, null)).phoneMissing()).toBe(true);
+    TestBed.resetTestingModule();
+    expect(make('BRAND_ADMIN', brand('APPROVED')).phoneMissing()).toBe(false);
+    TestBed.resetTestingModule();
+    // An answer that does not carry the field says nothing about it.
+    expect(make('BRAND_ADMIN', brand('APPROVED', null, undefined)).phoneMissing()).toBe(false);
+    TestBed.resetTestingModule();
+    expect(make('SUPER_ADMIN', brand('APPROVED', null, null)).phoneMissing()).toBe(false);
   });
 
   it('keeps the owner on the banner with a message when the request fails', () => {

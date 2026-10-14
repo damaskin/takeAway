@@ -128,7 +128,8 @@ export class AdminCatalogService {
   /**
    * Minimal brand list filtered to the caller's scope. `null` = no filter.
    * Carries the moderation state so the admin shell can tell an owner where
-   * their brand stands on every page, not only on /settings.
+   * their brand stands on every page, not only on /settings — and the
+   * contact phone, so it can ask a brand from before sign-up required one.
    */
   listBrandsForScope(scope: BrandScope) {
     return this.prisma.brand.findMany({
@@ -146,6 +147,7 @@ export class AdminCatalogService {
         submittedAt: true,
         plan: true,
         commissionBps: true,
+        contactPhone: true,
       },
     });
   }
@@ -565,16 +567,30 @@ export class AdminCatalogService {
   }
 
   // ── Categories ────────────────────────────────────────────────────────────
-  listCategories(scope: BrandScope, brandId?: string) {
+  /**
+   * The categories with how full each is (`_count`) and how many of their
+   * products have no photo (`productsWithoutPhoto`): the app shows such a
+   * product as a text row with no picture, so the menu editor points them
+   * out.
+   */
+  async listCategories(scope: BrandScope, brandId?: string) {
     if (brandId && scope !== null && !scope.includes(brandId)) return [];
     const where = brandId ? { brandId } : scope !== null ? { brandId: { in: scope } } : undefined;
-    return this.prisma.category.findMany({
+    const categories = await this.prisma.category.findMany({
       where,
       orderBy: [{ brandId: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
       // The editor shows how full each category is, and knows before a delete
       // that the products need somewhere to go; and whether it has an option set.
       include: { _count: { select: { products: true, options: true } } },
     });
+    if (categories.length === 0) return [];
+    const withoutPhoto = await this.prisma.product.groupBy({
+      by: ['categoryId'],
+      where: { categoryId: { in: categories.map((c) => c.id) }, imageUrls: { isEmpty: true } },
+      _count: { _all: true },
+    });
+    const counts = new Map(withoutPhoto.map((row) => [row.categoryId, row._count._all]));
+    return categories.map((c) => ({ ...c, productsWithoutPhoto: counts.get(c.id) ?? 0 }));
   }
 
   async getCategory(id: string, scope: BrandScope = null) {

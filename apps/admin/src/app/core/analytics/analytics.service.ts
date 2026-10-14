@@ -128,6 +128,15 @@ export interface RetentionCustomer {
   daysSinceLastOrder: number;
 }
 
+/**
+ * Regulars lost at one of the stores in the period who still order at
+ * another: not lost across the stores, so not in `count`.
+ */
+export interface LapsedAtStores {
+  count: number;
+  stores: Array<{ storeId: string; storeName: string; count: number }>;
+}
+
 export interface ChurnStats extends AnalyticsPeriodEcho {
   window: ChurnWindow;
   count: number;
@@ -136,6 +145,8 @@ export interface ChurnStats extends AnalyticsPeriodEcho {
   countDeltaPercent: number | null;
   /** Null on a plan without the list. */
   customers: RetentionCustomer[] | null;
+  /** Null for one store; missing from older APIs. */
+  activeElsewhere?: LapsedAtStores | null;
 }
 
 export interface WinBackPeriod {

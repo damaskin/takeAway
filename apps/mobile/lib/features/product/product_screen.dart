@@ -265,7 +265,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     );
   }
 
-  /// «Часто берут вместе» under a drink: something to eat from the same
+  /// «К этому напитку» under a drink: something to eat from the same
   /// store, when it is taking orders and has any.
   Widget? _pairing(ProductKind? kind, Store? store, Menu? menu) {
     if (!(kind?.isDrink ?? false) || store == null || !store.takesOrders || menu == null) return null;

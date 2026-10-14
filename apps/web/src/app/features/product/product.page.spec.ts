@@ -179,7 +179,7 @@ describe('ProductPage', () => {
     const harness = await open('latte', LATTE);
     const el = harness.routeNativeElement as HTMLElement;
 
-    expect(text(el)).toContain('Часто берут вместе');
+    expect(text(el)).toContain('К этому напитку');
     expect(Array.from(el.querySelectorAll('[data-testid="food-suggestion"] .name')).map(text)).toEqual([
       'Круассан',
       'Маффин',

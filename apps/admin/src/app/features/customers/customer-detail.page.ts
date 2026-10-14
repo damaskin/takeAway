@@ -102,7 +102,7 @@ interface FavouriteGroup {
               <li>
                 <span>{{ s.storeName }}</span>
                 <span class="cd-note">{{
-                  'admin.customers.storeLine' | translate: { orders: s.orders, amount: price(s.totalCents) }
+                  'admin.customers.storeLine' | translate: { orders: s.orders, amount: price(s.totalCents, s.currency) }
                 }}</span>
               </li>
             }
@@ -304,6 +304,8 @@ export class CustomerDetailPage {
 
   /** The `:userId` route param, bound by `withComponentInputBinding`. */
   readonly userId = input<string>();
+  /** `?currency=`, kept from the list: the currency the spend is shown in. */
+  readonly currency = input<string>();
 
   readonly customer = signal<CustomerDetail | null>(null);
   readonly error = signal<string | null>(null);
@@ -324,11 +326,12 @@ export class CustomerDetailPage {
     effect(() => {
       const brandId = this.activeBrand.activeId();
       const userId = this.userId();
+      const currency = this.currency();
       if (!brandId || !userId) return;
       untracked(() => {
         this.error.set(null);
         this.customer.set(null);
-        this.api.get(userId, brandId).subscribe({
+        this.api.get(userId, brandId, currency).subscribe({
           next: (c) => this.customer.set(c),
           error: (err) =>
             this.error.set(
@@ -346,8 +349,9 @@ export class CustomerDetailPage {
     return [c.phone, c.email].filter((v): v is string => !!v).join(' · ');
   }
 
-  price(cents: number): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency);
+  /** In `currency` when given (a store's own), else in the one the customer's spend was counted in. */
+  price(cents: number, currency?: string | null): string {
+    return this.fmt.money(cents, currency ?? this.customer()?.currency ?? this.activeBrand.active()?.currency);
   }
 
   frequency(days: number | null): string {

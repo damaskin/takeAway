@@ -9,8 +9,8 @@ export interface FoodSuggestion {
 }
 
 /**
- * Something to eat with the drinks — «К заказу» in the cart, «Часто берут
- * вместе» on a drink's page.
+ * Something to eat with the drinks — «Добавить к напитку?» in the cart,
+ * «К этому напитку» on a drink's page.
  *
  * Offered only while the products in hand (the cart's lines, or the drink on
  * screen) include a drink and nothing to eat yet. The offer is the menu's
@@ -20,6 +20,9 @@ export interface FoodSuggestion {
  * add-ons-only categories never reach it — so nothing else is filtered.
  * Kinds come from the menu: a product in hand that is not on it counts as
  * neither.
+ *
+ * A rule on the menu, not order statistics — which is why the titles do not
+ * claim «often ordered together». The app does the same (`upsell.dart`).
  */
 export function suggestFood(
   menu: Pick<StoreMenu, 'categories'> | null | undefined,

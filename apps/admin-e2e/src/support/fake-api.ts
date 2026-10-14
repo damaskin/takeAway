@@ -24,6 +24,7 @@ export const BRAND = {
   themeOverrides: null,
   moderationStatus: 'APPROVED',
   ownerId: 'user-1',
+  contactPhone: '+37369123456',
   _count: { stores: 1, products: 1 },
 };
 

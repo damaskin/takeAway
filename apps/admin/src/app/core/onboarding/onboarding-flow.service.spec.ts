@@ -15,7 +15,9 @@ const progress: BrandOnboarding = {
   brandProfile: false,
   store: false,
   menu: false,
+  photos: false,
   cardPayments: false,
+  hasOrders: false,
   complete: false,
 };
 
