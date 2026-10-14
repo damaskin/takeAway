@@ -159,7 +159,10 @@ export class PersonalInfoPage {
   }
 
   private extractMessage(err: unknown): string {
-    const maybe = err as { error?: { message?: unknown }; message?: unknown };
+    const maybe = err as { error?: { message?: unknown; code?: unknown }; message?: unknown };
+    if (maybe.error?.code === 'EMAIL_IS_SIGN_IN_METHOD') {
+      return this.translate.instant('web.profile.personalInfo.emailIsSignIn');
+    }
     if (maybe.error?.message && typeof maybe.error.message === 'string') return maybe.error.message;
     if (Array.isArray(maybe.error?.message) && maybe.error.message.length) return maybe.error.message[0] as string;
     if (typeof maybe.message === 'string') return maybe.message;

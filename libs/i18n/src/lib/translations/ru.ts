@@ -574,6 +574,8 @@ export const TRANSLATIONS_RU = {
         dob: 'Дата рождения',
         saving: 'Сохраняем…',
         saved: 'Сохранено.',
+        emailIsSignIn:
+          'Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».',
       },
       signOut: 'Выйти',
       initials: 'Г',

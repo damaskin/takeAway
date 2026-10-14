@@ -571,6 +571,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         dob: 'Date of birth',
         saving: 'Saving…',
         saved: 'Saved.',
+        emailIsSignIn:
+          'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.',
       },
       signOut: 'Sign out',
       initials: 'G',
