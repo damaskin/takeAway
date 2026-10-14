@@ -128,7 +128,8 @@ export class AdminCatalogService {
   /**
    * Minimal brand list filtered to the caller's scope. `null` = no filter.
    * Carries the moderation state so the admin shell can tell an owner where
-   * their brand stands on every page, not only on /settings.
+   * their brand stands on every page, not only on /settings — and the
+   * contact phone, so it can ask a brand from before sign-up required one.
    */
   listBrandsForScope(scope: BrandScope) {
     return this.prisma.brand.findMany({
@@ -146,6 +147,7 @@ export class AdminCatalogService {
         submittedAt: true,
         plan: true,
         commissionBps: true,
+        contactPhone: true,
       },
     });
   }

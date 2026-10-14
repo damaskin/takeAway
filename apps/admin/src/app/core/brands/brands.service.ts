@@ -60,6 +60,8 @@ export interface CreateBrandRequest {
   name: string;
   currency?: string;
   locale?: 'EN' | 'RU';
+  /** Any common format; the API stores E.164. */
+  contactPhone?: string;
 }
 
 @Injectable({ providedIn: 'root' })

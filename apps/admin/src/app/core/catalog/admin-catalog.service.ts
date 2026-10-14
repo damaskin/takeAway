@@ -23,6 +23,8 @@ export interface BrandDto {
   plan?: BrandPlan;
   /** Platform commission in basis points (1000 = 10 %). */
   commissionBps?: number;
+  /** The number the takeAway team calls, E.164; null on a brand from before sign-up asked for it. */
+  contactPhone?: string | null;
 }
 
 export interface StoreWorkingHourDto {

@@ -780,6 +780,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         resubmitting: 'Sending…',
         confirmResubmit: "Send your brand for review again? Make sure you've addressed the reviewer's comments.",
         support: 'Support:',
+        phoneMissing: 'Your brand has no contact phone — the takeAway team has no number to call you on about it.',
+        phoneCta: 'Add a phone',
       },
       checklist: {
         title: 'Launch your brand',
@@ -1051,6 +1053,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       localeHint: "We write to you about your brand's review in this language.",
       contactPhone: 'Contact phone',
       contactPhoneHint: 'The takeAway team calls this number about your brand.',
+      contactPhoneMissing:
+        'Add a contact phone — the settings will not save without it. The takeAway team calls this number about your brand: the launch, payouts, customer complaints.',
       errors: {
         CURRENCY_LOCKED: 'The currency cannot change: this brand already has orders.',
       },
