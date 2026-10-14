@@ -5,7 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import axios, { isAxiosError } from 'axios';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import type { PushAttempt, PushMessage, PushProvider, PushRecipient } from './push-provider.interface';
+import {
+  isPromotionalPush,
+  pushData,
+  type PushAttempt,
+  type PushMessage,
+  type PushProvider,
+  type PushRecipient,
+} from './push-provider.interface';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
@@ -113,8 +120,7 @@ export class FcmPushProvider implements PushProvider {
     token: string,
     message: PushMessage,
   ): Promise<{ status: 'sent' } | { status: 'gone' } | { status: 'failed'; error: string }> {
-    const data: Record<string, string> = { kind: message.kind };
-    if (message.orderId) data['orderId'] = message.orderId;
+    const data = pushData(message);
     try {
       await axios.post(
         `https://fcm.googleapis.com/v1/projects/${account.projectId}/messages:send`,
@@ -126,7 +132,7 @@ export class FcmPushProvider implements PushProvider {
             android: {
               priority: 'HIGH',
               notification: {
-                channel_id: message.kind === 'generic' ? ANDROID_CHANNEL_PROMOTIONS : ANDROID_CHANNEL_ORDERS,
+                channel_id: isPromotionalPush(message) ? ANDROID_CHANNEL_PROMOTIONS : ANDROID_CHANNEL_ORDERS,
                 // One notification per order on the device: a newer status
                 // replaces the older one instead of stacking.
                 ...(message.orderId ? { tag: `order-${message.orderId}` } : {}),

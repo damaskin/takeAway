@@ -108,13 +108,24 @@ export class CampaignsController {
     return this.service.preview(resolved, spec, c as CampaignChannel);
   }
 
-  /** Sends the copy to the signed-in admin only — their app, browser or Telegram. */
+  /**
+   * Sends the copy to the signed-in admin only — their app, browser or
+   * Telegram — titled «<Brand>: <title>» like the real thing when the brand
+   * is known (a SUPER_ADMIN passes `?brandId=`).
+   */
   @Post('test')
   @Roles('BRAND_ADMIN', 'SUPER_ADMIN')
   @Throttle({ default: { limit: TESTS_PER_MINUTE, ttl: 60_000 } })
+  @ApiQuery({ name: 'brandId', required: false, type: String })
   @ApiOkResponse({ type: CampaignTestResultDto })
-  test(@CurrentUser() user: AuthenticatedUser, @Body() dto: TestCampaignDto): Promise<CampaignTestResultDto> {
-    return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel });
+  async test(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: TestCampaignDto,
+    @Query('brandId') brandId?: string,
+  ): Promise<CampaignTestResultDto> {
+    const scope = await this.brandScope.resolveBrandIds(user);
+    const resolved = scope === null && !brandId ? undefined : await this.resolveBrandId(user, brandId);
+    return this.service.sendTest(user.id, { title: dto.title, body: dto.body, channel: dto.channel }, resolved);
   }
 
   /** One campaign — the edit form loads it. */

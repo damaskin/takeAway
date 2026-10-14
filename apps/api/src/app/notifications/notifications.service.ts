@@ -392,14 +392,18 @@ export class NotificationsService {
   /**
    * Sends one marketing message to one user — the admin's "send a test to
    * me". Honors the user's `notifyPromotions` flag unless `ignoreOptOut`
-   * (the test send: the admin asked for it themselves).
+   * (the test send: the admin asked for it themselves). `push` sets the kind
+   * and the ids the app routes a tap by; a plain `generic` push without it.
    */
   async sendCampaignTo(
     userId: string,
     channel: 'PUSH' | 'TELEGRAM',
     title: string,
     body: string,
-    options: { ignoreOptOut?: boolean } = {},
+    options: {
+      ignoreOptOut?: boolean;
+      push?: Pick<PushMessage, 'kind' | 'notificationId' | 'storeId' | 'brandId'>;
+    } = {},
   ): Promise<DeliveryResult | { outcome: 'opted_out'; via: DeliveryVia[] }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -408,7 +412,7 @@ export class NotificationsService {
     if (!user) return { outcome: 'no_channel', via: [] };
     if (!user.notifyPromotions && !options.ignoreOptOut) return { outcome: 'opted_out', via: [] };
     const mode: DeliveryMode = channel === 'TELEGRAM' ? 'telegram' : 'push';
-    return this.deliver(toPushRecipient(user), { kind: 'generic', title, body }, mode);
+    return this.deliver(toPushRecipient(user), { kind: 'generic', ...options.push, title, body }, mode);
   }
 
   /**

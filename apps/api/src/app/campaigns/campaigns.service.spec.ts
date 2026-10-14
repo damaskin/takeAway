@@ -1,7 +1,9 @@
 import { type Campaign, type CampaignDeliveryOutcome, Prisma } from '@prisma/client';
 
+import type { InboxService } from '../inbox/inbox.service';
 import type { MailService } from '../mail/mail.service';
 import type { DeliveryResult, NotificationsService } from '../notifications/notifications.service';
+import type { PushMessage } from '../notifications/providers/push-provider.interface';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
   type AudienceUser,
@@ -260,6 +262,7 @@ describe('CampaignsService', () => {
           return Promise.resolve([...counts].map(([outcome, n]) => ({ outcome, _count: { _all: n } })));
         }),
       },
+      brand: { findUnique: jest.fn(() => Promise.resolve({ name: 'NoName Coffee' })) },
       $transaction: jest.fn((ops: Array<Promise<unknown>>) => Promise.all(ops)),
       // The inactive segment lookup.
       $queryRaw: jest.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -267,7 +270,7 @@ describe('CampaignsService', () => {
         return Promise.resolve((opts.inactive ?? []).map((userId) => ({ userId })));
       }),
     };
-    const deliver = jest.fn<Promise<DeliveryResult>, [{ userId: string }]>((r) =>
+    const deliver = jest.fn<Promise<DeliveryResult>, [{ userId: string }, PushMessage, ...unknown[]]>((r) =>
       Promise.resolve(
         r.userId === 'tg'
           ? { outcome: 'sent', via: ['telegram'] }
@@ -285,8 +288,21 @@ describe('CampaignsService', () => {
       transportStatus: () => ({ apns: true, fcm: true, webpush: true, telegram: true }),
     } as unknown as NotificationsService;
     const mail = { isConfigured: () => true, send: jest.fn() } as unknown as MailService;
-    const service = new CampaignsService(prisma as unknown as PrismaService, notifications, mail);
-    return { service, prisma, deliver, deliveries, queries, current, exists: () => campaign !== null };
+    const writeForCampaign = jest.fn((_c: unknown, userIds: string[]) =>
+      Promise.resolve(new Map(userIds.map((id) => [id, `inbox-${id}`]))),
+    );
+    const inbox = { writeForCampaign } as unknown as InboxService;
+    const service = new CampaignsService(prisma as unknown as PrismaService, notifications, mail, inbox);
+    return {
+      service,
+      prisma,
+      deliver,
+      deliveries,
+      queries,
+      current,
+      writeForCampaign,
+      exists: () => campaign !== null,
+    };
   }
 
   it('refuses to retry to an empty audience instead of finishing "0 / 0"', async () => {
@@ -573,6 +589,58 @@ describe('CampaignsService', () => {
     expect(h.queries).toHaveLength(1);
   });
 
+  describe('inbox and sender', () => {
+    it('gives everyone who allows promotions an inbox item and pushes it under the brand name', async () => {
+      const h = setup({
+        users: [user({ id: 'app' }), user({ id: 'nobody' }), user({ id: 'quiet', notifyPromotions: false })],
+        campaign: { status: 'SENDING', ...approved },
+      });
+      await h.service.run('c1');
+
+      // The unreachable customer gets an item too; the opted-out one gets nothing.
+      expect(h.writeForCampaign).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', brandId: 'b1' }), [
+        'app',
+        'nobody',
+      ]);
+      expect(h.deliver).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'app' }),
+        {
+          kind: 'campaign',
+          title: 'NoName Coffee: Скидка',
+          body: '−20% на капучино',
+          notificationId: 'inbox-app',
+        },
+        'push',
+      );
+    });
+
+    it('titles a Telegram campaign with the brand too, without an inbox item', async () => {
+      const h = setup({
+        users: [user({ id: 'tg', telegramUserId: 7n })],
+        campaign: { status: 'SENDING', channel: 'TELEGRAM', ...approved },
+      });
+      await h.service.run('c1');
+
+      expect(h.writeForCampaign).not.toHaveBeenCalled();
+      expect(h.deliver).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'campaign', title: 'NoName Coffee: Скидка' }),
+        'telegram',
+      );
+      expect(h.deliver.mock.calls[0]?.[1]).not.toHaveProperty('notificationId');
+    });
+
+    it('writes no inbox item for an email campaign', async () => {
+      const h = setup({
+        users: [user({ id: 'mail', email: 'a@b.c' })],
+        campaign: { status: 'SENDING', channel: 'EMAIL', ...approved },
+      });
+      await h.service.run('c1');
+      expect(h.writeForCampaign).not.toHaveBeenCalled();
+      expect(h.current().sentCount).toBe(1);
+    });
+  });
+
   it('keeps why the app push failed when the Telegram fallback still delivered', async () => {
     const h = setup({
       users: [user({ id: 'fallback', telegramUserId: 7n })],
@@ -599,6 +667,7 @@ describe('CampaignsService.create', () => {
       prisma as unknown as PrismaService,
       {} as NotificationsService,
       {} as MailService,
+      {} as InboxService,
     );
     return { service, prisma };
   }
@@ -648,7 +717,7 @@ describe('CampaignsService.stats', () => {
       ),
     );
     const prisma = { campaignDelivery: { groupBy } } as unknown as PrismaService;
-    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService);
+    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService, {} as InboxService);
 
     const stats = await service.stats(['c1', 'c2', 'c3']);
 
@@ -667,7 +736,7 @@ describe('CampaignsService.stats', () => {
   it('does not query for an empty list', async () => {
     const groupBy = jest.fn();
     const prisma = { campaignDelivery: { groupBy } } as unknown as PrismaService;
-    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService);
+    const service = new CampaignsService(prisma, {} as NotificationsService, {} as MailService, {} as InboxService);
     await expect(service.stats([])).resolves.toEqual(new Map());
     expect(groupBy).not.toHaveBeenCalled();
   });
