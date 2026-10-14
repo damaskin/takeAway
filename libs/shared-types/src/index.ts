@@ -9,6 +9,7 @@ export * from './lib/plan';
 export * from './lib/analytics-overview';
 export * from './lib/feedback';
 export * from './lib/push';
+export * from './lib/inbox';
 export * from './lib/settlements';
 export * from './lib/promo-status';
 export * from './lib/images';
