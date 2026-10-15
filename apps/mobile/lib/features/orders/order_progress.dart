@@ -23,11 +23,15 @@ int orderStepIndex(OrderStatus status) => switch (status) {
 /// The big live dial: a countdown to the promised time while the kitchen
 /// works, a pulse when the order is ready, a check when it is collected.
 class OrderProgressRing extends StatefulWidget {
-  const OrderProgressRing({required this.order, required this.now, this.size = 260, super.key});
+  const OrderProgressRing({required this.order, required this.now, this.size = 260, this.late = false, super.key});
 
   final Order order;
   final DateTime now;
   final double size;
+
+  /// Past its time and not ready yet: the dial says so instead of a frozen
+  /// 0:00.
+  final bool late;
 
   @override
   State<OrderProgressRing> createState() => _OrderProgressRingState();
@@ -107,6 +111,22 @@ class _OrderProgressRingState extends State<OrderProgressRing> with TickerProvid
           Text(l10n.readyShort, style: context.text.displaySmall?.copyWith(color: brand.mint)),
         ],
       );
+    } else if (widget.late) {
+      center = Padding(
+        padding: EdgeInsets.symmetric(horizontal: widget.size * 0.14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.hourglass_bottom_rounded, size: widget.size * 0.16, color: brand.amber),
+            const SizedBox(height: 6),
+            Text(
+              l10n.orderRunningLate,
+              textAlign: TextAlign.center,
+              style: context.text.titleLarge?.copyWith(color: brand.textPrimary),
+            ),
+          ],
+        ),
+      );
     } else {
       final remaining = order.pickupAt.difference(widget.now);
       center = Column(
@@ -152,7 +172,7 @@ class _OrderProgressRingState extends State<OrderProgressRing> with TickerProvid
               scale: Tween(begin: 0.6, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutBack)),
               child: FadeTransition(opacity: animation, child: child),
             ),
-            child: KeyedSubtree(key: ValueKey(status), child: center),
+            child: KeyedSubtree(key: ValueKey('$status${widget.late}'), child: center),
           ),
         ),
       ),

@@ -181,6 +181,12 @@ export async function installFakeApi(
     product?: FakeProduct;
     /** The menu says what each category is, and has a bakery: the API with category kinds. */
     menuKinds?: boolean;
+    /**
+     * What the store's customers bought together with anything, best first
+     * (`GET /stores/:id/suggestions` with `source: copurchase`). Without it
+     * the endpoint is missing, as on an API from before it.
+     */
+    copurchase?: string[];
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -244,6 +250,11 @@ export async function installFakeApi(
     // ── Catalogue ───────────────────────────────────────────────────────
     if (path === '/stores') return json(route, [store]);
     if (path.match(/^\/stores\/[^/]+\/pickup-slots$/)) return json(route, slots());
+    if (path.match(/^\/stores\/[^/]+\/suggestions$/)) {
+      if (!opts.copurchase) return json(route, { statusCode: 404 }, 404);
+      const inHand = (url.searchParams.get('productIds') ?? '').split(',');
+      return json(route, { productIds: opts.copurchase.filter((id) => !inHand.includes(id)), source: 'copurchase' });
+    }
     if (path.match(/^\/stores\/[^/]+\/menu$/)) {
       const coffee = {
         id: 'cat-1',

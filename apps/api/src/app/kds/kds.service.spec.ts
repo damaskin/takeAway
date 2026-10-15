@@ -1,6 +1,7 @@
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
+import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
@@ -72,6 +73,10 @@ describe('KdsService.accept', () => {
         { provide: CardPaymentsService, useValue: payments },
         { provide: OrdersService, useValue: orders },
         { provide: PaymentHoldsService, useValue: holds },
+        {
+          provide: KitchenLoadService,
+          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
+        },
       ],
     }).compile();
 
@@ -177,6 +182,10 @@ describe('KdsService.listOpen', () => {
       items: [],
       events: [],
       totalCents: 3000,
+      prepSeconds: 120,
+      workSeconds: 120,
+      kitchenVisibleAt: null,
+      store: { kitchenParallelism: 2 },
     };
     const prisma = {
       order: {
@@ -196,6 +205,10 @@ describe('KdsService.listOpen', () => {
         { provide: CardPaymentsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
         { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
+        {
+          provide: KitchenLoadService,
+          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
+        },
       ],
     }).compile();
 
@@ -237,6 +250,10 @@ describe('KdsService.reject', () => {
         { provide: NotificationsService, useValue: notifications },
         { provide: CardPaymentsService, useValue: cards },
         { provide: PaymentHoldsService, useValue: {} },
+        {
+          provide: KitchenLoadService,
+          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
+        },
         { provide: OrdersService, useValue: orders },
       ],
     }).compile();

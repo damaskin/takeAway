@@ -7,7 +7,6 @@ import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
-import '../../shared/product_kinds.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../catalog/catalog_providers.dart';
@@ -38,7 +37,7 @@ class MenuScreen extends ConsumerWidget {
         // be ordered only ends in a refused checkout.
         data: (_) => store == null
             ? const SafeArea(bottom: false, child: NoStoreState())
-            : !store.isOpen
+            : !store.takesOrders
             ? SafeArea(
                 bottom: false,
                 child: StoreClosedState(key: ValueKey('closed-${store.id}'), store: store),
@@ -151,6 +150,39 @@ class _MenuViewState extends ConsumerState<_MenuView> {
     ),
   );
 
+  /// A category's products: those with a photo in the grid, then those
+  /// without as rows under it — a grid tile needs a picture, and a stand-in
+  /// one reads as a photo that failed to load.
+  List<Widget> _section(MenuCategory category, Store store) {
+    final photos = category.products.where(hasMenuPhoto).toList();
+    final plain = category.products.where((p) => !hasMenuPhoto(p)).toList();
+    return [
+      if (photos.isNotEmpty)
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 240,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.66,
+            ),
+            itemCount: photos.length,
+            itemBuilder: (context, index) => ProductCard(product: photos[index], store: store),
+          ),
+        ),
+      if (plain.isNotEmpty)
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(16, photos.isEmpty ? 0 : 12, 16, 0),
+          sliver: SliverList.separated(
+            itemCount: plain.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) => ProductRow(product: plain[index], store: store),
+          ),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
@@ -217,23 +249,7 @@ class _MenuViewState extends ConsumerState<_MenuView> {
                         child: Text(categories[i].name, style: context.text.headlineSmall),
                       ),
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverGrid.builder(
-                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 240,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.66,
-                        ),
-                        itemCount: categories[i].products.length,
-                        itemBuilder: (context, index) => ProductCard(
-                          product: categories[i].products[index],
-                          store: store,
-                          kind: productKindOf(categories[i].products[index], categoryKind: categories[i].kind),
-                        ),
-                      ),
-                    ),
+                    ..._section(categories[i], store),
                   ],
                   const SliverToBoxAdapter(child: SizedBox(height: 110)),
                 ],

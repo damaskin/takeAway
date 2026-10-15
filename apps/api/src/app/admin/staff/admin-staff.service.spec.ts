@@ -125,7 +125,8 @@ describe('AdminStaffService — kitchen PINs', () => {
 
 interface Account {
   id: string;
-  email: string;
+  email: string | null;
+  login?: string | null;
   name: string | null;
   role: Role;
   blockedAt: Date | null;
@@ -153,7 +154,7 @@ describe('AdminStaffService — accounts that also work for another brand', () =
       { id: 'store-own-2', brandId: 'brand-own' },
       { id: 'store-victim', brandId: 'brand-victim' },
     ];
-    const account = (id: string, email: string, role: Role): Account => ({
+    const account = (id: string, email: string | null, role: Role): Account => ({
       id,
       email,
       name: id,
@@ -217,7 +218,17 @@ describe('AdminStaffService — accounts that also work for another brand', () =
       user: {
         findUnique: async ({ where }: { where: { id?: string; email?: string } }) =>
           users.find((u) => (where.id ? u.id === where.id : u.email === where.email)) ?? null,
-        create: jest.fn(),
+        findFirst: jest.fn(async ({ where }: { where: { OR: { login?: string; email?: string }[] } }) => {
+          const hit = users.find((u) =>
+            where.OR.some((c) => (c.login !== undefined ? u.login === c.login : u.email === c.email)),
+          );
+          return hit ? { id: hit.id } : null;
+        }),
+        create: jest.fn(async ({ data }: { data: Partial<Account> & { role: Role } }) => {
+          const created = { ...account(`new-${users.length}`, null, data.role), ...data };
+          users.push(created);
+          return { id: created.id };
+        }),
         update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<Account> }) =>
           Object.assign(userOf(where.id) ?? {}, data),
         ),
@@ -274,6 +285,39 @@ describe('AdminStaffService — accounts that also work for another brand', () =
     expect(entry).toMatchObject({ userId: 'barista', role: Role.MENU_EDITOR });
     expect(storesOf('barista')).toEqual(['store-own', 'store-own-2']);
     expect(users.find((u) => u.id === 'barista')?.role).toBe(Role.MENU_EDITOR);
+  });
+
+  describe('by login, for someone without an email', () => {
+    const byLogin = (login: string, role: Role = Role.STAFF) => ({ login, role, tempPassword: 'temporary-1' });
+
+    it('creates a new account with the login, a temporary password to change and no email', async () => {
+      const { svc, prisma, users, storesOf } = world();
+      const entry = await svc.add('store-own', byLogin('Ion.K'), owner);
+
+      expect(prisma.user.create).toHaveBeenCalledWith({
+        data: { login: 'ion.k', passwordHash: 'bcrypt', passwordMustChange: true, name: null, role: Role.STAFF },
+        select: { id: true },
+      });
+      expect(entry).toMatchObject({ login: 'ion.k', email: null, role: Role.STAFF });
+      expect(storesOf(entry.userId)).toEqual(['store-own']);
+      expect(users.find((u) => u.id === entry.userId)?.email).toBeNull();
+    });
+
+    it("never attaches another brand's employee who has the login: 409 LOGIN_IN_USE without the role", async () => {
+      const { svc, prisma, users, storesOf } = world();
+      const victim = users.find((u) => u.id === 'victim');
+      if (victim) victim.login = 'chef';
+
+      const error = await svc.add('store-own', byLogin('Chef', Role.STORE_MANAGER), owner).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(responseOf(error)).toMatchObject({ code: 'LOGIN_IN_USE', field: 'login' });
+      expect(JSON.stringify(responseOf(error))).not.toMatch(/STORE_MANAGER|victim/i);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.userStore.create).not.toHaveBeenCalled();
+      expect(storesOf('victim')).toEqual(['store-victim']);
+    });
   });
 
   it('sets no PIN and no role for an account that also works at a store of another brand', async () => {

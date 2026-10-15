@@ -48,6 +48,16 @@ import { PlanCardComponent } from './plan-card.component';
         background: var(--color-berry);
         color: white;
       }
+      .phone-missing {
+        margin: 0 0 16px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: var(--color-foam);
+        box-shadow: inset 3px 0 0 var(--color-amber);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        color: var(--color-text-primary);
+      }
     `,
   ],
   template: `
@@ -64,6 +74,11 @@ import { PlanCardComponent } from './plan-card.component';
       @if (loading()) {
         <p style="color: var(--color-text-secondary)">{{ 'common.loading' | translate }}</p>
       } @else if (brand()) {
+        @if (!brand()!.contactPhone) {
+          <p class="phone-missing" role="alert" data-testid="phone-missing">
+            {{ 'admin.settings.contactPhoneMissing' | translate }}
+          </p>
+        }
         <form
           [formGroup]="form"
           (ngSubmit)="save()"
@@ -102,11 +117,12 @@ import { PlanCardComponent } from './plan-card.component';
               formControlName="contactPhone"
               type="tel"
               autocomplete="tel"
+              required
               [placeholder]="'admin.signup.phonePlaceholder' | translate"
               [attr.aria-invalid]="form.controls.contactPhone.invalid"
               style="height: 44px; padding: 0 14px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; outline: none"
             />
-            @if (form.controls.contactPhone.invalid && form.controls.contactPhone.dirty) {
+            @if (form.controls.contactPhone.invalid && (form.controls.contactPhone.dirty || !brand()!.contactPhone)) {
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-berry)">{{
                 (form.controls.contactPhone.hasError('required')
                   ? 'admin.signup.phoneRequired'
@@ -286,9 +302,10 @@ export class AdminSettingsPage {
   constructor() {
     this.form = new FormGroup({
       name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(120)] }),
-      // Optional here only for brands from before sign-up asked for it;
-      // once there is a number it can be changed, not removed.
-      contactPhone: new FormControl('', { nonNullable: true, validators: [phoneValidator({ required: false })] }),
+      // Required, as at sign-up: the takeAway team calls the business on it.
+      // A brand from before sign-up asked for it has to add one to save; the
+      // API refuses to clear it either way.
+      contactPhone: new FormControl('', { nonNullable: true, validators: [phoneValidator({ required: true })] }),
       currency: new FormControl('MDL', { nonNullable: true, validators: [Validators.required] }),
       locale: new FormControl<BrandLocale>('RU', { nonNullable: true }),
       logoUrl: new FormControl('', { nonNullable: true }),
@@ -320,11 +337,6 @@ export class AdminSettingsPage {
           locale: brand.locale,
           logoUrl: brand.logoUrl ?? '',
         });
-        // A number once given can be changed but not removed — the API
-        // keeps it either way, so the form says so instead of pretending.
-        const phone = this.form.controls.contactPhone;
-        phone.setValidators(phoneValidator({ required: Boolean(brand.contactPhone) }));
-        phone.updateValueAndValidity({ emitEvent: false });
         // Orders are summed in the brand's currency; the API refuses a new
         // one after the first order, so the form does not offer it.
         const currency = this.form.controls.currency;
@@ -349,7 +361,7 @@ export class AdminSettingsPage {
     this.settings
       .updateMyBrand({
         name: v.name.trim(),
-        ...(v.contactPhone.trim() ? { contactPhone: v.contactPhone.trim() } : {}),
+        contactPhone: v.contactPhone.trim(),
         ...(this.form.controls.currency.enabled ? { currency: v.currency } : {}),
         locale: v.locale,
         logoUrl: v.logoUrl.trim() || undefined,

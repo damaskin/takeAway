@@ -212,6 +212,50 @@ describe('SettlementsService.report', () => {
       status: 'PAID',
     });
   });
+
+  it('proposes the payout up to yesterday when the report reaches today, instead of a blocked card', async () => {
+    const { svc } = setup({
+      payouts: [payout()],
+      rows: [
+        ...ROWS,
+        raw({
+          id: 'today',
+          settledAt: new Date('2026-10-10T07:00:00Z'),
+          totalCents: 1000,
+          capturedCents: 1000n,
+          hasCapture: true,
+        }),
+      ],
+    });
+    // 10 October is today in Chișinău.
+    const report = await svc.report(admin, { brandId: 'b1', from: '2026-10-01', to: '2026-10-10' }, NOW);
+
+    expect(report.period.to).toBe('2026-10-10');
+    expect(report.nextPayout).toEqual({
+      periodFrom: '2026-10-01',
+      periodTo: '2026-10-09',
+      // Today's order is in the report but not in the payout: the day is not over.
+      amountCents: 4250,
+      cardNetCents: 5000,
+      commissionCents: 750,
+      blocked: null,
+      lastSettledDay: '2026-09-30',
+    });
+    expect(report.totals.capturedCents).toBe(6000);
+  });
+
+  it('says the closed days are settled already when the last payout reached yesterday', async () => {
+    const { svc } = setup({
+      payouts: [payout({ periodTo: new Date('2026-10-09T00:00:00Z'), periodEnd: new Date('2026-10-09T21:00:00Z') })],
+    });
+    const report = await svc.report(admin, { brandId: 'b1', from: '2026-10-01', to: '2026-10-10' }, NOW);
+
+    expect(report.nextPayout).toMatchObject({
+      periodTo: '2026-10-09',
+      blocked: 'OVERLAP',
+      lastSettledDay: '2026-10-09',
+    });
+  });
 });
 
 describe('SettlementsService.createPayout', () => {

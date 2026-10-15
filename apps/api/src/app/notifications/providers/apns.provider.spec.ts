@@ -288,6 +288,22 @@ describe('ApnsPushProvider delivery', () => {
 });
 
 describe('buildApnsPayload', () => {
+  it('carries the inbox item and the link next to aps, for the app to open on tap', () => {
+    const payload = JSON.parse(
+      buildApnsPayload(
+        { kind: 'announcement', title: 'takeAway: Новое', body: 'Текст', notificationId: 'n1', brandId: 'b1' },
+        'id-1',
+      ),
+    ) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      kind: 'announcement',
+      notificationId: 'n1',
+      brandId: 'b1',
+      'gcm.message_id': 'id-1',
+    });
+    expect(payload).not.toHaveProperty('orderId');
+  });
+
   it('cuts a body that would not fit into 4 KB', () => {
     const payload = buildApnsPayload({ kind: 'generic', title: 'Акция', body: 'Кофе '.repeat(800) }, 'id-1');
     expect(Buffer.byteLength(payload)).toBeLessThanOrEqual(APNS_MAX_PAYLOAD_BYTES);

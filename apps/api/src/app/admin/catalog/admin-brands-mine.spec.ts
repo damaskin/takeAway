@@ -22,4 +22,19 @@ describe('AdminCatalogService.listBrandsForScope', () => {
       }),
     );
   });
+
+  it('carries the contact phone, so the shell can ask a brand that has none for it', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new AdminCatalogService(
+      { brand: { findMany } } as unknown as PrismaService,
+      {} as PasswordService,
+      {} as StoreAvailabilityNotifier,
+    );
+
+    await svc.listBrandsForScope(null);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ contactPhone: true }) }),
+    );
+  });
 });

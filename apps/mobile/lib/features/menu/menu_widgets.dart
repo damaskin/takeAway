@@ -11,11 +11,13 @@ import '../../core/providers.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
+import '../../shared/store_hours.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/state_views.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
+import '../inbox/inbox_widgets.dart';
 import '../orders/orders_providers.dart';
 import '../stores/store_widgets.dart';
 
@@ -64,6 +66,7 @@ class MenuHeader extends ConsumerWidget {
                   style: IconButton.styleFrom(backgroundColor: brand.foam),
                   icon: const Icon(Icons.search_rounded),
                 ),
+              const InboxBell(),
             ],
           ),
           const SizedBox(height: 10),
@@ -142,19 +145,46 @@ class BusinessPlate extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(color: brand.foam, borderRadius: BorderRadius.circular(Radii.pill)),
-                    // An ETA for a store that is not taking ASAP orders would
-                    // be a promise nobody can keep.
-                    child: store.isOpen
-                        ? EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter)
-                        : Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            child: StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
-                          ),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: brand.foam,
+                          borderRadius: BorderRadius.circular(store.preorderOnly ? Radii.button : Radii.pill),
+                        ),
+                        // An ETA for a store that is not taking ASAP orders would
+                        // be a promise nobody can keep: a store open for
+                        // pre-orders only says when it opens instead.
+                        child: store.isOpen
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter),
+                                  if (store.closesAt != null)
+                                    Flexible(
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(left: 8, right: 8),
+                                        child: StoreHoursLine(store: store),
+                                      ),
+                                    ),
+                                ],
+                              )
+                            : store.preorderOnly
+                            ? Padding(
+                                key: const ValueKey('store-preorder'),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: StoreHoursLine(store: store, color: brand.textPrimary),
+                              )
+                            : Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                child: StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
+                              ),
+                      ),
+                    ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   Text(l10n.changeStore, style: context.text.labelLarge?.copyWith(color: ink.withValues(alpha: 0.8))),
                   Icon(Icons.chevron_right_rounded, size: 20, color: ink.withValues(alpha: 0.8)),
                 ],

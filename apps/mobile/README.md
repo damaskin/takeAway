@@ -14,9 +14,10 @@ NestJS API as the web app and the Telegram Mini App.
 - **Menu** — categories with a scroll-spy bar, search, quick add for items
   without options, product screen with sizes, milks and the like as chips
   with their prices, add-ons by group opening in place, allergens and
-  nutrition, and something to eat suggested under a drink. A product without
-  a photo shows the illustration for its category kind. Prices are always in
-  the store's currency.
+  nutrition, and something to eat suggested under a drink. Products with a
+  photo fill each category's grid; those without are listed under it as text
+  rows (no stand-in pictures anywhere — App Review reads them as placeholder
+  content). Prices are always in the store's currency.
 - **Cart and checkout** — something to eat offered next to a drink, ASAP or a
   15-minute pickup slot (full slots are
   shown struck through), delivery where the store offers it, promo code, gift
@@ -24,8 +25,12 @@ NestJS API as the web app and the Telegram Mini App.
   Outside working hours only a scheduled pickup can be chosen.
 - **Live order** — Socket.IO with polling as a fallback, ETA ring, steps,
   pickup code and QR, "I'm here", cancel, order again, receipt by email.
+- **Notifications («Уведомления»)** — brand campaigns and takeAway's own
+  announcements, behind a bell with the unread count on the stores and menu
+  headers and in the profile; a message opens the store's menu it links to,
+  or the list of places for a brand with several.
 - **Profile** — loyalty tier and history, referrals, gift cards, payment
-  cards, notification preferences, personal details, language (RU / EN).
+  cards, notification settings, personal details, language (RU / EN).
 - **Offline** — stores and menus are cached on the device, so the app opens on
   the last menu instead of an empty screen when the network is gone.
 - Light and dark theme from the design tokens in `libs/ui-kit`.
@@ -198,6 +203,12 @@ launch. Android posts order news to the `orders` channel (heads-up) and
 campaigns to `promotions` (MainActivity.kt). Tokens Firebase or Apple report
 as dead are pruned by the API.
 
+A tap on an order push opens the order. A tap on a campaign or announcement
+push (`kind` `campaign` / `announcement`, or any push with a
+`notificationId`) opens that message over «Уведомления», the list alone when
+the push has no `notificationId`; in the foreground the in-app notice offers
+«Открыть» and the unread badges are read again.
+
 ## Building releases
 
 **Android.** Create an upload keystore and `android/key.properties` (never
@@ -354,9 +365,6 @@ of ASAP.
   the iOS icon set and launch image, the Android launcher icons (legacy,
   adaptive, monochrome), splash mark and notification icon, in the brand
   colours. A new logo: replace that file and run it again.
-- **Product illustrations** — `assets/product-placeholders/*.svg` are copies
-  of `libs/ui-kit/src/assets/product-placeholders` (drawn with `flutter_svg`):
-  change them there, then copy them over.
 - **Map tiles** — OpenStreetMap through our cache at `takeaway.md/tiles`, with
   retries, a fallback to OSM and a 30-day disk cache on the phone; see
   [docs/map-tiles.md](../../docs/map-tiles.md). A commercial source, if ever

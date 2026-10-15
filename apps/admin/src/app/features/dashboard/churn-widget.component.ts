@@ -94,6 +94,28 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
           <app-plan-lock feature="churnList" [compact]="true" />
         }
       </div>
+      @if (stats()?.activeElsewhere; as elsewhere) {
+        @if (elsewhere.count > 0) {
+          <p class="churn-elsewhere" role="note" data-testid="churn-active-elsewhere">
+            {{ 'admin.churn.activeElsewhere' | translate: { count: elsewhere.count } }}
+            {{ 'admin.churn.activeElsewhereStores' | translate }}
+            @for (s of elsewhere.stores; track s.storeId; let last = $last) {
+              @if (canSeeAnalytics() && plans.has('winBack')) {
+                <a routerLink="/analytics" [queryParams]="storeRetentionQuery(s.storeId)" class="churn-store-link">{{
+                  'admin.churn.activeElsewhereStore' | translate: { store: s.storeName, count: s.count }
+                }}</a>
+              } @else {
+                <span>{{
+                  'admin.churn.activeElsewhereStore' | translate: { store: s.storeName, count: s.count }
+                }}</span>
+              }
+              @if (!last) {
+                ·
+              }
+            }
+          </p>
+        }
+      }
     </article>
   `,
   styles: [
@@ -227,6 +249,20 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
         font-weight: 600;
         text-decoration: none;
       }
+      .churn-elsewhere {
+        margin: 12px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--color-cream);
+        font-family: var(--font-sans);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+      }
+      .churn-store-link {
+        font-weight: 600;
+        color: var(--color-caramel);
+      }
       @media (max-width: 900px) {
         .churn-body {
           grid-template-columns: 1fr;
@@ -271,6 +307,11 @@ export class ChurnWidgetComponent {
       storeId: p.storeId ?? undefined,
     };
   });
+
+  /** The win-back tab on one store: where the regulars who left it show up. */
+  storeRetentionQuery(storeId: string) {
+    return { ...this.retentionQuery(), storeId };
+  }
 
   /** More customers going inactive is the bad direction. */
   readonly delta = computed<{ text: string; tone: string } | null>(() => {

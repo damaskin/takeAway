@@ -26,6 +26,13 @@ Store _$StoreFromJson(Map<String, dynamic> json) => Store(
   currency: json['currency'] as String,
   openNow: json['openNow'] as bool?,
   acceptingOrders: json['acceptingOrders'] as bool?,
+  asapBlockedReason: $enumDecodeNullable(
+    _$AsapBlockedReasonEnumMap,
+    json['asapBlockedReason'],
+    unknownValue: AsapBlockedReason.unknown,
+  ),
+  opensAt: json['opensAt'] == null ? null : DateTime.parse(json['opensAt'] as String),
+  closesAt: json['closesAt'] == null ? null : DateTime.parse(json['closesAt'] as String),
   brandName: json['brandName'] as String?,
   logoUrl: json['logoUrl'] as String?,
   heroImageUrl: json['heroImageUrl'] as String?,
@@ -50,6 +57,9 @@ Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
   'currentEtaSeconds': instance.currentEtaSeconds,
   'openNow': instance.openNow,
   'acceptingOrders': instance.acceptingOrders,
+  'asapBlockedReason': _$AsapBlockedReasonEnumMap[instance.asapBlockedReason],
+  'opensAt': instance.opensAt?.toIso8601String(),
+  'closesAt': instance.closesAt?.toIso8601String(),
   'taxRateBps': instance.taxRateBps,
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,
@@ -65,6 +75,13 @@ const _$StoreStatusEnumMap = {
   StoreStatus.overloaded: 'OVERLOADED',
   StoreStatus.closed: 'CLOSED',
   StoreStatus.unknown: 'unknown',
+};
+
+const _$AsapBlockedReasonEnumMap = {
+  AsapBlockedReason.outsideHours: 'OUTSIDE_HOURS',
+  AsapBlockedReason.shiftClosed: 'SHIFT_CLOSED',
+  AsapBlockedReason.queueFull: 'QUEUE_FULL',
+  AsapBlockedReason.unknown: 'unknown',
 };
 
 StoreWorkingHour _$StoreWorkingHourFromJson(Map<String, dynamic> json) => StoreWorkingHour(
@@ -126,6 +143,13 @@ StoreDetail _$StoreDetailFromJson(Map<String, dynamic> json) => StoreDetail(
   brand: BrandInfo.fromJson(json['brand'] as Map<String, dynamic>),
   openNow: json['openNow'] as bool?,
   acceptingOrders: json['acceptingOrders'] as bool?,
+  asapBlockedReason: $enumDecodeNullable(
+    _$AsapBlockedReasonEnumMap,
+    json['asapBlockedReason'],
+    unknownValue: AsapBlockedReason.unknown,
+  ),
+  opensAt: json['opensAt'] == null ? null : DateTime.parse(json['opensAt'] as String),
+  closesAt: json['closesAt'] == null ? null : DateTime.parse(json['closesAt'] as String),
   heroImageUrl: json['heroImageUrl'] as String?,
   kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
@@ -150,6 +174,9 @@ Map<String, dynamic> _$StoreDetailToJson(StoreDetail instance) => <String, dynam
   'currentEtaSeconds': instance.currentEtaSeconds,
   'openNow': instance.openNow,
   'acceptingOrders': instance.acceptingOrders,
+  'asapBlockedReason': _$AsapBlockedReasonEnumMap[instance.asapBlockedReason],
+  'opensAt': instance.opensAt?.toIso8601String(),
+  'closesAt': instance.closesAt?.toIso8601String(),
   'taxRateBps': instance.taxRateBps,
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,
@@ -348,6 +375,16 @@ Map<String, dynamic> _$MenuToJson(Menu instance) => <String, dynamic>{
   'storeId': instance.storeId,
   'storeSlug': instance.storeSlug,
   'categories': instance.categories.map((e) => e.toJson()).toList(),
+};
+
+StoreSuggestions _$StoreSuggestionsFromJson(Map<String, dynamic> json) => StoreSuggestions(
+  productIds: (json['productIds'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+  source: json['source'] as String? ?? 'rule',
+);
+
+Map<String, dynamic> _$StoreSuggestionsToJson(StoreSuggestions instance) => <String, dynamic>{
+  'productIds': instance.productIds,
+  'source': instance.source,
 };
 
 PickupSlot _$PickupSlotFromJson(Map<String, dynamic> json) => PickupSlot(

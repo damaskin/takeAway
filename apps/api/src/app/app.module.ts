@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AnnouncementsModule } from './announcements/announcements.module';
 import { AdminCatalogModule } from './admin/catalog/admin-catalog.module';
 import { AdminRidersModule } from './admin/riders/admin-riders.module';
 import { AdminStaffModule } from './admin/staff/admin-staff.module';
@@ -24,6 +25,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { GeocodingModule } from './geocoding/geocoding.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { HealthModule } from './health/health.module';
+import { InboxModule } from './inbox/inbox.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { KdsModule } from './kds/kds.module';
 import { KitchenModule } from './kitchen/kitchen.module';
@@ -75,6 +77,8 @@ import { UsersModule } from './users/users.module';
     GiftCardsModule,
     ReferralsModule,
     CampaignsModule,
+    InboxModule,
+    AnnouncementsModule,
     AnalyticsModule,
     SettlementsModule,
     CustomersModule,

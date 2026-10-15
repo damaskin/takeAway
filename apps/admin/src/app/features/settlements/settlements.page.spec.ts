@@ -217,6 +217,43 @@ describe('SettlementsPage', () => {
     expect(button('Зафиксировать выплату')).toBeUndefined();
   });
 
+  it('proposes the days up to yesterday when the report reaches today, and says so', async () => {
+    const data = report({
+      period: { from: '2026-10-01', to: '2026-10-14', days: 14, timeZone: 'Europe/Chisinau' },
+      nextPayout: { ...report().nextPayout, periodFrom: '2026-10-01', periodTo: '2026-10-13' },
+    });
+    await render('SUPER_ADMIN', data);
+
+    expect(el().querySelector('[data-testid="payout-closed-days"]')?.textContent).toContain(
+      'Сегодняшний день ещё не закончился',
+    );
+    click('Зафиксировать выплату');
+    expect(api.createPayout).toHaveBeenCalledWith(expect.objectContaining({ to: '2026-10-13' }));
+  });
+
+  it('does not ask for a later period when every closed day is paid out already', async () => {
+    const data = report({
+      period: { from: '2026-10-01', to: '2026-10-14', days: 14, timeZone: 'Europe/Chisinau' },
+      nextPayout: { ...report().nextPayout, periodTo: '2026-10-13', blocked: 'OVERLAP', lastSettledDay: '2026-10-13' },
+    });
+    await render('SUPER_ADMIN', data);
+
+    const blocked = el().querySelector('[data-testid="payout-blocked"]')?.textContent ?? '';
+    expect(blocked).toContain('Все закрытые дни уже в выплатах');
+    expect(blocked).not.toContain('Выберите период');
+  });
+
+  it('tells each side where payouts come from while there are none', async () => {
+    await render('SUPER_ADMIN', report({ payouts: [] }));
+    expect(el().querySelector('[data-testid="payouts-empty"]')?.textContent).toContain(
+      'Зафиксируйте выплату в карточке «Выплата бренду» выше',
+    );
+
+    TestBed.resetTestingModule();
+    await render('BRAND_ADMIN', report({ payouts: [] }));
+    expect(el().querySelector('[data-testid="payouts-empty"]')?.textContent).toContain('Выплаты фиксирует takeAway');
+  });
+
   it('marks a payout paid with the transfer number', async () => {
     await render('SUPER_ADMIN');
     click('Отметить выплаченной');

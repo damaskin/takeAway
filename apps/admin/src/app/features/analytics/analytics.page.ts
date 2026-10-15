@@ -394,7 +394,7 @@ interface ChartBar {
                       @for (p of staff(); track p.userId) {
                         <tr>
                           <td>
-                            <div class="an-row-name">{{ p.name || p.email || '—' }}</div>
+                            <div class="an-row-name">{{ p.name || p.email || p.login || '—' }}</div>
                             <div class="an-row-note">{{ 'admin.layout.role.' + p.role | translate }}</div>
                           </td>
                           <td class="num">{{ p.accepted }}</td>
@@ -418,7 +418,13 @@ interface ChartBar {
           @if (!plans.has('winBack')) {
             <app-plan-lock feature="winBack" />
           } @else if (brandId(); as id) {
-            <app-retention-tab [brandId]="id" [period]="period()" [currency]="currency()" [(window)]="churnWindow" />
+            <app-retention-tab
+              [brandId]="id"
+              [period]="period()"
+              [currency]="currency()"
+              [(window)]="churnWindow"
+              (storePicked)="storeId.set($event)"
+            />
           }
         }
       }

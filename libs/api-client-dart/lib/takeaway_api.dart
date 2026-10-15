@@ -9,6 +9,7 @@ export 'src/models/auth.dart';
 export 'src/models/cart.dart';
 export 'src/models/catalog.dart';
 export 'src/models/feedback.dart';
+export 'src/models/inbox.dart';
 export 'src/models/loyalty.dart';
 export 'src/models/misc.dart';
 export 'src/models/order.dart';

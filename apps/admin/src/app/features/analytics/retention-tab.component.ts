@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, model, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
@@ -75,6 +75,22 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
           }
         </div>
       </div>
+      @if (churn()?.activeElsewhere; as elsewhere) {
+        @if (elsewhere.count > 0) {
+          <p class="rt-elsewhere" role="note" data-testid="retention-active-elsewhere">
+            {{ 'admin.churn.activeElsewhere' | translate: { count: elsewhere.count } }}
+            {{ 'admin.churn.activeElsewhereStores' | translate }}
+            @for (s of elsewhere.stores; track s.storeId; let last = $last) {
+              <button type="button" class="rt-store-link" (click)="storePicked.emit(s.storeId)">
+                {{ 'admin.churn.activeElsewhereStore' | translate: { store: s.storeName, count: s.count } }}
+              </button>
+              @if (!last) {
+                ·
+              }
+            }
+          </p>
+        }
+      }
     </article>
 
     <article class="dash-card rt-actions">
@@ -356,6 +372,24 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
       .rt-action-main span {
         color: white;
       }
+      .rt-elsewhere {
+        margin: 12px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--color-cream);
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+      }
+      .rt-store-link {
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        font-weight: 600;
+        color: var(--color-caramel);
+        cursor: pointer;
+      }
       .an-sub {
         margin: 4px 0 0;
         font-size: 14px;
@@ -407,6 +441,8 @@ export class RetentionTabComponent {
   readonly currency = input<string | null | undefined>(null);
   /** Days without an order that make a regular inactive; two-way so the page can open the tab on a window. */
   readonly window = model<ChurnWindow>(14);
+  /** A store from «ещё N чел. перестали ходить в одну из точек» — the page narrows to it. */
+  readonly storePicked = output<string>();
 
   readonly windows: readonly ChurnWindow[] = INACTIVE_DAYS;
   readonly minOrders = INACTIVE_MIN_ORDERS;

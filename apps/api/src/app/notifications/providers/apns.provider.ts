@@ -5,7 +5,14 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, Optional } from '@nes
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import type { PushAttempt, PushMessage, PushProvider, PushRecipient, PushTarget } from './push-provider.interface';
+import {
+  pushData,
+  type PushAttempt,
+  type PushMessage,
+  type PushProvider,
+  type PushRecipient,
+  type PushTarget,
+} from './push-provider.interface';
 
 export type ApnsEnvironment = 'PRODUCTION' | 'SANDBOX';
 
@@ -241,8 +248,9 @@ export function apnsTargets(targets: readonly PushTarget[]): PushTarget[] {
 
 /**
  * The notification as Apple wants it: the alert with the default sound,
- * plus `kind` / `orderId` next to `aps`, which the app reads to open the
- * order. `gcm.message_id` makes the Flutter `firebase_messaging` plugin
+ * plus `kind` and the ids (`orderId`, `notificationId`, `storeId`,
+ * `brandId`) next to `aps`, which the app reads to open the order or the
+ * inbox item. `gcm.message_id` makes the Flutter `firebase_messaging` plugin
  * treat a direct APNs push like one of its own — without it the plugin
  * ignores the push in the foreground and on tap (it only shows it in the
  * background, where iOS draws it). A body too long for Apple's 4 KB is cut
@@ -256,8 +264,7 @@ export function buildApnsPayload(message: PushMessage, messageId: string): strin
         sound: 'default',
         ...(message.orderId ? { 'thread-id': `order-${message.orderId}` } : {}),
       },
-      kind: message.kind,
-      ...(message.orderId ? { orderId: message.orderId } : {}),
+      ...pushData(message),
       'gcm.message_id': messageId,
     });
 

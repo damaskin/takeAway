@@ -4,44 +4,67 @@ import type { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_BUSY_EXTRA_WAIT_SECONDS,
+  DEFAULT_MAX_ASAP_WAIT_SECONDS,
   KitchenLoadService,
   SLOT_MINUTES,
+  asapPlan,
   ceilToSlot,
   floorToSlot,
 } from './kitchen-load.service';
+import { slotFits } from './slots';
 
 const SLOT_MS = SLOT_MINUTES * 60 * 1000;
 
+interface StoreRow {
+  status: string;
+  baseEtaSeconds: number;
+  kitchenParallelism: number;
+  slotCapacity: number;
+  timezone: string;
+  workingHours: Array<{ weekday: number; opensAt: number; closesAt: number; isClosed: boolean }>;
+  shifts: Array<{ extendedUntil: Date | null }>;
+}
+
 interface PrismaStub {
   store: { findUnique: jest.Mock };
-  order: { groupBy: jest.Mock; findMany: jest.Mock; count: jest.Mock };
+  order: { groupBy: jest.Mock; findMany: jest.Mock };
+}
+
+const STORE: StoreRow = {
+  status: 'OPEN',
+  baseEtaSeconds: 300,
+  kitchenParallelism: 2,
+  slotCapacity: 4,
+  timezone: 'UTC',
+  // Open around the clock, so these cases isolate capacity from hours.
+  workingHours: [],
+  shifts: [{ extendedUntil: null }],
+};
+
+/** Open 08:00–20:00 UTC every day. */
+const DAYTIME = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+  weekday,
+  opensAt: 8 * 60,
+  closesAt: 20 * 60,
+  isClosed: false,
+}));
+
+/** Handovers already booked, as `slotLoadByStore` reads them. */
+function booked(...rows: Array<[string, number]>) {
+  return rows.map(([iso, workSeconds]) => ({ storeId: 'store-1', pickupAt: new Date(iso), workSeconds }));
 }
 
 function makeService(
-  overrides: Partial<PrismaStub> = {},
+  store: Partial<StoreRow> = {},
+  orders: { queued?: unknown[]; booked?: unknown[] } = {},
   env: Record<string, string | undefined> = {},
-): {
-  service: KitchenLoadService;
-  prisma: PrismaStub;
-} {
+): { service: KitchenLoadService; prisma: PrismaStub } {
   const prisma: PrismaStub = {
-    store: {
-      findUnique: jest.fn().mockResolvedValue({
-        status: 'OPEN',
-        baseEtaSeconds: 300,
-        kitchenParallelism: 2,
-        slotCapacity: 4,
-        timezone: 'UTC',
-        // Open around the clock, so these cases isolate capacity from hours.
-        workingHours: [],
-      }),
-    },
+    store: { findUnique: jest.fn().mockResolvedValue({ ...STORE, ...store }) },
     order: {
-      groupBy: jest.fn().mockResolvedValue([]),
-      findMany: jest.fn().mockResolvedValue([]),
-      count: jest.fn().mockResolvedValue(0),
+      groupBy: jest.fn().mockResolvedValue(orders.queued ?? []),
+      findMany: jest.fn().mockResolvedValue(orders.booked ?? []),
     },
-    ...overrides,
   };
   const config = { get: (key: string) => env[key] } as unknown as ConfigService;
   return { service: new KitchenLoadService(prisma as unknown as PrismaService, config), prisma };
@@ -78,73 +101,62 @@ describe('KitchenLoadService', () => {
   });
 
   describe('queue wait', () => {
-    it('divides outstanding work by how many orders run in parallel', async () => {
+    it('divides outstanding work by how many items run in parallel', async () => {
       const { service } = makeService();
-      // 1200s of queued work over two hands = 600s of waiting.
       const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2, status: 'OPEN' }]);
       expect(waits.get('store-1')).toBe(0);
 
-      const busy = makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 1200 } }]),
-          findMany: jest.fn(),
-          count: jest.fn(),
-        },
-      });
+      // 1200s of queued work over two hands = 600s of waiting.
+      const busy = makeService({}, { queued: [{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 1200 } }] });
       const busyWaits = await busy.service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2, status: 'OPEN' }]);
       expect(busyWaits.get('store-1')).toBe(600);
     });
 
+    it('counts only orders due within 30 minutes, and every order being made', async () => {
+      const { service, prisma } = makeService();
+      const now = new Date('2026-10-14T08:00:00.000Z');
+      await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 2, status: 'OPEN' }], now);
+
+      // A pre-order for 09:15 no longer pushes out the wait of an ASAP order placed at 08:00.
+      const where = prisma.order.groupBy.mock.calls[0]?.[0]?.where;
+      expect(where.OR).toEqual([
+        { pickupAt: { lte: new Date('2026-10-14T08:30:00.000Z') } },
+        { status: 'IN_PROGRESS' },
+      ]);
+    });
+
     it('counts an in-progress order as half done', async () => {
-      const { service } = makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([
+      const { service } = makeService(
+        {},
+        {
+          queued: [
             { storeId: 'store-1', status: 'IN_PROGRESS', _sum: { workSeconds: 400 } },
             { storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 200 } },
-          ]),
-          findMany: jest.fn(),
-          count: jest.fn(),
+          ],
         },
-      });
+      );
 
       // (400 * 0.5 + 200) / 1 = 400
       const waits = await service.queueWaitByStore([{ id: 'store-1', kitchenParallelism: 1, status: 'OPEN' }]);
       expect(waits.get('store-1')).toBe(400);
     });
 
-    it('returns zero for a store with nothing queued', async () => {
-      const { service } = makeService();
-      const waits = await service.queueWaitByStore([
-        { id: 'quiet', kitchenParallelism: 2, status: 'OPEN' },
-        { id: 'also-quiet', kitchenParallelism: 3, status: 'OPEN' },
-      ]);
-      expect([...waits.values()]).toEqual([0, 0]);
-    });
-
-    it('asks the database once for many stores', async () => {
+    it('asks the database once for many stores, and not at all for none', async () => {
       const { service, prisma } = makeService();
       await service.queueWaitByStore([
         { id: 'a', kitchenParallelism: 1, status: 'OPEN' },
         { id: 'b', kitchenParallelism: 1, status: 'OPEN' },
-        { id: 'c', kitchenParallelism: 1, status: 'OPEN' },
       ]);
+      expect(prisma.order.groupBy).toHaveBeenCalledTimes(1);
+      await service.queueWaitByStore([]);
       expect(prisma.order.groupBy).toHaveBeenCalledTimes(1);
     });
 
-    it('does not query at all for an empty store list', async () => {
-      const { service, prisma } = makeService();
-      await service.queueWaitByStore([]);
-      expect(prisma.order.groupBy).not.toHaveBeenCalled();
-    });
-
     it('adds five minutes while the kitchen has pressed «Загружены», to that store only', async () => {
-      const { service } = makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([{ storeId: 'busy', status: 'PAID', _sum: { workSeconds: 600 } }]),
-          findMany: jest.fn(),
-          count: jest.fn(),
-        },
-      });
+      const { service } = makeService(
+        {},
+        { queued: [{ storeId: 'busy', status: 'PAID', _sum: { workSeconds: 600 } }] },
+      );
 
       const waits = await service.queueWaitByStore([
         { id: 'busy', kitchenParallelism: 2, status: 'OVERLOADED' },
@@ -154,203 +166,252 @@ describe('KitchenLoadService', () => {
       expect(DEFAULT_BUSY_EXTRA_WAIT_SECONDS).toBe(300);
       expect(waits.get('busy')).toBe(300 + 300);
       expect(waits.get('calm')).toBe(0);
-      // Busy with nothing on the board still means a wait at the counter.
-      await expect(service.queueWaitSeconds({ id: 'x', kitchenParallelism: 1, status: 'OVERLOADED' })).resolves.toBe(
-        300,
-      );
     });
 
     it('takes the busy wait from BUSY_EXTRA_WAIT_SECONDS, 0 turning it off', async () => {
       const busy = { id: 's', kitchenParallelism: 1, status: 'OVERLOADED' };
-      await expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: '600' }).service.queueWaitSeconds(busy)).resolves.toBe(
-        600,
+      await expect(
+        makeService({}, {}, { BUSY_EXTRA_WAIT_SECONDS: '600' }).service.queueWaitSeconds(busy),
+      ).resolves.toBe(600);
+      await expect(makeService({}, {}, { BUSY_EXTRA_WAIT_SECONDS: '0' }).service.queueWaitSeconds(busy)).resolves.toBe(
+        0,
       );
-      await expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: '0' }).service.queueWaitSeconds(busy)).resolves.toBe(0);
       for (const nonsense of ['', 'five', '-60', '2.5']) {
-        expect(makeService({}, { BUSY_EXTRA_WAIT_SECONDS: nonsense }).service.busyExtraWaitSeconds).toBe(300);
+        expect(makeService({}, {}, { BUSY_EXTRA_WAIT_SECONDS: nonsense }).service.busyExtraWaitSeconds).toBe(300);
       }
     });
   });
 
-  describe('quote', () => {
-    it('adds base overhead, queue wait and own prep', async () => {
-      const { service } = makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 600 } }]),
-          findMany: jest.fn(),
-          count: jest.fn(),
-        },
+  describe('policy from the environment', () => {
+    it('defaults to a 45-minute ASAP wait, a 15-minute opening lead, alert at 3 and timeout at 8 minutes', () => {
+      const { service } = makeService();
+      expect(service.policy).toEqual({
+        maxAsapWaitSeconds: DEFAULT_MAX_ASAP_WAIT_SECONDS,
+        minScheduledLeadSeconds: 600,
+        preorderHorizonSeconds: 24 * 3600,
+        preorderOpeningLeadSeconds: 900,
       });
+      expect(service.acceptance).toEqual({ acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 });
+    });
 
-      const quote = await service.quote('store-1', 150);
+    it('reads overrides and ignores nonsense', () => {
+      const { service } = makeService(
+        {},
+        {},
+        {
+          MAX_ASAP_WAIT_SECONDS: '1800',
+          PREORDER_OPENING_LEAD_MINUTES: '0',
+          ORDER_ACCEPT_ALERT_SECONDS: '120',
+          ORDER_ACCEPT_TIMEOUT_SECONDS: 'soon',
+        },
+      );
+      expect(service.policy.maxAsapWaitSeconds).toBe(1800);
+      expect(service.policy.preorderOpeningLeadSeconds).toBe(0);
+      expect(service.acceptance).toEqual({ acceptAlertSeconds: 120, acceptTimeoutSeconds: 480 });
+    });
+
+    it('never times an order out before it alerts about it', () => {
+      const { service } = makeService(
+        {},
+        {},
+        { ORDER_ACCEPT_ALERT_SECONDS: '600', ORDER_ACCEPT_TIMEOUT_SECONDS: '300' },
+      );
+      expect(service.acceptance).toEqual({ acceptAlertSeconds: 600, acceptTimeoutSeconds: 600 });
+    });
+  });
+
+  describe('ASAP quote', () => {
+    const now = new Date('2026-10-14T08:00:00.000Z');
+
+    it('adds base overhead, queue wait and own prep', async () => {
+      const { service } = makeService(
+        {},
+        { queued: [{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 600 } }] },
+      );
+
+      const quote = await service.quote('store-1', 150, 150, now);
 
       expect(quote.baseEtaSeconds).toBe(300);
       expect(quote.queueWaitSeconds).toBe(300); // 600 / 2
       expect(quote.prepSeconds).toBe(150);
       expect(quote.etaSeconds).toBe(750);
+      expect(quote.pickupAt.toISOString()).toBe('2026-10-14T08:12:30.000Z');
+      expect(quote.queueFull).toBe(false);
     });
 
-    it('grows the quote as the queue grows — the whole point of the model', async () => {
-      const quiet = await makeService().service.quote('store-1', 120);
-
-      const rush = await makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([{ storeId: 'store-1', status: 'PAID', _sum: { workSeconds: 2400 } }]),
-          findMany: jest.fn(),
-          count: jest.fn(),
-        },
-      }).service.quote('store-1', 120);
-
-      expect(rush.etaSeconds).toBeGreaterThan(quiet.etaSeconds);
-      expect(rush.etaSeconds - quiet.etaSeconds).toBe(1200);
-    });
-
-    it('quotes a busy store the busy wait on top — checkout and the pickup time of an ASAP order', async () => {
-      const { service, prisma } = makeService();
-      prisma.store.findUnique.mockResolvedValue({
-        status: 'OVERLOADED',
-        baseEtaSeconds: 300,
-        kitchenParallelism: 2,
-        slotCapacity: 4,
-        timezone: 'UTC',
-        workingHours: [],
-      });
-
-      const quote = await service.quote('store-1', 120);
-
+    it('quotes a busy store the busy wait on top', async () => {
+      const { service } = makeService({ status: 'OVERLOADED' });
+      const quote = await service.quote('store-1', 120, 120, now);
       expect(quote.queueWaitSeconds).toBe(300);
       expect(quote.etaSeconds).toBe(300 + 300 + 120);
     });
+
+    it('spills into the next slot with room when its own slot is full by count', async () => {
+      // Ready at 08:07; the 08:00 slot already holds four handovers (capacity).
+      const { service } = makeService(
+        {},
+        {
+          booked: booked(
+            ['2026-10-14T08:05:00Z', 60],
+            ['2026-10-14T08:06:00Z', 60],
+            ['2026-10-14T08:08:00Z', 60],
+            ['2026-10-14T08:10:00Z', 60],
+          ),
+        },
+      );
+      const quote = await service.quote('store-1', 120, 120, now);
+      expect(quote.pickupAt.toISOString()).toBe('2026-10-14T08:15:00.000Z');
+      expect(quote.etaSeconds).toBe(15 * 60);
+      expect(quote.queueFull).toBe(false);
+    });
+
+    it('spills when the slot has no kitchen time left for this order', async () => {
+      // Two hands = 1800 s of work per slot; 1700 s are taken in 08:00.
+      const { service } = makeService({}, { booked: booked(['2026-10-14T08:10:00Z', 1700]) });
+      const quote = await service.quote('store-1', 120, 240, now);
+      expect(quote.pickupAt.toISOString()).toBe('2026-10-14T08:15:00.000Z');
+    });
+
+    it('reports the queue full when no slot within MAX_ASAP_WAIT_SECONDS has room — never PICKUP_SLOT_FULL', async () => {
+      const everySlotFull = [];
+      for (let t = now.getTime(); t < now.getTime() + 2 * 3600_000; t += SLOT_MS) {
+        for (let i = 0; i < 4; i++)
+          everySlotFull.push(['' + new Date(t + 60_000).toISOString(), 60] as [string, number]);
+      }
+      const { service } = makeService({}, { booked: booked(...everySlotFull) });
+      const quote = await service.quote('store-1', 120, 120, now);
+      expect(quote.queueFull).toBe(true);
+      expect(quote.etaSeconds).toBe(300 + 120);
+    });
+
+    it('is the same arithmetic for the store list (no work of its own)', () => {
+      const store = { id: 's', kitchenParallelism: 2, status: 'OPEN', baseEtaSeconds: 600, slotCapacity: 8 };
+      const plan = asapPlan(store, 3000, undefined, 0, 0, now, { maxAsapWaitSeconds: 2700 });
+      // 600 + 3000 = 60 minutes > 45: only pre-orders.
+      expect(plan.queueFull).toBe(true);
+      expect(asapPlan(store, 900, undefined, 0, 0, now, { maxAsapWaitSeconds: 2700 }).etaSeconds).toBe(1500);
+    });
   });
 
-  describe('slots', () => {
-    it('marks a slot unavailable once it reaches capacity', async () => {
-      const from = new Date('2026-08-22T08:00:00.000Z');
-      const full = new Date('2026-08-22T08:15:00.000Z');
+  describe('pre-order slots', () => {
+    it('offers 24 hours of slots, starting no sooner than 10 minutes from now', async () => {
+      const { service } = makeService();
+      const from = new Date('2026-10-14T08:07:30.000Z');
 
-      const { service } = makeService({
-        order: {
-          groupBy: jest.fn().mockResolvedValue([]),
-          // Four handovers all land in the 08:15 slot, which is capacity.
-          findMany: jest.fn().mockResolvedValue(Array.from({ length: 4 }, () => ({ pickupAt: full }))),
-          count: jest.fn(),
-        },
-      });
+      const slots = await service.pickupSlots('store-1', { from });
 
-      const slots = await service.pickupSlots('store-1', from, 1);
+      // 08:15 is less than ten minutes away — it used to be offered and then refused.
+      expect(slots[0]?.startsAt.toISOString()).toBe('2026-10-14T08:30:00.000Z');
+      expect(slots[slots.length - 1]?.startsAt.toISOString()).toBe('2026-10-15T08:00:00.000Z');
+    });
+
+    it('marks a slot unavailable once it holds slotCapacity orders', async () => {
+      const full = new Date('2026-10-14T09:00:00.000Z');
+      const { service } = makeService(
+        {},
+        { booked: booked(...Array.from({ length: 4 }, () => [full.toISOString(), 60] as [string, number])) },
+      );
+
+      const slots = await service.pickupSlots('store-1', { from: new Date('2026-10-14T08:00:00.000Z'), hours: 2 });
       const fullSlot = slots.find((s) => s.startsAt.getTime() === full.getTime());
 
-      expect(fullSlot?.taken).toBe(4);
-      expect(fullSlot?.available).toBe(false);
-      // Neighbouring slots are untouched and still bookable.
+      expect(fullSlot).toMatchObject({ taken: 4, capacity: 4, available: false });
       expect(slots.filter((s) => s.available).length).toBeGreaterThan(0);
     });
 
-    it('starts at the next whole slot, never in the past', async () => {
+    it("marks a slot unavailable when the cart's kitchen work would not fit it", async () => {
+      // 1500 s of 1800 taken at 09:00: a 240 s cart fits, a 400 s one does not.
+      const { service } = makeService({}, { booked: booked(['2026-10-14T09:05:00Z', 1500]) });
+      const from = new Date('2026-10-14T08:00:00.000Z');
+      const at = (slots: Array<{ startsAt: Date; available: boolean }>) =>
+        slots.find((s) => s.startsAt.toISOString() === '2026-10-14T09:00:00.000Z')?.available;
+
+      expect(at(await service.pickupSlots('store-1', { from, hours: 2, workSeconds: 240 }))).toBe(true);
+      expect(at(await service.pickupSlots('store-1', { from, hours: 2, workSeconds: 400 }))).toBe(false);
+    });
+
+    it('drops times outside the working hours, and the first 15 minutes after an opening nobody is there for', async () => {
+      const { service } = makeService({ workingHours: DAYTIME, shifts: [] });
+
+      // 01:00, shift closed: tomorrow-morning pre-orders start at 08:15, not at the opening.
+      const slots = await service.pickupSlots('store-1', { from: new Date('2026-10-14T01:00:00.000Z') });
+
+      expect(slots[0]?.startsAt.toISOString()).toBe('2026-10-14T08:15:00.000Z');
+      expect(slots.every((s) => s.startsAt.getUTCHours() >= 8 && s.startsAt.getUTCHours() < 20)).toBe(true);
+    });
+
+    it('keeps the opening lead for a window that has not opened yet, shift open or not', async () => {
+      // 20:30 with the evening shift still open: tomorrow's 08:00 opening is someone else's.
+      const { service } = makeService({ workingHours: DAYTIME });
+      const slots = await service.pickupSlots('store-1', { from: new Date('2026-10-14T20:30:00.000Z') });
+      expect(slots[0]?.startsAt.toISOString()).toBe('2026-10-15T08:15:00.000Z');
+    });
+  });
+
+  describe('booking a pre-order', () => {
+    const now = new Date('2026-10-14T01:00:00.000Z');
+
+    it('takes a slot tomorrow morning while the shift is closed', async () => {
+      const { service } = makeService({ workingHours: DAYTIME, shifts: [] });
+      await expect(
+        service.assertScheduledSlot('store-1', new Date('2026-10-14T09:15:00.000Z'), 300, now),
+      ).resolves.toBeUndefined();
+    });
+
+    it('refuses a time sooner than 10 minutes or further than 24 hours away', async () => {
       const { service } = makeService();
-      const from = new Date('2026-08-22T08:07:30.000Z');
+      const soon = service.assertScheduledSlot('store-1', new Date('2026-10-14T01:05:00.000Z'), 0, now);
+      await expect(soon).rejects.toMatchObject({ response: { code: 'PICKUP_TIME_OUT_OF_RANGE', minMinutes: 10 } });
+      const far = service.assertScheduledSlot('store-1', new Date('2026-10-15T01:15:00.000Z'), 0, now);
+      await expect(far).rejects.toMatchObject({ response: { code: 'PICKUP_TIME_OUT_OF_RANGE', maxHours: 24 } });
+    });
 
-      const slots = await service.pickupSlots('store-1', from, 1);
-
-      expect(slots[0]?.startsAt.toISOString()).toBe('2026-08-22T08:15:00.000Z');
-      expect(slots).toHaveLength(4); // one hour at 15-minute granularity
+    it('refuses a handover outside the hours or right at an opening nobody is there for', async () => {
+      const { service } = makeService({ workingHours: DAYTIME, shifts: [] });
+      const night = service.assertScheduledSlot('store-1', new Date('2026-10-14T03:00:00.000Z'), 0, now);
+      await expect(night).rejects.toMatchObject({ response: { code: 'STORE_CLOSED_AT_TIME' } });
+      const atOpening = service.assertScheduledSlot('store-1', new Date('2026-10-14T08:00:00.000Z'), 0, now);
+      await expect(atOpening).rejects.toMatchObject({ response: { code: 'STORE_CLOSED_AT_TIME' } });
     });
 
     it('rejects an order aimed at a slot that just filled up', async () => {
-      const { service } = makeService({
-        order: {
-          groupBy: jest.fn(),
-          findMany: jest.fn(),
-          count: jest.fn().mockResolvedValue(4),
-        },
-      });
+      const { service, prisma } = makeService(
+        {},
+        { booked: booked(...Array.from({ length: 4 }, () => ['2026-10-14T08:22:41Z', 60] as [string, number])) },
+      );
 
-      const attempt = service.assertSlotAvailable('store-1', new Date('2026-08-22T08:15:00.000Z'));
+      const attempt = service.assertScheduledSlot('store-1', new Date('2026-10-14T08:22:41.000Z'), 60, now);
       await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
-      // The code is what web and the Mini App translate; the message is English.
       await expect(attempt).rejects.toMatchObject({ response: { code: 'PICKUP_SLOT_FULL' } });
-    });
 
-    it('lets an order through while the slot has room', async () => {
-      const { service } = makeService({
-        order: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(3) },
-      });
-
-      await expect(service.assertSlotAvailable('store-1', new Date())).resolves.toBeUndefined();
-    });
-
-    it('counts occupancy against the containing slot, not the exact minute', async () => {
-      const { service, prisma } = makeService({
-        order: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
-      });
-
-      await service.assertSlotAvailable('store-1', new Date('2026-08-22T08:22:41.000Z'));
-
-      const where = prisma.order.count.mock.calls[0]?.[0]?.where;
-      expect(where.pickupAt.gte.toISOString()).toBe('2026-08-22T08:15:00.000Z');
-      expect(where.pickupAt.lt.toISOString()).toBe('2026-08-22T08:30:00.000Z');
+      // Occupancy is counted against the containing slot, not the exact minute.
+      const where = prisma.order.findMany.mock.calls[0]?.[0]?.where;
+      expect(where.pickupAt.gte.toISOString()).toBe('2026-10-14T08:15:00.000Z');
+      expect(where.pickupAt.lt.toISOString()).toBe('2026-10-14T08:30:00.000Z');
     });
   });
 
-  describe('opening hours', () => {
-    /** Open 08:00-10:00 UTC every day. */
-    const morningOnly = {
-      store: {
-        findUnique: jest.fn().mockResolvedValue({
-          baseEtaSeconds: 300,
-          kitchenParallelism: 2,
-          slotCapacity: 4,
-          timezone: 'UTC',
-          workingHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
-            weekday,
-            opensAt: 8 * 60,
-            closesAt: 10 * 60,
-            isClosed: false,
-          })),
-        }),
-      },
-    };
+  describe('slot arithmetic', () => {
+    const store = { slotCapacity: 4, kitchenParallelism: 2 };
 
-    it('offers no slots outside opening hours', async () => {
-      const { service } = makeService(morningOnly);
-
-      const slots = await service.pickupSlots('store-1', new Date('2026-08-22T06:00:00.000Z'), 12);
-
-      expect(slots).not.toHaveLength(0);
-      const outside = slots.filter((s) => {
-        const hour = s.startsAt.getUTCHours();
-        return hour < 8 || hour >= 10;
-      });
-      // Closed windows are dropped, not greyed out — a struck-through 03:00
-      // is noise where a full 08:15 is information.
-      expect(outside).toEqual([]);
+    it('is full by count or by kitchen work', () => {
+      expect(slotFits(undefined, store, 300)).toBe(true);
+      expect(slotFits({ count: 4, workSeconds: 0 }, store, 0)).toBe(false);
+      expect(slotFits({ count: 1, workSeconds: 1700 }, store, 100)).toBe(true);
+      expect(slotFits({ count: 1, workSeconds: 1700 }, store, 101)).toBe(false);
     });
 
-    it('rejects a handover the store will not be open for', async () => {
-      const { service } = makeService(morningOnly);
-      const attempt = service.assertOpenAt('store-1', new Date('2026-08-22T03:00:00.000Z'));
-      await expect(attempt).rejects.toThrow('closed at that time');
-      await expect(attempt).rejects.toMatchObject({ response: { code: 'STORE_CLOSED_AT_TIME' } });
+    it('lets an order bigger than a whole slot into an empty one', () => {
+      expect(slotFits({ count: 0, workSeconds: 0 }, store, 5000)).toBe(true);
     });
 
-    it('accepts a handover inside opening hours', async () => {
-      const { service } = makeService(morningOnly);
-      await expect(service.assertOpenAt('store-1', new Date('2026-08-22T09:00:00.000Z'))).resolves.toBeUndefined();
-    });
-  });
-
-  describe('slot boundaries', () => {
     it('floors and ceils to the 15-minute grid', () => {
       const t = new Date('2026-08-22T08:22:41.000Z');
       expect(floorToSlot(t).toISOString()).toBe('2026-08-22T08:15:00.000Z');
       expect(ceilToSlot(t).toISOString()).toBe('2026-08-22T08:30:00.000Z');
-    });
-
-    it('leaves an exact boundary alone', () => {
-      const t = new Date('2026-08-22T08:30:00.000Z');
-      expect(floorToSlot(t).getTime()).toBe(t.getTime());
-      expect(ceilToSlot(t).getTime()).toBe(t.getTime());
-      expect(ceilToSlot(t).getTime() - floorToSlot(t).getTime()).toBe(0);
+      const edge = new Date('2026-08-22T08:30:00.000Z');
+      expect(floorToSlot(edge).getTime()).toBe(edge.getTime());
+      expect(ceilToSlot(edge).getTime()).toBe(edge.getTime());
       expect(SLOT_MS).toBe(900_000);
     });
   });

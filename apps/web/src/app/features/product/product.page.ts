@@ -16,13 +16,15 @@ import {
   isStoreInactive,
   priceWithOptions,
   productKind,
-  suggestFood,
+  suggestionRow,
+  type SuggestionRow,
   type VariationSelection,
 } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 import { ProductOptionsComponent } from './product-options.component';
 
@@ -42,7 +44,7 @@ import { ProductOptionsComponent } from './product-options.component';
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
  *       add bar: the choice in one line, qty stepper + caramel pill button
  *         ("Add to cart — $X"); pinned to the bottom of a phone's screen
- *       «Часто берут вместе» under a drink, when the store sells food
+ *       «К этому напитку» under a drink, when the store sells food
  */
 @Component({
   selector: 'app-product',
@@ -262,11 +264,11 @@ import { ProductOptionsComponent } from './product-options.component';
             </p>
           }
 
-          @if (pairings().length > 0 && resolvedStore(); as store) {
+          @if (pairings().items.length > 0 && resolvedStore(); as store) {
             <app-food-suggestions
               style="margin-top: 12px"
-              title="common.product.pairings"
-              [suggestions]="pairings()"
+              [title]="pairings().source === 'copurchase' ? 'common.upsell.together' : 'common.product.pairings'"
+              [suggestions]="pairings().items"
               [store]="store"
               [canAdd]="authStore.isAuthenticated() && !storeClosed()"
             />
@@ -453,10 +455,20 @@ export class ProductPage implements OnInit {
 
   readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
-  /** «Часто берут вместе»: food and bakery from the same menu, under a drink. */
-  readonly pairings = computed(() => {
+  /** The store's answer for the product on screen (see `storeSuggestions`). */
+  private readonly suggestions = storeSuggestions(() => {
+    const menu = this.menu();
     const product = this.product();
-    return product ? suggestFood(this.menu(), [product.id], 6) : [];
+    return menu && product ? { storeId: menu.storeId, productIds: [product.id] } : null;
+  });
+
+  /**
+   * Under the product: what customers buy together with it, else — under a
+   * drink — food and bakery from the same menu («К этому напитку»).
+   */
+  readonly pairings = computed<SuggestionRow>(() => {
+    const product = this.product();
+    return product ? suggestionRow(this.menu(), [product.id], this.suggestions(), 6) : { items: [], source: 'rule' };
   });
 
   /** Set when the cart turned the item away because the store closed meanwhile. */

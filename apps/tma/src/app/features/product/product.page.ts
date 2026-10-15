@@ -16,7 +16,8 @@ import {
   isStoreInactive,
   priceWithOptions,
   productKind,
-  suggestFood,
+  suggestionRow,
+  type SuggestionRow,
   type VariationSelection,
 } from '@takeaway/utils';
 
@@ -24,6 +25,7 @@ import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 import { TmaProductOptionsComponent } from './product-options.component';
@@ -39,7 +41,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
  *   options — choice chips per size / temperature / milk / cup, add-on
  *     groups opening in place (see TmaProductOptionsComponent)
  *   note — «Пожелание бариста» for a drink, «Комментарий к заказу» else
- *   «Часто берут вместе» under a drink, when the store sells food
+ *   «К этому напитку» under a drink, when the store sells food
  *   choice bar — pinned above Telegram's button: the choice in one line
  *     and the price
  * MainButton (Telegram blue, 48px) handles add-to-cart action. It stays
@@ -182,10 +184,10 @@ import { TmaProductOptionsComponent } from './product-options.component';
           </p>
         }
 
-        @if (pairings().length > 0 && store(); as s) {
+        @if (pairings().items.length > 0 && store(); as s) {
           <app-tma-food-suggestions
-            title="common.product.pairings"
-            [suggestions]="pairings()"
+            [title]="pairings().source === 'copurchase' ? 'common.upsell.together' : 'common.product.pairings'"
+            [suggestions]="pairings().items"
             [store]="s"
             [canAdd]="authStore.isAuthenticated() && !storeClosed()"
           />
@@ -267,10 +269,20 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
-  /** «Часто берут вместе»: food and bakery from the same menu, under a drink. */
-  readonly pairings = computed(() => {
-    const p = this.product();
-    return p ? suggestFood(this.menu(), [p.id], 6) : [];
+  /** The store's answer for the product on screen (see `storeSuggestions`). */
+  private readonly suggestions = storeSuggestions(() => {
+    const menu = this.menu();
+    const product = this.product();
+    return menu && product ? { storeId: menu.storeId, productIds: [product.id] } : null;
+  });
+
+  /**
+   * Under the product: what customers buy together with it, else — under a
+   * drink — food and bakery from the same menu («К этому напитку»).
+   */
+  readonly pairings = computed<SuggestionRow>(() => {
+    const product = this.product();
+    return product ? suggestionRow(this.menu(), [product.id], this.suggestions(), 6) : { items: [], source: 'rule' };
   });
 
   constructor() {

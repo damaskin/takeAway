@@ -18,6 +18,10 @@ export class PickupSlotDto {
   @ApiProperty({ description: "The store's ceiling for one slot" })
   capacity!: number;
 
-  @ApiProperty({ description: 'False once the slot is at capacity' })
+  @ApiProperty({
+    description:
+      'False once the slot is full: it holds `capacity` orders, or more kitchen work than 15 minutes of the ' +
+      "kitchen (with the cart's own work when `cartId` was passed)",
+  })
   available!: boolean;
 }

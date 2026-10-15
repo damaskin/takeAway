@@ -7,6 +7,7 @@ import type {
   StoreDetail,
   StoreListItem,
   StoreMenu,
+  StoreSuggestions,
 } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
@@ -52,12 +53,14 @@ export class CatalogService {
   }
 
   /**
-   * Scheduled handover windows for the next twelve hours. Checkout offers
-   * these instead of a free time field, so a customer can only pick a time
-   * the kitchen can actually hit.
+   * Scheduled handover windows for the next 24 hours. Checkout offers these
+   * instead of a free time field, so a customer can only pick a time the
+   * kitchen can actually hit. With `cartId` a window too busy for that
+   * cart's work comes back unavailable.
    */
-  getPickupSlots(storeIdOrSlug: string): Observable<PickupSlot[]> {
-    return this.http.get<PickupSlot[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/pickup-slots`);
+  getPickupSlots(storeIdOrSlug: string, cartId?: string | null): Observable<PickupSlot[]> {
+    const params = cartId ? { cartId } : undefined;
+    return this.http.get<PickupSlot[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/pickup-slots`, { params });
   }
 
   getMenu(storeIdOrSlug: string): Observable<StoreMenu> {
@@ -67,6 +70,17 @@ export class CatalogService {
         this.menuCache.set(menu.storeId, menu);
       }),
     );
+  }
+
+  /**
+   * What to offer next to [productIds]: what customers bought together with
+   * them (`source: copurchase`), else the menu rule. Only in-stock products
+   * of this store's menu.
+   */
+  getSuggestions(storeIdOrSlug: string, productIds: readonly string[], limit = 6): Observable<StoreSuggestions> {
+    return this.http.get<StoreSuggestions>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/suggestions`, {
+      params: { productIds: productIds.join(','), limit },
+    });
   }
 
   /** `store`: the store being browsed — product slugs are unique per brand only. */

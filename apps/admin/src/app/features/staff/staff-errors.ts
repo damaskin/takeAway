@@ -10,6 +10,7 @@ const STAFF_ERRORS: ApiErrorWording = {
     STAFF_NOT_EDITABLE: 'admin.staff.errors.notEditable',
     STAFF_ALREADY_ON_TEAM: 'admin.staff.errors.alreadyOnTeam',
     STAFF_EMAIL_TAKEN: 'admin.staff.errors.emailTaken',
+    LOGIN_IN_USE: 'admin.staff.errors.loginTaken',
   },
   messages: {
     'Staff member not found': 'admin.staff.errors.notFound',
@@ -18,6 +19,7 @@ const STAFF_ERRORS: ApiErrorWording = {
   statuses: { 403: 'admin.staff.errors.forbidden', 404: 'admin.staff.errors.notFound' },
   fields: {
     email: 'admin.staff.email',
+    login: 'admin.staff.login',
     name: 'admin.staff.name',
     tempPassword: 'admin.staff.tempPassword',
     storeIds: 'admin.staff.storesLabel',

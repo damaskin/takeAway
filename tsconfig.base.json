@@ -27,7 +27,8 @@
       "@takeaway/utils": ["libs/utils/src/index.ts"],
       "@takeaway/api-client": ["libs/api-client/src/index.ts"],
       "@takeaway/ui-kit": ["libs/ui-kit/src/index.ts"],
-      "@takeaway/i18n": ["libs/i18n/src/index.ts"]
+      "@takeaway/i18n": ["libs/i18n/src/index.ts"],
+      "@takeaway/i18n/en": ["libs/i18n/src/en.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

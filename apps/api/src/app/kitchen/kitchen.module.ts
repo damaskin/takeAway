@@ -2,15 +2,17 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { KitchenLoadService } from './kitchen-load.service';
+import { StoreAvailabilityService } from './store-availability.service';
 
 /**
- * Standalone so cart, orders, catalog and payments can all ask the same
- * question — "when will this actually be ready?" — without importing each
- * other and creating a cycle.
+ * Standalone so cart, orders, catalog, payments and the realtime layer can
+ * all ask the same questions — "when will this actually be ready?" and
+ * "does the store take orders now?" — without importing each other and
+ * creating a cycle.
  */
 @Module({
   imports: [PrismaModule],
-  providers: [KitchenLoadService],
-  exports: [KitchenLoadService],
+  providers: [KitchenLoadService, StoreAvailabilityService],
+  exports: [KitchenLoadService, StoreAvailabilityService],
 })
 export class KitchenModule {}

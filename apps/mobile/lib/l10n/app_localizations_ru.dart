@@ -95,6 +95,22 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get timeJustNow => 'Только что';
+
+  @override
+  String timeMinutesAgo(int count) {
+    return '$count мин назад';
+  }
+
+  @override
+  String timeHoursAgo(int count) {
+    return '$count ч назад';
+  }
+
+  @override
+  String get timeYesterday => 'Вчера';
+
+  @override
   String itemsCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -185,6 +201,77 @@ class AppLocalizationsRu extends AppLocalizations {
   String get signInFailed => 'Не удалось войти. Попробуйте ещё раз.';
 
   @override
+  String get emailSignIn => 'Войти по почте';
+
+  @override
+  String get emailSignInOtherMethods => 'Другие способы входа';
+
+  @override
+  String get emailSignInEmailLabel => 'Электронная почта';
+
+  @override
+  String get emailSignInEmailHint => 'you@mail.ru';
+
+  @override
+  String get emailSignInGetCode => 'Получить код';
+
+  @override
+  String emailSignInSentTo(String email) {
+    return 'Отправили код на $email. Он действует 10 минут.';
+  }
+
+  @override
+  String emailSignInAlreadySent(String email) {
+    return 'Код уже отправлен на $email — проверьте почту.';
+  }
+
+  @override
+  String get emailSignInCodeLabel => 'Код из письма';
+
+  @override
+  String get emailSignInResend => 'Отправить код ещё раз';
+
+  @override
+  String emailSignInResendIn(int seconds) {
+    return 'Отправить ещё раз через $seconds с';
+  }
+
+  @override
+  String get emailSignInChangeEmail => 'Изменить почту';
+
+  @override
+  String get emailSignInInvalidEmail => 'Проверьте адрес — в нём должны быть @ и домен, например ivan@mail.ru.';
+
+  @override
+  String emailCodeInvalid(int left) {
+    return 'Неверный код. Осталось попыток: $left.';
+  }
+
+  @override
+  String get emailCodeExpired => 'Код истёк или уже использован. Запросите новый.';
+
+  @override
+  String get emailCodeTooManyAttempts =>
+      'Слишком много неверных попыток — этот код больше не действует. Запросите новый.';
+
+  @override
+  String emailCodeLimit(int minutes) {
+    return 'На этот адрес отправлено слишком много кодов. Попробуйте через $minutes мин.';
+  }
+
+  @override
+  String get emailCodeNotSent => 'Не удалось отправить письмо. Попробуйте через несколько минут.';
+
+  @override
+  String get emailSignInUnavailable => 'Вход по почте сейчас недоступен. Выберите другой способ.';
+
+  @override
+  String get emailSignInStaffAccount => 'Этот адрес принадлежит сотруднику. Войдите с паролем в кабинете бизнеса.';
+
+  @override
+  String get emailSignInTooManyRequests => 'Слишком много попыток подряд. Подождите минуту и попробуйте снова.';
+
+  @override
   String get signInMethodsTitle => 'Способы входа';
 
   @override
@@ -218,6 +305,14 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get signInMethodIosOnly => 'На iPhone';
+
+  @override
+  String get signInMethodEmail => 'Почта';
+
+  @override
+  String signInMethodEmailHint(String email) {
+    return 'Код для входа приходит на $email';
+  }
 
   @override
   String get telegramSignInFailed => 'Telegram не подтвердил вход. Попробуйте ещё раз.';
@@ -254,6 +349,32 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get storeStatusNotWorking => 'Не работает';
+
+  @override
+  String storeOpensAt(String time) {
+    return 'Сейчас закрыто · откроется в $time · можно заказать ко времени';
+  }
+
+  @override
+  String storeOpensTomorrowAt(String time) {
+    return 'Сейчас закрыто · откроется завтра в $time · можно заказать ко времени';
+  }
+
+  @override
+  String storeOpensOnAt(String date, String time) {
+    return 'Сейчас закрыто · откроется $date в $time · можно заказать ко времени';
+  }
+
+  @override
+  String get storeClosedPreorder => 'Сейчас закрыто · можно заказать ко времени';
+
+  @override
+  String get storeQueueFullPreorder => 'Большая очередь — только ко времени';
+
+  @override
+  String storeOpenUntil(String time) {
+    return 'до $time';
+  }
 
   @override
   String get orderHere => 'Заказать здесь';
@@ -294,7 +415,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get buildRoute => 'Построить маршрут';
 
   @override
-  String get callStore => 'Позвонить';
+  String get callStore => 'Позвонить в точку';
 
   @override
   String get menuSearchHint => 'Поиск по меню';
@@ -445,10 +566,48 @@ class AppLocalizationsRu extends AppLocalizations {
   String get pickupLaterHint => 'Выберите время';
 
   @override
-  String get noSlots => 'На ближайшие часы свободных окон нет. Попробуйте «как можно скорее».';
+  String get noSlots => 'На ближайшие сутки свободных окон нет. Попробуйте «как можно скорее».';
+
+  @override
+  String get noSlotsClosed => 'На ближайшие сутки свободных окон нет.';
 
   @override
   String get slotsHint => 'Показаны окна, которые точка успевает обслужить.';
+
+  @override
+  String asapBlockedOpensAt(String time) {
+    return 'Точка откроется в $time — выберите, к какому времени приготовить заказ.';
+  }
+
+  @override
+  String asapBlockedOpensTomorrowAt(String time) {
+    return 'Точка откроется завтра в $time — выберите, к какому времени приготовить заказ.';
+  }
+
+  @override
+  String asapBlockedOpensOnAt(String date, String time) {
+    return 'Точка откроется $date в $time — выберите, к какому времени приготовить заказ.';
+  }
+
+  @override
+  String get asapBlockedShiftClosed => 'Точка ещё не начала работу — выберите, к какому времени приготовить заказ.';
+
+  @override
+  String get asapBlockedQueueFull => 'Сейчас большая очередь — выберите, к какому времени приготовить заказ.';
+
+  @override
+  String get asapBlockedClosed => 'Точка сейчас закрыта — выберите, к какому времени приготовить заказ.';
+
+  @override
+  String get slotDayToday => 'Сегодня';
+
+  @override
+  String get slotDayTomorrow => 'Завтра';
+
+  @override
+  String timeTomorrow(String time) {
+    return '$time завтра';
+  }
 
   @override
   String get fulfillmentPickup => 'Самовывоз';
@@ -634,7 +793,25 @@ class AppLocalizationsRu extends AppLocalizations {
   String get statusCancelled => 'Отменён';
 
   @override
-  String get statusExpired => 'Отменён — оплата не поступила вовремя';
+  String get statusExpired => 'Не состоялся';
+
+  @override
+  String get orderAwaitingAcceptance => 'Ждём подтверждения точки';
+
+  @override
+  String get orderPreorderAwaitingOpening => 'Точка подтвердит предзаказ, когда откроется';
+
+  @override
+  String get orderRunningLate => 'Немного задерживаемся';
+
+  @override
+  String get orderExpiredNotAccepted => 'Точка не подтвердила заказ — деньги не списаны';
+
+  @override
+  String get orderExpiredNotAcceptedRefunded => 'Точка не подтвердила заказ — деньги вернутся на карту';
+
+  @override
+  String get orderExpiredPaymentNotCompleted => 'Оплата не завершилась — заказ отменён';
 
   @override
   String get statusUnknown => 'Обновляем…';
@@ -674,6 +851,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get paymentStateRefunded => 'Деньги возвращены';
+
+  @override
+  String get paymentStateNotCharged => 'Деньги не списаны';
 
   @override
   String get paymentStateAtCounter => 'Оплата на месте';
@@ -815,7 +995,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get profileReferrals => 'Пригласить друга';
 
   @override
-  String get profileNotifications => 'Уведомления';
+  String get profileInbox => 'Уведомления';
+
+  @override
+  String get profileNotifications => 'Настройки уведомлений';
 
   @override
   String get profileLanguage => 'Язык';
@@ -961,6 +1144,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get personalSaved => 'Сохранено';
 
   @override
+  String get emailIsSignInMethod =>
+      'Вы входите по коду на эту почту. Чтобы сменить адрес, сначала подключите Telegram, Google или Apple в «Способах входа».';
+
+  @override
   String get nameRequired => 'Укажите имя';
 
   @override
@@ -970,7 +1157,38 @@ class AppLocalizationsRu extends AppLocalizations {
   String get phoneInvalid => 'В международном формате, например +37377712345';
 
   @override
-  String get notificationsTitle => 'Уведомления';
+  String get inboxTitle => 'Уведомления';
+
+  @override
+  String get inboxReadAll => 'Прочитать все';
+
+  @override
+  String get inboxEmptyTitle => 'Пока пусто';
+
+  @override
+  String get inboxEmptyBody => 'Здесь появятся новости от заведений и takeAway.';
+
+  @override
+  String get inboxUnread => 'Не прочитано';
+
+  @override
+  String get inboxOpen => 'Открыть';
+
+  @override
+  String inboxOpenMenu(String name) {
+    return 'Открыть меню $name';
+  }
+
+  @override
+  String inboxShowPlaces(String name) {
+    return 'Показать заведения $name';
+  }
+
+  @override
+  String get inboxGone => 'Это уведомление больше недоступно.';
+
+  @override
+  String get notificationsTitle => 'Настройки уведомлений';
 
   @override
   String get notificationsSubtitle => 'Выберите, о чём сообщать. Настройки можно менять в любой момент.';
@@ -1309,10 +1527,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get productRequired => 'обязательно';
 
   @override
-  String get productPairsWith => 'Часто берут вместе';
+  String get productPairsWith => 'К этому напитку';
 
   @override
-  String get cartUpsellTitle => 'К заказу';
+  String get cartUpsellTitle => 'Добавить к напитку?';
 
   @override
   String get allergenGluten => 'глютен';
@@ -1364,6 +1582,9 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get errPickupSlotFull => 'Это время только что заняли — выберите другое';
+
+  @override
+  String get errAsapUnavailable => 'На сейчас заказ уже не принять — выберите, к какому времени приготовить';
 
   @override
   String errPickupTimeOutOfRange(int minMinutes, int maxHours) {

@@ -8,9 +8,13 @@ import { BrandsService } from '../../core/brands/brands.service';
 import { BRAND_CURRENCIES } from '../../core/business/business.service';
 import { extractMessage } from '../../core/http/extract-message';
 import { FormPageComponent } from '../../shared/form-page.component';
+import { phoneValidator } from '../../shared/phone.validator';
 import { slugify } from '../../shared/slugify';
 
-/** Create a brand, on its own route. */
+/**
+ * Create a brand, on its own route. The contact phone is required, as at
+ * self-serve sign-up: it is the number the platform team calls.
+ */
 @Component({
   selector: 'app-brand-form',
   standalone: true,
@@ -56,6 +60,23 @@ import { slugify } from '../../shared/slugify';
             </select>
           </label>
         </div>
+
+        <label class="field">
+          <span class="field-label">{{ 'admin.settings.contactPhone' | translate }}</span>
+          <input
+            formControlName="contactPhone"
+            type="tel"
+            autocomplete="tel"
+            required
+            class="field-input field-input-mono"
+            data-testid="brand-contact-phone"
+            [placeholder]="'admin.signup.phonePlaceholder' | translate"
+            [attr.aria-invalid]="phoneError() !== null"
+          />
+          <span class="field-label" [style.color]="phoneError() ? 'var(--color-berry)' : null">{{
+            phoneError() ?? 'admin.settings.contactPhoneHint' | translate
+          }}</span>
+        </label>
       </form>
     </app-form-page>
   `,
@@ -80,7 +101,15 @@ export class BrandFormPage {
     }),
     currency: new FormControl<string>('MDL', { nonNullable: true }),
     locale: new FormControl<'EN' | 'RU'>('RU', { nonNullable: true }),
+    contactPhone: new FormControl('', { nonNullable: true, validators: [phoneValidator({ required: true })] }),
   });
+
+  /** Why the typed phone will not do, once the operator has touched it. */
+  phoneError(): string | null {
+    const phone = this.form.controls.contactPhone;
+    if (!phone.invalid || !phone.dirty) return null;
+    return phone.hasError('required') ? 'admin.signup.phoneRequired' : 'admin.signup.phoneInvalid';
+  }
 
   /** Keeps the slug in step with the name until the operator edits it. */
   syncSlug(): void {
@@ -94,7 +123,14 @@ export class BrandFormPage {
     const v = this.form.getRawValue();
     this.creating.set(true);
     this.error.set(null);
-    this.brands.create({ name: v.name.trim(), slug: v.slug.trim(), currency: v.currency, locale: v.locale }).subscribe({
+    const body = {
+      name: v.name.trim(),
+      slug: v.slug.trim(),
+      currency: v.currency,
+      locale: v.locale,
+      contactPhone: v.contactPhone.trim(),
+    };
+    this.brands.create(body).subscribe({
       next: (brand) => {
         // Make it the context the rest of the panel works in, so stores
         // and menu are immediately usable without a reload.

@@ -15,6 +15,14 @@ export class SignInMethodsDto {
 
   @ApiProperty()
   apple!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'The proven address a sign-in code by email leads into this profile; null when the profile has none (an address only typed into the profile does not count).',
+  })
+  email!: string | null;
 }
 
 /**

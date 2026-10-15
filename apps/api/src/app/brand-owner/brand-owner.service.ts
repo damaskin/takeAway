@@ -10,7 +10,7 @@ import { FeedbackService } from '../feedback/feedback.service';
 import { OnboardingNotifier } from '../onboarding/onboarding-notifier.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
-import { PHOTOGRAPHED_PRODUCT_WHERE, READY_STORE_WHERE, progressOf } from './brand-onboarding';
+import { onboardingFactsOf, progressOf } from './brand-onboarding';
 import type { BrandOnboardingDto } from './dto/brand-onboarding.dto';
 
 /** Why a brand-settings change was refused, as the `code` of the 409. */
@@ -94,25 +94,19 @@ export class BrandOwnerService {
     return { logoUrl: url };
   }
 
+  /**
+   * «Запуск бренда»: the required steps (a store, a menu customers can see,
+   * payments, approval) and the recommendations (a logo, product photos).
+   * Complete once the steps are done — or once the brand has sold, whatever
+   * the checklist says. The rule is `brandLaunch` in `@takeaway/utils`.
+   */
   async onboarding(user: AuthenticatedUser, brandId?: string): Promise<BrandOnboardingDto> {
     const { id } = await this.resolveBrand(user, brandId);
-    const [brand, readyStores, categories, productsWithPhoto] = await Promise.all([
-      this.prisma.brand.findUniqueOrThrow({
-        where: { id },
-        select: { logoUrl: true, moderationStatus: true, moderationNote: true },
-      }),
-      this.prisma.store.count({ where: { brandId: id, ...READY_STORE_WHERE } }),
-      this.prisma.category.count({ where: { brandId: id } }),
-      this.prisma.product.count({ where: { brandId: id, ...PHOTOGRAPHED_PRODUCT_WHERE } }),
-    ]);
-
-    const progress = progressOf({
-      logoUrl: brand.logoUrl,
-      moderationStatus: brand.moderationStatus,
-      readyStores,
-      categories,
-      photographedProducts: productsWithPhoto,
+    const brand = await this.prisma.brand.findUniqueOrThrow({
+      where: { id },
+      select: { id: true, logoUrl: true, moderationStatus: true, moderationNote: true },
     });
+    const progress = progressOf(await onboardingFactsOf(this.prisma, brand));
     return {
       brandId: id,
       moderationStatus: brand.moderationStatus,
@@ -120,7 +114,9 @@ export class BrandOwnerService {
       brandProfile: progress.brandProfile,
       store: progress.store,
       menu: progress.menu,
+      photos: progress.photos,
       cardPayments: this.flags.cardPaymentFlow !== 'none',
+      hasOrders: progress.hasOrders,
       complete: progress.complete,
     };
   }

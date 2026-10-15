@@ -15,6 +15,7 @@ import '../../shared/error_message.dart';
 import '../../shared/web_pages.dart';
 import '../../shared/widgets/cup_logo.dart';
 import 'auth_service.dart';
+import 'email_sign_in_form.dart';
 
 /// Opens the sign-in sheet; completes with true once the customer is in.
 /// Call sites resume what the customer was doing (adding to cart,
@@ -45,6 +46,22 @@ class SignInSheet extends ConsumerStatefulWidget {
 class _SignInSheetState extends ConsumerState<SignInSheet> {
   _Provider? _busy;
   String? _error;
+
+  /// «Войти по почте» was tapped: the email form stands in for the buttons.
+  bool _emailOpen = false;
+
+  void _openEmail() {
+    if (_busy != null) return;
+    setState(() {
+      _emailOpen = true;
+      _error = null;
+    });
+  }
+
+  void _emailSignedIn() {
+    unawaited(HapticFeedback.mediumImpact());
+    if (mounted) Navigator.of(context).pop(true);
+  }
 
   Future<void> _run(_Provider provider) async {
     if (_busy != null) return;
@@ -85,7 +102,7 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
     final brand = context.brand;
     final options = ref.watch(signInOptionsProvider);
 
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(24, 0, 24, 24 + MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -107,54 +124,66 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
               child: Center(child: CircularProgressIndicator()),
             ),
             error: (_, _) => Text(l10n.signInUnavailable, textAlign: TextAlign.center),
-            data: (o) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!o.any)
-                  Text(
-                    l10n.signInUnavailable,
-                    textAlign: TextAlign.center,
-                    style: context.text.bodyMedium?.copyWith(color: brand.textSecondary),
+            data: (o) => o.email && _emailOpen
+                ? EmailSignInForm(onSignedIn: _emailSignedIn, onBack: () => setState(() => _emailOpen = false))
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!o.any)
+                        Text(
+                          l10n.signInUnavailable,
+                          textAlign: TextAlign.center,
+                          style: context.text.bodyMedium?.copyWith(color: brand.textSecondary),
+                        ),
+                      if (o.telegram)
+                        _ProviderButton(
+                          label: l10n.continueWithTelegram,
+                          icon: Icons.send_rounded,
+                          background: const Color(0xFF2AABEE),
+                          foreground: Colors.white,
+                          busy: _busy == _Provider.telegram,
+                          onTap: () => _run(_Provider.telegram),
+                        ),
+                      if (o.apple && Platform.isIOS)
+                        _ProviderButton(
+                          label: l10n.continueWithApple,
+                          icon: Icons.apple,
+                          background: brand.espresso,
+                          foreground: brand.cream,
+                          busy: _busy == _Provider.apple,
+                          onTap: () => _run(_Provider.apple),
+                        ),
+                      if (o.google)
+                        _ProviderButton(
+                          label: l10n.continueWithGoogle,
+                          icon: Icons.g_mobiledata_rounded,
+                          background: brand.foam,
+                          foreground: brand.textPrimary,
+                          outlined: true,
+                          busy: _busy == _Provider.google,
+                          onTap: () => _run(_Provider.google),
+                        ),
+                      if (o.email)
+                        _ProviderButton(
+                          label: l10n.emailSignIn,
+                          icon: Icons.mail_outline_rounded,
+                          background: brand.foam,
+                          foreground: brand.textPrimary,
+                          outlined: true,
+                          busy: false,
+                          onTap: _openEmail,
+                        ),
+                      if (o.dev)
+                        _ProviderButton(
+                          label: l10n.devSignIn,
+                          icon: Icons.developer_mode_rounded,
+                          background: brand.latte,
+                          foreground: brand.textPrimary,
+                          busy: _busy == _Provider.dev,
+                          onTap: () => _run(_Provider.dev),
+                        ),
+                    ],
                   ),
-                if (o.telegram)
-                  _ProviderButton(
-                    label: l10n.continueWithTelegram,
-                    icon: Icons.send_rounded,
-                    background: const Color(0xFF2AABEE),
-                    foreground: Colors.white,
-                    busy: _busy == _Provider.telegram,
-                    onTap: () => _run(_Provider.telegram),
-                  ),
-                if (o.apple && Platform.isIOS)
-                  _ProviderButton(
-                    label: l10n.continueWithApple,
-                    icon: Icons.apple,
-                    background: brand.espresso,
-                    foreground: brand.cream,
-                    busy: _busy == _Provider.apple,
-                    onTap: () => _run(_Provider.apple),
-                  ),
-                if (o.google)
-                  _ProviderButton(
-                    label: l10n.continueWithGoogle,
-                    icon: Icons.g_mobiledata_rounded,
-                    background: brand.foam,
-                    foreground: brand.textPrimary,
-                    outlined: true,
-                    busy: _busy == _Provider.google,
-                    onTap: () => _run(_Provider.google),
-                  ),
-                if (o.dev)
-                  _ProviderButton(
-                    label: l10n.devSignIn,
-                    icon: Icons.developer_mode_rounded,
-                    background: brand.latte,
-                    foreground: brand.textPrimary,
-                    busy: _busy == _Provider.dev,
-                    onTap: () => _run(_Provider.dev),
-                  ),
-              ],
-            ),
           ),
           AnimatedSize(
             duration: Motion.medium,

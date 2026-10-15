@@ -2,7 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
-import { TRANSLATIONS_EN, TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 import type { KitchenDeviceStores } from '@takeaway/shared-types';
 import { of, throwError } from 'rxjs';
 

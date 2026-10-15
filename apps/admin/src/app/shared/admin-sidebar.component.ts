@@ -123,6 +123,11 @@ const SUPPORT_ROLES: ReadonlyArray<AdminRole> = ['BRAND_ADMIN', 'STORE_MANAGER',
       }
 
       <div class="admin-aside-bottom flex flex-col" style="gap: 8px">
+        @if (kitchenOnly()) {
+          <p class="admin-pin-note" role="note" data-testid="pin-session-note">
+            {{ 'admin.layout.pinSessionNote' | translate }}
+          </p>
+        }
         @if (canWriteSupport()) {
           <button type="button" class="admin-support flex items-center" (click)="supportRequested.emit()">
             <span style="font-size: 18px" aria-hidden="true">✉</span>
@@ -218,6 +223,16 @@ const SUPPORT_ROLES: ReadonlyArray<AdminRole> = ['BRAND_ADMIN', 'STORE_MANAGER',
       .admin-install:hover {
         color: var(--color-caramel);
         border-color: var(--color-caramel);
+      }
+      .admin-pin-note {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--color-cream);
+        font-family: var(--font-sans);
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--color-text-secondary);
       }
       .admin-support {
         flex: 0 0 auto;
@@ -339,6 +354,7 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.campaignModeration,
       badge: 'pendingCampaigns',
     },
+    { icon: '📢', label: 'admin.nav.announcements', link: '/announcements', roles: ADMIN_ROLES.announcements },
     { icon: '📊', label: 'admin.nav.analytics', link: '/analytics', roles: ADMIN_ROLES.analytics },
     { icon: '💸', label: 'admin.nav.settlementsOwn', link: '/settlements', roles: ['BRAND_ADMIN'] },
     {
@@ -366,11 +382,18 @@ export class AdminSidebarComponent {
     },
   ];
 
+  /**
+   * Signed in with a kitchen PIN: a shared kitchen tablet, which sees the
+   * board and the stop-list only. The same person signed in with their
+   * password sees every section of their role, so the footer says why the
+   * menu is short — otherwise it reads as a bug.
+   */
+  readonly kitchenOnly = computed(() => this.authStore.kdsStoreId() !== null);
+
   readonly visibleItems = computed(() => {
     const flags = this.flags.flags();
     const role = this.authStore.user()?.role;
-    // A kitchen PIN session sees the board and the stop-list only.
-    const kitchenOnly = this.authStore.kdsStoreId() !== null;
+    const kitchenOnly = this.kitchenOnly();
     const kitchenLinks = KITCHEN_SESSION_NAV.map(navLink);
     return this.navItems.filter((item) => {
       if (kitchenOnly && !kitchenLinks.includes(item.link)) return false;

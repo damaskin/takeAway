@@ -41,7 +41,7 @@ export class AdminStaffController {
   add(@CurrentUser() user: AuthenticatedUser, @Param('storeId') storeId: string, @Body() dto: AddStaffDto) {
     return this.staff.add(
       storeId,
-      { email: dto.email, name: dto.name, role: dto.role, tempPassword: dto.tempPassword },
+      { email: dto.email, login: dto.login, name: dto.name, role: dto.role, tempPassword: dto.tempPassword },
       user,
     );
   }

@@ -5,6 +5,7 @@ import 'models/auth.dart';
 import 'models/cart.dart';
 import 'models/catalog.dart';
 import 'models/feedback.dart';
+import 'models/inbox.dart';
 import 'models/loyalty.dart';
 import 'models/misc.dart';
 import 'models/order.dart';
@@ -26,6 +27,10 @@ abstract class TakeAwayApi {
   @GET('/auth/telegram/config')
   Future<TelegramAuthConfig> telegramConfig();
 
+  /// Which customer sign-in methods the server can complete.
+  @GET('/auth/methods')
+  Future<AuthMethods> authMethods();
+
   // ── Auth ───────────────────────────────────────────────────────────────
 
   /// Telegram Login (OpenID Connect): the ID token Telegram signed for our bot.
@@ -41,6 +46,13 @@ abstract class TakeAwayApi {
 
   @POST('/auth/apple')
   Future<AuthSessionResponse> signInWithApple(@Body() OAuthLoginRequest body);
+
+  /// Mails a sign-in code (204 for any well-formed address).
+  @POST('/auth/email/start')
+  Future<void> startEmailSignIn(@Body() EmailSignInStartRequest body);
+
+  @POST('/auth/email/verify')
+  Future<AuthSessionResponse> verifyEmailCode(@Body() EmailSignInVerifyRequest body);
 
   @POST('/auth/logout')
   Future<void> logout(@Body() RefreshRequest body);
@@ -90,8 +102,19 @@ abstract class TakeAwayApi {
   @GET('/stores/{idOrSlug}/menu')
   Future<Menu> menu(@Path('idOrSlug') String idOrSlug);
 
+  /// 15-minute handover windows for the next 24 hours. With [cartId] a
+  /// window that cannot fit that cart's work comes back unavailable.
   @GET('/stores/{idOrSlug}/pickup-slots')
-  Future<List<PickupSlot>> pickupSlots(@Path('idOrSlug') String idOrSlug);
+  Future<List<PickupSlot>> pickupSlots(@Path('idOrSlug') String idOrSlug, {@Query('cartId') String? cartId});
+
+  /// What to offer next to [productIds] (comma-separated): what customers
+  /// bought together with them, else bakery and food next to a drink.
+  @GET('/stores/{idOrSlug}/suggestions')
+  Future<StoreSuggestions> suggestions(
+    @Path('idOrSlug') String idOrSlug, {
+    @Query('productIds') required String productIds,
+    @Query('limit') int? limit,
+  });
 
   /// `store`: the store being browsed. With it the product is looked up as
   /// that store sells it — 404 when the store does not sell it, and without
@@ -165,6 +188,28 @@ abstract class TakeAwayApi {
   /// messages an hour.
   @POST('/feedback')
   Future<FeedbackReceipt> sendFeedback(@Body() CreateFeedbackRequest body);
+
+  // ── Inbox («Уведомления») ──────────────────────────────────────────────
+
+  /// The signed-in customer's messages, newest first. [cursor] is the
+  /// previous page's `nextCursor`; [limit] 1..50, 20 when left out.
+  @GET('/inbox')
+  Future<InboxPage> inbox({@Query('cursor') String? cursor, @Query('limit') int? limit});
+
+  @GET('/inbox/unread-count')
+  Future<InboxUnreadCount> inboxUnreadCount();
+
+  /// 404 when it is not one of the caller's messages.
+  @GET('/inbox/{id}')
+  Future<InboxItem> inboxItem(@Path('id') String id);
+
+  /// 204; reading one already read is fine.
+  @POST('/inbox/{id}/read')
+  Future<void> markInboxItemRead(@Path('id') String id);
+
+  /// «Прочитать все».
+  @POST('/inbox/read-all')
+  Future<void> markInboxRead();
 
   // ── Delivery ───────────────────────────────────────────────────────────
 

@@ -26,6 +26,15 @@ export class CustomersQueryDto {
   @IsString()
   storeId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'The currency spend is shown in when the stores price in several. People are counted over every store either way.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(3)
+  currency?: string;
+
   @ApiPropertyOptional({ description: 'Name, phone or email, as on the account or typed at checkout.' })
   @IsOptional()
   @IsString()
@@ -87,6 +96,12 @@ export class CustomerScopeQueryDto {
   @IsOptional()
   @IsString()
   storeId?: string;
+
+  @ApiPropertyOptional({ description: 'The currency spend is shown in when the stores price in several.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(3)
+  currency?: string;
 }
 
 /** A product one customer keeps ordering: at least 5 units across their counted orders. */
@@ -122,16 +137,41 @@ export class CustomerSummaryDto {
   @ApiProperty({ nullable: true, type: () => FavouriteProductDto }) favouriteProduct!: FavouriteProductDto | null;
 }
 
+/** Of the people counted by `LapsedAtOneStoreDto`, those of one store. */
+export class StoreLapsedCountDto {
+  @ApiProperty() storeId!: string;
+  @ApiProperty() storeName!: string;
+  @ApiProperty() count!: number;
+}
+
+/**
+ * Regulars inactive at one of the stores (3+ orders there, none for the
+ * window) who still order at another — so they are not inactive across the
+ * brand and are not in the brand-wide list.
+ */
+export class LapsedAtOneStoreDto {
+  @ApiProperty({ description: 'People, each once' }) count!: number;
+  @ApiProperty({ type: () => StoreLapsedCountDto, isArray: true }) stores!: StoreLapsedCountDto[];
+}
+
 export class CustomerPageDto {
   @ApiProperty({ type: () => CustomerSummaryDto, isArray: true }) items!: CustomerSummaryDto[];
   @ApiProperty() total!: number;
   @ApiProperty() page!: number;
   @ApiProperty() pageSize!: number;
+  /** The currency of `totalCents` and `avgCheckCents`; spend in other currencies is not in them. */
+  @ApiProperty({ nullable: true, type: String }) currency!: string | null;
+  /** Every currency the stores price in; more than one — the page offers a choice. */
+  @ApiProperty({ type: String, isArray: true }) currencies!: string[];
+  /** On the brand-wide inactive list only: who went quiet at one store but orders at another. */
+  @ApiProperty({ nullable: true, type: () => LapsedAtOneStoreDto }) activeElsewhere!: LapsedAtOneStoreDto | null;
 }
 
 export class CustomerStoreDto {
   @ApiProperty() storeId!: string;
   @ApiProperty() storeName!: string;
+  /** The store's currency, which `totalCents` is in. */
+  @ApiProperty() currency!: string;
   @ApiProperty() orders!: number;
   @ApiProperty() totalCents!: number;
 }
@@ -149,6 +189,8 @@ export class CustomerOrderDto {
 }
 
 export class CustomerDetailDto extends CustomerSummaryDto {
+  /** The currency of the spend and average check above. */
+  @ApiProperty({ nullable: true, type: String }) currency!: string | null;
   @ApiProperty({ nullable: true, type: String }) email!: string | null;
   /** Cancelled or expired orders, which the totals leave out. */
   @ApiProperty() cancelledOrders!: number;

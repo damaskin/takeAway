@@ -199,9 +199,14 @@ final storeProductProvider = FutureProvider.family<ProductDetail, ({String produ
   }
 });
 
-final pickupSlotsProvider = FutureProvider.autoDispose.family<List<PickupSlot>, String>((ref, storeId) async {
+/// 15-minute pickup windows for the next 24 hours. With a cart the API
+/// marks a window too busy for that cart's work unavailable.
+final pickupSlotsProvider = FutureProvider.autoDispose.family<List<PickupSlot>, ({String storeId, String? cartId})>((
+  ref,
+  key,
+) async {
   try {
-    return await ref.watch(apiProvider).pickupSlots(storeId);
+    return await ref.watch(apiProvider).pickupSlots(key.storeId, cartId: key.cartId);
   } on Object catch (error) {
     throw ApiError.from(error);
   }

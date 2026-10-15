@@ -65,6 +65,7 @@ describe('DELETE /auth/me', () => {
     cardBindingRequest: { deleteMany: jest.fn() },
     cardToken: { deleteMany: jest.fn() },
     passwordResetToken: { deleteMany: jest.fn() },
+    customerNotification: { deleteMany: jest.fn() },
     userStore: { deleteMany: jest.fn() },
     order: { updateMany: jest.fn() },
     feedback: { updateMany: jest.fn() },

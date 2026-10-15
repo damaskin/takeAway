@@ -20,7 +20,6 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/directions.dart';
 import '../../shared/money_text.dart';
-import '../../shared/product_kinds.dart';
 import '../../shared/store_kinds.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
@@ -34,6 +33,7 @@ import '../catalog/product_visual.dart';
 import '../checkout/web_payment.dart';
 import '../product/product_options.dart';
 import 'order_progress.dart';
+import 'order_wait.dart';
 import 'orders_providers.dart';
 
 class OrderStatusScreen extends ConsumerStatefulWidget {
@@ -493,6 +493,10 @@ class _OrderBody extends ConsumerWidget {
     final name = ref.watch(currentUserProvider)?.firstName ?? '';
     final showCode = !status.isTerminal;
     final ringSize = (MediaQuery.sizeOf(context).width * 0.62).clamp(200.0, 300.0);
+    // The store as it is now: whether a pre-order waits for it to open, and
+    // its phone — the customer may already be at the counter.
+    final wait = orderWaitNote(order, ref.watch(liveStoreProvider(order.storeId)), now);
+    final phone = ref.watch(storeDetailProvider(order.storeId)).valueOrNull?.phone?.trim();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
@@ -506,7 +510,7 @@ class _OrderBody extends ConsumerWidget {
               const SizedBox(height: 4),
               AnimatedSwitcher(
                 duration: Motion.medium,
-                child: _Headline(key: ValueKey(status), order: order),
+                child: _Headline(key: ValueKey('$status$wait'), order: order, wait: wait),
               ),
               const SizedBox(height: 4),
               Text(
@@ -516,7 +520,16 @@ class _OrderBody extends ConsumerWidget {
                 style: context.text.bodyMedium?.copyWith(color: brand.textSecondary),
               ),
               const SizedBox(height: 20),
-              OrderProgressRing(order: order, now: now, size: ringSize),
+              OrderProgressRing(order: order, now: now, size: ringSize, late: wait == OrderWaitNote.late),
+              if (!status.isTerminal && phone != null && phone.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('call-store'),
+                  onPressed: () => openPhone(phone),
+                  icon: const Icon(Icons.call_rounded),
+                  label: Text(l10n.callStore),
+                ),
+              ],
             ],
           ),
         ),
@@ -546,11 +559,15 @@ class _OrderBody extends ConsumerWidget {
 }
 
 /// The status in words. At the counter it is the product's whole promise:
-/// the order is ready and the customer did not queue for it.
+/// the order is ready and the customer did not queue for it. While it waits
+/// the line under it says what for — the store's confirmation, the store to
+/// open, or that the kitchen is running late — and an expired order says why
+/// it ended and where the money is.
 class _Headline extends StatelessWidget {
-  const _Headline({required this.order, super.key});
+  const _Headline({required this.order, required this.wait, super.key});
 
   final Order order;
+  final OrderWaitNote? wait;
 
   @override
   Widget build(BuildContext context) {
@@ -560,7 +577,23 @@ class _Headline extends StatelessWidget {
     final (String title, String? line) = switch (order.status) {
       OrderStatus.ready when pickup => (l10n.orderReadyHeadline, l10n.orderReadySlogan),
       OrderStatus.pickedUp when pickup => (l10n.statusPickedUp, l10n.orderPickedUpSlogan),
-      final status => (orderStatusLabel(context, status, delivery: order.isDelivery), null),
+      OrderStatus.expired => (
+        l10n.statusExpired,
+        switch (expiredOutcome(order)) {
+          ExpiredOutcome.notAccepted => l10n.orderExpiredNotAccepted,
+          ExpiredOutcome.notAcceptedRefunded => l10n.orderExpiredNotAcceptedRefunded,
+          ExpiredOutcome.paymentNotCompleted => l10n.orderExpiredPaymentNotCompleted,
+        },
+      ),
+      final status => (
+        orderStatusLabel(context, status, delivery: order.isDelivery),
+        switch (wait) {
+          OrderWaitNote.late => l10n.orderRunningLate,
+          OrderWaitNote.preorderAwaitingOpening => l10n.orderPreorderAwaitingOpening,
+          OrderWaitNote.awaitingAcceptance => l10n.orderAwaitingAcceptance,
+          null => null,
+        },
+      ),
     };
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -623,6 +656,12 @@ class _PaymentCard extends StatelessWidget {
         l10n.paymentStateAwaiting,
         Icons.hourglass_top_rounded,
         brand.amber,
+      ),
+      // Ended without being made: a released hold is no payment at all.
+      PaymentState.none when order.status.isCancelled => (
+        l10n.paymentStateNotCharged,
+        Icons.money_off_rounded,
+        brand.textSecondary,
       ),
       PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
     };
@@ -794,6 +833,14 @@ class _ItemsCard extends ConsumerWidget {
     final brand = context.brand;
     final currency = order.currency;
     final discount = order.discountCents;
+    // Lines show their photos only when every line has one: a receipt with a
+    // picture on some lines and not others reads as images gone missing, and
+    // the quantities would not line up.
+    final photos = [
+      for (final item in order.items)
+        item.productId == null ? null : productPhotoFor(ref, order.storeId, item.productId!),
+    ];
+    final showPhotos = photos.isNotEmpty && photos.every((photo) => photo != null);
 
     Widget line(String label, int cents, {bool strong = false, bool minus = false}) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -822,14 +869,23 @@ class _ItemsCard extends ConsumerWidget {
         children: [
           Text(l10n.orderItems, style: context.text.titleMedium),
           const SizedBox(height: 8),
-          for (final item in order.items)
+          for (final (index, item) in order.items.indexed)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ItemImage(storeId: order.storeId, productId: item.productId),
-                  const SizedBox(width: 12),
+                  if (showPhotos) ...[
+                    SizedBox.square(
+                      dimension: 44,
+                      child: ProductImage(
+                        url: photos[index],
+                        seed: item.productId ?? '',
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Text('${item.quantity}×', style: context.text.titleSmall?.copyWith(color: brand.caramel)),
                   const SizedBox(width: 8),
                   Expanded(
@@ -876,37 +932,6 @@ class _ItemOptions extends ConsumerWidget {
     ].where((part) => part.isNotEmpty);
     if (parts.isEmpty) return const SizedBox.shrink();
     return Text(parts.join(' · '), style: context.text.bodySmall);
-  }
-}
-
-/// A line's photo, or the illustration for its kind. The order keeps only
-/// the product id: the store's menu has the rest, and the product details
-/// when the menu no longer lists it.
-class _ItemImage extends ConsumerWidget {
-  const _ItemImage({required this.storeId, required this.productId});
-
-  final String storeId;
-  final String? productId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final id = productId;
-    ({String? imageUrl, ProductKind? kind}) visual = (imageUrl: null, kind: null);
-    if (id != null) {
-      visual = productVisualFor(ref, storeId, id);
-      if (visual.imageUrl == null && visual.kind == null && ref.watch(menuProvider(storeId)).hasValue) {
-        visual = productVisualFor(ref, storeId, id, detail: ref.watch(productDetailProvider(id)).valueOrNull);
-      }
-    }
-    return SizedBox.square(
-      dimension: 44,
-      child: ProductImage(
-        url: visual.imageUrl,
-        kind: visual.kind,
-        seed: id ?? '',
-        borderRadius: BorderRadius.circular(10),
-      ),
-    );
   }
 }
 

@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "id": "inb_2",
+      "kind": "BRAND_CAMPAIGN",
+      "title": "−20% на капучино",
+      "body": "Только до воскресенья, в любом нашем заведении.",
+      "sender": {
+        "kind": "BRAND",
+        "name": "NoName Coffee",
+        "logoUrl": "https://takeaway.md/media/brands/noname/logo.png",
+        "brandId": "br_1"
+      },
+      "link": {
+        "kind": "BRAND",
+        "storeId": null,
+        "storeSlug": null,
+        "brandId": "br_1",
+        "name": "NoName Coffee"
+      },
+      "createdAt": "2026-10-14T09:30:00.000Z",
+      "readAt": null
+    },
+    {
+      "id": "inb_1",
+      "kind": "PLATFORM_ANNOUNCEMENT",
+      "title": "Новое в takeAway",
+      "body": "Теперь все новости заведений — в «Уведомлениях».",
+      "sender": {
+        "kind": "PLATFORM",
+        "name": "takeAway",
+        "logoUrl": null,
+        "brandId": null
+      },
+      "link": {
+        "kind": "STORE",
+        "storeId": "st_1",
+        "storeSlug": "noname-center",
+        "brandId": "br_1",
+        "name": "NoName — центр"
+      },
+      "createdAt": "2026-10-13T18:05:00.000Z",
+      "readAt": "2026-10-13T18:10:00.000Z"
+    }
+  ],
+  "nextCursor": "inb_1",
+  "unreadCount": 1
+}

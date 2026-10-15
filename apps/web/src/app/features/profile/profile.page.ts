@@ -7,6 +7,7 @@ import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
+import { InboxService } from '../../core/inbox/inbox.service';
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
 interface ProfileSection {
@@ -15,6 +16,8 @@ interface ProfileSection {
   value?: string;
   /** When set, the row is rendered as a routerLink to this URL. */
   link?: string;
+  /** A count badge on the row — unread messages of «Уведомления». */
+  badge?: 'inbox';
 }
 
 /**
@@ -26,7 +29,8 @@ interface ProfileSection {
  *     tier badge + points text, right chevron
  *   pfTierProgress — tier row ("Gold" caramel / "550 to Platinum" tertiary) + 6px rail
  *   pfSections — 56px foam cards (icon left · label · optional value · chevron):
- *     Personal info · Payment methods · Gift cards · Notifications · Language
+ *     My orders · Notifications (inbox, unread badge) · Personal info ·
+ *     Payment methods · Gift cards · … · Notification settings · Language
  *   pfLogout — 56px transparent row (berry icon + berry label)
  */
 @Component({
@@ -113,6 +117,14 @@ interface ProfileSection {
                     sec.value | translate
                   }}</span>
                 }
+                @if (sec.badge === 'inbox' && unread() > 0) {
+                  <span
+                    class="flex items-center justify-center"
+                    style="min-width: 22px; height: 22px; padding: 0 7px; border-radius: 9999px; background: var(--color-caramel); color: white; font-family: var(--font-sans); font-size: 12px; font-weight: 700"
+                    [attr.aria-label]="'web.profile.inbox.unreadBadge' | translate: { count: unread() }"
+                    >{{ unread() }}</span
+                  >
+                }
                 <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
               </a>
             } @else {
@@ -175,16 +187,20 @@ export class ProfilePage implements OnInit {
   private readonly loyaltyApi = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
   private readonly flags = inject(FeatureFlagsStore);
+  private readonly inbox = inject(InboxService);
 
   readonly loyalty = signal<LoyaltyAccount | null>(null);
+  readonly unread = this.inbox.unreadCount;
 
   ngOnInit(): void {
     this.flags.load();
     this.loyaltyApi.me().subscribe({ next: (acc) => this.loyalty.set(acc) });
+    this.inbox.refreshUnread();
   }
 
   private readonly allSections: ProfileSection[] = [
     { icon: '🧾', label: 'web.profile.sections.myOrders', link: '/orders' },
+    { icon: '📬', label: 'web.profile.sections.inbox', link: '/profile/inbox', badge: 'inbox' },
     { icon: '👤', label: 'web.profile.sections.personal', link: '/profile/personal' },
     { icon: '💳', label: 'web.profile.sections.payment', link: '/profile/payment-methods' },
     { icon: '🎁', label: 'web.profile.sections.gift', link: '/profile/gift-cards' },

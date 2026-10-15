@@ -19,9 +19,11 @@ const MAX_BYTES = PRODUCT_PHOTO_RULE.maxBytes;
  * customers see on the menu card. The API stays the judge of type and
  * size; the checks here only spare a pointless upload of a 20 MB HEIC.
  *
- * The hint carries the upload rule and the platform's photo style, and a
- * product without photos shows the placeholder customers see instead —
- * the one of its category's kind.
+ * The hint carries the upload rule and the platform's photo style. A
+ * product without photos shows what customers get instead: a text row with
+ * no picture in the app (App Review refused placeholder art), and on the
+ * website and in Telegram the illustration of its category's kind — with a
+ * nudge to add a photo, since products with one sell better.
  */
 @Component({
   selector: 'app-product-images',
@@ -54,9 +56,15 @@ const MAX_BYTES = PRODUCT_PHOTO_RULE.maxBytes;
             height="56"
             style="border-radius: 12px; background: white; border: 1px solid var(--color-border-light)"
           />
-          <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-            >{{ 'admin.images.placeholder' | translate }}.</span
-          >
+          <div class="flex flex-col" style="gap: 2px; min-width: 0">
+            <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+              >{{ 'admin.images.placeholder' | translate }}.</span
+            >
+            <span
+              style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-espresso)"
+              >{{ 'admin.images.photoSellsBetter' | translate }}</span
+            >
+          </div>
         </div>
       }
 

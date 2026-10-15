@@ -8,6 +8,8 @@ import '../core/storage/app_prefs.dart';
 import '../core/theme/tokens.dart';
 import '../features/cart/cart_screen.dart';
 import '../features/checkout/checkout_screen.dart';
+import '../features/inbox/inbox_item_screen.dart';
+import '../features/inbox/inbox_screen.dart';
 import '../features/menu/menu_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/orders/order_status_screen.dart';
@@ -39,6 +41,10 @@ abstract final class Routes {
 
   static String product(String id) => '/product/$id';
   static String order(String id, {bool placed = false}) => placed ? '/order/$id?placed=1' : '/order/$id';
+
+  /// «Уведомления»; one message opens over the list.
+  static const inbox = '/inbox';
+  static String inboxItem(String id) => '/inbox/$id';
   static const personal = '/profile/personal';
   static const notifications = '/profile/notifications';
   static const signInMethods = '/profile/sign-in';
@@ -55,6 +61,7 @@ abstract final class Routes {
 const _signedInOnly = [
   Routes.checkout,
   '/order/',
+  Routes.inbox,
   Routes.personal,
   Routes.notifications,
   Routes.signInMethods,
@@ -145,6 +152,20 @@ final routerProvider = Provider<GoRouter>((ref) {
             justPlaced: state.uri.queryParameters['placed'] == '1',
           ),
         ),
+      ),
+      GoRoute(
+        path: Routes.inbox,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const InboxScreen(),
+        routes: [
+          GoRoute(
+            path: ':id',
+            builder: (context, state) => InboxItemScreen(
+              itemId: state.pathParameters['id']!,
+              preview: state.extra is InboxItem ? state.extra! as InboxItem : null,
+            ),
+          ),
+        ],
       ),
     ],
   );

@@ -15,6 +15,7 @@ import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../../shared/widgets/store_map.dart';
 import '../catalog/catalog_providers.dart';
+import '../inbox/inbox_widgets.dart';
 import 'map_focus.dart';
 import 'nearby.dart';
 import 'store_widgets.dart';
@@ -83,16 +84,19 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
       return '${s.name} ${s.addressLine} ${s.city}'.toLowerCase().contains(q);
     }).toList();
     // Near me: nearest first, as the provider sorts them, open or not — the
-    // closed ones are greyed out where they are. Otherwise stores taking
-    // orders first, each group in the provider's order (nearest, or shortest
-    // wait). Then the pin the customer just tapped.
+    // closed ones are greyed out where they are. Otherwise stores open now
+    // first, then those taking pre-orders only, then the rest, each group in
+    // the provider's order (nearest, or shortest wait). Then the pin the
+    // customer just tapped.
     final ordered = radius.meters != null
         ? list
         : [
             for (final i in list)
               if (i.store.isOpen) i,
             for (final i in list)
-              if (!i.store.isOpen) i,
+              if (i.store.preorderOnly) i,
+            for (final i in list)
+              if (!i.store.takesOrders) i,
           ];
     final lifted = ordered.indexWhere((i) => i.store.id == _lifted);
     if (lifted > 0) ordered.insert(0, ordered.removeAt(lifted));
@@ -135,9 +139,9 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
   }
 
   void _order(Store store) {
-    // A closed store has no menu to show; the button is not offered, and
-    // this keeps a stale tap from choosing it anyway.
-    if (!store.isOpen) return;
+    // A store taking no orders has no menu to show; the button is not
+    // offered, and this keeps a stale tap from choosing it anyway.
+    if (!store.takesOrders) return;
     ref.read(activeStoreIdProvider.notifier).select(store.id);
     context.go(Routes.menu);
   }
@@ -237,7 +241,8 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
   }
 
   Color _pinColor(BrandColors brand, Store store) {
-    if (!store.isOpen) return brand.textTertiary;
+    if (!store.takesOrders) return brand.textTertiary;
+    if (store.preorderOnly) return brand.amber;
     final busy = brand.busy(store.busyMeter);
     return busy == brand.mint ? brand.caramel : busy;
   }
@@ -335,22 +340,29 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Material(
-                    color: Colors.transparent,
-                    child: TextField(
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        hintText: l10n.storesSearchHint,
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        suffixIcon: _search.text.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.close_rounded),
-                                onPressed: () => setState(_search.clear),
-                              ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: TextField(
+                            controller: _search,
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              hintText: l10n.storesSearchHint,
+                              prefixIcon: const Icon(Icons.search_rounded),
+                              suffixIcon: _search.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(Icons.close_rounded),
+                                      onPressed: () => setState(_search.clear),
+                                    ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const InboxBell(overMap: true),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   _FilterBar(
@@ -618,7 +630,8 @@ class _StoreRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final store = item.store;
-    final open = store.isOpen;
+    // Open now, or for pre-orders while closed: either way it can be chosen.
+    final open = store.takesOrders;
     return Column(
       children: [
         StoreTile(

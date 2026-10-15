@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import type { CartItem, Modifier, Variation } from '@prisma/client';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
 import { CartService, type StoreProduct } from './cart.service';
@@ -16,8 +17,9 @@ describe('CartService pricing', () => {
         CartService,
         { provide: PrismaService, useValue: {} },
         // These cases only exercise priceItem, which never reaches the
-        // kitchen — the provider is here to satisfy the constructor.
+        // kitchen — the providers are here to satisfy the constructor.
         { provide: KitchenLoadService, useValue: {} },
+        { provide: StoreAvailabilityService, useValue: {} },
       ],
     }).compile();
 
@@ -172,8 +174,26 @@ const openStore = {
   brandId: 'brand-a',
   status: 'OPEN',
   brand: { moderationStatus: 'APPROVED' },
-  shifts: [{ id: 'shift-1' }],
 };
+
+/** The availability rules' answer for the store; open for ASAP unless a test says otherwise. */
+function availability(patch: { acceptingOrders?: boolean; openNow?: boolean } = {}) {
+  return {
+    forStore: jest.fn().mockResolvedValue({
+      acceptingOrders: true,
+      openNow: true,
+      asapBlockedReason: null,
+      opensAt: null,
+      closesAt: null,
+      withinHours: true,
+      extendedUntil: null,
+      currentEtaSeconds: 600,
+      brandId: 'brand-a',
+      status: 'OPEN',
+      ...patch,
+    }),
+  };
+}
 
 function emptyCart() {
   return {
@@ -187,7 +207,10 @@ function emptyCart() {
   };
 }
 
-async function buildService(prisma: Record<string, unknown>): Promise<CartService> {
+async function buildService(
+  prisma: Record<string, unknown>,
+  rules: ReturnType<typeof availability> = availability(),
+): Promise<CartService> {
   const moduleRef = await Test.createTestingModule({
     providers: [
       CartService,
@@ -199,6 +222,7 @@ async function buildService(prisma: Record<string, unknown>): Promise<CartServic
           quote: jest.fn().mockResolvedValue({ etaSeconds: 0 }),
         },
       },
+      { provide: StoreAvailabilityService, useValue: rules },
     ],
   }).compile();
   return moduleRef.get(CartService);
@@ -592,12 +616,13 @@ describe('CartService.addItem guards', () => {
     modifiers: [],
   };
 
-  const build = async (prisma: Record<string, unknown>) => {
+  const build = async (prisma: Record<string, unknown>, rules = availability()) => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         CartService,
         { provide: PrismaService, useValue: prisma },
         { provide: KitchenLoadService, useValue: {} },
+        { provide: StoreAvailabilityService, useValue: rules },
       ],
     }).compile();
     return moduleRef.get(CartService);
@@ -640,35 +665,42 @@ describe('CartService.addItem guards', () => {
     });
   });
 
-  it('refuses a store that has been switched off, even from a direct link', async () => {
-    const service = await build({
-      product: { findUnique: jest.fn().mockResolvedValue(product) },
-      store: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ brandId: 'brand-a', status: 'CLOSED', brand: { moderationStatus: 'APPROVED' } }),
+  it('refuses a store that takes no order at all — switched off, or no hours within a day — even from a direct link', async () => {
+    const upsert = jest.fn();
+    const service = await build(
+      {
+        product: { findUnique: jest.fn().mockResolvedValue(product) },
+        store: { findUnique: jest.fn().mockResolvedValue(openStore) },
+        cart: { upsert },
       },
-    });
+      availability({ acceptingOrders: false, openNow: false }),
+    );
 
     await expect(service.addItem('user-1', add)).rejects.toMatchObject({
       status: 400,
       message: 'This store is not taking orders right now',
-    });
-  });
-
-  it('refuses a store with no shift running, before anything goes into a cart', async () => {
-    const upsert = jest.fn();
-    const service = await build({
-      product: { findUnique: jest.fn().mockResolvedValue(product) },
-      store: { findUnique: jest.fn().mockResolvedValue({ ...openStore, shifts: [] }) },
-      cart: { upsert },
-    });
-
-    await expect(service.addItem('user-1', add)).rejects.toMatchObject({
-      status: 400,
       response: { code: 'STORE_NOT_TAKING_ORDERS' },
     });
     expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('fills a basket while the shift is closed — the store still takes pre-orders', async () => {
+    const service = await buildService(
+      {
+        product: { findUnique: jest.fn().mockResolvedValue({ ...product, slug: 'p-1', name: 'Latte', sortOrder: 0 }) },
+        store: { findUnique: jest.fn().mockResolvedValue(openStore) },
+        stopListEntry: { findMany: jest.fn().mockResolvedValue([]) },
+        cart: {
+          upsert: jest.fn().mockResolvedValue({ id: 'cart-1' }),
+          findUnique: jest.fn().mockResolvedValue(emptyCart()),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        cartItem: { create: jest.fn().mockResolvedValue({}), findMany: jest.fn().mockResolvedValue([]) },
+      },
+      availability({ acceptingOrders: true, openNow: false }),
+    );
+
+    await expect(service.addItem('user-1', add)).resolves.toMatchObject({ id: 'cart-1' });
   });
 
   it('treats a store of a brand still in moderation as not there', async () => {

@@ -95,6 +95,20 @@ export class AnalyticsScopeResolver {
   }
 
   /**
+   * The scope for counting people rather than money — «Клиенты» and its
+   * segments: every store of the caller's slice whatever it prices in (or
+   * the requested store), never narrowed to one currency. A regular of a
+   * store in the other currency is a customer all the same, and the
+   * campaign and promo segments count them too. `currency` is picked as for
+   * {@link money}, for the money shown next to the people; `currencies` is
+   * the choice.
+   */
+  async people(user: AuthenticatedUser, request: AnalyticsRequest): Promise<MoneyScope> {
+    const { scope, parent, storeId, currency, currencies } = await this.withCurrency(user, request);
+    return { scope, parent, storeId, currency, currencies };
+  }
+
+  /**
    * The scope, the period read in the scope's own time zone, and the
    * features of the brands in it.
    */
@@ -109,6 +123,27 @@ export class AnalyticsScopeResolver {
     user: AuthenticatedUser,
     request: AnalyticsRequest,
   ): Promise<{ money: MoneyScope; stores: ScopeStore[]; platform: boolean }> {
+    const { scope, parent, storeId, platform, stores, own, currencies, currency } = await this.withCurrency(
+      user,
+      request,
+    );
+
+    if (currencies.length <= 1 || !currency) {
+      return { money: { scope, parent, storeId, currency, currencies }, stores, platform };
+    }
+    const narrowed: AnalyticsScope = {
+      brandIds: parent.brandIds,
+      storeIds: own.filter((s) => s.currency === currency).map((s) => s.id),
+    };
+    return {
+      money: { scope: storeId ? scope : narrowed, parent: narrowed, storeId, currency, currencies },
+      stores,
+      platform,
+    };
+  }
+
+  /** The caller's scope with the currency its money is counted in, before any narrowing to it. */
+  private async withCurrency(user: AuthenticatedUser, request: AnalyticsRequest) {
     const { scope, parent } = await this.resolveWithParent(user, request.brandId, request.storeId);
     const storeId = request.storeId ?? null;
     const platform = parent.brandIds === null && parent.storeIds === null;
@@ -124,19 +159,7 @@ export class AnalyticsScopeResolver {
         own.map((s) => s.currency),
         brandCurrency,
       );
-
-    if (currencies.length <= 1 || !currency) {
-      return { money: { scope, parent, storeId, currency, currencies }, stores, platform };
-    }
-    const narrowed: AnalyticsScope = {
-      brandIds: parent.brandIds,
-      storeIds: own.filter((s) => s.currency === currency).map((s) => s.id),
-    };
-    return {
-      money: { scope: storeId ? scope : narrowed, parent: narrowed, storeId, currency, currencies },
-      stores,
-      platform,
-    };
+    return { scope, parent, storeId, platform, stores, own, currencies, currency };
   }
 
   /** The scope with the requested store, and without it. */

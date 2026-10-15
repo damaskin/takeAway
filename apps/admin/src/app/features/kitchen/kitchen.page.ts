@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -13,12 +14,19 @@ import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 import {
   KITCHEN_COLUMNS,
   KITCHEN_REJECT_REASONS,
+  OVERDUE_CHIME_MS,
   type KitchenColumn,
+  acceptOverdue,
   applyKitchenEvent,
   canReject,
+  countdown,
   inColumn,
+  lateMinutes,
+  laterPreorders,
   nextAction,
   rejectOutcomeKey,
+  shiftBanner,
+  startDue,
 } from '../../core/kitchen/kitchen-board';
 import {
   KITCHEN_REJECT_COMMENT_MAX,
@@ -27,6 +35,7 @@ import {
   type KitchenOrder,
   type KitchenRejectBody,
   type KitchenRejectReason,
+  type ShiftExtendMinutes,
   type StoreShift,
 } from '../../core/kitchen/kitchen.api';
 import { KitchenDeviceService } from '../../core/kitchen/kitchen-device.service';
@@ -36,6 +45,8 @@ import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AuthService } from '../../core/auth/auth.service';
 import type { KitchenStore } from '../../core/kitchen/order-alerts.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
+import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
+import { KitchenShiftBannerComponent } from './kitchen-shift-banner.component';
 
 /** How long the "order rejected" notice stays on screen. */
 const TOAST_MS = 5000;
@@ -68,11 +79,26 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
  * A ticket nobody has accepted can instead be rejected with a reason
  * (`POST /kds/orders/:id/reject`); the API gives the money back and tells
  * the customer why.
+ *
+ * The kitchen policy of 2026-10-14 on the board: pre-orders whose start is
+ * more than 15 minutes away wait in «Предзаказы»; at their start time a
+ * chime and a notice say it is time to make them. A ticket nobody accepted
+ * in time pulses and chimes every 30 seconds (the API calls it off at its
+ * deadline). Late tickets say by how much. Before the working hours end,
+ * and outside them, a banner offers to extend; "Finish work" asks through
+ * a dialog that says what stays on the board.
  */
 @Component({
   selector: 'app-kitchen',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, ConfirmDialogComponent],
+  imports: [
+    RouterLink,
+    TranslatePipe,
+    NgTemplateOutlet,
+    ConfirmDialogComponent,
+    ShiftCloseDialogComponent,
+    KitchenShiftBannerComponent,
+  ],
   template: `
     <section class="kitchen" [class.kitchen-dark]="mode.tablet()">
       <header class="kitchen-head">
@@ -157,15 +183,34 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
                 (sh.openedByName ? 'admin.kitchen.shift.openSinceBy' : 'admin.kitchen.shift.openSince')
                   | translate: { time: shiftTime(sh.openedAt), name: sh.openedByName }
               }}
+              @if (extendedUntil(); as until) {
+                <span class="kitchen-shift-extended" data-testid="shift-extended">
+                  · {{ 'admin.kitchen.shift.extendedUntil' | translate: { time: shiftTime(until) } }}
+                </span>
+              }
             </span>
             <button type="button" class="kitchen-tool" [disabled]="shiftBusy()" (click)="setShift(false)">
               {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.finish') | translate }}
             </button>
           </div>
+          @if (banner(); as b) {
+            <app-kitchen-shift-banner
+              [banner]="b"
+              [time]="b.kind === 'closingSoon' ? shiftTime(b.at) : ''"
+              [opensAt]="b.kind === 'outsideHours' ? shiftTime(b.opensAt) : ''"
+              [busy]="extending()"
+              (extend)="extend($event)"
+            />
+          }
         } @else {
           <div class="kitchen-shift kitchen-shift-closed" role="status" data-testid="shift-closed">
             <div class="flex flex-col" style="gap: 4px; min-width: 0">
               <strong class="kitchen-shift-title">{{ 'admin.kitchen.shift.closedTitle' | translate }}</strong>
+              @if (sh.closedAutomatically && sh.closedAt) {
+                <span class="kitchen-shift-text" data-testid="shift-auto-closed">{{
+                  'admin.kitchen.shift.autoClosed' | translate: { time: shiftTime(sh.closedAt) }
+                }}</span>
+              }
               <span class="kitchen-shift-text">{{ 'admin.kitchen.shift.closedHint' | translate }}</span>
             </div>
             @if (store()?.status === 'CLOSED') {
@@ -193,6 +238,20 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
       @if (loaded() && stores().length === 0) {
         <p class="kitchen-empty-state">{{ 'admin.kitchen.noStores' | translate }}</p>
       } @else {
+        @if (preorders().length > 0) {
+          <section class="kitchen-preorders" [attr.aria-label]="'admin.kitchen.preorders.title' | translate">
+            <div class="kitchen-col-head kitchen-preorders-head">
+              <span>{{ 'admin.kitchen.preorders.title' | translate }}</span>
+              <span class="kitchen-preorders-hint">{{ 'admin.kitchen.preorders.hint' | translate }}</span>
+              <span>{{ preorders().length }}</span>
+            </div>
+            <div class="kitchen-preorders-cards" data-testid="kitchen-preorders">
+              @for (order of preorders(); track order.id) {
+                <ng-container [ngTemplateOutlet]="ticketCard" [ngTemplateOutletContext]="{ $implicit: order }" />
+              }
+            </div>
+          </section>
+        }
         <div class="kitchen-grid">
           @for (col of columns; track col) {
             <section class="kitchen-col" [attr.aria-label]="meta(col).label | translate">
@@ -202,98 +261,7 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
               </div>
               <div class="kitchen-cards">
                 @for (order of ordersIn(col); track order.id) {
-                  <article
-                    class="kitchen-card"
-                    [class.kitchen-card-here]="order.customerArrival === 'HERE'"
-                    [style.border]="cardBorder(order)"
-                  >
-                    @if (order.customerArrival; as arrival) {
-                      <div
-                        class="kitchen-arrival"
-                        [class.kitchen-arrival-here]="arrival === 'HERE'"
-                        [attr.data-testid]="'arrival-' + arrival"
-                      >
-                        {{
-                          (arrival === 'HERE' ? 'admin.kitchen.arrival.here' : 'admin.kitchen.arrival.nearby')
-                            | translate
-                        }}
-                        @if (order.customerArrivedAt) {
-                          <span class="kitchen-arrival-ago">{{ arrivedAgo(order.customerArrivedAt) }}</span>
-                        }
-                      </div>
-                    }
-                    <div class="flex items-center justify-between">
-                      <span class="kitchen-code">{{ order.orderCode }}</span>
-                      <div class="flex flex-col items-end" style="gap: 2px">
-                        <span class="kitchen-due" [style.color]="dueColor(order)">{{ dueLabel(order) }}</span>
-                        <span class="kitchen-mode">{{ 'kds.card.pickupMode.' + order.pickupMode | translate }}</span>
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="kitchen-customer">{{
-                        order.customerName ?? ('kds.card.customer' | translate)
-                      }}</span>
-                      <span class="kitchen-muted">{{ 'kds.card.due' | translate: { time: pickupTime(order) } }}</span>
-                    </div>
-                    <ul class="kitchen-lines">
-                      @for (line of ticket(order); track $index) {
-                        <li class="flex flex-col" style="gap: 4px">
-                          <div class="flex items-baseline" style="gap: 8px">
-                            <span class="kitchen-qty">{{ line.quantity }}×</span>
-                            <span class="kitchen-item">{{ line.name }}</span>
-                          </div>
-                          @if (line.variations.length > 0) {
-                            <div class="flex flex-wrap kitchen-indent" style="gap: 6px">
-                              @for (v of line.variations; track v.id) {
-                                <span class="kitchen-chip">{{ v.name }}</span>
-                              }
-                            </div>
-                          }
-                          @for (m of line.modifierLines; track m.id) {
-                            <span class="kitchen-indent kitchen-modifier">
-                              + {{ m.name }}
-                              @if (m.count > 1) {
-                                <strong style="color: var(--color-caramel)">×{{ m.count }}</strong>
-                              }
-                            </span>
-                          }
-                          @if (line.notes) {
-                            <div class="kitchen-indent kitchen-note">✎ {{ line.notes }}</div>
-                          }
-                        </li>
-                      }
-                    </ul>
-                    @if (order.notes) {
-                      <div class="kitchen-note">⚠ {{ order.notes }}</div>
-                    }
-                    @if (failures()[order.id]; as reason) {
-                      <p class="kitchen-card-error" role="alert">{{ reason }}</p>
-                    }
-                    @if (actionOf(order); as action) {
-                      <div class="kitchen-actions">
-                        @if (canReject(order)) {
-                          <button
-                            type="button"
-                            class="kitchen-reject"
-                            data-testid="reject-order"
-                            [disabled]="busy().has(order.id)"
-                            (click)="openReject(order)"
-                          >
-                            {{ 'admin.kitchen.reject.button' | translate }}
-                          </button>
-                        }
-                        <button
-                          type="button"
-                          class="kitchen-action"
-                          [style.background]="actionMeta(action).color"
-                          [disabled]="busy().has(order.id)"
-                          (click)="run(action, order)"
-                        >
-                          {{ (busy().has(order.id) ? 'admin.kitchen.working' : actionMeta(action).label) | translate }}
-                        </button>
-                      </div>
-                    }
-                  </article>
+                  <ng-container [ngTemplateOutlet]="ticketCard" [ngTemplateOutletContext]="{ $implicit: order }" />
                 } @empty {
                   <p class="kitchen-empty">{{ 'kds.card.empty' | translate }}</p>
                 }
@@ -303,6 +271,124 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         </div>
       }
     </section>
+
+    <ng-template #ticketCard let-order>
+      <article
+        class="kitchen-card"
+        [class.kitchen-card-here]="order.customerArrival === 'HERE'"
+        [class.kitchen-card-overdue]="overdue(order)"
+        [style.border]="cardBorder(order)"
+        [attr.data-testid]="'ticket-' + order.orderCode"
+      >
+        @if (overdue(order)) {
+          <div class="kitchen-overdue" role="alert" data-testid="ticket-overdue">
+            {{ 'admin.kitchen.card.awaiting' | translate: { minutes: waitingMinutes(order) } }}
+            @if (order.acceptDeadlineAt) {
+              · {{ 'admin.kitchen.card.autoCancelIn' | translate: { time: untilLabel(order.acceptDeadlineAt) } }}
+            }
+          </div>
+        }
+        @if (late(order) > 0) {
+          <div class="kitchen-late" data-testid="ticket-late">
+            {{ 'admin.kitchen.card.late' | translate: { minutes: late(order) } }}
+          </div>
+        }
+        @if (order.customerArrival; as arrival) {
+          <div
+            class="kitchen-arrival"
+            [class.kitchen-arrival-here]="arrival === 'HERE'"
+            [attr.data-testid]="'arrival-' + arrival"
+          >
+            {{ (arrival === 'HERE' ? 'admin.kitchen.arrival.here' : 'admin.kitchen.arrival.nearby') | translate }}
+            @if (order.customerArrivedAt) {
+              <span class="kitchen-arrival-ago">{{ arrivedAgo(order.customerArrivedAt) }}</span>
+            }
+          </div>
+        }
+        <div class="flex items-center justify-between">
+          <span class="kitchen-code">{{ order.orderCode }}</span>
+          <div class="flex flex-col items-end" style="gap: 2px">
+            <span class="kitchen-due" [style.color]="dueColor(order)">{{ dueLabel(order) }}</span>
+            <span class="kitchen-mode">{{ 'kds.card.pickupMode.' + order.pickupMode | translate }}</span>
+          </div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="kitchen-customer">{{ order.customerName ?? ('kds.card.customer' | translate) }}</span>
+          <span class="kitchen-muted">
+            @if (order.pickupMode === 'SCHEDULED' && order.startBy) {
+              {{
+                'admin.kitchen.preorders.dueStart'
+                  | translate: { time: pickupTime(order), start: shiftTime(order.startBy) }
+              }}
+            } @else {
+              {{ 'kds.card.due' | translate: { time: pickupTime(order) } }}
+            }
+          </span>
+        </div>
+        <ul class="kitchen-lines">
+          @for (line of ticket(order); track $index) {
+            <li class="flex flex-col" style="gap: 4px">
+              <div class="flex items-baseline" style="gap: 8px">
+                <span class="kitchen-qty">{{ line.quantity }}×</span>
+                <span class="kitchen-item">{{ line.name }}</span>
+              </div>
+              @if (line.variations.length > 0) {
+                <div class="flex flex-wrap kitchen-indent" style="gap: 6px">
+                  @for (v of line.variations; track v.id) {
+                    <span class="kitchen-chip">{{ v.name }}</span>
+                  }
+                </div>
+              }
+              @for (m of line.modifierLines; track m.id) {
+                <span class="kitchen-indent kitchen-modifier">
+                  + {{ m.name }}
+                  @if (m.count > 1) {
+                    <strong style="color: var(--color-caramel)">×{{ m.count }}</strong>
+                  }
+                </span>
+              }
+              @if (line.notes) {
+                <div class="kitchen-indent kitchen-note">✎ {{ line.notes }}</div>
+              }
+            </li>
+          }
+        </ul>
+        @if (order.notes) {
+          <div class="kitchen-note">⚠ {{ order.notes }}</div>
+        }
+        @if (failures()[order.id]; as reason) {
+          <p class="kitchen-card-error" role="alert">{{ reason }}</p>
+        }
+        @if (actionOf(order); as action) {
+          <div class="kitchen-actions">
+            @if (canReject(order)) {
+              <button
+                type="button"
+                class="kitchen-reject"
+                data-testid="reject-order"
+                [disabled]="busy().has(order.id)"
+                (click)="openReject(order)"
+              >
+                {{ 'admin.kitchen.reject.button' | translate }}
+              </button>
+            }
+            <button
+              type="button"
+              class="kitchen-action"
+              [style.background]="actionMeta(action).color"
+              [disabled]="busy().has(order.id)"
+              (click)="run(action, order)"
+            >
+              {{ (busy().has(order.id) ? 'admin.kitchen.working' : actionMeta(action).label) | translate }}
+            </button>
+          </div>
+        }
+      </article>
+    </ng-template>
+
+    @if (closingShift() && storeId(); as id) {
+      <app-shift-close-dialog [storeId]="id" (closed)="shiftClosed($event)" (cancelled)="closingShift.set(false)" />
+    }
 
     <!-- Outside the board, so the dialog keeps the light palette in tablet mode. -->
     @if (rejecting(); as target) {
@@ -784,6 +870,63 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         color: var(--color-text-tertiary);
         margin: 0;
       }
+      .kitchen-shift-extended {
+        font-weight: 600;
+        color: #3e8868;
+      }
+      .kitchen-preorders {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .kitchen-preorders-head {
+        gap: 12px;
+        background: var(--color-surface-variant);
+        color: var(--color-text-secondary);
+      }
+      .kitchen-preorders-hint {
+        flex: 1 1 auto;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .kitchen-preorders-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 12px;
+      }
+      .kitchen-overdue,
+      .kitchen-late {
+        align-self: flex-start;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 13px;
+        font-weight: 700;
+        color: white;
+        background: var(--color-berry);
+      }
+      .kitchen-late {
+        background: #8a6720;
+      }
+      .kitchen-card-overdue {
+        animation: kitchen-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes kitchen-pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(217, 75, 94, 0.55);
+        }
+        50% {
+          box-shadow: 0 0 0 8px rgba(217, 75, 94, 0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .kitchen-card-overdue {
+          animation: none;
+          box-shadow: 0 0 0 3px rgba(217, 75, 94, 0.45);
+        }
+      }
     `,
   ],
 })
@@ -823,6 +966,24 @@ export class KitchenPage {
     () => !!this.shift()?.open && this.shift()?.busy !== undefined && this.store()?.status !== 'CLOSED',
   );
   readonly busyToggling = signal(false);
+  /** The "Finish work" dialog is open. */
+  readonly closingShift = signal(false);
+  readonly extending = signal(false);
+  /** The hours banner: the end is near, or the store is closed by the schedule. */
+  readonly banner = computed(() => shiftBanner(this.shift(), this.now()));
+  /** An extension past the hours that is still running. */
+  readonly extendedUntil = computed(() => {
+    const until = this.shift()?.extendedUntil;
+    return until && Date.parse(until) > this.now() ? until : null;
+  });
+  /** «Предзаказы»: pre-orders whose start is more than 15 minutes away. */
+  readonly preorders = computed(() => laterPreorders(this.orders(), this.now()));
+
+  /** Pre-orders whose start reminder already went off on this screen. */
+  private reminded = new Set<string>();
+  private lastOverdueChime = 0;
+  /** The closing banner chimes once per closing time. */
+  private chimedBanner: string | null = null;
 
   readonly rejectReasons = KITCHEN_REJECT_REASONS;
   readonly commentMax = KITCHEN_REJECT_COMMENT_MAX;
@@ -856,7 +1017,10 @@ export class KitchenPage {
   constructor() {
     interval(1000)
       .pipe(takeUntilDestroyed())
-      .subscribe(() => this.now.set(Date.now()));
+      .subscribe(() => {
+        this.now.set(Date.now());
+        this.remind();
+      });
     interval(30_000)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.refresh());
@@ -897,7 +1061,28 @@ export class KitchenPage {
   }
 
   ordersIn(column: KitchenColumn): KitchenOrder[] {
-    return this.orders().filter((o) => inColumn(o, column));
+    const now = this.now();
+    return this.orders().filter((o) => inColumn(o, column, now));
+  }
+
+  /** Nobody accepted it in time: it pulses and chimes. */
+  overdue(order: KitchenOrder): boolean {
+    return acceptOverdue(order, this.now());
+  }
+
+  late(order: KitchenOrder): number {
+    return lateMinutes(order, this.now());
+  }
+
+  /** Minutes since the order reached the board. */
+  waitingMinutes(order: KitchenOrder): number {
+    const since = order.awaitingSince ?? order.createdAt;
+    return Math.max(0, Math.floor((this.now() - Date.parse(since)) / 60_000));
+  }
+
+  /** "2:14" until a moment, "0:00" once it passed. */
+  untilLabel(iso: string): string {
+    return countdown(Math.max(0, Date.parse(iso) - this.now()));
   }
 
   ticket(order: KitchenOrder): TicketLine[] {
@@ -1012,11 +1197,17 @@ export class KitchenPage {
     });
   }
 
-  /** "Start work" / "Finish work" for the store on the board. */
+  /**
+   * "Start work" / "Finish work" for the store on the board. Finishing asks
+   * through the dialog, which closes the shift itself.
+   */
   setShift(open: boolean): void {
     const storeId = this.storeId();
     if (!storeId || this.shiftBusy()) return;
-    if (!open && !window.confirm(this.translate.instant('admin.kitchen.shift.finishConfirm'))) return;
+    if (!open) {
+      this.closingShift.set(true);
+      return;
+    }
     this.shiftBusy.set(true);
     this.shiftError.set(null);
     this.api.setShift(storeId, open).subscribe({
@@ -1034,6 +1225,80 @@ export class KitchenPage {
         );
       },
     });
+  }
+
+  /** The dialog closed the shift. */
+  shiftClosed(shift: StoreShift): void {
+    this.closingShift.set(false);
+    if (this.storeId() === shift.storeId) this.shift.set(shift);
+    this.refresh();
+  }
+
+  /** «Продлить на 30 мин / 1 ч»: ASAP orders keep coming past the working hours. */
+  extend(minutes: ShiftExtendMinutes): void {
+    const storeId = this.storeId();
+    if (!storeId || this.extending()) return;
+    this.extending.set(true);
+    this.shiftError.set(null);
+    this.api.extendShift(storeId, minutes).subscribe({
+      next: (shift) => {
+        this.extending.set(false);
+        if (this.storeId() === storeId) this.shift.set(shift);
+      },
+      error: (err) => {
+        this.extending.set(false);
+        this.shiftError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            codes: {
+              SHIFT_EXTENSION_LIMIT: 'admin.kitchen.shift.extendLimit',
+              SHIFT_NOT_OPEN: 'admin.kitchen.shift.closedTitle',
+            },
+            statuses: { 403: 'common.forbidden' },
+          }),
+        );
+        this.refresh();
+      },
+    });
+  }
+
+  /**
+   * Once a second: a ticket nobody accepted in time chimes every 30 seconds,
+   * a pre-order whose start came gets its notice once, and the closing
+   * banner chimes when it appears.
+   */
+  private remind(): void {
+    const now = this.now();
+    const store = this.store();
+    const orders = this.orders();
+
+    if (orders.some((o) => acceptOverdue(o, now)) && now - this.lastOverdueChime >= OVERDUE_CHIME_MS) {
+      this.lastOverdueChime = now;
+      this.alerts.remind();
+    }
+
+    const due = orders.filter((o) => startDue(o, now) && !this.reminded.has(o.id));
+    const first = due[0];
+    if (first) {
+      for (const o of due) this.reminded.add(o.id);
+      const text =
+        due.length === 1
+          ? this.translate.instant('admin.kitchen.reminders.start', {
+              code: first.orderCode,
+              time: this.pickupTime(first),
+            })
+          : this.translate.instant('admin.kitchen.reminders.startMany', {
+              codes: due.map((o) => `#${o.orderCode}`).join(', '),
+            });
+      this.showToast(text);
+      this.alerts.remind({ title: text, body: store?.name ?? '', tag: `start-${first.id}` });
+    }
+
+    const banner = this.banner();
+    if (banner?.kind === 'closingSoon' && this.chimedBanner !== banner.at) {
+      this.chimedBanner = banner.at;
+      this.alerts.remind();
+    }
   }
 
   /** «Загружены» on or off for the store on the board. */
@@ -1075,10 +1340,7 @@ export class KitchenPage {
   }
 
   dueLabel(order: KitchenOrder): string {
-    const diff = new Date(order.pickupAt).getTime() - this.now();
-    const abs = Math.abs(Math.round(diff / 1000));
-    const sign = diff < 0 ? '−' : '';
-    return `${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`;
+    return countdown(new Date(order.pickupAt).getTime() - this.now());
   }
 
   pickupTime(order: KitchenOrder): string {
@@ -1155,6 +1417,10 @@ export class KitchenPage {
     this.rejecting.set(null);
     this.shift.set(null);
     this.shiftError.set(null);
+    this.closingShift.set(false);
+    this.reminded = new Set();
+    this.lastOverdueChime = 0;
+    this.chimedBanner = null;
     if (!storeId) return;
     // Whoever opens the board on this browser binds it to the store's brand
     // as a kitchen tablet (once), so its PIN screen lists only that brand's

@@ -8,11 +8,15 @@ import { ValidateBy, type ValidationOptions } from 'class-validator';
  * «8 916 123-45-67» all arrive as the international number. What does not
  * read as a phone number is left as it was typed, for
  * {@link IsInternationalPhone} to refuse; blank becomes `undefined`.
+ *
+ * `keepBlank` leaves blank as typed instead, for a number that can be
+ * changed but not removed: the validators then refuse it rather than the
+ * field being quietly left out.
  */
-export function ToPhone(): PropertyDecorator {
+export function ToPhone(options: { keepBlank?: boolean } = {}): PropertyDecorator {
   return Transform(({ value }) => {
     if (typeof value !== 'string') return value;
-    if (value.trim() === '') return undefined;
+    if (value.trim() === '') return options.keepBlank ? '' : undefined;
     return normalizePhone(value) ?? value;
   });
 }

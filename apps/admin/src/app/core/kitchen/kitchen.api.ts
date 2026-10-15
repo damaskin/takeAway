@@ -1,6 +1,13 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { KitchenDeviceBinding, KitchenDeviceStores } from '@takeaway/shared-types';
+import type {
+  AsapBlockedReason,
+  KitchenDeviceBinding,
+  KitchenDeviceStores,
+  KitchenOrderTimeline,
+  ShiftCloseSummary,
+  ShiftExtendMinutes,
+} from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -11,8 +18,12 @@ export const KITCHEN_DEVICE_HEADER = 'X-Kitchen-Device';
 /** The statuses an order passes through while it is on the kitchen board. */
 export type KitchenOrderStatus = 'CREATED' | 'PAID' | 'ACCEPTED' | 'IN_PROGRESS' | 'READY';
 
-/** One row of `GET /kds/orders` — and of a `kds.orderChanged` event. */
-export interface KitchenOrder {
+/**
+ * One row of `GET /kds/orders` — and of a `kds.orderChanged` event. The
+ * timing fields (`startBy`, the acceptance clock) are absent from older API
+ * builds.
+ */
+export interface KitchenOrder extends Partial<KitchenOrderTimeline> {
   id: string;
   orderCode: string;
   status: KitchenOrderStatus;
@@ -41,7 +52,20 @@ export interface StoreShift {
   closedByName: string | null;
   /** The kitchen marked the store «Загружены». Absent from older API builds. */
   busy?: boolean;
+  /** ASAP orders are taken past the working hours until then; null without an extension. */
+  extendedUntil?: string | null;
+  /** End of the current working-hours window; null outside the hours and around the clock. */
+  closesAt?: string | null;
+  /** Start of the next working-hours window while outside the hours. */
+  opensAt?: string | null;
+  /** An ASAP order placed now would be taken. */
+  asapOpen?: boolean;
+  asapBlockedReason?: AsapBlockedReason | null;
+  /** The last shift was closed by the schedule, not by a person. */
+  closedAutomatically?: boolean;
 }
+
+export type { ShiftCloseSummary, ShiftExtendMinutes };
 
 export type KitchenAction = 'accept' | 'start' | 'ready' | 'pickedUp';
 
@@ -123,6 +147,18 @@ export class KitchenApi {
   setShift(storeId: string, open: boolean): Observable<StoreShift> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.post<StoreShift>(`${this.api.baseUrl}/kds/shift/${open ? 'open' : 'close'}`, {}, { params });
+  }
+
+  /** What "Finish work" would leave behind: orders to accept first, to finish, for later. */
+  closeSummary(storeId: string): Observable<ShiftCloseSummary> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.get<ShiftCloseSummary>(`${this.api.baseUrl}/kds/shift/close-summary`, { params });
+  }
+
+  /** «Продлить»: ASAP orders keep coming this much longer past the working hours. */
+  extendShift(storeId: string, minutes: ShiftExtendMinutes): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.put<StoreShift>(`${this.api.baseUrl}/kds/shift/extend`, { minutes }, { params });
   }
 
   /** «Загружены» on or off; answers the shift with the new `busy`. */

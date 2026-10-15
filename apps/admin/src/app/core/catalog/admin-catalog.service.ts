@@ -23,6 +23,8 @@ export interface BrandDto {
   plan?: BrandPlan;
   /** Platform commission in basis points (1000 = 10 %). */
   commissionBps?: number;
+  /** The number the takeAway team calls, E.164; null on a brand from before sign-up asked for it. */
+  contactPhone?: string | null;
 }
 
 export interface StoreWorkingHourDto {
@@ -244,6 +246,8 @@ export interface CategoryAdminDto {
   /** Preparation time a new product of the category starts with, seconds. */
   defaultPrepTimeSeconds?: number | null;
   _count?: { products: number; options?: number };
+  /** Its products with no photo — a text row with no picture in the app. Missing from older APIs. */
+  productsWithoutPhoto?: number;
 }
 
 export interface ProductAdminDto {

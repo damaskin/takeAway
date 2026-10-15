@@ -45,6 +45,12 @@ const PAGE_SIZE = 25;
  * or 14 days) — and the store are in the address (`?segment=inactive&days=7
  * &storeId=`): the win-back tab and the dashboard link here, and the way
  * back from a customer keeps the filter.
+ *
+ * People are counted over every store of the brand, whatever it prices in.
+ * Spend is in one currency: with stores in several, a picker
+ * (`?currency=`) says which. «Все точки» counts a regular over every store,
+ * so the inactive list says how many went quiet at one store but still
+ * order at another, with a way to that store's list.
  */
 @Component({
   selector: 'app-customers',
@@ -96,6 +102,21 @@ const PAGE_SIZE = 25;
           }
         </p>
       }
+      @if (segment() === 'inactive' && !storeId() && page()?.activeElsewhere; as elsewhere) {
+        @if (elsewhere.count > 0) {
+          <p class="cu-elsewhere" role="note" data-testid="customers-active-elsewhere">
+            {{ 'admin.customers.activeElsewhere' | translate: { count: elsewhere.count, days: days() } }}
+            <span class="cu-elsewhere-stores">
+              {{ 'admin.customers.activeElsewhereStores' | translate }}
+              @for (s of elsewhere.stores; track s.storeId) {
+                <button type="button" class="cu-store-link" (click)="setFilter({ storeId: s.storeId })">
+                  {{ 'admin.customers.activeElsewhereStore' | translate: { store: s.storeName, count: s.count } }}
+                </button>
+              }
+            </span>
+          </p>
+        }
+      }
 
       <div class="cu-filters">
         <input
@@ -127,7 +148,24 @@ const PAGE_SIZE = 25;
             }
           </select>
         }
+        @if (currencyChoice()) {
+          <select
+            class="cu-input cu-select cu-currency"
+            [attr.aria-label]="'admin.customers.currencyLabel' | translate"
+            data-testid="customers-currency"
+            (change)="setFilter({ currency: $any($event.target).value })"
+          >
+            @for (c of currencies(); track c) {
+              <option [value]="c" [selected]="c === moneyCurrency()">{{ c }}</option>
+            }
+          </select>
+        }
       </div>
+      @if (currencyChoice()) {
+        <p class="cu-segment-hint" data-testid="customers-currency-note">
+          {{ 'admin.customers.currencyNote' | translate: { currency: moneyCurrency() } }}
+        </p>
+      }
 
       @if (error(); as e) {
         <p class="dash-error" role="alert">{{ e }}</p>
@@ -306,6 +344,36 @@ const PAGE_SIZE = 25;
         font-weight: 600;
         color: var(--color-caramel);
       }
+      .cu-elsewhere {
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: var(--color-cream);
+        box-shadow: inset 3px 0 0 var(--color-amber);
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--color-text-primary);
+      }
+      .cu-elsewhere-stores {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 10px;
+        margin-left: 4px;
+        color: var(--color-text-secondary);
+      }
+      .cu-store-link {
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        font-weight: 600;
+        color: var(--color-caramel);
+        cursor: pointer;
+      }
+      .cu-currency {
+        flex: 0 1 120px;
+      }
       .cu-fav {
         display: inline-block;
         margin-top: 4px;
@@ -457,6 +525,15 @@ export class CustomersPage {
   });
   readonly days = computed<InactiveDays>(() => parseInactiveDays(this.params().get('days')) ?? DEFAULT_INACTIVE_DAYS);
   readonly storeId = computed(() => this.params().get('storeId'));
+  /** `?currency=` — the currency spend is shown in; null lets the API pick the brand's. */
+  readonly currency = computed(() => this.params().get('currency'));
+  /** The currency the amounts on the page are in, as the API counted them. */
+  readonly moneyCurrency = computed(
+    () => this.page()?.currency ?? this.currency() ?? this.activeBrand.active()?.currency ?? null,
+  );
+  readonly currencies = computed(() => this.page()?.currencies ?? []);
+  /** Stores in several currencies and no store picked — a picked store's spend is in its own. */
+  readonly currencyChoice = computed(() => this.currencies().length > 1 && !this.storeId());
   /** The campaign composer on exactly this list. */
   readonly broadcast = computed(() => campaignLink({ days: this.days(), storeId: this.storeId() }));
   readonly search = signal('');
@@ -493,12 +570,14 @@ export class CustomersPage {
       const segment = this.segment();
       const inactiveDays = this.days();
       const storeId = this.storeId();
+      const currency = this.currency();
       if (!brandId) return;
       untracked(() => {
         this.error.set(null);
         const query = {
           brandId,
           storeId,
+          currency,
           search,
           sort,
           page,
@@ -521,8 +600,13 @@ export class CustomersPage {
     this.typed.next(value);
   }
 
-  /** Segment, days and store live in the address, so links and the way back keep them. */
-  setFilter(change: { segment?: CustomerSegment; days?: InactiveDays; storeId?: string | null }): void {
+  /** Segment, days, store and currency live in the address, so links and the way back keep them. */
+  setFilter(change: {
+    segment?: CustomerSegment;
+    days?: InactiveDays;
+    storeId?: string | null;
+    currency?: string | null;
+  }): void {
     this.pageNo.set(1);
     const segment = change.segment ?? this.segment();
     void this.router.navigate([], {
@@ -530,6 +614,7 @@ export class CustomersPage {
         segment: segment === 'all' ? null : segment,
         days: segment === 'inactive' ? (change.days ?? this.days()) : null,
         storeId: change.storeId === undefined ? this.storeId() : change.storeId,
+        currency: change.currency === undefined ? this.currency() : change.currency,
       },
       replaceUrl: true,
     });
@@ -542,7 +627,7 @@ export class CustomersPage {
   }
 
   price(cents: number): string {
-    return this.fmt.money(cents, this.activeBrand.active()?.currency);
+    return this.fmt.money(cents, this.moneyCurrency());
   }
 
   /** «раз в 9,5 дн.»; a dash for a single order. */

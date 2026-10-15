@@ -24,6 +24,7 @@ export const BRAND = {
   themeOverrides: null,
   moderationStatus: 'APPROVED',
   ownerId: 'user-1',
+  contactPhone: '+37369123456',
   _count: { stores: 1, products: 1 },
 };
 
@@ -94,6 +95,7 @@ const STAFF = {
 export const STAFF_MEMBER = {
   userId: STAFF.userId,
   email: STAFF.email,
+  login: null,
   phone: null,
   name: STAFF.name,
   role: 'STAFF',

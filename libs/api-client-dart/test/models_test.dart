@@ -5,8 +5,9 @@ import 'package:takeaway_api/takeaway_api.dart';
 import 'package:test/test.dart';
 
 /// Fixtures under `test/fixtures` are real responses captured from the
-/// public production API (stores, menu, slots, product, institutes); order
-/// and cart payloads are built from the API DTOs, since those need a login.
+/// public production API (stores, menu, slots, product, institutes); order,
+/// cart and inbox payloads are built from the API DTOs, since those need a
+/// login.
 Object? fixture(String name) => jsonDecode(File('test/fixtures/$name').readAsStringSync());
 
 void main() {
@@ -35,6 +36,62 @@ void main() {
       final older = Store.fromJson({...raw, 'status': 'OPEN'}..remove('acceptingOrders'));
       expect(older.acceptingOrders, isNull);
       expect(older.isInactive, isFalse);
+    });
+
+    test('takes pre-orders while closed for ASAP, and reads when it opens and closes', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final night = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': false,
+        'acceptingOrders': true,
+        'asapBlockedReason': 'OUTSIDE_HOURS',
+        'opensAt': '2026-10-15T06:00:00.000Z',
+        'closesAt': null,
+      });
+      expect(night.isOpen, isFalse);
+      expect(night.isInactive, isFalse);
+      expect(night.takesOrders, isTrue);
+      expect(night.preorderOnly, isTrue);
+      expect(night.asapBlockedReason, AsapBlockedReason.outsideHours);
+      expect(night.opensAt, DateTime.utc(2026, 10, 15, 6));
+      expect(night.closesAt, isNull);
+
+      final open = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': true,
+        'acceptingOrders': true,
+        'asapBlockedReason': null,
+        'closesAt': '2026-10-14T18:00:00.000Z',
+      });
+      expect(open.takesOrders, isTrue);
+      expect(open.preorderOnly, isFalse);
+      expect(open.closesAt, DateTime.utc(2026, 10, 14, 18));
+
+      final idle = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': false, 'acceptingOrders': false});
+      expect(idle.takesOrders, isFalse);
+      expect(idle.preorderOnly, isFalse);
+
+      // A reason this build does not know still parses; the cache keeps it all.
+      final future = Store.fromJson({...raw, 'openNow': false, 'acceptingOrders': true, 'asapBlockedReason': 'NEW'});
+      expect(future.asapBlockedReason, AsapBlockedReason.unknown);
+      final cached = Store.fromJson(jsonDecode(jsonEncode(night.toJson())) as Map<String, dynamic>);
+      expect(cached.asapBlockedReason, AsapBlockedReason.outsideHours);
+      expect(cached.opensAt, night.opensAt);
+    });
+
+    test('an API without acceptingOrders knows ASAP only: closed for ASAP takes no order', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final older = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': false}..remove('acceptingOrders'));
+      expect(older.takesOrders, isFalse);
+      expect(older.preorderOnly, isFalse);
+      expect(older.asapBlockedReason, isNull);
+      expect(older.opensAt, isNull);
+
+      final shiftEra = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': true, 'acceptingOrders': true});
+      expect(shiftEra.takesOrders, isTrue);
+      expect(shiftEra.isOpen, isTrue);
     });
 
     test('reads what a store sells, keeping only the string entries, and null from an older API', () {
@@ -141,6 +198,20 @@ void main() {
       expect(slots, hasLength(greaterThan(10)));
       expect(slots.first.startsAt.isUtc, isTrue);
       expect(slots.first.endsAt.difference(slots.first.startsAt), const Duration(minutes: 15));
+    });
+
+    test('reads store suggestions and whether they are bought together', () {
+      final together = StoreSuggestions.fromJson({
+        'productIds': ['p_croissant', 'p_cheesecake'],
+        'source': 'copurchase',
+      });
+      expect(together.productIds, ['p_croissant', 'p_cheesecake']);
+      expect(together.boughtTogether, isTrue);
+      expect(StoreSuggestions.fromJson({'productIds': <String>[], 'source': 'rule'}).boughtTogether, isFalse);
+      // An odd, empty answer reads as the rule with nothing to offer.
+      final empty = StoreSuggestions.fromJson({});
+      expect(empty.productIds, isEmpty);
+      expect(empty.boughtTogether, isFalse);
     });
 
     test('maps unknown enum values instead of failing', () {
@@ -314,6 +385,36 @@ void main() {
       expect(const DeleteAccountRequest(appleAuthorizationCode: 'c1').toJson(), {'appleAuthorizationCode': 'c1'});
       expect(const DeleteAccountRequest().toJson(), isEmpty);
     });
+
+    test('reads which sign-in methods the server offers, none from an API that predates the route', () {
+      final methods = AuthMethods.fromJson({'email': true, 'google': true, 'apple': false, 'telegram': true});
+      expect([methods.email, methods.google, methods.apple, methods.telegram], [true, true, false, true]);
+      expect(AuthMethods.fromJson(const {}).email, isFalse);
+    });
+
+    test('counts a proven email as a way into the profile', () {
+      final withEmail = SignInMethods.fromJson({
+        'telegram': false,
+        'google': true,
+        'apple': false,
+        'email': 'ivan@mail.ru',
+      });
+      expect(withEmail.email, 'ivan@mail.ru');
+      expect(withEmail.count, 2);
+      // An API from before email sign-in leaves the field out.
+      expect(SignInMethods.fromJson({'telegram': true, 'google': false, 'apple': false}).count, 1);
+    });
+
+    test('sends the address and the code as they are', () {
+      expect(const EmailSignInStartRequest(email: 'ivan@mail.ru', locale: 'ru').toJson(), {
+        'email': 'ivan@mail.ru',
+        'locale': 'ru',
+      });
+      expect(const EmailSignInVerifyRequest(email: 'ivan@mail.ru', code: '042917').toJson(), {
+        'email': 'ivan@mail.ru',
+        'code': '042917',
+      });
+    });
   });
 
   group('devices', () {
@@ -480,6 +581,57 @@ void main() {
       final receipt = FeedbackReceipt.fromJson({'id': 'fb_1', 'createdAt': '2026-10-07T10:00:00.000Z'});
       expect(receipt.id, 'fb_1');
       expect(receipt.createdAt.isUtc, isTrue);
+    });
+  });
+
+  group('inbox', () {
+    test('parses a page with a brand campaign and a platform announcement', () {
+      final page = InboxPage.fromJson(fixture('inbox_page.json')! as Map<String, dynamic>);
+      expect(page.nextCursor, 'inb_1');
+      expect(page.unreadCount, 1);
+
+      final campaign = page.items.first;
+      expect(campaign.kind, InboxItemKind.brandCampaign);
+      expect(campaign.sender.kind, InboxSenderKind.brand);
+      expect(campaign.sender.logoUrl, startsWith('https://'));
+      expect(campaign.link!.kind, InboxLinkKind.brand);
+      expect(campaign.link!.storeId, isNull, reason: 'a brand with several stores links to the list of places');
+      expect(campaign.isRead, isFalse);
+      expect(campaign.createdAt.isUtc, isTrue);
+
+      final announcement = page.items.last;
+      expect(announcement.kind, InboxItemKind.platformAnnouncement);
+      expect(announcement.sender.kind, InboxSenderKind.platform);
+      expect(announcement.sender.logoUrl, isNull);
+      expect(announcement.link!.storeId, 'st_1');
+      expect(announcement.isRead, isTrue);
+    });
+
+    test('reads the last page, an item without a link and kinds this build does not know', () {
+      final raw = (fixture('inbox_page.json')! as Map<String, dynamic>)['items'] as List<dynamic>;
+      final item = InboxItem.fromJson({
+        ...raw.first as Map<String, dynamic>,
+        'kind': 'SOMETHING_NEW',
+        'sender': {'kind': 'ROBOT', 'name': 'X', 'logoUrl': null, 'brandId': null},
+        'link': null,
+      });
+      expect(item.kind, InboxItemKind.unknown);
+      expect(item.sender.kind, InboxSenderKind.unknown);
+      expect(item.link, isNull);
+
+      final last = InboxPage.fromJson({'items': <Object>[], 'nextCursor': null, 'unreadCount': 0});
+      expect(last.items, isEmpty);
+      expect(last.nextCursor, isNull);
+      expect(InboxUnreadCount.fromJson({'count': 3}).count, 3);
+    });
+
+    test('marks a copy read without touching the rest', () {
+      final item = InboxPage.fromJson(fixture('inbox_page.json')! as Map<String, dynamic>).items.first;
+      final read = item.withReadAt(DateTime.utc(2026, 10, 14, 10));
+      expect(read.isRead, isTrue);
+      expect(read.id, item.id);
+      expect(read.link!.name, item.link!.name);
+      expect(read.withReadAt(null).isRead, isFalse);
     });
   });
 }

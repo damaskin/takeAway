@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import type { PrismaService } from '../prisma/prisma.service';
 import {
+  inactiveAtOneStoreOnly,
   inactiveBefore,
   inactiveCustomerIds,
   isInactive,
@@ -51,6 +52,15 @@ describe('perCustomerSql', () => {
     expect(sql.sql).toContain('uu."blockedAt" IS NULL');
     expect(sql.values).toEqual([['b1'], ['s1'], 'u1']);
   });
+
+  it('adds up spend in one currency when asked, the people and their orders whatever the currency', () => {
+    const sql = perCustomerSql({ brandIds: ['b1'], storeIds: null }, undefined, 'MDL');
+    expect(sql.sql).toContain(
+      'SUM(GREATEST(o."subtotalCents" - o."discountCents", 0)) FILTER (WHERE o."currency" = ?::"Currency")',
+    );
+    expect(sql.sql).toContain('COUNT(*)::int AS "orders"');
+    expect(sql.values).toEqual(['MDL', 'MDL', ['b1']]);
+  });
 });
 
 function prismaReturning(rows: unknown[]) {
@@ -72,6 +82,47 @@ describe('inactiveCustomerIds', () => {
       'u2',
     ]);
     expect(queries[0]?.values).toEqual([['b1'], 3, '2026-09-26T12:00:00.000Z']);
+  });
+});
+
+describe('inactiveAtOneStoreOnly', () => {
+  it('counts each person once and each store they left, most first', async () => {
+    const { prisma } = prismaReturning([
+      { userId: 'u1', storeId: 's2', storeName: 'Балка' },
+      { userId: 'u1', storeId: 's1', storeName: 'Центр' },
+      { userId: 'u2', storeId: 's1', storeName: 'Центр' },
+    ]);
+
+    await expect(
+      inactiveAtOneStoreOnly(prisma, { brandIds: ['b1'], storeIds: null }, { lastOrderBefore: daysAgo(14) }),
+    ).resolves.toEqual({
+      count: 2,
+      stores: [
+        { storeId: 's1', storeName: 'Центр', count: 2 },
+        { storeId: 's2', storeName: 'Балка', count: 1 },
+      ],
+    });
+  });
+
+  it('reads a churn period: orders before its end, the last one at the store inside the bounds', async () => {
+    const { prisma, queries } = prismaReturning([]);
+
+    await inactiveAtOneStoreOnly(
+      prisma,
+      { brandIds: ['b1'], storeIds: null },
+      { asOf: NOW, lastOrderFrom: daysAgo(21), lastOrderBefore: daysAgo(14) },
+    );
+
+    expect(queries[0]?.sql).toContain('o."createdAt" < ?::timestamp');
+    expect(queries[0]?.sql).toContain('ps."lastOrderAt" >= ?::timestamp');
+    expect(queries[0]?.values).toEqual([
+      ['b1'],
+      NOW.toISOString(),
+      3,
+      daysAgo(14).toISOString(),
+      daysAgo(21).toISOString(),
+      daysAgo(14).toISOString(),
+    ]);
   });
 });
 

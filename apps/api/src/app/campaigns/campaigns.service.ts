@@ -13,8 +13,10 @@ import type { CampaignTransport } from '@takeaway/shared-types';
 
 import { codedConflict } from '../common/http/coded-conflict';
 import { DEFAULT_INACTIVE_DAYS, inactiveCustomerIds } from '../customers/customer-segment';
+import { InboxService } from '../inbox/inbox.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService, PUSH_RECIPIENT_SELECT, toPushRecipient } from '../notifications/notifications.service';
+import { titleWithSender } from '../notifications/push-copy';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SEND_BATCH_SIZE = 50;
@@ -103,6 +105,14 @@ interface DeliveryRecord {
   outcome: CampaignDeliveryOutcome;
   via: string | null;
   error: string | null;
+}
+
+/** What one recipient's push or Telegram message carries besides the body. */
+interface PushCopy {
+  /** «<Brand>: <title>» — the customer sees who sent it. */
+  title: string;
+  /** The recipient's item in «Уведомления» (PUSH campaigns). */
+  notificationId?: string;
 }
 
 /**
@@ -260,6 +270,7 @@ export class CampaignsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
+    private readonly inbox: InboxService,
   ) {}
 
   list(brandId: string): Promise<Campaign[]> {
@@ -541,12 +552,25 @@ export class CampaignsService {
       this.logger.log(
         `Campaign ${id}: ${pending.length} to deliver (${alreadySent.size} already received it), channel ${campaign.channel}`,
       );
+      const title = await this.pushTitle(campaign);
 
       let lastError: string | null = null;
       for (let i = 0; i < pending.length; i += SEND_BATCH_SIZE) {
         const ids = pending.slice(i, i + SEND_BATCH_SIZE);
         const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: AUDIENCE_USER_SELECT });
-        const records = await Promise.all(users.map((u) => this.deliverOne(u, campaign)));
+        // A PUSH campaign lands in «Уведомления» of everyone who allows
+        // promotions, whatever happens to the device push — written first, so
+        // the push can say which item a tap opens.
+        const inboxIds =
+          campaign.channel === 'PUSH'
+            ? await this.inbox.writeForCampaign(
+                campaign,
+                users.filter((u) => u.notifyPromotions).map((u) => u.id),
+              )
+            : new Map<string, string>();
+        const records = await Promise.all(
+          users.map((u) => this.deliverOne(u, campaign, { title, notificationId: inboxIds.get(u.id) })),
+        );
         await this.prisma.$transaction(
           users.map((u, j) => {
             const r = records[j] as DeliveryRecord;
@@ -589,6 +613,7 @@ export class CampaignsService {
   async sendTest(
     userId: string,
     input: { title: string; body: string; channel: CampaignChannel },
+    brandId?: string,
   ): Promise<TestSendResult> {
     if (input.channel === 'EMAIL') {
       const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
@@ -598,8 +623,11 @@ export class CampaignsService {
       await this.mail.send(user.email, input.title, input.body);
       return { outcome: 'sent', via: ['email'] };
     }
-    const result = await this.notifications.sendCampaignTo(userId, input.channel, input.title, input.body, {
+    // Titled like the real thing, «<Brand>: <title>»; no inbox item — the test is not a campaign.
+    const title = brandId ? await this.pushTitle({ brandId, title: input.title }) : input.title;
+    const result = await this.notifications.sendCampaignTo(userId, input.channel, title, input.body, {
       ignoreOptOut: true,
+      push: { kind: 'campaign' },
     });
     if (result.outcome === 'opted_out') return { outcome: 'no_channel', via: [] };
     return result;
@@ -619,9 +647,16 @@ export class CampaignsService {
     if (stuck.count > 0) this.logger.warn(`Marked ${stuck.count} stuck campaign(s) FAILED`);
   }
 
+  /** The push and Telegram title: «<Brand>: <title>», so the customer sees who it is from. */
+  private async pushTitle(campaign: Pick<Campaign, 'brandId' | 'title'>): Promise<string> {
+    const brand = await this.prisma.brand.findUnique({ where: { id: campaign.brandId }, select: { name: true } });
+    return brand ? titleWithSender(brand.name, campaign.title) : campaign.title;
+  }
+
   private async deliverOne(
     user: AudienceUser,
     campaign: Pick<Campaign, 'channel' | 'title' | 'body'>,
+    copy: PushCopy,
   ): Promise<DeliveryRecord> {
     const record = (outcome: CampaignDeliveryOutcome, via: string[] = [], error?: string): DeliveryRecord => ({
       outcome,
@@ -641,7 +676,12 @@ export class CampaignsService {
     try {
       const result = await this.notifications.deliver(
         toPushRecipient(user),
-        { kind: 'generic', title: campaign.title, body: campaign.body },
+        {
+          kind: 'campaign',
+          title: copy.title,
+          body: campaign.body,
+          ...(copy.notificationId ? { notificationId: copy.notificationId } : {}),
+        },
         campaign.channel === 'TELEGRAM' ? 'telegram' : 'push',
       );
       // A delivery that landed may still carry what failed on the way (an

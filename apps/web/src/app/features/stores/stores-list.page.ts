@@ -15,8 +15,8 @@ import {
   type LatLng,
   type MapMarker,
 } from '@takeaway/ui-kit';
-import { TranslatePipe } from '@ngx-translate/core';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { LastStoreService } from '../../core/catalog/last-store.service';
@@ -44,9 +44,12 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
  *   mapArea (fill) — Leaflet/OSM map with a marker per store
  *   sidebar (480px, foam, 24px padding) — title + count, filter chips, store cards
  *
- * Closed stores (no shift, or switched off) come last, dimmed, and do not
- * open — there is nothing to order there. The list refreshes itself while
- * the tab is in view, so a store that starts its shift lights up by itself.
+ * Closed stores (switched off, or nothing bookable in the next 24 hours)
+ * come last, dimmed, and do not open — there is nothing to order there. A
+ * store closed for orders now but taking pre-orders (overnight, before the
+ * shift) opens as usual and says when it opens instead of the wait. The list
+ * refreshes itself while the tab is in view, so a store that starts its shift
+ * lights up by itself.
  *
  * Also the page behind «Меню» (`/menu`, `intent: 'menu'`): the site is a
  * marketplace, so the menu starts with choosing a place. The store whose
@@ -227,10 +230,21 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
                   {{ a }}
                 </p>
               }
-              <div class="flex items-center" style="gap: 16px">
-                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                  >⏱ {{ 'common.readyIn' | translate: { min: etaMinutes(store) } }}</span
-                >
+              <div class="flex items-center flex-wrap" style="gap: 4px 16px">
+                @if (preorderOnly(store)) {
+                  <span
+                    data-testid="store-hours"
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                    >🕘 {{ hoursLine(store) }}</span
+                  >
+                } @else {
+                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                    >⏱ {{ 'common.readyIn' | translate: { min: etaMinutes(store) } }}
+                    @if (hoursLine(store); as until) {
+                      · {{ until }}
+                    }
+                  </span>
+                }
                 @if (store.distanceMeters !== null) {
                   <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
                     >🚶 {{ distanceLabel(store.distanceMeters) }}</span
@@ -290,6 +304,7 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
 export class StoresListPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
   private readonly lastStoreSlug = inject(LastStoreService).slug;
 
   /** `menu` when opened from «Меню» (route data): the heading asks the customer to choose a place. */
@@ -320,7 +335,8 @@ export class StoresListPage implements OnInit {
       return words.every((w) => text.includes(w)) && storeMatchesKind(s, kind);
     });
     const f = this.filter();
-    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && storeAvailability(s) !== 'closed');
+    // «Открыты» is open for an order now; pre-order-only stores stay under «Все».
+    if (f === 'OPEN') return list.filter((s) => s.status === 'OPEN' && storeAvailability(s) === 'open');
     if (f === 'NEAR') {
       // By distance once the customer has shared where they are, by wait until then.
       return sortStoresByAvailability(
@@ -423,6 +439,16 @@ export class StoresListPage implements OnInit {
 
   inactive(store: StoreListItem): boolean {
     return storeAvailability(store) === 'closed';
+  }
+
+  /** Closed for an order now, open for a pre-order: the card says when it opens instead of the wait. */
+  preorderOnly(store: StoreListItem): boolean {
+    return storeAvailability(store) === 'scheduledOnly';
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени», or «до 21:00» while open. */
+  hoursLine(store: StoreListItem): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   /** Returns a translation key; the template runs it through the translate pipe. */

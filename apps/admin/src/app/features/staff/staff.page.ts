@@ -161,7 +161,7 @@ const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
               <li>
                 <a [routerLink]="['/staff', m.userId]" class="person">
                   <div class="person-head">
-                    <span class="person-name">{{ m.name || m.email || m.phone }}</span>
+                    <span class="person-name">{{ m.name || m.email || m.login || m.phone }}</span>
                     <span class="badge badge-role">{{ 'admin.staff.role.' + m.role | translate }}</span>
                     @if (m.blocked) {
                       <span class="badge badge-blocked">{{ 'admin.staff.blocked' | translate }}</span>
@@ -170,6 +170,9 @@ const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
                   <p class="person-contact">
                     @if (m.email) {
                       <span>{{ m.email }}</span>
+                    }
+                    @if (m.login) {
+                      <span>{{ 'admin.staff.login' | translate }}: {{ m.login }}</span>
                     }
                     @if (m.phone) {
                       <span>{{ m.phone }}</span>
@@ -365,7 +368,7 @@ export class AdminStaffPage {
       if (store && !m.stores.some((s) => s.id === store)) return false;
       if (role && m.role !== role) return false;
       if (!q) return true;
-      return [m.name, m.email, m.phone].some((v) => v?.toLowerCase().includes(q));
+      return [m.name, m.email, m.login, m.phone].some((v) => v?.toLowerCase().includes(q));
     });
   });
 

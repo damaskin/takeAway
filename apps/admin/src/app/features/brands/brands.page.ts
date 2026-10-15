@@ -3,7 +3,7 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocalDatePipe } from '@takeaway/i18n';
 import { BRAND_PLANS, type BrandPlan, DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
-import { formatPhone } from '@takeaway/utils';
+import { BRAND_LAUNCH_RECOMMENDATIONS, BRAND_LAUNCH_STEPS, brandLaunch, formatPhone } from '@takeaway/utils';
 
 import {
   AdminBrand,
@@ -19,9 +19,6 @@ import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
  * have not launched yet, and owners asking for another plan.
  */
 type Tab = BrandModerationStatus | 'NOT_LAUNCHED' | 'PLAN_REQUESTS';
-
-/** The «Запуск бренда» steps, in the order the owner sees them. */
-const LAUNCH_STEPS = ['brandProfile', 'store', 'menu', 'payments', 'approved'] as const;
 
 /** A decision that needs a second look before it is sent. */
 interface PendingDecision {
@@ -148,6 +145,11 @@ interface PendingDecision {
                       <span class="launch-count" [class.launch-done]="o.complete">{{
                         'admin.brands.launch.progress' | translate: { done: o.done, total: o.total }
                       }}</span>
+                      @if (o.hasOrders) {
+                        <span class="launch-sold" data-testid="brand-has-orders">
+                          · {{ 'admin.brands.launch.hasOrders' | translate }}</span
+                        >
+                      }
                       <span class="launch-steps">
                         @for (s of launchSteps; track s) {
                           <span
@@ -155,6 +157,14 @@ interface PendingDecision {
                             [title]="'admin.brands.launch.steps.' + s | translate"
                           >
                             {{ stepDone(o, s) ? '✓' : '·' }} {{ 'admin.brands.launch.steps.' + s | translate }}
+                          </span>
+                        }
+                      </span>
+                      <span class="launch-steps launch-optional" data-testid="brand-launch-recommended">
+                        {{ 'admin.brands.launch.recommended' | translate }}
+                        @for (r of launchRecommendations; track r) {
+                          <span [class.launch-step-done]="o[r]">
+                            {{ o[r] ? '✓' : '·' }} {{ 'admin.brands.launch.steps.' + r | translate }}
                           </span>
                         }
                       </span>
@@ -370,6 +380,14 @@ interface PendingDecision {
       .launch-step-done {
         color: var(--color-mint);
       }
+      .launch-sold {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--color-mint);
+      }
+      .launch-optional {
+        font-style: italic;
+      }
       .plan-request {
         display: flex;
         flex-wrap: wrap;
@@ -482,7 +500,9 @@ export class AdminBrandsPage {
 
   readonly tabs: ReadonlyArray<Tab> = ['PENDING', 'APPROVED', 'REJECTED', 'NOT_LAUNCHED', 'PLAN_REQUESTS'];
   readonly tab = signal<Tab>('PENDING');
-  readonly launchSteps = LAUNCH_STEPS;
+  /** The «Запуск бренда» steps, in the order the owner sees them; then what is only recommended. */
+  readonly launchSteps = BRAND_LAUNCH_STEPS;
+  readonly launchRecommendations = BRAND_LAUNCH_RECOMMENDATIONS;
   readonly all = signal<AdminBrand[]>([]);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -533,7 +553,7 @@ export class AdminBrandsPage {
     return formatPhone(e164);
   }
 
-  stepDone(o: BrandOnboardingProgress, step: (typeof LAUNCH_STEPS)[number]): boolean {
+  stepDone(o: BrandOnboardingProgress, step: (typeof BRAND_LAUNCH_STEPS)[number]): boolean {
     return step === 'payments' ? true : o[step];
   }
 
@@ -664,17 +684,21 @@ export class AdminBrandsPage {
   }
 }
 
-/** Signed up by an owner and not launched yet — the team's call list. */
+/** Signed up by an owner and not launched yet — the team's call list (the API's `?notLaunched` says the same). */
 function notLaunched(b: AdminBrand): boolean {
   return b.owner !== null && b.onboarding != null && !b.onboarding.complete;
 }
 
-/** A moderation decision moves the last step of the launch checklist. */
+/**
+ * A moderation decision moves the approval step; the launch is recounted by
+ * the API's own rule (`brandLaunch`), so the list and `?notLaunched` agree
+ * without a reload.
+ */
 function withModeration(b: AdminBrand): AdminBrand {
   const o = b.onboarding;
   if (!o) return b;
   const approved = b.moderationStatus === 'APPROVED';
   if (approved === o.approved) return b;
-  const done = o.done + (approved ? 1 : -1);
-  return { ...b, onboarding: { ...o, approved, done, complete: done === o.total } };
+  const launch = brandLaunch({ store: o.store, menu: o.menu, approved, hasOrders: o.hasOrders ?? false });
+  return { ...b, onboarding: { ...o, approved, ...launch } };
 }

@@ -45,6 +45,7 @@ function build() {
       ),
       update: jest.fn((args: object) => Promise.resolve({ ...args, stores: [] })),
       delete: jest.fn().mockResolvedValue({}),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
     store: { findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }]) },
     variation: {
@@ -145,6 +146,36 @@ describe('menu DTOs', () => {
 });
 
 describe('AdminCatalogService — categories', () => {
+  it('says how many products of each category have no photo — the app shows those without a picture', async () => {
+    const { svc, prisma } = build();
+    prisma.category.findMany.mockResolvedValue([
+      { id: 'coffee', _count: { products: 5, options: 0 } },
+      { id: 'bakery', _count: { products: 2, options: 0 } },
+    ]);
+    prisma.product.groupBy.mockResolvedValue([{ categoryId: 'coffee', _count: { _all: 3 } }]);
+
+    const list = await svc.listCategories(['b1'], 'b1');
+
+    expect(list.map((c) => [c.id, c.productsWithoutPhoto])).toEqual([
+      ['coffee', 3],
+      ['bakery', 0],
+    ]);
+    expect(prisma.product.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['categoryId'],
+        where: { categoryId: { in: ['coffee', 'bakery'] }, imageUrls: { isEmpty: true } },
+      }),
+    );
+  });
+
+  it('asks nothing more of a brand without categories', async () => {
+    const { svc, prisma } = build();
+    prisma.category.findMany.mockResolvedValue([]);
+
+    await expect(svc.listCategories(['b1'], 'b1')).resolves.toEqual([]);
+    expect(prisma.product.groupBy).not.toHaveBeenCalled();
+  });
+
   it('builds the slug from a Russian name and skips taken ones', async () => {
     const { svc, prisma } = build();
     prisma.category.count.mockImplementation(({ where }: { where: { slug: string } }) =>

@@ -4,6 +4,7 @@ import '../core/network/api_error.dart';
 import '../features/auth/telegram_login.dart';
 import '../l10n/app_localizations.dart';
 import 'checkout_errors.dart';
+import 'email_sign_in_errors.dart';
 
 /// Human text for any error thrown by the data layer. A stable code the
 /// server sent (promo, gift card and order-path refusals) is worded in the
@@ -18,6 +19,7 @@ String errorMessage(BuildContext context, Object error) {
   final apiError = ApiError.from(error);
   if (apiError.kind == ApiErrorKind.network) return l10n.networkError;
   return checkoutErrorText(context, apiError.code, apiError.details) ??
+      emailSignInErrorText(l10n, apiError) ??
       giftCardErrorText(l10n, apiError.message) ??
       apiError.message ??
       l10n.genericError;

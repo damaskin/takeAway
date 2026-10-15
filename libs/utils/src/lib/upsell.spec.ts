@@ -1,6 +1,6 @@
 import type { CategoryKind, CategoryWithProducts, ProductSummary } from '@takeaway/shared-types';
 
-import { suggestFood } from './upsell';
+import { suggestFood, suggestionRow } from './upsell';
 
 function product(id: string, over: Partial<ProductSummary> = {}): ProductSummary {
   return {
@@ -99,5 +99,50 @@ describe('suggestFood', () => {
   it('offers nothing without a menu, or when the store sells no food', () => {
     expect(suggestFood(null, ['latte'])).toEqual([]);
     expect(suggestFood({ categories: [menu.categories[0] as CategoryWithProducts] }, ['latte'])).toEqual([]);
+  });
+});
+
+describe('suggestionRow', () => {
+  const menu = {
+    categories: [
+      category('coffee', [product('latte'), product('americano')], 'HOT_DRINKS'),
+      category('pastry', [product('croissant'), product('cookie', { onStopList: true })], 'BAKERY'),
+      category('kitchen', [product('sandwich')], 'FOOD'),
+    ],
+  };
+  const together = (...productIds: string[]) => ({ productIds, source: 'copurchase' as const });
+
+  it("shows what was bought together in the API's order, with each product's kind", () => {
+    const row = suggestionRow(menu, ['latte'], together('sandwich', 'americano'));
+    expect(row.source).toBe('copurchase');
+    expect(row.items.map((s) => [s.product.id, s.kind])).toEqual([
+      ['sandwich', 'FOOD'],
+      ['americano', 'HOT_DRINKS'],
+    ]);
+  });
+
+  it('drops what this copy of the menu no longer sells, has sold out or is in hand, and keeps to the limit', () => {
+    const row = suggestionRow(
+      menu,
+      ['latte'],
+      together('gone', 'cookie', 'latte', 'croissant', 'croissant', 'sandwich'),
+      1,
+    );
+    expect(row).toMatchObject({ source: 'copurchase', items: [{ product: { id: 'croissant' } }] });
+  });
+
+  it('falls back to the menu rule when the answer is the rule, failed, or holds nothing left to offer', () => {
+    const rule = ['croissant', 'sandwich'];
+    expect(ids(suggestionRow(menu, ['latte'], { productIds: ['sandwich'], source: 'rule' }).items)).toEqual(rule);
+    expect(suggestionRow(menu, ['latte'], null)).toMatchObject({ source: 'rule' });
+    expect(ids(suggestionRow(menu, ['latte'], null).items)).toEqual(rule);
+    expect(ids(suggestionRow(menu, ['latte'], together('cookie', 'gone')).items)).toEqual(rule);
+    // An older API's empty answer, without a source.
+    expect(ids(suggestionRow(menu, ['latte'], {} as never).items)).toEqual(rule);
+  });
+
+  it('shows nothing until the answer lands, or without a menu', () => {
+    expect(suggestionRow(menu, ['latte'], undefined)).toEqual({ items: [], source: 'rule' });
+    expect(suggestionRow(null, ['latte'], together('croissant'))).toEqual({ items: [], source: 'rule' });
   });
 });

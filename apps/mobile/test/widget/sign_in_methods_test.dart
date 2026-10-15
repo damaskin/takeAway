@@ -31,4 +31,18 @@ void main() {
     expect(find.text('Отключить'), findsNothing, reason: 'the last way in cannot be removed');
     await h.unmount(tester);
   });
+
+  testWidgets('lists the proven email, which counts as a way in', (tester) async {
+    final api = FakeApi()
+      ..methods = const SignInMethods(telegram: false, google: true, apple: false, email: 'ivan@mail.ru');
+    final h = await pumpApp(tester, api: api);
+    unawaited(h.container.read(routerProvider).push(Routes.signInMethods));
+    await settle(tester);
+
+    expect(find.text('Почта'), findsOneWidget);
+    expect(find.text('Код для входа приходит на ivan@mail.ru'), findsOneWidget);
+    // Google is not the last way in: the email still leads here.
+    expect(find.text('Отключить'), findsOneWidget);
+    await h.unmount(tester);
+  });
 }

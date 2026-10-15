@@ -248,6 +248,30 @@ abstract class AppLocalizations {
   /// **'Ready by {time}'**
   String readyBy(String time);
 
+  /// No description provided for @timeJustNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get timeJustNow;
+
+  /// No description provided for @timeMinutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} min ago'**
+  String timeMinutesAgo(int count);
+
+  /// No description provided for @timeHoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} h ago'**
+  String timeHoursAgo(int count);
+
+  /// No description provided for @timeYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get timeYesterday;
+
   /// No description provided for @itemsCount.
   ///
   /// In en, this message translates to:
@@ -404,6 +428,126 @@ abstract class AppLocalizations {
   /// **'Could not sign in. Please try again.'**
   String get signInFailed;
 
+  /// No description provided for @emailSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue with email'**
+  String get emailSignIn;
+
+  /// No description provided for @emailSignInOtherMethods.
+  ///
+  /// In en, this message translates to:
+  /// **'Other ways to sign in'**
+  String get emailSignInOtherMethods;
+
+  /// No description provided for @emailSignInEmailLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get emailSignInEmailLabel;
+
+  /// No description provided for @emailSignInEmailHint.
+  ///
+  /// In en, this message translates to:
+  /// **'you@example.com'**
+  String get emailSignInEmailHint;
+
+  /// No description provided for @emailSignInGetCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a code'**
+  String get emailSignInGetCode;
+
+  /// No description provided for @emailSignInSentTo.
+  ///
+  /// In en, this message translates to:
+  /// **'We sent a code to {email}. It is valid for 10 minutes.'**
+  String emailSignInSentTo(String email);
+
+  /// No description provided for @emailSignInAlreadySent.
+  ///
+  /// In en, this message translates to:
+  /// **'A code was already sent to {email} — check your inbox.'**
+  String emailSignInAlreadySent(String email);
+
+  /// No description provided for @emailSignInCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Code from the email'**
+  String get emailSignInCodeLabel;
+
+  /// No description provided for @emailSignInResend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send the code again'**
+  String get emailSignInResend;
+
+  /// No description provided for @emailSignInResendIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Send again in {seconds} s'**
+  String emailSignInResendIn(int seconds);
+
+  /// No description provided for @emailSignInChangeEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Change email'**
+  String get emailSignInChangeEmail;
+
+  /// No description provided for @emailSignInInvalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the address — it needs an @ and a domain, like ivan@mail.ru.'**
+  String get emailSignInInvalidEmail;
+
+  /// No description provided for @emailCodeInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong code. Attempts left: {left}.'**
+  String emailCodeInvalid(int left);
+
+  /// No description provided for @emailCodeExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'The code has expired or was already used. Ask for a new one.'**
+  String get emailCodeExpired;
+
+  /// No description provided for @emailCodeTooManyAttempts.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many wrong attempts — this code no longer works. Ask for a new one.'**
+  String get emailCodeTooManyAttempts;
+
+  /// No description provided for @emailCodeLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many codes were sent to this address. Try again in {minutes} min.'**
+  String emailCodeLimit(int minutes);
+
+  /// No description provided for @emailCodeNotSent.
+  ///
+  /// In en, this message translates to:
+  /// **'We could not send the email. Try again in a few minutes.'**
+  String get emailCodeNotSent;
+
+  /// No description provided for @emailSignInUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in with email is unavailable right now. Choose another way.'**
+  String get emailSignInUnavailable;
+
+  /// No description provided for @emailSignInStaffAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'This address belongs to a staff account. Sign in with your password in the business cabinet.'**
+  String get emailSignInStaffAccount;
+
+  /// No description provided for @emailSignInTooManyRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts in a row. Wait a minute and try again.'**
+  String get emailSignInTooManyRequests;
+
   /// No description provided for @signInMethodsTitle.
   ///
   /// In en, this message translates to:
@@ -463,6 +607,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'On iPhone'**
   String get signInMethodIosOnly;
+
+  /// No description provided for @signInMethodEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get signInMethodEmail;
+
+  /// No description provided for @signInMethodEmailHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign-in codes go to {email}'**
+  String signInMethodEmailHint(String email);
 
   /// No description provided for @telegramSignInFailed.
   ///
@@ -536,6 +692,42 @@ abstract class AppLocalizations {
   /// **'Not working'**
   String get storeStatusNotWorking;
 
+  /// Store card / menu header: closed for orders now, taking pre-orders.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens at {time} · order ahead'**
+  String storeOpensAt(String time);
+
+  /// No description provided for @storeOpensTomorrowAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens tomorrow at {time} · order ahead'**
+  String storeOpensTomorrowAt(String time);
+
+  /// No description provided for @storeOpensOnAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · opens {date} at {time} · order ahead'**
+  String storeOpensOnAt(String date, String time);
+
+  /// No description provided for @storeClosedPreorder.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed now · order ahead'**
+  String get storeClosedPreorder;
+
+  /// No description provided for @storeQueueFullPreorder.
+  ///
+  /// In en, this message translates to:
+  /// **'Long queue — order ahead only'**
+  String get storeQueueFullPreorder;
+
+  /// Beside the wait of an open store: when it closes.
+  ///
+  /// In en, this message translates to:
+  /// **'until {time}'**
+  String storeOpenUntil(String time);
+
   /// No description provided for @orderHere.
   ///
   /// In en, this message translates to:
@@ -605,7 +797,7 @@ abstract class AppLocalizations {
   /// No description provided for @callStore.
   ///
   /// In en, this message translates to:
-  /// **'Call'**
+  /// **'Call the store'**
   String get callStore;
 
   /// No description provided for @menuSearchHint.
@@ -875,14 +1067,74 @@ abstract class AppLocalizations {
   /// No description provided for @noSlots.
   ///
   /// In en, this message translates to:
-  /// **'No free windows in the next few hours. Try ASAP.'**
+  /// **'No free windows in the next 24 hours. Try ASAP.'**
   String get noSlots;
+
+  /// No description provided for @noSlotsClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'No free windows in the next 24 hours.'**
+  String get noSlotsClosed;
 
   /// No description provided for @slotsHint.
   ///
   /// In en, this message translates to:
   /// **'Only windows this store can still keep up with.'**
   String get slotsHint;
+
+  /// Why ASAP is off at checkout.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens at {time} — pick a time for your order.'**
+  String asapBlockedOpensAt(String time);
+
+  /// No description provided for @asapBlockedOpensTomorrowAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens tomorrow at {time} — pick a time for your order.'**
+  String asapBlockedOpensTomorrowAt(String time);
+
+  /// No description provided for @asapBlockedOpensOnAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store opens {date} at {time} — pick a time for your order.'**
+  String asapBlockedOpensOnAt(String date, String time);
+
+  /// No description provided for @asapBlockedShiftClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The store has not started work yet — pick a time for your order.'**
+  String get asapBlockedShiftClosed;
+
+  /// No description provided for @asapBlockedQueueFull.
+  ///
+  /// In en, this message translates to:
+  /// **'There is a long queue right now — pick a time for your order.'**
+  String get asapBlockedQueueFull;
+
+  /// No description provided for @asapBlockedClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closed right now — pick a time for your order.'**
+  String get asapBlockedClosed;
+
+  /// Heading over today's pickup windows.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get slotDayToday;
+
+  /// No description provided for @slotDayTomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get slotDayTomorrow;
+
+  /// A pickup time on the next calendar day.
+  ///
+  /// In en, this message translates to:
+  /// **'{time} tomorrow'**
+  String timeTomorrow(String time);
 
   /// No description provided for @fulfillmentPickup.
   ///
@@ -1199,8 +1451,44 @@ abstract class AppLocalizations {
   /// No description provided for @statusExpired.
   ///
   /// In en, this message translates to:
-  /// **'Cancelled — payment did not arrive in time'**
+  /// **'Did not go through'**
   String get statusExpired;
+
+  /// Order screen: on the kitchen board, not accepted yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the store to confirm'**
+  String get orderAwaitingAcceptance;
+
+  /// No description provided for @orderPreorderAwaitingOpening.
+  ///
+  /// In en, this message translates to:
+  /// **'The store will confirm your pre-order when it opens'**
+  String get orderPreorderAwaitingOpening;
+
+  /// Accepted or being made, and past its pickup time.
+  ///
+  /// In en, this message translates to:
+  /// **'Running a little late'**
+  String get orderRunningLate;
+
+  /// No description provided for @orderExpiredNotAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'The store did not confirm the order — you were not charged'**
+  String get orderExpiredNotAccepted;
+
+  /// No description provided for @orderExpiredNotAcceptedRefunded.
+  ///
+  /// In en, this message translates to:
+  /// **'The store did not confirm the order — the money is on its way back'**
+  String get orderExpiredNotAcceptedRefunded;
+
+  /// No description provided for @orderExpiredPaymentNotCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'The payment did not go through — the order is cancelled'**
+  String get orderExpiredPaymentNotCompleted;
 
   /// No description provided for @statusUnknown.
   ///
@@ -1279,6 +1567,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Money returned'**
   String get paymentStateRefunded;
+
+  /// A cancelled or expired order whose card was never charged.
+  ///
+  /// In en, this message translates to:
+  /// **'You were not charged'**
+  String get paymentStateNotCharged;
 
   /// No description provided for @paymentStateAtCounter.
   ///
@@ -1538,10 +1832,16 @@ abstract class AppLocalizations {
   /// **'Invite a friend'**
   String get profileReferrals;
 
-  /// No description provided for @profileNotifications.
+  /// No description provided for @profileInbox.
   ///
   /// In en, this message translates to:
   /// **'Notifications'**
+  String get profileInbox;
+
+  /// No description provided for @profileNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings'**
   String get profileNotifications;
 
   /// No description provided for @profileLanguage.
@@ -1796,6 +2096,12 @@ abstract class AppLocalizations {
   /// **'Saved'**
   String get personalSaved;
 
+  /// No description provided for @emailIsSignInMethod.
+  ///
+  /// In en, this message translates to:
+  /// **'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.'**
+  String get emailIsSignInMethod;
+
   /// No description provided for @nameRequired.
   ///
   /// In en, this message translates to:
@@ -1814,10 +2120,64 @@ abstract class AppLocalizations {
   /// **'Use the international format, e.g. +37377712345'**
   String get phoneInvalid;
 
-  /// No description provided for @notificationsTitle.
+  /// No description provided for @inboxTitle.
   ///
   /// In en, this message translates to:
   /// **'Notifications'**
+  String get inboxTitle;
+
+  /// No description provided for @inboxReadAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark all read'**
+  String get inboxReadAll;
+
+  /// No description provided for @inboxEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here yet'**
+  String get inboxEmptyTitle;
+
+  /// No description provided for @inboxEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'News from cafés and takeAway will appear here.'**
+  String get inboxEmptyBody;
+
+  /// No description provided for @inboxUnread.
+  ///
+  /// In en, this message translates to:
+  /// **'Unread'**
+  String get inboxUnread;
+
+  /// No description provided for @inboxOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get inboxOpen;
+
+  /// No description provided for @inboxOpenMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Open {name} menu'**
+  String inboxOpenMenu(String name);
+
+  /// No description provided for @inboxShowPlaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Show {name} places'**
+  String inboxShowPlaces(String name);
+
+  /// No description provided for @inboxGone.
+  ///
+  /// In en, this message translates to:
+  /// **'This notification is no longer available.'**
+  String get inboxGone;
+
+  /// No description provided for @notificationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings'**
   String get notificationsTitle;
 
   /// No description provided for @notificationsSubtitle.
@@ -2429,13 +2789,13 @@ abstract class AppLocalizations {
   /// No description provided for @productPairsWith.
   ///
   /// In en, this message translates to:
-  /// **'Often ordered together'**
+  /// **'Goes well with it'**
   String get productPairsWith;
 
   /// No description provided for @cartUpsellTitle.
   ///
   /// In en, this message translates to:
-  /// **'Add to your order'**
+  /// **'Something to go with it?'**
   String get cartUpsellTitle;
 
   /// No description provided for @allergenGluten.
@@ -2539,6 +2899,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'That time has just been taken — pick another one'**
   String get errPickupSlotFull;
+
+  /// No description provided for @errAsapUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The store can no longer take an order for now — pick a time for it'**
+  String get errAsapUnavailable;
 
   /// No description provided for @errPickupTimeOutOfRange.
   ///

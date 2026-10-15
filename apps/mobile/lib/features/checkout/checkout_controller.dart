@@ -183,10 +183,23 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
     ref
       ..listen(cardsProvider, (_, _) => repick())
-      ..listen(featureFlagsProvider, (_, _) => repick());
-    // A closed store takes no orders at all, ASAP or scheduled: the screen
-    // says so and keeps the button off (see [placeOrder]).
-    return CheckoutState(cardId: _defaultCardId());
+      ..listen(featureFlagsProvider, (_, _) => repick())
+      // The store closing (or its queue filling up) while the customer is
+      // here takes «as soon as possible» away; a time later is still fine.
+      ..listen(activeStoreProvider, (_, store) {
+        if (store != null && !store.isOpen && state.mode == PickupMode.asap && state.placedOrderId == null) {
+          state = state.copyWith(mode: PickupMode.scheduled);
+        }
+      });
+    // A store taking no orders at all refuses ASAP and scheduled alike: the
+    // screen says so and keeps the button off (see [placeOrder]). One closed
+    // for an order now — overnight, before the shift, a full queue — takes a
+    // pre-order, so checkout starts on a time later.
+    final store = ref.read(activeStoreProvider);
+    return CheckoutState(
+      cardId: _defaultCardId(),
+      mode: store != null && !store.isOpen ? PickupMode.scheduled : PickupMode.asap,
+    );
   }
 
   Store? get _store => ref.read(activeStoreProvider);
@@ -205,7 +218,11 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     if (value == FulfillmentType.delivery) unawaited(_quoteDelivery());
   }
 
-  void setMode(PickupMode value) => state = state.copyWith(mode: value, error: () => null);
+  /// «As soon as possible» only while the store takes an order for now.
+  void setMode(PickupMode value) {
+    if (value == PickupMode.asap && !(_store?.isOpen ?? true)) return;
+    state = state.copyWith(mode: value, error: () => null);
+  }
 
   void selectSlot(PickupSlot slot) {
     if (!slot.available) return;
@@ -394,8 +411,13 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
     final s = state;
     // An order already created (its card was declined) may still be paid
-    // for; a new one goes only to a store taking orders.
-    if (!store.isOpen && s.placedOrderId == null) throw const CheckoutValidation(CheckoutProblem.storeClosed);
+    // for; a new one goes only to a store taking orders — for now, or for a
+    // time later while it is closed.
+    if (!store.takesOrders && s.placedOrderId == null) throw const CheckoutValidation(CheckoutProblem.storeClosed);
+    if (s.mode == PickupMode.asap && !store.isOpen && s.placedOrderId == null) {
+      state = s.copyWith(mode: PickupMode.scheduled);
+      throw const CheckoutValidation(CheckoutProblem.pickSlot);
+    }
     final delivery = s.fulfillment == FulfillmentType.delivery;
     if (s.mode == PickupMode.scheduled && s.slot == null) throw const CheckoutValidation(CheckoutProblem.pickSlot);
     if (delivery && (form.address.trim().isEmpty || form.city.trim().isEmpty)) {
@@ -450,8 +472,25 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         ..invalidate(loyaltyProvider);
       return orderId;
     } on Object catch (error) {
-      state = state.copyWith(submitting: false, error: () => ApiError.from(error));
+      final apiError = ApiError.from(error);
+      state = state.copyWith(submitting: false, error: () => apiError);
+      _onTimeRefused(apiError);
       return null;
+    }
+  }
+
+  /// The API turned the order down for its time. «As soon as possible» is
+  /// gone — the store closed, or its queue filled up, a moment ago: switch to
+  /// a time later and re-read the store for the reason. Or the chosen window
+  /// filled up meanwhile: drop it and fetch the windows again.
+  void _onTimeRefused(ApiError error) {
+    switch (error.code) {
+      case 'ASAP_UNAVAILABLE':
+        state = state.copyWith(mode: PickupMode.scheduled, slot: () => null);
+        ref.invalidate(storesProvider);
+      case 'PICKUP_SLOT_FULL':
+        state = state.copyWith(slot: () => null);
+        ref.invalidate(pickupSlotsProvider);
     }
   }
 

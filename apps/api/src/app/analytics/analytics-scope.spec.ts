@@ -187,6 +187,24 @@ describe('AnalyticsScopeResolver', () => {
       });
     });
 
+    it('keeps every store when counting people, and still names the currency for their money', async () => {
+      await expect(owner().people(user(Role.BRAND_ADMIN), {})).resolves.toEqual({
+        scope: { brandIds: ['own'], storeIds: null },
+        parent: { brandIds: ['own'], storeIds: null },
+        storeId: null,
+        currency: 'RUP',
+        currencies: ['MDL', 'RUP'],
+      });
+      await expect(owner().people(user(Role.BRAND_ADMIN), { currency: 'MDL' })).resolves.toMatchObject({
+        scope: { brandIds: ['own'], storeIds: null },
+        currency: 'MDL',
+      });
+      await expect(owner().people(user(Role.BRAND_ADMIN), { storeId: 'm1' })).resolves.toMatchObject({
+        scope: { brandIds: ['own'], storeIds: ['m1'] },
+        currency: 'MDL',
+      });
+    });
+
     it('leaves a brand in one currency as it is', async () => {
       const single = resolver({ brands: ['own'], stores: '*', storeRows: storeRows.slice(0, 2) });
       await expect(single.money(user(Role.BRAND_ADMIN), {})).resolves.toEqual({

@@ -1,29 +1,26 @@
-import type { PrismaService } from '../prisma/prisma.service';
+import type { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import type { RealtimeGateway } from './realtime.gateway';
 import { StoreAvailabilityNotifier } from './store-availability.notifier';
 
 describe('StoreAvailabilityNotifier', () => {
-  function harness(store: { status: string; shifts: { id: string }[] } | null) {
-    const prisma = {
-      store: {
-        findUnique: jest.fn().mockResolvedValue(store && { id: 'store-1', brandId: 'brand-1', ...store }),
-      },
+  function harness(view: { acceptingOrders: boolean; openNow: boolean } | null) {
+    const rules = {
+      forStore: jest.fn().mockResolvedValue(view && { ...view, brandId: 'brand-1', status: 'OPEN' }),
     };
     const realtime = { emitStoreAvailabilityChanged: jest.fn() };
     const notifier = new StoreAvailabilityNotifier(
-      prisma as unknown as PrismaService,
+      rules as unknown as StoreAvailabilityService,
       realtime as unknown as RealtimeGateway,
     );
-    return { notifier, prisma, realtime };
+    return { notifier, rules, realtime };
   }
 
   it.each([
-    ['open with a shift', 'OPEN', [{ id: 'shift-1' }], true],
-    ['busy with a shift', 'OVERLOADED', [{ id: 'shift-1' }], true],
-    ['open without a shift', 'OPEN', [], false],
-    ['switched off during a shift', 'CLOSED', [{ id: 'shift-1' }], false],
-  ])('announces a store %s', async (_label, status, shifts, accepting) => {
-    const { notifier, realtime } = harness({ status, shifts });
+    ['taking ASAP orders', { acceptingOrders: true, openNow: true }, true],
+    ['taking pre-orders only (shift closed, after hours, full queue)', { acceptingOrders: true, openNow: false }, true],
+    ['taking nothing (switched off, no hours within a day)', { acceptingOrders: false, openNow: false }, false],
+  ])('announces a store %s with exactly the fixed payload', async (_label, view, accepting) => {
+    const { notifier, realtime } = harness(view);
     await notifier.announce('store-1');
     expect(realtime.emitStoreAvailabilityChanged).toHaveBeenCalledWith({
       storeId: 'store-1',
@@ -39,8 +36,8 @@ describe('StoreAvailabilityNotifier', () => {
   });
 
   it('never fails the request that changed the store', async () => {
-    const { notifier, prisma, realtime } = harness({ status: 'OPEN', shifts: [] });
-    prisma.store.findUnique.mockRejectedValue(new Error('connection lost'));
+    const { notifier, rules, realtime } = harness({ acceptingOrders: true, openNow: true });
+    rules.forStore.mockRejectedValue(new Error('connection lost'));
     await expect(notifier.announce('store-1')).resolves.toBeUndefined();
     expect(realtime.emitStoreAvailabilityChanged).not.toHaveBeenCalled();
   });

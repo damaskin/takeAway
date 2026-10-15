@@ -58,16 +58,24 @@ export class AuthService {
   ) {}
 
   /**
-   * Staff / admin sign-in with email + password. Customer accounts are
-   * rejected even if a password hash is somehow present — they sign in with
-   * Telegram, Google or Apple.
+   * Staff / admin sign-in with an email or a staff login, and a password.
+   * An email always has an '@' and a login never does, so the identifier
+   * says which column to look in. Customer accounts are rejected even if a
+   * password hash is somehow present — they sign in with Telegram, Google
+   * or Apple.
    */
-  async loginWithPassword(email: string, password: string): Promise<AuthSessionDto> {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    // Same error for "no user" and "bad password" to avoid email-enumeration.
-    const generic = new UnauthorizedException('Invalid email or password');
-    if (!user || !user.passwordHash) throw generic;
-    if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw generic;
+  async loginWithPassword(identifier: string, password: string): Promise<AuthSessionDto> {
+    const key = identifier.trim().toLowerCase();
+    const user = key
+      ? await this.prisma.user.findUnique({ where: key.includes('@') ? { email: key } : { login: key } })
+      : null;
+    // Same error for "no user" and "bad password" to avoid enumerating
+    // emails or logins.
+    const generic = new UnauthorizedException('Invalid email, login or password');
+    if (!user || !user.passwordHash || !PASSWORD_LOGIN_ROLES.has(user.role)) {
+      await this.passwords.compareWithoutAccount(password);
+      throw generic;
+    }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
 
     const ok = await this.passwords.compare(password, user.passwordHash);
@@ -174,6 +182,11 @@ export class AuthService {
    * every other session ends: their refresh tokens are revoked, and their
    * access tokens run out within minutes. `keepRefreshToken` (the session
    * making the change) stays valid, so that person is not signed out too.
+   *
+   * A wrong current password is a 401 `CURRENT_PASSWORD_INCORRECT`; a new
+   * password equal to the current one — the temporary password typed twice
+   * on the first sign-in — is a 400 `PASSWORD_UNCHANGED`, so it cannot pass
+   * for a change.
    */
   async changeOwnPassword(
     userId: string,
@@ -186,7 +199,22 @@ export class AuthService {
     if (!PASSWORD_LOGIN_ROLES.has(user.role)) throw new UnauthorizedException('Account cannot change password here');
 
     const ok = await this.passwords.compare(currentPassword, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('Current password is incorrect');
+    if (!ok) {
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        error: 'Unauthorized',
+        code: 'CURRENT_PASSWORD_INCORRECT',
+        message: 'Current password is incorrect',
+      });
+    }
+    if (newPassword === currentPassword) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        code: 'PASSWORD_UNCHANGED',
+        message: 'The new password has to differ from the current one',
+      });
+    }
 
     const hash = await this.passwords.hash(newPassword);
     await this.prisma.user.update({
@@ -489,6 +517,7 @@ export class AuthService {
       id: user.id,
       phone: user.phone,
       email: user.email,
+      login: user.login,
       name: user.name,
       locale: user.locale,
       currency: user.currency,

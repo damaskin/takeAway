@@ -1,4 +1,10 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import { KdsPinService } from '../../auth/services/kds-pin.service';
@@ -7,6 +13,7 @@ import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
+import { createLoginAccount } from './staff-login';
 
 /**
  * Staff roster for a store — the UserStore pivot filtered to users with
@@ -23,6 +30,9 @@ import { PrismaService } from '../../prisma/prisma.service';
  *   - Existing BRAND_ADMIN/SUPER_ADMIN → refuse (never demote admins here).
  *   - Existing staff of another brand  → refuse (staff accounts are global).
  * Every refusal is the same neutral 409, without the account's role.
+ *
+ * With a login instead of an email it is always a new account, and a taken
+ * login is 409 LOGIN_IN_USE whoever holds it (see {@link createLoginAccount}).
  *
  * Role changes and kitchen PINs need the whole account to be the caller's:
  * see {@link BrandScopeService.managesUser}.
@@ -48,6 +58,7 @@ export class AdminStaffService {
           select: {
             id: true,
             email: true,
+            login: true,
             name: true,
             role: true,
             blockedAt: true,
@@ -61,6 +72,7 @@ export class AdminStaffService {
     return rows.map((r) => ({
       userId: r.user.id,
       email: r.user.email,
+      login: r.user.login,
       name: r.user.name,
       role: r.user.role,
       blocked: r.user.blockedAt !== null,
@@ -74,10 +86,21 @@ export class AdminStaffService {
 
   async add(
     storeId: string,
-    input: { email: string; name?: string; role: Role; tempPassword: string },
+    input: { email?: string; login?: string; name?: string; role: Role; tempPassword: string },
     user: AuthenticatedUser,
   ) {
     await this.assertStore(storeId, user);
+    if (input.login !== undefined) {
+      if (input.email !== undefined) throw new BadRequestException('Send either email or login');
+      const created = await createLoginAccount(this.prisma, {
+        login: input.login.trim().toLowerCase(),
+        passwordHash: await this.passwords.hash(input.tempPassword),
+        name: input.name ?? null,
+        role: input.role,
+      });
+      return this.roster(storeId, created.id, user);
+    }
+    if (input.email === undefined) throw new BadRequestException('Send either email or login');
     const email = input.email.toLowerCase();
 
     const existing = await this.prisma.user.findUnique({
@@ -114,7 +137,11 @@ export class AdminStaffService {
     } else {
       throw emailInUse();
     }
+    return this.roster(storeId, userId, user);
+  }
 
+  /** Puts the person on the store's roster and answers their row of it. */
+  private async roster(storeId: string, userId: string, user: AuthenticatedUser) {
     try {
       await this.prisma.userStore.create({ data: { userId, storeId } });
     } catch (err) {

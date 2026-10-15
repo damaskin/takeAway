@@ -64,7 +64,7 @@ import { storeErrorMessage } from './store-errors';
                 <span
                   style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
                 >
-                  {{ person.name || person.email }}
+                  {{ person.name || person.email || person.login }}
                 </span>
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
                   {{ 'admin.staff.role.' + person.role | translate }}
@@ -91,7 +91,9 @@ import { storeErrorMessage } from './store-errors';
                   [value]="draft(person.userId)"
                   (input)="setDraft(person.userId, $event)"
                   [placeholder]="'admin.stores.kitchen.pinPlaceholder' | translate"
-                  [attr.aria-label]="('admin.stores.kitchen.pin' | translate) + ': ' + (person.name || person.email)"
+                  [attr.aria-label]="
+                    ('admin.stores.kitchen.pin' | translate) + ': ' + (person.name || person.email || person.login)
+                  "
                   style="width: 120px; height: 32px; padding: 0 10px; background: var(--color-cream); border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.2em; outline: none"
                 />
                 <button
@@ -212,7 +214,7 @@ export class StoreKitchenAccessComponent {
 
   clearPin(person: StaffRoster): void {
     if (this.busyId()) return;
-    const name = person.name || person.email || '';
+    const name = person.name || person.email || person.login || '';
     if (!confirm(this.translate.instant('admin.stores.kitchen.resetConfirm', { name }))) return;
     this.start(person.userId);
     this.staff.clearKdsPin(this.storeId(), person.userId).subscribe({

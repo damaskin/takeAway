@@ -16,6 +16,7 @@ import { Observable } from 'rxjs';
 import type { AuthSession } from '@takeaway/shared-types';
 
 import { AuthService } from '../../core/auth/auth.service';
+import { EmailCodeLoginComponent } from './email-code-login.component';
 
 /**
  * Web Authentication.
@@ -29,7 +30,9 @@ import { AuthService } from '../../core/auth/auth.service';
  * Provider order is deliberate: Google first (largest share on the launch
  * markets), then Apple (required alongside it on iOS Safari), then Telegram
  * below a divider — it is the odd one out for a Dubai or London customer,
- * but the whole Mini App audience arrives with it.
+ * but the whole Mini App audience arrives with it. «Войти по почте» comes
+ * last, for customers with none of the three (mail.ru and the like); it
+ * appears only once `GET /auth/methods` says the server can mail codes.
  *
  * Every provider is optional. A deployment that configures none of them
  * shows the "no sign-in configured" note rather than an empty column.
@@ -45,6 +48,7 @@ import { AuthService } from '../../core/auth/auth.service';
     GoogleLoginButtonComponent,
     AppleLoginButtonComponent,
     BrandLogoComponent,
+    EmailCodeLoginComponent,
   ],
   template: `
     <section class="flex" style="min-height: calc(100vh - 72px); background: var(--color-cream)">
@@ -109,7 +113,11 @@ import { AuthService } from '../../core/auth/auth.service';
             }
           }
 
-          @if (!googleClientId && !appleClientId && !telegramClientId && !telegramBotUsername) {
+          @if (emailAvailable()) {
+            <app-email-code-login (signedIn)="onSignedIn()" />
+          }
+
+          @if (!googleClientId && !appleClientId && !telegramClientId && !telegramBotUsername && !emailAvailable()) {
             <p style="font-family: var(--font-sans); font-size: 14px; color: var(--color-berry)">
               {{ 'web.auth.noProviders' | translate }}
             </p>
@@ -175,6 +183,15 @@ export class LoginPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  /** Whether the server can mail sign-in codes (it has SMTP); hidden until it says so. */
+  readonly emailAvailable = signal(false);
+
+  constructor() {
+    this.auth.authMethods().subscribe({
+      next: (methods) => this.emailAvailable.set(methods.email),
+      error: () => this.emailAvailable.set(false),
+    });
+  }
 
   /** BCP-47 tag for Google's button chrome. */
   uiLocale(): string {
@@ -195,6 +212,10 @@ export class LoginPage {
 
   signInWithTelegramIdToken(idToken: string): void {
     this.run(this.auth.signInWithTelegramIdToken(idToken));
+  }
+
+  onSignedIn(): void {
+    void this.router.navigate(['/']);
   }
 
   private run(request: Observable<AuthSession>): void {

@@ -55,6 +55,7 @@ interface Tables {
   cardTokens: Row[];
   cardBindings: Row[];
   passwordResetTokens: Row[];
+  inboxNotifications: Row[];
   userStores: Row[];
   loyaltyAccounts: Row[];
   pointsLedger: Row[];
@@ -159,6 +160,10 @@ function seed(): Tables {
     ],
     cardBindings: [{ id: 'bind-1', userId: 'ana', phone: '77712345', cardTokenId: 'card-1' }],
     passwordResetTokens: [{ id: 'prt-1', userId: 'ana' }],
+    inboxNotifications: [
+      { id: 'in-1', userId: 'ana', title: 'Новая кофейня' },
+      { id: 'in-2', userId: 'bob', title: 'Новая кофейня' },
+    ],
     userStores: [],
     loyaltyAccounts: [
       { id: 'la-ana', userId: 'ana', pointsBalance: 420, lifetimePoints: 900, tier: 'GOLD' },
@@ -345,6 +350,7 @@ function fakeDb(t: Tables) {
     },
     cardBindingRequest: deleteManyByUser(t.cardBindings),
     passwordResetToken: deleteManyByUser(t.passwordResetTokens),
+    customerNotification: deleteManyByUser(t.inboxNotifications),
     userStore: deleteManyByUser(t.userStores),
     loyaltyAccount: {
       findUnique: jest.fn(async ({ where }: { where: { userId: string } }) =>
@@ -446,7 +452,7 @@ describe('AccountDeletionService', () => {
     expect(ana?.referredByUserId).toBe('bob');
   });
 
-  it('removes identities, devices, carts, saved cards and reset tokens — only the customer’s own', async () => {
+  it('removes identities, devices, carts, saved cards, reset tokens and inbox — only the customer’s own', async () => {
     const { svc, t } = setup();
     await svc.deleteOwnAccount('ana');
 
@@ -457,6 +463,7 @@ describe('AccountDeletionService', () => {
     expect(t.cardTokens.map((c) => c['id'])).toEqual(['card-2']);
     expect(t.cardBindings).toEqual([]);
     expect(t.passwordResetTokens).toEqual([]);
+    expect(t.inboxNotifications.map((n) => n['id'])).toEqual(['in-2']);
     expect(t.users.find((u) => u.id === 'bob')).toMatchObject({ email: 'bob@example.com', telegramUserId: 888n });
   });
 

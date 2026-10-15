@@ -5,7 +5,9 @@
  * Surfaces a system notification for events delivered by the browser's
  * push service. Payload shape is fixed by
  * apps/api/src/app/notifications/providers/web-push.provider.ts.
- * Tap → focuses (or opens) the order-status page for that order.
+ * Tap → focuses (or opens) the order-status page for that order; a brand
+ * campaign or a takeAway announcement (`kind` campaign / announcement)
+ * opens «Уведомления» on that message.
  *
  * Offline
  * -------
@@ -96,7 +98,14 @@ self.addEventListener('push', (event) => {
     payload.body = event.data ? event.data.text() : '';
   }
 
-  const url = payload.orderId ? `/orders/${payload.orderId}` : '/';
+  const inbox = payload.kind === 'campaign' || payload.kind === 'announcement';
+  const url = payload.orderId
+    ? `/orders/${payload.orderId}`
+    : inbox
+      ? payload.notificationId
+        ? `/profile/inbox?open=${encodeURIComponent(payload.notificationId)}`
+        : '/profile/inbox'
+      : '/';
 
   event.waitUntil(
     self.registration.showNotification(payload.title || 'takeAway', {
@@ -104,7 +113,11 @@ self.addEventListener('push', (event) => {
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       data: { url },
-      tag: payload.orderId ? `order-${payload.orderId}` : undefined,
+      tag: payload.orderId
+        ? `order-${payload.orderId}`
+        : payload.notificationId
+          ? `inbox-${payload.notificationId}`
+          : undefined,
       renotify: false,
     }),
   );
@@ -117,10 +130,19 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     (async () => {
       const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const path = target.split('?')[0];
       for (const client of all) {
         const u = new URL(client.url);
-        if (u.pathname === target) {
+        if (u.pathname + u.search === target) {
           await client.focus();
+          return;
+        }
+      }
+      // A tab already on «Уведомления» moves to the message instead of a second tab opening.
+      for (const client of all) {
+        if (path === '/profile/inbox' && new URL(client.url).pathname === path && 'navigate' in client) {
+          await client.focus();
+          await client.navigate(target);
           return;
         }
       }

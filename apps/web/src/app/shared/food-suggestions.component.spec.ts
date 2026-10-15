@@ -5,7 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { ProductDetail, ProductSummary } from '@takeaway/shared-types';
-import type { FoodSuggestion } from '@takeaway/utils';
+import type { ProductSuggestion } from '@takeaway/utils';
 
 import { API_CONFIG } from '../core/api/api.config';
 import { FoodSuggestionsComponent } from './food-suggestions.component';
@@ -41,7 +41,7 @@ describe('FoodSuggestionsComponent', () => {
 
   const croissant = summary('croissant', 'Круассан');
   const sandwich = summary('sandwich', 'Сэндвич');
-  const suggestions: FoodSuggestion[] = [
+  const suggestions: ProductSuggestion[] = [
     { product: croissant, kind: 'BAKERY' },
     { product: sandwich, kind: 'FOOD' },
   ];
@@ -76,7 +76,7 @@ describe('FoodSuggestionsComponent', () => {
   it('shows each product with its placeholder, price and a link to it', () => {
     const cards = Array.from(el().querySelectorAll('[data-testid="food-suggestion"]'));
     expect(cards).toHaveLength(2);
-    expect(el().querySelector('h2')?.textContent?.trim()).toBe('К заказу');
+    expect(el().querySelector('h2')?.textContent?.trim()).toBe('Добавить к напитку?');
     expect(cards[0]?.querySelector('img')?.getAttribute('src')).toBe('/ui-kit/product-placeholders/bakery.svg');
     expect(cards[0]?.querySelector('a')?.getAttribute('href')).toBe('/products/croissant?store=centre');
     expect(cards[0]?.textContent).toContain('25');

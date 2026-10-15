@@ -15,5 +15,6 @@ Picked by the product's category kind (`CategoryKind` in libs/shared-types):
 | OTHER / missing | other.svg      |
 
 Flat illustrations on a transparent background, 200×200 viewBox. Web and TMA serve
-them from `/ui-kit/product-placeholders/`; the Flutter app keeps copies in
-`apps/mobile/assets/product-placeholders/`. Change them here first, then copy.
+them from `/ui-kit/product-placeholders/`. The Flutter app does not use them: App
+Review rejected stand-in art as placeholder content (Guideline 2.1(a), 2026-10), so
+there a product without a photo is laid out as text.

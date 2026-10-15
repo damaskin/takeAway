@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Currency, Locale } from '@prisma/client';
-import { IsEnum, IsObject, IsOptional, IsString, IsUrl, Length } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, IsUrl, Length, ValidateIf } from 'class-validator';
 
 import { IsInternationalPhone, ToPhone } from '../../../common/text/phone';
 
@@ -50,4 +50,19 @@ export class CreateBrandDto {
   themeOverrides?: Record<string, string>;
 }
 
-export class UpdateBrandDto extends PartialType(CreateBrandDto) {}
+/**
+ * A change to a brand. The contact phone can be changed but not removed:
+ * sign-up asks for it and the platform team calls the business on it, so
+ * `null` or blank is refused instead of clearing the number.
+ */
+export class UpdateBrandDto extends PartialType(OmitType(CreateBrandDto, ['contactPhone'] as const)) {
+  @ApiPropertyOptional({
+    example: '+37369123456',
+    description: 'Normalised to E.164. Can be changed, not removed: null or blank is refused.',
+  })
+  @ToPhone({ keepBlank: true })
+  @ValidateIf((_dto: UpdateBrandDto, value: unknown) => value !== undefined)
+  @IsNotEmpty({ message: 'contactPhone cannot be removed, only changed' })
+  @IsInternationalPhone()
+  contactPhone?: string;
+}

@@ -30,16 +30,25 @@ export interface AdminBrand {
   _count: { stores: number; products: number };
 }
 
-/** The launch checklist of one brand, as the platform admin sees it. */
+/**
+ * The launch checklist of one brand, as the platform admin sees it. The rule
+ * is `brandLaunch` in `@takeaway/utils`, the same on both sides.
+ */
 export interface BrandOnboardingProgress {
+  /** Recommended, not counted: a logo. */
   brandProfile: boolean;
   store: boolean;
+  /** A product customers can see, with a photo or not. */
   menu: boolean;
+  /** Recommended, not counted: a product with a photo. */
+  photos: boolean;
   approved: boolean;
-  /** Steps done of `total` (5); payments always count. */
+  /** An order that was not cancelled or expired. Missing from older APIs. */
+  hasOrders?: boolean;
+  /** Required steps done of `total` (4); payments always count. */
   done: number;
   total: number;
-  /** Launched: every step done and the brand approved. */
+  /** Launched: every step done and the brand approved — or it has sold already. */
   complete: boolean;
 }
 
@@ -60,6 +69,8 @@ export interface CreateBrandRequest {
   name: string;
   currency?: string;
   locale?: 'EN' | 'RU';
+  /** Any common format; the API stores E.164. */
+  contactPhone?: string;
 }
 
 @Injectable({ providedIn: 'root' })

@@ -2,8 +2,13 @@
  * Auth transport types shared between apps/api, web, tma, admin.
  */
 
+/**
+ * `POST /auth/password/login`. `identifier` is an email or a staff login —
+ * one with an '@' is an email. Older clients send `email` instead; the API
+ * still takes it.
+ */
 export interface PasswordLoginRequest {
-  email: string;
+  identifier: string;
   password: string;
 }
 
@@ -50,6 +55,8 @@ export interface AuthUser {
   id: string;
   phone: string | null;
   email: string | null;
+  /** Staff sign-in name of an account without an email; null (or absent, from an older API) otherwise. */
+  login?: string | null;
   name: string | null;
   locale: 'EN' | 'RU';
   currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
@@ -75,12 +82,41 @@ export interface JwtAccessPayload {
   exp: number;
 }
 
-/** Which of Telegram, Google and Apple lead into the signed-in customer's profile. */
+/** Which of Telegram, Google, Apple and email lead into the signed-in customer's profile. */
 export interface SignInMethods {
   telegram: boolean;
   google: boolean;
   apple: boolean;
+  /**
+   * The proven address a sign-in code by email leads into this profile;
+   * null when there is none. An address only typed into the profile does
+   * not count.
+   */
+  email: string | null;
 }
+
+/** `GET /auth/methods`: which customer sign-in methods the server can complete. */
+export interface AuthMethods {
+  /** Sign-in with a code sent by email; false until SMTP is configured on the server. */
+  email: boolean;
+  google: boolean;
+  apple: boolean;
+  telegram: boolean;
+}
+
+/**
+ * Stable reasons `POST /auth/email/start` and `/auth/email/verify` refuse
+ * with, in the body's `code`. Clients word them in the customer's language.
+ */
+export type EmailLoginErrorCode =
+  | 'EMAIL_LOGIN_UNAVAILABLE'
+  | 'EMAIL_CODE_NOT_SENT'
+  | 'EMAIL_CODE_COOLDOWN'
+  | 'EMAIL_CODE_LIMIT'
+  | 'EMAIL_CODE_INVALID'
+  | 'EMAIL_CODE_EXPIRED'
+  | 'EMAIL_CODE_TOO_MANY_ATTEMPTS'
+  | 'EMAIL_LOGIN_STAFF_ACCOUNT';
 
 /**
  * Result of linking a sign-in method. `session` is present when the method

@@ -25,6 +25,23 @@ class FakeApi extends Fake implements TakeAwayApi {
   SignInMethods methods = const SignInMethods(telegram: true, google: false, apple: false);
   final unlinked = <String>[];
 
+  /// What `GET /auth/methods` answers; email sign-in is off by default, as
+  /// on a server without SMTP.
+  AuthMethods authMethodsAnswer = AuthMethods.none;
+
+  /// Every sign-in code the app asked to mail, and every code it sent back.
+  final emailStarts = <EmailSignInStartRequest>[];
+  final emailVerifications = <EmailSignInVerifyRequest>[];
+
+  /// The code the next verification accepts; anything else is refused.
+  String emailCode = '042917';
+
+  /// Error body (with its status) the next code request fails with; null = 204.
+  (int, Map<String, Object?>)? emailStartFailure;
+
+  /// Error body (with its status) the next wrong code is refused with.
+  (int, Map<String, Object?>) wrongCodeFailure = (400, {'code': 'EMAIL_CODE_INVALID', 'attemptsLeft': 4});
+
   /// Every account deletion the app asked for, with its body.
   final deleteRequests = <DeleteAccountRequest?>[];
 
@@ -37,6 +54,17 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   /// False = switched on but outside working hours, as the API reports it.
   bool storeOpenNow = true;
+
+  /// More fields of the default store, as API JSON — `acceptingOrders`,
+  /// `asapBlockedReason`, `opensAt`, `closesAt`, `phone` (2026-10-14).
+  Map<String, dynamic> storeExtra = {};
+
+  /// The `cartId` each pickup-slots request was made with.
+  final slotCartIds = <String?>[];
+
+  /// Error body the next order is refused with (400), e.g.
+  /// `{'code': 'ASAP_UNAVAILABLE', 'reason': 'QUEUE_FULL'}`; null = placed.
+  Map<String, dynamic>? orderRefusal;
 
   /// Stores listed after the default one, as API JSON.
   List<Map<String, dynamic>> moreStores = [];
@@ -223,14 +251,16 @@ class FakeApi extends Fake implements TakeAwayApi {
     Map<String, dynamic>? payment,
     double storeLatitude = 0,
     double storeLongitude = 0,
+    String pickupMode = 'ASAP',
+    DateTime? pickupAt,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
     'qrToken': 'qr_1',
     'status': status,
-    'pickupMode': 'ASAP',
+    'pickupMode': pickupMode,
     'fulfillmentType': 'PICKUP',
-    'pickupAt': DateTime.now().toUtc().add(const Duration(minutes: 8)).toIso8601String(),
+    'pickupAt': (pickupAt ?? DateTime.now().add(const Duration(minutes: 8))).toUtc().toIso8601String(),
     'subtotalCents': 2000,
     'discountCents': 0,
     'taxCents': 0,
@@ -268,6 +298,39 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<TelegramAuthConfig> telegramConfig() async => const TelegramAuthConfig();
 
   @override
+  Future<AuthMethods> authMethods() async => authMethodsAnswer;
+
+  @override
+  Future<void> startEmailSignIn(EmailSignInStartRequest body) async {
+    emailStarts.add(body);
+    final failure = emailStartFailure;
+    emailStartFailure = null;
+    if (failure != null) throw _apiError('/auth/email/start', failure.$1, failure.$2);
+  }
+
+  @override
+  Future<AuthSessionResponse> verifyEmailCode(EmailSignInVerifyRequest body) async {
+    emailVerifications.add(body);
+    if (body.code != emailCode) throw _apiError('/auth/email/verify', wrongCodeFailure.$1, wrongCodeFailure.$2);
+    return AuthSessionResponse(
+      accessToken: 'email-access',
+      refreshToken: 'email-refresh',
+      accessTokenExpiresInSeconds: 900,
+      refreshTokenExpiresInSeconds: 604800,
+      user: AuthUser(id: 'u_email', locale: 'RU', currency: 'MDL', role: 'CUSTOMER', email: body.email),
+    );
+  }
+
+  static DioException _apiError(String path, int status, Map<String, Object?> body) {
+    final request = RequestOptions(path: path, method: 'POST');
+    return DioException(
+      requestOptions: request,
+      response: Response<Object?>(requestOptions: request, statusCode: status, data: {'statusCode': status, ...body}),
+      type: DioExceptionType.badResponse,
+    );
+  }
+
+  @override
   Future<SignInMethods> signInMethods() async => methods;
 
   @override
@@ -277,6 +340,7 @@ class FakeApi extends Fake implements TakeAwayApi {
       telegram: methods.telegram,
       google: methods.google && provider != 'google',
       apple: methods.apple && provider != 'apple',
+      email: methods.email,
     );
   }
 
@@ -296,7 +360,7 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<List<Store>> stores({double? lat, double? lng, int? radius}) async => [
-    Store.fromJson({...storeJson, 'openNow': storeOpenNow, 'kinds': ?storeKinds}),
+    Store.fromJson({...storeJson, 'openNow': storeOpenNow, 'kinds': ?storeKinds, ...storeExtra}),
     for (final json in moreStores) Store.fromJson(json),
   ];
 
@@ -311,6 +375,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'galleryUrls': <String>[],
     'workingHours': <Object>[],
     'brand': {'id': 'br_1', 'slug': 'noname', 'name': 'NoName Coffee', 'logoUrl': null, 'themeOverrides': null},
+    ...storeExtra,
   });
 
   @override
@@ -380,7 +445,8 @@ class FakeApi extends Fake implements TakeAwayApi {
   }();
 
   @override
-  Future<List<PickupSlot>> pickupSlots(String idOrSlug) async {
+  Future<List<PickupSlot>> pickupSlots(String idOrSlug, {String? cartId}) async {
+    slotCartIds.add(cartId);
     final start = _slotsStart;
     return [
       for (var i = 0; i < 6; i++)
@@ -465,6 +531,16 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Order> createOrder(CreateOrderRequest body) async {
+    final refusal = orderRefusal;
+    if (refusal != null) {
+      orderRefusal = null;
+      final request = RequestOptions(path: '/orders', method: 'POST');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(requestOptions: request, statusCode: 400, data: {'statusCode': 400, ...refusal}),
+        type: DioExceptionType.badResponse,
+      );
+    }
     created.add(body);
     _cartItems.clear();
     return currentOrder = sampleOrder();
@@ -602,5 +678,104 @@ class FakeApi extends Fake implements TakeAwayApi {
       );
     }
     return FeedbackReceipt(id: 'fb_${feedback.length}', createdAt: DateTime.utc(2026, 10, 7, 10));
+  }
+
+  // ── Inbox ──────────────────────────────────────────────────────────────
+
+  /// «Уведомления» on the server, newest first, as API JSON — see
+  /// [inboxItemJson].
+  List<Map<String, dynamic>> inboxItems = [];
+
+  /// Page size the fake answers with, whatever the app asks for.
+  int? inboxPageSize;
+
+  /// The cursor of every page the app asked for.
+  final inboxCursors = <String?>[];
+
+  /// True = every page after the first fails.
+  bool inboxNextPagesFail = false;
+
+  /// Every message the app marked read, and how many times it read them all.
+  final inboxReads = <String>[];
+  var inboxReadAlls = 0;
+
+  /// Status the read calls fail with; null means they go through.
+  int? inboxReadStatus;
+
+  static Map<String, dynamic> inboxItemJson(
+    String id, {
+    String kind = 'BRAND_CAMPAIGN',
+    String title = '−20% на капучино',
+    String body = 'Только до воскресенья, в любом нашем заведении.',
+    bool read = false,
+    Map<String, dynamic>? link,
+    DateTime? createdAt,
+  }) => {
+    'id': id,
+    'kind': kind,
+    'title': title,
+    'body': body,
+    'sender': kind == 'PLATFORM_ANNOUNCEMENT'
+        ? {'kind': 'PLATFORM', 'name': 'takeAway', 'logoUrl': null, 'brandId': null}
+        : {'kind': 'BRAND', 'name': 'NoName Coffee', 'logoUrl': null, 'brandId': 'br_1'},
+    'link': link,
+    'createdAt': (createdAt ?? DateTime.now().toUtc().subtract(const Duration(minutes: 5))).toIso8601String(),
+    'readAt': read ? '2026-10-14T10:00:00.000Z' : null,
+  };
+
+  int get inboxUnread => inboxItems.where((item) => item['readAt'] == null).length;
+
+  @override
+  Future<InboxPage> inbox({String? cursor, int? limit}) async {
+    inboxCursors.add(cursor);
+    if (cursor != null && inboxNextPagesFail) throw _inboxError('/inbox', 503);
+    final start = cursor == null ? 0 : inboxItems.indexWhere((item) => item['id'] == cursor) + 1;
+    final page = inboxItems.skip(start).take(inboxPageSize ?? limit ?? 20).toList();
+    return InboxPage(
+      items: page.map(InboxItem.fromJson).toList(),
+      nextCursor: start + page.length < inboxItems.length ? page.last['id'] as String : null,
+      unreadCount: inboxUnread,
+    );
+  }
+
+  @override
+  Future<InboxUnreadCount> inboxUnreadCount() async => InboxUnreadCount(count: inboxUnread);
+
+  @override
+  Future<InboxItem> inboxItem(String id) async {
+    final json = inboxItems.where((item) => item['id'] == id).firstOrNull;
+    if (json == null) throw _inboxError('/inbox/$id', 404);
+    return InboxItem.fromJson(json);
+  }
+
+  @override
+  Future<void> markInboxItemRead(String id) async {
+    inboxReads.add(id);
+    final status = inboxReadStatus;
+    if (status != null) throw _inboxError('/inbox/$id/read', status);
+    inboxItems = [
+      for (final item in inboxItems) item['id'] == id ? {...item, 'readAt': item['readAt'] ?? _readAt()} : item,
+    ];
+  }
+
+  @override
+  Future<void> markInboxRead() async {
+    inboxReadAlls++;
+    final status = inboxReadStatus;
+    if (status != null) throw _inboxError('/inbox/read-all', status);
+    inboxItems = [
+      for (final item in inboxItems) {...item, 'readAt': item['readAt'] ?? _readAt()},
+    ];
+  }
+
+  static String _readAt() => DateTime.now().toUtc().toIso8601String();
+
+  static DioException _inboxError(String path, int status) {
+    final request = RequestOptions(path: path);
+    return DioException(
+      requestOptions: request,
+      response: Response<Object?>(requestOptions: request, statusCode: status, data: {'statusCode': status}),
+      type: DioExceptionType.badResponse,
+    );
   }
 }

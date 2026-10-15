@@ -303,10 +303,16 @@ model User {
   id                 String    @id @default(cuid())
   phone              String?   @unique
   email              String?   @unique
+  /// Staff sign-in name for someone without an email, set by the owner on
+  /// the invite form. Lowercase, 3–32 of [a-z0-9._-] — never an '@', so it
+  /// can't be mistaken for (or collide with) an email. Such an account has
+  /// no password-reset mail: only the owner resets its password.
+  login              String?   @unique
   /// When `email` was last proven to belong to this account — a Google or
-  /// Apple sign-in that vouched for the same verified address. Null for an
-  /// address typed into the profile. Only a verified address lets a social
-  /// sign-in join an existing profile by email; editing the email clears it.
+  /// Apple sign-in that vouched for the same verified address, or a sign-in
+  /// code mailed to it. Null for an address typed into the profile. Only a
+  /// verified address lets a social or email-code sign-in join an existing
+  /// profile by email; editing the email clears it.
   emailVerifiedAt    DateTime?
   /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
@@ -374,6 +380,11 @@ model User {
   feedback            Feedback[]
   campaignsCreated    Campaign[]         @relation("CampaignCreatedBy")
   campaignsReviewed   Campaign[]         @relation("CampaignReviewedBy")
+
+  // «Уведомления»: brand campaigns and platform announcements the customer received.
+  inboxNotifications     CustomerNotification[]
+  announcementDeliveries AnnouncementDelivery[]
+  announcementsCreated   Announcement[]         @relation("AnnouncementCreatedBy")
 
   @@index([createdAt])
   @@index([referredByUserId])
@@ -584,6 +595,9 @@ model Brand {
   payouts         BrandPayout[]
   kitchenDevices  KitchenDevice[]
 
+  /// Inbox items of its push campaigns — the brand is their sender.
+  inboxNotifications CustomerNotification[]
+
   @@index([moderationStatus])
   @@index([ownerId])
 }
@@ -723,6 +737,9 @@ model Campaign {
   reviewedBy User?              @relation("CampaignReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   deliveries CampaignDelivery[]
 
+  /// The inbox item each recipient of a PUSH campaign got.
+  inboxNotifications CustomerNotification[]
+
   @@index([brandId, status])
   @@index([brandId, createdAt])
   @@index([status, submittedAt])
@@ -788,6 +805,120 @@ enum CampaignDeliveryOutcome {
   FAILED
   NO_CHANNEL
   OPTED_OUT
+}
+
+/// A message from the platform itself to every customer who allows
+/// promotional notifications — a new partner, a new feature. Composed and
+/// sent by a SUPER_ADMIN, no moderation. DRAFT → «Отправить» → SENDING →
+/// SENT / FAILED, or DRAFT → SCHEDULED (`scheduledAt`) → SENDING …; a
+/// cancelled schedule goes back to DRAFT. Every recipient gets an inbox item
+/// («Уведомления») and a push (app → web → Telegram fallback); the counters
+/// are refreshed after every batch from the AnnouncementDelivery rows, so a
+/// retry only pushes to the people it missed.
+model Announcement {
+  id             String             @id @default(cuid())
+  title          String
+  body           String
+  /// Where a tap leads: this store's menu, or this brand's (at most one of
+  /// the two). Plain ids, not relations: a store or brand that goes away
+  /// just loses the link.
+  linkStoreId    String?
+  linkBrandId    String?
+  status         AnnouncementStatus @default(DRAFT)
+  /// Recipients when the run started, and how their push went.
+  targetCount    Int                @default(0)
+  sentCount      Int                @default(0)
+  failedCount    Int                @default(0)
+  /// Recipients no push could reach (no app or web push, no Telegram chat);
+  /// they still find it in «Уведомления».
+  noChannelCount Int                @default(0)
+  /// Last delivery error or the reason the whole run failed. Diagnostic text.
+  lastError      String?
+  /// SCHEDULED: send at this time.
+  scheduledAt    DateTime?
+  createdById    String?
+  startedAt      DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  createdBy          User?                  @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries         AnnouncementDelivery[]
+  inboxNotifications CustomerNotification[]
+
+  @@index([status, scheduledAt])
+  @@index([createdAt])
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+/// One row per (announcement, recipient): how the push went on the last
+/// attempt. SENT rows are skipped by a retry. The inbox item is written
+/// whatever the outcome.
+model AnnouncementDelivery {
+  id             String                  @id @default(cuid())
+  announcementId String
+  userId         String
+  outcome        CampaignDeliveryOutcome
+  /// Transports that accepted the push, comma-separated (apns,fcm,webpush,telegram).
+  via            String?
+  error          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([announcementId, outcome])
+  @@index([userId])
+}
+
+/// One message in a customer's «Уведомления»: a brand's PUSH campaign or a
+/// platform announcement. Written for every recipient of the run whether a
+/// device push landed or not — the inbox is where they read it later. Order
+/// news is not kept here; the Orders screens show it. Deleted with the
+/// account (AccountDeletionService).
+model CustomerNotification {
+  id             String                   @id @default(cuid())
+  userId         String
+  kind           CustomerNotificationKind
+  /// The copy as written, without the sender the push title starts with.
+  title          String
+  body           String
+  /// BRAND_CAMPAIGN: the brand that sent it. Null for a platform announcement.
+  brandId        String?
+  campaignId     String?
+  announcementId String?
+  /// Where a tap leads, copied from the announcement: a store's menu or a
+  /// brand's. Plain ids — a store or brand that is gone just drops the link.
+  linkStoreId    String?
+  linkBrandId    String?
+  readAt         DateTime?
+  createdAt      DateTime                 @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand        Brand?        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+
+  /// One item per person and campaign / announcement — a retry never duplicates it.
+  @@unique([campaignId, userId])
+  @@unique([announcementId, userId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+enum CustomerNotificationKind {
+  /// A brand's push campaign — the brand is the sender.
+  BRAND_CAMPAIGN
+  /// A platform announcement — takeAway is the sender.
+  PLATFORM_ANNOUNCEMENT
 }
 
 model Store {
@@ -910,19 +1041,25 @@ model UserStore {
   @@index([storeId])
 }
 
-/// A working shift at one store. The store takes orders only while it has a
-/// shift with `closedAt = null`: staff open it with "Start work" in the
-/// cabinet or on the kitchen tablet and close it with "Finish work". Working
-/// hours say when the store is meant to be open; the shift says someone is
-/// actually there. At most one open shift per store (partial unique index in
-/// the migration — Prisma cannot model it).
+/// A working shift at one store: staff open it with "Start work" in the
+/// cabinet or on the kitchen tablet and close it with "Finish work" (or the
+/// schedule closes it — see docs/kitchen-policy.md). ASAP orders need an
+/// open shift *and* working hours (or an extension past them); pre-orders
+/// for later are taken with the shift closed. At most one open shift per
+/// store (partial unique index in the migration — Prisma cannot model it).
 model StoreShift {
-  id         String    @id @default(cuid())
-  storeId    String
-  openedAt   DateTime  @default(now())
-  openedById String?
-  closedAt   DateTime?
-  closedById String?
+  id                  String    @id @default(cuid())
+  storeId             String
+  openedAt            DateTime  @default(now())
+  openedById          String?
+  closedAt            DateTime?
+  closedById          String?
+  /// The kitchen agreed to take ASAP orders past the working hours until
+  /// this moment («Продлить на 30 мин / 1 ч»). Null — no extension.
+  extendedUntil       DateTime?
+  /// Closed by the schedule after the working hours ended, not by a person
+  /// (closedById is null then).
+  closedAutomatically Boolean   @default(false)
 
   store    Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   openedBy User? @relation("ShiftOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
@@ -1376,6 +1513,20 @@ model Order {
   deliveredAt         DateTime?
   cancelledAt         DateTime?
   expiredAt           DateTime?
+  /// When the order became the kitchen's to accept — shown on the board:
+  /// at creation when nothing has to be paid by card, else when the card
+  /// hold (or the charge put off until the accept, or a captured payment)
+  /// landed. The acceptance clock runs from here. Null for orders still
+  /// waiting for their payment, and for orders from before 2026-10-14.
+  kitchenVisibleAt    DateTime?
+  /// Staff and the brand owner were told the order is still not accepted (once).
+  acceptAlertSentAt   DateTime?
+  /// «Пора готовить предзаказ» went to the staff (once).
+  startReminderSentAt DateTime?
+  /// The customer got «Немного задерживаемся» because the order ran past pickupAt (once).
+  lateNotifiedAt      DateTime?
+  /// Staff and the brand owner were told the order is five minutes late (once).
+  lateAlertSentAt     DateTime?
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)

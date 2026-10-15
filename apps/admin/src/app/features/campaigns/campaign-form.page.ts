@@ -194,6 +194,13 @@ import { CAMPAIGN_ERROR_WORDING } from './campaign-errors';
             }
             @if (channel() === 'PUSH') {
               <span style="color: var(--color-text-secondary)">{{ 'admin.campaigns.reach.pushHint' | translate }}</span>
+              <span style="color: var(--color-text-secondary)">{{
+                'admin.campaigns.reach.inboxHint' | translate
+              }}</span>
+            } @else if (channel() === 'TELEGRAM') {
+              <span style="color: var(--color-text-secondary)">{{
+                'admin.campaigns.reach.senderHint' | translate
+              }}</span>
             }
             @for (warning of transportWarnings(); track warning) {
               <span style="color: var(--color-amber)">{{ warning | translate }}</span>
@@ -374,18 +381,23 @@ export class CampaignFormPage implements OnInit {
   sendTest(): void {
     if (this.form.invalid) return;
     const { title, body, channel } = this.form.getRawValue();
+    const brandId = this.brandId();
     this.testing.set(true);
     this.testMessage.set(null);
-    this.http.post<CampaignTestResult>(`${this.api.baseUrl}/admin/campaigns/test`, { title, body, channel }).subscribe({
-      next: (r) => {
-        this.testing.set(false);
-        this.testMessage.set(this.describeTest(r));
-      },
-      error: (err) => {
-        this.testing.set(false);
-        this.testMessage.set({ ok: false, text: apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING) });
-      },
-    });
+    // The brand titles the push «<Brand>: <title>», as customers will see it.
+    const params = brandId ? { brandId } : undefined;
+    this.http
+      .post<CampaignTestResult>(`${this.api.baseUrl}/admin/campaigns/test`, { title, body, channel }, { params })
+      .subscribe({
+        next: (r) => {
+          this.testing.set(false);
+          this.testMessage.set(this.describeTest(r));
+        },
+        error: (err) => {
+          this.testing.set(false);
+          this.testMessage.set({ ok: false, text: apiErrorMessage(err, this.translate, CAMPAIGN_ERROR_WORDING) });
+        },
+      });
   }
 
   /**

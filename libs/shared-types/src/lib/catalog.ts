@@ -39,6 +39,13 @@ export const CATEGORY_KIND_PREP_SECONDS: Readonly<Record<CategoryKind, number | 
 
 export type { PickupPointType };
 
+/**
+ * Why a store cannot take an ASAP order right now (pre-orders may still work):
+ * outside working hours with no extension, no shift open, or the queue would
+ * push the handover past the longest acceptable wait.
+ */
+export type AsapBlockedReason = 'OUTSIDE_HOURS' | 'SHIFT_CLOSED' | 'QUEUE_FULL';
+
 export interface StoreListItem {
   id: string;
   brandId: string;
@@ -62,18 +69,24 @@ export interface StoreListItem {
   busyMeter: number;
   currentEtaSeconds: number;
   /**
-   * The store takes orders at all: not closed, and staff have started a shift
-   * ("Start work"). When false the store is shown as inactive and checkout is
-   * refused with STORE_NOT_TAKING_ORDERS. Optional for older API builds.
+   * The store takes some order: an ASAP one now (`openNow`) or a pre-order
+   * for a bookable slot in the next 24 hours, even while the shift is closed.
+   * When false the store is shown as inactive and checkout is refused with
+   * STORE_NOT_TAKING_ORDERS. Optional for older API builds.
    */
   acceptingOrders?: boolean;
   /**
-   * An ASAP order placed now would be accepted. The shift is the source of
-   * truth: same as `acceptingOrders` — not closed and a shift is open —
-   * whatever the working hours say. Hours only decide which slots are
-   * offered for scheduled (later) pickup.
+   * An ASAP order placed now would be accepted: not closed, a shift is open,
+   * within working hours (or the kitchen extended past them) and the queue
+   * is not full. Working hours win over the shift (owner decision 2026-10-14).
    */
   openNow: boolean;
+  /** Why an ASAP order cannot be placed now; null when `openNow`. Optional for older API builds. */
+  asapBlockedReason?: AsapBlockedReason | null;
+  /** ISO UTC start of the next working-hours window while outside hours, else null. */
+  opensAt?: string | null;
+  /** ISO UTC end of the current working-hours window while within hours, else null (also for 24/7). */
+  closesAt?: string | null;
   /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */
   taxRateBps: number;
   /** True when the listed prices already include the tax. */
@@ -209,6 +222,21 @@ export interface StoreMenu {
   storeId: string;
   storeSlug: string;
   categories: CategoryWithProducts[];
+}
+
+/**
+ * Where a store's suggestions came from: `copurchase` — what customers
+ * bought together with the products in hand over the last 90 days, the only
+ * case the clients may title «Часто берут вместе»; `rule` — bakery and food
+ * next to a drink, picked from the menu (`suggestFood`).
+ */
+export type SuggestionSource = 'copurchase' | 'rule';
+
+/** `GET /stores/:idOrSlug/suggestions`: what to offer next to the products in hand. */
+export interface StoreSuggestions {
+  /** Products of the store's menu, in stock, best first; none of those in hand. */
+  productIds: string[];
+  source: SuggestionSource;
 }
 
 export interface ListStoresQuery {

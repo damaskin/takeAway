@@ -105,6 +105,8 @@ export class StaffPerformanceDto {
   @ApiProperty() userId!: string;
   @ApiProperty({ nullable: true, type: String }) name!: string | null;
   @ApiProperty({ nullable: true, type: String }) email!: string | null;
+  /** Sign-in name of someone without an email. */
+  @ApiProperty({ nullable: true, type: String }) login!: string | null;
   @ApiProperty() role!: string;
   /** Orders this person accepted. */
   @ApiProperty() accepted!: number;
@@ -144,6 +146,22 @@ export class ChurnPeriodDto {
  * sum of their average checks, roughly what one more visit from each would
  * have brought.
  */
+/** Of the regulars counted by `LapsedAtStoreDto`, those of one store. */
+export class LapsedStoreCountDto {
+  @ApiProperty() storeId!: string;
+  @ApiProperty() storeName!: string;
+  @ApiProperty() count!: number;
+}
+
+/**
+ * Regulars lost at one of the stores in the period who still order at
+ * another: not lost across the stores, so not in `count`.
+ */
+export class LapsedAtStoreDto {
+  @ApiProperty({ description: 'People, each once' }) count!: number;
+  @ApiProperty({ type: () => LapsedStoreCountDto, isArray: true }) stores!: LapsedStoreCountDto[];
+}
+
 export class ChurnDto extends AnalyticsPeriodDto {
   @ApiProperty({ enum: CHURN_WINDOWS }) window!: number;
   @ApiProperty() count!: number;
@@ -153,6 +171,9 @@ export class ChurnDto extends AnalyticsPeriodDto {
   /** The lost customers, highest average check first. Null on a plan without the list. */
   @ApiProperty({ type: () => RetentionCustomerDto, isArray: true, nullable: true })
   customers!: RetentionCustomerDto[] | null;
+  /** Lost at one store, still ordering at another; null when the figures are for one store. */
+  @ApiProperty({ type: () => LapsedAtStoreDto, nullable: true })
+  activeElsewhere!: LapsedAtStoreDto | null;
 }
 
 export class WinBackPeriodDto {

@@ -33,7 +33,7 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
       [backTo]="['/staff']"
       backLabel="admin.staff.title"
       title="admin.staff.memberTitle"
-      [subtitle]="member()?.name || member()?.email || null"
+      [subtitle]="member()?.name || member()?.email || member()?.login || null"
       [saveDisabled]="!canSave()"
       [saving]="saving()"
       [loading]="loading()"
@@ -47,6 +47,12 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
               <div>
                 <dt>{{ 'admin.staff.email' | translate }}</dt>
                 <dd>{{ m.email }}</dd>
+              </div>
+            }
+            @if (m.login) {
+              <div>
+                <dt>{{ 'admin.staff.login' | translate }}</dt>
+                <dd data-testid="member-login">{{ m.login }}</dd>
               </div>
             }
             @if (m.phone) {
@@ -177,6 +183,9 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
                   }
                   @case ('FAILED') {
                     <p class="note">{{ 'admin.staff.password.emailFailed' | translate }}</p>
+                  }
+                  @case ('NO_EMAIL') {
+                    <p class="note" data-testid="reset-no-email">{{ 'admin.staff.password.noEmail' | translate }}</p>
                   }
                   @default {
                     <p class="note">{{ 'admin.staff.password.emailOff' | translate }}</p>
@@ -445,7 +454,7 @@ export class StaffMemberPage {
   removeFromTeam(): void {
     const m = this.member();
     if (!m || !m.editable) return;
-    const name = m.name || m.email || m.phone || '';
+    const name = m.name || m.email || m.login || m.phone || '';
     if (!window.confirm(this.translate.instant('admin.staff.confirmRemoveFromTeam', { name }))) return;
     this.saving.set(true);
     this.error.set(null);
@@ -466,7 +475,7 @@ export class StaffMemberPage {
   resetPassword(): void {
     const m = this.member();
     if (!m || this.passwordBusy()) return;
-    const name = m.name || m.email || '';
+    const name = m.name || m.email || m.login || '';
     if (!window.confirm(this.translate.instant('admin.staff.password.confirm', { name }))) return;
     this.passwordBusy.set(true);
     this.passwordError.set(null);
@@ -520,7 +529,7 @@ export class StaffMemberPage {
   clearPin(): void {
     const m = this.member();
     if (!m?.kdsPinStoreId || this.pinBusy()) return;
-    const name = m.name || m.email || '';
+    const name = m.name || m.email || m.login || '';
     if (!window.confirm(this.translate.instant('admin.stores.kitchen.resetConfirm', { name }))) return;
     this.startPin();
     this.staffApi.clearKdsPin(m.kdsPinStoreId, m.userId).subscribe({

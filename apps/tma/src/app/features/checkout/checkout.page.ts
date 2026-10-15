@@ -2,15 +2,34 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untrack
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { CartChangedError, CategoryKind, PickupSlot, StoreListItem, StoreMenu } from '@takeaway/shared-types';
-import { computeTax, isCartChangedError, isStoreInactive, productKind, suggestFood } from '@takeaway/utils';
-import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
+import type {
+  AsapBlockedReason,
+  CartChangedError,
+  CategoryKind,
+  PickupSlot,
+  StoreListItem,
+  StoreMenu,
+} from '@takeaway/shared-types';
+import {
+  calendarDaysFrom,
+  computeTax,
+  groupSlotsByDay,
+  isCartChangedError,
+  isStoreInactive,
+  productKind,
+  suggestionRow,
+  type PickupSlotDay,
+  type SuggestionRow,
+} from '@takeaway/utils';
+import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
+import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
+import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
@@ -136,9 +155,11 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             }}</a>
           </div>
         } @else if (!storeOpen()) {
-          <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-            'tma.checkout.closedNow' | translate
-          }}</span>
+          <span
+            data-testid="asap-blocked"
+            style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+            >{{ asapBlockedLine() ?? ('tma.checkout.closedNow' | translate) }}</span
+          >
         }
         @if (pickupMode() === 'SCHEDULED') {
           @if (slotsLoading()) {
@@ -150,31 +171,39 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
               (storeOpen() ? 'tma.checkout.noSlots' : 'tma.checkout.noSlotsClosed') | translate
             }}</span>
           } @else {
-            <div class="flex flex-wrap" style="gap: 8px">
-              @for (slot of slots(); track slot.startsAt) {
-                <button
-                  type="button"
-                  [disabled]="!slot.available"
-                  (click)="selectSlot(slot)"
-                  [style.background]="scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-foam)'"
-                  [style.color]="
-                    slot.available
-                      ? scheduledAt() === slot.startsAt
-                        ? 'white'
-                        : 'var(--color-text-primary)'
-                      : 'var(--color-text-secondary)'
-                  "
-                  [style.border]="
-                    scheduledAt() === slot.startsAt ? '1px solid transparent' : '1px solid var(--color-border-light)'
-                  "
-                  [style.opacity]="slot.available ? '1' : '0.45'"
-                  [style.textDecoration]="slot.available ? 'none' : 'line-through'"
-                  style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-                >
-                  {{ slotLabel(slot) }}
-                </button>
-              }
-            </div>
+            <!-- 24 hours of windows: each day under its own heading. -->
+            @for (day of slotDays(); track day.days) {
+              <span
+                data-testid="slot-day"
+                style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-text-secondary)"
+                >{{ dayLabel(day) }}</span
+              >
+              <div class="flex flex-wrap" style="gap: 8px">
+                @for (slot of day.slots; track slot.startsAt) {
+                  <button
+                    type="button"
+                    [disabled]="!slot.available"
+                    (click)="selectSlot(slot)"
+                    [style.background]="scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-foam)'"
+                    [style.color]="
+                      slot.available
+                        ? scheduledAt() === slot.startsAt
+                          ? 'white'
+                          : 'var(--color-text-primary)'
+                        : 'var(--color-text-secondary)'
+                    "
+                    [style.border]="
+                      scheduledAt() === slot.startsAt ? '1px solid transparent' : '1px solid var(--color-border-light)'
+                    "
+                    [style.opacity]="slot.available ? '1' : '0.45'"
+                    [style.textDecoration]="slot.available ? 'none' : 'line-through'"
+                    style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+                  >
+                    {{ slotLabel(slot) }}
+                  </button>
+                }
+              </div>
+            }
           }
         }
       </div>
@@ -260,7 +289,11 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             {{ storeName() }}
           </span>
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
-            {{ 'tma.checkout.readyIn' | translate: { min: etaMinutes() } }}
+            @if (pickupMode() === 'SCHEDULED' && scheduledAt()) {
+              {{ 'common.readyBy' | translate: { time: pickupTimeLabel(scheduledAt()) } }}
+            } @else {
+              {{ 'tma.checkout.readyIn' | translate: { min: etaMinutes() } }}
+            }
           </span>
         </div>
 
@@ -371,11 +404,12 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
-      <!-- «К заказу»: something to eat with the drinks -->
-      @if (upsell().length > 0 && servingStore(); as store) {
+      <!-- «Часто берут вместе», or something to eat with the drinks -->
+      @if (upsell().items.length > 0 && servingStore(); as store) {
         <app-tma-food-suggestions
           data-testid="upsell"
-          [suggestions]="upsell()"
+          [title]="upsell().source === 'copurchase' ? 'common.upsell.together' : 'common.upsell.title'"
+          [suggestions]="upsell().items"
           [store]="store"
           [canAdd]="authStore.isAuthenticated()"
           (cartChanged)="onUpsellAdded($event)"
@@ -521,6 +555,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** ISO start of the chosen slot; empty until the customer picks one. */
   readonly scheduledAt = signal<string>('');
   readonly slots = signal<PickupSlot[]>([]);
+  /** The windows by calendar day on the store's clock, for the «Сегодня» / «Завтра» headings. */
+  readonly slotDays = computed(() => groupSlotsByDay(this.slots(), new Date(), this.storeTimezone()));
   readonly slotsLoading = signal(false);
   readonly storeName = signal<string>('');
   /** Prices are the store's, whatever currency the customer's profile has. */
@@ -528,12 +564,13 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** Pickup times are the store's clock, wherever the customer is. */
   readonly storeTimezone = signal<string | null>(null);
   /**
-   * Whether the store takes an ASAP order right now — its switch and its
-   * working hours, as the API computes them. After hours only a scheduled
-   * pickup is accepted, and offering ASAP ended in a bare 400 at payment.
+   * Whether the store takes an ASAP order right now — its switch, its
+   * working hours, its shift and its queue, as the API computes them. When it
+   * does not, only a pickup time later on is offered: overnight that is a
+   * pre-order for the morning, with the shift still closed.
    */
   readonly storeOpen = signal(true);
-  /** The store takes no orders at all right now: no shift started, or switched off. */
+  /** The store takes no orders at all right now, not even for later: switched off, or nothing bookable. */
   readonly storeInactive = signal(false);
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
@@ -596,19 +633,27 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return looks;
   });
 
-  /**
-   * «К заказу»: food and bakery from the menu while the cart has drinks and
-   * nothing to eat. Gone once the order is placed — the basket is fixed then.
-   */
-  readonly upsell = computed(() => {
+  /** The products in the basket while it can still change: what the suggestions go with. */
+  private readonly basketProductIds = computed(() => {
     const cart = this.cart();
     if (!cart || this.placedOrder() || this.storeInactive()) return [];
-    return suggestFood(
-      this.menu(),
-      cart.items.map((i) => i.productId),
-      6,
-    );
+    return cart.items.map((i) => i.productId);
   });
+
+  /** The store's answer for the basket (see `storeSuggestions`). */
+  private readonly suggestions = storeSuggestions(() => {
+    const menu = this.menu();
+    return menu ? { storeId: menu.storeId, productIds: this.basketProductIds() } : null;
+  });
+
+  /**
+   * Under the basket: what customers buy together with it, else food and
+   * bakery while it has drinks and nothing to eat. Gone once the order is
+   * placed — the basket is fixed then.
+   */
+  readonly upsell = computed<SuggestionRow>(() =>
+    suggestionRow(this.menu(), this.basketProductIds(), this.suggestions(), 6),
+  );
 
   readonly needsCard = computed(() => {
     const c = this.cart();
@@ -621,6 +666,25 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   );
 
   private detachBack: (() => void) | null = null;
+
+  constructor() {
+    // The store opening, closing or filling up while the customer is here
+    // turns «Сейчас» on or off without reopening checkout.
+    refreshStoresWhileVisible((event) => {
+      const storeId = this.activeStoreId;
+      if (!storeId || this.placedOrder() || (event && event.storeId !== storeId)) return;
+      this.catalog.getStore(storeId).subscribe({
+        next: (store) => {
+          if (store.id !== this.activeStoreId) return;
+          const wasScheduled = this.pickupMode() === 'SCHEDULED';
+          this.applyAvailability(store);
+          if (!wasScheduled && this.pickupMode() === 'SCHEDULED') this.loadSlots();
+          this.refreshMainButton();
+        },
+        error: () => undefined,
+      });
+    });
+  }
 
   ngOnInit(): void {
     // Check out the store the customer actually shopped in. Using the first
@@ -639,17 +703,16 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.taxIncludedInPrice.set(store.taxIncludedInPrice);
         this.currency.set(store.currency);
         this.storeTimezone.set(store.timezone ?? null);
-        // `!== false`: an API that predates the field keeps ASAP available.
-        this.storeOpen.set(store.openNow !== false);
-        this.storeInactive.set(isStoreInactive(store));
-        if (!this.storeOpen()) {
-          this.pickupMode.set('SCHEDULED');
-          this.loadSlots();
-        }
+        this.applyAvailability(store);
+        // The windows wait for the cart: the API fits them to its work.
         this.cartService.load(store.id).subscribe({
           next: (c) => {
             this.cart.set(c);
+            if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
             this.refreshMainButton();
+          },
+          error: () => {
+            if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
           },
         });
         this.refreshFeeQuote();
@@ -671,6 +734,38 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.detachBack?.();
     this.tg.hideMainButton();
+  }
+
+  /**
+   * Whether «Сейчас» can be ordered, as the store says now. When it cannot —
+   * closed for the night, no shift yet, a full queue — a time later is
+   * preselected; the caller loads the windows.
+   */
+  private applyAvailability(store: StoreListItem): void {
+    // `!== false`: an API that predates the field keeps ASAP available.
+    this.storeOpen.set(store.openNow !== false);
+    this.storeInactive.set(isStoreInactive(store));
+    this.servingStore.set(store);
+    if (!this.storeOpen() && this.pickupMode() === 'ASAP') this.pickupMode.set('SCHEDULED');
+  }
+
+  /** Why «Сейчас» is off: «Точка откроется завтра в 9:00 — …»; null for the general line. */
+  asapBlockedLine(): string | null {
+    const store = this.servingStore();
+    return store ? asapBlockedText(store, this.translate, this.fmt) : null;
+  }
+
+  /** «Сегодня», «Завтра» over a day of windows. */
+  dayLabel(day: PickupSlotDay<PickupSlot>): string {
+    return pickupDayLabel(day.days, day.slots[0]?.startsAt ?? '', this.translate, this.fmt, this.storeTimezone());
+  }
+
+  /** «09:15», or «09:15 завтра» for a time on the store's next calendar day. */
+  pickupTimeLabel(iso: string): string {
+    const time = this.fmt.time(iso, this.storeTimezone());
+    return calendarDaysFrom(iso, new Date(), this.storeTimezone()) === 1
+      ? this.translate.instant('common.pickupDay.timeTomorrow', { time })
+      : time;
   }
 
   selectCard(card: BoundCard): void {
@@ -800,20 +895,25 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   /**
    * Fetched only when the customer asks to schedule: these are the store's
-   * live occupancy, and a copy held behind an ASAP order goes stale.
+   * live occupancy, and a copy held behind an ASAP order goes stale. They
+   * cover the next 24 hours and are fitted to this cart's work.
+   *
+   * `preselect`: pick the earliest window when the chosen one is gone. Off
+   * after the chosen window filled up at payment, so the customer picks the
+   * new time themselves.
    */
-  private loadSlots(): void {
+  private loadSlots(preselect = true): void {
     const storeId = this.activeStoreId;
     if (!storeId) return;
     this.slotsLoading.set(true);
-    this.catalog.getPickupSlots(storeId).subscribe({
+    this.catalog.getPickupSlots(storeId, this.cart()?.id).subscribe({
       next: (slots) => {
         this.slots.set(slots);
         this.slotsLoading.set(false);
         const current = this.scheduledAt();
         const stillValid = slots.some((s) => s.startsAt === current && s.available);
         if (!stillValid) {
-          this.scheduledAt.set(slots.find((s) => s.available)?.startsAt ?? '');
+          this.scheduledAt.set(preselect ? (slots.find((s) => s.available)?.startsAt ?? '') : '');
         }
         this.refreshMainButton();
       },
@@ -845,6 +945,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (cart) => {
         this.cart.set(cart);
         this.changingItemId.set(null);
+        // More or less work for the kitchen: the windows that fit it change.
+        if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
         this.refreshMainButton();
       },
       error: (err) => {
@@ -857,6 +959,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** A «К заказу» item went in: show the new cart and the new total on the button. */
   onUpsellAdded(cart: CartView): void {
     this.cart.set(cart);
+    if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
     this.refreshMainButton();
   }
 
@@ -941,9 +1044,35 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
           this.onCartChanged(c.storeId, body);
           return;
         }
+        this.onTimeRefused(body);
         this.showError(err, 'tma.checkout.placeOrderFailed');
       },
     });
+  }
+
+  /**
+   * The API turned the order down for its time. «Сейчас» is gone — the store
+   * closed, or its queue filled up, a moment ago: switch to a time later and
+   * say why. Or the chosen window filled up meanwhile: show the windows
+   * again and let the customer pick.
+   */
+  private onTimeRefused(body: unknown): void {
+    const refusal = (body ?? {}) as { code?: unknown; reason?: unknown; opensAt?: unknown };
+    if (refusal.code === 'ASAP_UNAVAILABLE') {
+      const store = this.servingStore();
+      if (store) {
+        this.servingStore.set({
+          ...store,
+          openNow: false,
+          asapBlockedReason: typeof refusal.reason === 'string' ? (refusal.reason as AsapBlockedReason) : null,
+          opensAt: typeof refusal.opensAt === 'string' ? refusal.opensAt : (store.opensAt ?? null),
+        });
+      }
+      this.storeOpen.set(false);
+      this.setPickup('SCHEDULED');
+    } else if (refusal.code === 'PICKUP_SLOT_FULL') {
+      this.loadSlots(false);
+    }
   }
 
   /**

@@ -96,7 +96,7 @@ export class SignInMethodsService {
       const methods = await this.methodsOf(tx, userId);
       const key = provider === 'GOOGLE' ? 'google' : 'apple';
       if (!methods[key]) return methods;
-      const remaining = [methods.telegram, methods.google, methods.apple].filter(Boolean).length - 1;
+      const remaining = [methods.telegram, methods.google, methods.apple, methods.email].filter(Boolean).length - 1;
       if (remaining < 1) {
         throw new BadRequestException(`${LABEL[provider]} is your only way to sign in — add another one first`);
       }
@@ -296,7 +296,12 @@ export class SignInMethodsService {
   private async methodsOf(client: Tx | PrismaService, userId: string): Promise<SignInMethodsDto> {
     const user = await client.user.findUnique({
       where: { id: userId },
-      select: { telegramUserId: true, oauthAccounts: { select: { provider: true } } },
+      select: {
+        telegramUserId: true,
+        email: true,
+        emailVerifiedAt: true,
+        oauthAccounts: { select: { provider: true } },
+      },
     });
     if (!user) throw new NotFoundException('User not found');
     const providers = new Set(user.oauthAccounts.map((a) => a.provider));
@@ -304,6 +309,8 @@ export class SignInMethodsService {
       telegram: user.telegramUserId !== null,
       google: providers.has(OAuthProvider.GOOGLE),
       apple: providers.has(OAuthProvider.APPLE),
+      // A code mailed to a proven address signs in here (EmailLoginService).
+      email: user.email !== null && user.emailVerifiedAt !== null ? user.email : null,
     };
   }
 }

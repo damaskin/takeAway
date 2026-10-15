@@ -11,6 +11,7 @@ import '../../core/format/time.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
+import '../../shared/store_hours.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -196,7 +197,7 @@ class CartScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (!store.isOpen)
+                  if (!store.takesOrders)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Text(
@@ -208,7 +209,7 @@ class CartScreen extends ConsumerWidget {
                   PrimaryButton(
                     label: l10n.cartCheckout(context.money(cart.subtotalCents, store.currency)),
                     icon: Icons.arrow_forward_rounded,
-                    onPressed: store.isOpen ? () => context.push(Routes.checkout) : null,
+                    onPressed: store.takesOrders ? () => context.push(Routes.checkout) : null,
                   ),
                 ],
               ),
@@ -240,13 +241,17 @@ class _StoreSummary extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(store.name, style: context.text.titleSmall),
-                Text(address ?? l10n.readyInMinutes(minutesCeil(cart.etaSeconds)), style: context.text.bodySmall),
+                if (address != null || store.isOpen)
+                  Text(address ?? l10n.readyInMinutes(minutesCeil(cart.etaSeconds)), style: context.text.bodySmall),
+                // Closed for an order now: when it opens, and that a time
+                // later can be ordered — checkout offers one.
+                if (store.preorderOnly) ...[const SizedBox(height: 4), StoreHoursLine(store: store)],
               ],
             ),
           ),
           if (store.isOpen)
             EtaChip(etaSeconds: cart.etaSeconds, busyMeter: store.busyMeter)
-          else
+          else if (!store.preorderOnly)
             StoreStatusBadge(status: store.effectiveStatus, notWorking: store.isInactive),
         ],
       ),

@@ -54,6 +54,24 @@
       }
     }
   },
+  "timeJustNow": "Just now",
+  "timeMinutesAgo": "{count} min ago",
+  "@timeMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursAgo": "{count} h ago",
+  "@timeHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "timeYesterday": "Yesterday",
   "itemsCount": "{count, plural, =1{1 item} other{{count} items}}",
   "@itemsCount": {
     "placeholders": {
@@ -98,6 +116,61 @@
   "signInAgreementPrivacy": "Privacy Policy",
   "signInUnavailable": "No sign-in method is configured for this build.",
   "signInFailed": "Could not sign in. Please try again.",
+  "emailSignIn": "Continue with email",
+  "emailSignInOtherMethods": "Other ways to sign in",
+  "emailSignInEmailLabel": "Email",
+  "emailSignInEmailHint": "you@example.com",
+  "emailSignInGetCode": "Get a code",
+  "emailSignInSentTo": "We sent a code to {email}. It is valid for 10 minutes.",
+  "@emailSignInSentTo": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignInAlreadySent": "A code was already sent to {email} — check your inbox.",
+  "@emailSignInAlreadySent": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignInCodeLabel": "Code from the email",
+  "emailSignInResend": "Send the code again",
+  "emailSignInResendIn": "Send again in {seconds} s",
+  "@emailSignInResendIn": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "emailSignInChangeEmail": "Change email",
+  "emailSignInInvalidEmail": "Check the address — it needs an @ and a domain, like ivan@mail.ru.",
+  "emailCodeInvalid": "Wrong code. Attempts left: {left}.",
+  "@emailCodeInvalid": {
+    "placeholders": {
+      "left": {
+        "type": "int"
+      }
+    }
+  },
+  "emailCodeExpired": "The code has expired or was already used. Ask for a new one.",
+  "emailCodeTooManyAttempts": "Too many wrong attempts — this code no longer works. Ask for a new one.",
+  "emailCodeLimit": "Too many codes were sent to this address. Try again in {minutes} min.",
+  "@emailCodeLimit": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "emailCodeNotSent": "We could not send the email. Try again in a few minutes.",
+  "emailSignInUnavailable": "Sign-in with email is unavailable right now. Choose another way.",
+  "emailSignInStaffAccount": "This address belongs to a staff account. Sign in with your password in the business cabinet.",
+  "emailSignInTooManyRequests": "Too many attempts in a row. Wait a minute and try again.",
   "signInMethodsTitle": "Sign-in methods",
   "signInMethodsSubtitle": "Connect Telegram, Google and Apple to one profile, and your orders and points stay with you whichever way you sign in.",
   "signInMethodLinked": "Connected",
@@ -122,6 +195,15 @@
   },
   "signInMethodSwitched": "That account already had orders, so you are now in that profile.",
   "signInMethodIosOnly": "On iPhone",
+  "signInMethodEmail": "Email",
+  "signInMethodEmailHint": "Sign-in codes go to {email}",
+  "@signInMethodEmailHint": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
   "telegramSignInFailed": "Telegram didn't confirm the sign-in. Please try again.",
   "storesTitle": "Stores",
   "storesSearchHint": "Search by name or address",
@@ -134,6 +216,45 @@
   "storeStatusBusy": "Busy",
   "storeStatusClosed": "Closed",
   "storeStatusNotWorking": "Not working",
+  "storeOpensAt": "Closed now · opens at {time} · order ahead",
+  "@storeOpensAt": {
+    "description": "Store card / menu header: closed for orders now, taking pre-orders.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeOpensTomorrowAt": "Closed now · opens tomorrow at {time} · order ahead",
+  "@storeOpensTomorrowAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeOpensOnAt": "Closed now · opens {date} at {time} · order ahead",
+  "@storeOpensOnAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeClosedPreorder": "Closed now · order ahead",
+  "storeQueueFullPreorder": "Long queue — order ahead only",
+  "storeOpenUntil": "until {time}",
+  "@storeOpenUntil": {
+    "description": "Beside the wait of an open store: when it closes.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "orderHere": "Order here",
   "distanceAway": "{distance} away",
   "@distanceAway": {
@@ -159,7 +280,7 @@
   "openingHours": "Opening hours",
   "closedAllDay": "Closed",
   "buildRoute": "Build route",
-  "callStore": "Call",
+  "callStore": "Call the store",
   "menuSearchHint": "Search the menu",
   "menuEmpty": "The menu is empty for now.",
   "menuNoResults": "Nothing found for “{query}”",
@@ -266,8 +387,54 @@
   "pickupAsap": "As soon as possible",
   "pickupLater": "Later",
   "pickupLaterHint": "Choose a time",
-  "noSlots": "No free windows in the next few hours. Try ASAP.",
+  "noSlots": "No free windows in the next 24 hours. Try ASAP.",
+  "noSlotsClosed": "No free windows in the next 24 hours.",
   "slotsHint": "Only windows this store can still keep up with.",
+  "asapBlockedOpensAt": "The store opens at {time} — pick a time for your order.",
+  "@asapBlockedOpensAt": {
+    "description": "Why ASAP is off at checkout.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedOpensTomorrowAt": "The store opens tomorrow at {time} — pick a time for your order.",
+  "@asapBlockedOpensTomorrowAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedOpensOnAt": "The store opens {date} at {time} — pick a time for your order.",
+  "@asapBlockedOpensOnAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedShiftClosed": "The store has not started work yet — pick a time for your order.",
+  "asapBlockedQueueFull": "There is a long queue right now — pick a time for your order.",
+  "asapBlockedClosed": "The store is closed right now — pick a time for your order.",
+  "slotDayToday": "Today",
+  "@slotDayToday": {
+    "description": "Heading over today's pickup windows."
+  },
+  "slotDayTomorrow": "Tomorrow",
+  "timeTomorrow": "{time} tomorrow",
+  "@timeTomorrow": {
+    "description": "A pickup time on the next calendar day.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "fulfillmentPickup": "Pickup",
   "fulfillmentDelivery": "Delivery",
   "deliveryAddress": "Address",
@@ -416,7 +583,19 @@
   "statusOutForDelivery": "On the way",
   "statusDelivered": "Delivered",
   "statusCancelled": "Cancelled",
-  "statusExpired": "Cancelled — payment did not arrive in time",
+  "statusExpired": "Did not go through",
+  "orderAwaitingAcceptance": "Waiting for the store to confirm",
+  "@orderAwaitingAcceptance": {
+    "description": "Order screen: on the kitchen board, not accepted yet."
+  },
+  "orderPreorderAwaitingOpening": "The store will confirm your pre-order when it opens",
+  "orderRunningLate": "Running a little late",
+  "@orderRunningLate": {
+    "description": "Accepted or being made, and past its pickup time."
+  },
+  "orderExpiredNotAccepted": "The store did not confirm the order — you were not charged",
+  "orderExpiredNotAcceptedRefunded": "The store did not confirm the order — the money is on its way back",
+  "orderExpiredPaymentNotCompleted": "The payment did not go through — the order is cancelled",
   "statusUnknown": "Updating…",
   "stepReceived": "Received",
   "stepPreparing": "Preparing",
@@ -430,6 +609,10 @@
   "paymentStatePending": "Checking your payment",
   "paymentStateFailed": "Payment did not go through",
   "paymentStateRefunded": "Money returned",
+  "paymentStateNotCharged": "You were not charged",
+  "@paymentStateNotCharged": {
+    "description": "A cancelled or expired order whose card was never charged."
+  },
   "paymentStateAtCounter": "Paying at the counter",
   "paymentStateAwaiting": "Awaiting payment",
   "pickupCode": "Pickup code",
@@ -511,7 +694,8 @@
   "profileGiftCards": "Gift cards",
   "profileLoyalty": "Loyalty",
   "profileReferrals": "Invite a friend",
-  "profileNotifications": "Notifications",
+  "profileInbox": "Notifications",
+  "profileNotifications": "Notification settings",
   "profileLanguage": "Language",
   "profileAbout": "About the app",
   "profileFeedback": "Feedback",
@@ -578,10 +762,34 @@
   "personalPhone": "Phone",
   "personalBirthday": "Date of birth",
   "personalSaved": "Saved",
+  "emailIsSignInMethod": "You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.",
   "nameRequired": "Enter your name",
   "emailInvalid": "Enter a valid email",
   "phoneInvalid": "Use the international format, e.g. +37377712345",
-  "notificationsTitle": "Notifications",
+  "inboxTitle": "Notifications",
+  "inboxReadAll": "Mark all read",
+  "inboxEmptyTitle": "Nothing here yet",
+  "inboxEmptyBody": "News from cafés and takeAway will appear here.",
+  "inboxUnread": "Unread",
+  "inboxOpen": "Open",
+  "inboxOpenMenu": "Open {name} menu",
+  "@inboxOpenMenu": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxShowPlaces": "Show {name} places",
+  "@inboxShowPlaces": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxGone": "This notification is no longer available.",
+  "notificationsTitle": "Notification settings",
   "notificationsSubtitle": "Choose what we may tell you about. You can change it any time.",
   "notifOrderUpdates": "Order updates",
   "notifOrderUpdatesHint": "When your order is accepted, ready or on its way.",
@@ -772,8 +980,8 @@
   },
   "productAddonsNone": "none",
   "productRequired": "required",
-  "productPairsWith": "Often ordered together",
-  "cartUpsellTitle": "Add to your order",
+  "productPairsWith": "Goes well with it",
+  "cartUpsellTitle": "Something to go with it?",
   "allergenGluten": "gluten",
   "allergenMilk": "milk",
   "allergenLactose": "lactose",
@@ -791,6 +999,7 @@
   "errStoreNotTakingOrders": "This store is not taking orders right now",
   "errStoreClosedAtTime": "The store is closed at that time — pick another time",
   "errPickupSlotFull": "That time has just been taken — pick another one",
+  "errAsapUnavailable": "The store can no longer take an order for now — pick a time for it",
   "errPickupTimeOutOfRange": "A scheduled pickup must be {minMinutes} min to {maxHours} h from now",
   "@errPickupTimeOutOfRange": {
     "placeholders": {

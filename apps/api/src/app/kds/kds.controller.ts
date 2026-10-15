@@ -18,6 +18,7 @@ import { KdsSessionAllowed } from '../auth/decorators/kds-session.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { ExtendShiftDto } from './dto/extend-shift.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
 import { SetStoreBusyDto } from './dto/set-busy.dto';
 import { KdsService } from './kds.service';
@@ -43,7 +44,11 @@ export class KdsController {
     return this.kds.listOpen(storeId);
   }
 
-  /** The store's shift: open means it takes orders. */
+  /**
+   * The store's shift and what it means for ASAP orders right now: the
+   * working hours around it (`closesAt`, `opensAt`), an extension past them,
+   * whether an ASAP order would be taken and why not.
+   */
   @Get('shift')
   @ApiQuery({ name: 'storeId', required: true })
   async shift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
@@ -51,7 +56,15 @@ export class KdsController {
     return this.shifts.current(storeId);
   }
 
-  /** "Start work": the store appears as active and takes orders. */
+  /** What "Finish work" would leave behind — for the dialog that asks before it. */
+  @Get('shift/close-summary')
+  @ApiQuery({ name: 'storeId', required: true })
+  async closeSummary(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.closeSummary(storeId);
+  }
+
+  /** "Start work": the store takes ASAP orders within its working hours. */
   @Post('shift/open')
   @ApiQuery({ name: 'storeId', required: true })
   async openShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
@@ -59,12 +72,32 @@ export class KdsController {
     return this.shifts.open(storeId, user.id);
   }
 
-  /** "Finish work": new orders stop; the ones already on the board stay. */
+  /**
+   * "Finish work": ASAP orders stop; the ones already on the board stay, and
+   * pre-orders keep coming. 409 `SHIFT_HAS_UNACCEPTED_ORDERS {count}` while
+   * orders due within 30 minutes wait for «Принять».
+   */
   @Post('shift/close')
   @ApiQuery({ name: 'storeId', required: true })
   async closeShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
     await this.assertInScope(user, storeId);
     return this.shifts.close(storeId, user.id);
+  }
+
+  /**
+   * «Продлить на 30 мин / 1 ч»: ASAP orders keep coming past the working
+   * hours. 409 `SHIFT_NOT_OPEN`, `SHIFT_EXTENSION_NOT_NEEDED` (open around
+   * the clock), `SHIFT_EXTENSION_LIMIT` (four hours past the closing).
+   */
+  @Put('shift/extend')
+  @ApiQuery({ name: 'storeId', required: true })
+  async extendShift(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('storeId') storeId: string,
+    @Body() dto: ExtendShiftDto,
+  ) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.extend(storeId, dto.minutes);
   }
 
   /**

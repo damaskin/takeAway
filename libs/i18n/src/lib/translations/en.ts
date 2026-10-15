@@ -10,7 +10,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     storeInactive: {
       badge: 'Not working',
       title: 'This store is not taking orders right now',
-      hint: 'The shift has not started yet or is already over. Pick another store or check back later.',
+      hint: 'The store takes neither orders for now nor pre-orders for the next 24 hours. Pick another store or check back later.',
     },
     storeClosed: {
       title: 'This store is closed',
@@ -23,6 +23,33 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     storeLater: {
       badge: 'Order ahead',
+    },
+    /**
+     * The line beside a store's name on its card and the menu header while it
+     * takes pre-orders only, or while it is open (until when).
+     */
+    storeHours: {
+      opensAt: 'Closed now · opens at {{time}} · order ahead',
+      opensTomorrowAt: 'Closed now · opens tomorrow at {{time}} · order ahead',
+      opensOnAt: 'Closed now · opens {{date}} at {{time}} · order ahead',
+      closedPreorder: 'Closed now · order ahead',
+      queueFull: 'Long queue — order ahead only',
+      until: 'until {{time}}',
+    },
+    /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
+    asapBlocked: {
+      opensAt: 'The store opens at {{time}} — pick a time for your order.',
+      opensTomorrowAt: 'The store opens tomorrow at {{time}} — pick a time for your order.',
+      opensOnAt: 'The store opens {{date}} at {{time}} — pick a time for your order.',
+      shiftClosed: 'The store has not started work yet — pick a time for your order.',
+      queueFull: 'There is a long queue right now — pick a time for your order.',
+    },
+    /** Day headings over the pickup windows at checkout. */
+    pickupDay: {
+      today: 'Today',
+      tomorrow: 'Tomorrow',
+      /** A pickup time on the next calendar day, for «Готово к {{time}}». */
+      timeTomorrow: '{{time}} tomorrow',
     },
     orderDone: {
       readyTitle: 'Your order is ready.',
@@ -77,6 +104,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       STORE_NOT_TAKING_ORDERS: 'This store is not taking orders right now',
       STORE_CLOSED_AT_TIME: 'The store is closed at that time — pick another time',
       PICKUP_SLOT_FULL: 'That time has just been taken — pick another one',
+      ASAP_UNAVAILABLE: 'The store can no longer take an order for now — pick a time for it',
       PICKUP_TIME_OUT_OF_RANGE: 'A scheduled pickup must be {{minMinutes}} min to {{maxHours}} h from now',
       ITEMS_UNAVAILABLE: 'Not available right now: {{items}}',
       BELOW_MIN_ORDER: 'The minimum order is {{amount}}',
@@ -153,11 +181,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noteOther: 'Order note',
       noteDrinkPlaceholder: 'For example, extra hot or no sugar',
       noteOtherPlaceholder: 'For example, no onion or cut in half',
-      pairings: 'Goes well with',
+      /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
+      pairings: 'Goes well with it',
     },
-    /** «К заказу»: something to eat offered next to the drinks in the cart. */
+    /** Products offered next to those in hand, in the cart and under a product (`suggestionRow`). */
     upsell: {
-      title: 'Add to your order',
+      /** The menu rule: something to eat next to the drinks in the cart (`suggestFood`). */
+      title: 'Something to go with it?',
+      /** Only for what the store's orders show customers buying together (`source: copurchase`). */
+      together: 'Often bought together',
       add: 'Add {{name}}',
     },
   },
@@ -288,8 +320,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupScheduled: 'Later',
       pickupAtLabel: 'Pick up at',
       scheduledHint: 'Only windows this store can still keep up with.',
-      noSlots: 'No windows free in the next few hours. Try "Now".',
-      noSlotsClosed: 'No windows free in the next few hours.',
+      noSlots: 'No windows free in the next 24 hours. Try "Now".',
+      noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       slotFull: 'This window is fully booked',
       prepHint: "We'll start preparing at {{time}} so it's fresh when you arrive.",
@@ -372,10 +404,25 @@ export const TRANSLATIONS_EN: TranslationTree = {
         refunded: 'Money returned',
         atCounter: 'Paying at the counter',
         awaiting: 'Awaiting payment',
+        /** A cancelled or expired order that never had its card charged. */
+        notCharged: 'You were not charged',
         heldHint: 'If the store does not accept the order, your card is not charged.',
         retry: 'Pay by card',
         retryHint: 'You can try paying again.',
       },
+      /** Under the status while the customer waits — see orderWaitNote in @takeaway/utils. */
+      wait: {
+        awaitingAcceptance: 'Waiting for the store to confirm',
+        preorderAwaitingOpening: 'The store will confirm your pre-order when it opens',
+        late: 'Running a little late',
+      },
+      /** Why an EXPIRED order ended — see expiredOutcome in @takeaway/utils. */
+      expired: {
+        notAccepted: 'The store did not confirm the order — you were not charged',
+        notAcceptedRefunded: 'The store did not confirm the order — the money is on its way back',
+        paymentNotCompleted: 'The payment did not go through — the order is cancelled',
+      },
+      callStore: 'Call the store',
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
       cancelOrder: 'Cancel order',
@@ -403,6 +450,33 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noProviders: 'No sign-in method is configured for this deployment.',
       or: 'or',
       signingIn: 'Signing in…',
+      // Sign-in with a one-time code mailed to the customer (shown only when the server has SMTP).
+      email: {
+        open: 'Sign in with email',
+        emailLabel: 'Email',
+        emailPlaceholder: 'you@example.com',
+        getCode: 'Get a code',
+        sending: 'Sending…',
+        sentTo: 'We sent a code to {{email}}. It is valid for 10 minutes.',
+        alreadySent: 'A code was already sent to {{email}} — check your inbox.',
+        codeLabel: 'Code from the email',
+        signIn: 'Sign in',
+        checking: 'Checking…',
+        resend: 'Send the code again',
+        resendIn: 'Send again in {{seconds}} s',
+        changeEmail: 'Change email',
+        errors: {
+          invalidEmail: 'Check the address — it needs an @ and a domain, like ivan@mail.ru.',
+          invalid: 'Wrong code. Attempts left: {{left}}.',
+          expired: 'The code has expired or was already used. Ask for a new one.',
+          tooManyAttempts: 'Too many wrong attempts — this code no longer works. Ask for a new one.',
+          limit: 'Too many codes were sent to this address. Try again in {{minutes}} min.',
+          notSent: 'We could not send the email. Try again in a few minutes.',
+          unavailable: 'Sign-in with email is unavailable right now. Choose another way.',
+          staffAccount: 'This address belongs to a staff account. Sign in with your password in the business cabinet.',
+          tooManyRequests: 'Too many attempts in a row. Wait a minute and try again.',
+        },
+      },
       // "By continuing you agree to our <Terms of Service> and <Privacy Policy>."
       // Split so each document can be a link.
       agreementLead: 'By continuing you agree to our',
@@ -513,15 +587,28 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     profile: {
       notifications: {
-        title: 'Notifications',
+        title: 'Notification settings',
         subtitle: 'Choose which pushes you want to receive. You can change this anytime.',
         orderUpdates: 'Order updates',
         orderUpdatesHint: 'Status changes on your active orders (created, paid, ready, delivered).',
         promotions: 'Promotions',
-        promotionsHint: 'Discounts, new items, loyalty tier unlocks.',
+        promotionsHint: 'Campaigns of the places you order from and takeAway news: discounts, new items, new partners.',
         browserPush: 'Browser push',
         browserPushHint: 'Order ready alerts on this device, even if the tab is closed.',
         browserPushBlocked: 'Browser blocked notifications. Allow them in your site settings and try again.',
+      },
+      inbox: {
+        title: 'Notifications',
+        subtitle: 'Campaigns of the places you order from, and news from takeAway.',
+        settings: 'Notification settings',
+        readAll: 'Mark all as read',
+        empty: 'News from places and from takeAway will show up here.',
+        error: 'Could not load notifications.',
+        loadMore: 'Show more',
+        unread: 'Unread',
+        unreadBadge: 'Unread notifications: {{count}}',
+        openMenu: 'Open the menu — {{name}}',
+        openStores: 'Choose a place — {{name}}',
       },
       signInMethods: {
         title: 'Sign-in methods',
@@ -532,6 +619,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         unlink: 'Disconnect',
         unlinkConfirm: 'Disconnect {{provider}}? You will no longer be able to sign in with it.',
         switched: 'That account already had orders, so you are now in that profile.',
+        email: 'Email',
+        emailHint: 'Sign-in codes go to {{email}}',
       },
       personalInfo: {
         title: 'Personal info',
@@ -542,6 +631,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         dob: 'Date of birth',
         saving: 'Saving…',
         saved: 'Saved.',
+        emailIsSignIn:
+          'You sign in with codes sent to this email. To change it, first connect Telegram, Google or Apple in Sign-in methods.',
       },
       signOut: 'Sign out',
       initials: 'G',
@@ -562,7 +653,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         loyalty: 'Loyalty',
         referrals: 'Invite a friend',
         signInMethods: 'Sign-in methods',
-        notifications: 'Notifications',
+        inbox: 'Notifications',
+        notifications: 'Notification settings',
         language: 'Language',
         feedback: 'Feedback',
       },
@@ -655,12 +747,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       kitchenPin: 'Kitchen sign-in with a PIN',
       title: 'Sign in to admin',
       subtitle: 'Staff access only',
-      passwordPrompt: 'Sign in with your work email and password',
+      passwordPrompt: 'Sign in with your work email or login and password',
       emailLabel: 'Email',
       emailPlaceholder: 'you@example.com',
+      identifierLabel: 'Email or login',
+      identifierPlaceholder: 'you@example.com or login',
       passwordLabel: 'Password',
       signIn: 'Sign in',
       signingIn: 'Signing in…',
+      invalid: 'Wrong email, login or password.',
       forgot: 'Forgot password?',
       signupCta: 'Register a business →',
     },
@@ -710,12 +805,26 @@ export const TRANSLATIONS_EN: TranslationTree = {
       subtitle: 'You were invited with a temporary password. Please pick a new one before continuing.',
       current: 'Current password',
       next: 'New password',
+      rule: 'At least {{min}} characters (up to {{max}}), and not the current one.',
+      confirm: 'Repeat the new password',
       save: 'Save',
       saving: 'Saving…',
+      errors: {
+        tooShort: 'Too short: at least {{min}} characters.',
+        tooLong: 'Too long: at most {{max}} characters.',
+        unchanged: 'The new password is the same as the current one — pick another.',
+        mismatch: 'The passwords do not match.',
+        currentIncorrect: 'The current password is wrong. Enter the one you signed in with.',
+        cannotChange: 'This account cannot change its password here. Ask the business owner or support.',
+        tooMany: 'Too many attempts. Wait a minute and try again.',
+        invalidField: 'Check the «{{field}}» field.',
+      },
     },
     forgot: {
       title: 'Forgot password',
       subtitle: "Enter your email — we'll send you a reset link.",
+      loginHint:
+        'Sign in with a login and no email? There is nowhere to send a link — ask your business owner to reset your password under «Staff».',
       sendLink: 'Send reset link',
       sending: 'Sending…',
       sent: 'If the address exists, an email with a reset link is on its way. The link works for 1 hour — check your spam folder too.',
@@ -745,6 +854,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       adminTag: 'Admin',
       install: 'Install app',
       installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
+      pinSessionNote:
+        'Signed in with a PIN — kitchen and stop-list only. The other sections open after signing in with a password.',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
@@ -780,16 +891,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
         resubmitting: 'Sending…',
         confirmResubmit: "Send your brand for review again? Make sure you've addressed the reviewer's comments.",
         support: 'Support:',
+        phoneMissing: 'Your brand has no contact phone — the takeAway team has no number to call you on about it.',
+        phoneCta: 'Add a phone',
       },
       checklist: {
         title: 'Launch your brand',
-        subtitle: 'Five steps to your first orders. Finished steps tick themselves off.',
+        subtitle: 'Four steps to your first orders. Finished steps tick themselves off.',
         progress: '{{done}} of {{total}} done',
         open: 'Open',
         loadFailed: 'Could not load the launch checklist.',
         brand: {
-          title: 'Brand details and logo',
-          todo: 'Upload your logo — customers see it next to your menu.',
+          title: 'Brand logo',
+          todo: 'Upload your logo — customers see it next to your menu and at stores without a photo of their own.',
           done: 'Logo uploaded.',
         },
         store: {
@@ -798,9 +911,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
           done: 'A store with address and opening hours is set up.',
         },
         menu: {
-          title: 'Menu: a category and a product with a photo',
-          todo: 'Create a category and add at least one product with a photo.',
-          done: 'Your menu has products with photos.',
+          title: 'Menu: a category and a product',
+          todo: 'Create a category and add at least one product customers can see. Photos can come later.',
+          done: 'Your menu has products.',
+        },
+        photos: {
+          title: 'Product photos',
+          todo: 'Without a photo the app shows a product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+          done: 'Your products have photos.',
+        },
+        recommended: {
+          title: 'Recommended',
+          hint: 'Not required to launch, but you sell better with them.',
         },
         payments: {
           title: 'Payments',
@@ -845,6 +967,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       promotions: 'Promotions',
       campaigns: 'Campaigns',
       campaignModeration: 'Campaign review',
+      announcements: 'Announcements',
       analytics: 'Analytics',
       customers: 'Customers',
       brands: 'Brands',
@@ -859,13 +982,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
     staff: {
       title: 'Staff roster',
       subtitle:
-        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with their email and password (the temporary one you set, or their own from the invite email link), and on the kitchen tablet with a PIN.",
+        "The brand's whole team. Open a person to choose their role, the stores they work at and their kitchen PIN. Staff sign in to the admin with their email or login and password (the temporary one you set, or their own from the invite email link), and on the kitchen tablet with a PIN.",
       noStores: 'Create a store first to invite staff.',
       empty: 'Nobody on the team yet.',
       count: 'Showing {{count}}',
       addTitle: 'Invite new staff',
       memberTitle: 'Staff member',
       email: 'Email',
+      login: 'Login',
+      identifier: 'Email or login',
+      identifierHint:
+        'No email? Make up a login: {{min}} to {{max}} latin letters, digits and . _ - characters. No email is sent — you pass the sign-in details on yourself.',
       phone: 'Phone',
       name: 'Name',
       roleLabel: 'Role',
@@ -883,6 +1010,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       tempPasswordRule: 'At least {{min}} characters (up to {{max}}): any letters, digits and symbols.',
       tempPasswordHint:
         'The person changes the temporary password on first sign-in. They also get an email with a link to set their own right away — the temporary password is never put in the email.',
+      tempPasswordHintLogin:
+        'Without an email nothing is sent: pass the login and temporary password on in person. They will be asked to change the password on first sign-in, and if they forget it, only the owner can reset it.',
       generate: 'Generate',
       addCta: 'Invite',
       invited: {
@@ -893,6 +1022,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
           '{{email}} already has an account — we told them they were added to the team. They sign in with their own password.',
         notConfigured: 'No email was sent: this server has no mail set up. Pass the sign-in details on yourself.',
         failed: 'No email was sent: the mail server refused it. Pass the sign-in details on yourself.',
+        noEmail:
+          'This person has no email, so nothing was sent. Pass the login and temporary password on in person — the password is shown only here, and they will be asked to change it on first sign-in.',
         cabinet: 'Cabinet',
         login: 'Login',
         ownPassword: 'their current password',
@@ -915,7 +1046,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       filters: {
         search: 'Search',
-        searchPlaceholder: 'Name, email or phone',
+        searchPlaceholder: 'Name, email, login or phone',
         store: 'Store',
         allStores: 'All stores',
         allRoles: 'All roles',
@@ -931,7 +1062,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         '{{name}} will no longer work at any of your stores and leaves the list. Their kitchen PIN at those stores is reset. Continue?',
       kitchenPin: 'Kitchen PIN',
       pinOpens: 'The PIN opens the kitchen tablet of "{{store}}".',
-      pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email and password.',
+      pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email or login and password.',
       pinHint:
         'A PIN works at one store: a new PIN for another store replaces the old one. Taking a store off the list resets its PIN.',
       pinStore: 'Store for the PIN',
@@ -945,6 +1076,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         emailSent: 'We emailed {{email}} a link to set their own password. The temporary password works too.',
         emailOff: 'No email was sent: mail is not set up on the server. Pass the temporary password on yourself.',
         emailFailed: 'No email was sent: the mail server refused it. Pass the temporary password on yourself.',
+        noEmail: 'This person has no email — pass the temporary password on in person.',
         notEditable: 'This person also works for another brand — only takeAway support can reset their password.',
       },
       errors: {
@@ -953,6 +1085,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         notEditable: "You can't change this person's role or stores.",
         alreadyOnTeam: 'This person is already on the team — open them in the list and tick the stores there.',
         emailTaken: 'This email is already in use. Ask the employee to use a different email.',
+        loginTaken: 'This login is already taken. Pick another one.',
         notFound: 'Staff member not found — they may have been taken off the team already.',
         forbidden: "You don't have permission for this.",
         invalidField: 'Check the field "{{field}}".',
@@ -1025,7 +1158,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Up to {{max}} photos: JPEG, PNG, WebP or AVIF, {{maxMb}} MB each at most. Square works best ({{aspect}}, from {{width}}×{{height}} pixels), or 3:4 with the product in the middle. The first photo is the main one, shown in the menu.',
       productStyle:
         'How to shoot: the product cut out on white, a 3/4 angle, soft light, no third-party logos. Hot drinks in a paper cup, cold ones in a clear cup.',
-      placeholder: 'Until there is a photo, customers see this picture',
+      placeholder:
+        'Until there is a photo, the iOS and Android app shows the product as a text row with no picture (App Store rules), and the website and Telegram show this illustration',
+      photoSellsBetter: 'Products with a photo sell better — add at least one.',
       errors: {
         type: 'This file will not do: it has to be a JPG, PNG or WebP picture.',
         size: 'The file is {{size}} MB and the limit is {{maxMb}} MB. Make the picture smaller and upload it again.',
@@ -1051,6 +1186,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       localeHint: "We write to you about your brand's review in this language.",
       contactPhone: 'Contact phone',
       contactPhoneHint: 'The takeAway team calls this number about your brand.',
+      contactPhoneMissing:
+        'Add a contact phone — the settings will not save without it. The takeAway team calls this number about your brand: the launch, payouts, customer complaints.',
       errors: {
         CURRENCY_LOCKED: 'The currency cannot change: this brand already has orders.',
       },
@@ -1091,7 +1228,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       status: { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' },
       empty: 'No brands in this bucket.',
       notLaunchedHint:
-        'Businesses that signed up and have not finished «Launch your brand» yet — call them and help them over the line.',
+        'Businesses that signed up, have not finished «Launch your brand» (a store, a menu, the review) and have not sold anything yet — call them and help them over the line. A logo and product photos are optional, and a brand with an order counts as launched.',
       waitingBadge: 'Waiting for review: {{brands}} · plan requests: {{plans}}',
       phone: 'Phone',
       launch: {
@@ -1103,7 +1240,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
           menu: 'menu',
           payments: 'payments',
           approved: 'review',
+          photos: 'product photos',
         },
+        recommended: 'recommended:',
+        hasOrders: 'has orders',
       },
       planRequest: {
         text: 'The owner asks to move to {{plan}} · {{date}}',
@@ -1208,14 +1348,48 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       shift: {
         closedTitle: 'Shift not started',
-        closedHint: 'While the shift is closed, customers see this store as inactive and it takes no orders.',
+        closedHint:
+          'While the shift is closed, no orders "for now" are taken. Pre-orders for later keep coming and wait on the board.',
         start: 'Start work',
         finish: 'Finish work',
-        finishConfirm: 'Finish work? The store stops taking orders right away. Orders already on the board stay.',
         openSince: 'Shift running since {{time}}, the store takes orders',
         openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
         storeClosed:
           'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
+        extendedUntil: 'extended until {{time}}',
+        autoClosed: 'The shift was closed automatically at {{time}}, after the working hours.',
+        closingSoon: 'The working hours end at {{time}} — orders "for now" stop then.',
+        closingSoonExtended: 'The extension ends at {{time}} — orders "for now" stop then.',
+        outsideHours: 'The store is closed by its working hours — no orders "for now".',
+        opensAt: 'Opens at {{time}}.',
+        extend30: 'Extend by 30 min',
+        extend60: 'Extend by 1 h',
+        extendLimit: 'It cannot be extended further: at most 4 hours past the closing time.',
+      },
+      shiftClose: {
+        title: 'Finish work?',
+        body: 'Orders "for now" stop. Pre-orders for later keep coming.',
+        bodyStore: '«{{store}}» stops taking orders "for now". Pre-orders for later keep coming.',
+        awaiting:
+          'Orders for the next 30 minutes not accepted: {{count}}. Accept or reject them on the kitchen board first — the customers are waiting.',
+        inProgress: 'Being made: {{count}}. They stay on the board — finish them.',
+        ready: 'Ready and waiting for the customer: {{count}}. They stay on the board until handed over.',
+        later: 'Pre-orders for later: {{count}}. They come to the board in the next shift.',
+        empty: 'No unfinished orders on the board.',
+      },
+      preorders: {
+        title: 'Pre-orders',
+        hint: 'move to «New» 15 minutes before cooking starts; they can be accepted now',
+        dueStart: 'for {{time}} · start at {{start}}',
+      },
+      card: {
+        awaiting: 'Waiting to be accepted for {{minutes}} min',
+        autoCancelIn: 'cancelled automatically in {{time}}',
+        late: '{{minutes}} min late',
+      },
+      reminders: {
+        start: 'Time to make #{{code}} for {{time}}',
+        startMany: 'Time to make: {{codes}}',
       },
       busy: {
         off: 'Busy',
@@ -1544,6 +1718,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
       moveDown: 'Move down',
       showCategories: 'Categories',
       hideCategories: 'Fold categories',
+      noPhoto: {
+        badge: 'no photo',
+        title:
+          'No photo: the app shows the product as a text row with no picture, the website and Telegram with an illustration. A photo sells better.',
+        summary:
+          'Products without a photo in the menu: {{count}}. The iOS and Android app shows them as text rows with no picture (App Store rules), the website and Telegram with an illustration. Products with a photo sell better.',
+        filter: 'Only without a photo: {{count}}',
+        inCategory: 'no photo: {{count}}',
+      },
       headers: {
         photo: 'Photo',
         name: 'Name',
@@ -1703,7 +1886,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         allergens: 'Allergens',
         allergensHint: 'Separated by commas, e.g. milk, nuts, gluten',
-        photosAfterCreate: 'Photos can be added right after the product is created.',
+        photosAfterCreate: 'Products with a photo sell better — add one right after creating the product.',
         stores: 'Sold in stores',
         storesHint: 'Same price in every store. New stores of the brand get the product automatically.',
         storesNone: 'No store is ticked — nobody will see the product.',
@@ -1901,7 +2084,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       openBlocked: 'Finish the readiness checklist first',
       shift: {
         open: 'Shift running — the store takes orders',
-        closed: 'Shift not started — customers see the store as inactive',
+        closed: 'Shift not started — no orders "for now", pre-orders keep coming',
         storeClosed:
           'The store is closed in its settings, so a shift cannot start. The owner or a manager can open it.',
         storeClosedCanOpen:
@@ -2066,10 +2249,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         baseEta: 'Base time per order, min',
         baseEtaHint:
           "The store's time is only ringing up, packing and handing over. Cooking time is set on each item (and by default on its category in Menu); the queue comes on top.",
-        parallelism: 'Orders prepared at once',
-        parallelismHint: 'How many orders the kitchen really works in parallel — it sets how fast a rush drains.',
+        parallelism: 'Items made at once',
+        parallelismHint:
+          'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
         slotCapacity: 'Orders per 15 minutes',
-        slotCapacityHint: 'The store never promises more handovers in one 15-minute window — ASAP orders included.',
+        slotCapacityHint:
+          'How many orders the store hands over in 15 minutes. One window never promises more — for later or for now.',
+        capacitySummary:
+          'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks) and hands over up to {{orders}} orders. A window short of either shows as taken.',
       },
       delivery: {
         title: 'Delivery',
@@ -2221,6 +2408,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         none: 'Right now this campaign would reach nobody.',
         pushHint:
           'Push goes to the app (people who allowed notifications) and the browser; when there is nowhere to push or the push fails, the Telegram bot sends it.',
+        inboxHint:
+          "The push title starts with your brand's name, and the campaign stays in the customer's «Notifications» in the app and on the site.",
+        senderHint: "The message starts with your brand's name, so the customer sees who it is from.",
         fcmOff:
           'App push is not configured on the server — app users get the message in Telegram if they have it linked.',
         telegramOff: 'The Telegram bot is not configured on the server.',
@@ -2341,6 +2531,94 @@ export const TRANSLATIONS_EN: TranslationTree = {
         reason: 'Reason',
         reasonPlaceholder: 'E.g. remove the promise of a free coffee without conditions',
         reasonRequired: 'Give a reason — without it the business will not know what to fix.',
+      },
+    },
+    announcements: {
+      title: 'takeAway announcements',
+      subtitle:
+        'Messages from the platform itself to every customer who has not turned promotional notifications off: a new partner, a new feature. Each gets it in «Notifications» in the app and on the site, and a push titled «takeAway: …» (the Telegram bot for people without the app).',
+      createTitle: 'New announcement',
+      editTitle: 'Announcement',
+      saveDraft: 'Save draft',
+      send: 'Send',
+      schedule: 'Schedule',
+      sending: 'Sending…',
+      retry: 'Retry',
+      edit: 'Edit',
+      delete: 'Delete',
+      cancelSchedule: 'Cancel sending',
+      empty: 'No announcements yet.',
+      scheduledFor: 'Sends: {{time}}',
+      sentAt: 'Sent: {{time}}',
+      linkStore: 'Opens the menu of {{name}} ({{brand}})',
+      linkBrand: "Opens the brand's menu: {{name}}",
+      sendingNotice: 'The announcement is going out — the result shows up in the list.',
+      scheduledNotice: 'The announcement is scheduled.',
+      cancelledNotice: 'Sending cancelled — the announcement is a draft again.',
+      testNoChannel:
+        'There is nowhere to send it to you: sign in to the takeAway app with this account and allow notifications, or open the bot in Telegram.',
+      pushPreview: 'How the push looks',
+      pickBrand: 'Pick a brand',
+      pickStore: 'Pick a store',
+      fields: {
+        title: 'Title',
+        body: 'Text',
+        link: 'A tap opens',
+        brand: 'Brand',
+        store: 'Store',
+        scheduledAt: 'Send time (optional)',
+        scheduledAtHint: 'Leave empty to send right after «Send».',
+      },
+      link: {
+        NONE: 'The full text',
+        STORE: "A store's menu",
+        BRAND: "A brand's menu",
+        hint: 'To announce a new partner, say: a tap takes the customer to its menu in the app and on the site. For a brand with several stores, the list of places opens.',
+      },
+      reach: {
+        title: 'Who gets it',
+        summary: 'In «Notifications»: {{recipients}} of {{customers}} customers',
+        inboxOnly: 'Only in «Notifications» (nowhere to push): {{count}}',
+        hint: 'Every customer gets it except those who turned promotional notifications off. Push goes to the app and the browser, otherwise the Telegram bot sends it.',
+      },
+      result: {
+        inbox: 'In «Notifications» of {{count}}',
+        pushed: 'push delivered: {{count}}',
+        failed: 'push errors: {{count}}',
+        inboxOnly: '«Notifications» only: {{count}}',
+      },
+      sendDialog: {
+        title: 'Send «{{title}}» to every customer?',
+        now: 'It goes out at once to every customer who has not turned promotional notifications off. It cannot be called back.',
+        scheduled:
+          'It goes out {{time}} to every customer who has not turned promotional notifications off. You can cancel it until then.',
+      },
+      deleteDialog: {
+        title: 'Delete the announcement «{{title}}»?',
+        body: 'It has not been sent yet. It cannot be restored.',
+      },
+      errors: {
+        noRecipients: 'Nobody to send to: every customer has turned promotional notifications off.',
+        inProgress: 'The announcement is already being sent.',
+        notSendable: 'This announcement has already gone out without errors.',
+        notEditable:
+          'The announcement can no longer change: it has been sent or scheduled (cancel sending to edit it).',
+        notScheduled: 'The announcement is not scheduled.',
+        notDeletable: 'An announcement that has started going out cannot be deleted.',
+        scheduledInPast: 'The send time has passed — pick a later one or clear the field.',
+        linkInvalid: 'The store or brand picked was not found — pick again.',
+      },
+      status: {
+        DRAFT: 'Draft',
+        SCHEDULED: 'Scheduled',
+        SENDING: 'Sending',
+        SENT: 'Sent',
+        FAILED: 'Failed',
+      },
+      col: {
+        title: 'Announcement',
+        status: 'Status',
+        result: 'Result',
       },
     },
     giftCards: {
@@ -2648,9 +2926,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
         fix: 'Fix the payout',
         fixing: 'Fixing…',
         fixed: 'Payout fixed: {{amount}}.',
+        closedDays:
+          "Today has not ended yet, so the payout covers the closed days, up to {{day}}. Today's orders go into the next one.",
         blocked: {
           PERIOD_OPEN: 'The period has not ended yet — pick a closed one, last week for instance.',
           OVERLAP: 'These days are already settled by a payout up to {{day}}. Pick a period that ends later.',
+          UP_TO_DATE:
+            'Every closed day is already in a payout — the latest runs to {{day}}. The next one can be fixed tomorrow.',
           NOTHING_DUE:
             'Nothing is owed to the brand at the end of the period. A negative balance reduces the next payout.',
         },
@@ -2687,6 +2969,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       payouts: {
         title: 'Payouts',
         empty: 'No payouts yet.',
+        emptyAdmin: 'Fix one in the «Payout to the brand» card above — for a closed period, up to yesterday.',
+        emptyOwner: 'takeAway records the payouts — their history will show up here.',
         period: 'Period',
         amount: 'Amount',
         commission: 'Commission',
@@ -2771,6 +3055,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       daysAgo: '{{days}} d ago',
       toRetention: 'Win-back',
       none: 'Nobody became inactive in this period.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive.',
+      activeElsewhereStores: 'By store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
     },
     customers: {
       title: 'Customers',
@@ -2831,7 +3119,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       inactiveDays: 'No order for',
       storeFilter: 'Store',
       allStores: 'All stores',
+      currencyLabel: 'Currency of the amounts',
+      currencyNote: 'Customers of every store; amounts in {{currency}} — orders in another currency are not in them.',
       emptyInactive: 'Nobody is inactive: every regular ordered within the last {{days}} days.',
+      activeElsewhere:
+        'Another {{count}} stopped coming to one of the stores but still order at another — across all stores they are not inactive, so they are not listed.',
+      activeElsewhereStores: 'See by store:',
+      activeElsewhereStore: '{{store}} — {{count}}',
       toBroadcast: 'Message these customers →',
       favouriteBadge: 'Favourite: {{name}}',
       favouriteTitle: 'Ordered {{count}}',
@@ -3128,7 +3422,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       asap: 'ASAP · ~{{min}} min',
       schedule: 'Schedule',
       noSlots: 'No windows free — try ASAP.',
-      noSlotsClosed: 'No windows free in the next few hours.',
+      noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       location: 'Pickup location',
       readyIn: 'Ready in ~{{min}} min',

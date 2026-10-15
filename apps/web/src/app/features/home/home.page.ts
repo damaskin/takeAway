@@ -2,9 +2,9 @@ import { ViewportScroller } from '@angular/common';
 import { Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
-import { isStoreInactive, sortStoresByAvailability } from '@takeaway/utils';
-import { TranslatePipe } from '@ngx-translate/core';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { isStoreInactive, sortStoresByAvailability, storeAvailability } from '@takeaway/utils';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 import { BrandLogoComponent, ProductImageComponent, StoreLogoComponent } from '@takeaway/ui-kit';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
@@ -115,12 +115,26 @@ interface FooterLink {
               <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
                 address(store) || ('common.readyIn' | translate: { min: etaMin(store) })
               }}</span>
+              @if (preorderOnly(store)) {
+                <span
+                  data-testid="store-hours"
+                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                  >{{ hoursLine(store) }}</span
+                >
+              }
             </div>
             @if (closed(store)) {
               <span
                 class="flex items-center justify-center"
                 style="background: #d94b5e22; color: #8f2f3c; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 700"
                 >{{ 'common.storeClosed.badge' | translate }}</span
+              >
+            } @else if (preorderOnly(store)) {
+              <!-- Closed for an order now: a wait would be a promise nobody keeps. -->
+              <span
+                class="flex items-center justify-center"
+                style="background: #e9a84b33; color: #8a6720; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 700; white-space: nowrap"
+                >{{ 'common.storeLater.badge' | translate }}</span
               >
             } @else {
               <span
@@ -378,6 +392,7 @@ export class HomePage implements OnInit {
   private readonly scroller = inject(ViewportScroller);
   private readonly injector = inject(Injector);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly translate = inject(TranslateService);
   readonly stores = signal<StoreListItem[]>([]);
 
   /**
@@ -441,6 +456,16 @@ export class HomePage implements OnInit {
 
   closed(store: StoreListItem): boolean {
     return isStoreInactive(store);
+  }
+
+  /** Closed for an order now, open for a pre-order (overnight, before the shift). */
+  preorderOnly(store: StoreListItem): boolean {
+    return storeAvailability(store) === 'scheduledOnly';
+  }
+
+  /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени». */
+  hoursLine(store: StoreListItem): string | null {
+    return storeHoursText(store, this.translate, this.fmt);
   }
 
   /** Open stores first, closed ones after them; the first six. */
