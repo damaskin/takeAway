@@ -1513,6 +1513,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cartUpsellTitle => 'Something to go with it?';
 
   @override
+  String get upsellTogether => 'Often bought together';
+
+  @override
   String get allergenGluten => 'gluten';
 
   @override

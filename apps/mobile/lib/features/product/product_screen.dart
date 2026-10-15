@@ -243,7 +243,7 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                       notes: _notes,
                       showNotes: _showNotes,
                       onShowNotes: () => setState(() => _showNotes = true),
-                      pairing: _pairing(kind, store, menu),
+                      pairing: _pairing(product?.id ?? widget.productId, kind, store, menu),
                     ),
             ),
           ),
@@ -265,15 +265,24 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     );
   }
 
-  /// «К этому напитку» under a drink: something to eat from the same
-  /// store, when it is taking orders and has any.
-  Widget? _pairing(ProductKind? kind, Store? store, Menu? menu) {
-    if (!(kind?.isDrink ?? false) || store == null || !store.takesOrders || menu == null) return null;
-    final items = foodSuggestions(menu, exclude: {widget.productId});
+  /// Under the product, while the store takes orders: «Часто берут вместе»
+  /// — what its customers bought together with this product — else, under a
+  /// drink, «К этому напитку» with something to eat from the same store.
+  /// Nothing until the store has answered.
+  Widget? _pairing(String productId, ProductKind? kind, Store? store, Menu? menu) {
+    if (store == null || !store.takesOrders || menu == null) return null;
+    final asked = ref.watch(storeSuggestionsProvider(suggestionsKey(store.id, [productId])));
+    if (!asked.hasValue) return null;
+    final together = boughtTogether(menu, asked.value, exclude: {productId});
+    final items = together.isNotEmpty
+        ? together
+        : (kind?.isDrink ?? false)
+        ? foodSuggestions(menu, exclude: {productId})
+        : const <Suggestion>[];
     if (items.isEmpty) return null;
     final l10n = AppLocalizations.of(context);
     return UpsellRow(
-      title: l10n.productPairsWith,
+      title: together.isNotEmpty ? l10n.upsellTogether : l10n.productPairsWith,
       items: items,
       store: store,
       onAdded: (added) => Snack.show(context, l10n.addedToCart(added.name), icon: Icons.check_circle_rounded),

@@ -2798,6 +2798,12 @@ abstract class AppLocalizations {
   /// **'Something to go with it?'**
   String get cartUpsellTitle;
 
+  /// Title of a suggestions row, only over what the store's customers really bought together with these products.
+  ///
+  /// In en, this message translates to:
+  /// **'Often bought together'**
+  String get upsellTogether;
+
   /// No description provided for @allergenGluten.
   ///
   /// In en, this message translates to:
