@@ -482,6 +482,30 @@ class Menu {
   Iterable<Product> get allProducts => categories.expand((c) => c.products);
 }
 
+/// `GET /stores/{idOrSlug}/suggestions`: what to offer next to the products
+/// in hand — the cart's lines, or the product on screen.
+@JsonSerializable()
+class StoreSuggestions {
+  const StoreSuggestions({required this.productIds, required this.source});
+
+  factory StoreSuggestions.fromJson(Map<String, dynamic> json) => _$StoreSuggestionsFromJson(json);
+
+  Map<String, dynamic> toJson() => _$StoreSuggestionsToJson(this);
+
+  /// Products of the store's menu, in stock, best first; none of those in hand.
+  @JsonKey(defaultValue: <String>[])
+  final List<String> productIds;
+
+  /// `copurchase` — what customers bought together with the products in hand
+  /// over the last 90 days; `rule` — bakery and food next to a drink, from
+  /// the menu, while the store has too few orders to tell.
+  @JsonKey(defaultValue: 'rule')
+  final String source;
+
+  /// The only case the row may say «Часто берут вместе».
+  bool get boughtTogether => source == 'copurchase';
+}
+
 @JsonSerializable(explicitToJson: true)
 class PickupSlot {
   const PickupSlot({

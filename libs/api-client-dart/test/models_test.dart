@@ -200,6 +200,20 @@ void main() {
       expect(slots.first.endsAt.difference(slots.first.startsAt), const Duration(minutes: 15));
     });
 
+    test('reads store suggestions and whether they are bought together', () {
+      final together = StoreSuggestions.fromJson({
+        'productIds': ['p_croissant', 'p_cheesecake'],
+        'source': 'copurchase',
+      });
+      expect(together.productIds, ['p_croissant', 'p_cheesecake']);
+      expect(together.boughtTogether, isTrue);
+      expect(StoreSuggestions.fromJson({'productIds': <String>[], 'source': 'rule'}).boughtTogether, isFalse);
+      // An odd, empty answer reads as the rule with nothing to offer.
+      final empty = StoreSuggestions.fromJson({});
+      expect(empty.productIds, isEmpty);
+      expect(empty.boughtTogether, isFalse);
+    });
+
     test('maps unknown enum values instead of failing', () {
       final store = Store.fromJson({
         ...((fixture('stores.json')! as List).first as Map<String, dynamic>),

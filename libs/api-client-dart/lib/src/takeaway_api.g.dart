@@ -681,6 +681,41 @@ class _TakeAwayApi implements TakeAwayApi {
   }
 
   @override
+  Future<StoreSuggestions> suggestions(
+    String idOrSlug, {
+    required String productIds,
+    int? limit,
+  }) async {
+    final _extra = <String, dynamic>{};
+    final queryParameters = <String, dynamic>{
+      r'productIds': productIds,
+      r'limit': limit,
+    };
+    queryParameters.removeWhere((k, v) => v == null);
+    final _headers = <String, dynamic>{};
+    const Map<String, dynamic>? _data = null;
+    final _options = _setStreamType<StoreSuggestions>(
+      Options(method: 'GET', headers: _headers, extra: _extra)
+          .compose(
+            _dio.options,
+            '/stores/${idOrSlug}/suggestions',
+            queryParameters: queryParameters,
+            data: _data,
+          )
+          .copyWith(baseUrl: _combineBaseUrls(_dio.options.baseUrl, baseUrl)),
+    );
+    final _result = await _dio.fetch<Map<String, dynamic>>(_options);
+    late StoreSuggestions _value;
+    try {
+      _value = StoreSuggestions.fromJson(_result.data!);
+    } on Object catch (e, s) {
+      errorLogger?.logError(e, s, _options, response: _result);
+      rethrow;
+    }
+    return _value;
+  }
+
+  @override
   Future<ProductDetail> product(String idOrSlug, {String? store}) async {
     final _extra = <String, dynamic>{};
     final queryParameters = <String, dynamic>{r'store': store};

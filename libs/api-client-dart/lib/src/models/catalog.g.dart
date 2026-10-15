@@ -377,6 +377,16 @@ Map<String, dynamic> _$MenuToJson(Menu instance) => <String, dynamic>{
   'categories': instance.categories.map((e) => e.toJson()).toList(),
 };
 
+StoreSuggestions _$StoreSuggestionsFromJson(Map<String, dynamic> json) => StoreSuggestions(
+  productIds: (json['productIds'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+  source: json['source'] as String? ?? 'rule',
+);
+
+Map<String, dynamic> _$StoreSuggestionsToJson(StoreSuggestions instance) => <String, dynamic>{
+  'productIds': instance.productIds,
+  'source': instance.source,
+};
+
 PickupSlot _$PickupSlotFromJson(Map<String, dynamic> json) => PickupSlot(
   startsAt: DateTime.parse(json['startsAt'] as String),
   endsAt: DateTime.parse(json['endsAt'] as String),
