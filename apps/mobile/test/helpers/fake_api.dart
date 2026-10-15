@@ -66,6 +66,13 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// `{'code': 'ASAP_UNAVAILABLE', 'reason': 'QUEUE_FULL'}`; null = placed.
   Map<String, dynamic>? orderRefusal;
 
+  /// What `GET /stores/{id}/suggestions` answers; null = 404, as on an API
+  /// from before the endpoint.
+  StoreSuggestions? suggestionsAnswer;
+
+  /// The `productIds` of each suggestions request, as sent.
+  final suggestionAsks = <String>[];
+
   /// Stores listed after the default one, as API JSON.
   List<Map<String, dynamic>> moreStores = [];
 
@@ -377,6 +384,21 @@ class FakeApi extends Fake implements TakeAwayApi {
     'brand': {'id': 'br_1', 'slug': 'noname', 'name': 'NoName Coffee', 'logoUrl': null, 'themeOverrides': null},
     ...storeExtra,
   });
+
+  @override
+  Future<StoreSuggestions> suggestions(String idOrSlug, {required String productIds, int? limit}) async {
+    suggestionAsks.add(productIds);
+    final answer = suggestionsAnswer;
+    if (answer == null) {
+      final request = RequestOptions(path: '/stores/$idOrSlug/suggestions');
+      throw DioException(
+        requestOptions: request,
+        response: Response<Object?>(requestOptions: request, statusCode: 404, data: {'statusCode': 404}),
+        type: DioExceptionType.badResponse,
+      );
+    }
+    return answer;
+  }
 
   @override
   Future<Menu> menu(String idOrSlug) async => Menu.fromJson({

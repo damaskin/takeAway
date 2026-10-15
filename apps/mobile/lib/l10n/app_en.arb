@@ -982,6 +982,10 @@
   "productRequired": "required",
   "productPairsWith": "Goes well with it",
   "cartUpsellTitle": "Something to go with it?",
+  "upsellTogether": "Often bought together",
+  "@upsellTogether": {
+    "description": "Title of a suggestions row, only over what the store's customers really bought together with these products."
+  },
   "allergenGluten": "gluten",
   "allergenMilk": "milk",
   "allergenLactose": "lactose",

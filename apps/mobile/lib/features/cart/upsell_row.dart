@@ -16,21 +16,45 @@ import '../catalog/catalog_providers.dart';
 import '../menu/quick_add.dart';
 import 'upsell.dart';
 
-/// The cart's «Добавить к напитку?»: when it holds a drink and nothing to
-/// eat, a row of the store's bakery and food. Gone once something to eat is
-/// in the cart, or when there is nothing to offer.
-class CartUpsell extends ConsumerWidget {
+/// The row under the cart: «Часто берут вместе» — what the store's customers
+/// bought together with these products ([boughtTogether]) — else, while the
+/// cart holds a drink and nothing to eat, «Добавить к напитку?» with the
+/// store's bakery and food ([foodSuggestions]). Nothing until the store has
+/// answered; gone when there is nothing to offer.
+class CartUpsell extends ConsumerStatefulWidget {
   const CartUpsell({required this.store, required this.cart, super.key});
 
   final Store store;
   final Cart cart;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CartUpsell> createState() => _CartUpsellState();
+}
+
+class _CartUpsellState extends ConsumerState<CartUpsell> {
+  /// The store's last answer, kept while it is asked about a changed cart so
+  /// the row does not collapse and come back. A record, to tell «not
+  /// answered yet» from an answer of null (the call failed).
+  (StoreSuggestions?,)? _answer;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    final cart = widget.cart;
     final menu = ref.watch(menuProvider(store.id)).valueOrNull?.value;
-    final items = menu == null || !store.takesOrders || !wantsFood(cart, menu)
-        ? const <Suggestion>[]
-        : foodSuggestions(menu, exclude: {for (final item in cart.items) item.productId});
+    final inHand = {for (final item in cart.items) item.productId};
+    var items = const <Suggestion>[];
+    var together = false;
+    if (menu != null && store.takesOrders && inHand.isNotEmpty) {
+      final asked = ref.watch(storeSuggestionsProvider(suggestionsKey(store.id, inHand)));
+      if (asked.hasValue) _answer = (asked.value,);
+      if (_answer case (final answer,)) {
+        items = boughtTogether(menu, answer, exclude: inHand);
+        together = items.isNotEmpty;
+        if (!together && wantsFood(cart, menu)) items = foodSuggestions(menu, exclude: inHand);
+      }
+    }
+    final l10n = AppLocalizations.of(context);
     return AnimatedSize(
       duration: Motion.medium,
       curve: Motion.emphasized,
@@ -39,14 +63,18 @@ class CartUpsell extends ConsumerWidget {
           ? const SizedBox(width: double.infinity)
           : Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 20),
-              child: UpsellRow(title: AppLocalizations.of(context).cartUpsellTitle, items: items, store: store),
+              child: UpsellRow(
+                title: together ? l10n.upsellTogether : l10n.cartUpsellTitle,
+                items: items,
+                store: store,
+              ),
             ),
     );
   }
 }
 
-/// A titled horizontal row of products to add — the cart's «Добавить к
-/// напитку?», the drink screen's «К этому напитку». A card opens the
+/// A titled horizontal row of products to add — «Часто берут вместе», the
+/// cart's «Добавить к напитку?», the drink screen's «К этому напитку». A card opens the
 /// product; its «+» adds it at once, or opens it when there is something to
 /// choose (see [quickAdd]).
 class UpsellRow extends StatelessWidget {
