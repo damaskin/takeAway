@@ -224,6 +224,21 @@ export interface StoreMenu {
   categories: CategoryWithProducts[];
 }
 
+/**
+ * Where a store's suggestions came from: `copurchase` — what customers
+ * bought together with the products in hand over the last 90 days, the only
+ * case the clients may title «Часто берут вместе»; `rule` — bakery and food
+ * next to a drink, picked from the menu (`suggestFood`).
+ */
+export type SuggestionSource = 'copurchase' | 'rule';
+
+/** `GET /stores/:idOrSlug/suggestions`: what to offer next to the products in hand. */
+export interface StoreSuggestions {
+  /** Products of the store's menu, in stock, best first; none of those in hand. */
+  productIds: string[];
+  source: SuggestionSource;
+}
+
 export interface ListStoresQuery {
   lat?: number;
   lng?: number;
