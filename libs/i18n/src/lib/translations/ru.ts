@@ -186,9 +186,12 @@ export const TRANSLATIONS_RU = {
       /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
       pairings: 'К этому напитку',
     },
-    /** «Добавить к напитку?»: something to eat offered next to the drinks in the cart (`suggestFood`). */
+    /** Products offered next to those in hand, in the cart and under a product (`suggestionRow`). */
     upsell: {
+      /** The menu rule: something to eat next to the drinks in the cart (`suggestFood`). */
       title: 'Добавить к напитку?',
+      /** Only for what the store's orders show customers buying together (`source: copurchase`). */
+      together: 'Часто берут вместе',
       add: 'Добавить: {{name}}',
     },
   },

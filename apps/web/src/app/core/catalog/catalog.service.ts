@@ -7,6 +7,7 @@ import type {
   StoreDetail,
   StoreListItem,
   StoreMenu,
+  StoreSuggestions,
 } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
@@ -69,6 +70,17 @@ export class CatalogService {
         this.menuCache.set(menu.storeId, menu);
       }),
     );
+  }
+
+  /**
+   * What to offer next to [productIds]: what customers bought together with
+   * them (`source: copurchase`), else the menu rule. Only in-stock products
+   * of this store's menu.
+   */
+  getSuggestions(storeIdOrSlug: string, productIds: readonly string[], limit = 6): Observable<StoreSuggestions> {
+    return this.http.get<StoreSuggestions>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/suggestions`, {
+      params: { productIds: productIds.join(','), limit },
+    });
   }
 
   /** `store`: the store being browsed — product slugs are unique per brand only. */

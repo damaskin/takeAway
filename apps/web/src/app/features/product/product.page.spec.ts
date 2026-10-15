@@ -6,7 +6,7 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
-import type { ProductDetail, StoreListItem, StoreMenu } from '@takeaway/shared-types';
+import type { ProductDetail, StoreListItem, StoreMenu, StoreSuggestions } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
@@ -114,7 +114,12 @@ const MENU: StoreMenu = {
 describe('ProductPage', () => {
   let http: HttpTestingController;
 
-  async function open(slug: string, detail: ProductDetail) {
+  /**
+   * Opens the product page and answers its requests. `suggestions` is the
+   * store's answer for the product; without one the call fails, as on an
+   * API from before the endpoint.
+   */
+  async function open(slug: string, detail: ProductDetail, suggestions?: StoreSuggestions) {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([{ path: 'products/:slug', component: ProductPage }]),
@@ -139,6 +144,11 @@ describe('ProductPage', () => {
       .expectOne((r) => r.url === '/api/cart')
       .flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 0 });
     http.expectOne('/api/stores/centre/menu').flush(MENU);
+    await harness.fixture.whenStable();
+    const ask = http.expectOne((r) => r.url === `/api/stores/${STORE.id}/suggestions`);
+    expect(ask.request.params.get('productIds')).toBe(detail.id);
+    if (suggestions) ask.flush(suggestions);
+    else ask.flush('Not Found', { status: 404, statusText: 'Not Found' });
     await harness.fixture.whenStable();
     return harness;
   }
@@ -216,5 +226,23 @@ describe('ProductPage', () => {
       '/ui-kit/product-placeholders/bakery.svg',
     );
     expect(el.querySelector('[data-testid="food-suggestion"]')).toBeNull();
+  });
+
+  it('says «Часто берут вместе» only over what customers bought together, under any product', async () => {
+    const harness = await open('croissant', CROISSANT, { productIds: ['latte', 'muffin'], source: 'copurchase' });
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('app-food-suggestions h2'))).toBe('Часто берут вместе');
+    expect(Array.from(el.querySelectorAll('[data-testid="food-suggestion"] .name')).map(text)).toEqual([
+      'Латте',
+      'Маффин',
+    ]);
+  });
+
+  it('keeps «К этому напитку» while the store has too few orders to tell', async () => {
+    const harness = await open('latte', LATTE, { productIds: ['croissant', 'muffin'], source: 'rule' });
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('app-food-suggestions h2'))).toBe('К этому напитку');
   });
 });

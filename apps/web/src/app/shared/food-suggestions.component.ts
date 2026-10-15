@@ -5,9 +5,9 @@ import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
   defaultVariationSelection,
-  type FoodSuggestion,
   hasRequiredOptions,
   initialModifierCounts,
+  type ProductSuggestion,
 } from '@takeaway/utils';
 import { EMPTY, switchMap } from 'rxjs';
 
@@ -15,8 +15,10 @@ import { CartService, type CartView } from '../core/cart/cart.service';
 import { CatalogService } from '../core/catalog/catalog.service';
 
 /**
- * A row of things to eat next to the drinks — «Добавить к напитку?» at
- * checkout, «К этому напитку» on a drink's page (see `suggestFood`).
+ * A row of products to add next to those in hand — at checkout and on a
+ * product's page. «Часто берут вместе» when the store's orders say what
+ * goes together, else something to eat next to the drinks: «Добавить к
+ * напитку?», «К этому напитку» (see `suggestionRow`).
  *
  * A card opens the product; its «+» adds one straight to the cart with the
  * default size and milk, unless the product has an add-on that must be taken
@@ -145,7 +147,7 @@ export class FoodSuggestionsComponent {
   private readonly translate = inject(TranslateService);
   readonly fmt = inject(LocaleFormatService);
 
-  readonly suggestions = input.required<readonly FoodSuggestion[]>();
+  readonly suggestions = input.required<readonly ProductSuggestion[]>();
   /** The store the items go to: its id for the cart, slug for links, currency for prices. */
   readonly store = input.required<{ id: string; slug: string; currency: string }>();
   /** Translation key of the heading. */
@@ -160,7 +162,7 @@ export class FoodSuggestionsComponent {
   readonly added = signal<ReadonlySet<string>>(new Set());
   readonly error = signal<string | null>(null);
 
-  quickAdd(suggestion: FoodSuggestion): void {
+  quickAdd(suggestion: ProductSuggestion): void {
     const store = this.store();
     const { product } = suggestion;
     if (this.busy()) return;

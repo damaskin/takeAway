@@ -5,8 +5,15 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
-import type { PickupSlot, StoreDetail } from '@takeaway/shared-types';
-import { of, throwError } from 'rxjs';
+import type {
+  CategoryKind,
+  PickupSlot,
+  ProductSummary,
+  StoreDetail,
+  StoreMenu,
+  StoreSuggestions,
+} from '@takeaway/shared-types';
+import { type Observable, of, throwError } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -99,16 +106,72 @@ const slot = (startsAt: string, available = true): PickupSlot => ({
 
 const SLOTS = [slot(day(0, 23, 45)), slot(day(1, 9, 15)), slot(day(1, 9, 30))];
 
+/** A latte and a croissant: a menu with something to eat next to the drink. */
+const MENU: StoreMenu = {
+  storeId: STORE.id,
+  storeSlug: STORE.slug,
+  categories: [
+    { ...category('coffee', 'HOT_DRINKS'), products: [summary('latte', 'Латте', 'coffee')] },
+    { ...category('pastry', 'BAKERY'), products: [summary('croissant', 'Круассан', 'pastry')] },
+  ],
+};
+
+function category(id: string, kind: CategoryKind) {
+  return {
+    id,
+    slug: id,
+    name: id,
+    description: null,
+    iconUrl: null,
+    sortOrder: 0,
+    availableFrom: null,
+    availableTo: null,
+    kind,
+  };
+}
+
+function summary(id: string, name: string, categoryId: string): ProductSummary {
+  return {
+    id,
+    categoryId,
+    slug: id,
+    name,
+    description: null,
+    basePriceCents: 2500,
+    prepTimeSeconds: 60,
+    caffeineLevel: null,
+    calories: null,
+    proteinsGrams: null,
+    fatsGrams: null,
+    carbsGrams: null,
+    allergens: [],
+    dietTags: [],
+    imageUrls: [],
+    sortOrder: 0,
+  };
+}
+
 describe('CheckoutPage — pickup time', () => {
-  let catalog: { getStore: jest.Mock; getPickupSlots: jest.Mock; cachedMenu: jest.Mock; getMenu: jest.Mock };
+  let catalog: {
+    getStore: jest.Mock;
+    getPickupSlots: jest.Mock;
+    cachedMenu: jest.Mock;
+    getMenu: jest.Mock;
+    getSuggestions: jest.Mock;
+  };
   let orders: { create: jest.Mock };
 
-  async function open(store: StoreDetail): Promise<{ page: CheckoutPage; root: HTMLElement; detect: () => void }> {
+  async function open(
+    store: StoreDetail,
+    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions> } = {},
+  ): Promise<{ page: CheckoutPage; root: HTMLElement; detect: () => void }> {
     catalog = {
       getStore: jest.fn(() => of(store)),
       getPickupSlots: jest.fn(() => of(SLOTS)),
-      cachedMenu: jest.fn(() => ({ storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
+      cachedMenu: jest.fn(() => opts.menu ?? { storeId: STORE.id, storeSlug: STORE.slug, categories: [] }),
       getMenu: jest.fn(),
+      // An API from before the endpoint, unless a test gives an answer.
+      getSuggestions: jest.fn(() => opts.suggestions ?? throwError(() => new Error('404'))),
     };
     orders = { create: jest.fn() };
     TestBed.configureTestingModule({
@@ -232,5 +295,31 @@ describe('CheckoutPage — pickup time', () => {
     expect(page.mode()).toBe('ASAP');
     expect(asapButton(root)?.disabled).toBe(false);
     expect(text(root, 'asap-blocked')).toEqual([]);
+  });
+
+  describe('suggestions under the basket', () => {
+    const heading = (root: HTMLElement) => root.querySelector('[data-testid="upsell"] h2')?.textContent?.trim();
+    const names = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('[data-testid="food-suggestion"] .name')).map((n) => n.textContent?.trim());
+
+    it("says «Часто берут вместе» over what the store's customers bought with the basket", async () => {
+      const { root } = await open(STORE, {
+        menu: MENU,
+        suggestions: of({ productIds: ['croissant'], source: 'copurchase' }),
+      });
+      expect(catalog.getSuggestions).toHaveBeenCalledWith(STORE.id, ['latte'], 6);
+      expect(heading(root)).toBe('Часто берут вместе');
+      expect(names(root)).toEqual(['Круассан']);
+    });
+
+    it('keeps «Добавить к напитку?» for the menu rule, and when the API cannot be asked', async () => {
+      const ruled = await open(STORE, { menu: MENU, suggestions: of({ productIds: ['croissant'], source: 'rule' }) });
+      expect(heading(ruled.root)).toBe('Добавить к напитку?');
+      TestBed.resetTestingModule();
+
+      const failed = await open(STORE, { menu: MENU });
+      expect(heading(failed.root)).toBe('Добавить к напитку?');
+      expect(names(failed.root)).toEqual(['Круассан']);
+    });
   });
 });

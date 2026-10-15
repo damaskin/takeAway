@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { installFakeApi, PRODUCT, type FakeProduct } from './support/fake-api';
+import { CROISSANT, installFakeApi, PRODUCT, type FakeProduct } from './support/fake-api';
 import { useEnglish } from './support/locale';
 
 /**
@@ -410,6 +410,21 @@ test.describe('customer journey', () => {
     await expect(upsell).toHaveCount(0);
     await expect(page.getByText('Croissant')).toBeVisible();
     await expect(placeOrder(page)).toContainText('30 AED');
+  });
+
+  test("checkout says «Often bought together» only over the store's real co-purchases", async ({ page }) => {
+    await installFakeApi(page, { menuKinds: true, copurchase: [CROISSANT.id] });
+    await signIn(page);
+
+    await page.goto('/products/flat-white?store=dubai-marina');
+    await expect(page.getByRole('heading', { name: 'Often bought together' })).toBeVisible();
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await expect(page.getByRole('link', { name: /go to checkout/i })).toBeVisible();
+
+    await page.goto('/checkout?store=dubai-marina');
+    const upsell = page.getByTestId('upsell');
+    await expect(upsell.getByRole('heading', { name: 'Often bought together' })).toBeVisible();
+    await expect(upsell.getByRole('button', { name: 'Add Croissant' })).toBeVisible();
   });
 
   test('a drink without any food on the menu offers nothing extra', async ({ page }) => {

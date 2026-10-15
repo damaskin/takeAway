@@ -5,7 +5,7 @@ import { Router, provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { ProductDetail, ProductSummary } from '@takeaway/shared-types';
-import type { FoodSuggestion } from '@takeaway/utils';
+import type { ProductSuggestion } from '@takeaway/utils';
 
 import { API_CONFIG } from '../core/api/api.config';
 import { FoodSuggestionsComponent } from './food-suggestions.component';
@@ -41,7 +41,7 @@ describe('FoodSuggestionsComponent', () => {
 
   const croissant = summary('croissant', 'Круассан');
   const sandwich = summary('sandwich', 'Сэндвич');
-  const suggestions: FoodSuggestion[] = [
+  const suggestions: ProductSuggestion[] = [
     { product: croissant, kind: 'BAKERY' },
     { product: sandwich, kind: 'FOOD' },
   ];
