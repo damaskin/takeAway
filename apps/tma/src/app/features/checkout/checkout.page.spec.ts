@@ -5,8 +5,15 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
-import type { PickupSlot, StoreListItem } from '@takeaway/shared-types';
-import { of, throwError } from 'rxjs';
+import type {
+  CategoryKind,
+  PickupSlot,
+  ProductSummary,
+  StoreListItem,
+  StoreMenu,
+  StoreSuggestions,
+} from '@takeaway/shared-types';
+import { type Observable, of, throwError } from 'rxjs';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
@@ -81,18 +88,68 @@ const CART: CartView = {
 const slot = (startsAt: string): PickupSlot => ({ startsAt, endsAt: startsAt, taken: 0, capacity: 4, available: true });
 const SLOTS = [slot(day(0, 23, 45)), slot(day(1, 9, 15)), slot(day(1, 9, 30))];
 
+/** A latte and a croissant: a menu with something to eat next to the drink. */
+const MENU: StoreMenu = {
+  storeId: STORE.id,
+  storeSlug: STORE.slug,
+  categories: [
+    { ...category('coffee', 'HOT_DRINKS'), products: [summary('latte', 'Латте', 'coffee')] },
+    { ...category('pastry', 'BAKERY'), products: [summary('croissant', 'Круассан', 'pastry')] },
+  ],
+};
+
+function category(id: string, kind: CategoryKind) {
+  return {
+    id,
+    slug: id,
+    name: id,
+    description: null,
+    iconUrl: null,
+    sortOrder: 0,
+    availableFrom: null,
+    availableTo: null,
+    kind,
+  };
+}
+
+function summary(id: string, name: string, categoryId: string): ProductSummary {
+  return {
+    id,
+    categoryId,
+    slug: id,
+    name,
+    description: null,
+    basePriceCents: 2500,
+    prepTimeSeconds: 60,
+    caffeineLevel: null,
+    calories: null,
+    proteinsGrams: null,
+    fatsGrams: null,
+    carbsGrams: null,
+    allergens: [],
+    dietTags: [],
+    imageUrls: [],
+    sortOrder: 0,
+  };
+}
+
 describe('TmaCheckoutPage — pickup time', () => {
   let catalog: Record<string, jest.Mock>;
   let orders: { create: jest.Mock };
   let mainButton: { label: string; tap: () => void } | null;
 
-  async function open(store: StoreListItem) {
+  async function open(
+    store: StoreListItem,
+    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions> } = {},
+  ) {
     mainButton = null;
     catalog = {
       listStores: jest.fn(() => of([store])),
       getStore: jest.fn(() => of(store)),
-      getMenu: jest.fn(() => of({ storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
+      getMenu: jest.fn(() => of(opts.menu ?? { storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
       getPickupSlots: jest.fn(() => of(SLOTS)),
+      // An API from before the endpoint, unless a test gives an answer.
+      getSuggestions: jest.fn(() => opts.suggestions ?? throwError(() => new Error('404'))),
     };
     orders = { create: jest.fn() };
     TestBed.configureTestingModule({
@@ -196,5 +253,23 @@ describe('TmaCheckoutPage — pickup time', () => {
     expect(page.scheduledAt()).toBe('');
     // No time chosen: nothing to pay for until the customer picks one.
     expect(mainButton).toBeNull();
+  });
+
+  describe('suggestions under the basket', () => {
+    const heading = (root: HTMLElement) => root.querySelector('[data-testid="upsell"] .title')?.textContent?.trim();
+
+    it("says «Часто берут вместе» over what the store's customers bought with the basket", async () => {
+      const { root } = await open(STORE, {
+        menu: MENU,
+        suggestions: of({ productIds: ['croissant'], source: 'copurchase' }),
+      });
+      expect(catalog['getSuggestions']).toHaveBeenCalledWith(STORE.id, ['latte'], 6);
+      expect(heading(root)).toBe('Часто берут вместе');
+    });
+
+    it('keeps «Добавить к напитку?» when the API cannot be asked', async () => {
+      const { root } = await open(STORE, { menu: MENU });
+      expect(heading(root)).toBe('Добавить к напитку?');
+    });
   });
 });

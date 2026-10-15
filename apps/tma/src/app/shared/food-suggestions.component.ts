@@ -5,9 +5,9 @@ import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
   defaultVariationSelection,
-  type FoodSuggestion,
   hasRequiredOptions,
   initialModifierCounts,
+  type ProductSuggestion,
 } from '@takeaway/utils';
 import { EMPTY, switchMap } from 'rxjs';
 
@@ -16,8 +16,10 @@ import { CatalogService } from '../core/catalog/catalog.service';
 import { TelegramBridgeService } from '../core/telegram/telegram-bridge.service';
 
 /**
- * A row of things to eat next to the drinks — «Добавить к напитку?» at
- * checkout, «К этому напитку» on a drink's screen (see `suggestFood`).
+ * A row of products to add next to those in hand — at checkout and on a
+ * product's screen. «Часто берут вместе» when the store's orders say what
+ * goes together, else something to eat next to the drinks: «Добавить к
+ * напитку?», «К этому напитку» (see `suggestionRow`).
  *
  * A card opens the product; its «+» adds one straight to the cart with the
  * default options, unless the product has an add-on that must be taken —
@@ -148,7 +150,7 @@ export class TmaFoodSuggestionsComponent {
   private readonly tg = inject(TelegramBridgeService);
   readonly fmt = inject(LocaleFormatService);
 
-  readonly suggestions = input.required<readonly FoodSuggestion[]>();
+  readonly suggestions = input.required<readonly ProductSuggestion[]>();
   /** The store the items go to: its id for the cart and the product lookup, currency for prices. */
   readonly store = input.required<{ id: string; slug: string; currency: string }>();
   /** Translation key of the heading. */
@@ -163,7 +165,7 @@ export class TmaFoodSuggestionsComponent {
   readonly added = signal<ReadonlySet<string>>(new Set());
   readonly error = signal<string | null>(null);
 
-  quickAdd(suggestion: FoodSuggestion): void {
+  quickAdd(suggestion: ProductSuggestion): void {
     const store = this.store();
     const { product } = suggestion;
     if (this.busy()) return;

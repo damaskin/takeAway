@@ -17,8 +17,9 @@ import {
   isCartChangedError,
   isStoreInactive,
   productKind,
-  suggestFood,
+  suggestionRow,
   type PickupSlotDay,
+  type SuggestionRow,
 } from '@takeaway/utils';
 import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
@@ -28,6 +29,7 @@ import { CartService, type CartItemView, type CartView } from '../../core/cart/c
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
+import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
@@ -402,11 +404,12 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
-      <!-- «К заказу»: something to eat with the drinks -->
-      @if (upsell().length > 0 && servingStore(); as store) {
+      <!-- «Часто берут вместе», or something to eat with the drinks -->
+      @if (upsell().items.length > 0 && servingStore(); as store) {
         <app-tma-food-suggestions
           data-testid="upsell"
-          [suggestions]="upsell()"
+          [title]="upsell().source === 'copurchase' ? 'common.upsell.together' : 'common.upsell.title'"
+          [suggestions]="upsell().items"
           [store]="store"
           [canAdd]="authStore.isAuthenticated()"
           (cartChanged)="onUpsellAdded($event)"
@@ -630,19 +633,27 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return looks;
   });
 
-  /**
-   * «К заказу»: food and bakery from the menu while the cart has drinks and
-   * nothing to eat. Gone once the order is placed — the basket is fixed then.
-   */
-  readonly upsell = computed(() => {
+  /** The products in the basket while it can still change: what the suggestions go with. */
+  private readonly basketProductIds = computed(() => {
     const cart = this.cart();
     if (!cart || this.placedOrder() || this.storeInactive()) return [];
-    return suggestFood(
-      this.menu(),
-      cart.items.map((i) => i.productId),
-      6,
-    );
+    return cart.items.map((i) => i.productId);
   });
+
+  /** The store's answer for the basket (see `storeSuggestions`). */
+  private readonly suggestions = storeSuggestions(() => {
+    const menu = this.menu();
+    return menu ? { storeId: menu.storeId, productIds: this.basketProductIds() } : null;
+  });
+
+  /**
+   * Under the basket: what customers buy together with it, else food and
+   * bakery while it has drinks and nothing to eat. Gone once the order is
+   * placed — the basket is fixed then.
+   */
+  readonly upsell = computed<SuggestionRow>(() =>
+    suggestionRow(this.menu(), this.basketProductIds(), this.suggestions(), 6),
+  );
 
   readonly needsCard = computed(() => {
     const c = this.cart();
