@@ -1,7 +1,7 @@
 name: takeaway_mobile
 description: 'takeAway — pre-order coffee and food, skip the queue.'
 publish_to: 'none'
-version: 1.5.0+5
+version: 1.6.0+6
 
 environment:
   sdk: ^3.10.7
