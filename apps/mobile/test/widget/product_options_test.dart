@@ -233,6 +233,19 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('under any product, what its customers bought with it is «Часто берут вместе»', (tester) async {
+    _phone(tester);
+    final api = _api()..suggestionsAnswer = const StoreSuggestions(productIds: ['p_latte'], source: 'copurchase');
+    final h = await pumpApp(tester, api: api);
+    await _openProduct(tester, h, 'p_sandwich');
+
+    await _reveal(tester, find.text('Часто берут вместе'));
+    expect(api.suggestionAsks, ['p_sandwich']);
+    expect(find.byKey(const ValueKey('p_latte')), findsOneWidget);
+    expect(find.text('К этому напитку'), findsNothing);
+    await h.unmount(tester);
+  });
+
   testWidgets('the menu grids the products with a photo and lists the rest under them as text rows', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api(photos: true));
@@ -401,6 +414,54 @@ void main() {
       expect(find.byType(ProductScreen), findsOneWidget);
       expect(find.descendant(of: find.byType(VariationChips), matching: find.text('Мини')), findsOneWidget);
       expect(api.added, isEmpty);
+      await h.unmount(tester);
+    });
+
+    testWidgets("what customers bought together comes under «Часто берут вместе», in the store's order", (
+      tester,
+    ) async {
+      _phone(tester);
+      final api = _api()
+        ..seedCart(FakeApi.latte())
+        ..suggestionsAnswer = const StoreSuggestions(
+          productIds: ['p_croissant', 'p_eclair', 'p_gone', 'p_latte', 'p_capp'],
+          source: 'copurchase',
+        );
+      final h = await pumpApp(tester, api: api);
+      await openCart(tester);
+
+      expect(api.suggestionAsks, ['p_latte']);
+      expect(find.text('Часто берут вместе'), findsOneWidget);
+      expect(find.text('Добавить к напитку?'), findsNothing);
+      final croissant = find.byKey(const ValueKey('p_croissant'));
+      final capp = find.byKey(const ValueKey('p_capp'));
+      expect(tester.getTopLeft(croissant).dx, lessThan(tester.getTopLeft(capp).dx), reason: "the store's order");
+      expect(find.byKey(const ValueKey('p_eclair')), findsNothing, reason: 'sold out');
+      expect(find.byKey(const ValueKey('p_latte')), findsNothing, reason: 'already in the cart');
+      expect(find.byKey(const ValueKey('p_sandwich')), findsNothing, reason: 'not bought with a latte');
+
+      // Something to eat in the cart does not end what goes together.
+      await tester.tap(find.descendant(of: croissant, matching: find.byIcon(Icons.add_rounded)));
+      await settle(tester);
+      expect(api.added.single.productId, 'p_croissant');
+      expect(api.suggestionAsks.last, 'p_croissant,p_latte');
+      expect(find.text('Часто берут вместе'), findsOneWidget);
+      expect(find.byKey(const ValueKey('p_capp')), findsOneWidget);
+      expect(find.byKey(const ValueKey('p_croissant')), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('a store with too few orders keeps «Добавить к напитку?»', (tester) async {
+      _phone(tester);
+      final api = _api()
+        ..seedCart(FakeApi.latte())
+        ..suggestionsAnswer = const StoreSuggestions(productIds: ['p_croissant'], source: 'rule');
+      final h = await pumpApp(tester, api: api);
+      await openCart(tester);
+
+      expect(find.text('Добавить к напитку?'), findsOneWidget);
+      expect(find.text('Часто берут вместе'), findsNothing);
+      expect(find.text('Сэндвич'), findsOneWidget, reason: 'the menu rule, worked out here');
       await h.unmount(tester);
     });
 

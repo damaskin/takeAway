@@ -1533,6 +1533,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cartUpsellTitle => 'Добавить к напитку?';
 
   @override
+  String get upsellTogether => 'Часто берут вместе';
+
+  @override
   String get allergenGluten => 'глютен';
 
   @override

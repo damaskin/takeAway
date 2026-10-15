@@ -165,6 +165,26 @@ final menuProvider = FutureProvider.family<Cached<Menu>, String>((ref, storeId) 
   );
 });
 
+/// Which store and products to ask suggestions for: the ids sorted and
+/// comma-joined, so one set of products is one request whatever its order.
+typedef SuggestionsKey = ({String storeId, String productIds});
+
+SuggestionsKey suggestionsKey(String storeId, Iterable<String> productIds) =>
+    (storeId: storeId, productIds: (productIds.toSet().toList()..sort()).join(','));
+
+/// The store's answer to «what goes with these?» (`GET /stores/{id}/suggestions`):
+/// what customers bought together with the products, or the menu rule while
+/// it has too few orders. Twelve, so the photo filter still leaves a row.
+/// Null when the store cannot be asked — an API from before the endpoint, or
+/// no network: the screens then pick by the menu rule themselves.
+final storeSuggestionsProvider = FutureProvider.autoDispose.family<StoreSuggestions?, SuggestionsKey>((ref, key) async {
+  try {
+    return await ref.watch(apiProvider).suggestions(key.storeId, productIds: key.productIds, limit: 12);
+  } on Object {
+    return null;
+  }
+});
+
 /// Product details (variations and modifiers). Kept for the session: the
 /// cart uses them to name the chosen options.
 final productDetailProvider = FutureProvider.family<ProductDetail, String>((ref, idOrSlug) async {

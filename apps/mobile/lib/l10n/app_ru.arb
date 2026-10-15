@@ -451,6 +451,7 @@
   "productRequired": "обязательно",
   "productPairsWith": "К этому напитку",
   "cartUpsellTitle": "Добавить к напитку?",
+  "upsellTogether": "Часто берут вместе",
   "allergenGluten": "глютен",
   "allergenMilk": "молоко",
   "allergenLactose": "лактоза",

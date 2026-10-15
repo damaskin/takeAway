@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/features/cart/upsell.dart';
+import 'package:takeaway_mobile/features/catalog/catalog_providers.dart';
 import 'package:takeaway_mobile/features/menu/quick_add.dart';
 import 'package:takeaway_mobile/features/product/product_options.dart';
 import 'package:takeaway_mobile/l10n/app_localizations.dart';
@@ -237,6 +238,46 @@ void main() {
         ),
       ]);
       expect(foodSuggestions(pictured).map((s) => s.product.id), ['muffin', 'wrap']);
+    });
+
+    test("what was bought together: in the answer's order, only what the menu sells now, not in hand", () {
+      const together = StoreSuggestions(
+        productIds: ['wrap', 'soup', 'gone', 'latte', 'bag', 'wrap', 'croissant'],
+        source: 'copurchase',
+      );
+      expect(boughtTogether(m, together, exclude: {'latte'}).map((s) => s.product.id), ['wrap', 'bag', 'croissant']);
+      expect(boughtTogether(m, together, limit: 2).map((s) => s.product.id), ['wrap', 'latte']);
+      expect(boughtTogether(m, together).map((s) => s.kind), [
+        ProductKind.food,
+        ProductKind.hotDrinks,
+        ProductKind.other,
+        ProductKind.bakery,
+      ]);
+    });
+
+    test('nothing is bought together by the rule, a failed call or an answer with no photos next to photos', () {
+      expect(boughtTogether(m, const StoreSuggestions(productIds: ['wrap'], source: 'rule')), isEmpty);
+      expect(boughtTogether(m, null), isEmpty);
+
+      final pictured = menu([
+        (
+          'cat_bakery',
+          'BAKERY',
+          [
+            p('croissant', category: 'cat_bakery'),
+            {
+              ...p('muffin', category: 'cat_bakery'),
+              'imageUrls': ['https://cdn.takeaway.md/products/muffin.jpg'],
+            },
+          ],
+        ),
+      ]);
+      const answer = StoreSuggestions(productIds: ['croissant', 'muffin'], source: 'copurchase');
+      expect(boughtTogether(pictured, answer).map((s) => s.product.id), ['muffin']);
+    });
+
+    test('one set of products is one request, whatever its order', () {
+      expect(suggestionsKey('st_1', ['latte', 'croissant', 'latte']), (storeId: 'st_1', productIds: 'croissant,latte'));
     });
 
     test('wants food only for a cart with a drink and nothing to eat', () {
