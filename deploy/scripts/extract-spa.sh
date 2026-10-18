@@ -12,13 +12,19 @@ if [ ${#APPS[@]} -eq 0 ]; then
   APPS=(web admin tma)
 fi
 
-WEBROOT=/opt/takeaway/www
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib/env.sh
+. "$(dirname "$0")/lib/env.sh"
+takeaway_require_server_layout
+
+WEBROOT="$TAKEAWAY_ROOT/www"
+REPO_DIR="$TAKEAWAY_REPO_DIR"
 
 mkdir -p "$WEBROOT"
 
 for app in "${APPS[@]}"; do
-  image="takeaway/${app}:local"
+  # Per environment, so a staging build running next to a production one
+  # never extracts the other's bundle.
+  image="takeaway/${app}:${IMAGE_TAG}"
   echo "--- building ${app} ---"
   docker build \
     -f "$REPO_DIR/deploy/Dockerfile.spa" \
@@ -64,7 +70,7 @@ for app in "${APPS[@]}"; do
 
     inject_global __BUILD_VERSION "${BUILD_VERSION:-}"
     inject_global __SENTRY_DSN "${SENTRY_DSN_WEB:-}"
-    inject_global __SENTRY_ENVIRONMENT "${SENTRY_ENVIRONMENT:-production}"
+    inject_global __SENTRY_ENVIRONMENT "${SENTRY_ENVIRONMENT:-$APP_ENVIRONMENT}"
     inject_global __TELEGRAM_BOT_USERNAME "${TELEGRAM_BOT_USERNAME:-}"
     # Empty keeps the legacy Login Widget; set it only once the bot is
     # switched to OpenID Connect in @BotFather (see .env.production.example).

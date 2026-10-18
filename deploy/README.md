@@ -1,6 +1,11 @@
-# takeAway production deploy
+# takeAway deploy — production and staging
 
-Docker Compose deploy for the live installation behind `takeaway.md`.
+Docker Compose deploy for the live installation behind `takeaway.md` and its
+staging copy behind `test.takeaway.md`. How the two relate — what deploys
+where, how a release reaches production, what staging's data is — is in
+[docs/environments.md](../docs/environments.md). This file is the mechanics;
+paths below are production's, staging's are the same under
+`/opt/takeaway-staging`.
 
 ## Where this actually runs
 
@@ -65,9 +70,11 @@ mismatch with `ssh-keyscan` — that trusts whoever happens to answer.
 
 ### Branch
 
-Production builds from **`main`**. The checkout lives at `/opt/takeaway/repo`
-and the deploy repoints it itself, so switching branches is a one-line edit in
-`.github/workflows/deploy.yml` and nothing on the box.
+**`main` deploys staging; production deploys release tags** `vYYYY.MM.DD`
+(docs/environments.md). Each checkout — `/opt/takeaway/repo`,
+`/opt/takeaway-staging/repo` — is moved by the workflow itself to the exact
+commit it deploys (`git checkout -f --detach <sha>`), so nothing on the box
+names a branch.
 
 `infra/migrate-takeaway-md` was the production line from May to September 2026,
 while it and `main` had diverged. They were reunified in August and `main` took
@@ -87,17 +94,27 @@ deploy/
   nginx/
     nginx.conf              Top-level config (gzip, WS upgrade map, include conf.d)
     snippets/               Shared location blocks (api proxy, SPA, map tile cache)
-    conf.d/                 HTTPS vhosts, one per subdomain; 05-tile-cache.conf is the tile cache zone
+    conf.d/                 HTTPS vhosts, one per subdomain, as *.conf.template with
+                            {{HOST}} placeholders, rendered per environment into
+                            *.rendered.conf (not committed); 05-tile-cache.conf is the
+                            tile cache zone
   scripts/
-    deploy.sh               Full deploy: build + extract SPAs + migrate + reload
-    extract-spa.sh          Build and atomically swap SPA assets into /opt/takeaway/www
-    issue-cert.sh           One-off Let's Encrypt issuance for all subdomains
+    lib/env.sh              Which environment a checkout is (production's defaults)
+    render-nginx.sh         Render conf.d templates for this environment (deploy.sh runs it)
+    deploy.sh               Full deploy: render nginx + build + extract SPAs + migrate + reload
+    extract-spa.sh          Build and atomically swap SPA assets into <root>/www
+    issue-cert.sh           One-off Let's Encrypt issuance for all of the environment's hosts
     renew-cert.sh           Weekly cron renewal with automatic nginx reload
     migrate.sh              Prisma migrate deploy
     edge-nginx.sh           Find / validate / reload the shared edge nginx
     smoke-test.sh           Post-deploy gate, run on the server (see Deploying)
     server-check.sh         Read-only diagnostics — first step of any investigation
-    backup-to-github.sh     Nightly encrypted dump (see Daily operations)
+    backup-to-github.sh     Nightly encrypted dump (see Daily operations), production only
+    staging-bootstrap.sh    One-time layout of /opt/takeaway-staging and its .env
+    staging-refresh.sh      Replace staging's data with a sanitized copy of production's
+    edge-staging-routes.sh  One-time: route staging's names through the shared edge
+    wipe-business-data.sh   Clear an environment down to its SUPER_ADMINs (backup first)
+    sql/                    The SQL those two run
   ssh/                      SSH keypair for CI/CD (gitignored)
 ```
 
@@ -113,12 +130,22 @@ admin.takeaway.md
 kds.takeaway.md   # 301 → admin.takeaway.md/login/pin (the kitchen lives in the cabinet)
 tma.takeaway.md
 cdn.takeaway.md
+
+test.takeaway.md        # staging — flat names: Cloudflare's free certificate
+test-api.takeaway.md    # covers one level of subdomains, so not admin.test.…
+test-admin.takeaway.md
+test-kds.takeaway.md
+test-tma.takeaway.md
+test-cdn.takeaway.md
 ```
 
 ## Deploying
 
-**Normally: push to `main`.** The `Deploy to production`
-workflow runs `deploy.sh` over SSH, then runs `deploy/scripts/smoke-test.sh`
+**Normally: merge into `main`** — `Deploy to staging` — **then push a release
+tag** — `Deploy to production`, which checks the commit is on `main` and has
+been on staging, and waits for the owner's approval (docs/environments.md).
+Both go through `deploy-to-server.yml`: it runs `deploy.sh` over SSH in that
+environment's checkout, then runs `deploy/scripts/smoke-test.sh`
 **on the server** — via `curl --resolve`, so it bypasses DNS and Cloudflare and
 tests only the stack we own. The gate asserts the API is serving the commit
 just deployed (a container that failed to restart keeps answering 200 from the
@@ -157,13 +184,14 @@ secrets is the old host's. Generate a fresh one, append the **public** half to
 the **private** half in `DEPLOY_SSH_KEY`. The private key never travels
 through chat, a ticket or email — only from your machine into the secret.
 
-The manual path, from your machine:
+The manual path, from your machine (production; staging is the same under
+`/opt/takeaway-staging/repo` with `origin/main`):
 
 ```bash
 ssh deploy@<host>
 cd /opt/takeaway/repo
-git fetch origin
-git reset --hard origin/main
+git fetch --tags origin
+git checkout -f --detach v2026.10.20
 bash deploy/scripts/deploy.sh
 ```
 

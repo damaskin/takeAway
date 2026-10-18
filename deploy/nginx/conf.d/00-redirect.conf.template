@@ -4,13 +4,7 @@
 
 server {
   listen 80;
-  server_name takeaway.md
-              www.takeaway.md
-              api.takeaway.md
-              admin.takeaway.md
-              kds.takeaway.md
-              tma.takeaway.md
-              cdn.takeaway.md;
+  server_name {{ALL_SERVER_NAMES}};
 
   include /etc/nginx/snippets/letsencrypt.conf;
 

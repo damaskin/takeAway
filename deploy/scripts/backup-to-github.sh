@@ -29,9 +29,18 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LOCAL_DIR=/opt/takeaway/backups
-GIT_DIR=/opt/takeaway/backup-repo
+# shellcheck source=lib/env.sh
+. "$(dirname "$0")/lib/env.sh"
+takeaway_require_server_layout
+DEPLOY_DIR="$TAKEAWAY_DEPLOY_DIR"
+# The mirror is production's. Staging is a copy that can be re-made from
+# production (docs/environments.md) and is not backed up.
+if [ "$APP_ENVIRONMENT" != production ]; then
+  echo "backup-to-github.sh backs up production only (this checkout is $APP_ENVIRONMENT)." >&2
+  exit 1
+fi
+LOCAL_DIR="$TAKEAWAY_ROOT/backups"
+GIT_DIR="$TAKEAWAY_ROOT/backup-repo"
 
 if [ -z "${BACKUP_ENCRYPTION_KEY:-}" ]; then
   echo "BACKUP_ENCRYPTION_KEY is not set — refusing to write an unencrypted customer database." >&2

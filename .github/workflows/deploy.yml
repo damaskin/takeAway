@@ -1,131 +1,107 @@
 name: Deploy to production
 
-# Production is built from `main`. It was built from
-# `infra/migrate-takeaway-md` while the two lines were apart; they were
-# reunified in August and `main` took over in September, so the long-lived
-# infra branch is history now and nothing should be pushed to it.
+# Production is released, not pushed to: a tag vYYYY.MM.DD on a commit that
+# has already been on staging (docs/environments.md).
 #
-# Changing where production deploys from is a one-line edit below: the deploy
-# step does `git checkout -f -B` on the server, so the checkout at
-# /opt/takeaway/repo follows on its own.
+#   git fetch origin
+#   git tag -a v2026.10.20 <commit> -m "Release 2026.10.20"   # usually origin/main
+#   git push origin v2026.10.20
+#
+# (or `gh release create v2026.10.20 --target <commit> --generate-notes`).
+# A second release on the same day is v2026.10.20.2. App versions (1.6.0 …)
+# are tagged separately and never match this trigger.
+#
+# Before anything reaches the server the release is checked: the commit is on
+# main, and staging has deployed it (or something built on it) successfully.
+# The deploy job then waits on the `production` environment — the owner
+# approves it in GitHub (repository Settings → Environments → production).
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
+    tags: ['v20[0-9][0-9].[0-9]*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to deploy, e.g. v2026.10.20 (a rollback is just an older tag)
+        required: true
+      skip_checks:
+        description: Skip the "on main" and "was on staging" checks — emergencies only
+        type: boolean
+        default: false
 
 concurrency:
-  group: deploy-prod
+  group: deploy-production
   cancel-in-progress: false
 
-env:
-  DEPLOY_BRANCH: main
-  API_HEALTH_URL: https://api.takeaway.md/api/health
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  deploy:
+  verify:
+    name: Verify the release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
-      # Fail here, by name, rather than three steps later with a cryptic ssh
-      # error. A deploy that cannot reach the server should say which secret
-      # is missing.
-      - name: Preflight — required secrets
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: |
-          missing=0
-          for v in DEPLOY_HOST DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
-            if [ -z "${!v}" ]; then
-              echo "::error::Repository secret $v is not set."
-              missing=1
-            fi
-          done
-          [ "$missing" = 0 ] || exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Configure SSH
+      - name: Resolve the tag
+        id: resolve
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          git fetch --force --tags origin
+          sha="$(git rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || {
+            echo "::error::Tag $TAG does not exist."
+            exit 1
+          }
+          echo "release $TAG -> $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          # The host key must already be pinned. Do NOT "fix" a failure here
-          # with ssh-keyscan against the IP: keyscan trusts whoever answers,
-          # and this deploy previously pointed at an address that had been
-          # decommissioned and reassigned. Take the key from the Hetzner
-          # console or from `cat /etc/ssh/ssh_host_ed25519_key.pub` over a
-          # session you already trust, then put it in DEPLOY_KNOWN_HOSTS.
-          if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
-            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for $DEPLOY_HOST. \
-          Add the server's public host key — from the provider console or the \
-          server itself, never from ssh-keyscan against the IP."
+      - name: The commit is on main
+        if: ${{ !inputs.skip_checks }}
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. Release only what has been merged and tested; \
+          for an emergency fix off main, rerun this workflow by hand with skip_checks."
             exit 1
           fi
 
-      - name: Run deploy.sh on production
+      - name: Staging has run it
+        if: ${{ !inputs.skip_checks }}
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # No `git clean` on the remote: .env.production and the host-local
-          # docker-compose.shared-edge.override.yml are untracked on purpose,
-          # and cleaning them takes production down.
-          #
-          # `checkout -f -B` also repairs a checkout that has drifted onto
-          # another branch or a detached HEAD, which a plain reset would not.
-          ssh -i ~/.ssh/deploy_key \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              -o StrictHostKeyChecking=yes \
-              -o BatchMode=yes \
-              -o ConnectTimeout=20 \
-              "$DEPLOY_USER@$DEPLOY_HOST" \
-              "set -euo pipefail
-               cd /opt/takeaway/repo
-               git fetch --prune origin '$DEPLOY_BRANCH'
-               git checkout -f -B '$DEPLOY_BRANCH' 'origin/$DEPLOY_BRANCH'
-               bash deploy/scripts/deploy.sh"
+          # A successful staging deploy of this commit, or of a later one that
+          # contains it: either way this code has been up on test.takeaway.md.
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-staging.yml/runs?status=success&event=push&per_page=100" \
+            --jq '.workflow_runs[].head_sha')"
+          for run_sha in $runs; do
+            if git merge-base --is-ancestor "$SHA" "$run_sha" 2>/dev/null; then
+              echo "staging deployed $run_sha, which contains $SHA"
+              exit 0
+            fi
+          done
+          echo "::error::No successful staging deploy contains $SHA yet. Let \"Deploy to staging\" finish \
+          for it (or rerun it), check test.takeaway.md, then release again."
+          exit 1
 
-      # Smoke tests run ON THE SERVER, via `curl --resolve`, bypassing DNS and
-      # Cloudflare. Asking from a GitHub runner would also be testing the CDN:
-      # a bot challenge served to the runner would fail a perfectly good
-      # deploy. The script asserts the API is serving *this* commit (a
-      # container that failed to restart keeps answering 200 from the previous
-      # build), that Postgres and Redis are reachable, and that no SPA is
-      # 502ing behind a stale edge upstream. It creates no production data.
-      - name: Smoke test (on the server)
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              -o StrictHostKeyChecking=yes \
-              -o BatchMode=yes \
-              "$DEPLOY_USER@$DEPLOY_HOST" \
-              "bash /opt/takeaway/repo/deploy/scripts/smoke-test.sh"
-
-      # Informational only. The stack is already proven healthy from inside the
-      # host; this just says whether the public path through Cloudflare agrees.
-      # A failure here is a CDN or DNS problem, not a bad build, so it must not
-      # fail the deploy.
-      - name: Public reachability (informational)
-        continue-on-error: true
-        run: |
-          code=$(curl -sS -o /tmp/pub.json -w '%{http_code}' --max-time 15 "$API_HEALTH_URL" || echo 000)
-          echo "public /api/health -> $code"
-          [ -s /tmp/pub.json ] && cat /tmp/pub.json || true
-          if [ "$code" != "200" ]; then
-            echo "::warning::Public health check returned $code while the server-side \
-          smoke test passed. The application is fine; look at Cloudflare or DNS."
-          fi
+  deploy:
+    needs: verify
+    uses: ./.github/workflows/deploy-to-server.yml
+    with:
+      environment: production
+      root: /opt/takeaway
+      sha: ${{ needs.verify.outputs.sha }}
+      url: https://takeaway.md
+      api_health_url: https://api.takeaway.md/api/health
+    secrets: inherit

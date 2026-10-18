@@ -3,14 +3,17 @@
 # and reports, it never restarts, rebuilds or writes anything.
 #
 # Run on the server:  bash /opt/takeaway/repo/deploy/scripts/server-check.sh
+# (staging: /opt/takeaway-staging/repo/…)
 
 set -uo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_DIR="$(cd "$DEPLOY_DIR/.." && pwd)"
+# shellcheck source=lib/env.sh
+. "$(dirname "$0")/lib/env.sh"
+DEPLOY_DIR="$TAKEAWAY_DEPLOY_DIR"
+REPO_DIR="$TAKEAWAY_REPO_DIR"
 cd "$DEPLOY_DIR"
 
-DOMAINS=(takeaway.md api.takeaway.md admin.takeaway.md kds.takeaway.md tma.takeaway.md cdn.takeaway.md)
+DOMAINS=("$DOMAIN_WEB_PRIMARY" "$DOMAIN_API" "$DOMAIN_ADMIN" "$DOMAIN_KDS" "$DOMAIN_TMA" "$DOMAIN_CDN")
 
 hr() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 ok() { printf '   \033[32mok\033[0m   %s\n' "$1"; }
@@ -80,8 +83,8 @@ else
 fi
 
 hr "api, from inside the host (bypasses DNS and Cloudflare)"
-health="$(curl -sS --max-time 10 --resolve api.takeaway.md:443:127.0.0.1 \
-            https://api.takeaway.md/api/health 2>/dev/null || true)"
+health="$(curl -sS --max-time 10 --resolve "$DOMAIN_API:443:127.0.0.1" \
+            "https://$DOMAIN_API/api/health" 2>/dev/null || true)"
 if [ -n "$health" ]; then
   ok "/api/health answered"
   info "$health"
@@ -98,14 +101,14 @@ else
 fi
 
 code="$(curl -sS -o /tmp/ta-ready.json -w '%{http_code}' --max-time 10 \
-          --resolve api.takeaway.md:443:127.0.0.1 \
-          https://api.takeaway.md/api/health/ready 2>/dev/null || echo 000)"
+          --resolve "$DOMAIN_API:443:127.0.0.1" \
+          "https://$DOMAIN_API/api/health/ready" 2>/dev/null || echo 000)"
 [ "$code" = "200" ] && ok "/api/health/ready 200" || bad "/api/health/ready $code"
 [ -s /tmp/ta-ready.json ] && sed 's/^/        /' /tmp/ta-ready.json && echo
 
 hr "spa domains, from inside the host"
 for d in "${DOMAINS[@]}"; do
-  [ "$d" = "api.takeaway.md" ] && continue
+  [ "$d" = "$DOMAIN_API" ] && continue
   c="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
         --resolve "$d:443:127.0.0.1" "https://$d/" 2>/dev/null || echo 000)"
   case "$c" in

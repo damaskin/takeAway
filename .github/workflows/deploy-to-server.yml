@@ -1,0 +1,149 @@
+name: Deploy to server
+
+# The one deploy procedure, called by deploy-staging.yml (every push to main)
+# and deploy.yml (a release tag). Both environments live on the same host, in
+# their own directories (docs/environments.md):
+#
+#   staging     /opt/takeaway-staging/repo   test.takeaway.md
+#   production  /opt/takeaway/repo           takeaway.md
+#
+# The server checks out the exact commit it was given — not a branch tip —
+# so what runs is what was asked for even when main has moved on since.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment — production or staging.
+        required: true
+        type: string
+      root:
+        description: Host directory of that environment.
+        required: true
+        type: string
+      sha:
+        description: Commit to deploy.
+        required: true
+        type: string
+      url:
+        description: The environment's storefront, for GitHub's deployment page.
+        required: true
+        type: string
+      api_health_url:
+        description: Public /api/health, for the informational reachability check.
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ inputs.url }}
+    steps:
+      # Fail here, by name, rather than three steps later with a cryptic ssh
+      # error. A deploy that cannot reach the server should say which secret
+      # is missing.
+      - name: Preflight — required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=0
+          for v in DEPLOY_HOST DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Repository secret $v is not set."
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ] || exit 1
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          # The host key must already be pinned. Do NOT "fix" a failure here
+          # with ssh-keyscan against the IP: keyscan trusts whoever answers,
+          # and this deploy previously pointed at an address that had been
+          # decommissioned and reassigned. Take the key from the Hetzner
+          # console or from `cat /etc/ssh/ssh_host_ed25519_key.pub` over a
+          # session you already trust, then put it in DEPLOY_KNOWN_HOSTS.
+          if ! ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS has no entry for $DEPLOY_HOST. \
+          Add the server's public host key — from the provider console or the \
+          server itself, never from ssh-keyscan against the IP."
+            exit 1
+          fi
+
+      - name: Run deploy.sh on ${{ inputs.environment }}
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          ROOT: ${{ inputs.root }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          # No `git clean` on the remote: .env.production and the host-local
+          # docker-compose.shared-edge.override.yml are untracked on purpose,
+          # and cleaning them takes the environment down. The rendered nginx
+          # vhosts are untracked too and are re-rendered by deploy.sh.
+          #
+          # `checkout -f --detach <sha>` also repairs a checkout that has
+          # drifted onto another branch, which a plain reset would not.
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              -o ConnectTimeout=20 \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "set -euo pipefail
+               cd '$ROOT/repo'
+               git fetch --prune --tags --force origin
+               git checkout -f --detach '$SHA'
+               bash deploy/scripts/deploy.sh"
+
+      # Smoke tests run ON THE SERVER, via `curl --resolve`, bypassing DNS and
+      # Cloudflare. Asking from a GitHub runner would also be testing the CDN:
+      # a bot challenge served to the runner would fail a perfectly good
+      # deploy. The script asserts the API is serving *this* commit (a
+      # container that failed to restart keeps answering 200 from the previous
+      # build), that Postgres and Redis are reachable, and that no SPA is
+      # 502ing behind a stale edge upstream. It creates no data.
+      - name: Smoke test (on the server)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          ROOT: ${{ inputs.root }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o StrictHostKeyChecking=yes \
+              -o BatchMode=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "bash '$ROOT/repo/deploy/scripts/smoke-test.sh'"
+
+      # Informational only. The stack is already proven healthy from inside the
+      # host; this just says whether the public path through Cloudflare agrees.
+      # A failure here is a CDN or DNS problem, not a bad build, so it must not
+      # fail the deploy.
+      - name: Public reachability (informational)
+        continue-on-error: true
+        env:
+          API_HEALTH_URL: ${{ inputs.api_health_url }}
+        run: |
+          code=$(curl -sS -o /tmp/pub.json -w '%{http_code}' --max-time 15 "$API_HEALTH_URL" || echo 000)
+          echo "public /api/health -> $code"
+          [ -s /tmp/pub.json ] && cat /tmp/pub.json || true
+          if [ "$code" != "200" ]; then
+            echo "::warning::Public health check returned $code while the server-side \
+          smoke test passed. The application is fine; look at Cloudflare or DNS."
+          fi

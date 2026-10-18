@@ -10,6 +10,12 @@
 #
 # Ports published to host:
 #   80, 443 (nginx) only. Postgres, Redis, API are all internal.
+#
+# The same file runs production and staging side by side on one host
+# (docs/environments.md). What differs — the compose project, the host
+# directory, the image tag — comes from deploy/.env.production through
+# compose's `.env` (a symlink to it, see deploy.sh); the defaults here are
+# production's. COMPOSE_PROJECT_NAME in that file overrides `name:` below.
 
 name: takeaway
 
@@ -93,7 +99,9 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-dev}
         BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
-    image: takeaway/api:local
+    # Tagged per environment: staging and production build on the same host,
+    # and a shared tag would let one restart from the other's build.
+    image: takeaway/api:${IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -112,7 +120,7 @@ services:
       # in every registry and every cached build that ever pulled it.
       # /run is tmpfs inside the container, so the source directory is what
       # survives a reboot.
-      - /opt/takeaway/secrets:/run/secrets:ro
+      - ${TAKEAWAY_ROOT:-/opt/takeaway}/secrets:/run/secrets:ro
     healthcheck:
       # /api/health only proves the process is alive — it answered "ok" with
       # Postgres face-down. /api/health/ready talks to Postgres and Redis and
@@ -144,10 +152,12 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       # SPA static roots — populated by the extract-spa.sh script at deploy time
-      - /opt/takeaway/www:/usr/share/nginx/html:ro
+      - ${TAKEAWAY_ROOT:-/opt/takeaway}/www:/usr/share/nginx/html:ro
       # Let's Encrypt material
-      - /opt/takeaway/letsencrypt:/etc/letsencrypt:ro
-      - /opt/takeaway/certbot-webroot:/var/www/certbot:ro
+      - ${TAKEAWAY_ROOT:-/opt/takeaway}/letsencrypt:/etc/letsencrypt:ro
+      # The edge answers HTTP-01 challenges for every takeaway.md host from
+      # production's webroot, so staging writes its challenges there too.
+      - ${CERTBOT_WEBROOT:-/opt/takeaway/certbot-webroot}:/var/www/certbot:ro
       # Map tile cache (nginx/snippets/tiles.conf). A named volume, so a
       # recreated container keeps its tiles instead of asking OSM again.
       - tile_cache:/var/cache/nginx/tiles
@@ -157,8 +167,8 @@ services:
     # Not started by default — bring it up on demand via `docker compose run certbot ...`
     profiles: ['tools']
     volumes:
-      - /opt/takeaway/letsencrypt:/etc/letsencrypt
-      - /opt/takeaway/certbot-webroot:/var/www/certbot
+      - ${TAKEAWAY_ROOT:-/opt/takeaway}/letsencrypt:/etc/letsencrypt
+      - ${CERTBOT_WEBROOT:-/opt/takeaway/certbot-webroot}:/var/www/certbot
 
 volumes:
   postgres_data:

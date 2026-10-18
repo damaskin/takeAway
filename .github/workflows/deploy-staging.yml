@@ -1,0 +1,45 @@
+name: Deploy to staging
+
+# Every push to main lands on the test environment, test.takeaway.md — that
+# is where a merged task is checked before it is released. Production is a
+# separate step: a release tag (deploy.yml, docs/environments.md).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to put on staging (default — main)
+        required: false
+        default: main
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: resolve
+    uses: ./.github/workflows/deploy-to-server.yml
+    with:
+      environment: staging
+      root: /opt/takeaway-staging
+      sha: ${{ needs.resolve.outputs.sha }}
+      url: https://test.takeaway.md
+      api_health_url: https://test-api.takeaway.md/api/health
+    secrets: inherit
