@@ -26,6 +26,7 @@ if [ "${1:-}" != "--yes-wipe-$APP_ENVIRONMENT" ]; then
   echo "Re-run with --yes-wipe-$APP_ENVIRONMENT to go ahead." >&2
   exit 2
 fi
+cd "$TAKEAWAY_DEPLOY_DIR"
 
 container_of() {
   docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter "label=com.docker.compose.service=$1" | head -1

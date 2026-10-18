@@ -25,6 +25,9 @@ if [ "$APP_ENVIRONMENT" != staging ]; then
   echo "staging-refresh.sh replaces the data of staging only (this checkout is $APP_ENVIRONMENT)." >&2
   exit 1
 fi
+# `sudo -u deploy` keeps the caller's directory — /root, which compose then
+# cannot even stat.
+cd "$TAKEAWAY_DEPLOY_DIR"
 
 PROD_DEPLOY=/opt/takeaway/repo/deploy
 PROD_PROJECT=takeaway
