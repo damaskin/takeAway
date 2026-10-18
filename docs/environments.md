@@ -196,7 +196,7 @@ edge serves for every takeaway.md name.
 
 - **Card payments.** The fake bank from `docker-compose.sandbox.yml`
   (`agro-mock`) can be wired in so test orders are paid with test cards.
-- **Google and Apple sign-in** — need the test-* origins registered in Google
+- **Google and Apple sign-in** — need the test-\* origins registered in Google
   Cloud and Apple Developer.
 - **A staging build of the app** pointing at test-api.takeaway.md.
 - **Email** — no SMTP in either environment.
