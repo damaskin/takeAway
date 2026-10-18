@@ -90,10 +90,20 @@ deploy/
   docker-compose.shared-edge.override.yml
                             Host-local. Present only on the shared host; makes
                             deploy.sh reload the edge instead of our own nginx.
+  docker-compose.staging.yml
+                            Staging only: the fake bank (agro-mock) and the api
+                            pointed at it. On when staging's .env.production says
+                            EXTRA_COMPOSE_FILES=docker-compose.staging.yml;
+                            production refuses it (scripts/lib/env.sh)
+  docker-compose.sandbox.yml
+                            The separate takeaway-agrotest stack (fake bank only)
+  Dockerfile.agro-mock      The fake bank's image, for those two
   .env.production.example   Copy to .env.production and fill in
   nginx/
     nginx.conf              Top-level config (gzip, WS upgrade map, include conf.d)
     snippets/               Shared location blocks (api proxy, SPA, map tile cache)
+    sandbox-bank/           Staging only: the fake bank's payment page on the api
+                            host, mounted by docker-compose.staging.yml
     conf.d/                 HTTPS vhosts, one per subdomain, as *.conf.template with
                             {{HOST}} placeholders, rendered per environment into
                             *.rendered.conf (not committed); 05-tile-cache.conf is the
@@ -262,7 +272,10 @@ deploy/.env.production`, fill in the secrets.
 
 All compose commands below run from `/opt/takeaway/repo/deploy`. On the
 shared host, add `-f docker-compose.shared-edge.override.yml` after the first
-`-f` — or just use `deploy.sh`, which assembles the file list itself.
+`-f` — or just use `deploy.sh`, which assembles the file list itself. On
+staging, when its `.env.production` names `EXTRA_COMPOSE_FILES`, add those too
+(`-f docker-compose.staging.yml`) to anything that starts or recreates the api:
+without them it comes back with card payments off.
 
 - **Tail API logs:**
   ```bash

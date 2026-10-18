@@ -13,7 +13,7 @@ has not run on staging first.
 | API / CDN      | test-api.takeaway.md / test-cdn.takeaway.md                 | api.takeaway.md / cdn.takeaway.md            |
 | Deploys        | every push to `main`, automatically                         | a release tag `vYYYY.MM.DD`, after approval  |
 | Data           | a sanitized copy of production (see below)                  | real                                         |
-| Card payments  | off                                                         | Agroprombank («Клевер»), live                |
+| Card payments  | a fake bank — test cards, no money (see below)              | Agroprombank («Клевер»), live                |
 | Search engines | `X-Robots-Tag: noindex, nofollow`                           | indexed                                      |
 | On the server  | `/opt/takeaway-staging`, compose project `takeaway-staging` | `/opt/takeaway`, compose project `takeaway`  |
 
@@ -96,8 +96,8 @@ cuts everything that could reach a real person or a real system from it
 - picture URLs point at staging's CDN, whose bucket gets a copy of production's.
 
 Staging's environment is the other wall: its own Telegram bot (a test order
-cannot message a café's real staff), card payments off, Google and Apple
-sign-in off, no push credentials, no SMTP.
+cannot message a café's real staff), card payments against a fake bank,
+Google and Apple sign-in off, no push credentials, no SMTP.
 
 It still holds real people's names and phone numbers. Staging is for the
 team only — do not hand its links to customers or cafés.
@@ -127,6 +127,42 @@ production — run it only when that is what you want.
   staging's API registers the test bot's webhook
   (`TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook`,
   `TELEGRAM_WEBHOOK_SECRET`) at every start. See docs/staff-access.md.
+
+### Paying by card on staging
+
+Staging's api talks to a fake bank instead of Agroprombank: the sandbox the
+payment tests run against (`tools/agroprombank-mock`), in the container
+`takeaway-staging-agro-mock-1`. It speaks the bank's protocol, signs and
+checks signatures like the bank, and moves no money; the live merchant never
+sees a staging order. It runs when staging's `deploy/.env.production` says
+`EXTRA_COMPOSE_FILES=docker-compose.staging.yml` (below, «Card payments on
+staging»).
+
+As in production, the checkout uses a **bound card** (`CARD_PAYMENT_FLOW=token`),
+charged when the kitchen accepts the order:
+
+- Bind a card in the profile: any **last four digits** except `0000`, any
+  phone, any issuer.
+- The **SMS code is always `111111`**. Another code is refused, three wrong
+  ones burn the request — as at the bank.
+- Card `0000` is refused at binding; an order of exactly **666.00** is
+  declined for insufficient funds. Everything else is approved.
+- Cards bound before a `staging-refresh.sh` are gone after it (the copy drops
+  card tokens); bind again. A redeploy keeps them — the fake bank stores what
+  it issued in a volume.
+
+**Web-платёж** — the bank's own page — works too. Set `CARD_PAYMENT_FLOW=web`
+in staging's `deploy/.env.production` and redeploy (or recreate the api); the
+checkout then sends the customer to
+`https://test-api.takeaway.md/sandbox-bank/PaymentStart`, a page with
+«Оплатить» and «Отказаться», and back to the order. 666.00 is declined there
+too. `AGROPROMBANK_HOLD_UNTIL_ACCEPTED=true` in the same file tries holds
+(authorize at checkout, capture on accept), which production's terminal
+refuses.
+
+What the fake bank did: `docker logs takeaway-staging-agro-mock-1` on the
+server — every call, decision and code. Invoices it sees start with `9`
+(production's start with `1`).
 
 ## Production's clean start (October 2026)
 
@@ -165,7 +201,16 @@ classic rejection), and staging to hold its copy.
   repo/                        checkout at the last commit of main (detached)
     deploy/.env.production     staging's — its first block says which copy this is
   www/ letsencrypt/ secrets/
+docker volumes takeaway-staging_sandbox_bank_keys    the fake bank's key pairs, made on its first start
+               takeaway-staging_sandbox_bank_state   what it issued: cards, operations, invoices
 ```
+
+Staging runs with one more compose file, `deploy/docker-compose.staging.yml`
+(the fake bank), because its `.env.production` names it in
+`EXTRA_COMPOSE_FILES`. Every deploy script takes the file list from
+`takeaway_compose_files` in `lib/env.sh`, which refuses any extra file for a
+production copy — by its root, its checkout, its project name or its host
+names — so production cannot start against the fake bank.
 
 `deploy/scripts/lib/env.sh` reads which copy a checkout is from its
 `deploy/.env.production` (`TAKEAWAY_ROOT`, `COMPOSE_PROJECT_NAME`,
@@ -237,6 +282,39 @@ and a snapshot owned by the user who took it is simpler to reason about.
 
 - **Card payments.** The fake bank from `docker-compose.sandbox.yml`
   (`agro-mock`) can be wired in so test orders are paid with test cards.
+
+### Card payments on staging
+
+A staging bootstrapped after this was added has the line already. One
+bootstrapped before it (the first one, 2026-10-18) gets it by hand, once:
+
+1. Staging's checkout must hold `docker-compose.staging.yml` — the next
+   `Deploy to staging` after it is in `main`.
+2. On the server:
+   ```bash
+   ssh hetzner
+   echo 'EXTRA_COMPOSE_FILES=docker-compose.staging.yml' \
+     | sudo -u deploy tee -a /opt/takeaway-staging/repo/deploy/.env.production
+   sudo -u deploy bash /opt/takeaway-staging/repo/deploy/scripts/deploy.sh
+   ```
+   The deploy builds the fake bank, which makes its keys on first start,
+   recreates the api and nginx with it, and reloads the edge. Production is
+   not touched: its own `.env.production` is a different file, and its deploy
+   refuses that line.
+3. Check: the deploy's smoke test says `sandbox bank: payment page routed`;
+   `https://test-api.takeaway.md/api/config/features` answers
+   `agroprombankEnabled: true`, `cardPaymentFlow: "token"`; bind a card in
+   the Mini App or on the site (code `111111`), order, accept it on the
+   kitchen board — the order is paid.
+
+To switch card payments off again, delete the line and deploy: the api then
+sees `AGROPROMBANK_ENABLED=false` from the same file. The fake bank's
+container and volumes stay until removed by hand
+(`docker rm -f takeaway-staging-agro-mock-1`,
+`docker volume rm takeaway-staging_sandbox_bank_keys takeaway-staging_sandbox_bank_state`).
+
+## Not on staging yet
+
 - **Google and Apple sign-in** — need the test-\* origins registered in Google
   Cloud and Apple Developer.
 - **A staging build of the app** pointing at test-api.takeaway.md.

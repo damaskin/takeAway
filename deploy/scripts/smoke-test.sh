@@ -120,4 +120,21 @@ case "$tile" in
   *) echo "FAIL: tile cache answered '$tile' instead of a PNG — check nginx/snippets/tiles.conf" >&2; exit 1 ;;
 esac
 
+# --- 5. staging's fake bank, when this copy runs one ------------------------
+# An unsigned request gets the mock's own 400 «Ошибка подписи запроса»: the
+# page is routed and the mock is up. The api's 404 means the route is not
+# mounted, 502 that the mock is down. Only said, never failed: a fake bank
+# must not hold up the deploy, and with it the release, of everything else.
+case " $EXTRA_COMPOSE_FILES " in
+  *" docker-compose.staging.yml "*)
+    page="$(code_of "https://$DOMAIN_API/sandbox-bank/PaymentStart")"
+    if [ "$page" = 400 ]; then
+      echo "sandbox bank: payment page routed"
+    else
+      echo "WARN: https://$DOMAIN_API/sandbox-bank/PaymentStart answered $page, not the mock's 400 —" >&2
+      echo "      card payments on staging will fail; see docker logs ${COMPOSE_PROJECT_NAME}-agro-mock-1" >&2
+    fi
+    ;;
+esac
+
 echo "smoke test passed"

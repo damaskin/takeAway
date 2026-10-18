@@ -22,14 +22,6 @@ skip_snapshot="${SKIP_PRE_DEPLOY_SNAPSHOT:-}"
 DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DEPLOY_DIR"
 
-COMPOSE_FILES=(-f docker-compose.prod.yml)
-SHARED_EDGE=0
-if [ -f docker-compose.shared-edge.override.yml ]; then
-  COMPOSE_FILES+=(-f docker-compose.shared-edge.override.yml)
-  SHARED_EDGE=1
-fi
-compose() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
-
 echo "==> loading .env.production"
 if [ ! -f .env.production ]; then
   echo "ERROR: deploy/.env.production missing. Copy from .env.production.example and fill in." >&2
@@ -39,6 +31,14 @@ fi
 . "$DEPLOY_DIR/scripts/lib/env.sh"
 takeaway_require_server_layout
 echo "==> environment: $APP_ENVIRONMENT — $TAKEAWAY_ROOT, compose project $COMPOSE_PROJECT_NAME, images :$IMAGE_TAG"
+
+# The stack, the shared-edge override where the server has one, and the
+# extra files this environment names (staging's fake bank) — lib/env.sh.
+takeaway_compose_files
+compose() { docker compose "${TAKEAWAY_COMPOSE_FILES[@]}" "$@"; }
+SHARED_EDGE=0
+[ -f docker-compose.shared-edge.override.yml ] && SHARED_EDGE=1
+[ -z "$EXTRA_COMPOSE_FILES" ] || echo "==> extra compose files: $EXTRA_COMPOSE_FILES"
 
 # Pre-flight: vars the API hard-requires on boot. A missing one used to put
 # the api container into a CrashLoopBackOff with nginx serving 502 — fail

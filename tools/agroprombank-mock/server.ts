@@ -11,6 +11,7 @@ import {
   createSandboxWebBank,
 } from '../../apps/api/src/app/payments/agroprombank-web/testing/sandbox-web-bank';
 import { ensureDevKeys, readDevKey } from './dev-keys';
+import { keepStateIn } from './state-file';
 
 /**
  * Standalone sandbox gateways — `pnpm agro:mock`.
@@ -31,6 +32,10 @@ const WEB_PORT = Number(process.env['AGRO_WEB_MOCK_PORT'] ?? 8898);
 const API_BASE = process.env['AGRO_WEB_MOCK_API_BASE'] ?? 'http://localhost:3000/api';
 /** Where the customer's browser reaches the API after the page — the redirects go there. */
 const PUBLIC_API_BASE = process.env['AGRO_WEB_MOCK_PUBLIC_API_BASE'] ?? API_BASE;
+/** One SMS code for every binding (a shared test environment); random when unset. */
+const FIXED_OTP = process.env['AGRO_MOCK_OTP']?.trim() || undefined;
+/** Where the sandboxes keep their memory across restarts; in memory only when unset. */
+const STATE_FILE = process.env['AGRO_MOCK_STATE_FILE']?.trim() || undefined;
 
 // eslint-disable-next-line no-console
 const log = (message: string): void => console.log(`[agro-mock] ${message}`);
@@ -39,6 +44,7 @@ const keys = ensureDevKeys();
 const bank = createSandboxBank({
   merchantPublicKeyPem: readDevKey(keys.merchantPublicKeyPath),
   bankPrivateKeyPem: readDevKey(keys.bankPrivateKeyPath),
+  fixedOtp: FIXED_OTP,
   log,
 });
 
@@ -53,9 +59,15 @@ const webBank = createSandboxWebBank({
   log: (message) => log(`[web] ${message}`),
 });
 
+if (STATE_FILE) keepStateIn(STATE_FILE, bank, webBank, log);
+
 void bank.listen(PORT).then((port) => {
   log(`песочница «Клевер» слушает http://localhost:${port}${SANDBOX_PATH}`);
-  log(`одноразовый пароль: GET http://localhost:${port}/__sandbox/otp/:requestid`);
+  log(
+    FIXED_OTP
+      ? `одноразовый пароль: всегда ${FIXED_OTP}`
+      : `одноразовый пароль: GET http://localhost:${port}/__sandbox/otp/:requestid`,
+  );
   log(`состояние:          GET http://localhost:${port}/__sandbox/state`);
   log(`карта ${UNKNOWN_CARD_DIGITS} не привязывается, сумма ${DECLINE_AMOUNT} отклоняется — для проверки ошибок`);
 });
