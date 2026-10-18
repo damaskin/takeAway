@@ -412,13 +412,19 @@ the repo ships a sandbox that speaks the same protocol —
 our signature and signs its own replies, so a broken canonicalization fails
 against it exactly as it would fail against the bank.
 
-The same implementation backs three things, which is why they cannot drift:
+The same implementation backs four things, which is why they cannot drift:
 
 | Surface                                            | Command                                                                      |
 | -------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Protocol test suite                                | `npx jest --config apps/api/jest.config.cts --testPathPatterns agroprombank` |
 | Standalone gateway for local dev                   | `pnpm agro:mock`                                                             |
 | Sandbox stack (API + Postgres + Redis + fake bank) | `deploy/docker-compose.sandbox.yml`                                          |
+| Staging, test.takeaway.md                          | `deploy/docker-compose.staging.yml` — docs/environments.md                   |
+
+On staging the mock runs with `AGRO_MOCK_OTP=111111` (one SMS code for every
+binding, since testers cannot read its log) and `AGRO_MOCK_STATE_FILE` (what it
+issued survives a restart, so bound cards keep working across deploys); its
+Web-платёж page is served at `https://test-api.takeaway.md/sandbox-bank/PaymentStart`.
 
 Local development against the mock:
 

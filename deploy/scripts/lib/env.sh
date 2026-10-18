@@ -20,6 +20,8 @@
 #   TLS_CERT_NAME        the Let's Encrypt lineage covering all of them
 #   APP_ENVIRONMENT      production | staging — for messages and Sentry
 #   ROBOTS_TAG           X-Robots-Tag for every site; empty (none) in production
+#   EXTRA_COMPOSE_FILES  compose files laid over the stack, by name in deploy/,
+#                        space-separated; staging only (takeaway_compose_files)
 #
 # The api container reads the whole file (env_file), so these names must not
 # mean anything to the API. The host names are DOMAIN_* for that reason:
@@ -58,9 +60,11 @@ fi
 : "${DOMAIN_CDN:=cdn.takeaway.md}"
 : "${TLS_CERT_NAME:=${DOMAIN_WEB%% *}}"
 DOMAIN_WEB_PRIMARY="${DOMAIN_WEB%% *}"
+: "${EXTRA_COMPOSE_FILES=}"
 
 export TAKEAWAY_ROOT COMPOSE_PROJECT_NAME IMAGE_TAG CERTBOT_WEBROOT APP_ENVIRONMENT ROBOTS_TAG \
-  DOMAIN_WEB DOMAIN_WEB_PRIMARY DOMAIN_API DOMAIN_ADMIN DOMAIN_KDS DOMAIN_TMA DOMAIN_CDN TLS_CERT_NAME
+  DOMAIN_WEB DOMAIN_WEB_PRIMARY DOMAIN_API DOMAIN_ADMIN DOMAIN_KDS DOMAIN_TMA DOMAIN_CDN TLS_CERT_NAME \
+  EXTRA_COMPOSE_FILES
 
 # Every server name of this copy, for the HTTP redirect, the certificate and
 # the smoke test.
@@ -100,4 +104,43 @@ takeaway_require_server_layout() {
     echo "ERROR: $problem" >&2
     exit 1
   fi
+}
+
+# The compose files of this copy, as `docker compose` arguments in the array
+# TAKEAWAY_COMPOSE_FILES: the stack, the shared-edge override where the server
+# has one, and what EXTRA_COMPOSE_FILES in deploy/.env.production names. Every
+# script that starts or recreates a service uses it — one that left the extra
+# files out would recreate the api without what they set.
+#
+# Not COMPOSE_FILE (or any COMPOSE_* name): compose reads those from .env, the
+# symlink to .env.production, by itself.
+#
+# Extra files are for staging alone. docker-compose.staging.yml runs a fake
+# bank, and a production that picked it up would take customers' orders
+# against it — so a production copy, by any sign of being one, refuses them.
+takeaway_compose_files() {
+  TAKEAWAY_COMPOSE_FILES=(-f "$TAKEAWAY_DEPLOY_DIR/docker-compose.prod.yml")
+  if [ -f "$TAKEAWAY_DEPLOY_DIR/docker-compose.shared-edge.override.yml" ]; then
+    TAKEAWAY_COMPOSE_FILES+=(-f "$TAKEAWAY_DEPLOY_DIR/docker-compose.shared-edge.override.yml")
+  fi
+  [ -n "${EXTRA_COMPOSE_FILES// /}" ] || return 0
+
+  if [ "$TAKEAWAY_ROOT" = "$TAKEAWAY_PROD_ROOT" ] || [ "$TAKEAWAY_REPO_DIR" = "$TAKEAWAY_PROD_ROOT/repo" ] \
+    || [ "$APP_ENVIRONMENT" = production ] || [ "$COMPOSE_PROJECT_NAME" = takeaway ] \
+    || [ "$DOMAIN_API" = api.takeaway.md ]; then
+    echo "ERROR: EXTRA_COMPOSE_FILES=$EXTRA_COMPOSE_FILES in production's deploy/.env.production —" >&2
+    echo "       extra compose files are for staging only (docker-compose.staging.yml is a fake bank)." >&2
+    exit 1
+  fi
+  local name
+  for name in $EXTRA_COMPOSE_FILES; do
+    case "$name" in
+      */* | .*) echo "ERROR: EXTRA_COMPOSE_FILES names files in deploy/ by name only, not '$name'" >&2; exit 1 ;;
+    esac
+    if [ ! -f "$TAKEAWAY_DEPLOY_DIR/$name" ]; then
+      echo "ERROR: EXTRA_COMPOSE_FILES names $name, which is not in $TAKEAWAY_DEPLOY_DIR" >&2
+      exit 1
+    fi
+    TAKEAWAY_COMPOSE_FILES+=(-f "$TAKEAWAY_DEPLOY_DIR/$name")
+  done
 }

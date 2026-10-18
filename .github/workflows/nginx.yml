@@ -6,21 +6,30 @@ name: nginx config
 # domain of that environment goes down. This renders production's vhosts,
 # runs them in the image production uses (read from docker-compose.prod.yml)
 # before they get there, checks that the map tile cache answers, and checks
-# that staging's render loads too.
+# that staging's render loads too — with staging's fake bank page, which
+# production must not have.
 on:
   push:
     paths:
       - 'deploy/nginx/**'
       - 'deploy/docker-compose.prod.yml'
+      - 'deploy/docker-compose.staging.yml'
+      - 'deploy/Dockerfile.agro-mock'
       - 'deploy/scripts/render-nginx.sh'
       - 'deploy/scripts/lib/env.sh'
+      - 'tools/agroprombank-mock/**'
+      - 'apps/api/src/app/payments/agroprombank*/testing/**'
       - '.github/workflows/nginx.yml'
   pull_request:
     paths:
       - 'deploy/nginx/**'
       - 'deploy/docker-compose.prod.yml'
+      - 'deploy/docker-compose.staging.yml'
+      - 'deploy/Dockerfile.agro-mock'
       - 'deploy/scripts/render-nginx.sh'
       - 'deploy/scripts/lib/env.sh'
+      - 'tools/agroprombank-mock/**'
+      - 'apps/api/src/app/payments/agroprombank*/testing/**'
       - '.github/workflows/nginx.yml'
 
 concurrency:
@@ -193,6 +202,55 @@ jobs:
             -v "$PWD/deploy/nginx/snippets:/etc/nginx/snippets:ro" \
             -v "$RUNNER_TEMP/letsencrypt:/etc/letsencrypt:ro" \
             "$image" nginx -t
+
+      - name: Staging's fake bank page, and none in production
+        run: |
+          # docker-compose.staging.yml mounts nginx/sandbox-bank/ at
+          # /etc/nginx/api.d/ and runs the fake bank as agro-mock on the
+          # project network. The same here, with the mock's real image.
+          docker build -q -f deploy/Dockerfile.agro-mock -t agro-mock-ci .
+          docker run -d --name agro-mock --network takeaway agro-mock-ci
+          image="$(sed -n 's/^ *image: *\(nginx:[^ ]*\).*/\1/p' deploy/docker-compose.prod.yml | head -1)"
+          docker run -d --name nginx-staging --network takeaway \
+            --add-host api:127.0.0.1 --add-host minio:127.0.0.1 \
+            -p 9443:443 \
+            -v "$PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$RUNNER_TEMP/conf.d-staging:/etc/nginx/conf.d:ro" \
+            -v "$PWD/deploy/nginx/snippets:/etc/nginx/snippets:ro" \
+            -v "$PWD/deploy/nginx/sandbox-bank:/etc/nginx/api.d:ro" \
+            -v "$RUNNER_TEMP/letsencrypt:/etc/letsencrypt:ro" \
+            "$image"
+          for i in $(seq 1 30); do
+            docker logs agro-mock 2>&1 | grep -q 'Web-платёж: страница' && break
+            sleep 1
+          done
+          docker exec nginx-staging nginx -t
+          get() { curl -sk --max-time 10 --resolve "$1:$2:127.0.0.1" -o /tmp/body -w '%{http_code}' "https://$1:$2$3"; }
+          fail=0
+
+          # An unsigned request reaches the mock: its own 400, its own words.
+          code="$(get test-api.takeaway.md 9443 /sandbox-bank/PaymentStart)"
+          echo "staging /sandbox-bank/PaymentStart -> $code: $(head -c 120 /tmp/body)"
+          { [ "$code" = 400 ] && grep -q 'Ошибка подписи' /tmp/body; } \
+            || { echo "::error::staging's api host does not serve the fake bank's page"; fail=1; }
+
+          # Only the page: the bank's web service and the mock's test hooks
+          # fall through to the api (not running here: 502), never the mock.
+          for path in /sandbox-bank/merchant/APB.SV.WebPayment.AgentService.asmx \
+                      /sandbox-bank/__sandbox/web/state /sandbox-bank/PaymentStart/x /sandbox-bank/; do
+            code="$(get test-api.takeaway.md 9443 "$path")"
+            echo "staging $path -> $code"
+            [ "$code" = 502 ] || { echo "::error::staging $path should be the api's, got $code"; fail=1; }
+          done
+
+          # Production's nginx (no api.d) on the same network as the mock: the
+          # path is the api's, the fake bank cannot be reached.
+          code="$(get api.takeaway.md 8443 /sandbox-bank/PaymentStart)"
+          echo "production /sandbox-bank/PaymentStart -> $code"
+          { [ "$code" = 502 ] && ! grep -q 'Ошибка подписи' /tmp/body; } \
+            || { echo "::error::production's api host reaches the fake bank ($code)"; fail=1; }
+
+          [ "$fail" = 0 ] || { docker logs nginx-staging 2>&1 | tail -20; docker logs agro-mock 2>&1 | tail -20; exit 1; }
 
       - name: nginx log
         if: always()
