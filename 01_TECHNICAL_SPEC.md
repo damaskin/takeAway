@@ -215,7 +215,8 @@ takeaway/
 - **Runtime**: Docker контейнеры (Dockerfile.api для NestJS, Dockerfile.spa для Angular bundles)
 - **Dev**: `docker compose -f infra/docker-compose.yml up` — Postgres 16 (host port 55432), Redis 7, MinIO. Mailhog не подключён (тестовая почта пишется на реальный SMTP).
 - **Prod**: docker-compose на общем хосте, за чужим edge-nginx. Подробности топологии — 0.5. Kubernetes — будущий M7.
-- **CI/CD**: GitHub Actions, preflight без `DATABASE_URL`/`REDIS_URL` (выводятся из compose), deploy guardrail
+- **Staging** (с 2026-10): вторая копия того же стека на том же хосте — `/opt/takeaway-staging`, compose-проект `takeaway-staging`, домены `test.takeaway.md`, `test-api.` / `test-admin.` / `test-tma.` / `test-cdn.` / `test-kds.takeaway.md`, свой бот @takeaway_test_bot, своя БД/MinIO/Redis/секреты, оплата картой выключена, `X-Robots-Tag: noindex`. Данные — обезвреженная копия прода (`deploy/scripts/staging-refresh.sh`). Чем окружение отличается, решает его `deploy/.env.production` (`deploy/scripts/lib/env.sh`); vhost'ы nginx — шаблоны `conf.d/*.conf.template`. Регламент — `docs/environments.md`.
+- **CI/CD**: GitHub Actions, preflight без `DATABASE_URL`/`REDIS_URL` (выводятся из compose), deploy guardrail. Push в `main` → `Deploy to staging`; прод — только тегом релиза `vYYYY.MM.DD` (`Deploy to production`: коммит есть в `main`, staging его уже выкатывал, затем подтверждение владельца в GitHub-окружении `production`). Оба — через `deploy-to-server.yml`.
 - **CDN**: `cdn.takeaway.md` (через MinIO)
 - **Secrets**: env-файлы в SSH-deploy. Doppler/Vault — потенциально M7.
 - **Backup**: pg_dump в S3-compatible — план

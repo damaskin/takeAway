@@ -53,6 +53,7 @@ for template in "$SRC_DIR"/*.conf.template; do
       -e "s|{{TMA_HOST}}|$TMA_HOST|g" \
       -e "s|{{CDN_HOST}}|$CDN_HOST|g" \
       -e "s|{{TLS_CERT_NAME}}|$TLS_CERT_NAME|g" \
+      -e "s|{{ROBOTS_TAG}}|$ROBOTS_TAG|g" \
       "$template" > "$tmp"
   if grep -n '{{' "$tmp" >&2; then
     rm -f "$tmp"

@@ -1,0 +1,8 @@
+# Whether search engines may index this environment: X-Robots-Tag, sent by
+# snippets/security-headers.conf. Empty in production (no header at all);
+# staging says "noindex, nofollow" — it holds a copy of real data and must
+# never show up in search results. ROBOTS_TAG in deploy/.env.production,
+# defaulted per environment by scripts/lib/env.sh.
+map $host $robots_tag {
+  default "{{ROBOTS_TAG}}";
+}

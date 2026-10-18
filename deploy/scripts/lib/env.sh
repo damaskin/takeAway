@@ -19,6 +19,7 @@
 #   API_HOST ADMIN_HOST KDS_HOST TMA_HOST CDN_HOST
 #   TLS_CERT_NAME        the Let's Encrypt lineage covering all of them
 #   APP_ENVIRONMENT      production | staging — for messages and Sentry
+#   ROBOTS_TAG           X-Robots-Tag for every site; empty (none) in production
 
 TAKEAWAY_DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAKEAWAY_REPO_DIR="$(cd "$TAKEAWAY_DEPLOY_DIR/.." && pwd)"
@@ -38,8 +39,10 @@ if [ "$TAKEAWAY_ROOT" = "$TAKEAWAY_PROD_ROOT" ]; then
   : "${COMPOSE_PROJECT_NAME:=takeaway}"
   : "${IMAGE_TAG:=local}"
   : "${APP_ENVIRONMENT:=production}"
+  : "${ROBOTS_TAG=}"
 else
   : "${APP_ENVIRONMENT:=staging}"
+  : "${ROBOTS_TAG=noindex, nofollow}"
 fi
 : "${CERTBOT_WEBROOT:=$TAKEAWAY_ROOT/certbot-webroot}"
 : "${WEB_HOSTS:=takeaway.md www.takeaway.md}"
@@ -51,7 +54,7 @@ fi
 : "${TLS_CERT_NAME:=${WEB_HOSTS%% *}}"
 WEB_HOST="${WEB_HOSTS%% *}"
 
-export TAKEAWAY_ROOT COMPOSE_PROJECT_NAME IMAGE_TAG CERTBOT_WEBROOT APP_ENVIRONMENT \
+export TAKEAWAY_ROOT COMPOSE_PROJECT_NAME IMAGE_TAG CERTBOT_WEBROOT APP_ENVIRONMENT ROBOTS_TAG \
   WEB_HOSTS WEB_HOST API_HOST ADMIN_HOST KDS_HOST TMA_HOST CDN_HOST TLS_CERT_NAME
 
 # Every server name of this copy, for the HTTP redirect, the certificate and

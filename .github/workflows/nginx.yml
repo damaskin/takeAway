@@ -45,7 +45,10 @@ jobs:
             -keyout "$dir/privkey.pem" -out "$dir/fullchain.pem" 2>/dev/null
 
       - name: Render production's vhosts
-        run: bash deploy/scripts/render-nginx.sh
+        run: |
+          bash deploy/scripts/render-nginx.sh
+          # Production is indexed: no X-Robots-Tag at all.
+          grep -q 'default "";' deploy/nginx/conf.d/01-robots.rendered.conf
 
       - name: Start nginx with the production config
         run: |
@@ -116,6 +119,7 @@ jobs:
                           'content-security-policy: .*frame-ancestors'; do
                 [ "$(count "$h" "$want")" = 1 ] || { echo "::error::$host$path: expected one '$want'"; fail=1; }
               done
+              [ "$(count "$h" 'x-robots-tag:')" = 0 ] || { echo "::error::$host$path: production must stay indexable"; fail=1; }
               case "$host" in
                 tma.*)
                   [ "$(count "$h" 'x-frame-options:')" = 0 ] || { echo "::error::$host$path: the Mini App must stay frameable"; fail=1; }
@@ -176,6 +180,8 @@ jobs:
             echo "::error::staging's render still names a production host"
             exit 1
           fi
+          grep -q 'default "noindex, nofollow";' "$out/01-robots.rendered.conf" \
+            || { echo "::error::staging must tell search engines not to index it"; exit 1; }
           dir="$RUNNER_TEMP/letsencrypt/live/test.takeaway.md"
           mkdir -p "$dir"
           cp "$RUNNER_TEMP/letsencrypt/live/takeaway.md/"*.pem "$dir/"
