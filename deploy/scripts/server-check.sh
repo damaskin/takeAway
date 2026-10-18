@@ -13,7 +13,7 @@ DEPLOY_DIR="$TAKEAWAY_DEPLOY_DIR"
 REPO_DIR="$TAKEAWAY_REPO_DIR"
 cd "$DEPLOY_DIR"
 
-DOMAINS=("$WEB_HOST" "$API_HOST" "$ADMIN_HOST" "$KDS_HOST" "$TMA_HOST" "$CDN_HOST")
+DOMAINS=("$DOMAIN_WEB_PRIMARY" "$DOMAIN_API" "$DOMAIN_ADMIN" "$DOMAIN_KDS" "$DOMAIN_TMA" "$DOMAIN_CDN")
 
 hr() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 ok() { printf '   \033[32mok\033[0m   %s\n' "$1"; }
@@ -83,8 +83,8 @@ else
 fi
 
 hr "api, from inside the host (bypasses DNS and Cloudflare)"
-health="$(curl -sS --max-time 10 --resolve "$API_HOST:443:127.0.0.1" \
-            "https://$API_HOST/api/health" 2>/dev/null || true)"
+health="$(curl -sS --max-time 10 --resolve "$DOMAIN_API:443:127.0.0.1" \
+            "https://$DOMAIN_API/api/health" 2>/dev/null || true)"
 if [ -n "$health" ]; then
   ok "/api/health answered"
   info "$health"
@@ -101,14 +101,14 @@ else
 fi
 
 code="$(curl -sS -o /tmp/ta-ready.json -w '%{http_code}' --max-time 10 \
-          --resolve "$API_HOST:443:127.0.0.1" \
-          "https://$API_HOST/api/health/ready" 2>/dev/null || echo 000)"
+          --resolve "$DOMAIN_API:443:127.0.0.1" \
+          "https://$DOMAIN_API/api/health/ready" 2>/dev/null || echo 000)"
 [ "$code" = "200" ] && ok "/api/health/ready 200" || bad "/api/health/ready $code"
 [ -s /tmp/ta-ready.json ] && sed 's/^/        /' /tmp/ta-ready.json && echo
 
 hr "spa domains, from inside the host"
 for d in "${DOMAINS[@]}"; do
-  [ "$d" = "$API_HOST" ] && continue
+  [ "$d" = "$DOMAIN_API" ] && continue
   c="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
         --resolve "$d:443:127.0.0.1" "https://$d/" 2>/dev/null || echo 000)"
   case "$c" in

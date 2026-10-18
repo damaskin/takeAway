@@ -15,11 +15,16 @@
 #   COMPOSE_PROJECT_NAME compose project — container, volume and network names
 #   IMAGE_TAG            tag of the locally built images (takeaway/api:<tag>, …)
 #   CERTBOT_WEBROOT      where certbot leaves HTTP-01 challenges for the edge to serve
-#   WEB_HOSTS            storefront server names, space-separated, the first one primary
-#   API_HOST ADMIN_HOST KDS_HOST TMA_HOST CDN_HOST
+#   DOMAIN_WEB           storefront server names, space-separated, the first one primary
+#   DOMAIN_API DOMAIN_ADMIN DOMAIN_KDS DOMAIN_TMA DOMAIN_CDN
 #   TLS_CERT_NAME        the Let's Encrypt lineage covering all of them
 #   APP_ENVIRONMENT      production | staging — for messages and Sentry
 #   ROBOTS_TAG           X-Robots-Tag for every site; empty (none) in production
+#
+# The api container reads the whole file (env_file), so these names must not
+# mean anything to the API. The host names are DOMAIN_* for that reason:
+# API_HOST is the API's listen address (apps/api/src/main.ts), and a host
+# name there makes it try to listen on Cloudflare's IP.
 
 TAKEAWAY_DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAKEAWAY_REPO_DIR="$(cd "$TAKEAWAY_DEPLOY_DIR/.." && pwd)"
@@ -45,22 +50,22 @@ else
   : "${ROBOTS_TAG=noindex, nofollow}"
 fi
 : "${CERTBOT_WEBROOT:=$TAKEAWAY_ROOT/certbot-webroot}"
-: "${WEB_HOSTS:=takeaway.md www.takeaway.md}"
-: "${API_HOST:=api.takeaway.md}"
-: "${ADMIN_HOST:=admin.takeaway.md}"
-: "${KDS_HOST:=kds.takeaway.md}"
-: "${TMA_HOST:=tma.takeaway.md}"
-: "${CDN_HOST:=cdn.takeaway.md}"
-: "${TLS_CERT_NAME:=${WEB_HOSTS%% *}}"
-WEB_HOST="${WEB_HOSTS%% *}"
+: "${DOMAIN_WEB:=takeaway.md www.takeaway.md}"
+: "${DOMAIN_API:=api.takeaway.md}"
+: "${DOMAIN_ADMIN:=admin.takeaway.md}"
+: "${DOMAIN_KDS:=kds.takeaway.md}"
+: "${DOMAIN_TMA:=tma.takeaway.md}"
+: "${DOMAIN_CDN:=cdn.takeaway.md}"
+: "${TLS_CERT_NAME:=${DOMAIN_WEB%% *}}"
+DOMAIN_WEB_PRIMARY="${DOMAIN_WEB%% *}"
 
 export TAKEAWAY_ROOT COMPOSE_PROJECT_NAME IMAGE_TAG CERTBOT_WEBROOT APP_ENVIRONMENT ROBOTS_TAG \
-  WEB_HOSTS WEB_HOST API_HOST ADMIN_HOST KDS_HOST TMA_HOST CDN_HOST TLS_CERT_NAME
+  DOMAIN_WEB DOMAIN_WEB_PRIMARY DOMAIN_API DOMAIN_ADMIN DOMAIN_KDS DOMAIN_TMA DOMAIN_CDN TLS_CERT_NAME
 
 # Every server name of this copy, for the HTTP redirect, the certificate and
 # the smoke test.
 takeaway_all_hosts() {
-  printf '%s\n' $WEB_HOSTS "$API_HOST" "$ADMIN_HOST" "$KDS_HOST" "$TMA_HOST" "$CDN_HOST"
+  printf '%s\n' $DOMAIN_WEB "$DOMAIN_API" "$DOMAIN_ADMIN" "$DOMAIN_KDS" "$DOMAIN_TMA" "$DOMAIN_CDN"
 }
 
 # For scripts that touch Docker or the host. A staging checkout that loses a
@@ -70,7 +75,13 @@ takeaway_all_hosts() {
 # copy's identity has to agree with where the checkout actually is.
 takeaway_require_server_layout() {
   local problem=""
-  if [ "$TAKEAWAY_REPO_DIR" != "$TAKEAWAY_ROOT/repo" ]; then
+  case "${API_HOST:-0.0.0.0}" in
+    0.0.0.0|::|127.0.0.1) ;;
+    *) problem="API_HOST=$API_HOST in deploy/.env.production is the API's listen address, not a host name — the host names are DOMAIN_*" ;;
+  esac
+  if [ -n "$problem" ]; then
+    :
+  elif [ "$TAKEAWAY_REPO_DIR" != "$TAKEAWAY_ROOT/repo" ]; then
     problem="this checkout is $TAKEAWAY_REPO_DIR, but TAKEAWAY_ROOT=$TAKEAWAY_ROOT expects $TAKEAWAY_ROOT/repo"
   elif [ "$TAKEAWAY_ROOT" = "$TAKEAWAY_PROD_ROOT" ]; then
     [ "$COMPOSE_PROJECT_NAME" = takeaway ] || problem="production must be compose project 'takeaway', not '$COMPOSE_PROJECT_NAME'"
@@ -81,8 +92,8 @@ takeaway_require_server_layout() {
     case "${IMAGE_TAG:-}" in
       ''|local) [ -n "$problem" ] || problem="TAKEAWAY_ROOT=$TAKEAWAY_ROOT needs its own IMAGE_TAG in deploy/.env.production" ;;
     esac
-    case "$API_HOST" in
-      api.takeaway.md) [ -n "$problem" ] || problem="TAKEAWAY_ROOT=$TAKEAWAY_ROOT still has production's host names — set WEB_HOSTS, API_HOST, … in deploy/.env.production" ;;
+    case "$DOMAIN_API" in
+      api.takeaway.md) [ -n "$problem" ] || problem="TAKEAWAY_ROOT=$TAKEAWAY_ROOT still has production's host names — set DOMAIN_WEB, DOMAIN_API, … in deploy/.env.production" ;;
     esac
   fi
   if [ -n "$problem" ]; then

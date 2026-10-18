@@ -64,12 +64,12 @@ IMAGE_TAG=staging
 APP_ENVIRONMENT=staging
 # The edge serves every takeaway.md ACME challenge from production's webroot.
 CERTBOT_WEBROOT=$PROD/certbot-webroot
-WEB_HOSTS=test.takeaway.md
-API_HOST=test-api.takeaway.md
-ADMIN_HOST=test-admin.takeaway.md
-KDS_HOST=test-kds.takeaway.md
-TMA_HOST=test-tma.takeaway.md
-CDN_HOST=test-cdn.takeaway.md
+DOMAIN_WEB=test.takeaway.md
+DOMAIN_API=test-api.takeaway.md
+DOMAIN_ADMIN=test-admin.takeaway.md
+DOMAIN_KDS=test-kds.takeaway.md
+DOMAIN_TMA=test-tma.takeaway.md
+DOMAIN_CDN=test-cdn.takeaway.md
 TLS_CERT_NAME=test.takeaway.md
 
 # --- database / cache / storage ----------------------------------------------

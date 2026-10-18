@@ -46,12 +46,12 @@ for template in "$SRC_DIR"/*.conf.template; do
   name="$(basename "$template" .conf.template).rendered.conf"
   tmp="$(mktemp "$OUT_DIR/.${name}.XXXXXX")"
   sed -e "s|{{ALL_SERVER_NAMES}}|$ALL_SERVER_NAMES|g" \
-      -e "s|{{WEB_HOSTS}}|$WEB_HOSTS|g" \
-      -e "s|{{API_HOST}}|$API_HOST|g" \
-      -e "s|{{ADMIN_HOST}}|$ADMIN_HOST|g" \
-      -e "s|{{KDS_HOST}}|$KDS_HOST|g" \
-      -e "s|{{TMA_HOST}}|$TMA_HOST|g" \
-      -e "s|{{CDN_HOST}}|$CDN_HOST|g" \
+      -e "s|{{DOMAIN_WEB}}|$DOMAIN_WEB|g" \
+      -e "s|{{DOMAIN_API}}|$DOMAIN_API|g" \
+      -e "s|{{DOMAIN_ADMIN}}|$DOMAIN_ADMIN|g" \
+      -e "s|{{DOMAIN_KDS}}|$DOMAIN_KDS|g" \
+      -e "s|{{DOMAIN_TMA}}|$DOMAIN_TMA|g" \
+      -e "s|{{DOMAIN_CDN}}|$DOMAIN_CDN|g" \
       -e "s|{{TLS_CERT_NAME}}|$TLS_CERT_NAME|g" \
       -e "s|{{ROBOTS_TAG}}|$ROBOTS_TAG|g" \
       "$template" > "$tmp"

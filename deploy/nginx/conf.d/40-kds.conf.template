@@ -4,7 +4,7 @@
 server {
   listen 443 ssl;
   http2 on;
-  server_name {{KDS_HOST}};
+  server_name {{DOMAIN_KDS}};
 
   ssl_certificate     /etc/letsencrypt/live/{{TLS_CERT_NAME}}/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/{{TLS_CERT_NAME}}/privkey.pem;
@@ -14,6 +14,6 @@ server {
   add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
   location / {
-    return 301 https://{{ADMIN_HOST}}/login/pin;
+    return 301 https://{{DOMAIN_ADMIN}}/login/pin;
   }
 }

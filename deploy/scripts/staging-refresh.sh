@@ -36,7 +36,7 @@ PROD_BUCKET="$(prod_env S3_BUCKET)"; PROD_BUCKET="${PROD_BUCKET:-takeaway-upload
 PROD_CDN_BASE="$(prod_env S3_PUBLIC_URL_BASE)"
 PROD_CDN_BASE="${PROD_CDN_BASE:-https://cdn.takeaway.md/$PROD_BUCKET}"
 STAGING_BUCKET="${S3_BUCKET:-takeaway-uploads}"
-STAGING_CDN_BASE="${S3_PUBLIC_URL_BASE:-https://$CDN_HOST/$STAGING_BUCKET}"
+STAGING_CDN_BASE="${S3_PUBLIC_URL_BASE:-https://$DOMAIN_CDN/$STAGING_BUCKET}"
 
 container_of() {
   docker ps -q --filter "label=com.docker.compose.project=$1" --filter "label=com.docker.compose.service=$2" | head -1
