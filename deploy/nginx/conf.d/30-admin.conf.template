@@ -1,0 +1,31 @@
+server {
+  listen 443 ssl;
+  http2 on;
+  server_name {{ADMIN_HOST}};
+
+  ssl_certificate     /etc/letsencrypt/live/{{TLS_CERT_NAME}}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/{{TLS_CERT_NAME}}/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+
+  # Security headers (snippets/security-headers.conf). The business cabinet
+  # is never framed — clickjacking a "delete" or "refund" is the risk.
+  #
+  # The full policy below only *reports* (browser console) for now: the
+  # cabinet has an inline config script stamped at every deploy, Angular
+  # injects inline styles, Leaflet sets style attributes, and Telegram,
+  # Google, Sentry and the tile cache are external. Enforce it once a release
+  # runs clean in the console — see docs/security-hardening.md.
+  # https://takeaway.md is literal in every environment: the map tiles come
+  # from production's tile cache (libs/ui-kit/src/lib/leaflet-map/map-tiles.ts).
+  set $frame_options "DENY";
+  set $csp "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+  set $csp_report_only "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://oauth.telegram.org https://accounts.google.com https://appleid.cdn-apple.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob: https://takeaway.md https://{{CDN_HOST}} https://tile.openstreetmap.org https://*.telegram.org https://t.me https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://*.sentry.io https://oauth.telegram.org https://accounts.google.com; frame-src https://oauth.telegram.org https://accounts.google.com https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+  set $permissions_policy "geolocation=(), camera=(), microphone=()";
+  include /etc/nginx/snippets/security-headers.conf;
+
+  include /etc/nginx/snippets/api-proxy.conf;
+
+  set $spa_root /usr/share/nginx/html/admin;
+  include /etc/nginx/snippets/spa.conf;
+}

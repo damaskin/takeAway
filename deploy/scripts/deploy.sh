@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Main deploy entrypoint. Run on the server from /opt/takeaway/repo.
+# Main deploy entrypoint. Run on the server from <root>/repo — /opt/takeaway/repo
+# for production, /opt/takeaway-staging/repo for staging (docs/environments.md).
+# Which one is decided by deploy/.env.production (scripts/lib/env.sh).
 # Idempotent — safe to re-run on every push.
 #
 # Phases:
+#   0. Render this environment's nginx vhosts.
 #   1. Build the api image (and bring it up, detached).
-#   2. Build + extract the four SPAs into /opt/takeaway/www.
+#   2. Build + extract the SPAs into <root>/www.
 #   3. Apply any pending Prisma migrations.
 #   4. Reload nginx so it sees freshly-extracted SPA assets.
 
@@ -26,7 +29,10 @@ if [ ! -f .env.production ]; then
   echo "ERROR: deploy/.env.production missing. Copy from .env.production.example and fill in." >&2
   exit 1
 fi
-set -a; source ./.env.production; set +a
+# shellcheck source=lib/env.sh
+. "$DEPLOY_DIR/scripts/lib/env.sh"
+takeaway_require_server_layout
+echo "==> environment: $APP_ENVIRONMENT — $TAKEAWAY_ROOT, compose project $COMPOSE_PROJECT_NAME, images :$IMAGE_TAG"
 
 # Pre-flight: vars the API hard-requires on boot. A missing one used to put
 # the api container into a CrashLoopBackOff with nginx serving 502 — fail
@@ -70,8 +76,11 @@ BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export BUILD_VERSION BUILD_COMMIT BUILD_TIME
 echo "==> build version: $BUILD_VERSION ($BUILD_COMMIT) at $BUILD_TIME"
 
-echo "==> [0/4] ensure host directories + bootstrap self-signed cert"
-mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webroot
+echo "==> [0/4] render nginx vhosts, ensure host directories + bootstrap self-signed cert"
+# First, before anything slow: git has just replaced the templates, and the
+# rendered vhosts must match them before anything can reload nginx.
+bash "$DEPLOY_DIR/scripts/render-nginx.sh"
+mkdir -p "$TAKEAWAY_ROOT/www" "$TAKEAWAY_ROOT/letsencrypt" "$CERTBOT_WEBROOT"
 # Bank key material lives here and is mounted read-only into the api
 # container. Created empty; the PEMs are placed by hand, once.
 #
@@ -80,7 +89,7 @@ mkdir -p /opt/takeaway/www /opt/takeaway/letsencrypt /opt/takeaway/certbot-webro
 # the contents, and each file carries its own mode — the private key is 0400
 # owned by 10001, the certificates are world-readable because certificates are
 # public. See docs/agroprombank-payments.md.
-mkdir -p /opt/takeaway/secrets && chmod 751 /opt/takeaway/secrets
+mkdir -p "$TAKEAWAY_ROOT/secrets" && chmod 751 "$TAKEAWAY_ROOT/secrets"
 # Ensure docker compose auto-picks the production env for variable substitution.
 # The `.env` filename is compose's default; we keep the canonical file named
 # .env.production and symlink .env -> .env.production so ad-hoc compose

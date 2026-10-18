@@ -70,3 +70,7 @@ deploy/.env.production
 
 # Sandbox key material for the Agroprombank mock (never real bank keys)
 .secrets/
+
+# nginx vhosts rendered per environment from conf.d/*.conf.template
+# (deploy/scripts/render-nginx.sh)
+deploy/nginx/conf.d/*.rendered.conf

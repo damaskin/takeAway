@@ -1,10 +1,10 @@
 server {
   listen 443 ssl;
   http2 on;
-  server_name api.takeaway.md;
+  server_name {{API_HOST}};
 
-  ssl_certificate     /etc/letsencrypt/live/takeaway.md/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/takeaway.md/privkey.pem;
+  ssl_certificate     /etc/letsencrypt/live/{{TLS_CERT_NAME}}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/{{TLS_CERT_NAME}}/privkey.pem;
   ssl_protocols TLSv1.2 TLSv1.3;
   ssl_prefer_server_ciphers off;
 
@@ -17,7 +17,7 @@ server {
 
   # The mobile apps talk to this host: /api/... for HTTP and /socket.io/ for
   # the realtime gateway, with the same limits as on the SPA hosts. The app
-  # has a global 'api' prefix, so requests hit api.takeaway.../api/... even
+  # has a global 'api' prefix, so requests hit {{API_HOST}}/api/... even
   # though the subdomain itself scopes everything — kept for continuity with
   # existing client base URLs.
   include /etc/nginx/snippets/api-proxy.conf;

@@ -1,20 +1,26 @@
 name: nginx config
 
-# The production nginx config is bind-mounted from this repo. deploy.sh
-# reloads it with `|| true`, and a container recreated with a broken config
-# does not start at all — every takeaway.md domain goes down. This runs the
-# config in the image production uses (read from docker-compose.prod.yml),
-# before it gets there, and checks that the map tile cache answers.
+# The nginx config is bind-mounted from this repo: the vhosts are rendered
+# per environment from conf.d/*.conf.template (deploy/scripts/render-nginx.sh).
+# A container recreated with a broken config does not start at all — every
+# domain of that environment goes down. This renders production's vhosts,
+# runs them in the image production uses (read from docker-compose.prod.yml)
+# before they get there, checks that the map tile cache answers, and checks
+# that staging's render loads too.
 on:
   push:
     paths:
       - 'deploy/nginx/**'
       - 'deploy/docker-compose.prod.yml'
+      - 'deploy/scripts/render-nginx.sh'
+      - 'deploy/scripts/lib/env.sh'
       - '.github/workflows/nginx.yml'
   pull_request:
     paths:
       - 'deploy/nginx/**'
       - 'deploy/docker-compose.prod.yml'
+      - 'deploy/scripts/render-nginx.sh'
+      - 'deploy/scripts/lib/env.sh'
       - '.github/workflows/nginx.yml'
 
 concurrency:
@@ -37,6 +43,9 @@ jobs:
           mkdir -p "$dir"
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=takeaway.md' \
             -keyout "$dir/privkey.pem" -out "$dir/fullchain.pem" 2>/dev/null
+
+      - name: Render production's vhosts
+        run: bash deploy/scripts/render-nginx.sh
 
       - name: Start nginx with the production config
         run: |
@@ -152,6 +161,32 @@ jobs:
           for i in $(seq 1 8); do codes="$codes $(post api.takeaway.md /api/auth/kds/pin -H 'CF-Connecting-IP: 198.51.100.8')"; done
           echo "api host kds pin x8:$codes"
           case "$codes" in *429*) ;; *) echo "::error::no 429 on api.takeaway.md"; exit 1 ;; esac
+
+      - name: Staging's vhosts load
+        run: |
+          # The values staging's deploy/.env.production sets (docs/environments.md).
+          out="$RUNNER_TEMP/conf.d-staging"
+          TAKEAWAY_ROOT=/opt/takeaway-staging \
+          WEB_HOSTS=test.takeaway.md API_HOST=test-api.takeaway.md ADMIN_HOST=test-admin.takeaway.md \
+          KDS_HOST=test-kds.takeaway.md TMA_HOST=test-tma.takeaway.md CDN_HOST=test-cdn.takeaway.md \
+          TLS_CERT_NAME=test.takeaway.md \
+            bash deploy/scripts/render-nginx.sh "$out"
+          if grep -rhoE 'server_name [^;]+' "$out" | tr ' ' '\n' \
+              | grep -xE '((www|api|admin|kds|tma|cdn)\.)?takeaway\.md'; then
+            echo "::error::staging's render still names a production host"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/letsencrypt/live/test.takeaway.md"
+          mkdir -p "$dir"
+          cp "$RUNNER_TEMP/letsencrypt/live/takeaway.md/"*.pem "$dir/"
+          image="$(sed -n 's/^ *image: *\(nginx:[^ ]*\).*/\1/p' deploy/docker-compose.prod.yml | head -1)"
+          docker run --rm --network takeaway \
+            --add-host api:127.0.0.1 --add-host minio:127.0.0.1 \
+            -v "$PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$out:/etc/nginx/conf.d:ro" \
+            -v "$PWD/deploy/nginx/snippets:/etc/nginx/snippets:ro" \
+            -v "$RUNNER_TEMP/letsencrypt:/etc/letsencrypt:ro" \
+            "$image" nginx -t
 
       - name: nginx log
         if: always()

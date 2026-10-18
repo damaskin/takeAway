@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Post-deploy gate. Exits non-zero if production is not actually serving what
-# we just deployed. Run on the server, by deploy.yml or by hand:
+# Post-deploy gate. Exits non-zero if this environment is not actually serving
+# what we just deployed. Run on the server, by the deploy workflow or by hand:
 #
-#   bash /opt/takeaway/repo/deploy/scripts/smoke-test.sh
+#   bash /opt/takeaway/repo/deploy/scripts/smoke-test.sh           # production
+#   bash /opt/takeaway-staging/repo/deploy/scripts/smoke-test.sh   # staging
+#
+# The hosts are this checkout's (deploy/.env.production, scripts/lib/env.sh).
 #
 # Deliberately runs from inside the host with `curl --resolve`, bypassing DNS
 # and Cloudflare: this asks whether *our* stack is healthy, so a Cloudflare
@@ -14,10 +17,13 @@
 
 set -uo pipefail
 
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# shellcheck source=lib/env.sh
+. "$(dirname "$0")/lib/env.sh"
+REPO_DIR="$TAKEAWAY_REPO_DIR"
 ATTEMPTS="${SMOKE_ATTEMPTS:-18}"
 INTERVAL="${SMOKE_INTERVAL:-10}"
-SPA_DOMAINS=(takeaway.md admin.takeaway.md kds.takeaway.md tma.takeaway.md)
+SPA_DOMAINS=("$WEB_HOST" "$ADMIN_HOST" "$KDS_HOST" "$TMA_HOST")
+echo "smoke test: $APP_ENVIRONMENT ($API_HOST)"
 
 EXPECTED="$(git -C "$REPO_DIR" rev-parse HEAD)"
 echo "expecting the API to serve $EXPECTED"
@@ -42,7 +48,7 @@ code_of() {
 # reports success while shipping nothing.
 served=""
 for i in $(seq 1 "$ATTEMPTS"); do
-  body="$(fetch_url https://api.takeaway.md/api/health)"
+  body="$(fetch_url "https://$API_HOST/api/health")"
   served="$(printf '%s' "$body" | sed -n 's/.*"commit":"\([0-9a-f]\{7,40\}\)".*/\1/p')"
   # The public answer carries a short commit (the full one needs
   # X-Health-Token), so it is matched as a prefix of what we deployed.
@@ -73,12 +79,12 @@ done
 # A migration that leaves Postgres unreachable should fail the deploy rather
 # than ship quietly behind a healthy-looking liveness probe.
 for i in $(seq 1 12); do
-  code="$(code_of https://api.takeaway.md/api/health/ready)"
+  code="$(code_of "https://$API_HOST/api/health/ready")"
   [ "$code" = "200" ] && { echo "api: dependencies ready"; break; }
   echo "attempt $i/12: /api/health/ready answered $code"
   [ "$i" = 12 ] && {
     echo "FAIL: api is live but not ready — Postgres or Redis is down" >&2
-    fetch_url https://api.takeaway.md/api/health/ready >&2
+    fetch_url "https://$API_HOST/api/health/ready" >&2
     exit 1
   }
   sleep "$INTERVAL"
@@ -107,7 +113,7 @@ done
 # yet — not this deploy's fault, so only say so. The world tile is cached
 # after the first deploy, so this costs OSM nothing.
 tile="$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' --max-time 20 \
-  --resolve takeaway.md:443:127.0.0.1 https://takeaway.md/tiles/0/0/0.png 2>/dev/null || echo 000)"
+  --resolve "$WEB_HOST:443:127.0.0.1" "https://$WEB_HOST/tiles/0/0/0.png" 2>/dev/null || echo 000)"
 case "$tile" in
   "200 image/png"*) echo "tiles: $tile" ;;
   5*|000*) echo "WARN: tile cache answered '$tile' — OpenStreetMap unreachable from the server?" >&2 ;;

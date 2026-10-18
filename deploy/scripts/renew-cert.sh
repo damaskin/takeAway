@@ -4,8 +4,10 @@
 
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$DEPLOY_DIR"
+# shellcheck source=lib/env.sh
+. "$(dirname "$0")/lib/env.sh"
+takeaway_require_server_layout
+cd "$TAKEAWAY_DEPLOY_DIR"
 
 output=$(docker compose -f docker-compose.prod.yml run --rm certbot renew 2>&1)
 echo "$output"
