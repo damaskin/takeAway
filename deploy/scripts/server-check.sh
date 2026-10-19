@@ -118,6 +118,32 @@ for d in "${DOMAINS[@]}"; do
   esac
 done
 
+hr "backups ($TAKEAWAY_ROOT/backups)"
+bdir="$TAKEAWAY_ROOT/backups"
+if [ -d "$bdir" ]; then
+  nightly="$(find "$bdir" -maxdepth 1 -name 'pg-*.sql.gz.enc' -mmin -1500 2>/dev/null | sort | tail -1)"
+  if [ -n "$nightly" ]; then
+    ok "nightly backup from the last 25 hours: $(basename "$nightly")"
+  else
+    bad "no encrypted nightly backup from the last 25 hours — see /var/log/takeaway-backup.log"
+  fi
+  # Everything here is customer data or secrets, encrypted with
+  # BACKUP_ENCRYPTION_KEY (lib/backup.sh). A file in the clear never expires
+  # and stays readable after the key is destroyed.
+  plain="$(find "$bdir" -maxdepth 1 -type f ! -name '*.enc' -printf '%TY-%Tm-%Td %9s  %f\n' 2>/dev/null | sort)"
+  if [ -n "$plain" ]; then
+    bad "unencrypted files — they never expire and survive crypto-shredding:"
+    printf '%s\n' "$plain" | sed 's/^/        /'
+    info "take snapshots with deploy/scripts/snapshot-db.sh, not a bare pg_dump"
+  else
+    ok "every file is encrypted"
+  fi
+elif [ "$APP_ENVIRONMENT" = production ]; then
+  bad "no backups directory"
+else
+  info "none — $APP_ENVIRONMENT is a copy and is not backed up"
+fi
+
 hr "disk (shared host — a full disk has taken prod down before)"
 df -h / | sed 's/^/   /'
 docker system df 2>/dev/null | sed 's/^/   /' || true
