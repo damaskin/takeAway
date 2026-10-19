@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # An encrypted snapshot of this copy's database, taken before a risky change:
-# a release whose migration reshapes data, a hand-made UPDATE on production,
-# anything you might want to undo. Run on the server as root (the backups
-# directory is root's), from that environment's checkout:
+# a hand-made UPDATE on production, a wipe, anything you might want to undo.
+# Every production release already takes one — deploy.sh runs this with
+# deploy-<version> before it changes anything. Run on the server as deploy
+# or root, from that environment's checkout:
 #
-#   bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh deploy-v2026.10.20
+#   bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh before-price-fix
 #
 # Writes <root>/backups/pre-<label>-<UTC time>.sql.gz.enc, readable by its
 # owner only, and expires these snapshots after 30 days. Use this, not a bare
@@ -28,6 +29,7 @@ case "$label" in
     ;;
 esac
 takeaway_require_backup_key
+takeaway_require_backup_dir
 
 out="$TAKEAWAY_BACKUP_DIR/pre-$label-$(date -u +%Y%m%dT%H%M%SZ).sql.gz.enc"
 takeaway_dump_encrypted "$out"

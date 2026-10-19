@@ -127,6 +127,18 @@ if [ -d "$bdir" ]; then
   else
     bad "no encrypted nightly backup from the last 25 hours — see /var/log/takeaway-backup.log"
   fi
+  # deploy.sh runs as deploy and snapshots production into this directory
+  # before every release (lib/backup.sh, takeaway_require_backup_dir).
+  if [ "$APP_ENVIRONMENT" = production ]; then
+    bowner="$(stat -c %U "$bdir" 2>/dev/null || echo '?')"
+    if [ "$bowner" = deploy ]; then
+      ok "owned by deploy — releases can write their pre-deploy snapshot"
+    else
+      bad "owned by $bowner — the next release stops before its snapshot; once: chown deploy:deploy $bdir && chmod 750 $bdir"
+    fi
+  fi
+  latest_deploy="$(find "$bdir" -maxdepth 1 -name 'pre-deploy-*.sql.gz.enc' -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)"
+  [ -z "$latest_deploy" ] || info "last pre-deploy snapshot: $latest_deploy"
   # Everything here is customer data or secrets, encrypted with
   # BACKUP_ENCRYPTION_KEY (lib/backup.sh). A file in the clear never expires
   # and stays readable after the key is destroyed.

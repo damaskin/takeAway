@@ -61,10 +61,14 @@ Actions → _Deploy to production_ → _Run workflow_ → tag = the previous
 release. Older releases pass both checks, so no flag is needed. Database
 migrations are not rolled back: a release whose migration drops or reshapes
 data needs its own way back, decided before it is released. The least it
-gets is a snapshot right before the deploy is approved —
-`bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh deploy-v2026.10.20`
-as root on the server. It is encrypted and expires after 30 days; never a
-bare `pg_dump` (`deploy/README.md`, «Daily operations»).
+gets is automatic: every production deploy first writes
+`/opt/takeaway/backups/pre-deploy-<version>-<UTC time>.sql.gz.enc`, the
+database as it was just before that release, and stops without changing
+anything if it cannot (`deploy/README.md`, «The pre-deploy snapshot»). It is
+encrypted with `BACKUP_ENCRYPTION_KEY` and expires after 30 days. Restoring it
+puts the whole database back to that moment, so orders taken since are lost.
+The rollback deploy takes a snapshot of its own, so the state the bad release
+left is kept too. Never a bare `pg_dump` by hand.
 
 ### Emergency fix
 
@@ -156,7 +160,8 @@ classic rejection), and staging to hold its copy.
 /opt/takeaway/                 production
   repo/                        checkout at the released commit (detached)
     deploy/.env.production     production's settings and secrets
-  www/ letsencrypt/ secrets/ backups/ backup-repo/ certbot-webroot/
+  backups/                     encrypted dumps: nightly (root), pre-deploy (deploy); deploy:deploy 750
+  www/ letsencrypt/ secrets/ backup-repo/ certbot-webroot/
 /opt/takeaway-staging/         staging
   repo/                        checkout at the last commit of main (detached)
     deploy/.env.production     staging's — its first block says which copy this is
@@ -198,6 +203,26 @@ edge serves for every takeaway.md name.
 7. `deploy/scripts/staging-refresh.sh` (as `deploy`) — the data.
 8. GitHub → Settings → Environments: `staging`, and `production` with the
    owner as required reviewer and deployments limited to `v*` tags.
+
+## Pre-deploy snapshots: one-time step (October 2026)
+
+From the release that brings `deploy/scripts/deploy.sh`'s pre-deploy snapshot,
+a production deploy writes into `/opt/takeaway/backups` as `deploy`, the user
+CI connects as. That directory was made by root's nightly cron and is
+`root:root 755`, so before that release, once, as root:
+
+```bash
+chown deploy:deploy /opt/takeaway/backups && chmod 750 /opt/takeaway/backups
+```
+
+Only the directory, not the files in it. The nightly keeps working (root
+writes anywhere) and its files stay root's. Without this step the release
+stops before it changes anything and prints the same command.
+`deploy/scripts/server-check.sh` shows who owns the directory.
+
+Why not `sudo` from `deploy.sh`: it would tie every deploy to `deploy`'s
+passwordless sudo, which should not be the thing that keeps backups working,
+and a snapshot owned by the user who took it is simpler to reason about.
 
 ## Not on staging yet
 
