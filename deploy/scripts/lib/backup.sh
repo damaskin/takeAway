@@ -12,7 +12,9 @@
 #
 #   pg-YYYY-MM-DD.sql.gz.enc          nightly, backup-to-github.sh     14 days
 #   pre-<label>-<UTC time>.*.enc      before a risky change:           30 days
-#                                     snapshot-db.sh, wipe-business-data.sh
+#                                     snapshot-db.sh, wipe-business-data.sh,
+#                                     deploy.sh (pre-deploy-<version>-…,
+#                                     every production release)
 #
 # Restore any *.sql.gz.enc (into an empty database):
 #   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
@@ -29,6 +31,22 @@ takeaway_require_backup_key() {
   if [ -z "${BACKUP_ENCRYPTION_KEY:-}" ]; then
     echo "BACKUP_ENCRYPTION_KEY is not set — refusing to write an unencrypted customer database." >&2
     echo "Generate one with: openssl rand -base64 48" >&2
+    return 1
+  fi
+}
+
+# Two users write here: root (the nightly cron) and deploy (deploy.sh, which
+# CI runs as deploy, snapshots production before a release). So backups/
+# belongs to deploy, mode 750 — root writes anywhere — and is created that
+# way when missing. One still owned by root, as it was before 2026-10, is
+# fixed once on the server rather than worked around with sudo on every run.
+takeaway_require_backup_dir() {
+  if [ ! -d "$TAKEAWAY_BACKUP_DIR" ]; then
+    (umask 027 && mkdir -p "$TAKEAWAY_BACKUP_DIR") || return 1
+  fi
+  if [ ! -w "$TAKEAWAY_BACKUP_DIR" ]; then
+    echo "$TAKEAWAY_BACKUP_DIR is not writable by $(id -un). Fix it once, on the server:" >&2
+    echo "  sudo chown $(id -un):$(id -gn) $TAKEAWAY_BACKUP_DIR && sudo chmod 750 $TAKEAWAY_BACKUP_DIR" >&2
     return 1
   fi
 }
