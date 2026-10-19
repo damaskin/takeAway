@@ -206,9 +206,12 @@ edge serves for every takeaway.md name.
 
 ## Pre-deploy snapshots: one-time step (October 2026)
 
+**Done 2026-10-19** (with the owner's OK): `/opt/takeaway/backups` is
+`deploy:deploy 750`. Kept here for a rebuilt host.
+
 From the release that brings `deploy/scripts/deploy.sh`'s pre-deploy snapshot,
 a production deploy writes into `/opt/takeaway/backups` as `deploy`, the user
-CI connects as. That directory was made by root's nightly cron and is
+CI connects as. That directory was made by root's nightly cron as
 `root:root 755`, so before that release, once, as root:
 
 ```bash
