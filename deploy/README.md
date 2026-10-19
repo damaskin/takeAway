@@ -257,18 +257,28 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
   customer database is not. Destroying the key renders every copy unreadable,
   which is how an erasure request is honoured against immutable backups.
 
-- **Restore from a backup:**
+- **Snapshot before a risky change** (a release whose migration reshapes
+  data, a hand-made UPDATE, the clean start) — as root:
+
+  ```bash
+  bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh deploy-v2026.10.20
+  ```
+
+  It writes `backups/pre-<label>-<UTC time>.sql.gz.enc`, encrypted with the
+  same key and expiring after 30 days. Never take a bare `pg_dump` into
+  `backups/` or anywhere else on the box: a plaintext dump never expires and
+  stays readable after the key is destroyed, so it defeats the point above.
+  `scripts/server-check.sh` flags any unencrypted file there.
+  `scripts/lib/backup.sh` lists every kind of file in `backups/` and how
+  long each is kept.
+
+- **Restore from a backup** (any `*.sql.gz.enc`, into an empty database):
 
   ```bash
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
     -pass env:BACKUP_ENCRYPTION_KEY -in pg-YYYY-MM-DD.sql.gz.enc \
     | gunzip \
     | docker compose -f docker-compose.prod.yml exec -T postgres psql -U takeaway takeaway
-  ```
-
-- **Ad-hoc dump (unencrypted — keep it on the box):**
-  ```bash
-  docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U takeaway takeaway | gzip > backup-$(date +%F).sql.gz
   ```
 
 ## Troubleshooting

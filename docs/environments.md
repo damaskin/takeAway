@@ -60,7 +60,11 @@ long-lived branch.
 Actions → _Deploy to production_ → _Run workflow_ → tag = the previous
 release. Older releases pass both checks, so no flag is needed. Database
 migrations are not rolled back: a release whose migration drops or reshapes
-data needs its own way back, decided before it is released.
+data needs its own way back, decided before it is released. The least it
+gets is a snapshot right before the deploy is approved —
+`bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh deploy-v2026.10.20`
+as root on the server. It is encrypted and expires after 30 days; never a
+bare `pg_dump` (`deploy/README.md`, «Daily operations»).
 
 ### Emergency fix
 
@@ -133,8 +137,11 @@ ssh hetzner
 bash /opt/takeaway/repo/deploy/scripts/wipe-business-data.sh --yes-wipe-production   # as root
 ```
 
-It writes a full backup first (`/opt/takeaway/backups/pre-wipe-<time>.dump`
-and `…-uploads.tar.gz`), stops the API for the minute it takes, runs
+It stops the API for the minute it takes, writes a full backup first
+(`/opt/takeaway/backups/pre-wipe-<time>.sql.gz.enc` and
+`…-uploads.tar.gz.enc`, encrypted with `BACKUP_ENCRYPTION_KEY` like every
+backup and deleted after 30 days — copy them elsewhere if they must live
+longer), runs
 `sql/wipe-business-data.sql` in one transaction that checks every foreign key
 before committing, then starts the API. Afterwards give production a fresh
 `KDS_PIN_SECRET` (`openssl rand -hex 32` → `deploy/.env.production`, then
@@ -196,7 +203,7 @@ edge serves for every takeaway.md name.
 
 - **Card payments.** The fake bank from `docker-compose.sandbox.yml`
   (`agro-mock`) can be wired in so test orders are paid with test cards.
-- **Google and Apple sign-in** — need the test-* origins registered in Google
+- **Google and Apple sign-in** — need the test-\* origins registered in Google
   Cloud and Apple Developer.
 - **A staging build of the app** pointing at test-api.takeaway.md.
 - **Email** — no SMTP in either environment.
