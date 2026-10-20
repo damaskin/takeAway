@@ -21,7 +21,9 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
   standalone: true,
   imports: [TranslatePipe],
   template: `
-    <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 16px">
+    <section
+      style="padding: 16px; padding-bottom: var(--tma-page-bottom); display: flex; flex-direction: column; gap: 16px"
+    >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >

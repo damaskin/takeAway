@@ -26,7 +26,9 @@ type Step = 'list' | 'form' | 'code';
   standalone: true,
   imports: [FormsModule, TranslatePipe],
   template: `
-    <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
+    <section
+      style="padding: 16px; padding-bottom: var(--tma-page-bottom); display: flex; flex-direction: column; gap: 20px"
+    >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >

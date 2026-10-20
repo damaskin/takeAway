@@ -24,7 +24,9 @@ type Tab = 'ACTIVE' | 'HISTORY';
   standalone: true,
   imports: [RouterLink, TmaTabBarComponent, TranslatePipe],
   template: `
-    <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
+    <section
+      style="padding: 16px; padding-bottom: var(--tma-tab-page-bottom); display: flex; flex-direction: column; gap: 16px"
+    >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >

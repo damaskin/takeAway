@@ -66,7 +66,9 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
       </div>
     }
 
-    <section style="padding: 16px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
+    <section
+      style="padding: 16px 16px var(--tma-tab-page-bottom) 16px; display: flex; flex-direction: column; gap: 16px"
+    >
       @if (store(); as s) {
         @if (inactive(s)) {
           <div

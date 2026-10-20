@@ -137,6 +137,10 @@ describe('TmaCheckoutPage — pickup time', () => {
   let catalog: Record<string, jest.Mock>;
   let orders: { create: jest.Mock };
   let mainButton: { label: string; tap: () => void } | null;
+  /** The windows the API offers; reset to {@link SLOTS} after each test. */
+  let catalogSlots: PickupSlot[] = SLOTS;
+
+  afterEach(() => (catalogSlots = SLOTS));
 
   async function open(
     store: StoreListItem,
@@ -147,7 +151,7 @@ describe('TmaCheckoutPage — pickup time', () => {
       listStores: jest.fn(() => of([store])),
       getStore: jest.fn(() => of(store)),
       getMenu: jest.fn(() => of(opts.menu ?? { storeId: STORE.id, storeSlug: STORE.slug, categories: [] })),
-      getPickupSlots: jest.fn(() => of(SLOTS)),
+      getPickupSlots: jest.fn(() => of(catalogSlots)),
       // An API from before the endpoint, unless a test gives an answer.
       getSuggestions: jest.fn(() => opts.suggestions ?? throwError(() => new Error('404'))),
     };
@@ -198,11 +202,14 @@ describe('TmaCheckoutPage — pickup time', () => {
     const root = harness.routeNativeElement as HTMLElement;
     const texts = (testId: string): string[] =>
       Array.from(root.querySelectorAll(`[data-testid="${testId}"]`)).map((el) => el.textContent?.trim() ?? '');
-    return { page, root, texts, detect: () => harness.detectChanges() };
+    /** The day groups of the time picker: «Сегодня», «Завтра». */
+    const days = (): string[] =>
+      Array.from(root.querySelectorAll('[data-testid="slot-day"]')).map((el) => el.getAttribute('label') ?? '');
+    return { page, root, texts, days, detect: () => harness.detectChanges() };
   }
 
   it('takes a pre-order for tomorrow morning while the store is closed for the night', async () => {
-    const { page, root, texts } = await open(NIGHT);
+    const { page, root, texts, days } = await open(NIGHT);
 
     expect(page.pickupMode()).toBe('SCHEDULED');
     const asap = Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.includes('Сейчас'));
@@ -211,7 +218,7 @@ describe('TmaCheckoutPage — pickup time', () => {
       'Точка откроется завтра в 09:00 — выберите, к какому времени приготовить заказ.',
     ]);
     expect(catalog['getPickupSlots']).toHaveBeenCalledWith(STORE.id, CART.id);
-    expect(texts('slot-day')).toEqual(['Сегодня', 'Завтра']);
+    expect(days()).toEqual(['Сегодня', 'Завтра']);
     // The Telegram main button is there: the order can be paid for now.
     expect(mainButton?.label).toContain('Оплатить');
     expect(page.pickupTimeLabel(day(1, 9, 15))).toBe('09:15 завтра');
@@ -239,6 +246,69 @@ describe('TmaCheckoutPage — pickup time', () => {
       'Точка откроется завтра в 09:00 — выберите, к какому времени приготовить заказ.',
     ]);
     expect(page.error()).toBe('На сейчас заказ уже не принять — выберите, к какому времени приготовить');
+  });
+
+  it('offers the windows in one native picker, by day, with the full ones greyed out', async () => {
+    catalogSlots = [slot(day(1, 9, 0)), { ...slot(day(1, 9, 15)), available: false }, slot(day(1, 9, 30))];
+    const { page, root, days, detect } = await open(NIGHT);
+    const select = root.querySelector<HTMLSelectElement>('[data-testid="slot-select"]');
+    if (!select) throw new Error('no time picker');
+
+    expect(days()).toEqual(['Завтра']);
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.map((o) => [o.textContent?.trim(), o.disabled])).toEqual([
+      ['09:00', false],
+      ['09:15 — занято', true],
+      ['09:30', false],
+    ]);
+    // The first free window is picked already: the pay button is up.
+    expect(page.scheduledAt()).toBe(day(1, 9, 0));
+    expect(select.value).toBe(day(1, 9, 0));
+    expect(mainButton?.label).toContain('Оплатить');
+
+    select.value = day(1, 9, 30);
+    select.dispatchEvent(new Event('change'));
+    detect();
+    expect(page.scheduledAt()).toBe(day(1, 9, 30));
+
+    // A full window is never taken, whatever the picker sends.
+    page.pickSlot(day(1, 9, 15));
+    expect(page.scheduledAt()).toBe(day(1, 9, 30));
+  });
+
+  it('says the kitchen is on a break until when, and takes a pre-order meanwhile', async () => {
+    const { page, texts } = await open({
+      ...STORE,
+      openNow: false,
+      asapBlockedReason: 'PAUSED',
+      pausedUntil: day(0, 12, 30),
+      pauseReason: 'EQUIPMENT',
+    });
+    expect(page.pickupMode()).toBe('SCHEDULED');
+    expect(texts('asap-blocked')).toEqual([
+      'В точке технический перерыв до 12:30 — выберите, к какому времени приготовить заказ.',
+    ]);
+  });
+
+  it('switches to a time later when «Сейчас» was refused because the store closes soon', async () => {
+    const { page, texts, detect } = await open(STORE);
+    orders.create.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { code: 'ASAP_UNAVAILABLE', reason: 'CLOSING_SOON', closesAt: day(0, 21, 0) },
+          }),
+      ),
+    );
+
+    mainButton?.tap();
+    detect();
+
+    expect(page.pickupMode()).toBe('SCHEDULED');
+    expect(texts('asap-blocked')).toEqual([
+      'Точка закрывается в 21:00 — заказ «сейчас» уже не успеем приготовить. Выберите время.',
+    ]);
   });
 
   it('asks for a new time when the chosen window filled up', async () => {

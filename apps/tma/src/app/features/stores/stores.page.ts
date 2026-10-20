@@ -8,13 +8,27 @@ import {
   storeMatchesKind,
   type StoreKindFilter,
 } from '@takeaway/utils';
-import { LeafletMapComponent, STORE_KIND_GLYPHS, StoreLogoComponent, type MapMarker } from '@takeaway/ui-kit';
+import {
+  LeafletMapComponent,
+  STORE_KIND_GLYPHS,
+  StoreLogoComponent,
+  type LatLng,
+  type MapMarker,
+} from '@takeaway/ui-kit';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService, storeHoursText } from '@takeaway/i18n';
 
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
+import { hasLocation, sortStoresByDistance, storeAddress, storeMatchesQuery } from '../../core/catalog/store-place';
+import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
+
+/** What went wrong with «Рядом со мной», as a translation key. */
+type LocationNote =
+  | 'tma.stores.locationDenied'
+  | 'tma.stores.locationDeniedSettings'
+  | 'tma.stores.locationUnavailable';
 
 const KIND_LABELS: Record<StoreKindFilter, string> = {
   ALL: 'common.storeKinds.all',
@@ -26,10 +40,13 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
  * TMA Store Selector — pencil POOLf.
  *
  * Body (gap 16):
- *   searchBar (44px, foam)
- *   mapFrame  (160px, aerial photo)
- *   "Nearby" section label
- *   store cards — caramel 2px stroke on selected, foam otherwise
+ *   searchBar (44px, foam) — narrows the map and the list by name or address
+ *   mapFrame  (160px) — a tap on a pin selects that store's card below and
+ *             scrolls it into view
+ *   "Nearby" section label + «Рядом со мной»: where the customer is (Telegram's
+ *             LocationManager, else the browser), then the stores by distance
+ *             with the customer's own dot on the map
+ *   store cards — caramel 2px stroke on the selected one, foam otherwise
  *
  * Closed stores (switched off, or nothing bookable in the next 24 hours)
  * come last, dimmed, and do not open: there is nothing to order there. A
@@ -46,7 +63,9 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
   standalone: true,
   imports: [RouterLink, TmaTabBarComponent, TranslatePipe, LeafletMapComponent, StoreLogoComponent],
   template: `
-    <section style="padding: 16px; padding-bottom: 88px; display: flex; flex-direction: column; gap: 16px">
+    <section
+      style="padding: 16px; padding-bottom: var(--tma-tab-page-bottom); display: flex; flex-direction: column; gap: 16px"
+    >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
@@ -61,9 +80,14 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
         <span style="color: var(--color-text-secondary); font-size: 16px">🔍</span>
         <input
           type="search"
+          data-testid="store-search"
+          enterkeyhint="search"
+          [value]="query()"
+          (input)="query.set($any($event.target).value)"
           [placeholder]="'tma.stores.search' | translate"
+          [attr.aria-label]="'common.search' | translate"
           class="flex-1 outline-none bg-transparent"
-          style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+          style="min-width: 0; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
         />
       </div>
 
@@ -90,25 +114,66 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
         }
       </div>
 
-      <!-- Map -->
+      <!-- Map: a tap on a pin picks that store below -->
       @if (storeMarkers().length > 0) {
         <div style="height: 160px; border-radius: 16px; overflow: hidden">
-          <lib-leaflet-map [markers]="storeMarkers()" />
+          <lib-leaflet-map
+            [markers]="storeMarkers()"
+            [userPosition]="userPosition()"
+            (markerClicked)="selectFromMap($event)"
+          />
         </div>
       }
 
-      <span
-        style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso); margin-top: 4px"
-        >{{ 'tma.stores.nearby' | translate }}</span
-      >
+      <div class="flex items-center justify-between" style="gap: 12px; margin-top: 4px">
+        <span style="font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-espresso)">{{
+          'tma.stores.nearby' | translate
+        }}</span>
+        <button
+          type="button"
+          data-testid="near-me"
+          (click)="locate()"
+          [disabled]="locating()"
+          [attr.aria-pressed]="userPosition() !== null"
+          class="flex items-center"
+          [style.opacity]="locating() ? 0.6 : 1"
+          style="gap: 6px; height: 34px; padding: 0 14px; border-radius: 9999px; background: var(--color-caramel); color: white; font-family: var(--font-sans); font-size: 13px; font-weight: 600; white-space: nowrap"
+        >
+          <span aria-hidden="true">📍</span>
+          {{ (locating() ? 'tma.stores.locating' : 'tma.stores.nearMe') | translate }}
+        </button>
+      </div>
+      @if (locationNote(); as note) {
+        <div
+          role="status"
+          data-testid="location-note"
+          class="flex items-center flex-wrap"
+          style="gap: 8px 12px; padding: 10px 14px; border-radius: 12px; background: var(--color-foam); border: 1px solid var(--color-border-light); font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+        >
+          <span class="flex-1" style="min-width: 180px">{{ note | translate }}</span>
+          @if (note === 'tma.stores.locationDeniedSettings') {
+            <button
+              type="button"
+              (click)="openLocationSettings()"
+              style="font-size: 13px; font-weight: 600; color: var(--color-caramel)"
+            >
+              {{ 'tma.stores.openSettings' | translate }}
+            </button>
+          }
+        </div>
+      }
 
       <div class="flex flex-col" style="gap: 12px">
-        @for (s of visibleStores(); track s.id; let i = $index) {
+        @for (s of visibleStores(); track s.id) {
           <a
             [routerLink]="inactive(s) ? null : ['/stores', s.slug]"
+            [attr.id]="'tma-store-' + s.id"
+            [attr.data-selected]="selectedId() === s.id || null"
             class="flex flex-col"
             [style.border]="
-              i === 0 && !inactive(s) ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
+              selectedId() === s.id && !inactive(s)
+                ? '2px solid var(--color-caramel)'
+                : '1px solid var(--color-border-light)'
             "
             [style.opacity]="inactive(s) ? 0.55 : 1"
             [style.cursor]="inactive(s) ? 'default' : null"
@@ -131,9 +196,11 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
                 >{{ badge(s) | translate }}</span
               >
             </div>
-            <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
-              {{ s.addressLine }}, {{ s.city }}
-            </p>
+            @if (address(s); as line) {
+              <p style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); margin: 0">
+                {{ line }}
+              </p>
+            }
             <div class="flex items-center flex-wrap" style="gap: 4px 14px">
               @if (preorderOnly(s)) {
                 <span
@@ -174,37 +241,119 @@ export class TmaStoresPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly fmt = inject(LocaleFormatService);
   private readonly translate = inject(TranslateService);
+  private readonly tg = inject(TelegramBridgeService);
 
   readonly stores = signal<StoreListItem[]>([]);
   readonly kind = signal<StoreKindFilter>('ALL');
   readonly kinds: StoreKindFilter[] = ['ALL', 'COFFEE', 'FOOD'];
+  /** What the customer typed into the search bar. */
+  readonly query = signal('');
+  /** Where the customer is, once they shared it: the stores come by distance and the map shows a dot. */
+  readonly userPosition = signal<LatLng | null>(null);
+  readonly locating = signal(false);
+  readonly locationNote = signal<LocationNote | null>(null);
+  /** The store picked on the map. */
+  private readonly pickedId = signal<string | null>(null);
 
   constructor() {
     refreshStoresWhileVisible(() => this.load());
   }
 
-  /** The stores under the chosen chip. */
-  readonly visibleStores = computed(() => this.stores().filter((s) => storeMatchesKind(s, this.kind())));
+  /** The stores under the chosen chip that match the search. */
+  readonly visibleStores = computed(() =>
+    this.stores().filter((s) => storeMatchesKind(s, this.kind()) && storeMatchesQuery(s, this.query())),
+  );
 
+  /** The highlighted card: the one picked on the map while it is listed, else the first that takes orders. */
+  readonly selectedId = computed(() => {
+    const visible = this.visibleStores();
+    const picked = this.pickedId();
+    if (picked && visible.some((s) => s.id === picked)) return picked;
+    return visible.find((s) => !this.inactive(s))?.id ?? null;
+  });
+
+  /** Stores without a pin yet stay in the list but off the map. */
   readonly storeMarkers = computed<MapMarker[]>(() =>
-    this.visibleStores().map((s) => ({
-      id: s.id,
-      lat: s.latitude,
-      lng: s.longitude,
-      label: s.name,
-      kind: 'store',
-      sells: storeKinds(s),
-    })),
+    this.visibleStores()
+      .filter(hasLocation)
+      .map((s) => ({
+        id: s.id,
+        lat: s.latitude,
+        lng: s.longitude,
+        label: s.name,
+        kind: 'store',
+        sells: storeKinds(s),
+      })),
   );
 
   ngOnInit(): void {
     this.load();
   }
 
+  /** The list, from where the customer is once they have shared it. */
   private load(): void {
-    this.catalog
-      .listStores()
-      .subscribe({ next: (s) => this.stores.set(sortStoresByAvailability(s)), error: () => undefined });
+    this.catalog.listStores(this.userPosition() ?? {}).subscribe({
+      next: (list) => this.stores.set(this.ordered(list)),
+      error: () => undefined,
+    });
+  }
+
+  /** Open ones first; nearest first once the customer's position is known. */
+  private ordered(list: StoreListItem[]): StoreListItem[] {
+    return sortStoresByAvailability(this.userPosition() ? sortStoresByDistance(list) : list);
+  }
+
+  /** A pin was tapped: that store's card lights up and comes into view. */
+  selectFromMap(storeId: string): void {
+    this.pickedId.set(storeId);
+    this.tg.haptic('light');
+    // After the highlight renders, so the scroll lands on the card as it now looks.
+    setTimeout(() =>
+      document.getElementById('tma-store-' + storeId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+    );
+  }
+
+  /**
+   * «Рядом со мной»: asks Telegram (or the browser) where the customer is,
+   * then lists the stores by distance from there, nearest first.
+   */
+  async locate(): Promise<void> {
+    if (this.locating()) return;
+    this.locating.set(true);
+    this.locationNote.set(null);
+    this.tg.haptic('light');
+    const found = await this.tg.requestLocation();
+    if (found.kind !== 'ok') {
+      this.locating.set(false);
+      this.locationNote.set(
+        found.kind === 'unavailable'
+          ? 'tma.stores.locationUnavailable'
+          : found.canOpenSettings
+            ? 'tma.stores.locationDeniedSettings'
+            : 'tma.stores.locationDenied',
+      );
+      return;
+    }
+    const here = { lat: found.lat, lng: found.lng };
+    this.userPosition.set(here);
+    this.catalog.listStores(here).subscribe({
+      next: (list) => {
+        this.stores.set(this.ordered(list));
+        // The nearest open store is the one to look at now.
+        this.pickedId.set(null);
+        this.locating.set(false);
+      },
+      error: () => this.locating.set(false),
+    });
+  }
+
+  /** Telegram's settings for the bot, where location access is switched back on. */
+  openLocationSettings(): void {
+    this.tg.openLocationSettings();
+  }
+
+  address(store: StoreListItem): string {
+    return storeAddress(store);
   }
 
   minutes(seconds: number): number {

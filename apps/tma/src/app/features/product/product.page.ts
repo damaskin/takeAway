@@ -200,7 +200,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
       <div
         data-testid="choice-summary"
         class="flex items-center"
-        style="position: sticky; bottom: 0; z-index: 5; gap: 12px; padding: 10px 16px calc(10px + var(--tg-safe-area-bottom, 0px)); background: var(--color-cream); border-top: 1px solid var(--color-border-light); font-family: var(--font-sans)"
+        style="position: sticky; bottom: 0; z-index: 5; gap: 12px; padding: 10px 16px calc(10px + var(--tma-safe-bottom)); background: var(--color-cream); border-top: 1px solid var(--color-border-light); font-family: var(--font-sans)"
       >
         <span
           class="flex-1"
