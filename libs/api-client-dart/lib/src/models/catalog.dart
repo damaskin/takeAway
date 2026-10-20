@@ -14,20 +14,56 @@ enum StoreStatus {
 }
 
 /// Why a store cannot take an ASAP order right now; pre-orders for later may
-/// still work (see [Store.takesOrders]).
+/// still work (see [Store.takesOrders]). A value this build does not know
+/// reads as [unknown]: closed for now, pre-orders may work.
 @JsonEnum(alwaysCreate: true)
 enum AsapBlockedReason {
   /// Outside working hours, and the kitchen did not extend them.
   @JsonValue('OUTSIDE_HOURS')
   outsideHours,
 
-  /// Within working hours, but nobody has started the shift.
+  /// Within working hours, but no shift is open. Since 2026-10-20 the
+  /// schedule opens and closes shifts by itself, so this shows only for a
+  /// moment between the schedule's passes.
   @JsonValue('SHIFT_CLOSED')
   shiftClosed,
 
   /// The queue would push the handover past the longest acceptable wait.
   @JsonValue('QUEUE_FULL')
   queueFull,
+
+  /// The kitchen paused the store («Технический перерыв») until
+  /// [Store.pausedUntil].
+  @JsonValue('PAUSED')
+  paused,
+
+  /// Within working hours, but an order placed now would not be ready before
+  /// the store closes ([Store.closesAt], or the kitchen's extension).
+  @JsonValue('CLOSING_SOON')
+  closingSoon,
+  unknown;
+
+  /// [raw] as the API spells it (`PAUSED`) — in an error body, say — and
+  /// [unknown] for anything else; null stays null.
+  static AsapBlockedReason? parse(Object? raw) => raw is String
+      ? _$AsapBlockedReasonEnumMap.entries
+            .firstWhere((e) => e.value == raw, orElse: () => const MapEntry(AsapBlockedReason.unknown, 'UNKNOWN'))
+            .key
+      : null;
+}
+
+/// Why the kitchen paused the store. Customers are shown a neutral
+/// «Технический перерыв» whatever it is.
+@JsonEnum(alwaysCreate: true)
+enum StorePauseReason {
+  @JsonValue('EQUIPMENT')
+  equipment,
+  @JsonValue('NO_INGREDIENTS')
+  noIngredients,
+  @JsonValue('NO_STAFF')
+  noStaff,
+  @JsonValue('OTHER')
+  other,
   unknown,
 }
 
@@ -69,6 +105,8 @@ class Store {
     this.asapBlockedReason,
     this.opensAt,
     this.closesAt,
+    this.pausedUntil,
+    this.pauseReason,
     this.brandName,
     this.logoUrl,
     this.heroImageUrl,
@@ -119,6 +157,15 @@ class Store {
   /// End of the current working-hours window while within hours; null outside
   /// hours and for a store open around the clock.
   final DateTime? closesAt;
+
+  /// The kitchen paused the store until then ([AsapBlockedReason.paused]);
+  /// pre-orders for a time inside the pause are refused too. Null when not
+  /// paused and from API versions that predate pauses.
+  final DateTime? pausedUntil;
+
+  /// Why the store is paused; null when it is not.
+  @JsonKey(unknownEnumValue: StorePauseReason.unknown)
+  final StorePauseReason? pauseReason;
   @JsonKey(defaultValue: 0)
   final int taxRateBps;
   @JsonKey(defaultValue: true)
@@ -158,8 +205,8 @@ class Store {
   /// without [acceptingOrders] knows ASAP only, so [isOpen] decides there.
   bool get takesOrders => acceptingOrders == null ? isOpen : !isInactive;
 
-  /// Takes orders for a time later only: closed now (after hours, no shift
-  /// yet, or a full queue), open for pre-orders.
+  /// Takes orders for a time later only: closed now (after hours, a full
+  /// queue, a kitchen pause, the closing too close), open for pre-orders.
   bool get preorderOnly => takesOrders && !isOpen;
 
   /// [status] as customers see it: a store that does not take ASAP orders
@@ -236,6 +283,8 @@ class StoreDetail extends Store {
     super.asapBlockedReason,
     super.opensAt,
     super.closesAt,
+    super.pausedUntil,
+    super.pauseReason,
     super.heroImageUrl,
     super.kinds,
     super.distanceMeters,

@@ -81,6 +81,68 @@ void main() {
       expect(cached.opensAt, night.opensAt);
     });
 
+    test('reads a kitchen pause and an imminent closing, and no pause from an older API', () {
+      final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
+      final paused = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': false,
+        'acceptingOrders': true,
+        'asapBlockedReason': 'PAUSED',
+        'pausedUntil': '2026-10-20T09:30:00.000Z',
+        'pauseReason': 'EQUIPMENT',
+        'closesAt': '2026-10-20T18:00:00.000Z',
+      });
+      expect(paused.asapBlockedReason, AsapBlockedReason.paused);
+      expect(paused.pausedUntil, DateTime.utc(2026, 10, 20, 9, 30));
+      expect(paused.pauseReason, StorePauseReason.equipment);
+      expect(paused.preorderOnly, isTrue, reason: 'a pause stops orders for now, not pre-orders');
+
+      final cached = Store.fromJson(jsonDecode(jsonEncode(paused.toJson())) as Map<String, dynamic>);
+      expect(cached.asapBlockedReason, AsapBlockedReason.paused);
+      expect(cached.pausedUntil, paused.pausedUntil);
+      expect(cached.pauseReason, StorePauseReason.equipment);
+
+      final closing = Store.fromJson({
+        ...raw,
+        'status': 'OPEN',
+        'openNow': false,
+        'acceptingOrders': true,
+        'asapBlockedReason': 'CLOSING_SOON',
+        'closesAt': '2026-10-20T18:00:00.000Z',
+        'pausedUntil': null,
+        'pauseReason': null,
+      });
+      expect(closing.asapBlockedReason, AsapBlockedReason.closingSoon);
+      expect(closing.pausedUntil, isNull);
+      expect(closing.pauseReason, isNull);
+      expect(closing.preorderOnly, isTrue);
+
+      final older = Store.fromJson({...raw}..removeWhere((key, _) => key == 'pausedUntil' || key == 'pauseReason'));
+      expect(older.pausedUntil, isNull);
+      expect(older.pauseReason, isNull);
+
+      expect(AsapBlockedReason.parse('PAUSED'), AsapBlockedReason.paused);
+      expect(AsapBlockedReason.parse('CLOSING_SOON'), AsapBlockedReason.closingSoon);
+      expect(AsapBlockedReason.parse('LATER'), AsapBlockedReason.unknown);
+      expect(AsapBlockedReason.parse(null), isNull);
+
+      // A pause reason this build does not know still parses.
+      final future = Store.fromJson({...raw, 'pauseReason': 'POWER_CUT', 'pausedUntil': '2026-10-20T09:30:00.000Z'});
+      expect(future.pauseReason, StorePauseReason.unknown);
+      expect(future.pausedUntil, isNotNull);
+
+      final detail = StoreDetail.fromJson({
+        ...(fixture('store_detail.json')! as Map<String, dynamic>),
+        'asapBlockedReason': 'PAUSED',
+        'pausedUntil': '2026-10-20T09:30:00.000Z',
+        'pauseReason': 'NO_STAFF',
+      });
+      expect(detail.asapBlockedReason, AsapBlockedReason.paused);
+      expect(detail.pausedUntil, DateTime.utc(2026, 10, 20, 9, 30));
+      expect(detail.pauseReason, StorePauseReason.noStaff);
+    });
+
     test('an API without acceptingOrders knows ASAP only: closed for ASAP takes no order', () {
       final raw = (fixture('stores.json')! as List).first as Map<String, dynamic>;
       final older = Store.fromJson({...raw, 'status': 'OPEN', 'openNow': false}..remove('acceptingOrders'));
@@ -310,8 +372,44 @@ void main() {
       expect(OrderStatus.pickedUp.isTerminal, isTrue);
       expect(OrderStatus.expired.isTerminal, isTrue);
       expect(OrderStatus.ready.isTerminal, isFalse);
-      expect(OrderStatus.accepted.isCancellable, isTrue);
+      expect(OrderStatus.created.isCancellable, isTrue);
+      expect(OrderStatus.paid.isCancellable, isTrue);
+      expect(OrderStatus.accepted.isCancellable, isFalse, reason: 'cancel only before the kitchen accepts');
       expect(OrderStatus.inProgress.isCancellable, isFalse);
+    });
+
+    test('reads the new estimate of the kitchen and counts down to it, else to the promise', () {
+      final late = Order.fromJson({...orderJson(), 'readyEstimateAt': '2026-09-22T19:48:00.000Z'});
+      expect(late.readyEstimateAt, DateTime.utc(2026, 9, 22, 19, 48));
+      expect(late.pickupAt, DateTime.utc(2026, 9, 22, 19, 40), reason: 'the promise stays as it was');
+      expect(late.dueAt, late.readyEstimateAt);
+
+      final onTime = Order.fromJson({...orderJson(), 'readyEstimateAt': null});
+      expect(onTime.readyEstimateAt, isNull);
+      expect(onTime.dueAt, onTime.pickupAt);
+
+      final older = Order.fromJson(orderJson());
+      expect(older.readyEstimateAt, isNull);
+      expect(older.dueAt, older.pickupAt);
+      expect(late.copyWithStatus(OrderStatus.ready).readyEstimateAt, late.readyEstimateAt);
+    });
+
+    test('takes the word of the API on cancelling, and before the accept only from an older API', () {
+      final charged = Order.fromJson({...orderJson(), 'status': 'PAID', 'canCancel': false});
+      expect(charged.canCancel, isFalse);
+      expect(charged.customerCanCancel, isFalse, reason: 'money was taken: the API said no');
+
+      final fresh = Order.fromJson({...orderJson(), 'status': 'CREATED', 'canCancel': true});
+      expect(fresh.customerCanCancel, isTrue);
+      // A live event that the kitchen accepted it takes the cancel away before the re-read lands.
+      expect(fresh.copyWithStatus(OrderStatus.accepted).customerCanCancel, isFalse);
+      expect(fresh.copyWithStatus(OrderStatus.paid).customerCanCancel, isTrue);
+
+      final older = Order.fromJson({...orderJson(), 'status': 'CREATED'});
+      expect(older.canCancel, isNull);
+      expect(older.customerCanCancel, isTrue);
+      expect(Order.fromJson({...orderJson(), 'status': 'ACCEPTED'}).customerCanCancel, isFalse);
+      expect(Order.fromJson(orderJson()).customerCanCancel, isFalse, reason: 'IN_PROGRESS');
     });
 
     test('parses socket status events, tolerating unknown statuses', () {
