@@ -3414,15 +3414,33 @@ export const TRANSLATIONS_RU = {
     orderStatus: {
       orderClosed: 'Заказ закрыт',
       goToPayment: 'Перейти к оплате',
+      /** The kitchen accepted the order late and named a new time. */
+      cooking: 'Готовим · будет готово через {{min}} мин',
+      /** A pre-order hours away: the pickup time instead of a long countdown. */
+      readyAt: 'к {{time}}',
+      readyAtOn: 'к {{time}}, {{date}}',
+      cancel: 'Отменить заказ',
+      cancelling: 'Отменяем…',
+      cancelConfirm: 'Отменить заказ {{code}}?',
+      cancelFailed: 'Не удалось отменить заказ. Попробуйте ещё раз.',
+      /** Once the kitchen accepted it (or the money was taken) only the store can cancel. */
+      callToCancel: 'Заказ уже готовят — для отмены позвоните в точку',
     },
     profile: {
       loyalty: 'ЛОЯЛЬНОСТЬ',
-      tierGold: 'Золотой уровень',
-      pointsSuffix: 'баллов',
       pointsLine: '{{points}} баллов',
-      toPlatinum: '{{points}} баллов до уровня «Платиновый»',
-      signOut: 'Выйти',
       fallbackName: 'Пользователь Telegram',
+      signedInVia: 'Вы вошли через Telegram',
+      signedInHint: 'В мини-приложении ваш аккаунт — это Telegram, выходить из него не нужно.',
+      personal: {
+        nameFromTelegram: 'Имя берётся из Telegram',
+        phoneInvalid: 'Проверьте номер: например, +373 69 123 456',
+        emailInvalid: 'Проверьте адрес почты',
+      },
+      notifications: {
+        subtitle: 'Сообщения о заказах приходят от бота takeAway прямо в этот чат Telegram. Выберите, о чём писать.',
+        fromBot: 'Сообщения о заказах приходят от бота',
+      },
     },
     checkout: {
       title: 'Оформление',
@@ -3431,6 +3449,9 @@ export const TRANSLATIONS_RU = {
       schedule: 'Запланировать',
       noSlots: 'Свободных окон нет — попробуйте «Сейчас».',
       noSlotsClosed: 'На ближайшие сутки свободных окон нет.',
+      slotPicker: 'Время, к которому приготовить заказ',
+      /** A window in the time picker that has no room left. */
+      slotFull: '{{time}} — занято',
       closedNow: 'Точка сейчас закрыта — выберите время, к которому забрать заказ.',
       location: 'Точка выдачи',
       readyIn: 'Готово через ~{{min}} мин',
@@ -3495,8 +3516,14 @@ export const TRANSLATIONS_RU = {
     },
     stores: {
       title: 'Выберите точку',
-      search: 'Район, ориентир…',
+      search: 'Название или адрес…',
       nearby: 'Рядом',
+      nearMe: 'Рядом со мной',
+      locating: 'Ищем вас…',
+      locationDenied: 'Нет доступа к геопозиции — разрешите его, чтобы показать точки рядом.',
+      locationDeniedSettings: 'Нет доступа к геопозиции. Разрешите его в настройках Telegram.',
+      openSettings: 'Открыть настройки',
+      locationUnavailable: 'Не удалось определить, где вы. Попробуйте ещё раз.',
     },
     menu: {
       change: 'Сменить',
