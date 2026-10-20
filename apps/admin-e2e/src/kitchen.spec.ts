@@ -261,7 +261,7 @@ test.describe('kitchen policy on the board', () => {
     storeId: STORE.id,
     open: true,
     openedAt: at(-300),
-    openedByName: 'Анна',
+    openedByName: null,
     closedAt: null,
     closedByName: null,
     busy: false,
@@ -271,15 +271,23 @@ test.describe('kitchen policy on the board', () => {
     asapOpen: true,
     asapBlockedReason: null,
     closedAutomatically: false,
+    // Since 2026-10-20 the working hours open the shift; the kitchen only extends and pauses.
+    openedAutomatically: true,
+    canExtend: true,
+    pausedUntil: null,
+    pauseReason: null,
+    pauseComment: null,
+    pausedByName: null,
   };
 
-  test('groups pre-orders, flags overdue and late tickets, extends the hours and asks before finishing', async ({
+  test('groups pre-orders, flags overdue and late tickets, follows the schedule, extends and pauses', async ({
     context,
     page,
   }) => {
     await signIn(context);
     await installFakeApi(context);
     const extended: unknown[] = [];
+    const paused: Array<{ method: string; body: unknown }> = [];
     await context.route('**/api/kds/orders**', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(BOARD) }),
     );
@@ -293,14 +301,24 @@ test.describe('kitchen policy on the board', () => {
           body: JSON.stringify({ ...SHIFT, closesAt: at(10), extendedUntil: at(40) }),
         });
       }
-      if (path.endsWith('/close-summary')) {
-        return route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ awaitingAcceptance: 1, inProgress: 1, ready: 0, later: 1 }),
-        });
-      }
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SHIFT) });
+    });
+    await context.route('**/api/kds/pause**', async (route) => {
+      const method = route.request().method();
+      paused.push({ method, body: method === 'PUT' ? route.request().postDataJSON() : null });
+      const body =
+        method === 'PUT'
+          ? {
+              ...SHIFT,
+              pausedUntil: at(30),
+              pauseReason: 'EQUIPMENT',
+              pauseComment: 'кофемашина',
+              pausedByName: 'Анна',
+              asapOpen: false,
+              asapBlockedReason: 'PAUSED',
+            }
+          : SHIFT;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -308,13 +326,22 @@ test.describe('kitchen policy on the board', () => {
 
     const preorders = page.getByRole('region', { name: 'Предзаказы' });
     await expect(preorders.getByText('P15')).toBeVisible();
-    await expect(preorders.getByText(/^1[12]:\d{2}:\d{2}$/)).toBeVisible();
     await expect(page.getByRole('region', { name: 'Новые' }).getByText('P15')).toHaveCount(0);
 
+    // Not accepted yet: the acceptance pill is the card's only countdown.
     const waiting = page.getByTestId('ticket-W31');
     await expect(waiting.getByTestId('ticket-overdue')).toContainText('Ждёт принятия 5 мин');
     await expect(waiting.getByTestId('ticket-overdue')).toContainText('автоотмена через');
+    await expect(waiting.getByTestId('ticket-due')).toHaveCount(0);
+    await expect(preorders.getByTestId('ticket-P15').getByTestId('ticket-awaiting')).toHaveText('Ждёт принятия');
+    // Accepted: the pickup countdown is back.
     await expect(page.getByTestId('ticket-L07').getByTestId('ticket-late')).toHaveText('Опаздываем 7 мин');
+    await expect(page.getByTestId('ticket-L07').getByTestId('ticket-due')).toBeVisible();
+
+    // No «Начать / Закончить работу»: the schedule runs the shift.
+    await expect(page.getByTestId('schedule-status')).toContainText('Работаем по графику до');
+    await expect(page.getByRole('button', { name: 'Закончить работу' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Начать работу' })).toHaveCount(0);
 
     const banner = page.getByTestId('shift-banner-closingSoon');
     await expect(banner).toContainText('по графику конец работы');
@@ -322,13 +349,72 @@ test.describe('kitchen policy on the board', () => {
 
     await banner.getByTestId('shift-extend-30').click();
     await expect.poll(() => extended).toEqual([{ minutes: 30 }]);
-    await expect(page.getByTestId('shift-extended')).toBeVisible();
+    await expect(page.getByTestId('schedule-status')).toContainText('Продлено до');
 
-    await page.getByRole('button', { name: 'Закончить работу' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Закончить работу?' });
-    await expect(dialog.getByTestId('close-blocked')).toContainText('Не приняты заказы на ближайшие 30 минут: 1');
-    await expect(dialog.getByText('Предзаказы на потом: 1')).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Закончить работу' })).toBeDisabled();
-    await page.screenshot({ path: test.info().outputPath('kitchen-close-dialog.png'), fullPage: true });
+    // «Пауза»: the coffee machine broke.
+    await page.getByTestId('kitchen-pause').click();
+    const dialog = page.getByRole('dialog', { name: 'Поставить точку на паузу?' });
+    const confirm = dialog.getByRole('button', { name: 'Поставить на паузу' });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByText('Сломалось оборудование').click();
+    await dialog.getByText('30 мин').click();
+    await dialog.getByTestId('pause-comment').fill('кофемашина');
+    await page.screenshot({ path: test.info().outputPath('kitchen-pause-dialog.png'), fullPage: true });
+    await confirm.click();
+    await expect
+      .poll(() => paused)
+      .toEqual([{ method: 'PUT', body: { minutes: 30, reason: 'EQUIPMENT', comment: 'кофемашина' } }]);
+    const pause = page.getByTestId('schedule-pause');
+    await expect(pause).toContainText('Пауза до');
+    await expect(pause).toContainText('Сломалось оборудование — кофемашина (Анна)');
+    await page.screenshot({ path: test.info().outputPath('kitchen-paused.png'), fullPage: true });
+
+    await pause.getByTestId('pause-resume').click();
+    await expect.poll(() => paused.map((p) => p.method)).toEqual(['PUT', 'DELETE']);
+    await expect(page.getByTestId('schedule-pause')).toHaveCount(0);
+  });
+});
+
+test.describe('stores follow their schedule', () => {
+  test('the «Точки» card says when the store opens, with no «Начать работу»', async ({ context, page }) => {
+    await signIn(context);
+    await installFakeApi(context);
+    const tomorrowMorning = new Date(Date.now() + 24 * 60 * 60_000);
+    await context.route('**/api/kds/shift**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          storeId: STORE.id,
+          open: false,
+          openedAt: null,
+          openedByName: null,
+          closedAt: null,
+          closedByName: null,
+          busy: false,
+          extendedUntil: null,
+          closesAt: null,
+          opensAt: tomorrowMorning.toISOString(),
+          asapOpen: false,
+          asapBlockedReason: 'OUTSIDE_HOURS',
+          closedAutomatically: true,
+          openedAutomatically: true,
+          canExtend: false,
+          pausedUntil: null,
+          pauseReason: null,
+          pauseComment: null,
+          pausedByName: null,
+        }),
+      }),
+    );
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/stores');
+
+    const line = page.getByTestId(`store-schedule-${STORE.id}`);
+    await expect(line).toContainText('По графику закрыто · откроется');
+    await expect(line).toContainText('предзаказы приходят');
+    await expect(page.getByRole('button', { name: 'Начать работу' })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath('stores-schedule.png'), fullPage: true });
   });
 });
