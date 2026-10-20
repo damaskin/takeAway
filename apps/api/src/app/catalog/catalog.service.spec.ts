@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { StoreAvailabilityService } from '../kitchen/store-availability.service';
+import { typicalPrepCache } from '../kitchen/typical-prep';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 import { AVAILABLE_OPTION } from './option-availability';
@@ -52,6 +53,7 @@ describe('CatalogService', () => {
     product: { findFirst: jest.Mock };
     order: { groupBy: jest.Mock; findMany: jest.Mock };
     cart: { findUnique: jest.Mock };
+    productStore: { findMany: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -63,7 +65,10 @@ describe('CatalogService', () => {
       // No outstanding work and empty slots, so the live ETA collapses to the store's base.
       order: { groupBy: jest.fn().mockResolvedValue([]), findMany: jest.fn().mockResolvedValue([]) },
       cart: { findUnique: jest.fn() },
+      // Nothing on sale unless a test says otherwise: no typical cooking in the ETA.
+      productStore: { findMany: jest.fn().mockResolvedValue([]) },
     };
+    typicalPrepCache.forget();
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -207,6 +212,18 @@ describe('CatalogService', () => {
     expect(result[0]?.distanceMeters).toBeLessThan(5000);
   });
 
+  it("adds a typical order's cooking to the «N мин» every storefront shows (item 9)", async () => {
+    prisma.productStore.findMany.mockResolvedValue([
+      { storeId: 'store-1', productId: 'espresso', product: { prepTimeSeconds: 60 } },
+      { storeId: 'store-1', productId: 'latte', product: { prepTimeSeconds: 180 } },
+      { storeId: 'store-1', productId: 'raf', product: { prepTimeSeconds: 300 } },
+    ]);
+    prisma.store.findMany.mockResolvedValue([storeFixture()]);
+    const [store] = await service.listStores({});
+    // Base 6 minutes + the median of 1, 3 and 5 minutes.
+    expect(store?.currentEtaSeconds).toBe(360 + 180);
+  });
+
   describe('availability (kitchen policy 2026-10-14)', () => {
     // 07:00–22:00 every day, Dubai time (UTC+4, no DST).
     const dayShift = Array.from({ length: 7 }, (_, weekday) => ({
@@ -218,6 +235,38 @@ describe('CatalogService', () => {
     const clock = (iso: string) => jest.useFakeTimers({ now: new Date(iso), doNotFake: ['nextTick', 'setImmediate'] });
 
     afterEach(() => jest.useRealTimers());
+
+    it('says a paused store takes no ASAP order until the pause ends, with the reason, and pre-orders still', async () => {
+      clock('2026-09-22T08:00:00Z'); // 12:00 local
+      const pausedUntil = new Date('2026-09-22T08:30:00Z');
+      prisma.store.findMany.mockResolvedValue([
+        storeFixture({ workingHours: dayShift, pausedUntil, pauseReason: 'EQUIPMENT' }),
+      ]);
+      const [store] = await service.listStores({});
+      expect(store).toMatchObject({
+        openNow: false,
+        acceptingOrders: true,
+        asapBlockedReason: 'PAUSED',
+        pausedUntil: '2026-09-22T08:30:00.000Z',
+        pauseReason: 'EQUIPMENT',
+      });
+
+      clock('2026-09-22T08:31:00Z');
+      const [after] = await service.listStores({});
+      expect(after).toMatchObject({ openNow: true, pausedUntil: null, pauseReason: null });
+    });
+
+    it('stops ASAP orders the kitchen would not make before the closing (CLOSING_SOON)', async () => {
+      clock('2026-09-22T17:55:00Z'); // 21:55 local, closing at 22:00 with a six-minute base
+      prisma.store.findMany.mockResolvedValue([storeFixture({ workingHours: dayShift })]);
+      const [store] = await service.listStores({});
+      expect(store).toMatchObject({
+        openNow: false,
+        acceptingOrders: true,
+        asapBlockedReason: 'CLOSING_SOON',
+        closesAt: '2026-09-22T18:00:00.000Z',
+      });
+    });
 
     it('is open now inside working hours with a shift, and says when it closes', async () => {
       clock('2026-09-22T08:00:00Z'); // 12:00 local

@@ -1385,35 +1385,67 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
       },
       shift: {
-        closedTitle: 'Shift not started',
-        closedHint:
-          'While the shift is closed, no orders "for now" are taken. Pre-orders for later keep coming and wait on the board.',
-        start: 'Start work',
-        finish: 'Finish work',
-        openSince: 'Shift running since {{time}}, the store takes orders',
-        openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
-        storeClosed:
-          'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
-        extendedUntil: 'extended until {{time}}',
-        autoClosed: 'The shift was closed automatically at {{time}}, after the working hours.',
+        storeClosed: 'The store is switched off in its settings — no orders. It can be switched on on the Stores page.',
         closingSoon: 'The working hours end at {{time}} — orders "for now" stop then.',
         closingSoonExtended: 'The extension ends at {{time}} — orders "for now" stop then.',
-        outsideHours: 'The store is closed by its working hours — no orders "for now".',
-        opensAt: 'Opens at {{time}}.',
         extend30: 'Extend by 30 min',
         extend60: 'Extend by 1 h',
         extendLimit: 'It cannot be extended further: at most 4 hours past the closing time.',
+        extendNotAllowed: 'The closing can be extended only in the last hour before it.',
       },
-      shiftClose: {
-        title: 'Finish work?',
-        body: 'Orders "for now" stop. Pre-orders for later keep coming.',
-        bodyStore: '«{{store}}» stops taking orders "for now". Pre-orders for later keep coming.',
-        awaiting:
-          'Orders for the next 30 minutes not accepted: {{count}}. Accept or reject them on the kitchen board first — the customers are waiting.',
-        inProgress: 'Being made: {{count}}. They stay on the board — finish them.',
-        ready: 'Ready and waiting for the customer: {{count}}. They stay on the board until handed over.',
-        later: 'Pre-orders for later: {{count}}. They come to the board in the next shift.',
-        empty: 'No unfinished orders on the board.',
+      /** The store's state on the board, the «Точки» cards and the dashboard: the schedule runs the shift. */
+      schedule: {
+        open: 'Open by the schedule until {{time}}',
+        extended: 'Extended until {{time}}',
+        aroundTheClock: 'Open around the clock',
+        opening: 'Open by the schedule — the shift opens within a minute',
+        opensAt: 'Closed by the schedule · opens today at {{time}} · pre-orders keep coming',
+        opensTomorrowAt: 'Closed by the schedule · opens tomorrow at {{time}} · pre-orders keep coming',
+        opensOnAt: 'Closed by the schedule · opens {{date}} at {{time}} · pre-orders keep coming',
+        closed: 'Closed by the schedule',
+        switchedOff: 'The store is switched off in its settings — no orders',
+        queueFull: 'No orders "for now": the queue is long. Pre-orders keep coming.',
+        closingSoon:
+          'No more orders "for now" — there is no time to make them before the closing. Pre-orders keep coming.',
+        pausedUntil: 'Paused until {{time}}',
+        pausedBy: '({{name}})',
+        resume: 'End the pause',
+      },
+      pause: {
+        button: 'Pause',
+        buttonOn: 'Paused until {{time}}',
+        hint: 'Technical trouble: orders "for now" and pre-orders for the time of the pause stop.',
+        title: 'Pause the store?',
+        body: 'While paused, the store takes no orders "for now" and no pre-orders for that time — customers see "Short break". Orders on the board stay and can be finished. Staff and the owner get a Telegram message.',
+        reasonLabel: 'What happened',
+        reasons: {
+          EQUIPMENT: 'Equipment broke',
+          NO_INGREDIENTS: 'Out of ingredients',
+          NO_STAFF: 'Short of staff',
+          OTHER: 'Other',
+        },
+        durationLabel: 'For how long',
+        durations: {
+          m15: '15 min',
+          m30: '30 min',
+          m60: '1 h',
+          m120: '2 h',
+          untilClose: 'Until the end of the day',
+        },
+        commentLabel: 'Comment for staff and the owner (optional)',
+        commentPlaceholder: 'For example: the coffee machine',
+        confirm: 'Pause the store',
+        done: 'The store is paused until {{time}}',
+        resumed: 'The pause is over — the store takes orders again',
+        errors: {
+          STORE_SWITCHED_OFF: 'The store is switched off in its settings — there is nothing to pause.',
+          PAUSE_NEEDS_DURATION: 'The store does not open again soon — pick how long to pause.',
+        },
+      },
+      /** A ticket that left the board without the kitchen. */
+      removed: {
+        CANCELLED_BY_CUSTOMER: 'Order #{{code}} was cancelled by the customer',
+        NOT_ACCEPTED: 'Order #{{code}} was cancelled automatically — nobody accepted it in time',
       },
       preorders: {
         title: 'Pre-orders',
@@ -1422,6 +1454,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
+        awaitingPreorder: 'Waiting to be accepted',
         autoCancelIn: 'cancelled automatically in {{time}}',
         late: '{{minutes}} min late',
       },
@@ -1434,7 +1467,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         on: 'Busy · on',
         offHint: 'Mark the kitchen as busy: customers see the store as busy, orders keep coming.',
         onHint: 'Clear the «Busy» mark',
-        note: 'Marked «Busy»: customers see the store as busy. Clear it with the same button, or it clears itself when the shift ends.',
+        note: 'Marked «Busy»: customers see the store as busy. Clear it with the same button, or it clears itself at the closing.',
       },
       arrival: {
         here: 'Customer is here',
@@ -1619,9 +1652,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       compareStores: 'Compare stores →',
       storeLine: '{{orders}} orders · {{share}} of revenue',
       shifts: {
-        title: 'Stores and shifts',
+        title: 'Stores now',
         empty: 'No stores yet.',
-        storeClosed: 'Store closed',
       },
       menu: {
         title: 'Menu',
@@ -2120,15 +2152,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       open: 'Open store',
       close: 'Close store',
       openBlocked: 'Finish the readiness checklist first',
-      shift: {
-        open: 'Shift running — the store takes orders',
-        closed: 'Shift not started — no orders "for now", pre-orders keep coming',
-        storeClosed:
-          'The store is closed in its settings, so a shift cannot start. The owner or a manager can open it.',
-        storeClosedCanOpen:
-          'The store is closed in its settings, so a shift cannot start. Open the store first with "Open store".',
-        storeClosedShiftOpen: 'The store is closed in its settings but a shift is still running — you can finish it.',
-      },
+      /** The shift follows the working hours; the kitchen extends the closing and pauses the store on its board. */
+      scheduleHint:
+        'Orders "for now" open and close with the working hours. The kitchen can extend the closing or pause the store.',
       timezoneMissing: {
         title: 'No time zone set — working hours are read as UTC',
         body: 'Customers see shifted working hours, and the store may look closed even during a shift.',
@@ -2286,7 +2312,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         baseEta: 'Base time per order, min',
         baseEtaHint:
-          "The store's time is only ringing up, packing and handing over. Cooking time is set on each item (and by default on its category in Menu); the queue comes on top.",
+          "The store's time is only ringing up, packing and handing over. The «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).",
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',

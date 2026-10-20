@@ -1,4 +1,12 @@
-import { acceptAlertAt, acceptDeadline, kitchenTimeline, startBy, type TimelineOrder } from './kitchen-timeline';
+import {
+  acceptAlertAt,
+  acceptDeadline,
+  cookingSeconds,
+  kitchenTimeline,
+  readyEstimate,
+  startBy,
+  type TimelineOrder,
+} from './kitchen-timeline';
 
 const POLICY = { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 };
 const at = (iso: string) => new Date(iso);
@@ -54,5 +62,23 @@ describe('kitchen timeline', () => {
       acceptAlertAt: null,
       acceptDeadlineAt: null,
     });
+  });
+});
+
+describe("the kitchen's new estimate (item 16)", () => {
+  it('cooks the longer of the longest item and the work over the hands', () => {
+    expect(cookingSeconds({ prepSeconds: 300, workSeconds: 900 }, 1)).toBe(900);
+    expect(cookingSeconds({ prepSeconds: 300, workSeconds: 900 }, 3)).toBe(300);
+    expect(cookingSeconds({ prepSeconds: 300, workSeconds: 900 }, 0)).toBe(900);
+  });
+
+  it('is set only when the order is taken on too late for its time', () => {
+    const late = order({ pickupAt: at('2026-10-14T09:15:00Z'), prepSeconds: 300, workSeconds: 300 });
+    // Accepted at 09:13 with five minutes of cooking: ready about 09:18.
+    expect(readyEstimate(late, 2, at('2026-10-14T09:13:00Z'))).toEqual(at('2026-10-14T09:18:00Z'));
+    // Accepted at 09:05: 09:10 is before the promise, which still holds.
+    expect(readyEstimate(late, 2, at('2026-10-14T09:05:00Z'))).toBeNull();
+    // Exactly on time is on time.
+    expect(readyEstimate(late, 2, at('2026-10-14T09:10:00Z'))).toBeNull();
   });
 });

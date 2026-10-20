@@ -1,22 +1,25 @@
 import { Component, effect, inject, input, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { interval } from 'rxjs';
 
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import { apiErrorMessage } from '../../core/http/api-error';
-import { KitchenApi } from '../../core/kitchen/kitchen.api';
+import { KitchenApi, type StoreShift } from '../../core/kitchen/kitchen.api';
 import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
-import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
+import { StoreScheduleStatusComponent } from '../../shared/store-schedule-status.component';
 
 /**
- * Store management on the dashboard: every store with its shift and a
- * "Start work" / "Finish work" button — the same shift the kitchen board
- * and the stores page open and close.
+ * The stores on the dashboard, each with where it stands by its schedule —
+ * open until when, extended, closed and when it opens, paused. Since
+ * 2026-10-20 the working hours open and close the shift, so there are no
+ * "Start work" / "Finish work" buttons here any more.
  */
 @Component({
   selector: 'app-store-shifts-widget',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, ShiftCloseDialogComponent],
+  imports: [RouterLink, TranslatePipe, StoreScheduleStatusComponent],
   template: `
     <article class="dash-card">
       <header class="dash-card-head">
@@ -28,29 +31,14 @@ import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.compo
       }
       <ul class="shift-list">
         @for (s of stores(); track s.id) {
-          <li class="shift-row">
-            <div class="shift-name">
-              <span class="shift-dot" [class.shift-dot-on]="s.shiftOpen && s.status !== 'CLOSED'"></span>
-              <span>{{ s.name }}</span>
-            </div>
-            @if (s.status === 'CLOSED') {
-              <span class="shift-state">{{ 'admin.dashboard.shifts.storeClosed' | translate }}</span>
-            } @else {
-              <span class="shift-state">{{
-                (s.shiftOpen ? 'admin.stores.shift.open' : 'admin.stores.shift.closed') | translate
-              }}</span>
-              @if (canToggle()) {
-                <button
-                  type="button"
-                  class="shift-btn"
-                  [class.shift-btn-start]="!s.shiftOpen"
-                  [disabled]="busyId() === s.id"
-                  (click)="toggle(s)"
-                >
-                  {{ (s.shiftOpen ? 'admin.kitchen.shift.finish' : 'admin.kitchen.shift.start') | translate }}
-                </button>
-              }
-            }
+          <li class="shift-row" [attr.data-testid]="'dashboard-store-' + s.id">
+            <span class="shift-name">{{ s.name }}</span>
+            <app-store-schedule-status
+              [shift]="shifts()[s.id] ?? null"
+              [storeStatus]="s.status"
+              [timezone]="s.timezone"
+              [now]="now()"
+            />
           </li>
         }
       </ul>
@@ -58,14 +46,6 @@ import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.compo
         <p class="dash-error" role="alert">{{ e }}</p>
       }
     </article>
-    @if (closing(); as target) {
-      <app-shift-close-dialog
-        [storeId]="target.id"
-        [storeName]="target.name"
-        (closed)="closed(target.id, $event.open)"
-        (cancelled)="closing.set(null)"
-      />
-    }
   `,
   styles: [
     DASH_CARD_STYLES,
@@ -83,57 +63,17 @@ import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.compo
       }
       .shift-row {
         display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 8px 12px;
+        flex-direction: column;
+        gap: 6px;
         padding: 10px 12px;
         border: 1px solid var(--color-border-light);
         border-radius: 14px;
         font-family: var(--font-sans);
-        font-size: 14px;
       }
       .shift-name {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 1 1 140px;
-        min-width: 0;
-        color: var(--color-text-primary);
-        font-weight: 500;
-      }
-      .shift-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 9999px;
-        background: var(--color-border);
-        flex: none;
-      }
-      .shift-dot-on {
-        background: #3e8868;
-      }
-      .shift-state {
-        font-size: 12px;
-        color: var(--color-text-tertiary);
-      }
-      .shift-btn {
-        height: 32px;
-        padding: 0 12px;
-        border-radius: var(--radius-button);
-        border: 1px solid var(--color-border);
-        background: transparent;
-        color: var(--color-text-primary);
-        font-family: var(--font-sans);
-        font-size: 12px;
+        font-size: 14px;
         font-weight: 600;
-        cursor: pointer;
-      }
-      .shift-btn-start {
-        border-color: transparent;
-        background: var(--color-caramel);
-        color: white;
-      }
-      .shift-btn:disabled {
-        opacity: 0.5;
+        color: var(--color-text-primary);
       }
     `,
   ],
@@ -144,15 +84,13 @@ export class StoreShiftsWidgetComponent {
   private readonly translate = inject(TranslateService);
 
   readonly brandId = input.required<string>();
-  /** Whether the viewer may open and close shifts; the API decides in the end. */
-  readonly canToggle = input(true);
 
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly loaded = signal(false);
-  readonly busyId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
-  /** The store whose "Finish work" dialog is open. */
-  readonly closing = signal<StoreAdminDto | null>(null);
+  /** Each store's shift, for its schedule line. */
+  readonly shifts = signal<Readonly<Record<string, StoreShift>>>({});
+  readonly now = signal(Date.now());
 
   constructor() {
     effect(() => {
@@ -163,6 +101,7 @@ export class StoreShiftsWidgetComponent {
           next: (list) => {
             this.stores.set(list);
             this.loaded.set(true);
+            this.loadShifts(list);
           },
           error: (err) => {
             this.loaded.set(true);
@@ -171,32 +110,22 @@ export class StoreShiftsWidgetComponent {
         });
       });
     });
+    interval(60_000)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.now.set(Date.now());
+        this.loadShifts(this.stores());
+      });
   }
 
-  /** "Start work" right away; "Finish work" through the dialog that says what stays on the board. */
-  toggle(store: StoreAdminDto): void {
-    const open = !store.shiftOpen;
-    if (!open) {
-      this.error.set(null);
-      this.closing.set(store);
-      return;
+  /** A store switched off reads as such without its shift; one the account cannot run shows its name only. */
+  private loadShifts(stores: readonly StoreAdminDto[]): void {
+    for (const store of stores) {
+      if (store.status === 'CLOSED') continue;
+      this.kitchen.shift(store.id).subscribe({
+        next: (shift) => this.shifts.update((all) => ({ ...all, [store.id]: shift })),
+        error: () => undefined,
+      });
     }
-    this.busyId.set(store.id);
-    this.error.set(null);
-    this.kitchen.setShift(store.id, open).subscribe({
-      next: (shift) => {
-        this.busyId.set(null);
-        this.stores.update((list) => list.map((s) => (s.id === store.id ? { ...s, shiftOpen: shift.open } : s)));
-      },
-      error: (err) => {
-        this.busyId.set(null);
-        this.error.set(apiErrorMessage(err, this.translate, { network: 'common.networkError' }));
-      },
-    });
-  }
-
-  closed(storeId: string, open: boolean): void {
-    this.closing.set(null);
-    this.stores.update((list) => list.map((s) => (s.id === storeId ? { ...s, shiftOpen: open } : s)));
   }
 }

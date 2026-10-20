@@ -9,7 +9,11 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { OrderStatus } from '@prisma/client';
-import type { StoreAvailabilityChangedEvent, StoreAvailabilityChangedEventName } from '@takeaway/shared-types';
+import type {
+  KitchenOrderRemovedReason,
+  StoreAvailabilityChangedEvent,
+  StoreAvailabilityChangedEventName,
+} from '@takeaway/shared-types';
 import type { Server, Socket } from 'socket.io';
 
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
@@ -43,6 +47,10 @@ interface KdsOrderPayload {
   orderId: string;
   /** Full KDS order row (same shape as KdsService.list). Null for "removed". */
   order: unknown | null;
+  /** "removed": why the ticket left the board without the kitchen, so the board can say so. */
+  reason?: KitchenOrderRemovedReason;
+  /** "removed": the order's code, for that notice. */
+  orderCode?: string;
 }
 
 /**

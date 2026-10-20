@@ -8,7 +8,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { AsapBlockedReason, OrderItemSnapshot } from '@takeaway/shared-types';
+import type {
+  AsapBlockedReason,
+  KitchenOrderRemovedReason,
+  OrderItemSnapshot,
+  OrderNotCancellableBody,
+} from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import type { Order, PaymentStatus, Prisma } from '@prisma/client';
 
@@ -17,6 +22,7 @@ import { codedConflict } from '../common/http/coded-conflict';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import { CartService, storeProductInclude, type CheckoutLine } from '../cart/cart.service';
+import { closingBoundary } from '../catalog/store-availability';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
@@ -26,6 +32,7 @@ import { MailService } from '../mail/mail.service';
 import { ReceiptPdfService } from '../mail/receipt-pdf.service';
 import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { customerCancelledMessage } from '../notifications/store-team-messages';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { isDeferredCharge } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,7 +47,23 @@ import { withoutCoordinates } from './order-event-payload';
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 /** Orders one customer may have waiting for payment at once (`ORDER_MAX_UNPAID_PER_USER`). */
 const DEFAULT_MAX_UNPAID_ORDERS = 2;
-const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID', 'ACCEPTED']);
+/**
+ * The customer cancels only before the kitchen accepts the order, and only
+ * while no money was charged for it (owner decision 2026-10-20) — see
+ * {@link cancelRefusal}.
+ */
+const CANCELLABLE_STATUSES = new Set<string>(['CREATED', 'PAID']);
+/** Statuses the kitchen has taken the order to: a customer's cancel is refused with reason ACCEPTED. */
+const ACCEPTED_OR_LATER = new Set<string>([
+  'ACCEPTED',
+  'IN_PROGRESS',
+  'READY',
+  'OUT_FOR_DELIVERY',
+  'PICKED_UP',
+  'DELIVERED',
+]);
+/** Payment states that mean the money was taken from the card. */
+const CAPTURED: PaymentStatus[] = ['SUCCEEDED', 'PARTIALLY_REFUNDED'];
 const RECEIPT_RESEND_STATUSES = new Set<string>([
   'PAID',
   'ACCEPTED',
@@ -742,18 +765,56 @@ export class OrdersService {
     }
   }
 
+  /**
+   * The customer's own cancel: only while the kitchen has not accepted the
+   * order and nothing was charged (a card hold or a charge put off until the
+   * accept is fine — it is released or called off). Otherwise 409
+   * `ORDER_NOT_CANCELLABLE {reason: 'ACCEPTED' | 'CHARGED'}`: the customer
+   * calls the store. Before 2026-10-20 an accepted order could be cancelled
+   * and the charged money was never given back.
+   *
+   * The kitchen hears about it when the order was already on its board —
+   * the store team and the owner in Telegram, the board with a notice.
+   */
   async cancel(userId: string, orderId: string): Promise<OrderDto> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
-    if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
-
-    const { order: updated } = await this.cancelOrder(order, {
-      actorId: userId,
-      by: 'customer',
-      allowedStatuses: CANCELLABLE_STATUSES,
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: { select: { status: true } } },
     });
+    if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
+    const refusal = cancelRefusal(order);
+    if (refusal) throw notCancellable(refusal);
 
-    // No push: the customer cancelled it themselves, on the screen they are
-    // looking at. The live status above is all the confirmation they need.
+    let updated: CancelledOrder;
+    try {
+      ({ order: updated } = await this.cancelOrder(order, {
+        actorId: userId,
+        by: 'customer',
+        allowedStatuses: CANCELLABLE_STATUSES,
+        nothingCaptured: true,
+      }));
+    } catch (err) {
+      // The kitchen accepted it, or the card was charged, a moment ago.
+      if (err instanceof ConflictException) {
+        const now = await this.prisma.order.findUnique({
+          where: { id: orderId },
+          include: { payments: { select: { status: true } } },
+        });
+        const why = now ? cancelRefusal(now) : null;
+        if (why) throw notCancellable(why);
+      }
+      throw err;
+    }
+
+    // No push to the customer: they cancelled it themselves, on the screen
+    // they are looking at. The kitchen did not, and may be about to start it.
+    if (order.kitchenVisibleAt !== null || order.status === 'PAID') {
+      void this.notifications.notifyStoreTeam(
+        updated.storeId,
+        customerCancelledMessage({ orderCode: updated.orderCode, orderId: updated.id, storeName: updated.store.name }),
+        { staff: true, owner: true },
+      );
+    }
 
     return this.toOrderDto(updated);
   }
@@ -775,6 +836,8 @@ export class OrdersService {
       actorId: string;
       by: 'customer' | 'store';
       allowedStatuses: ReadonlySet<string>;
+      /** Only while no payment of the order is captured (the customer's own cancel). */
+      nothingCaptured?: boolean;
       reason?: string;
       comment?: string;
     },
@@ -785,7 +848,11 @@ export class OrdersService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.order.updateMany({
-        where: { id: order.id, status: { in: [...options.allowedStatuses] as Order['status'][] } },
+        where: {
+          id: order.id,
+          status: { in: [...options.allowedStatuses] as Order['status'][] },
+          ...(options.nothingCaptured ? { payments: { none: { status: { in: CAPTURED } } } } : {}),
+        },
         data: { status: 'CANCELLED', cancelledAt: new Date() },
       });
       if (claimed.count === 0) throw new ConflictException('The order changed while it was being cancelled');
@@ -827,8 +894,16 @@ export class OrdersService {
       },
       updated.userId,
     );
-    // Off the kitchen board, whoever cancelled it.
-    this.realtime.emitKdsOrderChanged({ storeId: updated.storeId, kind: 'removed', orderId: updated.id, order: null });
+    // Off the kitchen board, whoever cancelled it; the board says so when the customer did.
+    const removed: KitchenOrderRemovedReason = options.by === 'customer' ? 'CANCELLED_BY_CUSTOMER' : 'REJECTED';
+    this.realtime.emitKdsOrderChanged({
+      storeId: updated.storeId,
+      kind: 'removed',
+      orderId: updated.id,
+      order: null,
+      reason: removed,
+      orderCode: updated.orderCode,
+    });
 
     // A charge that was waiting for the accept never touched the card.
     const voided = released !== null && isDeferredCharge(released);
@@ -928,16 +1003,18 @@ export class OrdersService {
    * When we promise to hand the order over.
    *
    * ASAP needs the store open for ASAP right now — a shift, within the
-   * hours or an extension, a queue that clears within MAX_ASAP_WAIT_SECONDS
-   * — else 400 `ASAP_UNAVAILABLE` with the reason and the next opening, so
+   * hours or an extension, not paused, a queue that clears within
+   * MAX_ASAP_WAIT_SECONDS — and its own handover (its quote, spill
+   * included) no later than the closing (`CLOSING_SOON`), else 400
+   * `ASAP_UNAVAILABLE` with the reason and the next opening, so
    * the client can offer a pre-order instead. It is quoted against the live
    * queue rather than the value cached on the cart (four orders may have
    * landed since), and spills into the first slot with room for its work;
    * an ASAP order is never refused for a full slot.
    *
    * A pre-order takes the slot the customer picked if the store hands over
-   * then and the slot has room for this order's work — with the shift
-   * closed too.
+   * then (not during a kitchen pause) and the slot has room for this
+   * order's work — with the shift closed too.
    */
   private async resolvePickupAt(
     storeId: string,
@@ -946,6 +1023,8 @@ export class OrdersService {
     dto: CreateOrderDto,
   ): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
+      const boundary = closingBoundary(availability);
+      // The times name what the client says: «перерыв до 12:30», «закрывается в 21:00».
       const unavailable = (reason: AsapBlockedReason | null) =>
         checkoutError(
           'ASAP_UNAVAILABLE',
@@ -953,10 +1032,19 @@ export class OrdersService {
           {
             reason,
             opensAt: availability.opensAt?.toISOString() ?? null,
+            pausedUntil: reason === 'PAUSED' ? (availability.pausedUntil?.toISOString() ?? null) : null,
+            closesAt: reason === 'CLOSING_SOON' ? (boundary?.toISOString() ?? null) : null,
           },
         );
       if (!availability.openNow) throw unavailable(availability.asapBlockedReason);
-      const quote = await this.kitchen.quote(storeId, timings.prepSeconds, timings.workSeconds);
+      const now = new Date();
+      const quote = await this.kitchen.quote(storeId, timings.prepSeconds, timings.workSeconds, now);
+      // Item 6: the last order for now is one the kitchen can make before the
+      // closing. A full queue hands over later than the longest wait.
+      const handover = quote.queueFull
+        ? now.getTime() + this.kitchen.policy.maxAsapWaitSeconds * 1000
+        : quote.pickupAt.getTime();
+      if (boundary && handover > boundary.getTime()) throw unavailable('CLOSING_SOON');
       if (quote.queueFull) throw unavailable('QUEUE_FULL');
       return quote.pickupAt;
     }
@@ -1067,6 +1155,8 @@ export class OrdersService {
       pickedUpAt: order.pickedUpAt?.toISOString() ?? null,
       cancelledAt: order.cancelledAt?.toISOString() ?? null,
       expiredAt: order.expiredAt?.toISOString() ?? null,
+      readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
+      canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),
       deliveryAddressLine: order.deliveryAddressLine,
       deliveryCity: order.deliveryCity,
       deliveryLatitude: order.deliveryLatitude,
@@ -1080,6 +1170,43 @@ export class OrdersService {
       payment: toPaymentView(order.payments ?? []),
     };
   }
+}
+
+/**
+ * Why the customer may not cancel the order now: `ACCEPTED` once the kitchen
+ * took it on (any status from ACCEPTED on), `CHARGED` while it waits for
+ * the kitchen but money was already taken (`AGROPROMBANK_CHARGE_AT_CHECKOUT`,
+ * a Web-платёж without preauth). Null when a cancel would go through — and
+ * for an order already cancelled or expired, which the cancel itself refuses.
+ */
+export function cancelRefusal(order: {
+  status: string;
+  payments: ReadonlyArray<{ status: PaymentStatus }>;
+}): OrderNotCancellableBody['reason'] | null {
+  if (ACCEPTED_OR_LATER.has(order.status)) return 'ACCEPTED';
+  if (!CANCELLABLE_STATUSES.has(order.status)) return null;
+  return order.payments.some((p) => CAPTURED.includes(p.status)) ? 'CHARGED' : null;
+}
+
+/** `Order.canCancel`: waiting for the kitchen and nothing charged. */
+export function canCustomerCancel(order: {
+  status: string;
+  payments: ReadonlyArray<{ status: PaymentStatus }>;
+}): boolean {
+  return CANCELLABLE_STATUSES.has(order.status) && cancelRefusal(order) === null;
+}
+
+function notCancellable(reason: OrderNotCancellableBody['reason']): ConflictException {
+  return new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    code: 'ORDER_NOT_CANCELLABLE',
+    message:
+      reason === 'ACCEPTED'
+        ? 'The store has already accepted the order; call the store to cancel it'
+        : 'The order is already paid for; call the store to cancel it',
+    reason,
+  } satisfies OrderNotCancellableBody);
 }
 
 /**

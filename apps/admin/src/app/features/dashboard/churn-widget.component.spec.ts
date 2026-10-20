@@ -96,7 +96,7 @@ describe('ChurnWidgetComponent', () => {
   it('opens «Возврат» on the same period, store and window', async () => {
     const fixture = await render();
     const link = (fixture.nativeElement as HTMLElement).querySelector('a.churn-cta') as HTMLAnchorElement;
-    expect(text(link)).toBe('Возврат');
+    expect(text(link)).toBe('Возврат клиентов');
     const url = new URL(link.href);
     expect(url.pathname).toBe('/analytics');
     expect(Object.fromEntries(url.searchParams)).toEqual({ tab: 'retention', window: '14', days: '30', storeId: 's1' });

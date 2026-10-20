@@ -36,6 +36,9 @@ export type ShiftExtendMinutes = 30 | 60;
 
 export const SHIFT_EXTEND_MINUTES: readonly ShiftExtendMinutes[] = [30, 60];
 
+/** The longest comment `PUT /kds/pause` takes. */
+export const KITCHEN_PAUSE_COMMENT_MAX = 120;
+
 /** How long a kitchen pause lasts; `null` in the request = until the store closes today. */
 export type KitchenPauseMinutes = 15 | 30 | 60 | 120;
 
@@ -90,25 +93,20 @@ export interface KitchenShiftState {
 }
 
 /**
- * `GET /kds/shift/close-summary` — what "Finish work" would leave behind.
- * `awaitingAcceptance` blocks the close (409 `SHIFT_HAS_UNACCEPTED_ORDERS`).
+ * Why `PUT /kds/shift/extend` was refused (409 `SHIFT_EXTENSION_NOT_ALLOWED`,
+ * in `reason`): no shift is open, the store is open around the clock, it is
+ * outside the working hours with no extension running, the closing is more
+ * than an hour away, or the extension reached its cap (four hours past the
+ * closing).
  */
-export interface ShiftCloseSummary {
-  /** Not accepted yet and due within 30 minutes: accept or reject them first. */
-  awaitingAcceptance: number;
-  /** Accepted or being made, due soon: they stay on the board — finish them. */
-  inProgress: number;
-  /** Ready and waiting for the customer: they stay on the board. */
-  ready: number;
-  /** Pre-orders for later: they come to the board in the next shift. */
-  later: number;
-}
+export type ShiftExtensionRefusal = 'NO_SHIFT' | 'AROUND_THE_CLOCK' | 'OUTSIDE_HOURS' | 'TOO_EARLY' | 'LIMIT';
 
-/** Body of the 409 `POST /kds/shift/close` answers while orders wait for acceptance. */
-export interface ShiftHasUnacceptedOrdersBody {
-  statusCode: 409;
-  error: 'Conflict';
-  code: 'SHIFT_HAS_UNACCEPTED_ORDERS';
-  message: string;
-  count: number;
-}
+/**
+ * Why a ticket left the kitchen board without the kitchen moving it on —
+ * `reason` of a `kds.orderChanged` with kind `removed` (absent from older
+ * API builds and from the board's own transitions): the customer cancelled
+ * it before it was accepted, the store rejected it, nobody accepted it in
+ * time (the SLA auto-cancel), or it expired otherwise (a payment that never
+ * came, the old backstops).
+ */
+export type KitchenOrderRemovedReason = 'CANCELLED_BY_CUSTOMER' | 'REJECTED' | 'NOT_ACCEPTED' | 'EXPIRED';

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, StorePauseReason } from '@prisma/client';
 
 import { type StoreAvailability, storeAvailability } from '../catalog/store-availability';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +15,8 @@ export const AVAILABILITY_SELECT = {
   baseEtaSeconds: true,
   kitchenParallelism: true,
   slotCapacity: true,
+  pausedUntil: true,
+  pauseReason: true,
   workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
   shifts: { where: { closedAt: null }, select: { extendedUntil: true }, take: 1 },
 } as const satisfies Prisma.StoreSelect;
@@ -30,18 +32,27 @@ export interface AvailabilityInput {
   workingHours: readonly WorkingHour[];
   /** The open shift, if any (`closedAt = null`, at most one row). */
   shifts: ReadonlyArray<{ extendedUntil: Date | null }>;
+  /** The kitchen's «Пауза»; absent reads as not paused. */
+  pausedUntil?: Date | null;
+  pauseReason?: StorePauseReason | null;
 }
 
 /** {@link StoreAvailability} plus the ASAP wait the storefronts show. */
 export interface StoreAvailabilityView extends StoreAvailability {
-  /** Seconds until an ASAP order placed now would be ready — the spill into a later slot included. */
+  /**
+   * Seconds until an ASAP order placed now would be ready: base time, the
+   * queue, a typical order's cooking, and the spill into a later slot.
+   */
   currentEtaSeconds: number;
+  /** Why the store is paused, while it is; null otherwise. */
+  pauseReason: StorePauseReason | null;
 }
 
 /**
  * Applies the availability rules (catalog/store-availability.ts) to stores
  * from the database: the hours in their timezone, the open shift and its
- * extension, and the live queue — for many stores in one round trip.
+ * extension, the kitchen's pause, and the live queue — for many stores in
+ * one round trip.
  */
 @Injectable()
 export class StoreAvailabilityService {
@@ -65,13 +76,18 @@ export class StoreAvailabilityService {
           status: store.status,
           openShift: store.shifts[0] ?? null,
           asapWaitSeconds: quote && !quote.queueFull ? quote.etaSeconds : null,
+          pausedUntil: store.pausedUntil ?? null,
         },
         now,
         policy,
         // A day back finds the window `now` is in; eight ahead find the next opening.
         hoursAround(store.workingHours, store.timezone, now, { backDays: 1 }),
       );
-      result.set(store.id, { ...availability, currentEtaSeconds: quote?.etaSeconds ?? store.baseEtaSeconds });
+      result.set(store.id, {
+        ...availability,
+        currentEtaSeconds: quote?.etaSeconds ?? store.baseEtaSeconds,
+        pauseReason: availability.pausedUntil ? (store.pauseReason ?? null) : null,
+      });
     }
     return result;
   }

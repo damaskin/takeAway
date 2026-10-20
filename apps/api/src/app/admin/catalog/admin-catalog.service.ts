@@ -21,6 +21,7 @@ import { onboardingProgressOf } from '../../brand-owner/brand-onboarding';
 import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
 import { slugify, uniqueSlug } from '../../common/text/slug';
 import { canonicalTimeZone, newStoreTimeZone } from '../../common/time/time-zone';
+import { typicalPrepCache } from '../../kitchen/typical-prep';
 import { recordCommissionRate, rateSourceFor } from '../../plans/commission-history';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
@@ -556,11 +557,14 @@ export class AdminCatalogService {
     // this store's list (or reveal that it exists).
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId }, select: { brandId: true } });
     if (!product || product.brandId !== store.brandId) throw new NotFoundException('Product not found');
-    return this.prisma.stopListEntry.upsert({
+    const entry = await this.prisma.stopListEntry.upsert({
       where: { storeId_productId: { storeId, productId: dto.productId } },
       create: { storeId, productId: dto.productId, reason: dto.reason, expiresAt: dto.expiresAt },
       update: { reason: dto.reason, expiresAt: dto.expiresAt },
     });
+    // The store's typical preparation time (its «N мин» badge) leaves the product out now.
+    typicalPrepCache.forget(storeId);
+    return entry;
   }
 
   async removeStopListEntry(storeId: string, productId: string, scope: BrandScope = null) {
@@ -568,6 +572,7 @@ export class AdminCatalogService {
     await this.prisma.stopListEntry.delete({ where: { storeId_productId: { storeId, productId } } }).catch(() => {
       throw new NotFoundException('Stop-list entry not found');
     });
+    typicalPrepCache.forget(storeId);
   }
 
   // ── Categories ────────────────────────────────────────────────────────────
@@ -783,6 +788,8 @@ export class AdminCatalogService {
         return product;
       })
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
+    // A new product can change the stores' typical preparation time.
+    typicalPrepCache.forget();
     return withStoreIds(created);
   }
 
@@ -811,6 +818,7 @@ export class AdminCatalogService {
     const updated = await this.prisma.product
       .update({ where: { id }, data, include: LISTING_INCLUDE })
       .catch((err: unknown) => rethrowSlugTaken(err, dto.slug));
+    typicalPrepCache.forget();
     return withStoreIds(updated);
   }
 
@@ -862,6 +870,7 @@ export class AdminCatalogService {
           await dropCartLines(tx, lines);
           await tx.product.delete({ where: { id } });
         });
+        typicalPrepCache.forget();
         return;
       } catch (err) {
         // A customer put it in a cart while the delete ran: take that line too.
@@ -877,6 +886,7 @@ export class AdminCatalogService {
       data: { visible: dto.visible },
       include: LISTING_INCLUDE,
     });
+    typicalPrepCache.forget();
     return withStoreIds(updated);
   }
 

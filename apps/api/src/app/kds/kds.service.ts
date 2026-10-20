@@ -7,6 +7,8 @@ import {
   type StoreRejectReason,
 } from '../notifications/notifications.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { readyEstimate } from '../kitchen/kitchen-timeline';
+import { wallClock } from '../kitchen/opening-hours';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { CARD_PROVIDERS, isCardProvider, isDeferredCharge } from '../payments/card-providers';
@@ -65,6 +67,10 @@ export class KdsService {
 
   /**
    * Taking the order on is also the moment the money moves.
+   *
+   * Accepted too late to make the promised time (now + the order's own
+   * cooking is past `pickupAt`), the order gets the kitchen's new estimate
+   * (`readyEstimateAt`) and the accept push names it.
    *
    * Under `AGROPROMBANK_HOLD_UNTIL_ACCEPTED` the card was only authorized at
    * checkout, so the capture happens here — before the status flip, because a
@@ -218,6 +224,7 @@ export class KdsService {
     return { id: cancelled.id, status: cancelled.status, orderCode: cancelled.orderCode, money };
   }
 
+  /** Started too late to make `pickupAt`, the order gets (or moves) the kitchen's new estimate. */
   start(storeId: string, orderId: string, staffUserId: string) {
     return this.transition(storeId, orderId, staffUserId, 'start', {
       status: 'IN_PROGRESS',
@@ -246,7 +253,10 @@ export class KdsService {
     key: keyof typeof ALLOWED_TRANSITIONS,
     patch: Partial<Order> & { status: OrderStatus },
   ) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { store: { select: { kitchenParallelism: true, timezone: true } } },
+    });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
     // DELIVERY orders never reach PICKED_UP — they move through OUT_FOR_DELIVERY
     // → DELIVERED via the rider flow. Guard in KDS so a barista can't fat-finger
@@ -259,10 +269,16 @@ export class KdsService {
       throw new BadRequestException(`Cannot ${key} an order in status ${order.status}`);
     }
 
+    // Accepted or started too late for the promise: the customer counts down
+    // to the kitchen's new estimate instead (pickupAt stays the promise).
+    const estimate =
+      key === 'accept' || key === 'start' ? readyEstimate(order, order.store.kitchenParallelism, new Date()) : null;
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         ...patch,
+        ...(estimate ? { readyEstimateAt: estimate } : {}),
         events: {
           create: {
             type: 'STATUS_CHANGED',
@@ -295,6 +311,7 @@ export class KdsService {
         fulfillmentType: updated.fulfillmentType,
       },
       updated.status,
+      estimate && updated.status === 'ACCEPTED' ? { readyEstimate: wallClock(estimate, order.store.timezone) } : {},
     );
 
     // Push to the kitchen board too. PICKED_UP orders leave the open list,
@@ -306,6 +323,7 @@ export class KdsService {
         kind: 'removed',
         orderId: updated.id,
         order: null,
+        orderCode: updated.orderCode,
       });
     } else {
       const [row] = await this.listOpenByIds(storeId, [updated.id]);
@@ -333,6 +351,7 @@ export class KdsService {
       status: updated.status,
       orderCode: updated.orderCode,
       pickupAt: updated.pickupAt.toISOString(),
+      readyEstimateAt: updated.readyEstimateAt?.toISOString() ?? null,
     };
   }
 

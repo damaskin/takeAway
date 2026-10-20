@@ -12,6 +12,7 @@ import {
 import { wallClock } from '../kitchen/opening-hours';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OpsChatService } from '../notifications/ops-chat.service';
+import { autoCancelledMessage } from '../notifications/store-team-messages';
 import { OrderExpiryService } from '../orders/order-expiry.service';
 import { isCardProvider } from '../payments/card-providers';
 import { PaymentsService } from '../payments/payments.service';
@@ -49,14 +50,18 @@ type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refun
  *   before 10 minutes ahead of its pickup) → the order expires with reason
  *   `not_accepted` through OrderExpiryService: a hold is released, a charge
  *   waiting for the accept is called off, promo, gift-card balance and
- *   points go back, the customer gets the "not accepted" push. A captured
- *   payment is refunded first; when that fails (or a payment is still in
- *   flight) the order is left alone and ops, staff and the owner are told;
+ *   points go back, the customer gets the "not accepted" push, and the
+ *   store team and the owner get «Заказ #1234 отменён автоматически». A
+ *   captured payment is refunded first; when that fails (or a payment is
+ *   still in flight) the order is left alone and ops, staff and the owner
+ *   are told;
  * - a pre-order whose start time came → «Пора готовить предзаказ» to staff
  *   (once); with no shift open, or the order not accepted yet, also to the
  *   owner;
- * - an accepted order past its pickup time → «Немного задерживаемся» to the
- *   customer (once), and five minutes later an alert to staff and the owner.
+ * - an accepted order past its time → «Немного задерживаемся» to the
+ *   customer (once) — past the kitchen's new estimate when it accepted the
+ *   order late (`readyEstimateAt`), else past `pickupAt` — and five minutes
+ *   past `pickupAt` an alert to staff and the owner.
  *
  * Each notice is claimed with a conditional update of its own column
  * before it is sent, so two API instances never send it twice.
@@ -160,6 +165,8 @@ export class KitchenSlaService {
         status: true,
         orderCode: true,
         storeId: true,
+        pickupMode: true,
+        pickupAt: true,
         store: STORE,
         payments: { select: { provider: true, status: true } },
       },
@@ -168,6 +175,18 @@ export class KitchenSlaService {
     });
 
     let expired = 0;
+    const tell = (order: (typeof orders)[number]) =>
+      this.notifications.notifyStoreTeam(
+        order.storeId,
+        autoCancelledMessage({
+          orderCode: order.orderCode,
+          orderId: order.id,
+          storeName: order.store.name,
+          timeoutMinutes: Math.round(policy.acceptTimeoutSeconds / 60),
+          scheduledFor: order.pickupMode === 'SCHEDULED' ? wallClock(order.pickupAt, order.store.timezone) : null,
+        }),
+        { staff: true, owner: true },
+      );
     const details = { rule: 'accept_timeout', acceptTimeoutSeconds: policy.acceptTimeoutSeconds };
     for (const order of orders) {
       try {
@@ -181,7 +200,10 @@ export class KitchenSlaService {
             await this.block(order, 'payment_in_flight');
             continue;
           }
-          if (await this.expiry.expire(order.id, 'not_accepted', { details })) expired += 1;
+          if (await this.expiry.expire(order.id, 'not_accepted', { details })) {
+            expired += 1;
+            await tell(order);
+          }
           continue;
         }
 
@@ -205,7 +227,10 @@ export class KitchenSlaService {
           refunded: captured,
           details,
         });
-        if (done) expired += 1;
+        if (done) {
+          expired += 1;
+          await tell(order);
+        }
         // The kitchen accepted it while the refund went through: the money
         // is back with the customer, the order is being made.
         else if (captured) await this.block(order, 'accepted_after_refund');
@@ -265,9 +290,10 @@ export class KitchenSlaService {
       const time = wallClock(order.pickupAt, order.store.timezone);
       let body: string;
       if (!shiftOpen) {
+        // The schedule opens the shift; nobody can open it by hand any more.
         body = unaccepted
-          ? 'Смена не открыта и заказ не принят — откройте смену и примите его. / The shift is not open and the order is not accepted: open the shift and accept it.'
-          : 'Смена не открыта — откройте смену на кухне. / The shift is not open: open it on the kitchen board.';
+          ? 'Точка ещё закрыта по графику, а заказ не принят — примите его на кухне. / The store is still closed by its hours and the order is not accepted: accept it on the kitchen board.'
+          : 'Точка ещё закрыта по графику — начните заказ на кухне, чтобы он был готов вовремя. / The store is still closed by its hours: start the order on the kitchen board so it is ready on time.';
       } else {
         body = unaccepted
           ? 'Заказ ещё не принят — примите его на кухне и начинайте. / Not accepted yet: accept it on the kitchen board and start.'
@@ -287,14 +313,22 @@ export class KitchenSlaService {
     return sent;
   }
 
-  /** Accepted orders past their pickup time: tell the customer, and five minutes on the staff and owner. */
+  /**
+   * Accepted orders past their time: tell the customer once it is past what
+   * they were last told (`readyEstimateAt ?? pickupAt`), and five minutes
+   * past `pickupAt` the staff and the owner (the thresholds stay as they
+   * are until the owner decides otherwise).
+   */
   async flagLate(now: Date): Promise<number> {
     const lateAlertBefore = new Date(now.getTime() - LATE_ALERT_SECONDS * 1000);
     const orders = await this.prisma.order.findMany({
       where: {
         status: { in: BEING_MADE },
         pickupAt: { lt: now, gte: new Date(now.getTime() - STALE_AFTER_SECONDS * 1000) },
-        OR: [{ lateNotifiedAt: null }, { lateAlertSentAt: null, pickupAt: { lt: lateAlertBefore } }],
+        OR: [
+          { lateNotifiedAt: null, OR: [{ readyEstimateAt: null }, { readyEstimateAt: { lt: now } }] },
+          { lateAlertSentAt: null, pickupAt: { lt: lateAlertBefore } },
+        ],
       },
       select: {
         id: true,
@@ -303,6 +337,7 @@ export class KitchenSlaService {
         storeId: true,
         fulfillmentType: true,
         pickupAt: true,
+        readyEstimateAt: true,
         lateNotifiedAt: true,
         lateAlertSentAt: true,
         store: STORE,
@@ -313,7 +348,8 @@ export class KitchenSlaService {
     let flagged = 0;
     for (const order of orders) {
       const stillMaking = { status: { in: BEING_MADE } };
-      if (!order.lateNotifiedAt && (await this.claim(order.id, 'lateNotifiedAt', stillMaking, now))) {
+      const due = order.readyEstimateAt ?? order.pickupAt;
+      if (!order.lateNotifiedAt && due < now && (await this.claim(order.id, 'lateNotifiedAt', stillMaking, now))) {
         void this.notifications.notifyOrderDelayed(order);
         flagged += 1;
       }

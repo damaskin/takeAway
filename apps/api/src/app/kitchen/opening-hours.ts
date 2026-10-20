@@ -109,6 +109,12 @@ export function localMoment(date: Date, timeZone: string): LocalMoment {
   return { weekday, minutes };
 }
 
+/** The first local midnight after `date` in `timeZone` — "the end of the day" on the store's clock. */
+export function nextLocalMidnight(date: Date, timeZone: string): Date {
+  const { year, month, day } = localDateTime(date, timeZone);
+  return localToUtc(year, month, day + 1, 0, timeZone);
+}
+
 /** The wall clock at `date` in `timeZone` as "HH:mm" — for staff messages. */
 export function wallClock(date: Date, timeZone: string): string {
   const { minutes } = localMoment(date, timeZone);

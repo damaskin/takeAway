@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   HttpCode,
@@ -10,7 +11,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConflictResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -18,7 +19,9 @@ import { KdsSessionAllowed } from '../auth/decorators/kds-session.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserStoreScopeService } from '../auth/services/user-store-scope.service';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { codedConflict } from '../common/http/coded-conflict';
 import { ExtendShiftDto } from './dto/extend-shift.dto';
+import { PauseStoreDto } from './dto/pause-store.dto';
 import { RejectOrderDto } from './dto/reject-order.dto';
 import { SetStoreBusyDto } from './dto/set-busy.dto';
 import { KdsService } from './kds.service';
@@ -56,38 +59,27 @@ export class KdsController {
     return this.shifts.current(storeId);
   }
 
-  /** What "Finish work" would leave behind — for the dialog that asks before it. */
-  @Get('shift/close-summary')
-  @ApiQuery({ name: 'storeId', required: true })
-  async closeSummary(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
-    await this.assertInScope(user, storeId);
-    return this.shifts.closeSummary(storeId);
-  }
-
-  /** "Start work": the store takes ASAP orders within its working hours. */
-  @Post('shift/open')
-  @ApiQuery({ name: 'storeId', required: true })
-  async openShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
-    await this.assertInScope(user, storeId);
-    return this.shifts.open(storeId, user.id);
-  }
-
   /**
-   * "Finish work": ASAP orders stop; the ones already on the board stay, and
-   * pre-orders keep coming. 409 `SHIFT_HAS_UNACCEPTED_ORDERS {count}` while
-   * orders due within 30 minutes wait for «Принять».
+   * "Start work" and "Finish work" are gone (2026-10-20): the schedule opens
+   * and closes the shift. Kept for cabinets loaded before the change, which
+   * get a 409 `SHIFT_FOLLOWS_SCHEDULE` instead of a 404.
    */
-  @Post('shift/close')
+  @Post(['shift/open', 'shift/close'])
   @ApiQuery({ name: 'storeId', required: true })
-  async closeShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+  @ApiConflictResponse({ description: '`SHIFT_FOLLOWS_SCHEDULE`: the working hours open and close the shift.' })
+  async manualShift(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string): Promise<never> {
     await this.assertInScope(user, storeId);
-    return this.shifts.close(storeId, user.id);
+    throw codedConflict(
+      'SHIFT_FOLLOWS_SCHEDULE',
+      'The shift opens and closes by the working hours; extend the closing or pause the store instead',
+    );
   }
 
   /**
    * «Продлить на 30 мин / 1 ч»: ASAP orders keep coming past the working
-   * hours. 409 `SHIFT_NOT_OPEN`, `SHIFT_EXTENSION_NOT_NEEDED` (open around
-   * the clock), `SHIFT_EXTENSION_LIMIT` (four hours past the closing).
+   * hours. Only in the last hour before the closing, or while an extension
+   * runs (`KitchenShiftState.canExtend`); else 409
+   * `SHIFT_EXTENSION_NOT_ALLOWED {reason}`.
    */
   @Put('shift/extend')
   @ApiQuery({ name: 'storeId', required: true })
@@ -114,6 +106,29 @@ export class KdsController {
   ) {
     await this.assertInScope(user, storeId);
     return this.shifts.setBusy(storeId, dto.busy);
+  }
+
+  /**
+   * «Пауза»: the coffee machine broke, a cook went home. No ASAP orders and
+   * no pre-orders for a time before the pause ends; the cart still fills.
+   * The store team and the owner are told in Telegram. Answers the shift,
+   * which carries the pause, and tells every tablet of the store. 409
+   * `STORE_SWITCHED_OFF`, `PAUSE_NEEDS_DURATION` (until the closing, with
+   * nothing opening soon).
+   */
+  @Put('pause')
+  @ApiQuery({ name: 'storeId', required: true })
+  async pause(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string, @Body() dto: PauseStoreDto) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.pause(storeId, user.id, dto);
+  }
+
+  /** «Снять паузу»: the store takes orders again. Idempotent. */
+  @Delete('pause')
+  @ApiQuery({ name: 'storeId', required: true })
+  async resume(@CurrentUser() user: AuthenticatedUser, @Query('storeId') storeId: string) {
+    await this.assertInScope(user, storeId);
+    return this.shifts.resume(storeId, user.id);
   }
 
   @Post('orders/:id/accept')
