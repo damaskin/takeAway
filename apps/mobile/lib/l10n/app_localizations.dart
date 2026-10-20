@@ -722,6 +722,18 @@ abstract class AppLocalizations {
   /// **'Long queue — order ahead only'**
   String get storeQueueFullPreorder;
 
+  /// Store card while the kitchen paused the store; pre-orders for later are taken.
+  ///
+  /// In en, this message translates to:
+  /// **'Short break until {time} · order ahead'**
+  String storePausedPreorder(String time);
+
+  /// Store card when an order for now would not be ready before the store closes.
+  ///
+  /// In en, this message translates to:
+  /// **'Closing soon — order ahead only'**
+  String get storeClosingSoonPreorder;
+
   /// Beside the wait of an open store: when it closes.
   ///
   /// In en, this message translates to:
@@ -1111,6 +1123,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'There is a long queue right now — pick a time for your order.'**
   String get asapBlockedQueueFull;
+
+  /// No description provided for @asapBlockedPausedUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is on a short break until {time} — pick a time for your order.'**
+  String asapBlockedPausedUntil(String time);
+
+  /// No description provided for @asapBlockedPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is on a short break — pick a time for your order.'**
+  String get asapBlockedPaused;
+
+  /// No description provided for @asapBlockedClosingSoonAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store closes at {time} — there is no time left to make an order for now. Pick a time.'**
+  String asapBlockedClosingSoonAt(String time);
+
+  /// No description provided for @asapBlockedClosingSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'The store closes soon — there is no time left to make an order for now. Pick a time.'**
+  String get asapBlockedClosingSoon;
 
   /// No description provided for @asapBlockedClosed.
   ///

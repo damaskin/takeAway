@@ -372,6 +372,14 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storeQueueFullPreorder => 'Большая очередь — только ко времени';
 
   @override
+  String storePausedPreorder(String time) {
+    return 'Технический перерыв до $time · можно заказать ко времени';
+  }
+
+  @override
+  String get storeClosingSoonPreorder => 'Скоро закрытие — только ко времени';
+
+  @override
   String storeOpenUntil(String time) {
     return 'до $time';
   }
@@ -594,6 +602,23 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get asapBlockedQueueFull => 'Сейчас большая очередь — выберите, к какому времени приготовить заказ.';
+
+  @override
+  String asapBlockedPausedUntil(String time) {
+    return 'В точке технический перерыв до $time — выберите, к какому времени приготовить заказ.';
+  }
+
+  @override
+  String get asapBlockedPaused => 'В точке технический перерыв — выберите, к какому времени приготовить заказ.';
+
+  @override
+  String asapBlockedClosingSoonAt(String time) {
+    return 'Точка закрывается в $time — заказ «сейчас» уже не успеем приготовить. Выберите время.';
+  }
+
+  @override
+  String get asapBlockedClosingSoon =>
+      'Точка скоро закрывается — заказ «сейчас» уже не успеем приготовить. Выберите время.';
 
   @override
   String get asapBlockedClosed => 'Точка сейчас закрыта — выберите, к какому времени приготовить заказ.';

@@ -246,6 +246,19 @@
   },
   "storeClosedPreorder": "Closed now · order ahead",
   "storeQueueFullPreorder": "Long queue — order ahead only",
+  "storePausedPreorder": "Short break until {time} · order ahead",
+  "@storePausedPreorder": {
+    "description": "Store card while the kitchen paused the store; pre-orders for later are taken.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "storeClosingSoonPreorder": "Closing soon — order ahead only",
+  "@storeClosingSoonPreorder": {
+    "description": "Store card when an order for now would not be ready before the store closes."
+  },
   "storeOpenUntil": "until {time}",
   "@storeOpenUntil": {
     "description": "Beside the wait of an open store: when it closes.",
@@ -420,6 +433,24 @@
   },
   "asapBlockedShiftClosed": "The store has not started work yet — pick a time for your order.",
   "asapBlockedQueueFull": "There is a long queue right now — pick a time for your order.",
+  "asapBlockedPausedUntil": "The store is on a short break until {time} — pick a time for your order.",
+  "@asapBlockedPausedUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedPaused": "The store is on a short break — pick a time for your order.",
+  "asapBlockedClosingSoonAt": "The store closes at {time} — there is no time left to make an order for now. Pick a time.",
+  "@asapBlockedClosingSoonAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "asapBlockedClosingSoon": "The store closes soon — there is no time left to make an order for now. Pick a time.",
   "asapBlockedClosed": "The store is closed right now — pick a time for your order.",
   "slotDayToday": "Today",
   "@slotDayToday": {

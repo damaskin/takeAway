@@ -74,6 +74,7 @@ class CheckoutState {
     this.error,
     this.placedOrderId,
     this.webLaunch,
+    this.asapRefused,
   });
 
   final FulfillmentType fulfillment;
@@ -102,6 +103,16 @@ class CheckoutState {
   /// What became of the bank's page in the web flow (null in the others).
   final WebPaymentLaunch? webLaunch;
 
+  /// The API turned an order for now down a moment ago, for this reason
+  /// ([AsapBlockedReason.unknown] when it named none). «Как можно скорее»
+  /// stays off for the rest of this checkout even while the store, read
+  /// again, still says it is open — a closing too close for this order's
+  /// own cooking time (CLOSING_SOON) does not show on the store.
+  final AsapBlockedReason? asapRefused;
+
+  /// Whether «Как можно скорее» can be chosen for [store] now.
+  bool asapOffered(Store store) => store.isOpen && asapRefused == null;
+
   CheckoutState copyWith({
     FulfillmentType? fulfillment,
     PickupMode? mode,
@@ -117,6 +128,7 @@ class CheckoutState {
     Object? Function()? error,
     String? placedOrderId,
     WebPaymentLaunch? webLaunch,
+    AsapBlockedReason? asapRefused,
   }) => CheckoutState(
     fulfillment: fulfillment ?? this.fulfillment,
     mode: mode ?? this.mode,
@@ -132,6 +144,7 @@ class CheckoutState {
     error: error == null ? this.error : error(),
     placedOrderId: placedOrderId ?? this.placedOrderId,
     webLaunch: webLaunch ?? this.webLaunch,
+    asapRefused: asapRefused ?? this.asapRefused,
   );
 }
 
@@ -220,7 +233,8 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
   /// «As soon as possible» only while the store takes an order for now.
   void setMode(PickupMode value) {
-    if (value == PickupMode.asap && !(_store?.isOpen ?? true)) return;
+    final store = _store;
+    if (value == PickupMode.asap && store != null && !state.asapOffered(store)) return;
     state = state.copyWith(mode: value, error: () => null);
   }
 
@@ -414,7 +428,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     // for; a new one goes only to a store taking orders — for now, or for a
     // time later while it is closed.
     if (!store.takesOrders && s.placedOrderId == null) throw const CheckoutValidation(CheckoutProblem.storeClosed);
-    if (s.mode == PickupMode.asap && !store.isOpen && s.placedOrderId == null) {
+    if (s.mode == PickupMode.asap && !s.asapOffered(store) && s.placedOrderId == null) {
       state = s.copyWith(mode: PickupMode.scheduled);
       throw const CheckoutValidation(CheckoutProblem.pickSlot);
     }
@@ -480,13 +494,18 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
   }
 
   /// The API turned the order down for its time. «As soon as possible» is
-  /// gone — the store closed, or its queue filled up, a moment ago: switch to
-  /// a time later and re-read the store for the reason. Or the chosen window
-  /// filled up meanwhile: drop it and fetch the windows again.
+  /// gone — the store closed, its queue filled up, the kitchen paused it, or
+  /// it closes before this order could be ready: switch to a time later,
+  /// keep the reason and re-read the store. Or the chosen window filled up
+  /// meanwhile: drop it and fetch the windows again.
   void _onTimeRefused(ApiError error) {
     switch (error.code) {
       case 'ASAP_UNAVAILABLE':
-        state = state.copyWith(mode: PickupMode.scheduled, slot: () => null);
+        state = state.copyWith(
+          mode: PickupMode.scheduled,
+          slot: () => null,
+          asapRefused: AsapBlockedReason.parse(error.details['reason']) ?? AsapBlockedReason.unknown,
+        );
         ref.invalidate(storesProvider);
       case 'PICKUP_SLOT_FULL':
         state = state.copyWith(slot: () => null);

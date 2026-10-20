@@ -365,6 +365,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeQueueFullPreorder => 'Long queue — order ahead only';
 
   @override
+  String storePausedPreorder(String time) {
+    return 'Short break until $time · order ahead';
+  }
+
+  @override
+  String get storeClosingSoonPreorder => 'Closing soon — order ahead only';
+
+  @override
   String storeOpenUntil(String time) {
     return 'until $time';
   }
@@ -587,6 +595,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get asapBlockedQueueFull => 'There is a long queue right now — pick a time for your order.';
+
+  @override
+  String asapBlockedPausedUntil(String time) {
+    return 'The store is on a short break until $time — pick a time for your order.';
+  }
+
+  @override
+  String get asapBlockedPaused => 'The store is on a short break — pick a time for your order.';
+
+  @override
+  String asapBlockedClosingSoonAt(String time) {
+    return 'The store closes at $time — there is no time left to make an order for now. Pick a time.';
+  }
+
+  @override
+  String get asapBlockedClosingSoon =>
+      'The store closes soon — there is no time left to make an order for now. Pick a time.';
 
   @override
   String get asapBlockedClosed => 'The store is closed right now — pick a time for your order.';

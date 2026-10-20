@@ -157,6 +157,87 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('a store on a kitchen pause says until when and takes a pre-order meanwhile', (tester) async {
+    final until = DateTime.now().add(const Duration(minutes: 40));
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
+      ..storeOpenNow = false
+      ..storeExtra = {
+        'acceptingOrders': true,
+        'asapBlockedReason': 'PAUSED',
+        'pausedUntil': until.toUtc().toIso8601String(),
+        'pauseReason': 'EQUIPMENT',
+      }
+      ..seedCart(FakeApi.croissant());
+    final h = await pumpApp(tester, api: api);
+
+    final time = formatClock(tester.element(find.byType(BusinessPlate)), until);
+    expect(find.byType(StoreClosedState), findsNothing);
+    expect(find.text('Технический перерыв до $time · можно заказать ко времени'), findsOneWidget);
+    expect(find.textContaining('кофемашин'), findsNothing, reason: 'customers never see why');
+
+    await openCheckout(tester);
+    expect(
+      find.text('В точке технический перерыв до $time — выберите, к какому времени приготовить заказ.'),
+      findsOneWidget,
+    );
+    expect(find.byType(SlotPicker), findsOneWidget);
+    await h.unmount(tester);
+  });
+
+  testWidgets('a store about to close offers a time later only', (tester) async {
+    final closes = DateTime.now().add(const Duration(minutes: 6));
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
+      ..storeOpenNow = false
+      ..storeExtra = {
+        'acceptingOrders': true,
+        'asapBlockedReason': 'CLOSING_SOON',
+        'closesAt': closes.toUtc().toIso8601String(),
+      }
+      ..seedCart(FakeApi.croissant());
+    final h = await pumpApp(tester, api: api);
+
+    expect(find.text('Скоро закрытие — только ко времени'), findsOneWidget);
+    await openCheckout(tester);
+    final time = formatClock(tester.element(find.byType(SlotPicker)), closes);
+    expect(
+      find.text('Точка закрывается в $time — заказ «сейчас» уже не успеем приготовить. Выберите время.'),
+      findsOneWidget,
+    );
+    await h.unmount(tester);
+  });
+
+  testWidgets('«as soon as possible» refused as too close to the closing stays off, though the store reads open', (
+    tester,
+  ) async {
+    final closes = DateTime.now().add(const Duration(minutes: 9));
+    final api = FakeApi(flags: const FeatureFlags(agroprombankEnabled: true))
+      ..boundCards = [FakeApi.card()]
+      ..storeExtra = {'acceptingOrders': true, 'closesAt': closes.toUtc().toIso8601String()}
+      ..orderRefusal = {'code': 'ASAP_UNAVAILABLE', 'reason': 'CLOSING_SOON', 'opensAt': null}
+      ..seedCart(FakeApi.croissant());
+    final h = await pumpApp(tester, api: api);
+    await openCheckout(tester);
+    expect(find.byKey(const ValueKey('asap-blocked')), findsNothing);
+
+    await tester.tap(find.textContaining('Оплатить'));
+    await settle(tester, const Duration(seconds: 2));
+
+    expect(api.created, isEmpty);
+    final time = formatClock(tester.element(find.byType(SlotPicker)), closes);
+    expect(
+      find.text('Точка закрывается в $time — заказ «сейчас» уже не успеем приготовить. Выберите время.'),
+      findsOneWidget,
+    );
+    expect(find.byType(SlotPicker), findsOneWidget);
+
+    await tester.tap(find.text('Как можно скорее'));
+    await settle(tester);
+    expect(find.byType(SlotPicker), findsOneWidget, reason: 'a second try would be refused the same way');
+    await h.unmount(tester);
+  });
+
   testWidgets('a pre-order placed at night waits for the store to open, counted in hours', (tester) async {
     final api = FakeApi()
       ..storeOpenNow = false
