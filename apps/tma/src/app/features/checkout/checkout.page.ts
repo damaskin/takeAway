@@ -56,7 +56,9 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
   standalone: true,
   imports: [FormsModule, RouterLink, TranslatePipe, ProductImageComponent, TmaFoodSuggestionsComponent],
   template: `
-    <section style="padding: 16px; padding-bottom: 100px; display: flex; flex-direction: column; gap: 20px">
+    <section
+      style="padding: 16px; padding-bottom: var(--tma-page-bottom); display: flex; flex-direction: column; gap: 20px"
+    >
       <h1
         style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
       >
@@ -171,39 +173,46 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
               (storeOpen() ? 'tma.checkout.noSlots' : 'tma.checkout.noSlotsClosed') | translate
             }}</span>
           } @else {
-            <!-- 24 hours of windows: each day under its own heading. -->
-            @for (day of slotDays(); track day.days) {
-              <span
-                data-testid="slot-day"
-                style="font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-text-secondary)"
-                >{{ dayLabel(day) }}</span
+            <!--
+              24 hours of windows in one native picker, grouped «Сегодня» /
+              «Завтра»: Telegram shows it as the phone's own wheel or sheet,
+              where ~96 chips used to fill the screen. A full window stays in
+              the list, greyed out with «— занято».
+            -->
+            <div style="position: relative">
+              <select
+                data-testid="slot-select"
+                [attr.aria-label]="'tma.checkout.slotPicker' | translate"
+                (change)="pickSlot($any($event.target).value)"
+                style="width: 100%; height: 48px; padding: 0 40px 0 14px; appearance: none; -webkit-appearance: none; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 15px; font-weight: 600; color: var(--color-text-primary)"
               >
-              <div class="flex flex-wrap" style="gap: 8px">
-                @for (slot of day.slots; track slot.startsAt) {
-                  <button
-                    type="button"
-                    [disabled]="!slot.available"
-                    (click)="selectSlot(slot)"
-                    [style.background]="scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-foam)'"
-                    [style.color]="
-                      slot.available
-                        ? scheduledAt() === slot.startsAt
-                          ? 'white'
-                          : 'var(--color-text-primary)'
-                        : 'var(--color-text-secondary)'
-                    "
-                    [style.border]="
-                      scheduledAt() === slot.startsAt ? '1px solid transparent' : '1px solid var(--color-border-light)'
-                    "
-                    [style.opacity]="slot.available ? '1' : '0.45'"
-                    [style.textDecoration]="slot.available ? 'none' : 'line-through'"
-                    style="height: 36px; padding: 0 14px; border-radius: 999px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-                  >
-                    {{ slotLabel(slot) }}
-                  </button>
+                @if (!scheduledAt()) {
+                  <option value="" disabled selected>{{ 'tma.checkout.slotPicker' | translate }}</option>
                 }
-              </div>
-            }
+                @for (day of slotDays(); track day.days) {
+                  <optgroup data-testid="slot-day" [attr.label]="dayLabel(day)">
+                    @for (slot of day.slots; track slot.startsAt) {
+                      <option
+                        [value]="slot.startsAt"
+                        [disabled]="!slot.available"
+                        [selected]="slot.startsAt === scheduledAt()"
+                      >
+                        {{
+                          slot.available
+                            ? slotLabel(slot)
+                            : ('tma.checkout.slotFull' | translate: { time: slotLabel(slot) })
+                        }}
+                      </option>
+                    }
+                  </optgroup>
+                }
+              </select>
+              <span
+                aria-hidden="true"
+                style="position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; font-size: 12px; color: var(--color-text-secondary)"
+                >▼</span
+              >
+            </div>
           }
         }
       </div>
@@ -882,8 +891,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return this.taxIncludedInPrice();
   }
 
-  selectSlot(slot: PickupSlot): void {
-    if (!slot.available) return;
+  /** A window picked in the time picker (its `startsAt`); a full one is not taken. */
+  pickSlot(startsAt: string): void {
+    const slot = this.slots().find((s) => s.startsAt === startsAt);
+    if (!slot?.available) return;
     this.scheduledAt.set(slot.startsAt);
     this.tg.haptic('light');
     this.refreshMainButton();
@@ -1057,22 +1068,52 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
    * again and let the customer pick.
    */
   private onTimeRefused(body: unknown): void {
-    const refusal = (body ?? {}) as { code?: unknown; reason?: unknown; opensAt?: unknown };
+    const refusal = (body ?? {}) as {
+      code?: unknown;
+      reason?: unknown;
+      opensAt?: unknown;
+      closesAt?: unknown;
+      pausedUntil?: unknown;
+    };
     if (refusal.code === 'ASAP_UNAVAILABLE') {
       const store = this.servingStore();
       if (store) {
+        const reason = typeof refusal.reason === 'string' ? (refusal.reason as AsapBlockedReason) : null;
         this.servingStore.set({
           ...store,
           openNow: false,
-          asapBlockedReason: typeof refusal.reason === 'string' ? (refusal.reason as AsapBlockedReason) : null,
+          asapBlockedReason: reason,
           opensAt: typeof refusal.opensAt === 'string' ? refusal.opensAt : (store.opensAt ?? null),
+          // PAUSED / CLOSING_SOON (2026-10-20): «перерыв до 12:30», «закрывается в 21:00».
+          closesAt: typeof refusal.closesAt === 'string' ? refusal.closesAt : (store.closesAt ?? null),
+          pausedUntil:
+            typeof refusal.pausedUntil === 'string'
+              ? refusal.pausedUntil
+              : reason === 'PAUSED'
+                ? (store.pausedUntil ?? null)
+                : null,
         });
       }
+      // The store's own answer has the pause's end and the closing time the refusal may lack.
+      this.refreshStoreAfterRefusal();
       this.storeOpen.set(false);
       this.setPickup('SCHEDULED');
     } else if (refusal.code === 'PICKUP_SLOT_FULL') {
       this.loadSlots(false);
     }
+  }
+
+  /** Re-reads the store after «Сейчас» was refused, keeping it closed for now whatever a stale copy says. */
+  private refreshStoreAfterRefusal(): void {
+    const storeId = this.activeStoreId;
+    if (!storeId) return;
+    this.catalog.getStore(storeId).subscribe({
+      next: (store) => {
+        if (store.id !== this.activeStoreId || store.openNow !== false) return;
+        this.applyAvailability(store);
+      },
+      error: () => undefined,
+    });
   }
 
   /**
