@@ -332,7 +332,6 @@ export const TRANSLATIONS_RU = {
       noSlots: 'На ближайшие сутки свободных окон нет. Попробуйте «Сейчас».',
       noSlotsClosed: 'На ближайшие сутки свободных окон нет.',
       closedNow: 'Точка сейчас закрыта — выберите время, к которому забрать заказ.',
-      slotFull: 'Это окно уже занято',
       /** A full window in the «Позже» picker, shown but not selectable. */
       slotTaken: '{{time}} — занято',
       /** The picker's first line while no window is chosen (the chosen one filled up). */

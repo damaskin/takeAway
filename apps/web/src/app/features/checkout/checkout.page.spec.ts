@@ -163,7 +163,7 @@ describe('CheckoutPage — pickup time', () => {
 
   async function open(
     store: StoreDetail,
-    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions> } = {},
+    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions>; deliveryEnabled?: boolean } = {},
   ): Promise<{ page: CheckoutPage; root: HTMLElement; detect: () => void }> {
     catalog = {
       getStore: jest.fn(() => of(store)),
@@ -189,6 +189,7 @@ describe('CheckoutPage — pickup time', () => {
           provide: FeatureFlagsStore,
           useValue: {
             load: jest.fn(),
+            deliveryEnabled: signal(opts.deliveryEnabled ?? false),
             cardPaymentsEnabled: signal(true),
             boundCardsEnabled: signal(false),
             webPaymentsEnabled: signal(true),
@@ -216,6 +217,19 @@ describe('CheckoutPage — pickup time', () => {
   const asapButton = (root: HTMLElement): HTMLButtonElement | undefined =>
     Array.from(root.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Сейчас');
 
+  const slotSelect = (root: HTMLElement): HTMLSelectElement | null =>
+    root.querySelector<HTMLSelectElement>('[data-testid="slot-select"]');
+
+  /** The picker's day groups, each with its windows as the customer reads them. */
+  const slotGroups = (root: HTMLElement) =>
+    Array.from(slotSelect(root)?.querySelectorAll('optgroup') ?? []).map((group) => ({
+      day: group.label,
+      options: Array.from(group.querySelectorAll('option')).map((o) => ({
+        text: o.textContent?.trim(),
+        disabled: o.disabled,
+      })),
+    }));
+
   it('takes a pre-order for tomorrow morning while the store is closed for the night', async () => {
     const { page, root } = await open(NIGHT);
 
@@ -224,10 +238,11 @@ describe('CheckoutPage — pickup time', () => {
     expect(text(root, 'asap-blocked')).toEqual([
       'Точка откроется завтра в 09:00 — выберите, к какому времени приготовить заказ.',
     ]);
-    // The windows are fitted to this cart, over 24 hours, under day headings.
+    // The windows are fitted to this cart, over 24 hours, grouped by day in one drop-down.
     expect(catalog.getPickupSlots).toHaveBeenCalledWith(STORE.id, CART.id);
-    expect(text(root, 'slot-day')).toEqual(['Сегодня', 'Завтра']);
+    expect(slotGroups(root).map((g) => g.day)).toEqual(['Сегодня', 'Завтра']);
     expect(page.scheduledAt()).toBe(SLOTS[0]?.startsAt);
+    expect(slotSelect(root)?.value).toBe(SLOTS[0]?.startsAt);
     // Checkout is not blocked: the store takes orders, just not for now.
     expect(root.querySelector('[data-testid="store-inactive"]')).toBeNull();
 
@@ -276,6 +291,146 @@ describe('CheckoutPage — pickup time', () => {
     expect(page.scheduledAt()).toBe('');
     expect(page.canSubmit()).toBe(false);
     expect(page.error()).toBe('Это время только что заняли — выберите другое');
+  });
+
+  it('picks the window in a drop-down grouped by day, full windows listed but not selectable', async () => {
+    const { page, root, detect } = await open(STORE);
+    catalog.getPickupSlots.mockReturnValue(of([slot(day(0, 23, 30), false), ...SLOTS]));
+    page.selectMode('SCHEDULED');
+    detect();
+
+    expect(slotGroups(root)).toEqual([
+      {
+        day: 'Сегодня',
+        options: [
+          { text: '23:30 — занято', disabled: true },
+          { text: '23:45', disabled: false },
+        ],
+      },
+      {
+        day: 'Завтра',
+        options: [
+          { text: '09:15', disabled: false },
+          { text: '09:30', disabled: false },
+        ],
+      },
+    ]);
+    // The first window the store can keep is preselected, not the full one.
+    expect(slotSelect(root)?.value).toBe(SLOTS[0]?.startsAt);
+
+    const select = slotSelect(root) as HTMLSelectElement;
+    select.value = SLOTS[2]?.startsAt ?? '';
+    select.dispatchEvent(new Event('change'));
+    detect();
+    expect(page.scheduledAt()).toBe(SLOTS[2]?.startsAt);
+    expect(page.readyTimeLabel()).toBe('09:30 завтра');
+  });
+
+  it('asks to choose a time again when the chosen window filled up', async () => {
+    const { page, root, detect } = await open(NIGHT);
+    page.selectSlot(SLOTS[2] as PickupSlot);
+    catalog.getPickupSlots.mockReturnValue(of([SLOTS[0], SLOTS[1], slot(day(1, 9, 30), false)]));
+    orders.create.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'PICKUP_SLOT_FULL' } })),
+    );
+    page.placeOrder();
+    detect();
+
+    const first = slotSelect(root)?.options[0];
+    expect(first?.textContent?.trim()).toBe('Выберите время');
+    expect(slotSelect(root)?.value).toBe('');
+  });
+
+  describe('pickup or delivery', () => {
+    const toggle = (root: HTMLElement) => root.querySelector('[data-testid="fulfillment-toggle"]');
+    const withDelivery: StoreDetail = { ...STORE, fulfillmentTypes: ['PICKUP', 'DELIVERY'] };
+
+    it('shows no «Самовывоз | Доставка» while delivery is switched off, even where the store offers it', async () => {
+      const { page, root } = await open(withDelivery, { deliveryEnabled: false });
+      expect(toggle(root)).toBeNull();
+      expect(root.textContent).not.toContain('Доставка');
+      page.selectFulfillment('DELIVERY');
+      expect(page.fulfillmentType()).toBe('PICKUP');
+    });
+
+    it('shows no choice at a store without delivery', async () => {
+      const { root } = await open(STORE, { deliveryEnabled: true });
+      expect(toggle(root)).toBeNull();
+    });
+
+    it('offers delivery when it is switched on and the store delivers', async () => {
+      const { page, root } = await open(withDelivery, { deliveryEnabled: true });
+      expect(toggle(root)?.textContent).toContain('Доставка');
+      page.selectFulfillment('DELIVERY');
+      expect(page.fulfillmentType()).toBe('DELIVERY');
+    });
+  });
+
+  describe('a kitchen pause and an imminent closing', () => {
+    it('says until when the store is paused, and takes a pre-order', async () => {
+      const { page, root } = await open({
+        ...STORE,
+        openNow: false,
+        asapBlockedReason: 'PAUSED',
+        pausedUntil: day(0, 23, 30),
+      });
+      expect(page.mode()).toBe('SCHEDULED');
+      expect(asapButton(root)?.disabled).toBe(true);
+      expect(text(root, 'asap-blocked')).toEqual([
+        'В точке технический перерыв до 23:30 — выберите, к какому времени приготовить заказ.',
+      ]);
+    });
+
+    it('says the store closes before an order for now would be ready', async () => {
+      const { root } = await open({
+        ...STORE,
+        openNow: false,
+        asapBlockedReason: 'CLOSING_SOON',
+        closesAt: day(0, 23, 59),
+      });
+      expect(text(root, 'asap-blocked')).toEqual([
+        'Точка закрывается в 23:59 — заказ «сейчас» уже не успеем приготовить. Выберите время.',
+      ]);
+    });
+
+    it('switches to a time later when «Сейчас» was refused for a pause', async () => {
+      const { page, root, detect } = await open(STORE);
+      orders.create.mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { code: 'ASAP_UNAVAILABLE', reason: 'PAUSED', opensAt: null, pausedUntil: day(0, 23, 30) },
+            }),
+        ),
+      );
+      page.placeOrder();
+      detect();
+
+      expect(page.mode()).toBe('SCHEDULED');
+      expect(text(root, 'asap-blocked')).toEqual([
+        'В точке технический перерыв до 23:30 — выберите, к какому времени приготовить заказ.',
+      ]);
+    });
+
+    it('names the closing time from the store when refused as closing soon', async () => {
+      const { page, root, detect } = await open({ ...STORE, closesAt: day(0, 23, 59) });
+      orders.create.mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { code: 'ASAP_UNAVAILABLE', reason: 'CLOSING_SOON', opensAt: null },
+            }),
+        ),
+      );
+      page.placeOrder();
+      detect();
+
+      expect(text(root, 'asap-blocked')).toEqual([
+        'Точка закрывается в 23:59 — заказ «сейчас» уже не успеем приготовить. Выберите время.',
+      ]);
+    });
   });
 
   it('refuses checkout only when the store takes no orders at all', async () => {

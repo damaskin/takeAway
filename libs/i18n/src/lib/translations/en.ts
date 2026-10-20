@@ -329,7 +329,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noSlots: 'No windows free in the next 24 hours. Try "Now".',
       noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
-      slotFull: 'This window is fully booked',
       /** A full window in the «Later» picker, shown but not selectable. */
       slotTaken: '{{time}} — taken',
       /** The picker's first line while no window is chosen (the chosen one filled up). */
