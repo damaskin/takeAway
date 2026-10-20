@@ -47,6 +47,37 @@ void main() {
       expect(storeHoursNote(store({'openNow': true, 'acceptingOrders': true})), isNull);
     });
 
+    test('names the end of a kitchen pause, and says closing soon when an order for now would not make it', () {
+      final until = DateTime.utc(2026, 10, 20, 9, 30);
+      final paused = storeHoursNote(
+        store({
+          'openNow': false,
+          'acceptingOrders': true,
+          'asapBlockedReason': 'PAUSED',
+          'pausedUntil': until.toIso8601String(),
+          'pauseReason': 'EQUIPMENT',
+        }),
+      )!;
+      expect(paused.kind, StoreHoursKind.paused);
+      expect(paused.at, until);
+      expect(
+        storeHoursNote(store({'openNow': false, 'acceptingOrders': true, 'asapBlockedReason': 'PAUSED'}))!.kind,
+        StoreHoursKind.preorder,
+        reason: 'a pause without its end reads as closed for now, pre-orders taken',
+      );
+      expect(
+        storeHoursNote(
+          store({
+            'openNow': false,
+            'acceptingOrders': true,
+            'asapBlockedReason': 'CLOSING_SOON',
+            'closesAt': '2026-10-20T18:00:00Z',
+          }),
+        )!.kind,
+        StoreHoursKind.closingSoon,
+      );
+    });
+
     test('adds nothing for a store taking no orders, or one from an older API', () {
       expect(storeHoursNote(store({'openNow': false, 'acceptingOrders': false})), isNull);
       expect(storeHoursNote(store({'openNow': false})), isNull, reason: 'no acceptingOrders: closed, as before');
@@ -84,6 +115,19 @@ void main() {
       expect(orderWaitNote(FakeApi.sampleOrder(status: 'IN_PROGRESS', pickupAt: past), open, now), OrderWaitNote.late);
       expect(orderWaitNote(FakeApi.sampleOrder(status: 'ACCEPTED'), open, now), isNull);
       expect(orderWaitNote(FakeApi.sampleOrder(status: 'READY', pickupAt: past), open, now), isNull);
+    });
+
+    test('an order accepted too late counts down to the new estimate, and is late only once that passes', () {
+      final promised = now.subtract(const Duration(minutes: 3));
+      final estimate = now.add(const Duration(minutes: 8));
+      final order = FakeApi.sampleOrder(status: 'ACCEPTED', pickupAt: promised, readyEstimateAt: estimate);
+      expect(order.dueAt, estimate.toUtc());
+      expect(orderWaitNote(order, open, now), OrderWaitNote.newEstimate);
+      expect(orderWaitNote(order, open, now.add(const Duration(minutes: 9))), OrderWaitNote.late);
+      expect(
+        orderWaitNote(FakeApi.sampleOrder(status: 'IN_PROGRESS', readyEstimateAt: estimate), open, now),
+        OrderWaitNote.newEstimate,
+      );
     });
 
     test('an expired order says whether the store never accepted it or the payment never went through', () {

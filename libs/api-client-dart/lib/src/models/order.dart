@@ -34,8 +34,11 @@ enum OrderStatus {
 
   bool get isCancelled => this == OrderStatus.cancelled || this == OrderStatus.expired;
 
-  /// The API lets the customer cancel until the kitchen starts cooking.
-  bool get isCancellable => this == OrderStatus.created || this == OrderStatus.paid || this == OrderStatus.accepted;
+  /// The customer may cancel only before the kitchen accepts the order
+  /// (owner decision 2026-10-20); after that they call the store. The API's
+  /// own verdict, [Order.canCancel], also knows whether money was taken —
+  /// see [Order.customerCanCancel].
+  bool get isCancellable => this == OrderStatus.created || this == OrderStatus.paid;
 
   static OrderStatus parse(String? raw) => _$OrderStatusEnumMap.entries
       .firstWhere((e) => e.value == raw, orElse: () => const MapEntry(OrderStatus.unknown, 'UNKNOWN'))
@@ -177,6 +180,8 @@ class Order {
     this.outForDeliveryAt,
     this.deliveredAt,
     this.payment = OrderPayment.none,
+    this.readyEstimateAt,
+    this.canCancel,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
@@ -234,6 +239,24 @@ class Order {
   @JsonKey(fromJson: _paymentFromJson)
   final OrderPayment payment;
 
+  /// When the kitchen expects the order ready, set when it accepted or
+  /// started the order too late to make [pickupAt]. Null otherwise and from
+  /// API versions that predate it. [pickupAt] stays the original promise.
+  final DateTime? readyEstimateAt;
+
+  /// The API's verdict on whether the customer may cancel now: not accepted
+  /// yet and no money taken. Null from API versions that predate it.
+  final bool? canCancel;
+
+  /// What the countdown runs to: the kitchen's new estimate once it accepted
+  /// or started the order too late, else the promise. The same rule as the
+  /// web (`orderDueAt` in `@takeaway/utils`).
+  DateTime get dueAt => readyEstimateAt ?? pickupAt;
+
+  /// Whether to offer «Отменить заказ»: the API's [canCancel], or, from an
+  /// API that predates it, a status before the kitchen's accept.
+  bool get customerCanCancel => canCancel ?? status.isCancellable;
+
   bool get isDelivery => fulfillmentType == FulfillmentType.delivery;
   bool get hasStoreLocation => storeLatitude != 0 || storeLongitude != 0;
   int get itemCount => items.fold(0, (sum, i) => sum + i.quantity);
@@ -281,6 +304,9 @@ class Order {
     outForDeliveryAt: outForDeliveryAt,
     deliveredAt: deliveredAt,
     payment: payment,
+    readyEstimateAt: readyEstimateAt,
+    // A cancel the order allowed before is off once the kitchen took it.
+    canCancel: next.isCancellable ? canCancel : false,
   );
 }
 

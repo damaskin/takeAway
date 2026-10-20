@@ -20,8 +20,10 @@ int orderStepIndex(OrderStatus status) => switch (status) {
   _ => 0,
 };
 
-/// The big live dial: a countdown to the promised time while the kitchen
-/// works, a pulse when the order is ready, a check when it is collected.
+/// The big live dial: a countdown to the due time ([Order.dueAt] — the
+/// kitchen's new estimate once it gave one, else the promised time) while
+/// the kitchen works, a pulse when the order is ready, a check when it is
+/// collected.
 class OrderProgressRing extends StatefulWidget {
   const OrderProgressRing({required this.order, required this.now, this.size = 260, this.late = false, super.key});
 
@@ -74,10 +76,11 @@ class _OrderProgressRingState extends State<OrderProgressRing> with TickerProvid
     super.dispose();
   }
 
-  /// Fraction of the wait already behind us, from order creation to pickup.
+  /// Fraction of the wait already behind us, from order creation to the due
+  /// time.
   double _elapsed() {
     final o = widget.order;
-    final total = o.pickupAt.difference(o.createdAt).inMilliseconds;
+    final total = o.dueAt.difference(o.createdAt).inMilliseconds;
     if (total <= 0) return 1;
     return (widget.now.difference(o.createdAt).inMilliseconds / total).clamp(0.0, 1.0);
   }
@@ -128,7 +131,7 @@ class _OrderProgressRingState extends State<OrderProgressRing> with TickerProvid
         ),
       );
     } else {
-      final remaining = order.pickupAt.difference(widget.now);
+      final remaining = order.dueAt.difference(widget.now);
       center = Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -272,6 +272,13 @@ class _WhenSection extends ConsumerWidget {
     final controller = ref.read(checkoutProvider.notifier);
     final deliveryOffered = flags.deliveryEnabled && store.supportsDelivery;
     final delivery = state.fulfillment == FulfillmentType.delivery;
+    final asapOffered = state.asapOffered(store);
+    // Why «Как можно скорее» is off. A refusal for a reason this build has
+    // no words for, while the store still reads open, is left to the error
+    // above the button.
+    final asapBlocked = !store.takesOrders
+        ? l10n.storeClosedCheckout
+        : asapBlockedText(context, store, refused: state.asapRefused) ?? (store.isOpen ? null : l10n.asapBlockedClosed);
 
     return CheckoutSection(
       title: l10n.checkoutWhen,
@@ -311,12 +318,13 @@ class _WhenSection extends ConsumerWidget {
               (PickupMode.asap, l10n.pickupAsap, Icons.bolt_rounded),
               (PickupMode.scheduled, l10n.pickupLater, Icons.event_rounded),
             ],
-            // Closed for an order now — after hours, no shift yet, a full
-            // queue: a time later only, and the reason under the toggle.
-            disabled: {if (!store.isOpen) PickupMode.asap},
+            // Closed for an order now — after hours, a full queue, a kitchen
+            // pause, the closing too close: a time later only, and the
+            // reason under the toggle.
+            disabled: {if (!asapOffered) PickupMode.asap},
             onChanged: controller.setMode,
           ),
-          if (!store.isOpen && state.placedOrderId == null)
+          if (asapBlocked != null && state.placedOrderId == null)
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: Row(
@@ -328,14 +336,7 @@ class _WhenSection extends ConsumerWidget {
                     color: store.takesOrders ? brand.amber : brand.berry,
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      !store.takesOrders
-                          ? l10n.storeClosedCheckout
-                          : asapBlockedText(context, store) ?? l10n.asapBlockedClosed,
-                      style: context.text.bodySmall,
-                    ),
-                  ),
+                  Expanded(child: Text(asapBlocked, style: context.text.bodySmall)),
                 ],
               ),
             ),
@@ -348,7 +349,7 @@ class _WhenSection extends ConsumerWidget {
                     child: SlotPicker(
                       storeId: store.id,
                       cartId: cart.id,
-                      asapOffered: store.isOpen,
+                      asapOffered: asapOffered,
                       selected: state.slot,
                       onSelect: controller.selectSlot,
                     ),

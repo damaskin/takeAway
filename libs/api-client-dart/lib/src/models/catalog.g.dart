@@ -33,6 +33,12 @@ Store _$StoreFromJson(Map<String, dynamic> json) => Store(
   ),
   opensAt: json['opensAt'] == null ? null : DateTime.parse(json['opensAt'] as String),
   closesAt: json['closesAt'] == null ? null : DateTime.parse(json['closesAt'] as String),
+  pausedUntil: json['pausedUntil'] == null ? null : DateTime.parse(json['pausedUntil'] as String),
+  pauseReason: $enumDecodeNullable(
+    _$StorePauseReasonEnumMap,
+    json['pauseReason'],
+    unknownValue: StorePauseReason.unknown,
+  ),
   brandName: json['brandName'] as String?,
   logoUrl: json['logoUrl'] as String?,
   heroImageUrl: json['heroImageUrl'] as String?,
@@ -60,6 +66,8 @@ Map<String, dynamic> _$StoreToJson(Store instance) => <String, dynamic>{
   'asapBlockedReason': _$AsapBlockedReasonEnumMap[instance.asapBlockedReason],
   'opensAt': instance.opensAt?.toIso8601String(),
   'closesAt': instance.closesAt?.toIso8601String(),
+  'pausedUntil': instance.pausedUntil?.toIso8601String(),
+  'pauseReason': _$StorePauseReasonEnumMap[instance.pauseReason],
   'taxRateBps': instance.taxRateBps,
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,
@@ -81,7 +89,17 @@ const _$AsapBlockedReasonEnumMap = {
   AsapBlockedReason.outsideHours: 'OUTSIDE_HOURS',
   AsapBlockedReason.shiftClosed: 'SHIFT_CLOSED',
   AsapBlockedReason.queueFull: 'QUEUE_FULL',
+  AsapBlockedReason.paused: 'PAUSED',
+  AsapBlockedReason.closingSoon: 'CLOSING_SOON',
   AsapBlockedReason.unknown: 'unknown',
+};
+
+const _$StorePauseReasonEnumMap = {
+  StorePauseReason.equipment: 'EQUIPMENT',
+  StorePauseReason.noIngredients: 'NO_INGREDIENTS',
+  StorePauseReason.noStaff: 'NO_STAFF',
+  StorePauseReason.other: 'OTHER',
+  StorePauseReason.unknown: 'unknown',
 };
 
 StoreWorkingHour _$StoreWorkingHourFromJson(Map<String, dynamic> json) => StoreWorkingHour(
@@ -150,6 +168,12 @@ StoreDetail _$StoreDetailFromJson(Map<String, dynamic> json) => StoreDetail(
   ),
   opensAt: json['opensAt'] == null ? null : DateTime.parse(json['opensAt'] as String),
   closesAt: json['closesAt'] == null ? null : DateTime.parse(json['closesAt'] as String),
+  pausedUntil: json['pausedUntil'] == null ? null : DateTime.parse(json['pausedUntil'] as String),
+  pauseReason: $enumDecodeNullable(
+    _$StorePauseReasonEnumMap,
+    json['pauseReason'],
+    unknownValue: StorePauseReason.unknown,
+  ),
   heroImageUrl: json['heroImageUrl'] as String?,
   kinds: _kindsFromJson(json['kinds']),
   distanceMeters: (json['distanceMeters'] as num?)?.toDouble(),
@@ -177,6 +201,8 @@ Map<String, dynamic> _$StoreDetailToJson(StoreDetail instance) => <String, dynam
   'asapBlockedReason': _$AsapBlockedReasonEnumMap[instance.asapBlockedReason],
   'opensAt': instance.opensAt?.toIso8601String(),
   'closesAt': instance.closesAt?.toIso8601String(),
+  'pausedUntil': instance.pausedUntil?.toIso8601String(),
+  'pauseReason': _$StorePauseReasonEnumMap[instance.pauseReason],
   'taxRateBps': instance.taxRateBps,
   'taxIncludedInPrice': instance.taxIncludedInPrice,
   'currency': instance.currency,

@@ -365,6 +365,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storeQueueFullPreorder => 'Long queue — order ahead only';
 
   @override
+  String storePausedPreorder(String time) {
+    return 'Short break until $time · order ahead';
+  }
+
+  @override
+  String get storeClosingSoonPreorder => 'Closing soon — order ahead only';
+
+  @override
   String storeOpenUntil(String time) {
     return 'until $time';
   }
@@ -589,6 +597,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get asapBlockedQueueFull => 'There is a long queue right now — pick a time for your order.';
 
   @override
+  String asapBlockedPausedUntil(String time) {
+    return 'The store is on a short break until $time — pick a time for your order.';
+  }
+
+  @override
+  String get asapBlockedPaused => 'The store is on a short break — pick a time for your order.';
+
+  @override
+  String asapBlockedClosingSoonAt(String time) {
+    return 'The store closes at $time — there is no time left to make an order for now. Pick a time.';
+  }
+
+  @override
+  String get asapBlockedClosingSoon =>
+      'The store closes soon — there is no time left to make an order for now. Pick a time.';
+
+  @override
   String get asapBlockedClosed => 'The store is closed right now — pick a time for your order.';
 
   @override
@@ -797,6 +822,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get orderRunningLate => 'Running a little late';
 
   @override
+  String orderNewEstimate(int minutes) {
+    return 'Cooking · ready in $minutes min';
+  }
+
+  @override
   String get orderExpiredNotAccepted => 'The store did not confirm the order — you were not charged';
 
   @override
@@ -854,13 +884,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
-  String get pickupCode => 'Pickup code';
+  String get pickupCode => 'Your code';
 
   @override
-  String get showQr => 'Show QR';
-
-  @override
-  String get qrHint => 'Show this at the counter';
+  String get pickupCodeHint => 'Show it at the counter';
 
   @override
   String get iAmHere => 'I\'m here';
@@ -875,7 +902,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelOrderTitle => 'Cancel this order?';
 
   @override
-  String get cancelOrderBody => 'If your card was charged or held, the money goes back.';
+  String get cancelOrderBody =>
+      'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.';
+
+  @override
+  String get cancelByPhone => 'Your order is already being made — call the store to cancel it';
 
   @override
   String get keepOrder => 'Keep it';

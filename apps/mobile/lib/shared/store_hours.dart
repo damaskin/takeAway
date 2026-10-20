@@ -19,6 +19,14 @@ enum StoreHoursKind {
   /// Open, but the queue is too long for «now»; pre-orders taken.
   queueFull,
 
+  /// The kitchen paused the store until [StoreHoursNote.at] («Технический
+  /// перерыв»); pre-orders for later taken.
+  paused,
+
+  /// Within hours, but an order for now would not be ready before the
+  /// closing; pre-orders taken.
+  closingSoon,
+
   /// Open for orders now, until [StoreHoursNote.at].
   until,
 }
@@ -42,7 +50,13 @@ StoreHoursNote? storeHoursNote(Store store, {DateTime? now}) {
     return closes == null ? null : StoreHoursNote(StoreHoursKind.until, at: closes);
   }
   if (!store.preorderOnly) return null;
-  if (store.asapBlockedReason == AsapBlockedReason.queueFull) return const StoreHoursNote(StoreHoursKind.queueFull);
+  final reason = store.asapBlockedReason;
+  final pausedUntil = store.pausedUntil;
+  if (reason == AsapBlockedReason.queueFull) return const StoreHoursNote(StoreHoursKind.queueFull);
+  if (reason == AsapBlockedReason.paused && pausedUntil != null) {
+    return StoreHoursNote(StoreHoursKind.paused, at: pausedUntil);
+  }
+  if (reason == AsapBlockedReason.closingSoon) return const StoreHoursNote(StoreHoursKind.closingSoon);
   final opens = store.opensAt;
   if (opens == null) return const StoreHoursNote(StoreHoursKind.preorder);
   return StoreHoursNote(StoreHoursKind.opens, at: opens, days: calendarDaysBetween(now ?? DateTime.now(), opens));
@@ -57,7 +71,8 @@ int calendarDaysBetween(DateTime from, DateTime to) {
 }
 
 /// «Сейчас закрыто · откроется завтра в 9:00 · можно заказать ко времени»,
-/// «Большая очередь — только ко времени», «до 21:00»; see [storeHoursNote].
+/// «Большая очередь — только ко времени», «Технический перерыв до 12:30 ·
+/// можно заказать ко времени», «до 21:00»; see [storeHoursNote].
 String? storeHoursText(BuildContext context, Store store, {DateTime? now}) {
   final note = storeHoursNote(store, now: now);
   if (note == null) return null;
@@ -66,6 +81,8 @@ String? storeHoursText(BuildContext context, Store store, {DateTime? now}) {
   return switch (note.kind) {
     StoreHoursKind.until => l10n.storeOpenUntil(formatClock(context, at!)),
     StoreHoursKind.queueFull => l10n.storeQueueFullPreorder,
+    StoreHoursKind.paused => l10n.storePausedPreorder(formatClock(context, at!)),
+    StoreHoursKind.closingSoon => l10n.storeClosingSoonPreorder,
     StoreHoursKind.preorder => l10n.storeClosedPreorder,
     StoreHoursKind.opens => switch (note.days) {
       <= 0 => l10n.storeOpensAt(formatClock(context, at!)),
@@ -77,13 +94,25 @@ String? storeHoursText(BuildContext context, Store store, {DateTime? now}) {
 
 /// Why «Как можно скорее» is off at checkout, with what to do instead; null
 /// while the store takes an order for now or gave no reason.
-String? asapBlockedText(BuildContext context, Store store, {DateTime? now}) {
-  if (store.isOpen) return null;
+///
+/// [refused] is the reason the API gave a moment ago when it turned an
+/// order for now down. It counts only while the store still reads open: a
+/// closing too close for this very order's cooking time, say, which the
+/// store's own state does not show.
+String? asapBlockedText(BuildContext context, Store store, {AsapBlockedReason? refused, DateTime? now}) {
+  final reason = store.isOpen ? refused : store.asapBlockedReason;
+  if (reason == null) return null;
   final l10n = AppLocalizations.of(context);
   final opens = store.opensAt;
-  return switch (store.asapBlockedReason) {
+  final pausedUntil = store.pausedUntil;
+  final closes = store.closesAt;
+  return switch (reason) {
     AsapBlockedReason.queueFull => l10n.asapBlockedQueueFull,
     AsapBlockedReason.shiftClosed => l10n.asapBlockedShiftClosed,
+    AsapBlockedReason.paused =>
+      pausedUntil == null ? l10n.asapBlockedPaused : l10n.asapBlockedPausedUntil(formatClock(context, pausedUntil)),
+    AsapBlockedReason.closingSoon =>
+      closes == null ? l10n.asapBlockedClosingSoon : l10n.asapBlockedClosingSoonAt(formatClock(context, closes)),
     AsapBlockedReason.outsideHours when opens != null => switch (calendarDaysBetween(now ?? DateTime.now(), opens)) {
       <= 0 => l10n.asapBlockedOpensAt(formatClock(context, opens)),
       1 => l10n.asapBlockedOpensTomorrowAt(formatClock(context, opens)),

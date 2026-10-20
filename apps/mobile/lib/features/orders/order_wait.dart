@@ -3,9 +3,14 @@ import 'package:takeaway_api/takeaway_api.dart';
 /// What the order screen says while the customer waits, on top of the bare
 /// status. The same rules as the web (`orderWaitNote` in `@takeaway/utils`).
 enum OrderWaitNote {
-  /// Accepted or being made, and its time has passed — the customer may
-  /// already be at the counter: «Немного задерживаемся».
+  /// Accepted or being made, and its time ([Order.dueAt]) has passed — the
+  /// customer may already be at the counter: «Немного задерживаемся».
   late,
+
+  /// Accepted or being made too late for the promised time, so the kitchen
+  /// gave a new estimate ([Order.readyEstimateAt]) and it has not passed
+  /// yet: «Готовим · будет готово через 8 мин».
+  newEstimate,
 
   /// A pre-order on the kitchen board while the store is closed (overnight,
   /// or before the shift): it is accepted once the store opens.
@@ -32,7 +37,8 @@ bool isAwaitingAcceptance(Order order) => switch (order.status) {
 /// awaiting acceptance.
 OrderWaitNote? orderWaitNote(Order order, Store? store, DateTime now) {
   if (order.status == OrderStatus.accepted || order.status == OrderStatus.inProgress) {
-    return now.isAfter(order.pickupAt) ? OrderWaitNote.late : null;
+    if (now.isAfter(order.dueAt)) return OrderWaitNote.late;
+    return order.readyEstimateAt != null ? OrderWaitNote.newEstimate : null;
   }
   if (!isAwaitingAcceptance(order)) return null;
   final closed = store != null && store.openNow == false && store.asapBlockedReason != AsapBlockedReason.queueFull;

@@ -73,6 +73,8 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
   outForDeliveryAt: json['outForDeliveryAt'] == null ? null : DateTime.parse(json['outForDeliveryAt'] as String),
   deliveredAt: json['deliveredAt'] == null ? null : DateTime.parse(json['deliveredAt'] as String),
   payment: json['payment'] == null ? OrderPayment.none : _paymentFromJson(json['payment']),
+  readyEstimateAt: json['readyEstimateAt'] == null ? null : DateTime.parse(json['readyEstimateAt'] as String),
+  canCancel: json['canCancel'] as bool?,
 );
 
 const _$OrderStatusEnumMap = {
