@@ -68,6 +68,14 @@ enum StoreStatus {
   OVERLOADED
 }
 
+/// Why the kitchen paused the store («Пауза» on the kitchen board).
+enum StorePauseReason {
+  EQUIPMENT
+  NO_INGREDIENTS
+  NO_STAFF
+  OTHER
+}
+
 enum StoreFulfillment {
   TAKEAWAY
   DINE_IN
@@ -979,6 +987,16 @@ model Store {
   /// Provider-side identifier (iiko terminalGroupId or organization-derived
   /// id, Poster spot id). Unique within (brandId, externalProvider).
   externalId            String?
+  /// The kitchen paused the store («Пауза»: the coffee machine broke, a cook
+  /// went home) until this moment: no ASAP orders and no pre-orders for a
+  /// time before it. Null — not paused. Cleared when the pause is lifted or
+  /// runs out, and when the shift closes. See docs/kitchen-policy.md.
+  pausedUntil           DateTime?
+  pauseReason           StorePauseReason?
+  /// Free text from the kitchen for the owner and staff, up to 120 characters.
+  pauseComment          String?
+  /// Who paused it. Not a relation: removing the person keeps the pause.
+  pausedById            String?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
@@ -1041,12 +1059,13 @@ model UserStore {
   @@index([storeId])
 }
 
-/// A working shift at one store: staff open it with "Start work" in the
-/// cabinet or on the kitchen tablet and close it with "Finish work" (or the
-/// schedule closes it — see docs/kitchen-policy.md). ASAP orders need an
-/// open shift *and* working hours (or an extension past them); pre-orders
-/// for later are taken with the shift closed. At most one open shift per
-/// store (partial unique index in the migration — Prisma cannot model it).
+/// A working shift at one store. Since 2026-10-20 the schedule opens it at
+/// the start of each working-hours window and closes it at the end of the
+/// window or of the kitchen's extension (docs/kitchen-policy.md); nobody
+/// opens or closes it by hand. ASAP orders need an open shift *and* working
+/// hours (or an extension past them); pre-orders for later are taken with
+/// the shift closed. At most one open shift per store (partial unique index
+/// in the migration — Prisma cannot model it).
 model StoreShift {
   id                  String    @id @default(cuid())
   storeId             String
@@ -1060,6 +1079,9 @@ model StoreShift {
   /// Closed by the schedule after the working hours ended, not by a person
   /// (closedById is null then).
   closedAutomatically Boolean   @default(false)
+  /// Opened by the schedule at the start of the working hours, not by a
+  /// person (openedById is null then).
+  openedAutomatically Boolean   @default(false)
 
   store    Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   openedBy User? @relation("ShiftOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
@@ -1527,6 +1549,11 @@ model Order {
   lateNotifiedAt      DateTime?
   /// Staff and the brand owner were told the order is five minutes late (once).
   lateAlertSentAt     DateTime?
+  /// When the kitchen expects the order ready, set when it accepted or
+  /// started the order too late to make pickupAt (now + its own cooking
+  /// time). pickupAt stays the original promise; the customer's countdown
+  /// and «Немного задерживаемся» run to this instead. Null otherwise.
+  readyEstimateAt     DateTime?
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
