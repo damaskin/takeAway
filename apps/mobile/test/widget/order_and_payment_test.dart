@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/app/router.dart';
+import 'package:takeaway_mobile/core/format/time.dart';
 
 import '../helpers/fake_api.dart';
 import '../helpers/harness.dart';
@@ -36,21 +37,124 @@ void main() {
       await openOrder(tester, h);
 
       expect(find.text('Заказ #4821'), findsOneWidget);
-      expect(find.text('4821'), findsWidgets);
       expect(find.text('Заказ получен'), findsOneWidget);
       expect(find.text('Ждём оплату'), findsOneWidget, reason: 'a new order with no card on it yet is unpaid');
       expect(find.text('Я на месте'), findsOneWidget);
+
+      // The code is what the counter hands the order over by; nobody scans a QR.
+      final code = find.byKey(const ValueKey('pickup-code'));
+      await reveal(tester, code);
+      expect(find.descendant(of: code, matching: find.text('Ваш код')), findsOneWidget);
+      expect(find.descendant(of: code, matching: find.text('4821')), findsOneWidget);
+      expect(find.descendant(of: code, matching: find.text('Покажите его на выдаче')), findsOneWidget);
+      expect(find.text('Показать QR'), findsNothing);
 
       await reveal(tester, find.text('Отменить заказ'));
       await tester.tap(find.text('Отменить заказ'));
       await settle(tester);
       expect(find.text('Отменить заказ?'), findsOneWidget);
+      expect(
+        find.text('Точка ещё не приняла заказ, деньги не списаны. Если сумма забронирована на карте, бронь снимется.'),
+        findsOneWidget,
+      );
       await tester.tap(find.widgetWithText(TextButton, 'Отменить заказ'));
       await settle(tester);
 
       expect(api.cancelled, ['ord_1']);
       expect(find.text('Отменён'), findsWidgets);
       expect(find.text('Повторить заказ'), findsOneWidget, reason: 'a finished order offers to order again');
+      await h.unmount(tester);
+    });
+
+    testWidgets('once the kitchen accepted the order the customer calls the store to cancel it', (tester) async {
+      final api = FakeApi()
+        ..storeExtra = {'acceptingOrders': true, 'phone': '+373 69 123 456'}
+        ..currentOrder = FakeApi.sampleOrder(status: 'ACCEPTED', canCancel: false);
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      final note = find.byKey(const ValueKey('cancel-by-phone'));
+      await reveal(tester, note);
+      expect(find.text('Заказ уже готовят — для отмены позвоните в точку'), findsOneWidget);
+      expect(find.descendant(of: note, matching: find.byIcon(Icons.call_rounded)), findsOneWidget);
+      expect(find.text('Отменить заказ'), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('an older API without canCancel: no cancel once accepted, and no call without a phone', (tester) async {
+      final api = FakeApi()..currentOrder = FakeApi.sampleOrder(status: 'IN_PROGRESS');
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      final note = find.byKey(const ValueKey('cancel-by-phone'));
+      await reveal(tester, note);
+      expect(find.text('Отменить заказ'), findsNothing);
+      expect(find.descendant(of: note, matching: find.byIcon(Icons.call_rounded)), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('money already taken before the accept: the API says no, so no cancel button', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          status: 'PAID',
+          canCancel: false,
+          payment: {'state': 'PAID', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, find.byKey(const ValueKey('cancel-by-phone')));
+      expect(find.text('Отменить заказ'), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('a cancel the kitchen beat by a moment shows the order as it is and says why', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          canCancel: true,
+          payment: {'state': 'HELD', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        )
+        ..acceptedBeforeCancel = FakeApi.sampleOrder(
+          status: 'ACCEPTED',
+          canCancel: false,
+          payment: {'state': 'PAID', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, find.text('Отменить заказ'));
+      await tester.tap(find.text('Отменить заказ'));
+      await settle(tester);
+      await tester.tap(find.widgetWithText(TextButton, 'Отменить заказ'));
+      await settle(tester);
+
+      expect(api.cancelled, isEmpty);
+      expect(find.text('Принят кухней'), findsOneWidget, reason: 'the order was read again');
+      expect(find.text('Отменить заказ'), findsNothing);
+      // Once in the snack bar, once in place of the button.
+      expect(find.text('Заказ уже готовят — для отмены позвоните в точку'), findsNWidgets(2));
+      await h.unmount(tester);
+    });
+
+    testWidgets('an order the kitchen took late counts down to its new estimate instead of reading as late', (
+      tester,
+    ) async {
+      final estimate = DateTime.now().add(const Duration(minutes: 8));
+      final api = FakeApi()
+        ..storeExtra = {'acceptingOrders': true}
+        ..currentOrder = FakeApi.sampleOrder(
+          status: 'IN_PROGRESS',
+          pickupAt: DateTime.now().subtract(const Duration(minutes: 3)),
+          readyEstimateAt: estimate,
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      expect(find.text('Готовим · будет готово через 8 мин'), findsOneWidget);
+      expect(find.text('Немного задерживаемся'), findsNothing);
+      expect(find.textContaining(RegExp(r'^7:\d\d$')), findsOneWidget, reason: 'the ring counts down to the estimate');
+      final context = tester.element(find.byType(Scaffold).last);
+      expect(find.text('Забрать в ${formatClock(context, estimate)}'), findsOneWidget);
       await h.unmount(tester);
     });
 

@@ -622,7 +622,16 @@
   "orderPreorderAwaitingOpening": "The store will confirm your pre-order when it opens",
   "orderRunningLate": "Running a little late",
   "@orderRunningLate": {
-    "description": "Accepted or being made, and past its pickup time."
+    "description": "Accepted or being made, and past its due time (the kitchen's new estimate, else the pickup time)."
+  },
+  "orderNewEstimate": "Cooking · ready in {minutes} min",
+  "@orderNewEstimate": {
+    "description": "The kitchen accepted or started the order too late for its pickup time and gave a new estimate.",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
   },
   "orderExpiredNotAccepted": "The store did not confirm the order — you were not charged",
   "orderExpiredNotAcceptedRefunded": "The store did not confirm the order — the money is on its way back",
@@ -646,14 +655,20 @@
   },
   "paymentStateAtCounter": "Paying at the counter",
   "paymentStateAwaiting": "Awaiting payment",
-  "pickupCode": "Pickup code",
-  "showQr": "Show QR",
-  "qrHint": "Show this at the counter",
+  "pickupCode": "Your code",
+  "@pickupCode": {
+    "description": "Over the order number on the order screen; the kitchen hands the order over by it."
+  },
+  "pickupCodeHint": "Show it at the counter",
   "iAmHere": "I'm here",
   "iAmHereSent": "The barista knows you are here",
   "cancelOrder": "Cancel order",
   "cancelOrderTitle": "Cancel this order?",
-  "cancelOrderBody": "If your card was charged or held, the money goes back.",
+  "cancelOrderBody": "The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.",
+  "cancelByPhone": "Your order is already being made — call the store to cancel it",
+  "@cancelByPhone": {
+    "description": "In place of «Cancel order» once the kitchen accepted the order or the money was taken; also the error when a cancel comes too late."
+  },
   "keepOrder": "Keep it",
   "reorder": "Order again",
   "reorderDone": "Added to your cart",

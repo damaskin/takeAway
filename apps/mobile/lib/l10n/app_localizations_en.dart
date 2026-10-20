@@ -822,6 +822,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get orderRunningLate => 'Running a little late';
 
   @override
+  String orderNewEstimate(int minutes) {
+    return 'Cooking · ready in $minutes min';
+  }
+
+  @override
   String get orderExpiredNotAccepted => 'The store did not confirm the order — you were not charged';
 
   @override
@@ -879,13 +884,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
-  String get pickupCode => 'Pickup code';
+  String get pickupCode => 'Your code';
 
   @override
-  String get showQr => 'Show QR';
-
-  @override
-  String get qrHint => 'Show this at the counter';
+  String get pickupCodeHint => 'Show it at the counter';
 
   @override
   String get iAmHere => 'I\'m here';
@@ -900,7 +902,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelOrderTitle => 'Cancel this order?';
 
   @override
-  String get cancelOrderBody => 'If your card was charged or held, the money goes back.';
+  String get cancelOrderBody =>
+      'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.';
+
+  @override
+  String get cancelByPhone => 'Your order is already being made — call the store to cancel it';
 
   @override
   String get keepOrder => 'Keep it';

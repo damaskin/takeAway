@@ -830,6 +830,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get orderRunningLate => 'Немного задерживаемся';
 
   @override
+  String orderNewEstimate(int minutes) {
+    return 'Готовим · будет готово через $minutes мин';
+  }
+
+  @override
   String get orderExpiredNotAccepted => 'Точка не подтвердила заказ — деньги не списаны';
 
   @override
@@ -887,13 +892,10 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentStateAwaiting => 'Ждём оплату';
 
   @override
-  String get pickupCode => 'Код получения';
+  String get pickupCode => 'Ваш код';
 
   @override
-  String get showQr => 'Показать QR';
-
-  @override
-  String get qrHint => 'Покажите на выдаче';
+  String get pickupCodeHint => 'Покажите его на выдаче';
 
   @override
   String get iAmHere => 'Я на месте';
@@ -908,7 +910,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cancelOrderTitle => 'Отменить заказ?';
 
   @override
-  String get cancelOrderBody => 'Если деньги были списаны или забронированы, они вернутся.';
+  String get cancelOrderBody =>
+      'Точка ещё не приняла заказ, деньги не списаны. Если сумма забронирована на карте, бронь снимется.';
+
+  @override
+  String get cancelByPhone => 'Заказ уже готовят — для отмены позвоните в точку';
 
   @override
   String get keepOrder => 'Оставить';
