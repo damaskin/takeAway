@@ -25,6 +25,7 @@ import { LocaleFormatService } from '@takeaway/i18n';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
+import { cancelNeedsCall, customerCanCancel, freshEstimateMinutes, pickupClock } from '../../core/orders/order-timing';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
@@ -66,7 +67,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
   template: `
     @if (order(); as o) {
       <section
-        style="padding: 24px; padding-bottom: 32px; display: flex; flex-direction: column; align-items: center; gap: 24px"
+        style="padding: 24px; padding-bottom: calc(32px + var(--tma-safe-bottom)); display: flex; flex-direction: column; align-items: center; gap: 24px"
       >
         <!-- Illustration -->
         <div
@@ -87,7 +88,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
             data-testid="order-slogan"
             style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-secondary); text-align: center; margin: -12px 0 0 0"
           >
-            {{ line | translate }}
+            {{ line.key | translate: line.params }}
           </p>
         }
 
@@ -153,8 +154,16 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
                 style="font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--color-caramel)"
                 >{{ 'web.orderStatus.wait.late' | translate }}</span
               >
+            } @else if (clockAt(); as at) {
+              <!-- A pre-order hours away: the time it will be ready, not a long countdown. -->
+              <span
+                data-testid="order-ready-at"
+                style="font-family: var(--font-sans); font-size: 26px; font-weight: 700; color: var(--color-caramel)"
+                >{{ at }}</span
+              >
             } @else {
               <span
+                data-testid="order-countdown"
                 style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
                 >{{ countdown() }}</span
               >
@@ -176,6 +185,15 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               >📞 {{ 'web.orderStatus.callStore' | translate }}</a
             >
           }
+        }
+        <!-- Accepted (or its money taken): only the store can call it off now. -->
+        @if (showCallToCancel()) {
+          <p
+            data-testid="call-to-cancel"
+            style="margin: -12px 0 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); text-align: center"
+          >
+            {{ 'tma.orderStatus.callToCancel' | translate }}
+          </p>
         }
 
         <!-- Timeline -->
@@ -210,6 +228,28 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
           >
             {{ (imHereClicked() ? 'common.confirm' : 'web.orderStatus.iAmHere') | translate }}
           </button>
+        }
+
+        <!-- Before the kitchen accepts it the customer may call the order off themselves. -->
+        @if (canCancel()) {
+          <button
+            type="button"
+            data-testid="cancel-order"
+            (click)="cancelOrder()"
+            [disabled]="cancelling()"
+            class="w-full flex items-center justify-center disabled:opacity-50"
+            style="margin-top: -12px; height: 48px; border-radius: 14px; background: transparent; border: 1px solid var(--color-border-light); color: var(--color-berry); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+          >
+            {{ (cancelling() ? 'tma.orderStatus.cancelling' : 'tma.orderStatus.cancel') | translate }}
+          </button>
+        }
+        @if (cancelError(); as message) {
+          <p
+            role="alert"
+            style="margin: -12px 0 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-berry); text-align: center"
+          >
+            {{ message }}
+          </p>
         }
 
         <!-- Order summary -->
@@ -468,10 +508,52 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     this.paymentState() === 'PAID' ? 'var(--color-mint-light, var(--color-foam))' : 'var(--color-foam)',
   );
 
-  /** «4:05»; «13:05:00» for a pre-order hours away. */
-  readonly countdown = computed(() => {
+  /**
+   * Where the wait stands: a countdown to the due time (the kitchen's new
+   * estimate once it accepted the order late), or for an order more than an
+   * hour away the time itself.
+   */
+  private readonly clock = computed(() => {
     const o = this.order();
-    return o ? formatCountdown(new Date(o.pickupAt).getTime() - this.now()) : '0:00';
+    return o ? pickupClock(o, new Date(this.now()), o.storeTimezone) : null;
+  });
+
+  /** «4:05», «59:59». */
+  readonly countdown = computed(() => {
+    const clock = this.clock();
+    return clock?.kind === 'countdown' ? formatCountdown(clock.remainingMs) : '0:00';
+  });
+
+  /** «к 09:15», «к 09:15 завтра», «к 09:15, 23 окт.» — null while counting down. */
+  readonly clockAt = computed(() => {
+    const clock = this.clock();
+    if (clock?.kind !== 'at') return null;
+    const zone = this.order()?.storeTimezone;
+    const time = this.fmt.time(clock.at, zone);
+    if (clock.days <= 0) return this.translate.instant('tma.orderStatus.readyAt', { time });
+    if (clock.days === 1) {
+      return this.translate.instant('tma.orderStatus.readyAt', {
+        time: this.translate.instant('common.pickupDay.timeTomorrow', { time }),
+      });
+    }
+    return this.translate.instant('tma.orderStatus.readyAtOn', { time, date: this.fmt.dayMonth(clock.at, zone) });
+  });
+
+  /** «Отменить заказ» is there: not accepted yet and no money taken. */
+  readonly canCancel = computed(() => {
+    const o = this.order();
+    return !!o && !this.cancelRefused() && customerCanCancel(o);
+  });
+  readonly cancelling = signal(false);
+  readonly cancelError = signal<string | null>(null);
+  /** The API turned the cancel down a moment ago: the kitchen got there first. */
+  private readonly cancelRefused = signal(false);
+
+  /** «Заказ уже готовят — для отмены позвоните в точку». */
+  readonly showCallToCancel = computed(() => {
+    const o = this.order();
+    if (!o || this.isTerminal(o.status) || o.status === 'READY') return false;
+    return this.cancelRefused() || cancelNeedsCall(o);
   });
 
   /**
@@ -694,16 +776,57 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /**
    * The line under the headline: the zero-minute queue once ready, why an
    * expired order ended, or what the wait is for («Ждём подтверждения
-   * точки», «Немного задерживаемся»). A translation key.
+   * точки», «Готовим · будет готово через 6 мин», «Немного задерживаемся»).
+   * A translation key with its parameters.
    */
-  slogan(): string | null {
+  slogan(): { key: string; params?: Record<string, unknown> } | null {
     const order = this.order();
     if (!order) return null;
-    if (order.status === 'READY') return 'common.orderDone.readySlogan';
-    if (order.status === 'PICKED_UP') return 'common.orderDone.pickedUpSlogan';
-    if (order.status === 'EXPIRED') return `web.orderStatus.expired.${expiredOutcome(order)}`;
+    if (order.status === 'READY') return { key: 'common.orderDone.readySlogan' };
+    if (order.status === 'PICKED_UP') return { key: 'common.orderDone.pickedUpSlogan' };
+    if (order.status === 'EXPIRED') return { key: `web.orderStatus.expired.${expiredOutcome(order)}` };
+    // Accepted late with a new time named: say when, not «Немного задерживаемся».
+    const minutes = freshEstimateMinutes(order, new Date(this.now()));
+    if (minutes !== null) return { key: 'tma.orderStatus.cooking', params: { min: minutes } };
     const wait = this.waitNote();
-    return wait ? `web.orderStatus.wait.${wait}` : null;
+    return wait ? { key: `web.orderStatus.wait.${wait}` } : null;
+  }
+
+  /**
+   * Calls the order off after the customer confirms (Telegram's own dialog).
+   * Refused because the kitchen accepted it (or the money was taken) a moment
+   * ago: the order is re-read and the screen says to call the store.
+   */
+  async cancelOrder(): Promise<void> {
+    const o = this.order();
+    if (!o || this.cancelling()) return;
+    this.tg.haptic('light');
+    const confirmed = await this.tg.confirm(
+      this.translate.instant('tma.orderStatus.cancelConfirm', { code: o.orderCode }),
+    );
+    if (!confirmed) return;
+    this.cancelling.set(true);
+    this.cancelError.set(null);
+    this.orders.cancel(o.id).subscribe({
+      next: (updated) => {
+        this.cancelling.set(false);
+        this.order.set(updated);
+        this.tg.haptic('medium');
+      },
+      error: (err: unknown) => {
+        this.cancelling.set(false);
+        const status = (err as { status?: unknown } | null)?.status;
+        const code = ((err as { error?: unknown } | null)?.error as { code?: unknown } | null)?.code;
+        if (code === 'ORDER_NOT_CANCELLABLE' || status === 409 || status === 400) {
+          this.cancelRefused.set(true);
+          this.orders.get(o.id).subscribe({ next: (fresh) => this.order.set(fresh), error: () => undefined });
+          return;
+        }
+        this.cancelError.set(
+          this.translate.instant(status === 0 ? 'common.networkError' : 'tma.orderStatus.cancelFailed'),
+        );
+      },
+    });
   }
 
   isReady(): boolean {
