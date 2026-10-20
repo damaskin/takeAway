@@ -22,9 +22,27 @@ describe('InviteStaffDto — email or login', () => {
     expect(dto.login).toBe('anna.k_2-b');
   });
 
-  it('wants exactly one of them', async () => {
-    expect((await check({})).problems).toEqual(['email', 'login']);
+  it('takes at most one of them', async () => {
     expect((await check({ email: 'anna@noname.md', login: 'anna' })).problems).toEqual(['login']);
+  });
+
+  it('takes neither for kitchen staff, with a name and a 6-digit PIN instead of a password', async () => {
+    const pinOnly = { role: 'STAFF', storeIds: ['store-1'] };
+    const strict = async (body: Record<string, unknown>) => {
+      const dto = plainToInstance(InviteStaffDto, body);
+      const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+      return [...new Set(errors.map((e) => e.property))].sort();
+    };
+    expect(await strict({ ...pinOnly, name: 'Ира', pin: '480317' })).toEqual([]);
+    expect(await strict(pinOnly)).toEqual(['name', 'pin']);
+    expect(await strict({ ...pinOnly, name: '  ', pin: '4803' })).toEqual(['name', 'pin']);
+  });
+
+  it('wants a temporary password with an email or a login, and takes a PIN with them too', async () => {
+    const { problems } = await check({ email: 'anna@noname.md', tempPassword: undefined });
+    expect(problems).toEqual(['tempPassword']);
+    expect((await check({ login: 'anna.k', pin: '480317' })).problems).toEqual([]);
+    expect((await check({ login: 'anna.k', pin: 'abcdef' })).problems).toEqual(['pin']);
   });
 
   it('keeps a login to 3–32 latin letters, digits, dots, underscores and hyphens — never an @', async () => {

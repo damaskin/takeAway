@@ -1,9 +1,11 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
+  AddStaffSignInRequest,
   InviteStaffRequest,
   KitchenDeviceSummary,
   KitchenPairingCode,
+  SetStaffPinRequest,
   SetStaffStoresRequest,
   StaffInviteResult,
   StaffMember,
@@ -120,6 +122,35 @@ export class StaffService {
     );
   }
 
+  /**
+   * The person's kitchen PIN: one for every store they work at in the brand.
+   * Replaces the PIN they had and ends their tablet sessions.
+   */
+  setMemberPin(userId: string, pin: string, brandId: string | null): Observable<StaffMember> {
+    const body: SetStaffPinRequest = { pin };
+    return this.http.put<StaffMember>(`${this.api.baseUrl}/admin/staff/${userId}/kds-pin`, body, {
+      params: this.brandParams(brandId),
+    });
+  }
+
+  clearMemberPin(userId: string, brandId: string | null): Observable<StaffMember> {
+    return this.http.delete<StaffMember>(`${this.api.baseUrl}/admin/staff/${userId}/kds-pin`, {
+      params: this.brandParams(brandId),
+    });
+  }
+
+  /** A way into the cabinet for someone invited with a PIN only: an email or a login and a temporary password. */
+  addSignIn(userId: string, body: AddStaffSignInRequest, brandId: string | null): Observable<StaffInviteResult> {
+    return this.http.put<StaffInviteResult>(`${this.api.baseUrl}/admin/staff/${userId}/sign-in`, body, {
+      params: this.brandParams(brandId),
+    });
+  }
+
+  /** «Сбросить пароль» of the brand owner — the platform team only. */
+  resetOwnerPassword(brandId: string): Observable<StaffPasswordReset> {
+    return this.http.post<StaffPasswordReset>(`${this.api.baseUrl}/admin/brands/${brandId}/owner/reset-password`, {});
+  }
+
   private brandParams(brandId: string | null): Record<string, string> {
     return brandId ? { brandId } : {};
   }
@@ -128,15 +159,6 @@ export class StaffService {
 
   list(storeId: string): Observable<StaffRoster[]> {
     return this.http.get<StaffRoster[]>(`${this.api.baseUrl}/admin/stores/${storeId}/staff`);
-  }
-
-  /** Sets or rotates the 6-digit PIN a staff member unlocks this store's kitchen tablet with. */
-  setKdsPin(storeId: string, userId: string, pin: string): Observable<void> {
-    return this.http.put<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/kds-pin`, { pin });
-  }
-
-  clearKdsPin(storeId: string, userId: string): Observable<void> {
-    return this.http.delete<void>(`${this.api.baseUrl}/admin/stores/${storeId}/staff/${userId}/kds-pin`);
   }
 
   getOwner(brandId: string): Observable<BrandOwner | null> {

@@ -9,6 +9,7 @@ import {
 import { Prisma, Role } from '@prisma/client';
 
 import type { BrandScopeService } from '../../auth/services/brand-scope.service';
+import { type KitchenPinsService, kdsPinMultiBrand, kdsPinTaken } from '../../auth/services/kitchen-pins.service';
 import type { PasswordService } from '../../auth/services/password.service';
 import type { TokensService } from '../../auth/services/tokens.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
@@ -29,6 +30,7 @@ interface FakeUser {
   createdAt: Date;
   kdsPinHash: string | null;
   kdsPinStoreId: string | null;
+  kdsPinBrandId: string | null;
 }
 
 interface StoreIdFilter {
@@ -45,6 +47,11 @@ function world() {
     { id: 'store-station', brandId: 'brand-1', name: 'Station' },
     { id: 'store-other', brandId: 'brand-2', name: 'Elsewhere' },
   ];
+  const brands = [
+    { id: 'brand-1', ownerId: 'owner' },
+    { id: 'brand-2', ownerId: 'root' },
+    { id: 'brand-empty', ownerId: null as string | null },
+  ];
   const at = new Date('2026-09-01T08:00:00Z');
   const user = (id: string, role: Role, extra: Partial<FakeUser> = {}): FakeUser => ({
     id,
@@ -57,10 +64,12 @@ function world() {
     createdAt: at,
     kdsPinHash: null,
     kdsPinStoreId: null,
+    kdsPinBrandId: null,
     ...extra,
   });
   const users: FakeUser[] = [
     user('owner', Role.BRAND_ADMIN),
+    user('root', Role.SUPER_ADMIN),
     user('manager-centre', Role.STORE_MANAGER),
     user('manager-station', Role.STORE_MANAGER),
     user('barista', Role.STAFF, { kdsPinHash: 'hash', kdsPinStoreId: 'store-station' }),
@@ -101,7 +110,7 @@ function world() {
               if (holder && !pivot.some((p) => p.userId === holder && p.storeId === s.id)) return false;
               return true;
             })
-            .map((s) => ({ id: s.id, name: s.name })),
+            .map((s) => ({ id: s.id, name: s.name, brandId: s.brandId })),
       ),
     },
     user: {
@@ -144,6 +153,10 @@ function world() {
           email: data.email ?? null,
           login: data.login ?? null,
           name: data.name ?? null,
+          passwordHash: data.passwordHash,
+          kdsPinHash: data.kdsPinHash ?? null,
+          kdsPinBrandId: data.kdsPinBrandId ?? null,
+          kdsPinStoreId: data.kdsPinStoreId ?? null,
         });
         users.push(created);
         return { id: created.id };
@@ -180,6 +193,26 @@ function world() {
         pivot.push(...fresh.map((d) => ({ ...d, createdAt: new Date('2026-10-04T08:00:00Z') })));
         return { count: fresh.length };
       }),
+      count: jest.fn(
+        async ({ where }: { where: { userId: string; storeId?: string; store?: { brandId: string } } }) =>
+          pivot.filter(
+            (p) =>
+              p.userId === where.userId &&
+              (where.storeId === undefined || p.storeId === where.storeId) &&
+              (where.store === undefined || stores.find((s) => s.id === p.storeId)?.brandId === where.store.brandId),
+          ).length,
+      ),
+    },
+    brand: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+        const brand = brands.find((b) => b.id === where.id);
+        if (!brand) return null;
+        const owner = users.find((u) => u.id === brand.ownerId) ?? null;
+        return {
+          owner: owner && { id: owner.id, role: owner.role, email: owner.email, name: owner.name },
+          stores: stores.filter((s) => s.brandId === brand.id).map((s) => ({ id: s.id })),
+        };
+      }),
     },
     passwordResetToken: {
       updateMany: jest.fn(async (_args: { where: { userId: string; consumedAt: null } }) => ({ count: 1 })),
@@ -211,19 +244,50 @@ function world() {
   };
   const tokens = { revokeAll: jest.fn(async () => 2) };
 
+  // The PIN rules of KitchenPinsService over the in-memory users: a PIN is
+  // `pin:<brand>:<digits>`, unique per brand.
+  const pinOf = (brandId: string, pin: string) => `pin:${brandId}:${pin}`;
+  const assertFree = (brandId: string, pin: string, except?: string) => {
+    if (users.some((u) => u.id !== except && u.kdsPinHash === pinOf(brandId, pin))) throw kdsPinTaken();
+  };
+  const kitchenPins = {
+    newPinData: jest.fn(async (brandId: string, pin: string, except?: string) => {
+      assertFree(brandId, pin, except);
+      return { kdsPinHash: pinOf(brandId, pin), kdsPinBrandId: brandId, kdsPinStoreId: null };
+    }),
+    assign: jest.fn(async (userId: string, brandId: string, pin: string) => {
+      assertFree(brandId, pin, userId);
+      const target = users.find((u) => u.id === userId);
+      if (target)
+        Object.assign(target, { kdsPinHash: pinOf(brandId, pin), kdsPinBrandId: brandId, kdsPinStoreId: null });
+    }),
+    clear: jest.fn(async (userId: string) => {
+      const target = users.find((u) => u.id === userId);
+      if (target) Object.assign(target, { kdsPinHash: null, kdsPinBrandId: null, kdsPinStoreId: null });
+    }),
+    brandOf: jest.fn(async (userId: string) => {
+      const own = new Set(
+        pivot.filter((p) => p.userId === userId).map((p) => stores.find((s) => s.id === p.storeId)?.brandId),
+      );
+      if (own.size > 1) throw kdsPinMultiBrand();
+      return [...own][0] ?? null;
+    }),
+  };
+
   const svc = new AdminStaffMembersService(
     prisma as unknown as PrismaService,
     passwords as unknown as PasswordService,
     scope as unknown as BrandScopeService,
     inviteMailer as unknown as StaffInviteMailer,
     tokens as unknown as TokensService,
+    kitchenPins as unknown as KitchenPinsService,
   );
   const storesOf = (userId: string) =>
     pivot
       .filter((p) => p.userId === userId)
       .map((p) => p.storeId)
       .sort();
-  return { svc, prisma, users, storesOf, inviteMailer, tokens };
+  return { svc, prisma, users, storesOf, inviteMailer, tokens, kitchenPins, pinOf };
 }
 
 const owner = { id: 'owner', role: Role.BRAND_ADMIN } as AuthenticatedUser;
@@ -728,6 +792,319 @@ describe('AdminStaffMembersService — staff as people', () => {
       const { svc, tokens } = world();
       await expect(svc.resetPassword('foreign-barista', owner, 'brand-1')).rejects.toBeInstanceOf(NotFoundException);
       await expect(svc.resetPassword('customer', owner, 'brand-1')).rejects.toBeInstanceOf(NotFoundException);
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
+    });
+  });
+  describe('the kitchen PIN on the person', () => {
+    it('sets one PIN for every store of the brand, replacing an old store PIN', async () => {
+      const { svc, users, kitchenPins, pinOf } = world();
+      const member = await svc.setKdsPin('barista', '480317', owner, 'brand-1');
+
+      expect(kitchenPins.assign).toHaveBeenCalledWith('barista', 'brand-1', '480317');
+      expect(users.find((u) => u.id === 'barista')).toMatchObject({
+        kdsPinHash: pinOf('brand-1', '480317'),
+        kdsPinBrandId: 'brand-1',
+        kdsPinStoreId: null,
+      });
+      // A brand PIN opens both stores: no single PIN store any more.
+      expect(member).toMatchObject({ hasKdsPin: true, kdsPinStoreId: null });
+    });
+
+    it('shows a brand PIN to a manager of any of its stores', async () => {
+      const { svc } = world();
+      await svc.setKdsPin('barista', '480317', owner, 'brand-1');
+      const seen = (await svc.list(managerCentre, 'brand-1')).find((m) => m.userId === 'barista');
+      expect(seen).toMatchObject({ hasKdsPin: true, kdsPinStoreId: null });
+    });
+
+    it('answers KDS_PIN_TAKEN when someone else at the brand has the PIN', async () => {
+      const { svc } = world();
+      await svc.setKdsPin('barista', '480317', owner, 'brand-1');
+      const error = await svc.setKdsPin('cook', '480317', owner, 'brand-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(codeOf(error)).toBe('KDS_PIN_TAKEN');
+    });
+
+    it('is only for kitchen staff and managers, and never for oneself', async () => {
+      const { svc, users } = world();
+      const cook = users.find((u) => u.id === 'cook');
+      if (cook) cook.role = Role.MENU_EDITOR;
+      await expect(svc.setKdsPin('cook', '480317', owner, 'brand-1')).rejects.toBeInstanceOf(NotFoundException);
+      const self = await svc.setKdsPin('manager-centre', '480317', managerCentre).catch((e: unknown) => e);
+      expect(codeOf(self)).toBe('STAFF_NOT_EDITABLE');
+    });
+
+    it('keeps the PIN of someone who also works for another brand out of the brand’s hands', async () => {
+      const { svc, prisma } = world();
+      await prisma.userStore.createMany({ data: [{ userId: 'cook', storeId: 'store-other' }] });
+      const error = await svc.setKdsPin('cook', '480317', owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      // A platform admin is told why it cannot be done.
+      const root = await svc.setKdsPin('cook', '480317', superAdmin).catch((e: unknown) => e);
+      expect(codeOf(root)).toBe('KDS_PIN_MULTI_BRAND');
+    });
+
+    it('resets the PIN, whichever kind it is', async () => {
+      const { svc, users, kitchenPins } = world();
+      const member = await svc.clearKdsPin('barista', owner, 'brand-1');
+      expect(kitchenPins.clear).toHaveBeenCalledWith('barista');
+      expect(users.find((u) => u.id === 'barista')).toMatchObject({ kdsPinHash: null, kdsPinStoreId: null });
+      expect(member.hasKdsPin).toBe(false);
+    });
+
+    it('leaves alone an old PIN of a store outside a manager’s reach', async () => {
+      const { svc, kitchenPins } = world();
+      // The barista's old PIN opens Station; this manager runs Centre.
+      await svc.clearKdsPin('barista', managerCentre);
+      expect(kitchenPins.clear).not.toHaveBeenCalled();
+    });
+
+    it('resets a brand PIN once the person works at none of the brand’s stores', async () => {
+      const { svc, kitchenPins } = world();
+      await svc.setKdsPin('cook', '480317', owner, 'brand-1');
+      await svc.setStores('cook', ['store-centre'], owner, 'brand-1');
+      expect(kitchenPins.clear).not.toHaveBeenCalled();
+      await svc.setStores('cook', [], owner, 'brand-1');
+      expect(kitchenPins.clear).toHaveBeenCalledWith('cook');
+    });
+  });
+
+  describe('invite kitchen staff with a PIN only', () => {
+    const pinOnly = (extra: Record<string, unknown> = {}) => ({
+      name: 'Ира',
+      role: 'STAFF' as const,
+      pin: '480317',
+      storeIds: ['store-centre', 'store-station'],
+      ...extra,
+    });
+
+    it('creates an account with no email, login or password, and the PIN for the brand', async () => {
+      const { svc, users, storesOf, inviteMailer, pinOf } = world();
+      const result = await svc.invite(pinOnly(), owner, 'brand-1');
+
+      const account = users.find((u) => u.id === result.userId);
+      expect(account).toMatchObject({
+        name: 'Ира',
+        role: Role.STAFF,
+        email: null,
+        login: null,
+        kdsPinHash: pinOf('brand-1', '480317'),
+        kdsPinBrandId: 'brand-1',
+      });
+      expect(account?.passwordHash).toBeUndefined();
+      expect(storesOf(result.userId)).toEqual(['store-centre', 'store-station']);
+      expect(result).toMatchObject({ inviteEmail: 'NO_EMAIL', accountCreated: true, hasKdsPin: true });
+      expect(inviteMailer.send).not.toHaveBeenCalled();
+    });
+
+    it('is for kitchen staff only', async () => {
+      const { svc, prisma } = world();
+      const error = await svc.invite(pinOnly({ role: 'STORE_MANAGER' }), owner, 'brand-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(codeOf(error)).toBe('STAFF_SIGN_IN_REQUIRED');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('creates nobody when the PIN is taken at the brand', async () => {
+      const { svc, prisma } = world();
+      await svc.setKdsPin('barista', '480317', owner, 'brand-1');
+      const error = await svc.invite(pinOnly(), owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('KDS_PIN_TAKEN');
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('turns a lost race for the PIN into KDS_PIN_TAKEN', async () => {
+      const { svc, prisma } = world();
+      prisma.user.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }),
+      );
+      const error = await svc.invite(pinOnly(), owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('KDS_PIN_TAKEN');
+    });
+
+    it('wants a name, and stores of one brand', async () => {
+      const { svc } = world();
+      await expect(svc.invite(pinOnly({ name: '  ' }), owner, 'brand-1')).rejects.toBeInstanceOf(BadRequestException);
+      const twoBrands = await svc
+        .invite(pinOnly({ storeIds: ['store-centre', 'store-other'] }), superAdmin)
+        .catch((e: unknown) => e);
+      expect(codeOf(twoBrands)).toBe('KDS_PIN_MULTI_BRAND');
+    });
+
+    it('still asks for a temporary password with an email or a login', async () => {
+      const { svc } = world();
+      await expect(
+        svc.invite({ email: 'ira@noname.md', role: 'STAFF', storeIds: ['store-centre'] }, owner, 'brand-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('sets the PIN given with an email invite, after checking it is free', async () => {
+      const { svc, users, kitchenPins, pinOf } = world();
+      const result = await svc.invite(
+        {
+          email: 'ira@noname.md',
+          role: 'STAFF',
+          tempPassword: 'temporary-1',
+          pin: '480317',
+          storeIds: ['store-centre'],
+        },
+        owner,
+        'brand-1',
+      );
+      expect(kitchenPins.newPinData).toHaveBeenCalledWith('brand-1', '480317', undefined);
+      expect(users.find((u) => u.id === result.userId)?.kdsPinHash).toBe(pinOf('brand-1', '480317'));
+      expect(result.hasKdsPin).toBe(true);
+    });
+
+    it('does not give a PIN to a menu editor', async () => {
+      const { svc } = world();
+      const error = await svc
+        .invite(
+          {
+            login: 'menu.anna',
+            role: 'MENU_EDITOR',
+            tempPassword: 'temporary-1',
+            pin: '480317',
+            storeIds: ['store-centre'],
+          },
+          owner,
+          'brand-1',
+        )
+        .catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('KDS_PIN_ROLE');
+    });
+  });
+
+  describe('a login for someone invited with a PIN only', () => {
+    it('adds a login with a temporary password to change', async () => {
+      const { svc, users } = world();
+      const invited = await svc.invite(
+        { name: 'Ира', role: 'STAFF', pin: '480317', storeIds: ['store-centre'] },
+        owner,
+        'brand-1',
+      );
+      const result = await svc.addSignIn(
+        invited.userId,
+        { login: 'Ira.K', tempPassword: 'temporary-1' },
+        owner,
+        'brand-1',
+      );
+
+      expect(users.find((u) => u.id === invited.userId)).toMatchObject({
+        login: 'ira.k',
+        passwordHash: 'bcrypt(temporary-1)',
+        passwordMustChange: true,
+      });
+      expect(result).toMatchObject({ login: 'ira.k', inviteEmail: 'NO_EMAIL', accountCreated: true });
+    });
+
+    it('adds an email and sends the invite letter', async () => {
+      const { svc, inviteMailer } = world();
+      const invited = await svc.invite(
+        { name: 'Ира', role: 'STAFF', pin: '480317', storeIds: ['store-centre'] },
+        owner,
+        'brand-1',
+      );
+      const result = await svc.addSignIn(
+        invited.userId,
+        { email: 'Ira@NoName.md', tempPassword: 'temporary-1' },
+        owner,
+        'brand-1',
+      );
+      expect(result).toMatchObject({ email: 'ira@noname.md', inviteEmail: 'SENT' });
+      expect(inviteMailer.send).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: invited.userId, email: 'ira@noname.md', newAccount: true }),
+      );
+    });
+
+    it('refuses someone who already signs in, and a taken login', async () => {
+      const { svc } = world();
+      const has = await svc
+        .addSignIn('cook', { login: 'cook.two', tempPassword: 'temporary-1' }, owner, 'brand-1')
+        .catch((e: unknown) => e);
+      expect(codeOf(has)).toBe('STAFF_HAS_SIGN_IN');
+
+      const invited = await svc.invite(
+        { name: 'Ира', role: 'STAFF', pin: '480317', storeIds: ['store-centre'] },
+        owner,
+        'brand-1',
+      );
+      const taken = await svc
+        .addSignIn(invited.userId, { login: 'cook@noname.md', tempPassword: 'temporary-1' }, owner, 'brand-1')
+        .catch((e: unknown) => e);
+      expect(codeOf(taken)).toBe('LOGIN_IN_USE');
+    });
+
+    it('sends the owner from «Сбросить пароль» to adding a login', async () => {
+      const { svc, tokens } = world();
+      const invited = await svc.invite(
+        { name: 'Ира', role: 'STAFF', pin: '480317', storeIds: ['store-centre'] },
+        owner,
+        'brand-1',
+      );
+      const error = await svc.resetPassword(invited.userId, owner, 'brand-1').catch((e: unknown) => e);
+      expect(codeOf(error)).toBe('STAFF_NO_SIGN_IN');
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetOwnerPassword', () => {
+    let logs: jest.SpyInstance;
+    beforeEach(() => {
+      logs = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    });
+    afterEach(() => logs.mockRestore());
+
+    it('lets the platform team reset the owner’s password: shown once, sessions ended, link mailed', async () => {
+      const { svc, users, tokens, inviteMailer, prisma } = world();
+      const result = await svc.resetOwnerPassword('brand-1', superAdmin);
+
+      expect(result.resetEmail).toBe('SENT');
+      expect(result.tempPassword).toHaveLength(12);
+      expect(users.find((u) => u.id === 'owner')).toMatchObject({
+        passwordHash: `bcrypt(${result.tempPassword})`,
+        passwordMustChange: true,
+      });
+      expect(tokens.revokeAll).toHaveBeenCalledWith('owner');
+      expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'owner', consumedAt: null },
+        data: { consumedAt: expect.any(Date) },
+      });
+      expect(inviteMailer.sendPasswordReset).toHaveBeenCalledWith({
+        userId: 'owner',
+        email: 'owner@noname.md',
+        name: 'owner',
+        storeIds: ['store-centre', 'store-station'],
+      });
+      const lines = logs.mock.calls.map((call) => String(call[0])).join(' ');
+      expect(lines).toContain('Owner password reset: user owner of brand brand-1 by root');
+      expect(lines).not.toContain(result.tempPassword);
+    });
+
+    it('still hands the password over when no mail can go out', async () => {
+      const { svc, inviteMailer } = world();
+      inviteMailer.sendPasswordReset.mockResolvedValueOnce('NOT_CONFIGURED');
+      await expect(svc.resetOwnerPassword('brand-1', superAdmin)).resolves.toMatchObject({
+        resetEmail: 'NOT_CONFIGURED',
+      });
+    });
+
+    it('is the platform team’s alone — not the owner’s, a manager’s or a barista’s', async () => {
+      const { svc, tokens } = world();
+      for (const caller of [owner, managerCentre, { id: 'cook', role: Role.STAFF } as AuthenticatedUser]) {
+        const error = await svc.resetOwnerPassword('brand-1', caller).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ForbiddenException);
+        expect(codeOf(error)).toBe('STAFF_NOT_EDITABLE');
+      }
+      expect(tokens.revokeAll).not.toHaveBeenCalled();
+    });
+
+    it('does not reset a platform admin who is set as an owner, nor a brand without an owner', async () => {
+      const { svc, tokens } = world();
+      const admin = await svc.resetOwnerPassword('brand-2', superAdmin).catch((e: unknown) => e);
+      expect(codeOf(admin)).toBe('STAFF_NOT_EDITABLE');
+      await expect(svc.resetOwnerPassword('brand-empty', superAdmin)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.resetOwnerPassword('brand-404', superAdmin)).rejects.toBeInstanceOf(NotFoundException);
       expect(tokens.revokeAll).not.toHaveBeenCalled();
     });
   });

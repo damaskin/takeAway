@@ -186,7 +186,9 @@ const ROLES: StaffRole[] = ['STORE_MANAGER', 'STAFF', 'MENU_EDITOR'];
                       <span class="chip" [class.chip-pin]="m.hasKdsPin" [class.chip-nopin]="!m.hasKdsPin">
                         {{
                           m.hasKdsPin
-                            ? ('admin.staff.pinAt' | translate: { store: pinStoreName(m) })
+                            ? m.kdsPinStoreId
+                              ? ('admin.staff.pinAt' | translate: { store: pinStoreName(m) })
+                              : ('admin.staff.pinAll' | translate)
                             : ('admin.staff.noPin' | translate)
                         }}
                       </span>

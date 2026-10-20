@@ -7,8 +7,22 @@ import type { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from './realtime.gateway';
 
 describe('RealtimeGateway store rooms', () => {
-  function gateway(role: string, scope: '*' | string[]) {
-    const prisma = { user: { findUnique: jest.fn().mockResolvedValue({ role }) } } as unknown as PrismaService;
+  /** `brandStores`: the stores of brand-1, where a PIN session's person may work. */
+  function gateway(role: string, scope: '*' | string[], brandStores: string[] = []) {
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ role }) },
+      userStore: {
+        findFirst: jest.fn(
+          async ({ where }: { where: { userId: string; storeId: string; store: { brandId: string } } }) =>
+            where.store.brandId === 'brand-1' &&
+            brandStores.includes(where.storeId) &&
+            scope !== '*' &&
+            scope.includes(where.storeId)
+              ? { storeId: where.storeId }
+              : null,
+        ),
+      },
+    } as unknown as PrismaService;
     const stores = { getScope: jest.fn().mockResolvedValue(scope) } as unknown as UserStoreScopeService;
     const gw = new RealtimeGateway({} as JwtService, {} as ConfigService, prisma, stores);
     const join = jest.fn();
@@ -33,12 +47,14 @@ describe('RealtimeGateway store rooms', () => {
     await expect(gw.subscribeToDispatch(client, { storeId: 'any' })).resolves.toEqual({ ok: true });
   });
 
-  it('keeps a kitchen PIN socket on its own store’s board and off the delivery queue', async () => {
-    const { gw, client } = gateway('STORE_MANAGER', ['store-1', 'store-2']);
-    (client.data as Record<string, unknown>)['kdsStoreId'] = 'store-1';
+  it('keeps a kitchen PIN socket on its person’s boards in the tablet’s brand and off the delivery queue', async () => {
+    // Works at store-1 and store-2 of brand-1, and at store-9 of another brand.
+    const { gw, client } = gateway('STORE_MANAGER', ['store-1', 'store-2', 'store-9'], ['store-1', 'store-2']);
+    (client.data as Record<string, unknown>)['kdsBrandId'] = 'brand-1';
 
-    await expect(gw.subscribeToKds(client, { storeId: 'store-2' })).resolves.toEqual({ ok: false });
     await expect(gw.subscribeToKds(client, { storeId: 'store-1' })).resolves.toEqual({ ok: true });
+    await expect(gw.subscribeToKds(client, { storeId: 'store-2' })).resolves.toEqual({ ok: true });
+    await expect(gw.subscribeToKds(client, { storeId: 'store-9' })).resolves.toEqual({ ok: false });
     await expect(gw.subscribeToDispatch(client, { storeId: 'store-1' })).resolves.toEqual({ ok: false });
   });
 });
@@ -47,7 +63,14 @@ describe('RealtimeGateway handshake', () => {
   function connect(user: { blockedAt: Date | null } | null) {
     const jwt = { verifyAsync: jest.fn().mockResolvedValue({ sub: 'u1' }) } as unknown as JwtService;
     const config = { get: jest.fn() } as unknown as ConfigService;
-    const prisma = { user: { findUnique: jest.fn().mockResolvedValue(user) } } as unknown as PrismaService;
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      store: {
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
+          where.id === 'gone' ? null : { brandId: 'brand-of-' + where.id },
+        ),
+      },
+    } as unknown as PrismaService;
     const gw = new RealtimeGateway(jwt, config, prisma, {} as UserStoreScopeService);
     const client = {
       handshake: { auth: { token: 'access-token' }, headers: {} },
@@ -63,17 +86,37 @@ describe('RealtimeGateway handshake', () => {
     await gw.handleConnection(socket);
     expect(client.join).toHaveBeenCalledWith('user:u1');
     expect(client.disconnect).not.toHaveBeenCalled();
-    expect(client.data['kdsStoreId']).toBeUndefined();
+    expect(client.data['kdsBrandId']).toBeUndefined();
   });
 
-  it('remembers the store of a kitchen PIN session from its token', async () => {
+  it('remembers the brand of a kitchen PIN session from its token', async () => {
     const { gw, client, socket } = connect({ blockedAt: null });
     (gw as unknown as { jwt: { verifyAsync: jest.Mock } }).jwt.verifyAsync.mockResolvedValue({
       sub: 'u1',
+      kdsb: 'brand-1',
       kds: 'store-1',
     });
     await gw.handleConnection(socket);
-    expect(client.data['kdsStoreId']).toBe('store-1');
+    expect(client.data['kdsBrandId']).toBe('brand-1');
+  });
+
+  it('takes the brand of the store from a PIN token issued before brands, and turns away one whose store is gone', async () => {
+    const old = connect({ blockedAt: null });
+    (old.gw as unknown as { jwt: { verifyAsync: jest.Mock } }).jwt.verifyAsync.mockResolvedValue({
+      sub: 'u1',
+      kds: 'store-1',
+    });
+    await old.gw.handleConnection(old.socket);
+    expect(old.client.data['kdsBrandId']).toBe('brand-of-store-1');
+
+    const orphan = connect({ blockedAt: null });
+    (orphan.gw as unknown as { jwt: { verifyAsync: jest.Mock } }).jwt.verifyAsync.mockResolvedValue({
+      sub: 'u1',
+      kds: 'gone',
+    });
+    await orphan.gw.handleConnection(orphan.socket);
+    expect(orphan.client.disconnect).toHaveBeenCalledWith(true);
+    expect(orphan.client.join).not.toHaveBeenCalled();
   });
 
   it.each([

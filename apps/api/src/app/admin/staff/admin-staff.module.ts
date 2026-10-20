@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../../auth/auth.module';
 import { MailModule } from '../../mail/mail.module';
+import { AdminBrandOwnerController } from './admin-brand-owner.controller';
 import { AdminKitchenDevicesController } from './admin-kitchen-devices.controller';
 import { AdminStaffMembersController } from './admin-staff-members.controller';
 import { AdminStaffMembersService } from './admin-staff-members.service';
@@ -11,7 +12,12 @@ import { StaffInviteMailer } from './staff-invite-mailer.service';
 
 @Module({
   imports: [AuthModule, MailModule],
-  controllers: [AdminStaffController, AdminStaffMembersController, AdminKitchenDevicesController],
+  controllers: [
+    AdminStaffController,
+    AdminStaffMembersController,
+    AdminKitchenDevicesController,
+    AdminBrandOwnerController,
+  ],
   providers: [AdminStaffService, AdminStaffMembersService, StaffInviteMailer],
 })
 export class AdminStaffModule {}

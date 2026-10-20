@@ -13,6 +13,21 @@ const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace
 describe('ChangePasswordPage', () => {
   let changePassword: jest.Mock;
 
+  /** The session in the browser before the page opens: forced after a temporary password, a PIN session, or a plain one. */
+  function seed(extra: Record<string, unknown> = {}): void {
+    localStorage.setItem(
+      'takeaway.admin.session',
+      JSON.stringify({
+        accessToken: 'a',
+        refreshToken: 'r',
+        accessTokenExpiresInSeconds: 900,
+        refreshTokenExpiresInSeconds: 86_400,
+        user: { id: 'u1', role: 'BRAND_ADMIN', email: 'owner@noname.md', phone: null, name: 'Иван', locale: 'RU' },
+        ...extra,
+      }),
+    );
+  }
+
   function render() {
     changePassword = jest.fn().mockReturnValue(of(undefined));
     TestBed.configureTestingModule({
@@ -33,7 +48,11 @@ describe('ChangePasswordPage', () => {
     fixture.detectChanges();
   }
 
-  beforeEach(() => TestBed.resetTestingModule());
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    localStorage.clear();
+  });
+  afterEach(() => localStorage.clear());
 
   it('says how long the new password has to be before anything is typed', () => {
     const fixture = render();
@@ -87,5 +106,39 @@ describe('ChangePasswordPage', () => {
     fixture.componentInstance.submit();
 
     expect(fixture.componentInstance.error()).toBe('Текущий пароль неверный. Введите пароль, с которым вы вошли.');
+  });
+
+  it('forced after a temporary password: no way back, and on to the cabinet once changed', () => {
+    seed({ mustChangePassword: true });
+    const fixture = render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('h1'))).toBe('Смените пароль');
+    expect(el.querySelector('[data-testid="change-password-back"]')).toBeNull();
+
+    type(fixture, { currentPassword: 'temp-pass-1', newPassword: 'my-own-pass', confirmPassword: 'my-own-pass' });
+    fixture.componentInstance.submit();
+    expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/']);
+  });
+
+  it('opened at will from «Сменить пароль»: a way back, and says it is done', () => {
+    seed();
+    const fixture = render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('h1'))).toBe('Сменить пароль');
+    expect(el.querySelector('[data-testid="change-password-back"]')).not.toBeNull();
+
+    type(fixture, { currentPassword: 'old-pass-1', newPassword: 'my-own-pass', confirmPassword: 'my-own-pass' });
+    fixture.componentInstance.submit();
+    fixture.detectChanges();
+    expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    expect(text(el.querySelector('[data-testid="change-password-done"]'))).toContain('Пароль изменён');
+  });
+
+  it('has no password to change in a kitchen PIN session', () => {
+    seed({ kdsBrandId: 'brand-1', kdsStoreId: 'store-1' });
+    const fixture = render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="change-password-pin-session"]')).not.toBeNull();
+    expect(el.querySelector('form')).toBeNull();
   });
 });

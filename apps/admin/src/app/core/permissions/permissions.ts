@@ -85,17 +85,18 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   feedback: [SA],
   settings: [SA, BA],
   integrations: [SA, BA],
-  // Telegram account-link drives order push notifications — MENU_EDITOR
-  // doesn't receive order events, so it's excluded.
-  telegramLink: [BA, SM, ST],
+  // Where work notifications go in Telegram (orders for the team, alerts
+  // and feedback for the platform team). MENU_EDITOR receives none.
+  telegramLink: [SA, BA, SM, ST],
 };
 
 /**
  * What a kitchen PIN session may open, whatever the role behind the PIN:
- * the board and the stop-list of its store. The API refuses it everything
- * else (KdsSessionGuard), so the cabinet does not offer it either.
+ * the board and the stop-list of the person's stores, and «Telegram» to
+ * link their own phone for order notifications. The API refuses it
+ * everything else (KdsSessionGuard), so the cabinet does not offer it either.
  */
-export const KITCHEN_SESSION_NAV: ReadonlyArray<NavKey> = ['kitchen', 'stopList'];
+export const KITCHEN_SESSION_NAV: ReadonlyArray<NavKey> = ['kitchen', 'stopList', 'telegramLink'];
 
 /**
  * Whether a role sees a section. `kitchenOnly` is a kitchen PIN session,

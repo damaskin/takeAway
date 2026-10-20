@@ -84,7 +84,7 @@ edge container's address. Keep all takeaway.md records proxied.
 Customer sign-in (Telegram, Google, Apple) and token refresh stay on the
 general budget on purpose: many customers share one carrier address. The API
 keeps its own, finer per-route limits behind nginx (password login 10/min,
-PIN 8/min plus a per-store lock, and so on).
+PIN 8/min plus a per-tablet and per-brand lock, and so on).
 
 A visitor over a limit gets `429` with the same JSON shape the API uses:
 

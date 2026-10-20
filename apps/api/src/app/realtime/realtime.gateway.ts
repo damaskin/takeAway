@@ -125,7 +125,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
     try {
       // RealtimeModule configures JwtService with the access secret.
-      const payload = await this.jwt.verifyAsync<{ sub: string; kds?: string }>(token);
+      const payload = await this.jwt.verifyAsync<{ sub: string; kdsb?: string; kds?: string }>(token);
       // Same rule as the HTTP JWT strategy: a blocked or deleted account's
       // access token is still signed and unexpired for a few minutes, and
       // must not open a socket in that window.
@@ -134,14 +134,29 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         client.disconnect(true);
         return;
       }
+      // A kitchen PIN session follows the kitchens of its person's stores in
+      // the tablet's brand, and nothing else.
+      const kitchenBrand = await this.kitchenBrandOf(payload);
       client.data['userId'] = payload.sub;
-      // A kitchen PIN session follows its own store's kitchen and nothing else.
-      if (typeof payload.kds === 'string' && payload.kds) client.data['kdsStoreId'] = payload.kds;
+      if (kitchenBrand) client.data['kdsBrandId'] = kitchenBrand;
       client.join(this.userRoom(payload.sub));
       this.logger.debug(`WS connected: ${client.id} (user ${payload.sub})`);
     } catch {
       client.disconnect(true);
     }
+  }
+
+  /**
+   * The brand a kitchen PIN token is bound to, or null for a password
+   * session. A token from before 2026-10-20 names only its store; the brand
+   * is that store's — and a token whose store is gone opens nothing.
+   */
+  private async kitchenBrandOf(payload: { kdsb?: string; kds?: string }): Promise<string | null> {
+    if (typeof payload.kdsb === 'string' && payload.kdsb) return payload.kdsb;
+    if (typeof payload.kds !== 'string' || !payload.kds) return null;
+    const store = await this.prisma.store.findUnique({ where: { id: payload.kds }, select: { brandId: true } });
+    if (!store) throw new Error('Kitchen session ended');
+    return store.brandId;
   }
 
   handleDisconnect(client: Socket): void {
@@ -256,8 +271,14 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   async subscribeToKds(client: Socket, body: { storeId: string }): Promise<{ ok: boolean }> {
     const userId = client.data['userId'] as string | undefined;
     if (!userId || !body?.storeId) return { ok: false };
-    const kdsStoreId = client.data['kdsStoreId'] as string | undefined;
-    if (kdsStoreId && kdsStoreId !== body.storeId) return { ok: false };
+    const kdsBrandId = client.data['kdsBrandId'] as string | undefined;
+    if (kdsBrandId) {
+      const works = await this.prisma.userStore.findFirst({
+        where: { userId, storeId: body.storeId, store: { brandId: kdsBrandId } },
+        select: { storeId: true },
+      });
+      if (!works) return { ok: false };
+    }
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -304,7 +325,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     const userId = client.data['userId'] as string | undefined;
     if (!userId || !body?.storeId) return { ok: false };
     // The delivery queue is not the kitchen board; a PIN session does not follow it.
-    if (client.data['kdsStoreId']) return { ok: false };
+    if (client.data['kdsBrandId']) return { ok: false };
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

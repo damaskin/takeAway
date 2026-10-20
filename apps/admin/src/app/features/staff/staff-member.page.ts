@@ -1,13 +1,22 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import {
+  STAFF_LOGIN_MAX_LENGTH,
+  STAFF_LOGIN_MIN_LENGTH,
+  STAFF_PASSWORD_MAX_LENGTH,
+  STAFF_PASSWORD_MIN_LENGTH,
+} from '@takeaway/shared-types';
+import { generateTempPassword, tempPasswordValid } from '@takeaway/utils';
 import { of, switchMap } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
+import { signInIdentifier } from '../../core/auth/sign-in-identifier';
 import { apiErrorCode } from '../../core/http/api-error';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import {
+  type StaffInviteResult,
   type StaffMember,
   type StaffPasswordReset,
   type StaffRole,
@@ -23,6 +32,11 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
  * One employee: their role, the stores they work at, the kitchen PIN and —
  * for the owner — «Сбросить пароль». Stores are ticked here rather than
  * people being added store by store.
+ *
+ * The PIN is the person's one PIN for every store they work at in the
+ * brand. A PIN set before that opens one store only; the page says so and
+ * offers a new one. Kitchen staff invited with a PIN only have no email,
+ * login or password: the owner can add a way into the cabinet here.
  */
 @Component({
   selector: 'app-staff-member',
@@ -96,28 +110,20 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
           @if (m.role === 'STAFF' || m.role === 'STORE_MANAGER') {
             <section class="pin" aria-labelledby="member-kitchen-pin">
               <h2 id="member-kitchen-pin">{{ 'admin.staff.kitchenPin' | translate }}</h2>
-              <p class="note">
-                @if (m.hasKdsPin) {
-                  {{ 'admin.staff.pinOpens' | translate: { store: pinStoreName() } }}
+              <p class="note" data-testid="member-pin-state">
+                @if (m.hasKdsPin && m.kdsPinStoreId) {
+                  {{ 'admin.staff.pinOpensLegacy' | translate: { store: pinStoreName() } }}
+                } @else if (m.hasKdsPin) {
+                  {{ 'admin.staff.pinOpensAll' | translate }}
+                } @else if (pinOnly()) {
+                  {{ 'admin.staff.pinNoneNoSignIn' | translate }}
                 } @else {
                   {{ 'admin.staff.pinNone' | translate }}
                 }
               </p>
               <p class="note">{{ 'admin.staff.pinHint' | translate }}</p>
-              @if (m.stores.length > 0) {
+              @if (m.editable && m.stores.length > 0) {
                 <form class="pin-row" (submit)="setPin($event)">
-                  <label class="field">
-                    <span class="field-label">{{ 'admin.staff.pinStore' | translate }}</span>
-                    <select
-                      class="field-input"
-                      [value]="pinStoreId()"
-                      (change)="pinStoreId.set($any($event.target).value)"
-                    >
-                      @for (s of m.stores; track s.id) {
-                        <option [value]="s.id" [selected]="s.id === pinStoreId()">{{ s.name }}</option>
-                      }
-                    </select>
-                  </label>
                   <label class="field">
                     <span class="field-label">{{ 'admin.stores.kitchen.pin' | translate }}</span>
                     <input
@@ -134,9 +140,7 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
                   </label>
                   <div class="pin-actions">
                     <button type="submit" class="primary" [disabled]="pinBusy() || !pinValid()">
-                      {{
-                        (pinReplaces() ? 'admin.stores.kitchen.changePin' : 'admin.stores.kitchen.setPin') | translate
-                      }}
+                      {{ (m.hasKdsPin ? 'admin.stores.kitchen.changePin' : 'admin.stores.kitchen.setPin') | translate }}
                     </button>
                     @if (m.hasKdsPin) {
                       <button type="button" class="danger-link" [disabled]="pinBusy()" (click)="clearPin()">
@@ -165,7 +169,66 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
             </section>
           }
 
-          @if (canResetPassword()) {
+          @if (canResetPassword() && (pinOnly() || signInAdded())) {
+            <section class="pin" aria-labelledby="member-sign-in" data-testid="member-sign-in">
+              <h2 id="member-sign-in">{{ 'admin.staff.signIn.title' | translate }}</h2>
+              @if (signInAdded(); as added) {
+                <p class="note">{{ 'admin.staff.signIn.done' | translate }}</p>
+                <dl class="contact">
+                  <div>
+                    <dt>{{ 'admin.staff.invited.login' | translate }}</dt>
+                    <dd>{{ added.login || added.email }}</dd>
+                  </div>
+                  <div>
+                    <dt>{{ 'admin.staff.tempPassword' | translate }}</dt>
+                    <dd data-testid="sign-in-temp-password">{{ signInPassword() }}</dd>
+                  </div>
+                </dl>
+              } @else {
+                <p class="note">{{ 'admin.staff.signIn.none' | translate }}</p>
+                <form class="pin-row" (submit)="addSignIn($event)">
+                  <label class="field">
+                    <span class="field-label">{{ 'admin.staff.identifier' | translate }}</span>
+                    <input
+                      type="text"
+                      autocomplete="off"
+                      autocapitalize="none"
+                      spellcheck="false"
+                      class="field-input"
+                      [value]="signInId()"
+                      (input)="signInId.set($any($event.target).value)"
+                    />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">{{ 'admin.staff.tempPassword' | translate }}</span>
+                    <input
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="field-input field-input-mono"
+                      [value]="signInPassword()"
+                      (input)="signInPassword.set($any($event.target).value)"
+                    />
+                  </label>
+                  <div class="pin-actions">
+                    <button type="button" class="outline" (click)="signInPassword.set(generate())">
+                      {{ 'admin.staff.generate' | translate }}
+                    </button>
+                    <button type="submit" class="primary" [disabled]="signInBusy() || !signInValid()">
+                      {{ 'admin.staff.signIn.add' | translate }}
+                    </button>
+                  </div>
+                </form>
+                <p class="note">{{ 'admin.staff.identifierHint' | translate: loginRule }}</p>
+                <p class="note">{{ 'admin.staff.tempPasswordRule' | translate: passwordRule }}</p>
+              }
+              @if (signInError(); as message) {
+                <p role="alert" class="err">{{ message }}</p>
+              }
+            </section>
+          }
+
+          @if (canResetPassword() && !pinOnly() && !signInAdded()) {
             <section class="pin" aria-labelledby="member-password">
               <h2 id="member-password">{{ 'admin.staff.password.title' | translate }}</h2>
               @if (passwordReset(); as r) {
@@ -369,7 +432,6 @@ export class StaffMemberPage {
   readonly role = signal<StaffRole>('STAFF');
   readonly selectedStores = signal<string[]>([]);
 
-  readonly pinStoreId = signal('');
   readonly pin = signal('');
   readonly pinBusy = signal(false);
   readonly pinSaved = signal(false);
@@ -381,7 +443,23 @@ export class StaffMemberPage {
   readonly passwordCopied = signal(false);
   readonly passwordError = signal<string | null>(null);
 
+  /** «Вход в кабинет» for someone with a PIN only: an email or a login and a temporary password. */
+  readonly signInId = signal('');
+  readonly signInPassword = signal('');
+  readonly signInBusy = signal(false);
+  readonly signInError = signal<string | null>(null);
+  readonly signInAdded = signal<StaffInviteResult | null>(null);
+
+  readonly loginRule = { min: STAFF_LOGIN_MIN_LENGTH, max: STAFF_LOGIN_MAX_LENGTH };
+  readonly passwordRule = { min: STAFF_PASSWORD_MIN_LENGTH, max: STAFF_PASSWORD_MAX_LENGTH };
+
   readonly isSelf = computed(() => this.member()?.userId === this.authStore.user()?.id);
+
+  /** Signs in with a kitchen PIN only: no email, no login, no password. */
+  readonly pinOnly = computed(() => {
+    const m = this.member();
+    return !!m && !m.email && !m.login;
+  });
 
   /** The owner (and the platform admin) can reset the password of someone they can edit. */
   readonly canResetPassword = computed(() => {
@@ -410,13 +488,15 @@ export class StaffMemberPage {
   readonly pinProblem = computed(() => newPinProblem(this.pin()));
   readonly pinValid = computed(() => this.pinProblem() === null);
 
-  /** A new PIN replaces the current one, whichever store that one opens. */
-  readonly pinReplaces = computed(() => !!this.member()?.hasKdsPin);
-
+  /** The one store an old PIN opens. */
   readonly pinStoreName = computed(() => {
     const m = this.member();
     return m?.stores.find((s) => s.id === m.kdsPinStoreId)?.name ?? '';
   });
+
+  readonly signInValid = computed(
+    () => signInIdentifier(this.signInId()) !== null && tempPasswordValid(this.signInPassword()),
+  );
 
   constructor() {
     effect(() => {
@@ -503,6 +583,35 @@ export class StaffMemberPage {
     );
   }
 
+  generate(): string {
+    return generateTempPassword();
+  }
+
+  /** Gives someone with a PIN only an email or a login and a temporary password for the cabinet. */
+  addSignIn(event: Event): void {
+    event.preventDefault();
+    const m = this.member();
+    const identifier = signInIdentifier(this.signInId());
+    if (!m || !identifier || !this.signInValid() || this.signInBusy()) return;
+    this.signInBusy.set(true);
+    this.signInError.set(null);
+    const body =
+      identifier.kind === 'email'
+        ? { email: identifier.value, tempPassword: this.signInPassword() }
+        : { login: identifier.value, tempPassword: this.signInPassword() };
+    this.staffApi.addSignIn(m.userId, body, this.brandCtx.activeId()).subscribe({
+      next: (result) => {
+        this.signInBusy.set(false);
+        this.signInAdded.set(result);
+        this.member.set(result);
+      },
+      error: (err) => {
+        this.signInBusy.set(false);
+        this.signInError.set(staffErrorMessage(err, this.translate));
+      },
+    });
+  }
+
   onPinInput(event: Event): void {
     const field = event.target as HTMLInputElement;
     const digits = field.value.replace(/\D/g, '').slice(0, 6);
@@ -511,15 +620,15 @@ export class StaffMemberPage {
     this.pinSaved.set(false);
   }
 
+  /** The person's one PIN for all their stores of the brand; it replaces the old one and signs them out of the tablets. */
   setPin(event: Event): void {
     event.preventDefault();
     const m = this.member();
-    const storeId = this.pinStoreId();
-    if (!m || !storeId || !this.pinValid() || this.pinBusy()) return;
+    if (!m || !this.pinValid() || this.pinBusy()) return;
     this.startPin();
-    this.staffApi.setKdsPin(storeId, m.userId, this.pin()).subscribe({
-      next: () => {
-        this.finishPin({ ...m, hasKdsPin: true, kdsPinStoreId: storeId });
+    this.staffApi.setMemberPin(m.userId, this.pin(), this.brandCtx.activeId()).subscribe({
+      next: (updated) => {
+        this.finishPin(updated);
         this.pin.set('');
       },
       error: (err) => this.failPin(err),
@@ -528,12 +637,12 @@ export class StaffMemberPage {
 
   clearPin(): void {
     const m = this.member();
-    if (!m?.kdsPinStoreId || this.pinBusy()) return;
+    if (!m?.hasKdsPin || this.pinBusy()) return;
     const name = m.name || m.email || m.login || '';
     if (!window.confirm(this.translate.instant('admin.stores.kitchen.resetConfirm', { name }))) return;
     this.startPin();
-    this.staffApi.clearKdsPin(m.kdsPinStoreId, m.userId).subscribe({
-      next: () => this.finishPin({ ...m, hasKdsPin: false, kdsPinStoreId: null }),
+    this.staffApi.clearMemberPin(m.userId, this.brandCtx.activeId()).subscribe({
+      next: (updated) => this.finishPin(updated),
       error: (err) => this.failPin(err),
     });
   }
@@ -543,6 +652,8 @@ export class StaffMemberPage {
     this.error.set(null);
     this.passwordReset.set(null);
     this.passwordError.set(null);
+    this.signInAdded.set(null);
+    this.signInError.set(null);
     this.catalog.listStores(brandId ?? undefined).subscribe({
       next: (list) => this.stores.set(list),
       error: (err) => this.error.set(staffErrorMessage(err, this.translate)),
@@ -552,7 +663,6 @@ export class StaffMemberPage {
         this.member.set(m);
         this.role.set(m.role);
         this.selectedStores.set(m.stores.map((s) => s.id));
-        this.pinStoreId.set(m.kdsPinStoreId ?? m.stores[0]?.id ?? '');
         this.loading.set(false);
       },
       error: (err) => {

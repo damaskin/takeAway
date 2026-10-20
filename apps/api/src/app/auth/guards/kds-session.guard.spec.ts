@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 
 import { KdsController } from '../../kds/kds.controller';
+import { TelegramNotifyLinkController } from '../../telegram-bot/telegram-notify-link.controller';
 import { AdminStaffController } from '../../admin/staff/admin-staff.controller';
 import { KdsSessionAllowed } from '../decorators/kds-session.decorator';
 import type { AuthenticatedUser } from '../strategies/jwt.strategy';
@@ -36,7 +37,13 @@ function contextFor(
   } as unknown as ExecutionContext;
 }
 
-const pinSession: Partial<AuthenticatedUser> = { id: 'barista', role: Role.STORE_MANAGER, kdsStoreId: 'store-1' };
+/** A PIN session at brand-1 of someone who works at store-1 and store-2 there. */
+const pinSession: Partial<AuthenticatedUser> = {
+  id: 'barista',
+  role: Role.STORE_MANAGER,
+  kdsBrandId: 'brand-1',
+  kdsStoreIds: ['store-1', 'store-2'],
+};
 const passwordSession: Partial<AuthenticatedUser> = { id: 'owner', role: Role.STORE_MANAGER };
 
 function code(fn: () => unknown): unknown {
@@ -65,21 +72,36 @@ describe('KdsSessionGuard', () => {
     expect(code(() => guard.canActivate(contextFor(pinSession, fixture)))).toBe('KDS_SESSION_LIMITED');
   });
 
-  it('lets a PIN session reach a marked route for its own store only', () => {
+  it('lets a PIN session reach a marked route for its own stores only', () => {
     const stopList = { cls: Fixture, handler: Fixture.prototype.stopList };
     expect(guard.canActivate(contextFor(pinSession, stopList, { params: { id: 'store-1' } }))).toBe(true);
-    expect(code(() => guard.canActivate(contextFor(pinSession, stopList, { params: { id: 'store-2' } })))).toBe(
+    expect(guard.canActivate(contextFor(pinSession, stopList, { params: { id: 'store-2' } }))).toBe(true);
+    expect(code(() => guard.canActivate(contextFor(pinSession, stopList, { params: { id: 'store-3' } })))).toBe(
       'KDS_SESSION_STORE',
     );
     expect(guard.canActivate(contextFor(pinSession, { cls: Fixture, handler: Fixture.prototype.me }))).toBe(true);
   });
 
-  it('opens the kitchen board for the PIN store and refuses other stores', () => {
+  it('switches the kitchen board between the person’s stores and refuses the others', () => {
     const board = { cls: KdsController, handler: KdsController.prototype.list };
     expect(guard.canActivate(contextFor(pinSession, board, { query: { storeId: 'store-1' } }))).toBe(true);
+    expect(guard.canActivate(contextFor(pinSession, board, { query: { storeId: 'store-2' } }))).toBe(true);
     expect(code(() => guard.canActivate(contextFor(pinSession, board, { query: { storeId: 'store-9' } })))).toBe(
       'KDS_SESSION_STORE',
     );
+  });
+
+  it('refuses every store to a PIN session whose person works nowhere in the brand any more', () => {
+    const board = { cls: KdsController, handler: KdsController.prototype.list };
+    const gone = { ...pinSession, kdsStoreIds: [] };
+    expect(code(() => guard.canActivate(contextFor(gone, board, { query: { storeId: 'store-1' } })))).toBe(
+      'KDS_SESSION_STORE',
+    );
+  });
+
+  it('opens the Telegram link page for a PIN session', () => {
+    const telegram = { cls: TelegramNotifyLinkController, handler: TelegramNotifyLinkController.prototype.issue };
+    expect(guard.canActivate(contextFor(pinSession, telegram))).toBe(true);
   });
 
   it('keeps a manager’s PIN session away from staff and PIN management', () => {

@@ -124,11 +124,11 @@ describe('KitchenDeviceService', () => {
     expect(devices).toHaveLength(0);
   });
 
-  it('keeps a PIN session to its own store', async () => {
+  it('keeps a PIN session to its own stores', async () => {
     const { service } = harness({ storeScope: ['store-1', 'store-2'] });
-    await expect(service.bindForUser(person(Role.STAFF, { kdsStoreId: 'store-1' }), 'store-2')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    const pinSession = person(Role.STAFF, { kdsBrandId: 'brand-1', kdsStoreIds: ['store-1'] });
+    await expect(service.bindForUser(pinSession, 'store-2')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.bindForUser(pinSession, 'store-1')).resolves.toMatchObject({ brandId: 'brand-1' });
   });
 
   it('refuses customers and menu editors', async () => {
@@ -159,7 +159,10 @@ describe('KitchenDeviceService', () => {
     );
     await expect(service.createPairingCode(person(Role.STAFF), 'brand-1')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(
-      service.createPairingCode(person(Role.STORE_MANAGER, { kdsStoreId: 'store-1' }), 'brand-1'),
+      service.createPairingCode(
+        person(Role.STORE_MANAGER, { kdsBrandId: 'brand-1', kdsStoreIds: ['store-1'] }),
+        'brand-1',
+      ),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -175,12 +178,17 @@ describe('KitchenDeviceService', () => {
     });
     const where = prisma.store.findMany.mock.calls[0]?.[0].where;
     expect(where.brandId).toBe('brand-1');
-    expect(where.kdsPinUsers.some).toMatchObject({
+    const holder = {
       role: { in: [Role.STAFF, Role.STORE_MANAGER] },
       blockedAt: null,
       kdsPinHash: { not: null },
       NOT: { kdsPinHash: { startsWith: 'unset:' } },
-    });
+    };
+    // Someone with the brand's PIN working at the store, or an old PIN of that store.
+    expect(where.OR).toEqual([
+      { userStores: { some: { user: { ...holder, kdsPinBrandId: 'brand-1' } } } },
+      { kdsPinUsers: { some: { ...holder, kdsPinBrandId: null } } },
+    ]);
   });
 
   it('answers KDS_DEVICE_UNKNOWN for no token, a made-up one, or an unbound tablet', async () => {

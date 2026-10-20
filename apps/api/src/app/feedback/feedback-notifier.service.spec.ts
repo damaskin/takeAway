@@ -35,8 +35,8 @@ describe('FeedbackNotifier', () => {
       feedback: { findUnique: jest.fn().mockResolvedValue(feedback()) },
       user: {
         findMany: jest.fn().mockResolvedValue([
-          { id: 'root', email: 'root@takeaway.md', locale: Locale.EN, telegramUserId: 111n },
-          { id: 'ops', email: null, locale: Locale.RU, telegramUserId: null },
+          { id: 'root', email: 'root@takeaway.md', locale: Locale.EN, telegramNotifyChatId: 111n },
+          { id: 'ops', email: null, locale: Locale.RU, telegramNotifyChatId: null },
         ]),
       },
     };
@@ -157,7 +157,9 @@ describe('FeedbackNotifier', () => {
 
   it('warns when nobody at all can be told in Telegram', async () => {
     opsChat.enabled = false;
-    prisma.user.findMany.mockResolvedValue([{ id: 'root', email: null, locale: Locale.RU, telegramUserId: null }]);
+    prisma.user.findMany.mockResolvedValue([
+      { id: 'root', email: null, locale: Locale.RU, telegramNotifyChatId: null },
+    ]);
     await notifier.feedbackReceived('fb-1');
     expect(notifications.deliver).not.toHaveBeenCalled();
     expect(warnings).toHaveBeenCalled();

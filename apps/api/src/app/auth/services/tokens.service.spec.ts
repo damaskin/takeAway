@@ -50,6 +50,11 @@ function setup() {
         where.id === 'gone' ? null : { blockedAt: blocked.has(where.id) ? new Date() : null },
       ),
     },
+    store: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === 'gone-store' ? null : { brandId: `brand-of-${where.id}` },
+      ),
+    },
   };
   const tokens = new TokensService(
     new JwtService({ secret: 'test-access-secret' }),
@@ -117,18 +122,54 @@ describe('TokensService', () => {
     expect([...store.keys()]).toEqual([]);
   });
 
-  it('keeps a kitchen PIN session narrowed to its store across refreshes', async () => {
+  it('keeps a kitchen PIN session bound to its brand across refreshes', async () => {
     const { tokens } = setup();
     const jwt = new JwtService({ secret: 'test-access-secret' });
-    const pin = await tokens.issue('ana', 'device-1', { kdsStoreId: 'store-1' });
-    expect(jwt.decode(pin.accessToken)).toMatchObject({ sub: 'ana', kds: 'store-1' });
+    const pin = await tokens.issue('ana', 'device-1', { kdsBrandId: 'brand-1', kdsStoreId: 'store-1' });
+    expect(jwt.decode(pin.accessToken)).toMatchObject({ sub: 'ana', kdsb: 'brand-1', kds: 'store-1' });
 
     const refreshed = await tokens.rotate(pin.refreshToken);
-    expect(jwt.decode(refreshed.accessToken)).toMatchObject({ sub: 'ana', kds: 'store-1' });
+    expect(jwt.decode(refreshed.accessToken)).toMatchObject({ sub: 'ana', kdsb: 'brand-1', kds: 'store-1' });
 
     // A password session carries no such claim.
     const full = await tokens.issue('ana', 'device-2');
     expect(jwt.decode(full.accessToken)).not.toHaveProperty('kds');
+    expect(jwt.decode(full.accessToken)).not.toHaveProperty('kdsb');
+  });
+
+  it('carries a PIN session from before brands on with its store’s brand, and ends one whose store is gone', async () => {
+    const { tokens, store } = setup();
+    const jwt = new JwtService({ secret: 'test-access-secret' });
+    /** Rewrites the stored sessions the way a build before 2026-10-20 kept them: the store alone. */
+    const forgetBrand = () => {
+      for (const [key, value] of store) {
+        const session = JSON.parse(value) as Record<string, unknown>;
+        delete session['kdsBrandId'];
+        store.set(key, JSON.stringify(session));
+      }
+    };
+
+    const old = await tokens.issue('ana', 'device-1', { kdsBrandId: 'brand-1', kdsStoreId: 'store-1' });
+    forgetBrand();
+    const refreshed = await tokens.rotate(old.refreshToken);
+    expect(jwt.decode(refreshed.accessToken)).toMatchObject({ kdsb: 'brand-of-store-1', kds: 'store-1' });
+
+    const orphan = await tokens.issue('bob', 'device-2', { kdsBrandId: 'brand-1', kdsStoreId: 'gone-store' });
+    forgetBrand();
+    await expect(tokens.rotate(orphan.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('revokeKitchenSessions ends the PIN sessions and leaves the password ones', async () => {
+    const { tokens, store } = setup();
+    const tablet = await tokens.issue('ana', 'device-1', { kdsBrandId: 'brand-1', kdsStoreId: 'store-1' });
+    const laptop = await tokens.issue('ana', 'device-2');
+    const bob = await tokens.issue('bob', 'device-3', { kdsBrandId: 'brand-1' });
+
+    await expect(tokens.revokeKitchenSessions('ana')).resolves.toBe(1);
+    expect(store.size).toBe(2);
+    await expect(tokens.rotate(tablet.refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(tokens.rotate(laptop.refreshToken)).resolves.toMatchObject({ refreshToken: expect.any(String) });
+    await expect(tokens.rotate(bob.refreshToken)).resolves.toMatchObject({ refreshToken: expect.any(String) });
   });
 
   it('refuses to rotate when the user row is gone', async () => {

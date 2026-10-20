@@ -308,50 +308,66 @@ enum PosSyncJobStatus {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model User {
-  id                 String    @id @default(cuid())
-  phone              String?   @unique
-  email              String?   @unique
+  id                   String    @id @default(cuid())
+  phone                String?   @unique
+  email                String?   @unique
   /// Staff sign-in name for someone without an email, set by the owner on
   /// the invite form. Lowercase, 3–32 of [a-z0-9._-] — never an '@', so it
   /// can't be mistaken for (or collide with) an email. Such an account has
   /// no password-reset mail: only the owner resets its password.
-  login              String?   @unique
+  login                String?   @unique
   /// When `email` was last proven to belong to this account — a Google or
   /// Apple sign-in that vouched for the same verified address, or a sign-in
   /// code mailed to it. Null for an address typed into the profile. Only a
   /// verified address lets a social or email-code sign-in join an existing
   /// profile by email; editing the email clears it.
-  emailVerifiedAt    DateTime?
+  emailVerifiedAt      DateTime?
   /// bcrypt hash. Staff-only (SUPER_ADMIN / BRAND_ADMIN / STORE_MANAGER /
   /// STAFF / RIDER) — CUSTOMER users authenticate via Telegram and never
   /// set a password.
-  passwordHash       String?
+  passwordHash         String?
   /// Set to `true` when an admin invites the user with a temp password.
   /// The admin app routes a forced /change-password flow on login until
   /// the user rotates the hash, at which point this flips to `false`.
-  passwordMustChange Boolean   @default(false)
-  name               String?
-  dateOfBirth        DateTime?
-  avatarUrl          String?
-  locale             Locale    @default(EN)
-  currency           Currency  @default(USD)
-  telegramUserId     BigInt?   @unique
-  role               Role      @default(CUSTOMER)
+  passwordMustChange   Boolean   @default(false)
+  name                 String?
+  dateOfBirth          DateTime?
+  avatarUrl            String?
+  locale               Locale    @default(EN)
+  currency             Currency  @default(USD)
+  /// The Telegram account this user signs in with (Mini App, Telegram
+  /// Login). Customers only: a staff account never signs in with Telegram,
+  /// and a Telegram sign-in that finds one moves the id off it (see
+  /// AuthService.finalizeTelegramSignIn).
+  telegramUserId       BigInt?   @unique
+  /// Where the bot sends this account's work notifications — new orders,
+  /// store alerts, moderation verdicts. Staff, owners and platform admins
+  /// link it through the bot (`/start link_<code>`) and unlink it in the
+  /// cabinet. Separate from `telegramUserId` so linking notifications never
+  /// touches anybody's sign-in, and not unique: one person may get the
+  /// messages of two accounts in one chat.
+  telegramNotifyChatId BigInt?
+  role                 Role      @default(CUSTOMER)
   /// Customer-facing push toggles. Staff push (new-order for a brand,
   /// rider-assigned) ignores these — it's operational, not promotional.
-  notifyOrderUpdates Boolean   @default(true)
-  notifyPromotions   Boolean   @default(true)
-  blockedAt          DateTime?
-  /// HMAC-SHA256 of (storeId + pin + KDS_PIN_SECRET). Staff sign in to the KDS
-  /// app on a shared tablet by typing this short PIN on a per-store lockscreen.
-  /// Scoped to one store at a time — staff working two stores get two PINs
-  /// or use email+password instead. NULL when the user has no KDS access.
-  kdsPinHash         String?
-  kdsPinStoreId      String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  notifyOrderUpdates   Boolean   @default(true)
+  notifyPromotions     Boolean   @default(true)
+  blockedAt            DateTime?
+  /// Kitchen PIN, as HMAC-SHA256 keyed by KDS_PIN_SECRET (KdsPinService).
+  /// Staff unlock a shared kitchen tablet with it. One PIN per person for
+  /// every store they work at in the brand: `kdsPinBrandId` is set and the
+  /// hash is of `${brandId}|${pin}`, unique per brand. A PIN set before
+  /// 2026-10-20 is still store-scoped — `kdsPinStoreId` set, hash of
+  /// `${storeId}|${pin}` — and keeps working until it is replaced or reset.
+  /// NULL when the person has no kitchen PIN.
+  kdsPinHash           String?
+  kdsPinStoreId        String?
+  kdsPinBrandId        String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   kdsPinStore         Store?               @relation("KdsPinStore", fields: [kdsPinStoreId], references: [id], onDelete: SetNull)
+  kdsPinBrand         Brand?               @relation("KdsPinBrand", fields: [kdsPinBrandId], references: [id], onDelete: SetNull)
   devices             Device[]
   oauthAccounts       OAuthAccount[]
   passwordResetTokens PasswordResetToken[]
@@ -602,6 +618,7 @@ model Brand {
   commissionRates BrandCommissionRate[]
   payouts         BrandPayout[]
   kitchenDevices  KitchenDevice[]
+  kdsPinUsers     User[]                @relation("KdsPinBrand")
 
   /// Inbox items of its push campaigns — the brand is their sender.
   inboxNotifications CustomerNotification[]

@@ -119,6 +119,10 @@ production — run it only when that is what you want.
 - **Kitchen PIN** — works: staging shares production's `KDS_PIN_SECRET` on
   purpose, so the copied PINs are valid. Production gets a fresh secret at its
   clean start.
+- **Telegram for staff notifications** — linked through @takeaway_test_bot:
+  staging's API registers the test bot's webhook
+  (`TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook`,
+  `TELEGRAM_WEBHOOK_SECRET`) at every start. See docs/staff-access.md.
 
 ## Production's clean start (October 2026)
 
@@ -192,11 +196,18 @@ edge serves for every takeaway.md name.
 8. GitHub → Settings → Environments: `staging`, and `production` with the
    owner as required reviewer and deployments limited to `v*` tags.
 
+Added later (2026-10-20, the bot webhook for staff notifications): the
+bootstrap writes `TELEGRAM_WEBHOOK_URL` and `TELEGRAM_WEBHOOK_SECRET` into a
+new staging `.env.production`; the existing one gets the two lines by hand —
+`TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook` and
+`TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 32)` — then the next deploy (or
+`docker compose … up -d --force-recreate api`) registers the webhook.
+
 ## Not on staging yet
 
 - **Card payments.** The fake bank from `docker-compose.sandbox.yml`
   (`agro-mock`) can be wired in so test orders are paid with test cards.
-- **Google and Apple sign-in** — need the test-* origins registered in Google
+- **Google and Apple sign-in** — need the test-\* origins registered in Google
   Cloud and Apple Developer.
 - **A staging build of the app** pointing at test-api.takeaway.md.
 - **Email** — no SMTP in either environment.

@@ -16,11 +16,9 @@ const ALL_KEYS = Object.keys(ADMIN_ROLES) as NavKey[];
 
 describe('permissions map', () => {
   describe('canAccess', () => {
-    it('grants SUPER_ADMIN every section except the per-brand telegram link', () => {
-      // telegramLink binds a brand staff account to Telegram for order
-      // pushes — a global SUPER_ADMIN has no brand of their own to link.
+    it('grants SUPER_ADMIN every section, the Telegram link for its alerts included', () => {
       for (const key of ALL_KEYS) {
-        expect(canAccess('SUPER_ADMIN', key)).toBe(key !== 'telegramLink');
+        expect(canAccess('SUPER_ADMIN', key)).toBe(true);
       }
     });
 
@@ -157,7 +155,8 @@ describe('permissions map', () => {
   });
 
   describe('kitchen PIN session', () => {
-    it('opens only the board and the stop-list, whatever the role behind the PIN', () => {
+    it('opens only the board, the stop-list and the Telegram link, whatever the role behind the PIN', () => {
+      expect([...KITCHEN_SESSION_NAV]).toEqual(['kitchen', 'stopList', 'telegramLink']);
       for (const key of ALL_KEYS) {
         const expected = KITCHEN_SESSION_NAV.includes(key);
         expect(canAccess('STORE_MANAGER', key, true)).toBe(expected);
@@ -165,6 +164,7 @@ describe('permissions map', () => {
       }
       expect(canAccess('STORE_MANAGER', 'staff', true)).toBe(false);
       expect(canAccess('STORE_MANAGER', 'orders', true)).toBe(false);
+      expect(canAccess('STAFF', 'telegramLink', true)).toBe(true);
     });
   });
 

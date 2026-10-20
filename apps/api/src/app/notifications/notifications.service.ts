@@ -223,8 +223,18 @@ export class NotificationsService {
    * bound to the order (`notifyRiderReady`).
    */
   async notifyRider(orderLike: OrderLike, riderId: string, kind: 'assigned' | 'ready'): Promise<void> {
-    const recipient = await this.loadRecipient(riderId);
-    if (!recipient) return;
+    // A rider is staff: their work messages go to the notification chat.
+    const rider = await this.prisma.user.findUnique({
+      where: { id: riderId },
+      select: { id: true, locale: true, telegramNotifyChatId: true, blockedAt: true },
+    });
+    if (!rider || rider.blockedAt) return;
+    const recipient: PushRecipient = {
+      userId: rider.id,
+      locale: rider.locale,
+      telegramUserId: rider.telegramNotifyChatId,
+      pushTokens: [],
+    };
     const codeTag = `#${orderLike.orderCode}`;
     const message: PushMessage =
       kind === 'assigned'
@@ -248,7 +258,7 @@ export class NotificationsService {
    * stores. Targets:
    *   - BRAND_ADMIN(s) who own the brand.
    *   - STORE_MANAGER / STAFF assigned to the store via the UserStore pivot.
-   * Only users with a linked `telegramUserId` actually receive a push —
+   * Only users with a linked notification chat actually receive a push —
    * the rest are silently skipped (they rely on the in-app realtime UI).
    */
   async notifyBrandStaffNewOrder(order: OrderLike, payment: { paid: boolean } = { paid: true }): Promise<void> {
@@ -289,9 +299,10 @@ export class NotificationsService {
 
   /**
    * A Telegram message to the people of one store: everyone assigned to it
-   * on the Staff page, the brand owner, or both. Only people with a linked
-   * Telegram account and an unblocked account receive it; the rest rely on
-   * the cabinet. Returns how many Telegram accepted it for.
+   * on the Staff page, the brand owner, or both. Only people who linked a
+   * notification chat (`telegramNotifyChatId`, «Telegram» in the cabinet)
+   * and are not blocked receive it; the rest rely on the cabinet. Returns
+   * how many Telegram accepted it for.
    */
   async notifyStoreTeam(storeId: string, message: StoreTeamMessage, audience: StoreTeamAudience): Promise<number> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
@@ -301,8 +312,8 @@ export class NotificationsService {
     if (audience.owner) who.push({ role: 'BRAND_ADMIN', ownedBrands: { some: { id: store.brandId } } });
     if (audience.staff) who.push({ userStores: { some: { storeId } } });
     const recipients = await this.prisma.user.findMany({
-      where: { telegramUserId: { not: null }, blockedAt: null, OR: who },
-      select: { id: true, locale: true, telegramUserId: true },
+      where: { telegramNotifyChatId: { not: null }, blockedAt: null, OR: who },
+      select: { id: true, locale: true, telegramNotifyChatId: true },
     });
     if (recipients.length === 0) return 0;
 
@@ -314,7 +325,10 @@ export class NotificationsService {
     };
     const results = await Promise.allSettled(
       recipients.map((u) =>
-        this.telegram.send({ userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] }, push),
+        this.telegram.send(
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramNotifyChatId, pushTokens: [] },
+          push,
+        ),
       ),
     );
     return results.filter((r) => r.status === 'fulfilled' && r.value).length;
@@ -464,12 +478,12 @@ export class NotificationsService {
   async notifyBrandAdminPosError(input: { brandId: string; orderCode: string; message: string }): Promise<void> {
     const recipients = await this.prisma.user.findMany({
       where: {
-        telegramUserId: { not: null },
+        telegramNotifyChatId: { not: null },
         blockedAt: null,
         role: 'BRAND_ADMIN',
         ownedBrands: { some: { id: input.brandId } },
       },
-      select: { id: true, locale: true, telegramUserId: true },
+      select: { id: true, locale: true, telegramNotifyChatId: true },
     });
     if (recipients.length === 0) return;
 
@@ -482,7 +496,7 @@ export class NotificationsService {
     await Promise.allSettled(
       recipients.map((u) =>
         this.telegram.send(
-          { userId: u.id, locale: u.locale, telegramUserId: u.telegramUserId, pushTokens: [] },
+          { userId: u.id, locale: u.locale, telegramUserId: u.telegramNotifyChatId, pushTokens: [] },
           message,
         ),
       ),

@@ -68,7 +68,13 @@ describe('CampaignModerationService', () => {
     name: string;
     locale: 'RU' | 'EN';
     stores: Array<{ timezone: string }>;
-    owner: { id: string; email: string | null; locale: string; telegramUserId: bigint | null; blockedAt: null } | null;
+    owner: {
+      id: string;
+      email: string | null;
+      locale: string;
+      telegramNotifyChatId: bigint | null;
+      blockedAt: null;
+    } | null;
   };
   let service: CampaignModerationService;
   let errors: jest.SpyInstance;
@@ -113,7 +119,7 @@ describe('CampaignModerationService', () => {
       name: 'Кофейня Ромашка',
       locale: 'RU',
       stores: [{ timezone: 'Europe/Chisinau' }],
-      owner: { id: 'owner', email: 'owner@romashka.md', locale: 'RU', telegramUserId: 42n, blockedAt: null },
+      owner: { id: 'owner', email: 'owner@romashka.md', locale: 'RU', telegramNotifyChatId: 42n, blockedAt: null },
     };
     service = new CampaignModerationService(
       prisma as unknown as PrismaService,
@@ -260,7 +266,7 @@ describe('CampaignModerationService', () => {
     });
 
     it('skips what the owner cannot get: no Telegram, no SMTP — and a brand without an owner', async () => {
-      if (brandRow.owner) brandRow.owner.telegramUserId = null;
+      if (brandRow.owner) brandRow.owner.telegramNotifyChatId = null;
       mail.isConfigured.mockReturnValue(false);
       await service.approve('c1', root, NOW);
       await flush();

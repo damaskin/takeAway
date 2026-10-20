@@ -1,25 +1,13 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { IsString, Matches } from 'class-validator';
 
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { KdsPinService } from '../../auth/services/kds-pin.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminStaffService } from './admin-staff.service';
-import { AddStaffDto, ChangeStaffRoleDto } from './dto/admin-staff.dto';
-
-/**
- * A new PIN is exactly 6 digits — PINs set earlier with 4 or 5 keep working
- * on the tablet, but none are handed out any more. The digits-only shape is
- * checked here; the "not 123456" rule in the handler, with its own code.
- */
-class SetKdsPinDto {
-  @IsString()
-  @Matches(/^[0-9]{6}$/, { message: 'pin must be exactly 6 digits' })
-  pin!: string;
-}
+import { AddStaffDto, ChangeStaffRoleDto, SetStaffPinDto } from './dto/admin-staff.dto';
 
 @ApiTags('admin: staff')
 @ApiBearerAuth()
@@ -66,13 +54,18 @@ export class AdminStaffController {
     await this.staff.remove(storeId, userId, user);
   }
 
+  /**
+   * The store-centric way to set a PIN, kept for admin builds before
+   * 2026-10-20: it sets the person's one PIN for every store of the brand,
+   * as `PUT /admin/staff/:userId/kds-pin` does.
+   */
   @Put(':userId/kds-pin')
   @HttpCode(HttpStatus.NO_CONTENT)
   async setKdsPin(
     @CurrentUser() user: AuthenticatedUser,
     @Param('storeId') storeId: string,
     @Param('userId') userId: string,
-    @Body() dto: SetKdsPinDto,
+    @Body() dto: SetStaffPinDto,
   ): Promise<void> {
     // 400 KDS_PIN_FORMAT / KDS_PIN_TOO_SIMPLE before anything is looked up.
     this.kdsPins.assertNewPinAllowed(dto.pin);

@@ -11,7 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { filter } from 'rxjs/operators';
@@ -54,6 +54,7 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
   standalone: true,
   imports: [
     RouterOutlet,
+    RouterLink,
     FormsModule,
     AdminSidebarComponent,
     BrandStatusBannerComponent,
@@ -98,6 +99,15 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
                 >{{ roleLabel() | translate }}</span
               >
             </div>
+            @if (canChangePassword()) {
+              <a
+                routerLink="/change-password"
+                data-testid="drawer-change-password"
+                style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); padding: 8px 4px; text-decoration: none"
+              >
+                {{ 'admin.layout.changePassword' | translate }}
+              </a>
+            }
             <button
               type="button"
               (click)="logout()"
@@ -204,6 +214,16 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
             </button>
           }
           <app-language-switcher />
+          @if (canChangePassword()) {
+            <a
+              routerLink="/change-password"
+              class="admin-change-password"
+              data-testid="change-password-link"
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary); text-decoration: none; white-space: nowrap"
+            >
+              {{ 'admin.layout.changePassword' | translate }}
+            </a>
+          }
           <button
             type="button"
             (click)="logout()"
@@ -321,7 +341,8 @@ const NAMED_ROLES = new Set(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MEN
         .admin-account {
           visibility: hidden;
         }
-        .admin-signout {
+        .admin-signout,
+        .admin-change-password {
           display: none;
         }
         .admin-brand-picker select {
@@ -341,6 +362,9 @@ export class AdminLayoutPage implements OnInit {
   readonly orderAlerts = inject(OrderAlertsService);
   private readonly realtime = inject(KitchenRealtimeService);
   private readonly plans = inject(PlanAccess);
+
+  /** «Сменить пароль»: a session opened with a password, not a kitchen PIN. */
+  readonly canChangePassword = computed(() => !!this.store.user() && !this.store.kitchenSession());
 
   /** Roles that take orders on get the chime toggle; the others hear nothing anyway. */
   readonly hearsOrders = computed(() => canAccess(this.store.user()?.role as AdminRole | undefined, 'kitchen'));

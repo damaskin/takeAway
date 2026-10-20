@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { BrandScopeService } from '../auth/services/brand-scope.service';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
+import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { AdminFeedbackController } from './admin-feedback.controller';
 import { BusinessSupportController } from './business-support.controller';
@@ -71,6 +72,8 @@ describe('feedback endpoints', () => {
             },
           },
         },
+        // JwtStrategy reads a kitchen PIN session's stores; these sessions are all password ones.
+        { provide: PrismaService, useValue: {} },
         { provide: FeedbackService, useValue: service },
       ],
     }).compile();

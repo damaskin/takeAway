@@ -20,18 +20,34 @@ interface RefreshSession {
   deviceId: string | null;
   issuedAt: number;
   /** Set for a kitchen PIN session — kept across refreshes, see {@link SessionScope}. */
+  kdsBrandId?: string;
+  /** The store the PIN session opened on. Alone (no brand) on sessions opened before 2026-10-20. */
   kdsStoreId?: string;
 }
 
 /**
  * Narrows what a session may do. A session opened with a kitchen PIN works
- * one store's kitchen board and nothing else: the PIN is short and typed on
- * a shared tablet, so it must not open a manager's menu, staff or refunds.
- * The access token carries the store as the `kds` claim, and a refresh
- * keeps it — a PIN session never widens into a full one.
+ * the kitchen board and stop-list and nothing else: the PIN is short and
+ * typed on a shared tablet, so it must not open a manager's menu, staff or
+ * refunds. It is bound to the brand of the tablet it was opened on, and
+ * reaches the stores the person works at in that brand — read from the
+ * database on every request (JwtStrategy), never from the token.
+ *
+ * The access token carries the brand as the `kdsb` claim and the store
+ * picked at sign-in as `kds`; a refresh keeps both, so a PIN session never
+ * widens into a full one. `kds` alone is what a build before 2026-10-20
+ * understands: rolled back, the API narrows such a session to that one
+ * store instead of opening anything more.
  */
 export interface SessionScope {
-  kdsStoreId: string;
+  kdsBrandId: string;
+  kdsStoreId?: string;
+}
+
+/** Claims of a kitchen PIN session, see {@link SessionScope}. */
+interface KitchenClaims {
+  kdsb: string;
+  kds?: string;
 }
 
 @Injectable()
@@ -53,7 +69,11 @@ export class TokensService {
 
   async issue(userId: string, deviceId: string | null, scope?: SessionScope): Promise<IssuedTokens> {
     const jti = randomUUID();
-    const claims = scope ? { sub: userId, jti, kds: scope.kdsStoreId } : { sub: userId, jti };
+    const claims: { sub: string; jti: string } & Partial<KitchenClaims> = { sub: userId, jti };
+    if (scope) {
+      claims.kdsb = scope.kdsBrandId;
+      if (scope.kdsStoreId) claims.kds = scope.kdsStoreId;
+    }
     const accessToken = await this.jwt.signAsync(claims, { expiresIn: this.accessTtlSeconds });
 
     const refreshTokenId = randomUUID();
@@ -63,7 +83,10 @@ export class TokensService {
     );
 
     const session: RefreshSession = { userId, deviceId, issuedAt: Date.now() };
-    if (scope) session.kdsStoreId = scope.kdsStoreId;
+    if (scope) {
+      session.kdsBrandId = scope.kdsBrandId;
+      if (scope.kdsStoreId) session.kdsStoreId = scope.kdsStoreId;
+    }
     await this.redis.set(this.refreshKey(userId, refreshTokenId), JSON.stringify(session), this.refreshTtlSeconds);
 
     return {
@@ -91,11 +114,61 @@ export class TokensService {
     if (!user || user.blockedAt) {
       throw new UnauthorizedException('User not found or blocked');
     }
-    return this.issue(
-      parsed.userId,
-      parsed.deviceId,
-      parsed.kdsStoreId ? { kdsStoreId: parsed.kdsStoreId } : undefined,
-    );
+    return this.issue(parsed.userId, parsed.deviceId, await this.scopeOf(parsed));
+  }
+
+  /**
+   * The scope a refreshed session keeps. A PIN session from before
+   * 2026-10-20 knows only its store; it continues bound to that store's
+   * brand. One whose store is gone ends here rather than widen into a full
+   * session.
+   */
+  private async scopeOf(session: RefreshSession): Promise<SessionScope | undefined> {
+    if (session.kdsBrandId) {
+      return session.kdsStoreId
+        ? { kdsBrandId: session.kdsBrandId, kdsStoreId: session.kdsStoreId }
+        : { kdsBrandId: session.kdsBrandId };
+    }
+    if (!session.kdsStoreId) return undefined;
+    const store = await this.prisma.store.findUnique({ where: { id: session.kdsStoreId }, select: { brandId: true } });
+    if (!store) throw new UnauthorizedException('Refresh token revoked or expired');
+    return { kdsBrandId: store.brandId, kdsStoreId: session.kdsStoreId };
+  }
+
+  /**
+   * Ends the user's kitchen PIN sessions and leaves the ones opened with a
+   * password: their refresh tokens stop rotating. Called when the person's
+   * PIN changes or is reset — whoever knew the old one must not stay on the
+   * tablet for another week. Access tokens run out within minutes, and
+   * JwtStrategy refuses a PIN session whose PIN is gone at once.
+   */
+  async revokeKitchenSessions(userId: string): Promise<number> {
+    let cursor = '0';
+    let removed = 0;
+    do {
+      const [next, keys] = await this.redis.raw.scan(
+        cursor,
+        'MATCH',
+        this.refreshKey(escapeGlob(userId), '*'),
+        'COUNT',
+        200,
+      );
+      cursor = next;
+      for (const key of keys) {
+        const raw = await this.redis.get(key);
+        if (!raw) continue;
+        let session: RefreshSession;
+        try {
+          session = JSON.parse(raw) as RefreshSession;
+        } catch {
+          continue;
+        }
+        if (!session.kdsBrandId && !session.kdsStoreId) continue;
+        await this.redis.del(key);
+        removed++;
+      }
+    } while (cursor !== '0');
+    return removed;
   }
 
   async revokeRefresh(refreshToken: string): Promise<void> {

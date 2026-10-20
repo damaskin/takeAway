@@ -13,6 +13,11 @@ export interface StaffMemberStore {
 
 export interface StaffMember {
   userId: string;
+  /**
+   * Email and login are both null for kitchen staff invited with a PIN
+   * only: they sign in on the kitchen tablet and nowhere else, until the
+   * owner adds a login ({@link AddStaffSignInRequest}).
+   */
   email: string | null;
   /** The sign-in name of someone invited without an email; null otherwise. */
   login: string | null;
@@ -28,8 +33,14 @@ export interface StaffMember {
    * longer on the team.
    */
   stores: StaffMemberStore[];
-  /** The store the kitchen PIN opens, when it is one of `stores`. */
+  /**
+   * An old kitchen PIN (set before 2026-10-20) opens one store only: that
+   * store, when it is one of `stores`. Null for the current kind of PIN,
+   * which opens every store the person works at in the brand, and when
+   * there is no PIN.
+   */
   kdsPinStoreId: string | null;
+  /** The person has a kitchen PIN that opens the listed stores' tablet (one of them, for an old PIN). */
   hasKdsPin: boolean;
   /**
    * The caller may change this person's stores and role. False for the
@@ -59,19 +70,44 @@ export const STAFF_LOGIN_PATTERN = /^[a-z0-9._-]{3,32}$/;
 export const KDS_PIN_MIN_LENGTH = 4;
 export const KDS_PIN_MAX_LENGTH = 6;
 export const KDS_PIN_PATTERN = /^[0-9]{4,6}$/;
+/** A PIN set now: exactly 6 digits (and not one digit six times or a straight run — the API checks that too). */
+export const KDS_NEW_PIN_PATTERN = /^[0-9]{6}$/;
 
 /**
- * `POST /admin/staff` — exactly one of `email` and `login`. Someone invited
- * by a login gets no email: the owner hands the login and the temporary
- * password over in person.
+ * `POST /admin/staff` — at most one of `email` and `login`, each with a
+ * temporary password. Someone invited by a login gets no email: the owner
+ * hands the login and the temporary password over in person.
+ *
+ * Kitchen staff (`STAFF`) may come with neither: then `name` and `pin` are
+ * required and the person signs in on the kitchen tablet only, with no
+ * password at all, until the owner adds a login on their page. `pin` may
+ * also come with an email or login, for `STAFF` and `STORE_MANAGER`.
  */
 export interface InviteStaffRequest {
   email?: string;
   login?: string;
   name?: string;
   role: StaffRoleName;
-  tempPassword: string;
+  tempPassword?: string;
+  /** The kitchen PIN, 6 digits — one for every store of the brand the person works at. */
+  pin?: string;
   storeIds: string[];
+}
+
+/** `PUT /admin/staff/:userId/kds-pin` — the person's one kitchen PIN for all their stores of the brand. */
+export interface SetStaffPinRequest {
+  pin: string;
+}
+
+/**
+ * `PUT /admin/staff/:userId/sign-in` — a way into the cabinet for someone
+ * invited with a PIN only: an email or a login (exactly one) and a
+ * temporary password, to be changed at the first sign-in.
+ */
+export interface AddStaffSignInRequest {
+  email?: string;
+  login?: string;
+  tempPassword: string;
 }
 
 /**
@@ -132,11 +168,15 @@ export interface KitchenDeviceBinding {
   brandName: string;
 }
 
-/** `GET /auth/kds/device` — the stores a bound tablet's PIN screen offers. */
+/** `GET /auth/kds/device` — the brand a bound tablet belongs to, for its PIN screen. */
 export interface KitchenDeviceStores {
   brandId: string;
   brandName: string;
-  /** Stores of the brand where at least one employee has a working PIN. */
+  /**
+   * Stores of the brand where at least one employee has a working PIN. The
+   * PIN screen shows its keypad only when there is one, and offers these
+   * when an old PIN needs its store (409 `KDS_PIN_STORE_REQUIRED`).
+   */
   stores: Array<{ id: string; name: string; city: string }>;
 }
 

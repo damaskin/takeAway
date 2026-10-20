@@ -435,11 +435,13 @@ describe('NotificationsService — kitchen policy messages', () => {
     expect(optedOut.fcm.attempt).not.toHaveBeenCalled();
   });
 
-  it('messages the staff of a store, the owner, or both, through the bot only', async () => {
+  it('messages the staff of a store, the owner, or both, through the bot only — to their notification chat', async () => {
     const h = setup();
     const prisma = (h.service as unknown as { prisma: { store: unknown; user: { findMany: jest.Mock } } }).prisma;
     prisma.store = { findUnique: jest.fn().mockResolvedValue({ brandId: 'brand-1' }) };
-    prisma.user.findMany = jest.fn().mockResolvedValue([{ id: 'staff-1', locale: 'RU', telegramUserId: BigInt(42) }]);
+    prisma.user.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: 'staff-1', locale: 'RU', telegramNotifyChatId: BigInt(42) }]);
 
     await expect(
       h.service.notifyStoreTeam(
@@ -451,12 +453,13 @@ describe('NotificationsService — kitchen policy messages', () => {
     expect(prisma.user.findMany.mock.calls[0]?.[0]?.where.OR).toEqual([
       { userStores: { some: { storeId: 'store-1' } } },
     ]);
-    expect(h.telegram.send).toHaveBeenCalledWith(expect.objectContaining({ userId: 'staff-1', pushTokens: [] }), {
-      kind: 'order_status',
-      title: 'T',
-      body: 'B',
-      orderId: 'order-1',
-    });
+    // The chat linked on «Telegram», never the sign-in identity.
+    expect(prisma.user.findMany.mock.calls[0]?.[0]?.where.telegramNotifyChatId).toEqual({ not: null });
+    expect(prisma.user.findMany.mock.calls[0]?.[0]?.where).not.toHaveProperty('telegramUserId');
+    expect(h.telegram.send).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'staff-1', telegramUserId: BigInt(42), pushTokens: [] }),
+      { kind: 'order_status', title: 'T', body: 'B', orderId: 'order-1' },
+    );
 
     await h.service.notifyStoreTeam('store-1', { title: 'T', body: 'B' }, { staff: false, owner: true });
     expect(prisma.user.findMany.mock.calls[1]?.[0]?.where.OR).toEqual([

@@ -845,6 +845,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       next: 'New password',
       rule: 'At least {{min}} characters (up to {{max}}), and not the current one.',
       confirm: 'Repeat the new password',
+      titleVoluntary: 'Change password',
+      subtitleVoluntary:
+        'Enter your current password and pick a new one. Your other devices are signed out of the cabinet.',
+      back: '← Back',
+      done: 'Password changed. Your other devices were signed out of the cabinet.',
+      pinSession:
+        'You signed in with a PIN on the kitchen tablet. Change your password after signing in with your email or login and password.',
       save: 'Save',
       saving: 'Saving…',
       errors: {
@@ -893,7 +900,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       install: 'Install app',
       installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
       pinSessionNote:
-        'Signed in with a PIN — kitchen and stop-list only. The other sections open after signing in with a password.',
+        'Signed in with a PIN — kitchen, stop-list and Telegram only. The other sections open after signing in with a password.',
+      changePassword: 'Change password',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
@@ -1051,6 +1059,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       tempPasswordHintLogin:
         'Without an email nothing is sent: pass the login and temporary password on in person. They will be asked to change the password on first sign-in, and if they forget it, only the owner can reset it.',
       generate: 'Generate',
+      signInWay: 'How they sign in',
+      signInPassword: 'With an email or login and a password',
+      signInPinOnly: 'With a PIN on the kitchen tablet only',
+      pinOnlyHint:
+        'No email, login or password: they sign in on the kitchen tablet with a PIN only. A login and password can be added on their page later.',
+      nameRequired: 'Required: the list and the kitchen know them by name.',
+      pinOptionalHint: 'Optional. 6 digits, not all the same or in a row — one PIN for all their stores.',
+      pinRequiredHint: '6 digits, not all the same or in a row — one PIN for all their stores.',
       addCta: 'Invite',
       invited: {
         title: 'Invite sent',
@@ -1065,6 +1081,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         cabinet: 'Cabinet',
         login: 'Login',
         ownPassword: 'their current password',
+        pinOnly:
+          'They sign in on the kitchen tablet with a PIN — they have no login or password. Those can be added on their page.',
+        pinSet: 'The kitchen PIN is set — it opens the tablet at all their stores.',
         toList: 'Back to the team',
         another: 'Invite another',
       },
@@ -1091,6 +1110,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         nothing: 'Nobody matches — change the filters.',
       },
       pinAt: 'PIN · {{store}}',
+      pinAll: 'PIN',
       noPin: 'No PIN',
       noStoresWarning: 'No store is ticked — once saved, this person is taken off the team.',
       readOnlySelf: "This is your own account — you can't change your role or stores here.",
@@ -1099,11 +1119,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       confirmRemoveFromTeam:
         '{{name}} will no longer work at any of your stores and leaves the list. Their kitchen PIN at those stores is reset. Continue?',
       kitchenPin: 'Kitchen PIN',
-      pinOpens: 'The PIN opens the kitchen tablet of "{{store}}".',
+      pinOpensAll: 'The PIN opens the kitchen tablet at all their stores.',
+      pinOpensLegacy: 'The old PIN opens "{{store}}" only. Set a new one — it works at all their stores.',
       pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email or login and password.',
+      pinNoneNoSignIn: 'No PIN — without one they cannot sign in on the kitchen tablet.',
       pinHint:
-        'A PIN works at one store: a new PIN for another store replaces the old one. Taking a store off the list resets its PIN.',
-      pinStore: 'Store for the PIN',
+        'One PIN for every store of the brand they work at: on the tablet they type the PIN, then pick the store. A new PIN replaces the old one and signs them out of the tablets.',
       password: {
         title: 'Password',
         hint: 'Forgot their password and cannot get to their email? Reset it: the old password stops working, they are signed out of the cabinet and the kitchen tablet, and you get a temporary password to pass on. They will be asked to change it when they sign in.',
@@ -1117,6 +1138,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noEmail: 'This person has no email — pass the temporary password on in person.',
         notEditable: 'This person also works for another brand — only takeAway support can reset their password.',
       },
+      signIn: {
+        title: 'Cabinet sign-in',
+        none: 'They sign in with a PIN on the kitchen tablet only. To let them into the cabinet too, add an email or a login and a temporary password — they change it at the first sign-in.',
+        add: 'Add sign-in',
+        done: 'Done. Pass the sign-in details on:',
+      },
       errors: {
         storeOutOfScope: 'One of the chosen stores is outside your access.',
         roleNotAllowed: 'A store manager cannot appoint managers — the brand owner does that.',
@@ -1124,6 +1151,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         alreadyOnTeam: 'This person is already on the team — open them in the list and tick the stores there.',
         emailTaken: 'This email is already in use. Ask the employee to use a different email.',
         loginTaken: 'This login is already taken. Pick another one.',
+        signInRequired: 'Only kitchen staff can be invited without an email or a login.',
+        hasSignIn: 'They already have an email or a login — reset the password if they forgot it.',
+        noSignIn: 'They sign in with a PIN only — add an email or a login first.',
+        pinRole: 'A kitchen PIN is for kitchen staff and store managers.',
+        pinMultiBrand:
+          'They also work for another brand, and a PIN works in one. On the tablet they sign in with email or login and password.',
         notFound: 'Staff member not found — they may have been taken off the team already.',
         forbidden: "You don't have permission for this.",
         invalidField: 'Check the field "{{field}}".',
@@ -1136,6 +1169,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
         cta: 'Set as owner',
         tempPasswordHint: 'Temporary password (required only for a new account)',
         tempPasswordPlaceholder: 'Leave blank if the user already exists',
+        current: 'Current owner',
+        passwordHint:
+          'The owner forgot the password and no email arrives? Reset it: the old password stops working, the owner is signed out on every device, and you get a temporary password to pass on. They will be asked to change it when they sign in.',
+        passwordConfirm:
+          "Reset the owner {{name}}'s password? The old one stops working and they are signed out on every device.",
+        passwordDone: 'Password reset; the owner was signed out on every device. Temporary password:',
+        emailOff:
+          'No email was sent: mail is not set up on the server. Pass the temporary password on to the owner yourself.',
+        emailFailed:
+          'No email was sent: the mail server refused it. Pass the temporary password on to the owner yourself.',
       },
     },
     integrations: {
@@ -1175,15 +1218,24 @@ export const TRANSLATIONS_EN: TranslationTree = {
       confirmDisconnect: 'Disconnect this integration? Imported items stay in the catalog.',
     },
     telegramLink: {
-      title: 'Link Telegram for order notifications',
+      title: 'Telegram: order notifications',
       subtitle:
-        'Tap the Telegram button below — the bot will push you a message the moment a new paid order lands at one of your stores.',
-      startHint: 'You will be redirected to Telegram to confirm. This does not replace your email/password login.',
-      linking: 'Linking…',
-      linked: 'Linked',
-      linkedNote:
-        'You will now receive order events in Telegram. Tap the button again to relink under a different account.',
-      unavailable: 'Telegram is not configured on this deployment — ask your admin to set the bot username.',
+        "The bot sends your stores' new orders, reminders about unaccepted ones and other events to Telegram. Link your phone — you can do it from the kitchen tablet too.",
+      linked: 'Linked — notifications go to Telegram.',
+      linkedNote: 'To get them on another phone, link that one — the previous chat stops getting messages.',
+      notLinked: 'Not linked — no notifications go to Telegram.',
+      makeLink: 'Link Telegram',
+      relink: 'Link another phone',
+      qrLabel: 'QR code of the link to the bot',
+      scan: 'Scan the code with your phone camera, or open the link on your phone — the takeAway bot opens. Tap «Start».',
+      open: 'Open in Telegram',
+      expires: 'One-time link, valid until {{time}}.',
+      expired: 'The link has expired — get a new one.',
+      waiting: 'Waiting for you to tap «Start» in the bot…',
+      unlink: 'Unlink',
+      unlinkConfirm: 'Unlink Telegram? Order notifications stop coming.',
+      botUnavailable: 'Linking through the bot is not set up on this server yet — contact takeAway support.',
+      legacyHint: 'Until the bot is set up, you can link Telegram by signing in with Telegram:',
       button: 'Link Telegram',
       failed: 'Telegram did not confirm the link. Try again.',
     },
@@ -2381,7 +2433,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         empty: 'No photos yet.',
       },
       kitchen: {
-        hint: "Staff unlock this store's kitchen tablet with a 6-digit PIN (4–5 digit PINs given out earlier keep working). A PIN works at this store only.",
+        hint: "Who can open this store's kitchen tablet: the store's kitchen staff and managers with a PIN. Each person has one PIN for all their stores, set on their card under Staff.",
+        canEnter: 'Sign in with a PIN: {{count}}',
+        setOnCard: 'Whoever has no PIN cannot sign in on the tablet — open them and set the PIN on their card.',
         where: 'On the tablet, open',
         empty: 'No kitchen staff or managers are assigned to this store yet.',
         toStaff: 'Add them under Staff',
@@ -2404,7 +2458,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         slugFormat: 'Lower-case latin letters, digits and hyphens only, e.g. noname-centre.',
         notReady: 'The store cannot open yet. Missing: {{missing}}.',
         galleryFull: 'A gallery holds at most {{max}} photos — remove one to add another.',
-        pinTaken: 'Another staff member of this store already uses this PIN — choose a different one.',
+        pinTaken: 'Someone else at this business already uses this PIN — choose a different one.',
         pinNotConfigured:
           'Kitchen PIN sign-in is not set up on the server. Ask the administrator to set KDS_PIN_SECRET — PINs cannot be saved until then.',
         pinFormat: 'A new PIN is exactly 6 digits.',
@@ -3381,6 +3435,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       signIn: 'Sign in',
       delete: 'Delete',
       usePassword: 'Sign in with email and password',
+      storeRequired:
+        'This PIN was set for one store, and someone at another store has the same one. Pick your store and press «Sign in» again.',
+      chooseTitle: 'Where are you working today?',
+      chooseHint: 'Your PIN opens all your stores. Switch to another one on the kitchen screen — no PIN needed.',
     },
     device: {
       pairing: 'Binding the tablet…',
@@ -3393,7 +3451,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       unboundNow: 'This tablet was unbound from the business — bind it again.',
       linkInvalid:
         'This tablet link no longer works: it was already used or has expired. Make a new one on the Staff page.',
-      noPins: 'Nobody at this business has a PIN yet. Set PINs on the Staff page.',
+      noPins: "Nobody at this business has a PIN yet. Set a PIN on the person's card under Staff.",
       unbind: 'Unbind this tablet',
       unbindConfirm: 'Unbind this tablet from the business? PIN sign-in needs it bound again.',
     },
