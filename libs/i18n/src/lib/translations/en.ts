@@ -34,6 +34,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       opensOnAt: 'Closed now · opens {{date}} at {{time}} · order ahead',
       closedPreorder: 'Closed now · order ahead',
       queueFull: 'Long queue — order ahead only',
+      paused: 'Short break until {{time}} · order ahead',
+      closingSoon: 'Closing soon — order ahead only',
       until: 'until {{time}}',
     },
     /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
@@ -43,6 +45,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       opensOnAt: 'The store opens {{date}} at {{time}} — pick a time for your order.',
       shiftClosed: 'The store has not started work yet — pick a time for your order.',
       queueFull: 'There is a long queue right now — pick a time for your order.',
+      pausedUntil: 'The store is on a short break until {{time}} — pick a time for your order.',
+      paused: 'The store is on a short break — pick a time for your order.',
+      closingSoonAt: 'The store closes at {{time}} — there is no time left to make an order for now. Pick a time.',
+      closingSoon: 'The store closes soon — there is no time left to make an order for now. Pick a time.',
     },
     /** Day headings over the pickup windows at checkout. */
     pickupDay: {

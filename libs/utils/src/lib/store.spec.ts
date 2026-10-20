@@ -211,3 +211,21 @@ describe('groupSlotsByDay', () => {
     expect(groupSlotsByDay([], now, 'UTC')).toEqual([]);
   });
 });
+
+describe('storeHoursNote — pause and closing soon', () => {
+  const now = new Date('2026-10-15T09:00:00Z');
+  const base = { status: 'OPEN', timezone: 'Europe/Chisinau', acceptingOrders: true, openNow: false };
+
+  it('names the end of a kitchen pause', () => {
+    expect(storeHoursNote({ ...base, asapBlockedReason: 'PAUSED', pausedUntil: '2026-10-15T09:30:00Z' }, now)).toEqual({
+      kind: 'paused',
+      until: '2026-10-15T09:30:00Z',
+    });
+  });
+
+  it('says closing soon when an order for now would not be ready in time', () => {
+    expect(
+      storeHoursNote({ ...base, asapBlockedReason: 'CLOSING_SOON', closesAt: '2026-10-15T09:05:00Z' }, now),
+    ).toEqual({ kind: 'closingSoon' });
+  });
+});

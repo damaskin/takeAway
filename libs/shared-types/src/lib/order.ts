@@ -208,6 +208,21 @@ export interface Order extends OrderSummary {
   pickedUpAt: string | null;
   cancelledAt: string | null;
   expiredAt: string | null;
+  /**
+   * ISO UTC: when the kitchen expects the order to be ready, set when it
+   * accepted or started the order too late to make `pickupAt` (now + the
+   * order's own cooking time). Null otherwise. Clients count down to
+   * `readyEstimateAt ?? pickupAt`; `pickupAt` stays the original promise.
+   * Optional for older API builds.
+   */
+  readyEstimateAt?: string | null;
+  /**
+   * The customer may cancel the order now: the kitchen has not accepted it
+   * and no money has been charged (a hold or a charge put off until the
+   * accept is fine). Since 2026-10-20 an accepted order cannot be cancelled
+   * by the customer — they call the store. Optional for older API builds.
+   */
+  canCancel?: boolean;
 }
 
 export interface CreateOrderInput {

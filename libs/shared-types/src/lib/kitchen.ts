@@ -1,9 +1,11 @@
 /**
  * The kitchen board and the store's shift (`/kds/*`), as the kitchen
- * operations policy of 2026-10-14 shapes them — see docs/kitchen-policy.md.
+ * operations policy shapes them — see docs/kitchen-policy.md. Since
+ * 2026-10-20 the working hours open and close the shift by themselves; the
+ * kitchen can only extend the closing and pause the store.
  */
 
-import type { AsapBlockedReason } from './catalog';
+import type { AsapBlockedReason, StorePauseReason } from './catalog';
 
 /** Timing fields of a kitchen board row (`GET /kds/orders`, `kds.orderChanged`). */
 export interface KitchenOrderTimeline {
@@ -25,10 +27,28 @@ export interface KitchenOrderTimeline {
   acceptDeadlineAt: string | null;
 }
 
-/** `PUT /kds/shift/extend` body: take ASAP orders this much longer past the working hours. */
+/**
+ * `PUT /kds/shift/extend` body: take ASAP orders this much longer past the
+ * working hours. Offered only in the last hour before the closing (or while
+ * an extension runs) — see `KitchenShiftState.canExtend`.
+ */
 export type ShiftExtendMinutes = 30 | 60;
 
 export const SHIFT_EXTEND_MINUTES: readonly ShiftExtendMinutes[] = [30, 60];
+
+/** How long a kitchen pause lasts; `null` in the request = until the store closes today. */
+export type KitchenPauseMinutes = 15 | 30 | 60 | 120;
+
+export const KITCHEN_PAUSE_MINUTES: readonly KitchenPauseMinutes[] = [15, 30, 60, 120];
+
+/** `PUT /kds/pause?storeId=` body. */
+export interface KitchenPauseRequest {
+  /** Null: until the end of the current working-hours window (or the extension). */
+  minutes: KitchenPauseMinutes | null;
+  reason: StorePauseReason;
+  /** Free text for the owner and staff, e.g. «кофемашина». Up to 120 characters. */
+  comment?: string | null;
+}
 
 /** `GET /kds/shift` — the store's shift and what it means for ASAP orders right now. */
 export interface KitchenShiftState {
@@ -54,6 +74,19 @@ export interface KitchenShiftState {
   asapBlockedReason: AsapBlockedReason | null;
   /** The last shift was closed by the schedule after the working hours ended, not by a person. */
   closedAutomatically: boolean;
+  /** The current (or last) shift was opened by the schedule, not by a person. */
+  openedAutomatically: boolean;
+  /**
+   * «Продлить на 30 мин / 1 ч» may be offered now: a shift is open, within
+   * the working hours and the closing is at most 60 minutes away, or an
+   * extension is running and still below its cap.
+   */
+  canExtend: boolean;
+  /** ISO UTC: the store is paused until then; null when not paused. */
+  pausedUntil: string | null;
+  pauseReason: StorePauseReason | null;
+  pauseComment: string | null;
+  pausedByName: string | null;
 }
 
 /**

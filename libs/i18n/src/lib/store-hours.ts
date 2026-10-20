@@ -11,6 +11,7 @@ export interface StoreHoursInput {
   asapBlockedReason?: string | null;
   opensAt?: string | null;
   closesAt?: string | null;
+  pausedUntil?: string | null;
   timezone?: string | null;
 }
 
@@ -34,6 +35,10 @@ export function storeHoursText(
       return translate.instant('common.storeHours.until', { time: fmt.time(note.at, zone) });
     case 'queueFull':
       return translate.instant('common.storeHours.queueFull');
+    case 'paused':
+      return translate.instant('common.storeHours.paused', { time: fmt.time(note.until, zone) });
+    case 'closingSoon':
+      return translate.instant('common.storeHours.closingSoon');
     case 'preorder':
       return translate.instant('common.storeHours.closedPreorder');
     case 'opens':
@@ -63,6 +68,14 @@ export function asapBlockedText(
       return translate.instant('common.asapBlocked.queueFull');
     case 'SHIFT_CLOSED':
       return translate.instant('common.asapBlocked.shiftClosed');
+    case 'PAUSED':
+      return store.pausedUntil
+        ? translate.instant('common.asapBlocked.pausedUntil', { time: fmt.time(store.pausedUntil, zone) })
+        : translate.instant('common.asapBlocked.paused');
+    case 'CLOSING_SOON':
+      return store.closesAt
+        ? translate.instant('common.asapBlocked.closingSoonAt', { time: fmt.time(store.closesAt, zone) })
+        : translate.instant('common.asapBlocked.closingSoon');
     case 'OUTSIDE_HOURS':
       if (!store.opensAt) return null;
       return translate.instant(opensKey('common.asapBlocked', calendarDaysFrom(store.opensAt, now, zone)), {

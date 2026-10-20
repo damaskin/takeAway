@@ -56,6 +56,10 @@ export type StoreHoursNote =
   | { kind: 'preorder' }
   /** Open, but the queue is too long for «now»; pre-orders taken. */
   | { kind: 'queueFull' }
+  /** The kitchen paused the store until `until` («Технический перерыв»); pre-orders for later taken. */
+  | { kind: 'paused'; until: string }
+  /** Within hours, but an order for now would not be ready before the closing; pre-orders taken. */
+  | { kind: 'closingSoon' }
   /** Open for orders now, until `at`. */
   | { kind: 'until'; at: string };
 
@@ -74,6 +78,7 @@ export function storeHoursNote(
     asapBlockedReason?: string | null;
     opensAt?: string | null;
     closesAt?: string | null;
+    pausedUntil?: string | null;
     timezone?: string | null;
   },
   now: Date = new Date(),
@@ -82,6 +87,8 @@ export function storeHoursNote(
   if (availability === 'closed') return null;
   if (availability === 'open') return store.closesAt ? { kind: 'until', at: store.closesAt } : null;
   if (store.asapBlockedReason === 'QUEUE_FULL') return { kind: 'queueFull' };
+  if (store.asapBlockedReason === 'PAUSED' && store.pausedUntil) return { kind: 'paused', until: store.pausedUntil };
+  if (store.asapBlockedReason === 'CLOSING_SOON') return { kind: 'closingSoon' };
   if (store.opensAt)
     return { kind: 'opens', at: store.opensAt, days: calendarDaysFrom(store.opensAt, now, store.timezone) };
   return { kind: 'preorder' };

@@ -1,4 +1,4 @@
-import { expiredOutcome, formatCountdown, isAwaitingAcceptance, orderWaitNote } from './order-progress';
+import { expiredOutcome, formatCountdown, isAwaitingAcceptance, orderDueAt, orderWaitNote } from './order-progress';
 
 describe('isAwaitingAcceptance', () => {
   const order = { pickupAt: '2026-10-15T06:15:00Z', totalCents: 4500 };
@@ -26,6 +26,18 @@ describe('orderWaitNote', () => {
     expect(orderWaitNote({ status: 'IN_PROGRESS', pickupAt: '2026-10-15T06:15:00Z' }, null, now)).toBe('late');
     expect(orderWaitNote({ status: 'IN_PROGRESS', pickupAt: '2026-10-15T06:30:00Z' }, null, now)).toBeNull();
     expect(orderWaitNote({ status: 'READY', pickupAt: '2026-10-15T06:15:00Z' }, null, now)).toBeNull();
+  });
+
+  it('counts down to the new estimate once the kitchen accepted the order late', () => {
+    const order = {
+      status: 'IN_PROGRESS',
+      pickupAt: '2026-10-15T06:15:00Z',
+      readyEstimateAt: '2026-10-15T06:23:00Z',
+    };
+    expect(orderDueAt(order)).toBe('2026-10-15T06:23:00Z');
+    expect(orderWaitNote(order, null, now)).toBeNull();
+    expect(orderWaitNote(order, null, new Date('2026-10-15T06:24:00Z'))).toBe('late');
+    expect(orderDueAt({ pickupAt: '2026-10-15T06:15:00Z', readyEstimateAt: null })).toBe('2026-10-15T06:15:00Z');
   });
 
   it('says a pre-order is confirmed when the store opens, while it is closed', () => {
