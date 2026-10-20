@@ -311,6 +311,16 @@ describe('NotificationsService.notifyOrderStatus', () => {
     expect(en.sent()?.message.title).toBe('Order #A42 accepted');
   });
 
+  it("names the kitchen's new estimate when it accepted the order late", async () => {
+    const ru = setup({ locale: 'RU' });
+    await ru.service.notifyOrderStatus(order, 'ACCEPTED', { readyEstimate: '12:10' });
+    expect(ru.sent()?.message.body).toBe('Заведение уже готовит ваш заказ — будет готов примерно к 12:10.');
+
+    const en = setup({ locale: 'EN' });
+    await en.service.notifyOrderStatus(order, 'ACCEPTED', { readyEstimate: '12:10' });
+    expect(en.sent()?.message.body).toBe('The store is preparing your order — it should be ready at about 12:10.');
+  });
+
   it('says where to collect a ready order', async () => {
     const pickup = setup();
     await pickup.service.notifyOrderStatus(order, 'READY');

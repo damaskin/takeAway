@@ -210,6 +210,7 @@ function harness() {
     }),
     assertScheduledSlot: jest.fn().mockResolvedValue(undefined),
     acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 },
+    policy: { maxAsapWaitSeconds: 2700 },
   };
   // Open for ASAP unless a test says otherwise.
   const view: StoreAvailabilityView & { brandId: string; status: string } = {
@@ -220,6 +221,8 @@ function harness() {
     closesAt: null,
     withinHours: true,
     extendedUntil: null,
+    pausedUntil: null,
+    pauseReason: null,
     currentEtaSeconds: 600,
     brandId: 'brand-a',
     status: 'OPEN',
@@ -330,7 +333,7 @@ describe('OrdersService.create', () => {
 
     await service.create('user-1', placeOrder);
     // Quoted with its own prep and kitchen work.
-    expect(kitchen.quote).toHaveBeenCalledWith('store-1', 180, 360);
+    expect(kitchen.quote).toHaveBeenCalledWith('store-1', 180, 360, expect.any(Date));
     expect(tx.order.create.mock.calls[0]?.[0]?.data['pickupAt']).toEqual(new Date('2026-09-23T08:11:00Z'));
     expect(kitchen.assertScheduledSlot).not.toHaveBeenCalled();
 
@@ -338,6 +341,61 @@ describe('OrdersService.create', () => {
     await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'ASAP_UNAVAILABLE', reason: 'QUEUE_FULL' }),
     });
+  });
+
+  it('refuses an ASAP order while the kitchen is paused, naming when the pause ends', async () => {
+    const { service, prisma, tx, storeIs } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    const pausedUntil = new Date('2026-09-23T09:30:00Z');
+    storeIs({ openNow: false, asapBlockedReason: 'PAUSED', pausedUntil, pauseReason: 'EQUIPMENT' });
+
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({
+        code: 'ASAP_UNAVAILABLE',
+        reason: 'PAUSED',
+        pausedUntil: '2026-09-23T09:30:00.000Z',
+        closesAt: null,
+      }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an ASAP order the store-level ETA already would not make before the closing, naming the closing', async () => {
+    const { service, prisma, storeIs } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    storeIs({ openNow: false, asapBlockedReason: 'CLOSING_SOON', closesAt: new Date('2026-09-23T18:00:00Z') });
+
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'ASAP_UNAVAILABLE',
+        reason: 'CLOSING_SOON',
+        closesAt: '2026-09-23T18:00:00.000Z',
+        pausedUntil: null,
+      }),
+    });
+  });
+
+  it('refuses an ASAP order whose own handover would be after the closing (item 6)', async () => {
+    const { service, prisma, tx, kitchen, storeIs } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    // The store takes ASAP orders, but this one (spill included) is due 08:11 and the store closes at 08:10.
+    storeIs({ closesAt: new Date('2026-09-23T08:10:00Z') });
+
+    await expect(service.create('user-1', placeOrder)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'ASAP_UNAVAILABLE',
+        reason: 'CLOSING_SOON',
+        closesAt: '2026-09-23T08:10:00.000Z',
+      }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+
+    // Extended to 08:30: the same order is taken.
+    storeIs({ closesAt: new Date('2026-09-23T08:10:00Z'), extendedUntil: new Date('2026-09-23T08:30:00Z') });
+    await service.create('user-1', placeOrder);
+    expect(tx.order.create).toHaveBeenCalled();
+    expect(kitchen.quote).toHaveBeenCalled();
   });
 
   it('takes a pre-order while the shift is closed — at 01:00 for the morning', async () => {

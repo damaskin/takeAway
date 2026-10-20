@@ -70,6 +70,11 @@ export interface OrderStatusPushOptions {
   rejection?: StoreRejectionInfo;
   /** The bank declined the card when the store accepted the order, so the order was called off. */
   cardDeclined?: boolean;
+  /**
+   * ACCEPTED: the kitchen accepted the order too late for its time and
+   * expects it ready then — a wall-clock time on the store's clock ("12:10").
+   */
+  readyEstimate?: string;
 }
 
 /**
@@ -543,6 +548,19 @@ export class NotificationsService {
 
     switch (status) {
       case 'ACCEPTED':
+        if (options.readyEstimate) {
+          return ru
+            ? message(
+                'order_status',
+                `Заказ ${code} принят`,
+                `Заведение уже готовит ваш заказ — будет готов примерно к ${options.readyEstimate}.`,
+              )
+            : message(
+                'order_status',
+                `Order ${code} accepted`,
+                `The store is preparing your order — it should be ready at about ${options.readyEstimate}.`,
+              );
+        }
         return ru
           ? message('order_status', `Заказ ${code} принят`, 'Заведение уже готовит ваш заказ.')
           : message('order_status', `Order ${code} accepted`, 'The store is preparing your order.');

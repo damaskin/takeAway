@@ -29,6 +29,10 @@ describe('KdsService.accept', () => {
     customerName: null,
     notes: null,
     items: [],
+    prepSeconds: 300,
+    workSeconds: 300,
+    readyEstimateAt: null,
+    store: { kitchenParallelism: 2, timezone: 'Europe/Chisinau' },
   };
 
   let prisma: { order: { findUnique: jest.Mock; update: jest.Mock; findMany: jest.Mock } };
@@ -166,6 +170,55 @@ describe('KdsService.accept', () => {
     await service.accept('store-1', order.id, 'staff-1');
 
     expect(prisma.order.update).toHaveBeenCalled();
+  });
+
+  describe("the kitchen's new estimate (item 16)", () => {
+    afterEach(() => jest.useRealTimers());
+    const at = (iso: string) => jest.useFakeTimers({ now: new Date(iso), doNotFake: ['nextTick', 'setImmediate'] });
+
+    it('is set when the order is accepted too late for its time, and the accept push names it', async () => {
+      // Due 10:00 (13:00 in Chisinau), five minutes of cooking, accepted at 09:58.
+      at('2026-09-22T09:58:00.000Z');
+      prisma.order.update.mockResolvedValue({ ...order, status: 'ACCEPTED' });
+
+      await service.accept('store-1', order.id, 'staff-1');
+
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'ACCEPTED', readyEstimateAt: new Date('2026-09-22T10:03:00.000Z') }),
+        }),
+      );
+      expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ id: order.id }),
+        'ACCEPTED',
+        {
+          readyEstimate: '13:03',
+        },
+      );
+    });
+
+    it('is left alone when the kitchen is in time — pickupAt stays the promise', async () => {
+      at('2026-09-22T09:50:00.000Z');
+      await service.accept('store-1', order.id, 'staff-1');
+      const data = prisma.order.update.mock.calls[0]?.[0]?.data;
+      expect(data).not.toHaveProperty('readyEstimateAt');
+      expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(expect.anything(), 'ACCEPTED', {});
+    });
+
+    it('moves on when the order is started late, without another push', async () => {
+      at('2026-09-22T10:01:00.000Z');
+      prisma.order.findUnique.mockResolvedValue({ ...order, status: 'ACCEPTED' });
+      prisma.order.update.mockResolvedValue({ ...order, status: 'IN_PROGRESS' });
+
+      await service.start('store-1', order.id, 'staff-1');
+
+      expect(prisma.order.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ readyEstimateAt: new Date('2026-09-22T10:06:00.000Z') }),
+        }),
+      );
+      expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(expect.anything(), 'IN_PROGRESS', {});
+    });
   });
 });
 
