@@ -28,6 +28,8 @@ function availabilityFields(view: StoreAvailabilityView | undefined) {
     asapBlockedReason: view?.asapBlockedReason ?? null,
     opensAt: view?.opensAt?.toISOString() ?? null,
     closesAt: view?.closesAt?.toISOString() ?? null,
+    pausedUntil: view?.pausedUntil?.toISOString() ?? null,
+    pauseReason: view?.pauseReason ?? null,
   };
 }
 
@@ -69,8 +71,8 @@ export class CatalogService {
     // A couple of grouped queries for every store's live queue and slots,
     // rather than a few per pin. `currentEtaSeconds` on the wire is a
     // computed figure: the store's fixed overhead plus what the queue owes
-    // (and the busy wait while the kitchen has pressed «Загружены»), pushed
-    // to the first slot with room.
+    // (and the busy wait while the kitchen has pressed «Загружены») plus a
+    // typical order's cooking, pushed to the first slot with room.
     const availability = await this.availability.evaluate(stores);
 
     const hasPoint = typeof query.lat === 'number' && typeof query.lng === 'number';

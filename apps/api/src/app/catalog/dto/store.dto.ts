@@ -1,8 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
-import type { AsapBlockedReason } from '@takeaway/shared-types';
+import { type AsapBlockedReason, STORE_PAUSE_REASONS, type StorePauseReason } from '@takeaway/shared-types';
 
-const ASAP_BLOCKED_REASONS: readonly AsapBlockedReason[] = ['OUTSIDE_HOURS', 'SHIFT_CLOSED', 'QUEUE_FULL'];
+/** In the order they are checked. */
+const ASAP_BLOCKED_REASONS: readonly AsapBlockedReason[] = [
+  'OUTSIDE_HOURS',
+  'PAUSED',
+  'SHIFT_CLOSED',
+  'CLOSING_SOON',
+  'QUEUE_FULL',
+];
 
 export class StoreWorkingHourDto {
   @ApiProperty({ description: '0 = Sunday, 6 = Saturday' })
@@ -72,8 +79,8 @@ export class StoreListItemDto {
 
   @ApiProperty({
     description:
-      'ETA for an ASAP order, in seconds: store overhead plus the queue due now, pushed to the first 15-minute ' +
-      'slot with room.',
+      'ETA for an ASAP order, in seconds: store overhead, the queue due now and the cooking of a typical order (the ' +
+      'median preparation time of what can be ordered here), pushed to the first 15-minute slot with room.',
   })
   currentEtaSeconds!: number;
 
@@ -87,9 +94,9 @@ export class StoreListItemDto {
 
   @ApiProperty({
     description:
-      'True when an ASAP order placed now would be accepted: not switched off, a shift is open, within the ' +
-      'working hours (or the kitchen extended past them) and the queue hands it over within ' +
-      'MAX_ASAP_WAIT_SECONDS. Working hours win over the shift (kitchen policy 2026-10-14).',
+      'True when an ASAP order placed now would be accepted: not switched off, within the working hours (or ' +
+      'the kitchen extended past them), not paused by the kitchen, a shift is open (the schedule opens it), ' +
+      'ready before the closing, and the queue hands it over within MAX_ASAP_WAIT_SECONDS.',
   })
   openNow!: boolean;
 
@@ -98,8 +105,10 @@ export class StoreListItemDto {
     nullable: true,
     type: String,
     description:
-      'Why openNow is false: OUTSIDE_HOURS (no extension), then SHIFT_CLOSED, then QUEUE_FULL. Null when ' +
-      'openNow, and for a store switched off (acceptingOrders says it).',
+      'Why openNow is false, the first that applies: OUTSIDE_HOURS (no extension), PAUSED (see pausedUntil), ' +
+      'SHIFT_CLOSED, CLOSING_SOON (an order for now would not be ready before the closing), QUEUE_FULL. Null ' +
+      'when openNow, and for a store switched off (acceptingOrders says it). Clients treat an unknown value as ' +
+      '"closed for now, pre-orders may work".',
   })
   asapBlockedReason!: AsapBlockedReason | null;
 
@@ -118,6 +127,23 @@ export class StoreListItemDto {
       'store open around the clock.',
   })
   closesAt!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'ISO UTC: the kitchen paused the store until then — no ASAP orders, no pre-orders for a time before it. ' +
+      'Null when not paused.',
+  })
+  pausedUntil!: string | null;
+
+  @ApiProperty({
+    enum: [...STORE_PAUSE_REASONS],
+    nullable: true,
+    type: String,
+    description: 'Why the store is paused; null when not paused. Customers are shown a neutral text whatever it is.',
+  })
+  pauseReason!: StorePauseReason | null;
 
   @ApiProperty({ description: 'Sales tax in basis points: 500 = 5%, 2000 = 20%. 0 = no tax line.' })
   taxRateBps!: number;

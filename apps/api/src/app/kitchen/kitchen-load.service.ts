@@ -2,12 +2,15 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OrderStatus } from '@prisma/client';
 
+import { activeStopWhere } from '../catalog/option-availability';
+import { SOLD_ON_ITS_OWN } from '../catalog/product-listing';
 import { type AvailabilityPolicy, isBusy, slotBlocker } from '../catalog/store-availability';
 import { checkoutError } from '../common/http/checkout-error';
 import { PrismaService } from '../prisma/prisma.service';
-import type { AcceptancePolicy } from './kitchen-timeline';
+import { type AcceptancePolicy, cookingSeconds } from './kitchen-timeline';
 import { hoursAround, type WorkingHour } from './opening-hours';
 import { SLOT_MS, type SlotLoad, ceilToSlot, floorToSlot, slotFits } from './slots';
+import { medianSeconds, typicalPrepCache } from './typical-prep';
 
 export { SLOT_MINUTES, ceilToSlot, floorToSlot } from './slots';
 
@@ -77,7 +80,7 @@ export interface EtaQuote {
   etaSeconds: number;
   /** Of which, waiting for the queue to clear — the busy wait included. */
   queueWaitSeconds: number;
-  /** Of which, this order's own preparation. */
+  /** Of which, this order's own cooking: max(prep, work ÷ parallelism). */
   prepSeconds: number;
   /** Fixed store overhead folded in. */
   baseEtaSeconds: number;
@@ -106,6 +109,8 @@ export interface StoreCapacity extends Omit<AsapFacts, 'id'> {
   workingHours: WorkingHour[];
   /** The open shift, if any — at most one row. */
   shifts: Array<{ extendedUntil: Date | null }>;
+  /** The kitchen paused the store until then: no pre-order before it. */
+  pausedUntil: Date | null;
 }
 
 /**
@@ -116,14 +121,19 @@ export interface StoreCapacity extends Omit<AsapFacts, 'id'> {
  * queue the customer is joining, so the wait is derived from the work
  * outstanding at the store rather than read off a field nobody updates:
  *
- *     eta = baseEtaSeconds + outstandingWork / kitchenParallelism + ownPrep
+ *     eta = baseEtaSeconds + outstandingWork / kitchenParallelism
+ *           + max(ownPrep, ownWork / kitchenParallelism)
  *           (+ busyExtraWait while the store is marked busy)
  *
  * `outstandingWork` sums `Order.workSeconds` (the whole order's cost to the
- * kitchen) of the orders due within {@link DUE_SOON_SECONDS}, while
- * `ownPrep` uses `prepSeconds` (the longest single item). Those are
- * deliberately different numbers: a four-drink order occupies the bar four
- * times as long as it makes its own customer wait.
+ * kitchen) of the orders due within {@link DUE_SOON_SECONDS}. The order's
+ * own part is its longest item (`prepSeconds`) or its whole work spread over
+ * the kitchen's hands, whichever is longer: three five-minute americanos on
+ * a one-handed bar take fifteen minutes, not five (2026-10-20, item 10).
+ *
+ * A store quoted with no order of its own (the storefront's «готово через N
+ * мин», `currentEtaSeconds`) counts a typical order's cooking instead: the
+ * median preparation time of what can be ordered there (item 9).
  *
  * The orders on the board are not all the kitchen is doing: when staff
  * press «Загружены» (store status OVERLOADED) there is a queue at the
@@ -223,32 +233,77 @@ export class KitchenLoadService {
   }
 
   /**
-   * The ASAP quote of many stores at once, for an order with no work of its
-   * own — the store list's «готово через N мин» and its open-now badge.
+   * The ASAP quote of many stores at once, for a typical order — the store
+   * list's «готово через N мин» and its open-now badge. A typical order's
+   * cooking is the store's {@link typicalPrepByStore}; it costs no slot work.
    */
   async asapByStore(stores: readonly AsapFacts[], now: Date = new Date()): Promise<Map<string, EtaQuote>> {
     const quotes = new Map<string, EtaQuote>();
     if (stores.length === 0) return quotes;
     const policy = this.policy;
-    const [waits, loads] = await Promise.all([
+    const ids = stores.map((s) => s.id);
+    const [waits, loads, typical] = await Promise.all([
       this.queueWaitByStore(stores, now),
-      this.slotLoadByStore(
-        stores.map((s) => s.id),
-        now,
-        new Date(now.getTime() + policy.maxAsapWaitSeconds * 1000 + SLOT_MS),
-      ),
+      this.slotLoadByStore(ids, now, new Date(now.getTime() + policy.maxAsapWaitSeconds * 1000 + SLOT_MS)),
+      this.typicalPrepByStore(ids, now),
     ]);
     for (const store of stores) {
-      quotes.set(store.id, asapPlan(store, waits.get(store.id) ?? 0, loads.get(store.id), 0, 0, now, policy));
+      const prep = typical.get(store.id) ?? 0;
+      quotes.set(store.id, asapPlan(store, waits.get(store.id) ?? 0, loads.get(store.id), prep, 0, now, policy));
     }
     return quotes;
   }
 
   /**
+   * How long a usual order takes to make at each store: the median
+   * `prepTimeSeconds` of the products a customer can order there now
+   * (visible, listed in the store, in a category sold on its own, not on the
+   * store's stop-list); 0 for a store with none. Kept for a few minutes per
+   * store (see typical-prep.ts).
+   */
+  async typicalPrepByStore(storeIds: readonly string[], now: Date = new Date()): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    const missing: string[] = [];
+    for (const id of storeIds) {
+      const cached = typicalPrepCache.get(id, now.getTime());
+      if (cached === undefined) missing.push(id);
+      else result.set(id, cached);
+    }
+    if (missing.length === 0) return result;
+
+    const [listings, stops] = await Promise.all([
+      this.prisma.productStore.findMany({
+        where: { storeId: { in: missing }, product: { visible: true, category: SOLD_ON_ITS_OWN } },
+        select: { storeId: true, productId: true, product: { select: { prepTimeSeconds: true } } },
+      }),
+      this.prisma.stopListEntry.findMany({
+        where: { storeId: { in: missing }, ...activeStopWhere(now) },
+        select: { storeId: true, productId: true },
+      }),
+    ]);
+    const stopped = new Set(stops.map((s) => `${s.storeId}|${s.productId}`));
+    const times = new Map<string, number[]>();
+    for (const row of listings) {
+      if (stopped.has(`${row.storeId}|${row.productId}`)) continue;
+      const list = times.get(row.storeId) ?? [];
+      list.push(row.product.prepTimeSeconds);
+      times.set(row.storeId, list);
+    }
+    for (const id of missing) {
+      const seconds = medianSeconds(times.get(id) ?? []);
+      typicalPrepCache.set(id, seconds, now.getTime());
+      result.set(id, seconds);
+    }
+    return result;
+  }
+
+  /**
    * Quote an ASAP order: its own preparation (`prepSeconds`, the longest
    * item) and the kitchen time it costs (`workSeconds`, which decides
-   * whether a slot still has room) — from the cart being priced, or from
-   * the order being created.
+   * whether a slot still has room, and — spread over the kitchen's hands —
+   * how long the order takes when that is longer than its longest item) —
+   * from the cart being priced («Готово к 12:03» at checkout), or from the
+   * order being created.
    */
   async quote(storeId: string, prepSeconds: number, workSeconds = 0, now: Date = new Date()): Promise<EtaQuote> {
     const store = await this.capacityFor(storeId);
@@ -263,8 +318,9 @@ export class KitchenLoadService {
 
   /**
    * The pre-order slots a customer may pick over the next 24 hours. Times
-   * that cannot be booked at all — outside the hours, too soon, right at an
-   * opening nobody is there for yet — are left out; slots that are full
+   * that cannot be booked at all — outside the hours, during a kitchen pause,
+   * too soon, right at an opening nobody is there for yet — are left out;
+   * slots that are full
    * (by count, or by kitchen work with `workSeconds` of the customer's cart
    * added) come back marked unavailable, so checkout can strike them out
    * and the customer understands the store is busy instead of wondering
@@ -284,6 +340,7 @@ export class KitchenLoadService {
       now: from,
       hours: hoursAround(store.workingHours, store.timezone, from, { backDays: 1, aheadDays: 2 }),
       shiftOpen: store.shifts.length > 0,
+      pausedUntil: store.pausedUntil,
       policy,
     };
     const start = ceilToSlot(from);
@@ -308,9 +365,10 @@ export class KitchenLoadService {
 
   /**
    * Refuse a pre-order time the store cannot take: too soon or too far
-   * ahead (`PICKUP_TIME_OUT_OF_RANGE`), outside the hours or right at an
-   * opening nobody is there for yet (`STORE_CLOSED_AT_TIME`), or a slot with
-   * no room for this order's work (`PICKUP_SLOT_FULL`). Called on the order
+   * ahead (`PICKUP_TIME_OUT_OF_RANGE`), outside the hours, during a kitchen
+   * pause or right at an opening nobody is there for yet
+   * (`STORE_CLOSED_AT_TIME`), or a slot with no room for this order's work
+   * (`PICKUP_SLOT_FULL`). Called on the order
    * path, not just the UI one — the checkout screen can be stale by seconds,
    * and two customers can pick the last slot at the same moment.
    */
@@ -326,6 +384,7 @@ export class KitchenLoadService {
       now,
       hours: hoursAround(store.workingHours, store.timezone, now, { backDays: 1, aheadDays: 2 }),
       shiftOpen: store.shifts.length > 0,
+      pausedUntil: store.pausedUntil,
       policy,
     });
     if (blocker === 'TOO_SOON' || blocker === 'TOO_FAR') {
@@ -376,6 +435,7 @@ export class KitchenLoadService {
           select: { weekday: true, opensAt: true, closesAt: true, isClosed: true },
         },
         shifts: { where: { closedAt: null }, select: { extendedUntil: true }, take: 1 },
+        pausedUntil: true,
       },
     });
     if (!store) throw new NotFoundException('Store not found');
@@ -420,9 +480,10 @@ export class KitchenLoadService {
 }
 
 /**
- * When an ASAP order placed at `now` is handed over: at its ETA if that
- * slot has room, else at the start of the first later slot that has —
- * within `maxAsapWaitSeconds`. Past that the queue is full.
+ * When an ASAP order placed at `now` is handed over: at its ETA (base +
+ * queue + its own cooking, max(prep, work ÷ parallelism)) if that slot has
+ * room, else at the start of the first later slot that has — within
+ * `maxAsapWaitSeconds`. Past that the queue is full.
  */
 export function asapPlan(
   store: AsapFacts,
@@ -433,10 +494,11 @@ export function asapPlan(
   now: Date,
   policy: Pick<AvailabilityPolicy, 'maxAsapWaitSeconds'>,
 ): EtaQuote {
-  const etaSeconds = store.baseEtaSeconds + queueWaitSeconds + prepSeconds;
+  const cooking = cookingSeconds({ prepSeconds, workSeconds }, store.kitchenParallelism);
+  const etaSeconds = store.baseEtaSeconds + queueWaitSeconds + cooking;
   const ready = now.getTime() + etaSeconds * 1000;
   const limit = now.getTime() + policy.maxAsapWaitSeconds * 1000;
-  const base = { queueWaitSeconds, prepSeconds, baseEtaSeconds: store.baseEtaSeconds };
+  const base = { queueWaitSeconds, prepSeconds: cooking, baseEtaSeconds: store.baseEtaSeconds };
 
   for (let slot = floorToSlot(new Date(ready)).getTime(); slot <= limit; slot += SLOT_MS) {
     if (!slotFits(loads?.get(slot), store, workSeconds)) continue;

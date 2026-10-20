@@ -2,6 +2,7 @@ import { hoursAround, type WorkingHour } from '../kitchen/opening-hours';
 import {
   type AvailabilityFacts,
   type AvailabilityPolicy,
+  closingBoundary,
   hasBookableSlot,
   slotBlocker,
   storeAvailability,
@@ -44,6 +45,7 @@ describe('store availability (kitchen policy 2026-10-14)', () => {
       closesAt: at('2026-10-14T21:00:00Z'),
       withinHours: true,
       extendedUntil: null,
+      pausedUntil: null,
     });
   });
 
@@ -140,5 +142,112 @@ describe('store availability (kitchen policy 2026-10-14)', () => {
       expect(hasBookableSlot(ctx('2026-10-14T20:55:00Z', true))).toBe(true); // tomorrow morning
       expect(hasBookableSlot(ctx('2026-10-14T12:00:00Z', false))).toBe(true);
     });
+  });
+});
+
+describe('store availability (owner decisions 2026-10-20)', () => {
+  describe('«Пауза»', () => {
+    const paused = { pausedUntil: at('2026-10-14T12:30:00Z') };
+
+    it('blocks ASAP orders with PAUSED until the pause ends, and still takes pre-orders for later', () => {
+      expect(availability('2026-10-14T12:00:00Z', paused)).toMatchObject({
+        openNow: false,
+        acceptingOrders: true,
+        asapBlockedReason: 'PAUSED',
+        pausedUntil: at('2026-10-14T12:30:00Z'),
+      });
+      // A pause that ran out is no pause, even before the cron clears it.
+      expect(availability('2026-10-14T12:31:00Z', paused)).toMatchObject({
+        openNow: true,
+        asapBlockedReason: null,
+        pausedUntil: null,
+      });
+    });
+
+    it('comes after the hours and before the shift and the queue', () => {
+      expect(availability('2026-10-14T22:00:00Z', { pausedUntil: at('2026-10-14T23:00:00Z') }).asapBlockedReason).toBe(
+        'OUTSIDE_HOURS',
+      );
+      expect(availability('2026-10-14T12:00:00Z', { ...paused, openShift: null, asapWaitSeconds: null })).toMatchObject(
+        { asapBlockedReason: 'PAUSED' },
+      );
+    });
+
+    it('takes no pre-order for a time before the pause ends', () => {
+      const now = at('2026-10-14T12:00:00Z');
+      const ctx = {
+        now,
+        hours: hoursAround(HOURS, 'UTC', now),
+        shiftOpen: true,
+        policy: POLICY,
+        pausedUntil: at('2026-10-14T12:30:00Z'),
+      };
+      expect(slotBlocker(at('2026-10-14T12:15:00Z'), ctx)).toBe('PAUSED');
+      expect(slotBlocker(at('2026-10-14T12:30:00Z'), ctx)).toBeNull();
+      // A store open around the clock too.
+      expect(slotBlocker(at('2026-10-14T12:15:00Z'), { ...ctx, hours: hoursAround([], 'UTC', now) })).toBe('PAUSED');
+    });
+
+    it('stops taking any order when the pause covers the rest of the day and nothing opens within it', () => {
+      const tuesdayOnly = HOURS.filter((h) => h.weekday === 2);
+      // Tuesday 12:00, paused until the 21:00 closing; the next window is next Tuesday.
+      expect(
+        availability('2026-10-13T12:00:00Z', { pausedUntil: at('2026-10-13T21:00:00Z') }, tuesdayOnly),
+      ).toMatchObject({ acceptingOrders: false, asapBlockedReason: 'PAUSED' });
+    });
+  });
+
+  describe('the last ASAP order before the closing (item 6)', () => {
+    it('is taken while it would be ready by the closing', () => {
+      // 20:40 + 20 min = 21:00 sharp.
+      expect(availability('2026-10-14T20:40:00Z', { asapWaitSeconds: 1200 })).toMatchObject({
+        openNow: true,
+        asapBlockedReason: null,
+      });
+    });
+
+    it('is refused with CLOSING_SOON once it would be ready after the closing; pre-orders stay', () => {
+      expect(availability('2026-10-14T20:41:00Z', { asapWaitSeconds: 1200 })).toMatchObject({
+        openNow: false,
+        acceptingOrders: true,
+        asapBlockedReason: 'CLOSING_SOON',
+        closesAt: at('2026-10-14T21:00:00Z'),
+      });
+    });
+
+    it('counts to the end of the extension when the kitchen extended the closing', () => {
+      const extended = { openShift: { extendedUntil: at('2026-10-14T21:30:00Z') }, asapWaitSeconds: 1200 };
+      expect(availability('2026-10-14T20:50:00Z', extended).openNow).toBe(true);
+      expect(availability('2026-10-14T21:15:00Z', extended).asapBlockedReason).toBe('CLOSING_SOON');
+    });
+
+    it('comes before a full queue when the closing is nearer than the longest wait', () => {
+      expect(availability('2026-10-14T20:30:00Z', { asapWaitSeconds: null }).asapBlockedReason).toBe('CLOSING_SOON');
+      expect(availability('2026-10-14T12:00:00Z', { asapWaitSeconds: null }).asapBlockedReason).toBe('QUEUE_FULL');
+    });
+
+    it('never applies to a store open around the clock', () => {
+      expect(availability('2026-10-14T23:59:00Z', { asapWaitSeconds: 2400 }, []).openNow).toBe(true);
+    });
+  });
+
+  it('takes the later of the window end and the extension as the closing boundary', () => {
+    expect(closingBoundary({ closesAt: at('2026-10-14T21:00:00Z'), extendedUntil: null })).toEqual(
+      at('2026-10-14T21:00:00Z'),
+    );
+    expect(
+      closingBoundary({ closesAt: at('2026-10-14T21:00:00Z'), extendedUntil: at('2026-10-14T21:30:00Z') }),
+    ).toEqual(at('2026-10-14T21:30:00Z'));
+    expect(closingBoundary({ closesAt: null, extendedUntil: at('2026-10-14T21:30:00Z') })).toEqual(
+      at('2026-10-14T21:30:00Z'),
+    );
+    expect(closingBoundary({ closesAt: null, extendedUntil: null })).toBeNull();
+  });
+
+  it('keeps pre-order slots inside the window: the last one starts before the closing', () => {
+    const now = at('2026-10-14T19:00:00Z');
+    const ctx = { now, hours: hoursAround(HOURS, 'UTC', now), shiftOpen: true, policy: POLICY };
+    expect(slotBlocker(at('2026-10-14T20:45:00Z'), ctx)).toBeNull();
+    expect(slotBlocker(at('2026-10-14T21:00:00Z'), ctx)).toBe('OUTSIDE_HOURS');
   });
 });

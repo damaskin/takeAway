@@ -37,16 +37,44 @@ export function awaitsAcceptance(order: { status: string }): boolean {
 }
 
 /**
- * When the kitchen should start: pickupAt − max(prep, work ÷ parallelism)
- * − {@link START_BUFFER_SECONDS}. A four-drink order on a two-handed bar
+ * How long one order takes the kitchen from the first item to the last:
+ * max(prep, work ÷ parallelism), whole seconds. Three americanos of five
+ * minutes on a one-handed bar take fifteen, not five; on a three-handed bar
+ * five. Used for when to start, for the order's own ETA and for the
+ * kitchen's new estimate when it accepts an order late.
+ */
+export function cookingSeconds(
+  order: { prepSeconds: number; workSeconds: number },
+  kitchenParallelism: number,
+): number {
+  return Math.round(Math.max(order.prepSeconds, order.workSeconds / Math.max(1, kitchenParallelism)));
+}
+
+/**
+ * When the kitchen should start: pickupAt − {@link cookingSeconds} −
+ * {@link START_BUFFER_SECONDS}. A four-drink order on a two-handed bar
  * starts earlier than a single one, even though each drink takes the same.
  */
 export function startBy(
   order: Pick<TimelineOrder, 'pickupAt' | 'prepSeconds' | 'workSeconds'>,
   kitchenParallelism: number,
 ): Date {
-  const cooking = Math.max(order.prepSeconds, order.workSeconds / Math.max(1, kitchenParallelism));
-  return new Date(order.pickupAt.getTime() - Math.round(cooking) * 1000 - START_BUFFER_SECONDS * 1000);
+  const cooking = cookingSeconds(order, kitchenParallelism);
+  return new Date(order.pickupAt.getTime() - cooking * 1000 - START_BUFFER_SECONDS * 1000);
+}
+
+/**
+ * The kitchen's new estimate for an order it accepts or starts at `now`:
+ * now + {@link cookingSeconds} when that is after the promised `pickupAt`,
+ * else null — the promise still holds.
+ */
+export function readyEstimate(
+  order: { pickupAt: Date; prepSeconds: number; workSeconds: number },
+  kitchenParallelism: number,
+  now: Date,
+): Date | null {
+  const ready = now.getTime() + cookingSeconds(order, kitchenParallelism) * 1000;
+  return ready > order.pickupAt.getTime() ? new Date(ready) : null;
 }
 
 /**
