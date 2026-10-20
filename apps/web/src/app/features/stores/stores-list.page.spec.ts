@@ -12,6 +12,7 @@ import { RealtimeService } from '../../core/realtime/realtime.service';
 import { StoresListPage } from './stores-list.page';
 
 /** Stands in for the Leaflet map: jsdom draws no tiles, and the page only needs its pin taps. */
+// eslint-disable-next-line @angular-eslint/component-selector -- must match the ui-kit map it replaces
 @Component({ selector: 'lib-leaflet-map', standalone: true, template: '' })
 class FakeMapComponent {
   readonly markers = input<MapMarker[]>([]);
