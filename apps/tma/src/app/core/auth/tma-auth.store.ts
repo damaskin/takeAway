@@ -46,6 +46,15 @@ export class TmaAuthStore {
     return true;
   }
 
+  /** The customer changed their profile (`PATCH /auth/me`): keep the tokens, show the new details. */
+  setUser(user: AuthUser): void {
+    const current = this._session();
+    if (!current) return;
+    const next: StoredSession = { ...current, user };
+    this._session.set(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  }
+
   /** Read the refresh token imperatively, outside the reactive graph. */
   refreshToken(): string | null {
     return this._session()?.refreshToken ?? null;
