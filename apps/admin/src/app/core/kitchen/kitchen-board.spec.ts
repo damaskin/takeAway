@@ -1,7 +1,10 @@
 import {
   KITCHEN_REJECT_REASONS,
   acceptOverdue,
+  acceptPill,
+  activePause,
   applyKitchenEvent,
+  asapNote,
   awaitsAcceptance,
   canReject,
   countdown,
@@ -11,7 +14,10 @@ import {
   laterPreorders,
   nextAction,
   rejectOutcomeKey,
+  removalNotice,
+  scheduleStatus,
   shiftBanner,
+  showsPickupCountdown,
   startDue,
 } from './kitchen-board';
 import type { KitchenOrder, StoreShift } from './kitchen.api';
@@ -192,7 +198,7 @@ describe('kitchen policy on the board', () => {
     expect(startDue(preorder({ status: 'IN_PROGRESS' }), Date.parse('2026-10-14T09:05:00Z'))).toBe(false);
   });
 
-  describe('shift banner', () => {
+  describe('closing banner', () => {
     const shift = (patch: Partial<StoreShift>): StoreShift => ({
       storeId: 's',
       open: true,
@@ -201,20 +207,21 @@ describe('kitchen policy on the board', () => {
       closedAt: null,
       closedByName: null,
       busy: false,
+      canExtend: true,
       ...patch,
     });
     const at = (iso: string) => Date.parse(iso);
 
-    it('warns 15 minutes before the hours end', () => {
+    it('warns 15 minutes before the hours end, offering «Продлить» while the API allows it', () => {
       const s = shift({ closesAt: '2026-10-14T21:00:00Z', asapOpen: true });
       expect(shiftBanner(s, at('2026-10-14T20:44:00Z'))).toBeNull();
       expect(shiftBanner(s, at('2026-10-14T20:45:00Z'))).toEqual({
         kind: 'closingSoon',
         at: '2026-10-14T21:00:00.000Z',
         extended: false,
+        canExtend: true,
       });
-      // Past the closing before the next read of the shift: closed by the schedule.
-      expect(shiftBanner(s, at('2026-10-14T21:00:30Z'))).toEqual({ kind: 'outsideHours', opensAt: null });
+      expect(shiftBanner({ ...s, canExtend: false }, at('2026-10-14T20:50:00Z'))).toMatchObject({ canExtend: false });
     });
 
     it('warns before an extension ends, and says nothing while it has long to run', () => {
@@ -223,17 +230,169 @@ describe('kitchen policy on the board', () => {
       expect(shiftBanner(s, at('2026-10-14T21:50:00Z'))).toMatchObject({ kind: 'closingSoon', extended: true });
     });
 
-    it('says the store is closed by the schedule outside the hours, with the next opening', () => {
-      const s = shift({ asapBlockedReason: 'OUTSIDE_HOURS', opensAt: '2026-10-15T06:00:00Z' });
-      expect(shiftBanner(s, at('2026-10-14T23:50:00Z'))).toEqual({
-        kind: 'outsideHours',
-        opensAt: '2026-10-15T06:00:00Z',
-      });
+    it('offers nothing outside the hours — at 23:57 there is nothing to extend', () => {
+      const s = shift({ asapBlockedReason: 'OUTSIDE_HOURS', opensAt: '2026-10-15T06:00:00Z', canExtend: false });
+      expect(shiftBanner(s, at('2026-10-14T23:57:00Z'))).toBeNull();
+      // Past the closing before the next read of the shift: quiet too.
+      expect(shiftBanner(shift({ closesAt: '2026-10-14T21:00:00Z' }), at('2026-10-14T21:00:30Z'))).toBeNull();
     });
 
     it('stays quiet without a shift and for a store open around the clock', () => {
-      expect(shiftBanner(shift({ open: false, asapBlockedReason: 'OUTSIDE_HOURS' }), now)).toBeNull();
+      expect(shiftBanner(shift({ open: false, closesAt: '2026-10-14T21:00:00Z' }), now)).toBeNull();
       expect(shiftBanner(shift({ closesAt: null, asapOpen: true }), now)).toBeNull();
+    });
+  });
+
+  describe('schedule status (the shift follows the hours)', () => {
+    const shift = (patch: Partial<StoreShift>): StoreShift => ({
+      storeId: 's',
+      open: true,
+      openedAt: '2026-10-14T06:00:00Z',
+      openedByName: null,
+      closedAt: null,
+      closedByName: null,
+      busy: false,
+      closesAt: null,
+      opensAt: null,
+      extendedUntil: null,
+      asapBlockedReason: null,
+      ...patch,
+    });
+    const at = (iso: string) => Date.parse(iso);
+
+    it('works by the schedule until the closing, and says when it was extended', () => {
+      expect(scheduleStatus(shift({ closesAt: '2026-10-14T21:00:00Z' }), 'OPEN', now)).toEqual({
+        kind: 'open',
+        until: '2026-10-14T21:00:00.000Z',
+      });
+      expect(
+        scheduleStatus(
+          shift({ closesAt: '2026-10-14T21:00:00Z', extendedUntil: '2026-10-14T21:30:00Z' }),
+          'OVERLOADED',
+          at('2026-10-14T20:50:00Z'),
+        ),
+      ).toEqual({ kind: 'extended', until: '2026-10-14T21:30:00.000Z' });
+      // Past the hours, the extension still running.
+      expect(
+        scheduleStatus(
+          shift({ extendedUntil: '2026-10-14T21:30:00Z', asapBlockedReason: null }),
+          'OPEN',
+          at('2026-10-14T21:10:00Z'),
+        ),
+      ).toEqual({ kind: 'extended', until: '2026-10-14T21:30:00.000Z' });
+    });
+
+    it('is closed by the schedule with the next opening, and does not take the shift for it', () => {
+      const night = shift({ open: false, asapBlockedReason: 'OUTSIDE_HOURS', opensAt: '2026-10-15T06:00:00Z' });
+      expect(scheduleStatus(night, 'OPEN', at('2026-10-14T23:57:00Z'))).toEqual({
+        kind: 'closed',
+        opensAt: '2026-10-15T06:00:00.000Z',
+      });
+      // The closing passed between two reads: closed, the opening to come with the next read.
+      expect(scheduleStatus(shift({ closesAt: '2026-10-14T21:00:00Z' }), 'OPEN', at('2026-10-14T21:00:30Z'))).toEqual({
+        kind: 'closed',
+        opensAt: null,
+      });
+    });
+
+    it('is opening for the minute before the schedule opens the shift, and open around the clock with no hours', () => {
+      expect(scheduleStatus(shift({ open: false, closesAt: '2026-10-14T21:00:00Z' }), 'OPEN', now)).toEqual({
+        kind: 'opening',
+      });
+      expect(scheduleStatus(shift({}), 'OPEN', now)).toEqual({ kind: 'aroundTheClock' });
+    });
+
+    it('is switched off for a store closed in its settings, whatever the shift says', () => {
+      expect(scheduleStatus(shift({ closesAt: '2026-10-14T21:00:00Z' }), 'CLOSED', now)).toEqual({
+        kind: 'switchedOff',
+      });
+      expect(scheduleStatus(null, 'CLOSED', now)).toEqual({ kind: 'switchedOff' });
+      expect(scheduleStatus(null, 'OPEN', now)).toBeNull();
+    });
+
+    it('says why no ASAP orders come while open: the queue or the closing', () => {
+      expect(asapNote(shift({ asapBlockedReason: 'QUEUE_FULL' }))).toBe('queueFull');
+      expect(asapNote(shift({ asapBlockedReason: 'CLOSING_SOON' }))).toBe('closingSoon');
+      expect(asapNote(shift({ asapBlockedReason: 'PAUSED' }))).toBeNull();
+    });
+
+    it('carries the pause while it runs', () => {
+      const paused = shift({
+        pausedUntil: '2026-10-14T08:30:00Z',
+        pauseReason: 'EQUIPMENT',
+        pauseComment: 'кофемашина',
+        pausedByName: 'Анна',
+      });
+      expect(activePause(paused, now)).toEqual({
+        until: '2026-10-14T08:30:00Z',
+        reason: 'EQUIPMENT',
+        comment: 'кофемашина',
+        byName: 'Анна',
+      });
+      expect(activePause(paused, at('2026-10-14T08:30:01Z'))).toBeNull();
+      expect(activePause(shift({ pausedUntil: null }), now)).toBeNull();
+    });
+  });
+
+  describe('card timers (item 16)', () => {
+    const asap = (patch: Partial<KitchenOrder> = {}): KitchenOrder => ({
+      ...order('a', 'PAID'),
+      acceptAlertAt: '2026-10-14T08:03:00Z',
+      acceptDeadlineAt: '2026-10-14T08:08:00Z',
+      ...patch,
+    });
+
+    it('shows only the acceptance pill while nobody accepted the order, the pickup countdown after', () => {
+      expect(showsPickupCountdown(asap())).toBe(false);
+      expect(acceptPill(asap(), now)).toEqual({ overdue: false, countdown: true });
+      expect(acceptPill(asap(), Date.parse('2026-10-14T08:03:00Z'))).toEqual({ overdue: true, countdown: true });
+      expect(showsPickupCountdown(asap({ status: 'ACCEPTED' }))).toBe(true);
+      expect(acceptPill(asap({ status: 'ACCEPTED' }), now)).toBeNull();
+    });
+
+    it('counts a pre-order down to its auto-cancel only once it is overdue', () => {
+      const pre = preorder({ acceptAlertAt: '2026-10-14T09:00:00Z', acceptDeadlineAt: '2026-10-14T09:05:00Z' });
+      expect(acceptPill(pre, now)).toEqual({ overdue: false, countdown: false });
+      expect(acceptPill(pre, Date.parse('2026-10-14T09:00:00Z'))).toEqual({ overdue: true, countdown: true });
+    });
+  });
+
+  describe('a ticket that left without the kitchen', () => {
+    const board = [order('a', 'PAID'), order('b', 'IN_PROGRESS')];
+
+    it('is announced when the customer cancelled it or nobody accepted it in time', () => {
+      expect(
+        removalNotice(board, {
+          storeId: 's',
+          kind: 'removed',
+          orderId: 'a',
+          order: null,
+          reason: 'CANCELLED_BY_CUSTOMER',
+          orderCode: '1234',
+        }),
+      ).toEqual({ reason: 'CANCELLED_BY_CUSTOMER', code: '1234' });
+      expect(
+        removalNotice(board, { storeId: 's', kind: 'removed', orderId: 'a', order: null, reason: 'NOT_ACCEPTED' }),
+      ).toEqual({ reason: 'NOT_ACCEPTED', code: 'A' });
+    });
+
+    it('stays quiet for the kitchen’s own moves, its own rejections and tickets it never showed', () => {
+      expect(removalNotice(board, { storeId: 's', kind: 'removed', orderId: 'a', order: null })).toBeNull();
+      expect(
+        removalNotice(board, { storeId: 's', kind: 'removed', orderId: 'a', order: null, reason: 'REJECTED' }),
+      ).toBeNull();
+      expect(
+        removalNotice(board, { storeId: 's', kind: 'removed', orderId: 'x', order: null, reason: 'EXPIRED' }),
+      ).toBeNull();
+      expect(
+        removalNotice(board, {
+          storeId: 's',
+          kind: 'removed',
+          orderId: 'x',
+          order: null,
+          reason: 'CANCELLED_BY_CUSTOMER',
+        }),
+      ).toBeNull();
     });
   });
 });

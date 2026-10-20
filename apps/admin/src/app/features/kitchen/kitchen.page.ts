@@ -10,13 +10,15 @@ import { interval } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
-import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
+import { apiErrorBody, apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
 import {
   KITCHEN_COLUMNS,
   KITCHEN_REJECT_REASONS,
   OVERDUE_CHIME_MS,
   type KitchenColumn,
   acceptOverdue,
+  acceptPill,
+  activePause,
   applyKitchenEvent,
   canReject,
   countdown,
@@ -25,7 +27,9 @@ import {
   laterPreorders,
   nextAction,
   rejectOutcomeKey,
+  removalNotice,
   shiftBanner,
+  showsPickupCountdown,
   startDue,
 } from '../../core/kitchen/kitchen-board';
 import {
@@ -33,6 +37,7 @@ import {
   KitchenApi,
   type KitchenAction,
   type KitchenOrder,
+  type KitchenPauseRequest,
   type KitchenRejectBody,
   type KitchenRejectReason,
   type ShiftExtendMinutes,
@@ -45,7 +50,8 @@ import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AuthService } from '../../core/auth/auth.service';
 import type { KitchenStore } from '../../core/kitchen/order-alerts.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
-import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
+import { StoreScheduleStatusComponent } from '../../shared/store-schedule-status.component';
+import { KitchenPauseDialogComponent } from './kitchen-pause-dialog.component';
 import { KitchenShiftBannerComponent } from './kitchen-shift-banner.component';
 
 /** How long the "order rejected" notice stays on screen. */
@@ -84,9 +90,14 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
  * more than 15 minutes away wait in «Предзаказы»; at their start time a
  * chime and a notice say it is time to make them. A ticket nobody accepted
  * in time pulses and chimes every 30 seconds (the API calls it off at its
- * deadline). Late tickets say by how much. Before the working hours end,
- * and outside them, a banner offers to extend; "Finish work" asks through
- * a dialog that says what stays on the board.
+ * deadline). Late tickets say by how much.
+ *
+ * Since 2026-10-20 the working hours open and close the shift: the board
+ * says where the store stands by its schedule, offers «Продлить» only in the
+ * last hour before the closing, and «Пауза» for technical trouble. A ticket
+ * the customer cancelled (or nobody accepted in time) leaves with a notice
+ * and a chime instead of silently. An unaccepted card counts down only to
+ * its auto-cancel; the pickup countdown starts once it is accepted.
  */
 @Component({
   selector: 'app-kitchen',
@@ -96,8 +107,9 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
     TranslatePipe,
     NgTemplateOutlet,
     ConfirmDialogComponent,
-    ShiftCloseDialogComponent,
     KitchenShiftBannerComponent,
+    KitchenPauseDialogComponent,
+    StoreScheduleStatusComponent,
   ],
   template: `
     <section class="kitchen" [class.kitchen-dark]="mode.tablet()">
@@ -135,6 +147,24 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
               (click)="toggleBusy()"
             >
               {{ (markedBusy() ? 'admin.kitchen.busy.on' : 'admin.kitchen.busy.off') | translate }}
+            </button>
+          }
+          @if (canPause()) {
+            <button
+              type="button"
+              class="kitchen-tool kitchen-pause"
+              [class.kitchen-pause-on]="paused()"
+              [attr.aria-pressed]="!!paused()"
+              [disabled]="pauseBusy()"
+              [title]="(paused() ? 'admin.kitchen.schedule.resume' : 'admin.kitchen.pause.hint') | translate"
+              data-testid="kitchen-pause"
+              (click)="paused() ? resumePause() : openPause()"
+            >
+              @if (paused(); as p) {
+                {{ 'admin.kitchen.pause.buttonOn' | translate: { time: shiftTime(p.until) } }}
+              } @else {
+                {{ 'admin.kitchen.pause.button' | translate }}
+              }
             </button>
           }
           <a
@@ -175,55 +205,23 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
       }
 
       @if (storeId() && shift(); as sh) {
-        @if (sh.open) {
-          <div class="kitchen-shift kitchen-shift-open" data-testid="shift-open">
-            <span class="kitchen-shift-dot"></span>
-            <span class="kitchen-shift-text">
-              {{
-                (sh.openedByName ? 'admin.kitchen.shift.openSinceBy' : 'admin.kitchen.shift.openSince')
-                  | translate: { time: shiftTime(sh.openedAt), name: sh.openedByName }
-              }}
-              @if (extendedUntil(); as until) {
-                <span class="kitchen-shift-extended" data-testid="shift-extended">
-                  · {{ 'admin.kitchen.shift.extendedUntil' | translate: { time: shiftTime(until) } }}
-                </span>
-              }
-            </span>
-            <button type="button" class="kitchen-tool" [disabled]="shiftBusy()" (click)="setShift(false)">
-              {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.finish') | translate }}
-            </button>
-          </div>
-          @if (banner(); as b) {
-            <app-kitchen-shift-banner
-              [banner]="b"
-              [time]="b.kind === 'closingSoon' ? shiftTime(b.at) : ''"
-              [opensAt]="b.kind === 'outsideHours' ? shiftTime(b.opensAt) : ''"
-              [busy]="extending()"
-              (extend)="extend($event)"
-            />
-          }
-        } @else {
-          <div class="kitchen-shift kitchen-shift-closed" role="status" data-testid="shift-closed">
-            <div class="flex flex-col" style="gap: 4px; min-width: 0">
-              <strong class="kitchen-shift-title">{{ 'admin.kitchen.shift.closedTitle' | translate }}</strong>
-              @if (sh.closedAutomatically && sh.closedAt) {
-                <span class="kitchen-shift-text" data-testid="shift-auto-closed">{{
-                  'admin.kitchen.shift.autoClosed' | translate: { time: shiftTime(sh.closedAt) }
-                }}</span>
-              }
-              <span class="kitchen-shift-text">{{ 'admin.kitchen.shift.closedHint' | translate }}</span>
-            </div>
-            @if (store()?.status === 'CLOSED') {
-              <!-- The store is switched off: a shift would not make it take orders, so say why instead. -->
-              <span class="kitchen-shift-text" data-testid="shift-store-closed">{{
-                'admin.kitchen.shift.storeClosed' | translate
-              }}</span>
-            } @else {
-              <button type="button" class="kitchen-shift-start" [disabled]="shiftBusy()" (click)="setShift(true)">
-                {{ (shiftBusy() ? 'admin.kitchen.working' : 'admin.kitchen.shift.start') | translate }}
-              </button>
-            }
-          </div>
+        <!-- The working hours open and close the shift; the kitchen extends the closing and pauses the store. -->
+        <app-store-schedule-status
+          [shift]="sh"
+          [storeStatus]="store()?.status"
+          [timezone]="store()?.timezone"
+          [now]="now()"
+          [canResume]="true"
+          [resuming]="pauseBusy()"
+          (lift)="resumePause()"
+        />
+        @if (banner(); as b) {
+          <app-kitchen-shift-banner
+            [banner]="b"
+            [time]="shiftTime(b.at)"
+            [busy]="extending()"
+            (extend)="extend($event)"
+          />
         }
         @if (shiftError()) {
           <p class="kitchen-error" role="alert">{{ shiftError() }}</p>
@@ -280,10 +278,20 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         [style.border]="cardBorder(order)"
         [attr.data-testid]="'ticket-' + order.orderCode"
       >
-        @if (overdue(order)) {
-          <div class="kitchen-overdue" role="alert" data-testid="ticket-overdue">
-            {{ 'admin.kitchen.card.awaiting' | translate: { minutes: waitingMinutes(order) } }}
-            @if (order.acceptDeadlineAt) {
+        @if (pillOf(order); as pill) {
+          <!-- Waiting for «Принять»: this is the card's only countdown, to the auto-cancel. -->
+          <div
+            class="kitchen-awaiting"
+            [class.kitchen-overdue]="pill.overdue"
+            [attr.role]="pill.overdue ? 'alert' : null"
+            [attr.data-testid]="pill.overdue ? 'ticket-overdue' : 'ticket-awaiting'"
+          >
+            @if (order.pickupMode === 'SCHEDULED' && !pill.overdue) {
+              {{ 'admin.kitchen.card.awaitingPreorder' | translate }}
+            } @else {
+              {{ 'admin.kitchen.card.awaiting' | translate: { minutes: waitingMinutes(order) } }}
+            }
+            @if (pill.countdown && order.acceptDeadlineAt) {
               · {{ 'admin.kitchen.card.autoCancelIn' | translate: { time: untilLabel(order.acceptDeadlineAt) } }}
             }
           </div>
@@ -308,7 +316,11 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         <div class="flex items-center justify-between">
           <span class="kitchen-code">{{ order.orderCode }}</span>
           <div class="flex flex-col items-end" style="gap: 2px">
-            <span class="kitchen-due" [style.color]="dueColor(order)">{{ dueLabel(order) }}</span>
+            @if (pickupCountdown(order)) {
+              <span class="kitchen-due" data-testid="ticket-due" [style.color]="dueColor(order)">{{
+                dueLabel(order)
+              }}</span>
+            }
             <span class="kitchen-mode">{{ 'kds.card.pickupMode.' + order.pickupMode | translate }}</span>
           </div>
         </div>
@@ -386,8 +398,13 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
       </article>
     </ng-template>
 
-    @if (closingShift() && storeId(); as id) {
-      <app-shift-close-dialog [storeId]="id" (closed)="shiftClosed($event)" (cancelled)="closingShift.set(false)" />
+    @if (pausing()) {
+      <app-kitchen-pause-dialog
+        [busy]="pauseBusy()"
+        [error]="pauseError()"
+        (confirmed)="confirmPause($event)"
+        (cancelled)="closePause()"
+      />
     }
 
     <!-- Outside the board, so the dialog keeps the light palette in tablet mode. -->
@@ -494,6 +511,11 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         background: var(--color-amber);
         border-color: var(--color-amber);
         color: #3d2a05;
+      }
+      .kitchen-pause-on {
+        background: var(--color-berry);
+        border-color: var(--color-berry);
+        color: white;
       }
       .kitchen-busy-note {
         margin: 0;
@@ -794,47 +816,6 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         font-weight: 600;
         box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
       }
-      .kitchen-shift {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 12px;
-        padding: 12px 16px;
-        border-radius: 14px;
-      }
-      .kitchen-shift-open {
-        background: rgba(123, 196, 164, 0.16);
-      }
-      .kitchen-shift-closed {
-        justify-content: space-between;
-        background: rgba(233, 168, 75, 0.18);
-        border: 1px solid var(--color-amber);
-      }
-      .kitchen-shift-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 9999px;
-        background: var(--color-mint);
-      }
-      .kitchen-shift-title {
-        font-size: 16px;
-        color: var(--color-text-primary);
-      }
-      .kitchen-shift-text {
-        flex: 1 1 200px;
-        font-size: 13px;
-        color: var(--color-text-secondary);
-      }
-      .kitchen-shift-start {
-        height: 48px;
-        padding: 0 24px;
-        border-radius: 12px;
-        background: var(--color-caramel);
-        color: white;
-        font-size: 16px;
-        font-weight: 700;
-      }
-      .kitchen-shift-start:disabled,
       .kitchen-tool:disabled {
         opacity: 0.6;
         cursor: progress;
@@ -870,10 +851,6 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         color: var(--color-text-tertiary);
         margin: 0;
       }
-      .kitchen-shift-extended {
-        font-weight: 600;
-        color: #3e8868;
-      }
       .kitchen-preorders {
         display: flex;
         flex-direction: column;
@@ -896,17 +873,22 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
         gap: 12px;
       }
-      .kitchen-overdue,
+      .kitchen-awaiting,
       .kitchen-late {
         align-self: flex-start;
         padding: 4px 12px;
         border-radius: 9999px;
         font-size: 13px;
         font-weight: 700;
+        color: #8a6720;
+        background: rgba(233, 168, 75, 0.22);
+      }
+      .kitchen-awaiting.kitchen-overdue {
         color: white;
         background: var(--color-berry);
       }
       .kitchen-late {
+        color: white;
         background: #8a6720;
       }
       .kitchen-card-overdue {
@@ -957,7 +939,6 @@ export class KitchenPage {
   readonly now = signal(Date.now());
   /** The store's shift; null until read. Closed means it takes no orders. */
   readonly shift = signal<StoreShift | null>(null);
-  readonly shiftBusy = signal(false);
   readonly shiftError = signal<string | null>(null);
   /** «Загружены»: the kitchen marked the store busy — customers see it, orders still come. */
   readonly markedBusy = computed(() => !!this.shift()?.busy);
@@ -966,16 +947,17 @@ export class KitchenPage {
     () => !!this.shift()?.open && this.shift()?.busy !== undefined && this.store()?.status !== 'CLOSED',
   );
   readonly busyToggling = signal(false);
-  /** The "Finish work" dialog is open. */
-  readonly closingShift = signal(false);
   readonly extending = signal(false);
-  /** The hours banner: the end is near, or the store is closed by the schedule. */
+  /** The closing banner: the end of the hours (or the extension) is near. */
   readonly banner = computed(() => shiftBanner(this.shift(), this.now()));
-  /** An extension past the hours that is still running. */
-  readonly extendedUntil = computed(() => {
-    const until = this.shift()?.extendedUntil;
-    return until && Date.parse(until) > this.now() ? until : null;
-  });
+  /** The kitchen's «Пауза» while it runs. */
+  readonly paused = computed(() => activePause(this.shift(), this.now()));
+  /** «Пауза» shows once the shift is read, in a store that is not switched off. */
+  readonly canPause = computed(() => !!this.shift() && this.store()?.status !== 'CLOSED');
+  /** The pause dialog is open. */
+  readonly pausing = signal(false);
+  readonly pauseBusy = signal(false);
+  readonly pauseError = signal<string | null>(null);
   /** «Предзаказы»: pre-orders whose start is more than 15 minutes away. */
   readonly preorders = computed(() => laterPreorders(this.orders(), this.now()));
 
@@ -1068,6 +1050,16 @@ export class KitchenPage {
   /** Nobody accepted it in time: it pulses and chimes. */
   overdue(order: KitchenOrder): boolean {
     return acceptOverdue(order, this.now());
+  }
+
+  /** The acceptance pill of a card nobody has accepted yet. */
+  pillOf(order: KitchenOrder) {
+    return acceptPill(order, this.now());
+  }
+
+  /** The countdown to the pickup, once the order is accepted. */
+  pickupCountdown(order: KitchenOrder): boolean {
+    return showsPickupCountdown(order);
   }
 
   late(order: KitchenOrder): number {
@@ -1197,26 +1189,67 @@ export class KitchenPage {
     });
   }
 
-  /**
-   * "Start work" / "Finish work" for the store on the board. Finishing asks
-   * through the dialog, which closes the shift itself.
-   */
-  setShift(open: boolean): void {
+  openPause(): void {
+    if (!this.canPause() || this.pauseBusy()) return;
+    this.pauseError.set(null);
+    this.pausing.set(true);
+  }
+
+  /** Cancel, Escape or the backdrop; ignored while the request is in flight. */
+  closePause(): void {
+    if (this.pauseBusy()) return;
+    this.pausing.set(false);
+  }
+
+  /** «Пауза»: the store takes no orders for now and no pre-orders until it ends. */
+  confirmPause(body: KitchenPauseRequest): void {
     const storeId = this.storeId();
-    if (!storeId || this.shiftBusy()) return;
-    if (!open) {
-      this.closingShift.set(true);
-      return;
-    }
-    this.shiftBusy.set(true);
-    this.shiftError.set(null);
-    this.api.setShift(storeId, open).subscribe({
+    if (!storeId || this.pauseBusy()) return;
+    this.pauseBusy.set(true);
+    this.pauseError.set(null);
+    this.api.pause(storeId, body).subscribe({
       next: (shift) => {
-        this.shiftBusy.set(false);
-        if (this.storeId() === storeId) this.shift.set(shift);
+        this.pauseBusy.set(false);
+        this.pausing.set(false);
+        if (this.storeId() !== storeId) return;
+        this.shift.set(shift);
+        if (shift.pausedUntil) {
+          this.showToast(
+            this.translate.instant('admin.kitchen.pause.done', { time: this.shiftTime(shift.pausedUntil) }),
+          );
+        }
       },
       error: (err) => {
-        this.shiftBusy.set(false);
+        this.pauseBusy.set(false);
+        this.pauseError.set(
+          apiErrorMessage(err, this.translate, {
+            network: 'common.networkError',
+            codes: {
+              STORE_SWITCHED_OFF: 'admin.kitchen.pause.errors.STORE_SWITCHED_OFF',
+              PAUSE_NEEDS_DURATION: 'admin.kitchen.pause.errors.PAUSE_NEEDS_DURATION',
+            },
+            statuses: { 403: 'common.forbidden' },
+          }),
+        );
+      },
+    });
+  }
+
+  /** «Снять паузу». */
+  resumePause(): void {
+    const storeId = this.storeId();
+    if (!storeId || this.pauseBusy()) return;
+    this.pauseBusy.set(true);
+    this.shiftError.set(null);
+    this.api.resume(storeId).subscribe({
+      next: (shift) => {
+        this.pauseBusy.set(false);
+        if (this.storeId() !== storeId) return;
+        this.shift.set(shift);
+        this.showToast(this.translate.instant('admin.kitchen.pause.resumed'));
+      },
+      error: (err) => {
+        this.pauseBusy.set(false);
         this.shiftError.set(
           apiErrorMessage(err, this.translate, {
             network: 'common.networkError',
@@ -1225,13 +1258,6 @@ export class KitchenPage {
         );
       },
     });
-  }
-
-  /** The dialog closed the shift. */
-  shiftClosed(shift: StoreShift): void {
-    this.closingShift.set(false);
-    if (this.storeId() === shift.storeId) this.shift.set(shift);
-    this.refresh();
   }
 
   /** «Продлить на 30 мин / 1 ч»: ASAP orders keep coming past the working hours. */
@@ -1247,12 +1273,14 @@ export class KitchenPage {
       },
       error: (err) => {
         this.extending.set(false);
+        const limit = apiErrorBody(err)?.['reason'] === 'LIMIT';
         this.shiftError.set(
           apiErrorMessage(err, this.translate, {
             network: 'common.networkError',
             codes: {
-              SHIFT_EXTENSION_LIMIT: 'admin.kitchen.shift.extendLimit',
-              SHIFT_NOT_OPEN: 'admin.kitchen.shift.closedTitle',
+              SHIFT_EXTENSION_NOT_ALLOWED: limit
+                ? 'admin.kitchen.shift.extendLimit'
+                : 'admin.kitchen.shift.extendNotAllowed',
             },
             statuses: { 403: 'common.forbidden' },
           }),
@@ -1417,7 +1445,7 @@ export class KitchenPage {
     this.rejecting.set(null);
     this.shift.set(null);
     this.shiftError.set(null);
-    this.closingShift.set(false);
+    this.pausing.set(false);
     this.reminded = new Set();
     this.lastOverdueChime = 0;
     this.chimedBanner = null;
@@ -1430,9 +1458,17 @@ export class KitchenPage {
     this.detach = this.realtime.watch(
       storeId,
       (event) => {
+        // The customer cancelled it, or nobody accepted it in time: say so
+        // with a chime rather than let the ticket just vanish.
+        const notice = removalNotice(this.orders(), event);
         const next = applyKitchenEvent(this.orders(), event);
         if (next) this.orders.set(next);
         else this.refresh();
+        if (notice) {
+          this.alerts.dismiss(event.orderId);
+          this.showToast(this.translate.instant(`admin.kitchen.removed.${notice.reason}`, { code: notice.code }));
+          this.alerts.remind();
+        }
       },
       (event) => this.shift.set(event.shift),
     );

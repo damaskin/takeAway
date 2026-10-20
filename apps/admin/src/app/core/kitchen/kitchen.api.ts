@@ -5,8 +5,9 @@ import type {
   KitchenDeviceBinding,
   KitchenDeviceStores,
   KitchenOrderTimeline,
-  ShiftCloseSummary,
+  KitchenPauseRequest,
   ShiftExtendMinutes,
+  StorePauseReason,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -42,7 +43,11 @@ export interface KitchenOrder extends Partial<KitchenOrderTimeline> {
   }>;
 }
 
-/** `GET /kds/shift` — whether the store is working, i.e. takes orders. */
+/**
+ * `GET /kds/shift` — the store's shift, which the working hours open and
+ * close by themselves (since 2026-10-20), and what it means right now.
+ * The fields after `busy` are absent from older API builds.
+ */
 export interface StoreShift {
   storeId: string;
   open: boolean;
@@ -63,9 +68,18 @@ export interface StoreShift {
   asapBlockedReason?: AsapBlockedReason | null;
   /** The last shift was closed by the schedule, not by a person. */
   closedAutomatically?: boolean;
+  /** The current (or last) shift was opened by the schedule. */
+  openedAutomatically?: boolean;
+  /** «Продлить» may be offered now: the last hour before the closing, or an extension running below its cap. */
+  canExtend?: boolean;
+  /** The kitchen paused the store until then; null when not paused. */
+  pausedUntil?: string | null;
+  pauseReason?: StorePauseReason | null;
+  pauseComment?: string | null;
+  pausedByName?: string | null;
 }
 
-export type { ShiftCloseSummary, ShiftExtendMinutes };
+export type { KitchenPauseRequest, ShiftExtendMinutes, StorePauseReason };
 
 export type KitchenAction = 'accept' | 'start' | 'ready' | 'pickedUp';
 
@@ -143,19 +157,7 @@ export class KitchenApi {
     return this.http.get<StoreShift>(`${this.api.baseUrl}/kds/shift`, { params });
   }
 
-  /** "Start work" (`open`) or "Finish work" (`close`) at the store. */
-  setShift(storeId: string, open: boolean): Observable<StoreShift> {
-    const params = new HttpParams().set('storeId', storeId);
-    return this.http.post<StoreShift>(`${this.api.baseUrl}/kds/shift/${open ? 'open' : 'close'}`, {}, { params });
-  }
-
-  /** What "Finish work" would leave behind: orders to accept first, to finish, for later. */
-  closeSummary(storeId: string): Observable<ShiftCloseSummary> {
-    const params = new HttpParams().set('storeId', storeId);
-    return this.http.get<ShiftCloseSummary>(`${this.api.baseUrl}/kds/shift/close-summary`, { params });
-  }
-
-  /** «Продлить»: ASAP orders keep coming this much longer past the working hours. */
+  /** «Продлить»: ASAP orders keep coming this much longer past the working hours (only while `canExtend`). */
   extendShift(storeId: string, minutes: ShiftExtendMinutes): Observable<StoreShift> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.put<StoreShift>(`${this.api.baseUrl}/kds/shift/extend`, { minutes }, { params });
@@ -165,6 +167,18 @@ export class KitchenApi {
   setBusy(storeId: string, busy: boolean): Observable<StoreShift> {
     const params = new HttpParams().set('storeId', storeId);
     return this.http.put<StoreShift>(`${this.api.baseUrl}/kds/busy`, { busy }, { params });
+  }
+
+  /** «Пауза»: no orders for now and no pre-orders until it ends; answers the shift carrying the pause. */
+  pause(storeId: string, body: KitchenPauseRequest): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.put<StoreShift>(`${this.api.baseUrl}/kds/pause`, body, { params });
+  }
+
+  /** «Снять паузу». */
+  resume(storeId: string): Observable<StoreShift> {
+    const params = new HttpParams().set('storeId', storeId);
+    return this.http.delete<StoreShift>(`${this.api.baseUrl}/kds/pause`, { params });
   }
 
   run(action: KitchenAction, storeId: string, orderId: string): Observable<{ id: string; status: string }> {
