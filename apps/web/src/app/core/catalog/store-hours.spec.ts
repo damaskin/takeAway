@@ -76,6 +76,24 @@ describe('store hours lines', () => {
     expect(asapBlockedText({ ...closed, openNow: true }, translate, fmt, night)).toBeNull();
   });
 
+  it('names the end of a kitchen pause and an imminent closing, on cards and at checkout', () => {
+    // 12:00 in Tiraspol, within the hours.
+    const noon = new Date('2026-10-15T09:00:00Z');
+    const paused = { ...closed, asapBlockedReason: 'PAUSED', pausedUntil: '2026-10-15T09:30:00Z', opensAt: null };
+    expect(storeHoursText(paused, translate, fmt, noon)).toBe(
+      'Технический перерыв до 12:30 · можно заказать ко времени',
+    );
+    expect(asapBlockedText(paused, translate, fmt, noon)).toBe(
+      'В точке технический перерыв до 12:30 — выберите, к какому времени приготовить заказ.',
+    );
+
+    const closing = { ...closed, asapBlockedReason: 'CLOSING_SOON', closesAt: '2026-10-15T09:10:00Z', opensAt: null };
+    expect(storeHoursText(closing, translate, fmt, noon)).toBe('Скоро закрытие — только ко времени');
+    expect(asapBlockedText(closing, translate, fmt, noon)).toBe(
+      'Точка закрывается в 12:10 — заказ «сейчас» уже не успеем приготовить. Выберите время.',
+    );
+  });
+
   it('heads pickup windows «Сегодня» and «Завтра», in English too', () => {
     expect(pickupDayLabel(0, '2026-10-15T06:00:00Z', translate, fmt, 'Europe/Chisinau')).toBe('Сегодня');
     expect(pickupDayLabel(1, '2026-10-15T06:00:00Z', translate, fmt, 'Europe/Chisinau')).toBe('Завтра');
