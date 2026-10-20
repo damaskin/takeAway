@@ -41,6 +41,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { StorageModule } from './storage/storage.module';
+import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -83,6 +84,7 @@ import { UsersModule } from './users/users.module';
     SettlementsModule,
     CustomersModule,
     FeedbackModule,
+    TelegramBotModule,
     HealthModule,
   ],
   controllers: [AppController],

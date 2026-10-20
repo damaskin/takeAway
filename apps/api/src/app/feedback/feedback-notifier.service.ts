@@ -66,7 +66,7 @@ export class FeedbackNotifier {
       });
       const admins = await this.prisma.user.findMany({
         where: { role: Role.SUPER_ADMIN, blockedAt: null },
-        select: { id: true, email: true, locale: true, telegramUserId: true },
+        select: { id: true, email: true, locale: true, telegramNotifyChatId: true },
       });
 
       await settle(this.logger, [
@@ -82,7 +82,7 @@ export class FeedbackNotifier {
     if (this.opsChat.enabled && (await this.opsChat.send(feedbackChatText(digest)))) return;
 
     const { title, body } = feedbackPush(digest);
-    const reachable = admins.filter((a) => a.telegramUserId !== null);
+    const reachable = admins.filter((a) => a.telegramNotifyChatId !== null);
     if (reachable.length === 0) {
       this.logger.warn('New feedback, but no ops chat and no platform admin with Telegram to tell');
       return;
@@ -91,7 +91,7 @@ export class FeedbackNotifier {
       this.logger,
       reachable.map((admin) =>
         this.notifications.deliver(
-          { userId: admin.id, locale: admin.locale, telegramUserId: admin.telegramUserId, pushTokens: [] },
+          { userId: admin.id, locale: admin.locale, telegramUserId: admin.telegramNotifyChatId, pushTokens: [] },
           { kind: 'generic', title, body },
           'telegram',
         ),
@@ -119,7 +119,7 @@ interface Admin {
   id: string;
   email: string | null;
   locale: Locale;
-  telegramUserId: bigint | null;
+  telegramNotifyChatId: bigint | null;
 }
 
 /** Runs every delivery to the end, whatever happens to its neighbours, and logs the ones that failed. */

@@ -11,6 +11,10 @@ export interface PushTarget {
 
 export interface PushRecipient {
   userId: string;
+  /**
+   * The Telegram chat the bot writes to: a customer's own Telegram id, or a
+   * staff account's notification chat (`User.telegramNotifyChatId`).
+   */
   telegramUserId?: bigint | null;
   pushTokens: PushTarget[];
   locale: 'EN' | 'RU';

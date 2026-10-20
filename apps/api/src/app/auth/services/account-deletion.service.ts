@@ -148,6 +148,7 @@ export class AccountDeletionService {
           avatarUrl: null,
           dateOfBirth: null,
           telegramUserId: null,
+          telegramNotifyChatId: null,
           passwordHash: null,
           passwordMustChange: false,
           referralCode: null,

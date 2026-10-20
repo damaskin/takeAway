@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 
 import { KdsController } from '../../kds/kds.controller';
+import { TelegramNotifyLinkController } from '../../telegram-bot/telegram-notify-link.controller';
 import { AdminStaffController } from '../../admin/staff/admin-staff.controller';
 import { KdsSessionAllowed } from '../decorators/kds-session.decorator';
 import type { AuthenticatedUser } from '../strategies/jwt.strategy';
@@ -96,6 +97,11 @@ describe('KdsSessionGuard', () => {
     expect(code(() => guard.canActivate(contextFor(gone, board, { query: { storeId: 'store-1' } })))).toBe(
       'KDS_SESSION_STORE',
     );
+  });
+
+  it('opens the Telegram link page for a PIN session', () => {
+    const telegram = { cls: TelegramNotifyLinkController, handler: TelegramNotifyLinkController.prototype.issue };
+    expect(guard.canActivate(contextFor(pinSession, telegram))).toBe(true);
   });
 
   it('keeps a manager’s PIN session away from staff and PIN management', () => {

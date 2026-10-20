@@ -169,7 +169,7 @@ export class CampaignModerationService {
             select: {
               locale: true,
               stores: { select: { timezone: true } },
-              owner: { select: { id: true, email: true, locale: true, telegramUserId: true, blockedAt: true } },
+              owner: { select: { id: true, email: true, locale: true, telegramNotifyChatId: true, blockedAt: true } },
             },
           },
         },
@@ -186,10 +186,10 @@ export class CampaignModerationService {
         adminUrl: this.adminUrl,
       });
       const deliveries: Promise<unknown>[] = [];
-      if (owner.telegramUserId !== null) {
+      if (owner.telegramNotifyChatId !== null) {
         deliveries.push(
           this.notifications.deliver(
-            { userId: owner.id, locale: owner.locale, telegramUserId: owner.telegramUserId, pushTokens: [] },
+            { userId: owner.id, locale: owner.locale, telegramUserId: owner.telegramNotifyChatId, pushTokens: [] },
             { kind: 'generic', title: m.title, body: m.body },
             'telegram',
           ),

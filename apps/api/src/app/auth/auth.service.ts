@@ -363,31 +363,30 @@ export class AuthService {
   }
 
   /**
-   * Link the current (email+password) user to a Telegram chat ID via a
-   * Login Widget callback. Used by admin/KDS staff to receive push
-   * notifications. Unlike the sign-in path, we do NOT create a new user
-   * or issue tokens — we just write `telegramUserId` onto the existing
-   * row.
+   * The older way staff linked Telegram for work notifications: a Login
+   * Widget callback. It now sets where the bot writes to
+   * (`telegramNotifyChatId`) and never the Telegram sign-in identity, so the
+   * Telegram account may well also be the person's own customer profile —
+   * linking used to fail then. The usual way is the bot link
+   * (TelegramNotifyLinkService); this stays for password sessions on a
+   * server where the bot cannot receive messages yet.
    */
   async linkTelegram(userId: string, payload: TelegramLoginWidgetPayload): Promise<AuthUserDto> {
-    return this.linkTelegramUserId(userId, this.telegram.verifyLoginWidget(payload).id);
+    return this.linkNotifyChat(userId, this.telegram.verifyLoginWidget(payload).id);
   }
 
   /** Same as {@link linkTelegram}, from a Telegram Login (OpenID Connect) ID token. */
   async linkTelegramIdToken(userId: string, idToken: string): Promise<AuthUserDto> {
     const identity = await this.oauth.verifyTelegram(idToken);
-    return this.linkTelegramUserId(userId, identity.id);
+    return this.linkNotifyChat(userId, identity.id);
   }
 
-  private async linkTelegramUserId(userId: string, id: number): Promise<AuthUserDto> {
-    const telegramUserId = BigInt(id);
-
-    const existing = await this.prisma.user.findUnique({ where: { telegramUserId } });
-    if (existing && existing.id !== userId) {
-      throw new BadRequestException('This Telegram account is already linked to another user');
-    }
-
-    const user = await this.prisma.user.update({ where: { id: userId }, data: { telegramUserId } });
+  /** A private chat with the bot has the person's Telegram id as its chat id. */
+  private async linkNotifyChat(userId: string, telegramId: number): Promise<AuthUserDto> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { telegramNotifyChatId: BigInt(telegramId) },
+    });
     return this.toAuthUser(user);
   }
 
@@ -426,10 +425,18 @@ export class AuthService {
   /**
    * Shared tail of both Telegram sign-in paths (Mini App init-data + Login
    * Widget). Keys the user on `telegramUserId`.
+   *
+   * A staff account never signs in with Telegram — it signs in with a
+   * password or a PIN. Staff who linked Telegram for notifications before
+   * 2026-10-20 had it written to `telegramUserId`, so their own Mini App or
+   * a Telegram sign-in on the site landed in the staff account. Such an id
+   * is moved off the staff account here (its notifications keep going to
+   * `telegramNotifyChatId`), and the sign-in opens a customer profile.
    */
   private async finalizeTelegramSignIn(tgUser: TelegramUser, deviceType: 'TELEGRAM' | 'WEB'): Promise<AuthSessionDto> {
     const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || null;
     const locale = tgUser.language_code?.toLowerCase().startsWith('ru') ? 'RU' : 'EN';
+    await this.releaseStaffTelegram(BigInt(tgUser.id));
 
     const user = await this.prisma.user.upsert({
       where: { telegramUserId: BigInt(tgUser.id) },
@@ -452,6 +459,24 @@ export class AuthService {
 
     const tokens = await this.tokens.issue(user.id, device.id);
     return { ...tokens, user: this.toAuthUser(user) };
+  }
+
+  /**
+   * Takes a Telegram id off a staff, owner or admin account, which kept it
+   * from linking Telegram on the old «Telegram» page. The account keeps the
+   * chat as its notification chat. Customers are left alone.
+   */
+  async releaseStaffTelegram(telegramUserId: bigint): Promise<void> {
+    const holder = await this.prisma.user.findUnique({
+      where: { telegramUserId },
+      select: { id: true, role: true, telegramNotifyChatId: true },
+    });
+    if (!holder || holder.role === Role.CUSTOMER) return;
+    await this.prisma.user.update({
+      where: { id: holder.id },
+      data: { telegramUserId: null, telegramNotifyChatId: holder.telegramNotifyChatId ?? telegramUserId },
+    });
+    this.logger.log(`Telegram sign-in identity moved off ${holder.role} account ${holder.id}; it keeps notifications`);
   }
 
   /**
