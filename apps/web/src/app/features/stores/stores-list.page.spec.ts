@@ -30,7 +30,7 @@ const store = (id: string, name: string): StoreListItem => ({
   latitude: 46.84,
   longitude: 29.62,
   status: 'OPEN',
-  fulfillmentTypes: ['PICKUP'],
+  fulfillmentTypes: ['TAKEAWAY'],
   pickupPointType: 'COUNTER',
   busyMeter: 0,
   currentEtaSeconds: 300,

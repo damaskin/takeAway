@@ -343,7 +343,7 @@ describe('CheckoutPage — pickup time', () => {
 
   describe('pickup or delivery', () => {
     const toggle = (root: HTMLElement) => root.querySelector('[data-testid="fulfillment-toggle"]');
-    const withDelivery: StoreDetail = { ...STORE, fulfillmentTypes: ['PICKUP', 'DELIVERY'] };
+    const withDelivery: StoreDetail = { ...STORE, fulfillmentTypes: ['TAKEAWAY', 'DELIVERY'] };
 
     it('shows no «Самовывоз | Доставка» while delivery is switched off, even where the store offers it', async () => {
       const { page, root } = await open(withDelivery, { deliveryEnabled: false });
