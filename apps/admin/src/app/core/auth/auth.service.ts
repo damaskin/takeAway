@@ -4,6 +4,7 @@ import type {
   AuthSession,
   AuthTokens,
   AuthUser,
+  KdsPinLoginRequest,
   PasswordForgotRequest,
   PasswordLoginRequest,
   PasswordResetRequest,
@@ -36,12 +37,14 @@ export class AuthService {
   }
 
   /**
-   * Kitchen tablet sign-in: a short PIN valid for one store, from a tablet
-   * bound to the store's brand. The session opens only that store's kitchen.
+   * Kitchen tablet sign-in: the person's PIN for every store they work at in
+   * the tablet's brand. The store comes after it (`kdsStores` in the
+   * answer); `storeId` is sent only to settle an old PIN two people share
+   * (409 `KDS_PIN_STORE_REQUIRED`). The session opens only the kitchen.
    */
-  loginWithPin(storeId: string, pin: string, deviceToken: string): Observable<AuthSession> {
+  loginWithPin(body: KdsPinLoginRequest): Observable<AuthSession> {
     return this.http
-      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, { storeId, pin, deviceToken })
+      .post<AuthSession>(`${this.api.baseUrl}/auth/kds/pin`, body)
       .pipe(tap((session) => this.store.set(session)));
   }
 

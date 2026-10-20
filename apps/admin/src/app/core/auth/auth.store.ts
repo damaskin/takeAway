@@ -10,8 +10,10 @@ interface StoredSession {
   refreshTokenExpiresInSeconds: number;
   user: AuthUser;
   mustChangePassword?: boolean;
-  /** Set for a kitchen PIN session: the one store it works. */
+  /** Kitchen PIN session: the store the board opened on. Alone on sessions saved before brand-wide PINs. */
   kdsStoreId?: string;
+  /** Set for a kitchen PIN session: the brand of the tablet. */
+  kdsBrandId?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -24,11 +26,20 @@ export class AuthStore {
   readonly accessToken = computed<string | null>(() => this._session()?.accessToken ?? null);
   readonly mustChangePassword = computed<boolean>(() => !!this._session()?.mustChangePassword);
   /**
-   * The store of a kitchen PIN session, null for an email + password one.
-   * The API lets a PIN session reach only that store's kitchen board and
-   * stop-list, so the cabinet shows nothing else.
+   * The store a kitchen PIN session opened on, null for an email + password
+   * one. The board may switch to the person's other stores of the brand.
    */
   readonly kdsStoreId = computed<string | null>(() => this._session()?.kdsStoreId ?? null);
+  /**
+   * Signed in with a kitchen PIN: the API lets such a session reach only
+   * the kitchen board, the stop-list and the Telegram link of the person's
+   * stores in the tablet's brand, so the cabinet shows nothing else.
+   * Sessions saved before brand-wide PINs carry only the store.
+   */
+  readonly kitchenSession = computed<boolean>(() => {
+    const session = this._session();
+    return !!(session?.kdsBrandId || session?.kdsStoreId);
+  });
 
   set(session: AuthSession): void {
     const stored: StoredSession = {
@@ -39,6 +50,7 @@ export class AuthStore {
       user: session.user,
       mustChangePassword: session.mustChangePassword,
       kdsStoreId: session.kdsStoreId,
+      kdsBrandId: session.kdsBrandId,
     };
     this._session.set(stored);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));

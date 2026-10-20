@@ -15,13 +15,16 @@ import { PwaService } from '../core/pwa/pwa.service';
 import { AdminSidebarComponent } from './admin-sidebar.component';
 
 describe('AdminSidebarComponent — a kitchen PIN session', () => {
-  function render(kdsStoreId: string | null) {
+  function render(kitchenSession: boolean) {
     TestBed.configureTestingModule({
       imports: [AdminSidebarComponent],
       providers: [
         provideRouter([]),
         provideTranslateService(),
-        { provide: AuthStore, useValue: { user: signal({ role: 'STAFF' }), kdsStoreId: signal(kdsStoreId) } },
+        {
+          provide: AuthStore,
+          useValue: { user: signal({ role: 'STAFF' }), kitchenSession: signal(kitchenSession) },
+        },
         { provide: FeatureFlagsStore, useValue: { flags: signal({}) } },
         { provide: BrandsService, useValue: { pendingCount: signal(null), planRequests: signal(null) } },
         { provide: OrderAlertsService, useValue: { pendingCount: signal(0) } },
@@ -41,22 +44,25 @@ describe('AdminSidebarComponent — a kitchen PIN session', () => {
 
   beforeEach(() => TestBed.resetTestingModule());
 
-  it('says why only the kitchen and the stop-list are there', () => {
-    const el = render('store-1');
+  it('says why only the kitchen, the stop-list and Telegram are there, and offers no support form', () => {
+    const el = render(true);
 
     expect(el.querySelector('[data-testid="pin-session-note"]')?.textContent?.trim()).toBe(
-      'Вход по PIN — только кухня и стоп-лист. Остальные разделы — после входа по паролю.',
+      'Вход по PIN — кухня, стоп-лист и Telegram. Остальные разделы — после входа по паролю.',
     );
     expect([...el.querySelectorAll('a.admin-nav')].map((a) => a.getAttribute('href'))).toEqual([
       '/kitchen',
       '/stop-list',
+      '/telegram-link',
     ]);
+    expect(el.querySelector('.admin-support')).toBeNull();
   });
 
-  it('has nothing to explain after a password sign-in', () => {
-    const el = render(null);
+  it('has nothing to explain after a password sign-in, and offers the support form', () => {
+    const el = render(false);
 
     expect(el.querySelector('[data-testid="pin-session-note"]')).toBeNull();
-    expect(el.querySelectorAll('a.admin-nav').length).toBeGreaterThan(2);
+    expect(el.querySelectorAll('a.admin-nav').length).toBeGreaterThan(3);
+    expect(el.querySelector('.admin-support')).not.toBeNull();
   });
 });

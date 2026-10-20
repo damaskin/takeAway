@@ -2,7 +2,7 @@ import { Component, HostListener, computed, inject, signal } from '@angular/core
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import type { KitchenDeviceStores } from '@takeaway/shared-types';
+import type { AuthSession, KitchenDeviceStores, KitchenSessionStore } from '@takeaway/shared-types';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { apiErrorBody, apiErrorCode } from '../../core/http/api-error';
@@ -10,8 +10,8 @@ import { KitchenDeviceService } from '../../core/kitchen/kitchen-device.service'
 import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
 import { appendPinDigit, canSubmitPin, pinSlots } from '../../core/kitchen/kitchen-pin';
 
-/** What the screen shows: binding instructions, a link being redeemed, or the keypad. */
-type DeviceState = 'loading' | 'unbound' | 'pairing' | 'bound';
+/** What the screen shows: binding instructions, a link being redeemed, the keypad, or the store to open. */
+type DeviceState = 'loading' | 'unbound' | 'pairing' | 'bound' | 'choose';
 
 /** Codes after which this tablet's token is no good and it must be bound again. */
 const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_DEVICE_UNKNOWN']);
@@ -21,15 +21,19 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
  *
  * The tablet sits on the pass, in reach of the queue, and shifts change.
  * Typing a work email and a long password there is slow and shows an admin
- * credential to customers — so staff unlock with a short PIN scoped to
- * this one store, on a large keypad rather than the tablet's own keyboard.
+ * credential to customers — so staff unlock with a short PIN, on a large
+ * keypad rather than the tablet's own keyboard.
  *
- * The store picker used to list every store of every brand. A tablet is now
- * bound to one brand (KitchenDeviceService) and offers only that brand's
- * stores; an unbound tablet explains how to bind it. PINs are 4–6 digits
- * and the PIN is sent with «Войти» (or Enter) — the screen cannot know a
- * PIN's length, and auto-sending at four digits made 5–6 digit PINs
- * impossible and spent a lockout attempt on every keystroke.
+ * A tablet is bound to one brand (KitchenDeviceService); an unbound tablet
+ * explains how to bind it. The PIN comes first: it is the person's one PIN
+ * for every store they work at in the brand. Someone who works at more than
+ * one is asked which store to open, and switches between them on the board
+ * without the PIN again. An old store PIN that two people share at
+ * different stores (409 `KDS_PIN_STORE_REQUIRED`) asks for the store and is
+ * sent again with it. PINs are 4–6 digits and the PIN is sent with «Войти»
+ * (or Enter) — the screen cannot know a PIN's length, and auto-sending at
+ * four digits made 5–6 digit PINs impossible and spent a lockout attempt on
+ * every keystroke.
  */
 @Component({
   selector: 'app-pin-login',
@@ -72,7 +76,10 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
           @if (stores().length === 0) {
             <p class="pin-note" data-testid="pin-no-stores">{{ 'kds.device.noPins' | translate }}</p>
           } @else {
-            @if (stores().length > 1) {
+            @if (needStore()) {
+              <p class="pin-note" role="note" data-testid="pin-store-required">
+                {{ 'kds.pin.storeRequired' | translate }}
+              </p>
               <label class="flex flex-col w-full" style="max-width: 420px; gap: 6px">
                 <span class="pin-caption">{{ 'kds.pin.store' | translate }}</span>
                 <select class="pin-select" [value]="storeId() ?? ''" (change)="selectStore($any($event.target).value)">
@@ -82,8 +89,6 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
                   }
                 </select>
               </label>
-            } @else if (stores()[0]; as only) {
-              <p class="pin-store">{{ only.name }} · {{ only.city }}</p>
             }
 
             <div class="flex" style="gap: 14px; min-height: 22px" aria-hidden="true">
@@ -93,7 +98,7 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
             </div>
             <p class="pin-note">{{ 'kds.pin.rule' | translate }}</p>
 
-            <div class="pin-pad" [class.pin-pad-off]="!storeId()">
+            <div class="pin-pad" [class.pin-pad-off]="needStore() && !storeId()">
               @for (key of keys; track key) {
                 @if (key === '') {
                   <span></span>
@@ -133,11 +138,32 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
             {{ 'kds.device.unbind' | translate }}
           </button>
         }
+        @case ('choose') {
+          <section class="pin-card" data-testid="pin-choose">
+            <h2 class="pin-card-title">{{ 'kds.pin.chooseTitle' | translate }}</h2>
+            <p class="pin-note">{{ 'kds.pin.chooseHint' | translate }}</p>
+            <div class="pin-choices">
+              @for (store of choices(); track store.id) {
+                <button
+                  type="button"
+                  class="pin-choice"
+                  [class.pin-choice-last]="store.id === lastStoreId"
+                  (click)="open(store.id)"
+                >
+                  <span class="pin-choice-name">{{ store.name }}</span>
+                  <span class="pin-caption">{{ store.city }}</span>
+                </button>
+              }
+            </div>
+          </section>
+        }
       }
 
-      <a routerLink="/login" class="pin-note" style="text-decoration: underline">{{
-        'kds.pin.usePassword' | translate
-      }}</a>
+      @if (state() !== 'choose') {
+        <a routerLink="/login" class="pin-note" style="text-decoration: underline">{{
+          'kds.pin.usePassword' | translate
+        }}</a>
+      }
     </main>
   `,
   styles: [
@@ -168,12 +194,6 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
         margin: 0;
         text-align: center;
         max-width: 420px;
-      }
-      .pin-store {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--color-espresso);
       }
       .pin-card {
         display: flex;
@@ -271,6 +291,32 @@ const UNBOUND_CODES: ReadonlySet<string> = new Set(['KDS_DEVICE_REQUIRED', 'KDS_
       .pin-submit:disabled {
         opacity: 0.4;
       }
+      .pin-choices {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .pin-choice {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        min-height: 64px;
+        padding: 12px 16px;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-cream);
+        text-align: left;
+        cursor: pointer;
+      }
+      .pin-choice-last {
+        border-color: var(--color-caramel);
+      }
+      .pin-choice-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--color-espresso);
+      }
       .pin-link {
         background: transparent;
         border: 0;
@@ -295,7 +341,14 @@ export class PinLoginPage {
   readonly state = signal<DeviceState>('loading');
   readonly brandName = signal<string | null>(null);
   readonly stores = signal<KitchenDeviceStores['stores']>([]);
+  /** The store sent with the PIN — only after the API asked for it (an old PIN two people share). */
   readonly storeId = signal<string | null>(null);
+  /** The API answered KDS_PIN_STORE_REQUIRED: the PIN goes again with the store picked. */
+  readonly needStore = signal(false);
+  /** After the PIN: the person's stores, when there is more than one to open. */
+  readonly choices = signal<KitchenSessionStore[]>([]);
+  /** The store this tablet opened last, marked among the choices. */
+  readonly lastStoreId = read(KITCHEN_STORE_KEY);
   readonly pin = signal('');
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -304,7 +357,9 @@ export class PinLoginPage {
 
   /** Six slots filled left to right; the last two are optional. Shows progress, never the digits. */
   readonly slots = computed(() => pinSlots(this.pin()));
-  readonly canSubmit = computed(() => !!this.storeId() && canSubmitPin(this.pin()) && !this.loading());
+  readonly canSubmit = computed(
+    () => canSubmitPin(this.pin()) && !this.loading() && (!this.needStore() || !!this.storeId()),
+  );
 
   constructor() {
     const code = this.route.snapshot.queryParamMap.get('pair');
@@ -323,11 +378,10 @@ export class PinLoginPage {
     event.preventDefault();
   }
 
+  /** The store an old PIN was set for, picked after 409 KDS_PIN_STORE_REQUIRED. The PIN typed stays. */
   selectStore(id: string): void {
     this.storeId.set(id || null);
-    this.pin.set('');
     this.error.set(null);
-    if (id) write(KITCHEN_STORE_KEY, id);
   }
 
   press(digit: string): void {
@@ -343,26 +397,53 @@ export class PinLoginPage {
   }
 
   submit(): void {
-    const storeId = this.storeId();
     const token = this.device.token();
-    if (!this.canSubmit() || !storeId || !token) return;
+    if (!this.canSubmit() || !token) return;
+    const storeId = this.needStore() ? (this.storeId() ?? undefined) : undefined;
     this.loading.set(true);
-    this.auth.loginWithPin(storeId, this.pin(), token).subscribe({
-      next: () => {
+    this.auth.loginWithPin({ pin: this.pin(), deviceToken: token, ...(storeId ? { storeId } : {}) }).subscribe({
+      next: (session) => {
         this.loading.set(false);
-        this.mode.enter();
-        void this.router.navigate(['/kitchen'], { queryParams: { store: storeId } });
+        this.pin.set('');
+        this.signedIn(session);
       },
       error: (err: unknown) => {
         this.loading.set(false);
+        const code = apiErrorCode(err) ?? '';
+        if (code === 'KDS_PIN_STORE_REQUIRED') {
+          // The PIN was right; it only needs its store. Keep it typed.
+          this.needStore.set(true);
+          this.storeId.set(null);
+          return;
+        }
         this.pin.set('');
-        if (UNBOUND_CODES.has(apiErrorCode(err) ?? '')) {
+        if (UNBOUND_CODES.has(code)) {
           this.becomeUnbound(this.translate.instant('kds.device.unboundNow'));
           return;
         }
         this.error.set(this.pinErrorMessage(err));
       },
     });
+  }
+
+  /** Opens the board on one of the person's stores; the board switches to the others without the PIN. */
+  open(storeId: string): void {
+    write(KITCHEN_STORE_KEY, storeId);
+    this.mode.enter();
+    void this.router.navigate(['/kitchen'], { queryParams: { store: storeId } });
+  }
+
+  /** One store goes straight to the board; several are offered, the one this tablet opened last marked. */
+  private signedIn(session: AuthSession): void {
+    const stores = session.kdsStores ?? [];
+    if (stores.length > 1) {
+      this.choices.set(stores);
+      this.state.set('choose');
+      return;
+    }
+    const only = stores[0]?.id ?? session.kdsStoreId;
+    if (only) this.open(only);
+    else void this.router.navigate(['/kitchen']);
   }
 
   /** "Not our business": forget the binding, e.g. a tablet moved to another café. */
@@ -381,10 +462,6 @@ export class PinLoginPage {
       next: (bound) => {
         this.brandName.set(bound.brandName);
         this.stores.set(bound.stores);
-        const remembered = read(KITCHEN_STORE_KEY);
-        const pick =
-          bound.stores.find((s) => s.id === remembered) ?? (bound.stores.length === 1 ? bound.stores[0] : null);
-        this.storeId.set(pick?.id ?? null);
         this.state.set('bound');
       },
       error: (err: unknown) => {
@@ -422,6 +499,7 @@ export class PinLoginPage {
     this.device.forget();
     this.stores.set([]);
     this.storeId.set(null);
+    this.needStore.set(false);
     this.brandName.set(null);
     this.notice.set(notice);
     this.state.set('unbound');
