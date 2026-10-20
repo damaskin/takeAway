@@ -20,7 +20,9 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
   standalone: true,
   imports: [RouterLink, TmaTabBarComponent, TranslatePipe, StoreLogoComponent],
   template: `
-    <section style="padding: 24px 16px 88px 16px; display: flex; flex-direction: column; gap: 16px">
+    <section
+      style="padding: 24px 16px var(--tma-tab-page-bottom) 16px; display: flex; flex-direction: column; gap: 16px"
+    >
       <div class="flex flex-col" style="gap: 4px">
         <h1
           style="font-family: var(--font-display); font-size: 26px; font-weight: 700; color: var(--color-espresso); margin: 0"

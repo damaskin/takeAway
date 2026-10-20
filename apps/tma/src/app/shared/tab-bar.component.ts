@@ -5,7 +5,9 @@ import { TranslatePipe } from '@ngx-translate/core';
 /**
  * TMA bottom tab bar — pencil tmaTabBar (kaqJQ/vtZXk/05LjB/Do3R7).
  *
- * 56px foam bar with 4 tabs ({{ 'nav.home' | translate }} · {{ 'nav.stores' | translate }} · {{ 'nav.orders' | translate }} · {{ 'nav.profile' | translate }}).
+ * 56px foam bar with 4 tabs (Главная · Точки · Заказы · Профиль), raised
+ * above the phone's home indicator or gesture bar: the bar grows by
+ * `--tma-safe-bottom` (see styles.css) and keeps its tabs above it.
  * Active tab uses caramel icon + label, inactive uses text-tertiary.
  */
 @Component({
@@ -15,7 +17,7 @@ import { TranslatePipe } from '@ngx-translate/core';
   template: `
     <nav
       class="fixed left-0 right-0 bottom-0 flex items-center justify-around"
-      style="height: 56px; padding: 8px 24px; background: var(--color-foam); border-top: 1px solid var(--color-border-light); z-index: 20"
+      style="height: var(--tma-tab-bar-height); padding: 8px 24px calc(8px + var(--tma-safe-bottom)); background: var(--color-foam); border-top: 1px solid var(--color-border-light); z-index: 20"
     >
       <a
         routerLink="/"
