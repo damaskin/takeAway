@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { CROISSANT, installFakeApi, PRODUCT, type FakeProduct } from './support/fake-api';
 import { useEnglish } from './support/locale';
+import { signIn } from './support/session';
 
 /**
  * The customer journey, end to end through the real Angular app.
@@ -36,28 +37,17 @@ function placeOrder(page: Page) {
   return page.getByRole('button', { name: /·\s*ready by/i });
 }
 
-/** Signs in by seeding the session the app persists, skipping the OAuth hop. */
-async function signIn(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'takeaway.web.session',
-      JSON.stringify({
-        accessToken: 'test-access',
-        refreshToken: 'test-refresh',
-        accessTokenExpiresInSeconds: 900,
-        refreshTokenExpiresInSeconds: 604800,
-        user: {
-          id: 'user-1',
-          phone: null,
-          email: 'sam@example.com',
-          name: 'Sam',
-          locale: 'EN',
-          currency: 'AED',
-          role: 'CUSTOMER',
-        },
-      }),
-    );
-  });
+/** The «Later» drop-down: one native select, the windows grouped by day. */
+function slotPicker(page: Page) {
+  return page.getByLabel('Pick up at');
+}
+
+/** The value (ISO start) of the picker's n-th window. */
+function slotValue(page: Page, n: number): Promise<string> {
+  return slotPicker(page)
+    .locator('optgroup option')
+    .nth(n)
+    .evaluate((o) => (o as HTMLOptionElement).value);
 }
 
 test.describe('customer journey', () => {
@@ -89,15 +79,17 @@ test.describe('customer journey', () => {
     // ── Scheduling: only slots the kitchen can keep ───────────────────
     await page.getByRole('button', { name: /later/i }).click();
 
-    // Slot labels are localized times, so they carry an AM/PM suffix under
-    // en-US and none under a 24-hour locale. Match both.
-    const slotButtons = page.locator('button', { hasText: /^\s*\d{1,2}:\d{2}(\s*[AP]M)?\s*$/i });
-    await expect(slotButtons.first()).toBeVisible();
-    // The fake marks the first window full; it must render disabled rather
-    // than disappear, so the customer reads "busy" not "broken".
-    await expect(slotButtons.nth(0)).toBeDisabled();
-    await expect(slotButtons.nth(1)).toBeEnabled();
-    await slotButtons.nth(1).click();
+    // One drop-down, not a wall of chips. The fake marks the first window
+    // full: it is listed, disabled and says so, so the customer reads "busy"
+    // not "broken"; the first free one is preselected.
+    const windows = slotPicker(page).locator('optgroup option');
+    await expect(windows).toHaveCount(4);
+    await expect(windows.nth(0)).toBeDisabled();
+    await expect(windows.nth(0)).toHaveText(/— taken\s*$/);
+    await expect(windows.nth(1)).toBeEnabled();
+    await expect(slotPicker(page)).toHaveValue(await slotValue(page, 1));
+    const chosen = await slotValue(page, 2);
+    await slotPicker(page).selectOption(chosen);
 
     // ── Place ─────────────────────────────────────────────────────────
     await placeOrder(page).click();
@@ -110,7 +102,7 @@ test.describe('customer journey', () => {
     expect(api.orders).toHaveLength(1);
     const sent = api.orders[0]?.['_request'] as Record<string, unknown>;
     expect(sent['pickupMode']).toBe('SCHEDULED');
-    expect(typeof sent['pickupAt']).toBe('string');
+    expect(sent['pickupAt']).toBe(chosen);
     expect(new Date(sent['pickupAt'] as string).getTime()).toBeGreaterThan(Date.now());
   });
 
@@ -180,15 +172,81 @@ test.describe('customer journey', () => {
     await expect(page.getByRole('button', { name: /^\s*asap\s*$/i })).toBeDisabled();
 
     // Checkout opens on the slots with the first free window already picked.
-    const slotButtons = page.locator('button', { hasText: /^\s*\d{1,2}:\d{2}(\s*[AP]M)?\s*$/i });
-    await expect(slotButtons.nth(1)).toBeEnabled();
+    const firstFree = await slotValue(page, 1);
+    await expect(slotPicker(page)).toHaveValue(firstFree);
 
     await placeOrder(page).click();
     await page.waitForURL(/\/orders\/order-1/);
 
     const sent = api.orders[0]?.['_request'] as Record<string, unknown>;
     expect(sent['pickupMode']).toBe('SCHEDULED');
-    expect(typeof sent['pickupAt']).toBe('string');
+    expect(sent['pickupAt']).toBe(firstFree);
+  });
+
+  test('checkout shows no pickup-or-delivery choice while delivery is switched off', async ({ page }) => {
+    await installFakeApi(page);
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+
+    await expect(placeOrder(page)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delivery' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Pickup' })).toHaveCount(0);
+  });
+
+  test('checkout offers delivery once it is switched on and the store delivers', async ({ page }) => {
+    await installFakeApi(page, { delivery: true });
+    await signIn(page);
+
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+
+    await page.getByRole('button', { name: 'Delivery' }).click();
+    await expect(page.getByText('Address', { exact: true })).toBeVisible();
+  });
+
+  test('a paused store says until when everywhere and takes pre-orders only', async ({ page }) => {
+    // 12:30 today in Dubai is whatever it is in UTC minus four hours; the
+    // page shows it on the store's clock.
+    const pausedUntil = new Date(Date.now() + 30 * 60_000);
+    pausedUntil.setUTCSeconds(0, 0);
+    const until = new Intl.DateTimeFormat('en', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'Asia/Dubai',
+    }).format(pausedUntil);
+    await installFakeApi(page, {
+      storeOpenNow: false,
+      store: { asapBlockedReason: 'PAUSED', pausedUntil: pausedUntil.toISOString(), pauseReason: 'EQUIPMENT' },
+    });
+    await signIn(page);
+
+    // Home: the hours line, no «N min» badge.
+    await page.goto('/');
+    await expect(page.getByTestId('store-hours').first()).toContainText(`Short break until ${until}`);
+    await expect(page.getByText(/^\s*7 min\s*$/)).toHaveCount(0);
+
+    // Stores list: the same line instead of the wait.
+    await page.goto('/stores');
+    await expect(page.getByTestId('store-hours').first()).toContainText('Short break until');
+    await expect(page.getByText(/ready in \d+ min/i)).toHaveCount(0);
+
+    // Menu header.
+    await page.goto('/stores/dubai-marina');
+    await expect(page.getByTestId('store-preorder')).toContainText('Short break until');
+
+    // Checkout: «ASAP» off, why, and a window preselected.
+    await page.goto('/products/flat-white');
+    await page.getByRole('button', { name: /add to cart/i }).click();
+    await page.goto('/checkout?store=dubai-marina');
+    await expect(page.getByRole('button', { name: /^\s*asap\s*$/i })).toBeDisabled();
+    await expect(page.getByTestId('asap-blocked')).toContainText(
+      `The store is on a short break until ${until} — pick a time for your order.`,
+    );
+    await expect(slotPicker(page)).toHaveValue(await slotValue(page, 1));
   });
 
   test('a closed store shows its hours and a way out instead of the menu', async ({ page }) => {
