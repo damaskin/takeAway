@@ -1046,9 +1046,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       roleHint: {
         STORE_MANAGER:
-          'runs their stores: orders, the kitchen and shifts, the menu and stop-list, opening hours, kitchen staff and their PINs. Does not see analytics, promotions or brand settings.',
+          'runs their stores: orders, the kitchen, pauses and extended hours, the menu and stop-list, opening hours, kitchen staff and their PINs. Does not see analytics, promotions or brand settings.',
         STAFF:
-          'works the kitchen: accepts and prepares orders (signs in on the tablet with a PIN), opens the shift, keeps the stop-list. Does not change the menu or settings.',
+          'works the kitchen: accepts and prepares orders (signs in on the tablet with a PIN), pauses the store and extends its hours, keeps the stop-list. Does not change the menu or settings.',
         MENU_EDITOR: 'edits the menu only: items, prices, photos, add-ins. Does not see orders or the kitchen.',
       },
       blocked: 'Blocked',
@@ -3354,7 +3354,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       staff: {
         title: 'Staff',
-        hint: 'Orders by who tapped the button in the kitchen. Hours are the shifts a person opened: a shift belongs to the store, so its hours go to whoever started it.',
+        hint: 'Orders by who tapped the button in the kitchen. Hours are the shifts a person opened themselves. Since 20 Oct 2026 shifts open by the schedule, so no new hours are counted.',
         empty: 'No staff handled orders in this period.',
         cols: {
           person: 'Employee',
