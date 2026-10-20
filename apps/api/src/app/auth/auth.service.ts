@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpStatus,
   Injectable,
   Logger,
@@ -93,18 +94,27 @@ export class AuthService {
   }
 
   /**
-   * KDS PIN login, from the kitchen tablet's lockscreen: a short numeric PIN
-   * scoped to one store, accepted only from a tablet bound to that store's
-   * brand (see KitchenDeviceService). Returns the same shape as the password
-   * login so the admin reuses its JWT/refresh wiring, but the session is
-   * narrowed to the store: it opens that store's kitchen board and
-   * stop-list and nothing else (KdsSessionGuard).
+   * KDS PIN login, from the kitchen tablet's lockscreen: the person's one
+   * PIN for every store they work at in the brand, accepted only from a
+   * tablet bound to that brand (see KitchenDeviceService). Returns the same
+   * shape as the password login so the admin reuses its JWT/refresh wiring,
+   * but the session is narrowed: it opens the kitchen board and stop-list
+   * of the person's stores in the tablet's brand and nothing else
+   * (KdsSessionGuard). It switches between those stores without the PIN
+   * again; `kdsStores` lists them, so a tablet asks which store to open when
+   * there is more than one.
+   *
+   * The PIN comes first now, the store after. `storeId` is optional: older
+   * tablets still send the store they picked, and it is how a tablet settles
+   * an old store-scoped PIN that two people share at different stores (409
+   * `KDS_PIN_STORE_REQUIRED`).
    *
    * Order matters: the tablet is checked before any PIN is counted, so
-   * nobody outside the brand's tablets can run up a store's failures, and
-   * failures are counted per store *and* tablet (KdsPinService).
+   * nobody outside the brand's tablets can run up its failures, and
+   * failures are counted per tablet and brand (KdsPinService).
    */
-  async loginWithKdsPin(storeId: string, pin: string, deviceToken?: string): Promise<AuthSessionDto> {
+  async loginWithKdsPin(input: { pin: string; deviceToken?: string; storeId?: string }): Promise<AuthSessionDto> {
+    const { pin, deviceToken, storeId } = input;
     const generic = new UnauthorizedException('Invalid PIN');
     // No secret, no PIN sign-in: 503 KDS_PIN_NOT_CONFIGURED before anything
     // touches the database.
@@ -121,56 +131,114 @@ export class AuthService {
     if (!tablet) throw unknownDevice();
     if (!this.kdsPins.isValidFormat(pin)) throw generic;
 
-    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { brandId: true } });
-    // A store of another brand is not on this tablet's picker; refuse it
-    // without counting a failure against anyone.
-    if (!store || store.brandId !== tablet.brandId) throw generic;
-    await this.kdsPins.assertNotLocked(storeId, tablet.id);
-
-    const expected = this.kdsPins.hash(storeId, pin);
-    const user = await this.prisma.user.findFirst({
-      where: {
-        kdsPinStoreId: storeId,
-        kdsPinHash: expected,
-        // Placeholders written by an older build without a secret matched
-        // any PIN. They can't equal an HMAC, but never let one through.
-        NOT: { kdsPinHash: { startsWith: KDS_PIN_LEGACY_SENTINEL_PREFIX } },
-      },
+    const brandId = tablet.brandId;
+    const brandStores = await this.prisma.store.findMany({
+      where: { brandId },
+      select: { id: true, name: true, city: true },
+      orderBy: { name: 'asc' },
     });
-    if (!user || !this.kdsPins.isUsableHash(user.kdsPinHash)) {
-      await this.kdsPins.recordFailure(storeId, tablet.id);
+    // A store of another brand is not on this tablet; refuse it without
+    // counting a failure against anyone.
+    if (storeId && !brandStores.some((s) => s.id === storeId)) throw generic;
+    await this.kdsPins.assertNotLocked(brandId, tablet.id);
+
+    const user = await this.findPinHolder(
+      brandId,
+      pin,
+      brandStores.map((s) => s.id),
+      storeId,
+    );
+    if (!user) {
+      await this.kdsPins.recordFailure(brandId, tablet.id);
       throw generic;
     }
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
     // PIN holders must be operational staff — no SUPER_ADMIN / BRAND_ADMIN PINs
     // (those roles use email+password from the admin app, not the tablet).
     if (user.role !== Role.STORE_MANAGER && user.role !== Role.STAFF) throw generic;
+
     // A PIN typed at one brand's tablet must open nothing beyond that brand.
-    // The session is narrowed to this store anyway (KdsSessionGuard); on top
-    // of that an account no longer at this store, or working for several
-    // brands, signs in with email and password instead.
-    if (!(await this.staysWithinPinBrand(user.id, storeId))) {
-      this.logger.warn(`KDS PIN sign-in refused: user ${user.id} reaches beyond the brand of store ${storeId}`);
+    // The session is narrowed to the brand anyway (KdsSessionGuard); on top
+    // of that someone who also works for another brand signs in with a
+    // password, and an old store PIN opens only while its store is theirs.
+    const links = await this.prisma.userStore.findMany({
+      where: { userId: user.id },
+      select: { storeId: true, store: { select: { brandId: true } } },
+    });
+    const ownStores = brandStores.filter((s) => links.some((l) => l.storeId === s.id));
+    const legacyStoreLost = user.kdsPinBrandId === null && !ownStores.some((s) => s.id === user.kdsPinStoreId);
+    if (ownStores.length === 0 || legacyStoreLost || links.some((l) => l.store.brandId !== brandId)) {
+      this.logger.warn(`KDS PIN sign-in refused: user ${user.id} does not work within brand ${brandId} alone`);
       throw generic;
     }
-    await this.kdsPins.clearFailures(storeId, tablet.id);
+    await this.kdsPins.clearFailures(brandId, tablet.id);
     await this.kitchenDevices.touch(tablet.id);
 
+    // Where the board opens: the store the tablet asked for, else the old
+    // PIN's store, else the only (or first) one — the tablet lets the person
+    // pick when there are several.
+    const opening =
+      ownStores.find((s) => s.id === storeId) ??
+      ownStores.find((s) => s.id === user.kdsPinStoreId) ??
+      (ownStores[0] as (typeof ownStores)[number]);
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },
     });
-    const tokens = await this.tokens.issue(user.id, device.id, { kdsStoreId: storeId });
-    return { ...tokens, user: this.toAuthUser(user), kdsStoreId: storeId };
+    const tokens = await this.tokens.issue(user.id, device.id, { kdsBrandId: brandId, kdsStoreId: opening.id });
+    return {
+      ...tokens,
+      user: this.toAuthUser(user),
+      kdsBrandId: brandId,
+      kdsStoreId: opening.id,
+      kdsStores: ownStores,
+    };
   }
 
-  /** True when the user works at `storeId` and every store they work at is of that store's brand. */
-  private async staysWithinPinBrand(userId: string, storeId: string): Promise<boolean> {
-    const links = await this.prisma.userStore.findMany({
-      where: { userId },
-      select: { storeId: true, store: { select: { brandId: true } } },
+  /**
+   * Whose PIN this is at the brand. A brand PIN is unique within the brand;
+   * failing that, an old store-scoped PIN at one of the brand's stores. Two
+   * people may share an old PIN at different stores — then the store the
+   * tablet sent decides, and without one the tablet is asked to send it
+   * (409 `KDS_PIN_STORE_REQUIRED`, not counted as a failure: the PIN was
+   * right).
+   */
+  private async findPinHolder(
+    brandId: string,
+    pin: string,
+    storeIds: string[],
+    storeId: string | undefined,
+  ): Promise<User | null> {
+    const usable = (u: User | null): u is User => !!u && this.kdsPins.isUsableHash(u.kdsPinHash);
+    const own = await this.prisma.user.findFirst({
+      where: {
+        kdsPinBrandId: brandId,
+        kdsPinHash: this.kdsPins.brandHash(brandId, pin),
+        // Placeholders written by an older build without a secret matched
+        // any PIN. They can't equal an HMAC, but never let one through.
+        NOT: { kdsPinHash: { startsWith: KDS_PIN_LEGACY_SENTINEL_PREFIX } },
+      },
     });
-    const here = links.find((l) => l.storeId === storeId);
-    return !!here && links.every((l) => l.store.brandId === here.store.brandId);
+    if (usable(own)) return own;
+    if (storeIds.length === 0) return null;
+
+    const legacy = (
+      await this.prisma.user.findMany({
+        where: {
+          kdsPinBrandId: null,
+          OR: storeIds.map((id) => ({ kdsPinStoreId: id, kdsPinHash: this.kdsPins.storeHash(id, pin) })),
+          NOT: { kdsPinHash: { startsWith: KDS_PIN_LEGACY_SENTINEL_PREFIX } },
+        },
+      })
+    ).filter(usable);
+    if (legacy.length <= 1) return legacy[0] ?? null;
+    const atStore = legacy.find((u) => u.kdsPinStoreId === storeId);
+    if (atStore) return atStore;
+    throw new ConflictException({
+      statusCode: HttpStatus.CONFLICT,
+      error: 'Conflict',
+      code: 'KDS_PIN_STORE_REQUIRED',
+      message: 'Pick the store this PIN was set for, then enter it again',
+    });
   }
 
   /**

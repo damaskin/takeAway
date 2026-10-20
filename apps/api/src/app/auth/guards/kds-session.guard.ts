@@ -17,9 +17,13 @@ interface GuardedRequest {
  * owner's role could — a manager's PIN reached the menu, staff, PINs and
  * refunds. A PIN session now reaches only routes marked
  * `@KdsSessionAllowed()` (the board, shifts, the stop-list, the brand and
- * store it needs to draw them), and on those only its own store.
+ * stores it needs to draw them, the Telegram link), and on those only the
+ * stores of its person in the tablet's brand — `kdsStoreIds`, which the JWT
+ * strategy reads from the database on every request. So the tablet can
+ * switch between the person's stores without the PIN again, and never
+ * reaches a store of another brand or one the person no longer works at.
  *
- * Sessions opened with email and password carry no `kdsStoreId` and pass
+ * Sessions opened with email and password carry no `kdsBrandId` and pass
  * untouched; so do public routes, which never authenticate.
  */
 @Injectable()
@@ -28,8 +32,8 @@ export class KdsSessionGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<GuardedRequest>();
-    const storeId = request.user?.kdsStoreId;
-    if (!storeId) return true;
+    const user = request.user;
+    if (!user?.kdsBrandId) return true;
 
     const allowed = this.reflector.getAllAndOverride<KdsSessionStoreSource | undefined>(KDS_SESSION_KEY, [
       context.getHandler(),
@@ -39,8 +43,8 @@ export class KdsSessionGuard implements CanActivate {
       throw forbidden('KDS_SESSION_LIMITED', 'A kitchen PIN session only opens the kitchen board');
     }
     const requested = storeFrom(request, allowed);
-    if (requested !== null && requested !== storeId) {
-      throw forbidden('KDS_SESSION_STORE', 'A kitchen PIN session only opens the kitchen of its own store');
+    if (requested !== null && !(user.kdsStoreIds ?? []).includes(requested)) {
+      throw forbidden('KDS_SESSION_STORE', 'A kitchen PIN session only opens the kitchens of its own stores');
     }
     return true;
   }

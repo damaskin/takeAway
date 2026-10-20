@@ -153,6 +153,7 @@ export class AccountDeletionService {
           referralCode: null,
           kdsPinHash: null,
           kdsPinStoreId: null,
+          kdsPinBrandId: null,
           notifyOrderUpdates: false,
           notifyPromotions: false,
           blockedAt: deletedAt,

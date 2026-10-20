@@ -4,9 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import type { RedisService } from '../../redis/redis.service';
 import {
   KDS_PIN_FREE_ATTEMPTS,
+  KDS_PIN_BRAND_LOCK_SECONDS,
+  KDS_PIN_BRAND_MAX_FAILURES,
   KDS_PIN_MAX_LOCK_SECONDS,
-  KDS_PIN_STORE_LOCK_SECONDS,
-  KDS_PIN_STORE_MAX_FAILURES,
   KdsPinService,
   lockSecondsAfter,
 } from './kds-pin.service';
@@ -59,21 +59,29 @@ describe('KdsPinService', () => {
     expect(svc.isValidFormat('abcd')).toBe(false);
   });
 
-  it('hashes the same PIN to the same value within a store, and different across stores and PINs', () => {
+  it('hashes the same PIN to the same value within a scope, and different across scopes and PINs', () => {
     const svc = build({ KDS_PIN_SECRET: 'sek' });
-    const a = svc.hash('store-A', '1234');
-    expect(svc.hash('store-A', '1234')).toBe(a);
-    expect(svc.hash('store-B', '1234')).not.toBe(a); // store id is part of the input
-    expect(svc.hash('store-A', '1235')).not.toBe(a); // and so is the PIN
+    const a = svc.hash('brand-A', '1234');
+    expect(svc.hash('brand-A', '1234')).toBe(a);
+    expect(svc.hash('brand-B', '1234')).not.toBe(a); // the scope id is part of the input
+    expect(svc.hash('brand-A', '1235')).not.toBe(a); // and so is the PIN
     expect(a).toMatch(/^[0-9a-f]{64}$/); // sha256 hex
+  });
+
+  it('hashes a PIN for the brand, and an old PIN for its store, the same way under different scopes', () => {
+    const svc = build({ KDS_PIN_SECRET: 'sek' });
+    expect(svc.brandHash('brand-A', '480317')).toBe(svc.hash('brand-A', '480317'));
+    expect(svc.storeHash('store-A', '480317')).toBe(svc.hash('store-A', '480317'));
+    expect(svc.brandHash('brand-A', '480317')).not.toBe(svc.brandHash('brand-B', '480317'));
+    expect(svc.brandHash('brand-A', '480317')).not.toBe(svc.storeHash('store-A', '480317'));
   });
 
   it('matches() rejects when the candidate hash differs', () => {
     const svc = build({ KDS_PIN_SECRET: 'sek' });
-    const stored = svc.hash('store-A', '1234');
-    expect(svc.matches('store-A', '1234', stored)).toBe(true);
-    expect(svc.matches('store-A', '1235', stored)).toBe(false);
-    expect(svc.matches('store-B', '1234', stored)).toBe(false);
+    const stored = svc.hash('brand-A', '1234');
+    expect(svc.matches('brand-A', '1234', stored)).toBe(true);
+    expect(svc.matches('brand-A', '1235', stored)).toBe(false);
+    expect(svc.matches('brand-B', '1234', stored)).toBe(false);
   });
 
   it.each([
@@ -85,7 +93,7 @@ describe('KdsPinService', () => {
     const svc = build(env);
     expect(svc.isConfigured()).toBe(false);
     // Never a PIN-independent value a lookup could match — it throws.
-    expect(() => svc.hash('store-A', '1234')).toThrow(ServiceUnavailableException);
+    expect(() => svc.hash('brand-A', '1234')).toThrow(ServiceUnavailableException);
     const error = (() => {
       try {
         svc.assertConfigured();
@@ -96,16 +104,16 @@ describe('KdsPinService', () => {
     })();
     expect(error?.getStatus()).toBe(503);
     expect(error?.getResponse()).toMatchObject({ code: 'KDS_PIN_NOT_CONFIGURED' });
-    expect(svc.matches('store-A', '1234', 'a'.repeat(64))).toBe(false);
+    expect(svc.matches('brand-A', '1234', 'a'.repeat(64))).toBe(false);
   });
 
   it('never treats a legacy "unset:" placeholder as a usable hash, even once a secret is set', () => {
     const svc = build({ KDS_PIN_SECRET: 'sek' });
-    const sentinel = 'unset:' + Buffer.from('store-A').toString('base64url');
+    const sentinel = 'unset:' + Buffer.from('brand-A').toString('base64url');
     expect(svc.isUsableHash(sentinel)).toBe(false);
     expect(svc.isUsableHash(null)).toBe(false);
-    expect(svc.matches('store-A', '1234', sentinel)).toBe(false);
-    expect(svc.isUsableHash(svc.hash('store-A', '1234'))).toBe(true);
+    expect(svc.matches('brand-A', '1234', sentinel)).toBe(false);
+    expect(svc.isUsableHash(svc.hash('brand-A', '1234'))).toBe(true);
   });
 
   it('sets only 6-digit PINs that are not a first guess', () => {
@@ -130,7 +138,7 @@ describe('KdsPinService', () => {
     expect(error?.getResponse()).toMatchObject({ code: 'KDS_PIN_TOO_SIMPLE' });
   });
 
-  describe('lockout per store and tablet', () => {
+  describe('lockout per tablet and brand', () => {
     it('pauses after the free attempts and doubles the pause up to an hour', () => {
       expect(lockSecondsAfter(KDS_PIN_FREE_ATTEMPTS - 1)).toBe(0);
       expect(lockSecondsAfter(KDS_PIN_FREE_ATTEMPTS)).toBe(60);
@@ -140,43 +148,43 @@ describe('KdsPinService', () => {
       expect(lockSecondsAfter(500)).toBe(KDS_PIN_MAX_LOCK_SECONDS);
     });
 
-    it('locks the tablet that typed the wrong PINs — not the other tablets of the store', async () => {
+    it('locks the tablet that typed the wrong PINs — not the other tablets of the brand', async () => {
       const { redis } = fakeRedis();
       const svc = new KdsPinService(config({ KDS_PIN_SECRET: 'sek' }), redis);
 
-      for (let i = 0; i < KDS_PIN_FREE_ATTEMPTS - 1; i++) await svc.recordFailure('store-A', 'tablet-1');
-      await expect(svc.assertNotLocked('store-A', 'tablet-1')).resolves.toBeUndefined();
+      for (let i = 0; i < KDS_PIN_FREE_ATTEMPTS - 1; i++) await svc.recordFailure('brand-A', 'tablet-1');
+      await expect(svc.assertNotLocked('brand-A', 'tablet-1')).resolves.toBeUndefined();
 
-      await svc.recordFailure('store-A', 'tablet-1');
-      const error = await svc.assertNotLocked('store-A', 'tablet-1').catch((e: unknown) => e as HttpException);
+      await svc.recordFailure('brand-A', 'tablet-1');
+      const error = await svc.assertNotLocked('brand-A', 'tablet-1').catch((e: unknown) => e as HttpException);
       expect(error).toBeInstanceOf(HttpException);
       expect((error as HttpException).getStatus()).toBe(429);
       expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_LOCKED', retryAfterSeconds: 60 });
 
-      // The kitchen's other tablet and other stores keep working.
-      await expect(svc.assertNotLocked('store-A', 'tablet-2')).resolves.toBeUndefined();
-      await expect(svc.assertNotLocked('store-B', 'tablet-1')).resolves.toBeUndefined();
+      // The brand's other tablet, and another brand, keep working.
+      await expect(svc.assertNotLocked('brand-A', 'tablet-2')).resolves.toBeUndefined();
+      await expect(svc.assertNotLocked('brand-B', 'tablet-1')).resolves.toBeUndefined();
     });
 
     it('a successful sign-in clears that tablet’s count and pause', async () => {
       const { redis } = fakeRedis();
       const svc = new KdsPinService(config({ KDS_PIN_SECRET: 'sek' }), redis);
-      for (let i = 0; i < KDS_PIN_FREE_ATTEMPTS + 2; i++) await svc.recordFailure('store-A', 'tablet-1');
-      await svc.clearFailures('store-A', 'tablet-1');
-      await expect(svc.assertNotLocked('store-A', 'tablet-1')).resolves.toBeUndefined();
+      for (let i = 0; i < KDS_PIN_FREE_ATTEMPTS + 2; i++) await svc.recordFailure('brand-A', 'tablet-1');
+      await svc.clearFailures('brand-A', 'tablet-1');
+      await expect(svc.assertNotLocked('brand-A', 'tablet-1')).resolves.toBeUndefined();
       // The next mistake starts from zero again.
-      await svc.recordFailure('store-A', 'tablet-1');
-      await expect(svc.assertNotLocked('store-A', 'tablet-1')).resolves.toBeUndefined();
+      await svc.recordFailure('brand-A', 'tablet-1');
+      await expect(svc.assertNotLocked('brand-A', 'tablet-1')).resolves.toBeUndefined();
     });
 
-    it(`pauses the whole store after ${KDS_PIN_STORE_MAX_FAILURES} wrong PINs in an hour across tablets`, async () => {
+    it(`pauses the whole brand after ${KDS_PIN_BRAND_MAX_FAILURES} wrong PINs in an hour across tablets`, async () => {
       const { redis, ttls } = fakeRedis();
       const svc = new KdsPinService(config({ KDS_PIN_SECRET: 'sek' }), redis);
-      for (let i = 0; i < KDS_PIN_STORE_MAX_FAILURES; i++) await svc.recordFailure('store-A', `tablet-${i}`);
+      for (let i = 0; i < KDS_PIN_BRAND_MAX_FAILURES; i++) await svc.recordFailure('brand-A', `tablet-${i}`);
 
-      const error = await svc.assertNotLocked('store-A', 'fresh-tablet').catch((e: unknown) => e as HttpException);
+      const error = await svc.assertNotLocked('brand-A', 'fresh-tablet').catch((e: unknown) => e as HttpException);
       expect((error as HttpException).getStatus()).toBe(429);
-      expect(ttls.get('kds-pin:store-lock:store-A')).toBe(KDS_PIN_STORE_LOCK_SECONDS);
+      expect(ttls.get('kds-pin:brand-lock:brand-A')).toBe(KDS_PIN_BRAND_LOCK_SECONDS);
     });
   });
 });

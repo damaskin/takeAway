@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Currency, Locale, Role } from '@prisma/client';
+import type { KitchenSessionStore } from '@takeaway/shared-types';
 
 export class AuthUserDto {
   @ApiProperty()
@@ -34,6 +35,17 @@ export class AuthUserDto {
   telegramUserId!: string | null;
 }
 
+export class KitchenSessionStoreDto implements KitchenSessionStore {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  city!: string;
+}
+
 export class AuthTokensDto {
   @ApiProperty()
   accessToken!: string;
@@ -61,7 +73,22 @@ export class AuthSessionDto extends AuthTokensDto {
   @ApiProperty({
     required: false,
     description:
-      'Set on a kitchen PIN session: the one store it works. Such a session only opens the kitchen board and stop-list of that store.',
+      'Kitchen PIN session: the store the board opens on — the one the tablet asked for, or the person’s only (first) store.',
   })
   kdsStoreId?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Set on a kitchen PIN session: the brand of the tablet. Such a session only opens the kitchen board and stop-list of the person’s stores in this brand.',
+  })
+  kdsBrandId?: string;
+
+  @ApiProperty({
+    required: false,
+    type: [KitchenSessionStoreDto],
+    description:
+      'Kitchen PIN session: the person’s stores in the tablet’s brand. More than one — the tablet asks which to open.',
+  })
+  kdsStores?: KitchenSessionStoreDto[];
 }

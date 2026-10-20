@@ -36,18 +36,16 @@ describe('BrandScopeService', () => {
       expect(brandFindMany).not.toHaveBeenCalled();
     });
 
-    it('narrows a kitchen PIN session to the brand of its store, whatever else the person works for', async () => {
-      storeFindUnique.mockResolvedValue({ brandId: 'b2' });
+    it('narrows a kitchen PIN session to the brand of its tablet, whatever else the person works for', async () => {
       userStoreFindMany.mockResolvedValue([{ store: { brandId: 'b1' } }, { store: { brandId: 'b2' } }]);
-      const scope = await service.resolveBrandIds({ ...userWith(Role.STORE_MANAGER), kdsStoreId: 'store-2' });
+      const scope = await service.resolveBrandIds({
+        ...userWith(Role.STORE_MANAGER),
+        kdsBrandId: 'b2',
+        kdsStoreIds: ['store-2'],
+      });
       expect(scope).toEqual(['b2']);
-      expect(storeFindUnique).toHaveBeenCalledWith({ where: { id: 'store-2' }, select: { brandId: true } });
       expect(userStoreFindMany).not.toHaveBeenCalled();
-    });
-
-    it('gives a PIN session of a store that no longer exists nothing at all', async () => {
-      storeFindUnique.mockResolvedValue(null);
-      await expect(service.resolveBrandIds({ ...userWith(Role.STAFF), kdsStoreId: 'gone' })).resolves.toEqual([]);
+      expect(storeFindUnique).not.toHaveBeenCalled();
     });
 
     it('resolves BRAND_ADMIN to the brands they own', async () => {

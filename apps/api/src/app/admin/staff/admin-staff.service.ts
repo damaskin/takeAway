@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
-import { KdsPinService } from '../../auth/services/kds-pin.service';
+import { KitchenPinsService } from '../../auth/services/kitchen-pins.service';
 import { PasswordService } from '../../auth/services/password.service';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
@@ -42,12 +42,12 @@ export class AdminStaffService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordService,
-    private readonly kdsPins: KdsPinService,
+    private readonly kitchenPins: KitchenPinsService,
     private readonly scope: BrandScopeService,
   ) {}
 
   async list(storeId: string, user: AuthenticatedUser) {
-    await this.assertStore(storeId, user);
+    const store = await this.assertStore(storeId, user);
     const rows = await this.prisma.userStore.findMany({
       where: {
         storeId,
@@ -64,6 +64,7 @@ export class AdminStaffService {
             blockedAt: true,
             kdsPinHash: true,
             kdsPinStoreId: true,
+            kdsPinBrandId: true,
           },
         },
       },
@@ -77,10 +78,10 @@ export class AdminStaffService {
       role: r.user.role,
       blocked: r.user.blockedAt !== null,
       addedAt: r.createdAt.toISOString(),
-      // A PIN belongs to one store; one set at another store doesn't open
-      // this store's kitchen tablet. The hash itself never leaves the API.
-      // A placeholder left by a build without KDS_PIN_SECRET is no PIN.
-      hasKdsPin: this.kdsPins.isUsableHash(r.user.kdsPinHash) && r.user.kdsPinStoreId === storeId,
+      // The person's PIN opens every store of its brand they work at; an
+      // old PIN opens its one store. The hash itself never leaves the API,
+      // and a placeholder left by a build without KDS_PIN_SECRET is no PIN.
+      hasKdsPin: this.kitchenPins.opensStore(r.user, store, true),
     }));
   }
 
@@ -175,20 +176,14 @@ export class AdminStaffService {
   }
 
   /**
-   * Sets (or rotates) the KDS PIN for a staff member at a specific store.
-   * The user must already be rostered in this store. PIN must be 4–6 digits;
-   * uniqueness within the store is DB-enforced via the partial unique index
-   * `User_kdsPin_uniq` — a duplicate PIN throws 409.
+   * Sets (or rotates) the person's kitchen PIN from one of their stores —
+   * the endpoint of builds before 2026-10-20. The PIN is the person's one
+   * PIN for every store of the brand, the same as `PUT
+   * /admin/staff/:userId/kds-pin`; the store only says where the caller
+   * opened it. A PIN already used at the brand is 409 `KDS_PIN_TAKEN`.
    */
   async setKdsPin(storeId: string, userId: string, pin: string, user: AuthenticatedUser): Promise<void> {
-    await this.assertStore(storeId, user);
-    // Without KDS_PIN_SECRET there is nothing to hash with — 503
-    // KDS_PIN_NOT_CONFIGURED rather than storing a PIN nobody can check.
-    this.kdsPins.assertConfigured();
-    if (!this.kdsPins.isValidFormat(pin)) {
-      throw new ConflictException('PIN must be 4 to 6 digits');
-    }
-
+    const store = await this.assertStore(storeId, user);
     const rostered = await this.prisma.userStore.findUnique({
       where: { userId_storeId: { userId, storeId } },
     });
@@ -200,37 +195,24 @@ export class AdminStaffService {
     if (!target || (target.role !== Role.STORE_MANAGER && target.role !== Role.STAFF)) {
       throw new NotFoundException('User is not eligible for a KDS PIN');
     }
-
-    const hash = this.kdsPins.hash(storeId, pin);
-    try {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { kdsPinHash: hash, kdsPinStoreId: storeId },
-      });
-    } catch (err) {
-      // Map the partial-unique-index collision to a friendly 409. Prisma
-      // reports it as P2002 without always naming the index.
-      const isDuplicate =
-        (err as { code?: string }).code === 'P2002' ||
-        (err instanceof Error && err.message.includes('User_kdsPin_uniq'));
-      if (isDuplicate) {
-        throw new ConflictException({
-          statusCode: 409,
-          error: 'Conflict',
-          code: 'KDS_PIN_TAKEN',
-          message: 'Another staff at this store already uses this PIN',
-        });
-      }
-      throw err;
-    }
+    // A PIN belongs to one brand: 409 KDS_PIN_MULTI_BRAND for someone who
+    // also works for another one (only a platform admin gets this far).
+    await this.kitchenPins.brandOf(userId);
+    await this.kitchenPins.assign(userId, store.brandId, pin);
   }
 
+  /** Resets the person's PIN when it opens this store's tablet. */
   async clearKdsPin(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
-    await this.assertStore(storeId, user);
-    await this.prisma.user.updateMany({
-      where: { id: userId, kdsPinStoreId: storeId },
-      data: { kdsPinHash: null, kdsPinStoreId: null },
+    const store = await this.assertStore(storeId, user);
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { kdsPinHash: true, kdsPinBrandId: true, kdsPinStoreId: true },
     });
+    const rostered = await this.prisma.userStore.findUnique({
+      where: { userId_storeId: { userId, storeId } },
+      select: { storeId: true },
+    });
+    if (target && this.kitchenPins.opensStore(target, store, !!rostered)) await this.kitchenPins.clear(userId);
   }
 
   async remove(storeId: string, userId: string, user: AuthenticatedUser): Promise<void> {
@@ -254,7 +236,7 @@ export class AdminStaffService {
     }
   }
 
-  private async assertStore(storeId: string, user: AuthenticatedUser): Promise<void> {
+  private async assertStore(storeId: string, user: AuthenticatedUser): Promise<{ id: string; brandId: string }> {
     const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, brandId: true } });
     if (!store) throw new NotFoundException('Store not found');
     const scope = await this.scope.resolveBrandIds(user);
@@ -270,6 +252,7 @@ export class AdminStaffService {
       });
       if (!assigned) throw new ForbiddenException('Store is outside your scope');
     }
+    return store;
   }
 }
 

@@ -165,8 +165,8 @@ export class KdsController {
    * the kitchen board.
    */
   private async assertInScope(user: AuthenticatedUser, storeId: string): Promise<void> {
-    // A PIN session works the one store it was opened for.
-    if (user.kdsStoreId && user.kdsStoreId !== storeId) {
+    // A PIN session works its person's stores in the tablet's brand.
+    if (user.kdsStoreIds && !user.kdsStoreIds.includes(storeId)) {
       throw new ForbiddenException('Store is outside your scope');
     }
     const scope = await this.scope.getScope(user.id, user.role);

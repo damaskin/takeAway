@@ -78,8 +78,10 @@ export class KitchenDeviceService {
   /** Binds the tablet a signed-in employee is on to the brand of a store they work at. */
   async bindForUser(user: AuthenticatedUser, storeId: string): Promise<KitchenDeviceBinding> {
     if (!KITCHEN_ROLES.has(user.role)) throw new ForbiddenException('Insufficient permissions');
-    // A PIN session may only re-bind to its own store's brand.
-    if (user.kdsStoreId && user.kdsStoreId !== storeId) throw new ForbiddenException('Store is outside your scope');
+    // A PIN session may only re-bind to the brand of its own stores.
+    if (user.kdsStoreIds && !user.kdsStoreIds.includes(storeId)) {
+      throw new ForbiddenException('Store is outside your scope');
+    }
     const scope = await this.storeScope.getScope(user.id, user.role);
     if (scope !== '*' && !scope.includes(storeId)) throw new ForbiddenException('Store is outside your scope');
 
@@ -137,16 +139,23 @@ export class KitchenDeviceService {
   }
 
   /**
-   * What the PIN screen of a bound tablet offers: the brand's stores where
-   * somebody can actually sign in with a PIN. 401 `KDS_DEVICE_UNKNOWN` for
-   * a token that is unknown or was unbound — the tablet forgets it and asks
-   * to be bound again.
+   * What the PIN screen of a bound tablet needs: its brand, and the brand's
+   * stores where somebody can actually sign in with a PIN — someone with
+   * the brand's PIN working there, or an old store PIN of that store. 401
+   * `KDS_DEVICE_UNKNOWN` for a token that is unknown or was unbound — the
+   * tablet forgets it and asks to be bound again.
    */
   async storesFor(token: string | null | undefined): Promise<KitchenDeviceStores> {
     const device = await this.resolve(token);
     if (!device) throw unknownDevice();
     const stores = await this.prisma.store.findMany({
-      where: { brandId: device.brandId, kdsPinUsers: { some: PIN_HOLDER } },
+      where: {
+        brandId: device.brandId,
+        OR: [
+          { userStores: { some: { user: { ...PIN_HOLDER, kdsPinBrandId: device.brandId } } } },
+          { kdsPinUsers: { some: { ...PIN_HOLDER, kdsPinBrandId: null } } },
+        ],
+      },
       select: { id: true, name: true, city: true },
       orderBy: { name: 'asc' },
     });
@@ -196,7 +205,7 @@ export class KitchenDeviceService {
   }
 
   private async assertManages(user: AuthenticatedUser, brandId: string): Promise<void> {
-    if (!MANAGER_ROLES.has(user.role) || user.kdsStoreId) throw new ForbiddenException('Insufficient permissions');
+    if (!MANAGER_ROLES.has(user.role) || user.kdsBrandId) throw new ForbiddenException('Insufficient permissions');
     await this.brandScope.assertBrand(user, brandId);
   }
 

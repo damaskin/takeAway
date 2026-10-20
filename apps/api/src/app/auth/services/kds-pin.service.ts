@@ -27,7 +27,7 @@ export const KDS_PIN_LEGACY_SENTINEL_PREFIX = 'unset:';
 /** Values that mean "nobody provisioned a secret" — the env example ships CHANGE_ME. */
 const PLACEHOLDER_SECRETS: ReadonlySet<string> = new Set(['', 'CHANGE_ME']);
 
-/** Wrong PINs one tablet may type at one store before the first pause. */
+/** Wrong PINs one tablet may type before the first pause. */
 export const KDS_PIN_FREE_ATTEMPTS = 5;
 /** The first pause; every further wrong PIN doubles it. */
 export const KDS_PIN_BASE_LOCK_SECONDS = 60;
@@ -36,30 +36,32 @@ export const KDS_PIN_MAX_LOCK_SECONDS = 60 * 60;
 /** How long a tablet's wrong PINs are remembered without a successful sign-in. */
 export const KDS_PIN_FAILURE_WINDOW_SECONDS = 24 * 60 * 60;
 /**
- * The store-wide ceiling: this many wrong PINs at one store within an hour,
- * from all its tablets together, pauses the store's PIN sign-in. Far above
+ * The brand-wide ceiling: this many wrong PINs at one brand within an hour,
+ * from all its tablets together, pauses the brand's PIN sign-in. Far above
  * any honest shift — it only stops someone cycling through many tablet
  * tokens to get around the per-tablet pause.
  */
-export const KDS_PIN_STORE_MAX_FAILURES = 100;
-export const KDS_PIN_STORE_WINDOW_SECONDS = 60 * 60;
-export const KDS_PIN_STORE_LOCK_SECONDS = 15 * 60;
+export const KDS_PIN_BRAND_MAX_FAILURES = 100;
+export const KDS_PIN_BRAND_WINDOW_SECONDS = 60 * 60;
+export const KDS_PIN_BRAND_LOCK_SECONDS = 15 * 60;
 
 /** Why a new PIN is refused. */
 export type NewPinProblem = 'FORMAT' | 'TOO_SIMPLE';
 
 /**
  * KDS PIN cryptography. We hash the PIN with HMAC-SHA256 keyed by
- * `KDS_PIN_SECRET` mixed with the store id, so two staff with the
- * same PIN at different stores produce different hashes — and so a
- * compromised database row alone can't be brute-forced without the
- * service-side secret.
+ * `KDS_PIN_SECRET` mixed with the brand id ({@link brandHash}), so the same
+ * PIN at two brands produces different hashes — and so a compromised
+ * database row alone can't be brute-forced without the service-side secret.
+ * One PIN opens every store the person works at in the brand. PINs set
+ * before 2026-10-20 were mixed with a store id instead ({@link storeHash});
+ * they keep working until they are replaced.
  *
  * We do NOT use bcrypt here on purpose: PIN auth needs to look up by
  * hash (not iterate every row), and a 4–6 digit space is small enough
  * that bcrypt's per-attempt cost is irrelevant once you can target
  * one row at a time. The HMAC scheme combined with rate-limiting (per IP
- * on the endpoint, per tablet and store here) is the right tradeoff for a
+ * on the endpoint, per tablet and brand here) is the right tradeoff for a
  * tablet lockscreen.
  *
  * Without a real secret the feature is off: setting a PIN and signing in
@@ -146,14 +148,26 @@ export class KdsPinService {
     return !!stored && !stored.startsWith(KDS_PIN_LEGACY_SENTINEL_PREFIX);
   }
 
+  /** The hash a PIN is stored and looked up by: one PIN for every store of the brand. */
+  brandHash(brandId: string, pin: string): string {
+    return this.hash(brandId, pin);
+  }
+
+  /** The hash of a PIN set before 2026-10-20, which opens one store only. */
+  storeHash(storeId: string, pin: string): string {
+    return this.hash(storeId, pin);
+  }
+
   /**
-   * HMAC of the PIN for one store. Always depends on the PIN — without a
-   * secret it throws instead of returning anything a lookup could match.
+   * HMAC of `${scope}|${pin}` — the scope being a brand id, or a store id for
+   * the older PINs. Brand and store ids are both cuids, so the two never
+   * meet. Always depends on the PIN — without a secret it throws instead of
+   * returning anything a lookup could match.
    */
-  hash(storeId: string, pin: string): string {
+  hash(scopeId: string, pin: string): string {
     this.assertConfigured();
     return createHmac('sha256', this.secret as string)
-      .update(`${storeId}|${pin}`)
+      .update(`${scopeId}|${pin}`)
       .digest('hex');
   }
 
@@ -161,28 +175,27 @@ export class KdsPinService {
    * Constant-time comparison so a partial match doesn't leak via timing.
    * Both inputs are hex strings of equal length, so Buffer.from is safe.
    */
-  matches(storeId: string, pin: string, expectedHash: string): boolean {
+  matches(scopeId: string, pin: string, expectedHash: string): boolean {
     if (!this.secret || !this.isUsableHash(expectedHash)) return false;
-    const candidate = this.hash(storeId, pin);
+    const candidate = this.hash(scopeId, pin);
     if (candidate.length !== expectedHash.length) return false;
     return timingSafeEqual(Buffer.from(candidate), Buffer.from(expectedHash));
   }
 
   /**
    * Throws 429 `KDS_PIN_LOCKED` (with `retryAfterSeconds`) while this tablet
-   * is paused at this store, or while the whole store is paused.
+   * is paused, or while the whole brand is paused.
    *
-   * The pause used to be per store only: ten wrong PINs from anywhere shut
-   * every tablet of the store out for ten minutes, so anyone on the internet
-   * could keep a kitchen locked. Now the count is kept per store *and*
-   * tablet — the bound device the request comes from, which is sturdier
-   * than an IP address that the whole café shares behind one router — and
-   * only bound tablets of the brand can reach it at all.
+   * The count is kept per tablet — the bound device the request comes from,
+   * which is sturdier than an IP address that the whole café shares behind
+   * one router — and only bound tablets of the brand can reach it at all.
+   * It used to be per store; the PIN is typed before a store is picked now,
+   * so it is per brand (a tablet belongs to one brand anyway).
    */
-  async assertNotLocked(storeId: string, deviceId: string): Promise<void> {
-    const deviceWait = await this.secondsLeft(this.deviceLockKey(storeId, deviceId));
-    const storeWait = await this.secondsLeft(this.storeLockKey(storeId));
-    const wait = Math.max(deviceWait, storeWait);
+  async assertNotLocked(brandId: string, deviceId: string): Promise<void> {
+    const deviceWait = await this.secondsLeft(this.deviceLockKey(brandId, deviceId));
+    const brandWait = await this.secondsLeft(this.brandLockKey(brandId));
+    const wait = Math.max(deviceWait, brandWait);
     if (wait > 0) {
       throw new HttpException(
         {
@@ -198,31 +211,31 @@ export class KdsPinService {
   }
 
   /**
-   * Counts a wrong PIN from one tablet at one store. The first
+   * Counts a wrong PIN from one tablet of a brand. The first
    * {@link KDS_PIN_FREE_ATTEMPTS} are free; from then on every wrong PIN
    * pauses the tablet, for a minute and then twice as long each time, up
-   * to an hour. The store-wide ceiling is counted alongside.
+   * to an hour. The brand-wide ceiling is counted alongside.
    */
-  async recordFailure(storeId: string, deviceId: string): Promise<void> {
+  async recordFailure(brandId: string, deviceId: string): Promise<void> {
     const failures = await this.redis.incrWithTtl(
-      this.deviceFailuresKey(storeId, deviceId),
+      this.deviceFailuresKey(brandId, deviceId),
       KDS_PIN_FAILURE_WINDOW_SECONDS,
     );
     const lockSeconds = lockSecondsAfter(failures);
     if (lockSeconds > 0) {
-      await this.redis.set(this.deviceLockKey(storeId, deviceId), String(failures), lockSeconds);
+      await this.redis.set(this.deviceLockKey(brandId, deviceId), String(failures), lockSeconds);
     }
 
-    const storeFailures = await this.redis.incrWithTtl(this.storeFailuresKey(storeId), KDS_PIN_STORE_WINDOW_SECONDS);
-    if (storeFailures === KDS_PIN_STORE_MAX_FAILURES) {
-      await this.redis.set(this.storeLockKey(storeId), String(storeFailures), KDS_PIN_STORE_LOCK_SECONDS);
-      this.logger.warn(`Kitchen PIN sign-in paused for store ${storeId}: ${storeFailures} wrong PINs within an hour`);
+    const brandFailures = await this.redis.incrWithTtl(this.brandFailuresKey(brandId), KDS_PIN_BRAND_WINDOW_SECONDS);
+    if (brandFailures === KDS_PIN_BRAND_MAX_FAILURES) {
+      await this.redis.set(this.brandLockKey(brandId), String(brandFailures), KDS_PIN_BRAND_LOCK_SECONDS);
+      this.logger.warn(`Kitchen PIN sign-in paused for brand ${brandId}: ${brandFailures} wrong PINs within an hour`);
     }
   }
 
-  /** A successful sign-in forgives this tablet's earlier typos at the store. */
-  async clearFailures(storeId: string, deviceId: string): Promise<void> {
-    await this.redis.del(this.deviceFailuresKey(storeId, deviceId), this.deviceLockKey(storeId, deviceId));
+  /** A successful sign-in forgives this tablet's earlier typos. */
+  async clearFailures(brandId: string, deviceId: string): Promise<void> {
+    await this.redis.del(this.deviceFailuresKey(brandId, deviceId), this.deviceLockKey(brandId, deviceId));
   }
 
   private async secondsLeft(key: string): Promise<number> {
@@ -230,20 +243,20 @@ export class KdsPinService {
     return ttl > 0 ? ttl : 0;
   }
 
-  private deviceFailuresKey(storeId: string, deviceId: string): string {
-    return `kds-pin:failures:${storeId}:${deviceId}`;
+  private deviceFailuresKey(brandId: string, deviceId: string): string {
+    return `kds-pin:failures:${brandId}:${deviceId}`;
   }
 
-  private deviceLockKey(storeId: string, deviceId: string): string {
-    return `kds-pin:lock:${storeId}:${deviceId}`;
+  private deviceLockKey(brandId: string, deviceId: string): string {
+    return `kds-pin:lock:${brandId}:${deviceId}`;
   }
 
-  private storeFailuresKey(storeId: string): string {
-    return `kds-pin:store-failures:${storeId}`;
+  private brandFailuresKey(brandId: string): string {
+    return `kds-pin:brand-failures:${brandId}`;
   }
 
-  private storeLockKey(storeId: string): string {
-    return `kds-pin:store-lock:${storeId}`;
+  private brandLockKey(brandId: string): string {
+    return `kds-pin:brand-lock:${brandId}`;
   }
 }
 
