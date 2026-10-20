@@ -332,7 +332,10 @@ export const TRANSLATIONS_RU = {
       noSlots: 'На ближайшие сутки свободных окон нет. Попробуйте «Сейчас».',
       noSlotsClosed: 'На ближайшие сутки свободных окон нет.',
       closedNow: 'Точка сейчас закрыта — выберите время, к которому забрать заказ.',
-      slotFull: 'Это окно уже занято',
+      /** A full window in the «Позже» picker, shown but not selectable. */
+      slotTaken: '{{time}} — занято',
+      /** The picker's first line while no window is chosen (the chosen one filled up). */
+      slotChoose: 'Выберите время',
       prepHint: 'Начнём готовить в {{time}}, чтобы всё было свежим.',
       name: 'Имя на заказе',
       notes: 'Пожелания к заказу (необязательно)',
@@ -430,6 +433,32 @@ export const TRANSLATIONS_RU = {
         notAcceptedRefunded: 'Точка не подтвердила заказ — деньги вернутся на карту',
         paymentNotCompleted: 'Оплата не завершилась — заказ отменён',
       },
+      /** Under the status once the kitchen gave a new time — see readyEstimateAt. */
+      estimate: {
+        inMinutes: 'Готовим · будет готово через {{min}} мин',
+        at: 'Готовим · будет готово к {{time}}',
+      },
+      /** The words around the time in the big circle. */
+      ring: {
+        /** Under a countdown of less than an hour. */
+        untilPickup: 'до выдачи',
+        /** Over the clock time of an order an hour or more away. */
+        readyBy: 'Будет готово к',
+      },
+      /** Cancelling is the customer's only before the kitchen accepts and while no money is taken. */
+      cancel: {
+        confirmTitle: 'Отменить заказ #{{code}}?',
+        confirmBody:
+          'Точка ещё не начала его готовить. Если деньги забронированы на карте, бронь снимем — ничего не спишется.',
+        confirm: 'Да, отменить',
+        keep: 'Не отменять',
+        cancelling: 'Отменяем…',
+        acceptedCall: 'Заказ уже готовят — для отмены позвоните в точку',
+        acceptedNoPhone: 'Заказ уже готовят — отменить его уже нельзя',
+        chargedCall: 'Оплата уже прошла — для отмены позвоните в точку',
+        chargedNoPhone: 'Оплата уже прошла — отменить заказ здесь нельзя',
+        failed: 'Не удалось отменить заказ. Попробуйте ещё раз.',
+      },
       callStore: 'Позвонить в точку',
       codeLabel: 'код {{code}}',
       iAmHere: 'Я на месте',
@@ -441,7 +470,10 @@ export const TRANSLATIONS_RU = {
       ready: 'Готово',
       thanks: 'Спасибо!',
       yourCode: 'Ваш код',
+      codeHint: 'Назовите его на кассе — по нему выдадут заказ',
       pickupIn: 'Заберёте примерно через {{min}} мин',
+      /** An hour or more away: the clock time on the store's clock, «09:15» or «09:15 завтра». */
+      pickupAt: 'Заберёте в {{time}}',
       backToMenu: 'Вернуться в меню',
       notFound: 'Заказ не найден',
     },

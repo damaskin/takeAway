@@ -117,32 +117,37 @@ interface Step {
               class="w-full"
               style="max-width: 500px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 20px; padding: var(--spacing-xl); display: flex; flex-direction: column; gap: var(--spacing-lg)"
             >
-              <!-- PICKUP / DELIVERY toggle -->
-              <div class="flex gap-3 w-full">
-                <button
-                  type="button"
-                  (click)="selectFulfillment('PICKUP')"
-                  class="flex items-center justify-center w-full"
-                  [style.background]="fulfillmentType() === 'PICKUP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                  [style.color]="fulfillmentType() === 'PICKUP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                  [style.border]="fulfillmentType() === 'PICKUP' ? 'none' : '1px solid var(--color-border)'"
-                  style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                >
-                  {{ 'web.checkout.fulfillmentPickup' | translate }}
-                </button>
-                <button
-                  type="button"
-                  (click)="selectFulfillment('DELIVERY')"
-                  [disabled]="!deliveryAvailable()"
-                  class="flex items-center justify-center w-full disabled:opacity-40"
-                  [style.background]="fulfillmentType() === 'DELIVERY' ? 'var(--color-caramel)' : 'var(--color-cream)'"
-                  [style.color]="fulfillmentType() === 'DELIVERY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                  [style.border]="fulfillmentType() === 'DELIVERY' ? 'none' : '1px solid var(--color-border)'"
-                  style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                >
-                  {{ 'web.checkout.fulfillmentDelivery' | translate }}
-                </button>
-              </div>
+              <!-- PICKUP / DELIVERY toggle: only while delivery is switched on
+                   (DELIVERY_ENABLED) and this store offers it. Otherwise the
+                   order is a pickup and there is nothing to choose. -->
+              @if (deliveryOffered()) {
+                <div class="flex gap-3 w-full" data-testid="fulfillment-toggle">
+                  <button
+                    type="button"
+                    (click)="selectFulfillment('PICKUP')"
+                    class="flex items-center justify-center w-full"
+                    [style.background]="fulfillmentType() === 'PICKUP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                    [style.color]="fulfillmentType() === 'PICKUP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                    [style.border]="fulfillmentType() === 'PICKUP' ? 'none' : '1px solid var(--color-border)'"
+                    style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  >
+                    {{ 'web.checkout.fulfillmentPickup' | translate }}
+                  </button>
+                  <button
+                    type="button"
+                    (click)="selectFulfillment('DELIVERY')"
+                    class="flex items-center justify-center w-full"
+                    [style.background]="
+                      fulfillmentType() === 'DELIVERY' ? 'var(--color-caramel)' : 'var(--color-cream)'
+                    "
+                    [style.color]="fulfillmentType() === 'DELIVERY' ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                    [style.border]="fulfillmentType() === 'DELIVERY' ? 'none' : '1px solid var(--color-border)'"
+                    style="padding: 10px 16px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                  >
+                    {{ 'web.checkout.fulfillmentDelivery' | translate }}
+                  </button>
+                </div>
+              }
 
               <!-- ASAP / SCHEDULED — works for both PICKUP and DELIVERY -->
               <div class="flex gap-3 w-full">
@@ -260,9 +265,10 @@ interface Step {
 
               @if (mode() === 'SCHEDULED') {
                 <div class="flex flex-col gap-1">
-                  <span
+                  <label
+                    for="pickup-slot"
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 500; color: var(--color-text-secondary)"
-                    >{{ 'web.checkout.pickupAtLabel' | translate }}</span
+                    >{{ 'web.checkout.pickupAtLabel' | translate }}</label
                   >
 
                   @if (slotsLoading()) {
@@ -274,42 +280,39 @@ interface Step {
                       (storeOpen() ? 'web.checkout.noSlots' : 'web.checkout.noSlotsClosed') | translate
                     }}</span>
                   } @else {
-                    <!-- 24 hours of windows: each day under its own heading. -->
-                    @for (day of slotDays(); track day.days) {
-                      <span
-                        data-testid="slot-day"
-                        style="margin-top: 6px; font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--color-text-secondary)"
-                        >{{ dayLabel(day) }}</span
-                      >
-                      <div class="flex flex-wrap" style="gap: 8px">
-                        @for (slot of day.slots; track slot.startsAt) {
-                          <button
-                            type="button"
-                            [disabled]="!slot.available"
-                            (click)="selectSlot(slot)"
-                            [title]="slot.available ? '' : ('web.checkout.slotFull' | translate)"
-                            [style.background]="
-                              scheduledAt() === slot.startsAt ? 'var(--color-caramel)' : 'var(--color-cream)'
-                            "
-                            [style.color]="
-                              slot.available
-                                ? scheduledAt() === slot.startsAt
-                                  ? 'var(--color-foam)'
-                                  : 'var(--color-espresso)'
-                                : 'var(--color-text-tertiary)'
-                            "
-                            [style.borderColor]="
-                              scheduledAt() === slot.startsAt ? 'transparent' : 'var(--color-border)'
-                            "
-                            [style.cursor]="slot.available ? 'pointer' : 'not-allowed'"
-                            [style.textDecoration]="slot.available ? 'none' : 'line-through'"
-                            style="padding: 8px 14px; border: 1px solid; border-radius: 999px; font-family: var(--font-sans); font-size: 14px; font-weight: 500"
-                          >
-                            {{ slotLabel(slot) }}
-                          </button>
+                    <!-- Up to 24 hours of windows in one drop-down, a group per
+                         day: the phone's own picker opens over the page rather
+                         than a wall of ~96 chips. Full windows stay listed but
+                         cannot be picked. -->
+                    <div class="slot-picker">
+                      <select id="pickup-slot" data-testid="slot-select" (change)="onSlotChange($event)">
+                        <!-- Not disabled: a select falls back to its first enabled
+                             option, and that must be this line, not 12:45. -->
+                        @if (!scheduledAt()) {
+                          <option value="" [selected]="true">{{ 'web.checkout.slotChoose' | translate }}</option>
                         }
-                      </div>
-                    }
+                        @for (day of slotDays(); track day.days) {
+                          <optgroup [label]="dayLabel(day)">
+                            @for (slot of day.slots; track slot.startsAt) {
+                              <option
+                                [value]="slot.startsAt"
+                                [disabled]="!slot.available"
+                                [selected]="slot.startsAt === scheduledAt()"
+                              >
+                                {{
+                                  slot.available
+                                    ? slotLabel(slot)
+                                    : ('web.checkout.slotTaken' | translate: { time: slotLabel(slot) })
+                                }}
+                              </option>
+                            }
+                          </optgroup>
+                        }
+                      </select>
+                      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </div>
                   }
 
                   <span style="font-size: 12px; color: var(--color-text-tertiary)">{{
@@ -747,6 +750,44 @@ interface Step {
       }
     </section>
   `,
+  styles: [
+    `
+      .slot-picker {
+        position: relative;
+      }
+      .slot-picker select {
+        appearance: none;
+        width: 100%;
+        height: 48px;
+        padding: 0 44px 0 16px;
+        background: var(--color-cream);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        font-family: var(--font-sans);
+        /* 16px keeps iOS from zooming into the page on focus. */
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--color-espresso);
+        cursor: pointer;
+      }
+      .slot-picker select:focus-visible {
+        outline: 2px solid var(--color-caramel);
+        outline-offset: 2px;
+      }
+      .slot-picker svg {
+        position: absolute;
+        top: 50%;
+        right: 16px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        fill: none;
+        stroke: var(--color-espresso);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    `,
+  ],
 })
 export class CheckoutPage implements OnInit {
   readonly authStore = inject(AuthStore);
@@ -816,6 +857,12 @@ export class CheckoutPage implements OnInit {
   readonly error = signal<string | null>(null);
   /** Whether the picked store advertises DELIVERY in `fulfillmentTypes`. */
   readonly deliveryAvailable = signal(false);
+  /**
+   * «Самовывоз | Доставка» is offered only while delivery is switched on for
+   * the deployment and the store offers it; otherwise every order is a
+   * pickup and the choice is not shown at all.
+   */
+  readonly deliveryOffered = computed(() => this.deliveryAvailable() && this.flags.deliveryEnabled());
   /** Fee in cents — populated from /delivery/quote on store load and on geolocation. */
   readonly deliveryFeeCents = signal(300);
   /** Straight-line distance in metres; null until the customer shares coords. */
@@ -1300,6 +1347,7 @@ export class CheckoutPage implements OnInit {
   }
 
   selectFulfillment(type: FulfillmentType): void {
+    if (type === 'DELIVERY' && !this.deliveryOffered()) return;
     this.fulfillmentType.set(type);
   }
 
@@ -1310,6 +1358,13 @@ export class CheckoutPage implements OnInit {
   selectSlot(slot: PickupSlot): void {
     if (!slot.available) return;
     this.scheduledAt.set(slot.startsAt);
+  }
+
+  /** A window picked in the drop-down. */
+  onSlotChange(event: Event): void {
+    const startsAt = (event.target as HTMLSelectElement).value;
+    const slot = this.slots().find((s) => s.startsAt === startsAt);
+    if (slot) this.selectSlot(slot);
   }
 
   slotLabel(slot: PickupSlot): string {
@@ -1435,20 +1490,32 @@ export class CheckoutPage implements OnInit {
 
   /**
    * The API turned the order down for its time. «Сейчас» is gone — the store
-   * closed, or its queue filled up, a moment ago: switch to a time later and
-   * say why. Or the chosen window filled up meanwhile: show the windows
+   * closed, its queue filled up, the kitchen paused it, or it closes before
+   * an order for now would be ready, a moment ago: switch to a time later
+   * and say why. Or the chosen window filled up meanwhile: show the windows
    * again and let the customer pick.
    */
   private onTimeRefused(body: unknown): void {
-    const refusal = (body ?? {}) as { code?: unknown; reason?: unknown; opensAt?: unknown };
+    const refusal = (body ?? {}) as {
+      code?: unknown;
+      reason?: unknown;
+      opensAt?: unknown;
+      pausedUntil?: unknown;
+      closesAt?: unknown;
+    };
     if (refusal.code === 'ASAP_UNAVAILABLE') {
       const store = this.servingStore();
       if (store) {
+        // The refusal names the reason and the opening; the end of a pause or
+        // the closing time come from the store as last loaded, unless it
+        // sent them too.
         this.servingStore.set({
           ...store,
           openNow: false,
           asapBlockedReason: typeof refusal.reason === 'string' ? (refusal.reason as AsapBlockedReason) : null,
           opensAt: typeof refusal.opensAt === 'string' ? refusal.opensAt : (store.opensAt ?? null),
+          pausedUntil: typeof refusal.pausedUntil === 'string' ? refusal.pausedUntil : (store.pausedUntil ?? null),
+          closesAt: typeof refusal.closesAt === 'string' ? refusal.closesAt : (store.closesAt ?? null),
         });
       }
       this.storeOpen.set(false);

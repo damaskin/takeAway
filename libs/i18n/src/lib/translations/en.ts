@@ -329,7 +329,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noSlots: 'No windows free in the next 24 hours. Try "Now".',
       noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
-      slotFull: 'This window is fully booked',
+      /** A full window in the «Later» picker, shown but not selectable. */
+      slotTaken: '{{time}} — taken',
+      /** The picker's first line while no window is chosen (the chosen one filled up). */
+      slotChoose: 'Choose a time',
       prepHint: "We'll start preparing at {{time}} so it's fresh when you arrive.",
       name: 'Name on the order',
       notes: 'Notes for the order (optional)',
@@ -428,6 +431,32 @@ export const TRANSLATIONS_EN: TranslationTree = {
         notAcceptedRefunded: 'The store did not confirm the order — the money is on its way back',
         paymentNotCompleted: 'The payment did not go through — the order is cancelled',
       },
+      /** Under the status once the kitchen gave a new time — see readyEstimateAt. */
+      estimate: {
+        inMinutes: 'Preparing · ready in {{min}} min',
+        at: 'Preparing · ready by {{time}}',
+      },
+      /** The words around the time in the big circle. */
+      ring: {
+        /** Under a countdown of less than an hour. */
+        untilPickup: 'until pickup',
+        /** Over the clock time of an order an hour or more away. */
+        readyBy: 'Ready by',
+      },
+      /** Cancelling is the customer's only before the kitchen accepts and while no money is taken. */
+      cancel: {
+        confirmTitle: 'Cancel order #{{code}}?',
+        confirmBody:
+          'The store has not started on it yet. If money is held on your card, we release the hold — nothing is charged.',
+        confirm: 'Yes, cancel',
+        keep: 'Keep the order',
+        cancelling: 'Cancelling…',
+        acceptedCall: 'The order is already being made — call the store to cancel it',
+        acceptedNoPhone: 'The order is already being made — it can no longer be cancelled',
+        chargedCall: 'The payment has gone through — call the store to cancel the order',
+        chargedNoPhone: 'The payment has gone through — the order cannot be cancelled here',
+        failed: 'Could not cancel the order. Please try again.',
+      },
       callStore: 'Call the store',
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -439,7 +468,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       ready: 'Ready',
       thanks: 'Thanks!',
       yourCode: 'Your code',
+      codeHint: 'Say it at the counter to collect your order',
       pickupIn: 'Pickup in ~{{min}} min',
+      /** An hour or more away: the clock time on the store's clock, «09:15» or «09:15 tomorrow». */
+      pickupAt: 'Pickup at {{time}}',
       backToMenu: 'Back to menu',
       notFound: 'Order not found',
     },

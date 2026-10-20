@@ -138,8 +138,16 @@ function slots(): unknown[] {
 }
 
 export interface FakeApi {
-  /** Orders the app has created, newest last. */
+  /** Orders the app has created, newest last. `GET /orders/:id` answers with the last one. */
   readonly orders: Array<Record<string, unknown>>;
+  /**
+   * Puts an order on file as if checkout had placed it — `order-1`, code
+   * 4832, a pickup in 8 minutes unless `patch` says otherwise — for tests
+   * of the order page alone.
+   */
+  seedOrder(patch?: Record<string, unknown>): Record<string, unknown>;
+  /** Cancels the app asked for, by order id. */
+  readonly cancels: string[];
   /** What the app sent to add to the cart, in order. */
   readonly cartAdds: Array<Record<string, unknown>>;
   /** Card payments the app asked for, as sent. */
@@ -187,6 +195,12 @@ export async function installFakeApi(
      * the endpoint is missing, as on an API from before it.
      */
     copurchase?: string[];
+    /** Delivery switched on for the deployment (DELIVERY_ENABLED) and offered by the store. */
+    delivery?: boolean;
+    /** Store fields as the API reports them, over the defaults: a pause, a closing time, a phone. */
+    store?: Record<string, unknown>;
+    /** `POST /orders/:id/cancel` answers 409 ORDER_NOT_CANCELLABLE with this reason. */
+    cancelRefusal?: 'ACCEPTED' | 'CHARGED';
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -194,6 +208,8 @@ export async function installFakeApi(
     ...STORE,
     acceptingOrders,
     openNow: acceptingOrders ? (opts.storeOpenNow ?? STORE.openNow) : false,
+    ...(opts.delivery ? { fulfillmentTypes: ['TAKEAWAY', 'DELIVERY'] } : {}),
+    ...opts.store,
   };
   const drink: FakeProduct = opts.product ?? PRODUCT;
   const products: FakeProduct[] = opts.menuKinds ? [drink, CROISSANT] : [drink];
@@ -201,6 +217,7 @@ export async function installFakeApi(
   const cartAdds: Array<Record<string, unknown>> = [];
   const orders: Array<Record<string, unknown>> = [];
   const payments: Array<Record<string, unknown>> = [];
+  const cancels: string[] = [];
   let nextId = 1;
 
   const cart = () => {
@@ -224,6 +241,40 @@ export async function installFakeApi(
         modifiers: i.modifiers,
         notes: i.notes,
       })),
+    };
+  };
+
+  const newOrder = (patch: Record<string, unknown>): Record<string, unknown> => {
+    const subtotalCents = cart().subtotalCents;
+    return {
+      id: 'order-1',
+      orderCode: '4832',
+      status: 'CREATED',
+      fulfillmentType: 'PICKUP',
+      pickupMode: 'ASAP',
+      pickupAt: new Date(Date.now() + 8 * 60_000).toISOString(),
+      storeId: STORE.id,
+      storeName: STORE.name,
+      storeTimezone: STORE.timezone,
+      storeLatitude: 0,
+      storeLongitude: 0,
+      storeAddress: STORE.addressLine,
+      currency: STORE.currency,
+      subtotalCents,
+      discountCents: 0,
+      taxCents: Math.round((subtotalCents * 500) / 10_500),
+      deliveryFeeCents: 0,
+      giftCardCents: 0,
+      totalCents: subtotalCents,
+      qrToken: 'qr-token',
+      etaSeconds: 480,
+      items: cart().items,
+      createdAt: new Date().toISOString(),
+      readyAt: null,
+      cancelledAt: null,
+      readyEstimateAt: null,
+      canCancel: true,
+      ...patch,
     };
   };
 
@@ -315,7 +366,7 @@ export async function installFakeApi(
     // ── Config & payments ───────────────────────────────────────────────
     if (path === '/config/features') {
       return json(route, {
-        deliveryEnabled: false,
+        deliveryEnabled: opts.delivery ?? false,
         agroprombankEnabled: opts.cardPayments ?? true,
         cardPaymentFlow: (opts.cardPayments ?? true) ? 'token' : 'none',
         support: { email: null, telegram: null },
@@ -382,33 +433,38 @@ export async function installFakeApi(
     // ── Orders ──────────────────────────────────────────────────────────
     if (path === '/orders' && method === 'POST') {
       const body = request.postDataJSON() as Record<string, unknown>;
-      const subtotalCents = cart().subtotalCents;
-      const order = {
-        id: 'order-1',
-        orderCode: '4832',
-        status: 'CREATED',
+      const order = newOrder({
         fulfillmentType: body['fulfillmentType'] ?? 'PICKUP',
         pickupMode: body['pickupMode'] ?? 'ASAP',
-        pickupAt: (body['pickupAt'] as string) ?? new Date(Date.now() + 8 * 60_000).toISOString(),
-        storeId: STORE.id,
-        storeName: STORE.name,
-        currency: STORE.currency,
-        subtotalCents,
-        discountCents: 0,
-        taxCents: Math.round((subtotalCents * 500) / 10_500),
-        deliveryFeeCents: 0,
-        giftCardCents: 0,
-        totalCents: subtotalCents,
-        qrToken: 'qr-token',
-        etaSeconds: 480,
-        items: cart().items,
-        createdAt: new Date().toISOString(),
+        ...(body['pickupAt'] ? { pickupAt: body['pickupAt'] } : {}),
         // Echoed so the test can assert what checkout actually sent.
         _request: body,
-      };
+      });
       orders.push(order);
       items.length = 0;
       return json(route, order, 201);
+    }
+    const cancelPath = path.match(/^\/orders\/([^/]+)\/cancel$/);
+    if (cancelPath && method === 'POST') {
+      cancels.push(cancelPath[1] ?? '');
+      const order = orders[orders.length - 1];
+      if (!order) return json(route, { statusCode: 404 }, 404);
+      if (opts.cancelRefusal) {
+        // The kitchen took it (or the money went) a moment before the tap.
+        Object.assign(order, opts.cancelRefusal === 'ACCEPTED' ? { status: 'ACCEPTED' } : {}, { canCancel: false });
+        return json(
+          route,
+          {
+            statusCode: 409,
+            code: 'ORDER_NOT_CANCELLABLE',
+            reason: opts.cancelRefusal,
+            message: 'The order can no longer be cancelled',
+          },
+          409,
+        );
+      }
+      Object.assign(order, { status: 'CANCELLED', canCancel: false, cancelledAt: new Date().toISOString() });
+      return json(route, order);
     }
     if (path.match(/^\/orders\/[^/]+$/) && method === 'GET') {
       return json(route, orders[orders.length - 1] ?? {}, orders.length > 0 ? 200 : 404);
@@ -419,5 +475,11 @@ export async function installFakeApi(
     return json(route, {});
   });
 
-  return { orders, payments, cartAdds };
+  const seedOrder = (patch: Record<string, unknown> = {}): Record<string, unknown> => {
+    const order = newOrder(patch);
+    orders.push(order);
+    return order;
+  };
+
+  return { orders, payments, cartAdds, cancels, seedOrder };
 }

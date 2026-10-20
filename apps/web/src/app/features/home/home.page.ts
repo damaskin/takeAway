@@ -112,9 +112,17 @@ interface FooterLink {
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
                 >{{ store.name }}</span
               >
-              <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-                address(store) || ('common.readyIn' | translate: { min: etaMin(store) })
-              }}</span>
+              <!-- No address yet: the wait instead, but only while it takes an
+                   order for now — paused or closing, a wait is a promise nobody keeps. -->
+              @if (address(store); as a) {
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                  a
+                }}</span>
+              } @else if (!closed(store) && !preorderOnly(store)) {
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
+                  'common.readyIn' | translate: { min: etaMin(store) }
+                }}</span>
+              }
               @if (preorderOnly(store)) {
                 <span
                   data-testid="store-hours"
