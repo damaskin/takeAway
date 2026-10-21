@@ -7,6 +7,10 @@ name: Deploy to staging
 on:
   push:
     branches: [main]
+    # Docs-only pushes do not deploy. deploy.yml still releases them: its
+    # check (deploy/scripts/release-staging-check.sh) reads this list from
+    # here. Keep it a plain list of patterns, without `!`, `?` or `+` —
+    # anything it cannot read turns that allowance off.
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
