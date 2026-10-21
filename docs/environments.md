@@ -210,6 +210,29 @@ new staging `.env.production`; the existing one gets the two lines by hand —
 `TELEGRAM_WEBHOOK_SECRET=$(openssl rand -hex 32)` — then the next deploy (or
 `docker compose … up -d --force-recreate api`) registers the webhook.
 
+## Pre-deploy snapshots: one-time step (October 2026)
+
+**Done 2026-10-19** (with the owner's OK): `/opt/takeaway/backups` is
+`deploy:deploy 750`. Kept here for a rebuilt host.
+
+From the release that brings `deploy/scripts/deploy.sh`'s pre-deploy snapshot,
+a production deploy writes into `/opt/takeaway/backups` as `deploy`, the user
+CI connects as. That directory was made by root's nightly cron as
+`root:root 755`, so before that release, once, as root:
+
+```bash
+chown deploy:deploy /opt/takeaway/backups && chmod 750 /opt/takeaway/backups
+```
+
+Only the directory, not the files in it. The nightly keeps working (root
+writes anywhere) and its files stay root's. Without this step the release
+stops before it changes anything and prints the same command.
+`deploy/scripts/server-check.sh` shows who owns the directory.
+
+Why not `sudo` from `deploy.sh`: it would tie every deploy to `deploy`'s
+passwordless sudo, which should not be the thing that keeps backups working,
+and a snapshot owned by the user who took it is simpler to reason about.
+
 ## Not on staging yet
 
 - **Card payments.** The fake bank from `docker-compose.sandbox.yml`
