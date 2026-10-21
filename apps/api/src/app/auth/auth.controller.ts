@@ -93,13 +93,15 @@ export class AuthController {
 
   /**
    * KDS lockscreen PIN login, from a bound kitchen tablet only (401
-   * KDS_DEVICE_REQUIRED / KDS_DEVICE_UNKNOWN otherwise). Rate-limited per-IP
-   * — production allows 8 attempts per minute. On top of that each tablet
-   * gets 5 wrong PINs at a store, then pauses of 1, 2, 4 … 60 minutes (429
-   * KDS_PIN_LOCKED with retryAfterSeconds), with a store-wide ceiling far
-   * above honest use. Without KDS_PIN_SECRET it answers 503
-   * KDS_PIN_NOT_CONFIGURED. The session it opens works only that store's
-   * kitchen board and stop-list.
+   * KDS_DEVICE_REQUIRED / KDS_DEVICE_UNKNOWN otherwise). The PIN is the
+   * person's one PIN for all their stores in the brand; the store is picked
+   * after it (`kdsStores` in the answer). Rate-limited per-IP — production
+   * allows 8 attempts per minute. On top of that each tablet gets 5 wrong
+   * PINs, then pauses of 1, 2, 4 … 60 minutes (429 KDS_PIN_LOCKED with
+   * retryAfterSeconds), with a brand-wide ceiling far above honest use.
+   * Without KDS_PIN_SECRET it answers 503 KDS_PIN_NOT_CONFIGURED. The
+   * session it opens works only the kitchen board and stop-list of the
+   * person's stores in the tablet's brand.
    */
   @Public()
   @Post('kds/pin')
@@ -107,7 +109,7 @@ export class AuthController {
   @Throttle({ default: { limit: limits.kdsPin, ttl: 60_000 } })
   @ApiOkResponse({ type: AuthSessionDto })
   kdsPinLogin(@Body() dto: KdsPinLoginDto): Promise<AuthSessionDto> {
-    return this.auth.loginWithKdsPin(dto.storeId, dto.pin, dto.deviceToken);
+    return this.auth.loginWithKdsPin({ pin: dto.pin, deviceToken: dto.deviceToken, storeId: dto.storeId });
   }
 
   @Public()

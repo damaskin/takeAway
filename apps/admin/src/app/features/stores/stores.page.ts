@@ -1,6 +1,8 @@
 import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { interval } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -11,11 +13,11 @@ import {
   type StoreKind,
   type StoreStatus,
 } from '../../core/catalog/admin-catalog.service';
-import { apiErrorCode, apiErrorMessage } from '../../core/http/api-error';
-import { KitchenApi } from '../../core/kitchen/kitchen.api';
+import { apiErrorCode } from '../../core/http/api-error';
+import { KitchenApi, type StoreShift } from '../../core/kitchen/kitchen.api';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
-import { ShiftCloseDialogComponent } from '../../shared/shift-close-dialog.component';
+import { StoreScheduleStatusComponent } from '../../shared/store-schedule-status.component';
 import { type EditorTab } from './store-editor.component';
 import { storeErrorMessage } from './store-errors';
 import { storeNeedsTimeZone } from './store-options';
@@ -31,7 +33,13 @@ interface CardError {
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, StoreReadinessComponent, OnboardingReturnComponent, ShiftCloseDialogComponent],
+  imports: [
+    RouterLink,
+    TranslatePipe,
+    StoreReadinessComponent,
+    OnboardingReturnComponent,
+    StoreScheduleStatusComponent,
+  ],
   template: `
     <div
       class="flex items-center justify-between flex-wrap"
@@ -180,69 +188,15 @@ interface CardError {
               </div>
             }
 
-            @if (s.status === 'CLOSED' && s.shiftOpen !== undefined) {
-              <!-- A closed store takes no orders whatever the shift says; say so instead of hiding the button. -->
-              <div
-                class="flex items-center flex-wrap"
-                [attr.data-testid]="'store-shift-blocked-' + s.id"
-                style="gap: 8px 12px; padding: 10px 12px; border-radius: 12px; background: var(--color-cream); border: 1px solid var(--color-border-light)"
-              >
-                <span
-                  style="flex: 1 1 200px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                  >{{
-                    (s.shiftOpen
-                      ? 'admin.stores.shift.storeClosedShiftOpen'
-                      : canEdit()
-                        ? 'admin.stores.shift.storeClosedCanOpen'
-                        : 'admin.stores.shift.storeClosed'
-                    ) | translate
-                  }}</span
-                >
-                @if (s.shiftOpen) {
-                  <button
-                    type="button"
-                    (click)="setShift(s, false)"
-                    [disabled]="busyId() === s.id"
-                    style="height: 34px; padding: 0 14px; background: transparent; color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; cursor: pointer"
-                  >
-                    {{ (busyId() === s.id ? 'common.loading' : 'admin.kitchen.shift.finish') | translate }}
-                  </button>
-                }
-              </div>
-            }
-
-            @if (s.status !== 'CLOSED' && s.shiftOpen !== undefined) {
-              <div
-                class="flex items-center flex-wrap"
-                [attr.data-testid]="'store-shift-' + s.id"
-                [style.background]="s.shiftOpen ? '#7BC4A422' : '#E9A84B26'"
-                style="gap: 8px 12px; padding: 10px 12px; border-radius: 12px"
-              >
-                <span
-                  style="flex: 1 1 160px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
-                  [style.color]="s.shiftOpen ? '#3E8868' : '#8A6720'"
-                  >{{ (s.shiftOpen ? 'admin.stores.shift.open' : 'admin.stores.shift.closed') | translate }}</span
-                >
-                <button
-                  type="button"
-                  (click)="setShift(s, !s.shiftOpen)"
-                  [disabled]="busyId() === s.id"
-                  [style.background]="s.shiftOpen ? 'transparent' : 'var(--color-caramel)'"
-                  [style.color]="s.shiftOpen ? 'var(--color-text-primary)' : 'white'"
-                  [style.border]="s.shiftOpen ? '1px solid var(--color-border)' : 'none'"
-                  style="height: 34px; padding: 0 14px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; cursor: pointer"
-                >
-                  {{
-                    (busyId() === s.id
-                      ? 'common.loading'
-                      : s.shiftOpen
-                        ? 'admin.kitchen.shift.finish'
-                        : 'admin.kitchen.shift.start'
-                    ) | translate
-                  }}
-                </button>
-              </div>
-            }
+            <!-- Where the store stands by its schedule, and the kitchen's pause; the hours open and close the shift. -->
+            <app-store-schedule-status
+              [attr.data-testid]="'store-schedule-' + s.id"
+              [attr.title]="'admin.stores.scheduleHint' | translate"
+              [shift]="shifts()[s.id] ?? null"
+              [storeStatus]="s.status"
+              [timezone]="s.timezone"
+              [now]="now()"
+            />
 
             @if (s.readiness && showReadiness(s)) {
               <app-store-readiness
@@ -327,15 +281,6 @@ interface CardError {
         }
       </div>
     </section>
-
-    @if (closingShiftOf(); as target) {
-      <app-shift-close-dialog
-        [storeId]="target.id"
-        [storeName]="target.name"
-        (closed)="shiftClosed(target.id, $event.open)"
-        (cancelled)="closingShiftOf.set(null)"
-      />
-    }
   `,
 })
 export class StoresPage implements OnInit {
@@ -368,8 +313,10 @@ export class StoresPage implements OnInit {
   readonly listError = signal<string | null>(null);
   readonly busyId = signal<string | null>(null);
   readonly cardErrors = signal<Record<string, CardError>>({});
-  /** The store whose "Finish work" dialog is open. */
-  readonly closingShiftOf = signal<StoreAdminDto | null>(null);
+  /** Each store's shift (`GET /kds/shift`), for the schedule line; read with the list and once a minute. */
+  readonly shifts = signal<Readonly<Record<string, StoreShift>>>({});
+  /** The clock the schedule lines read; it ticks with the shift refresh. */
+  readonly now = signal(Date.now());
 
   private listRequest = 0;
 
@@ -383,6 +330,12 @@ export class StoresPage implements OnInit {
       // silent token refresh must not reload the page and close the editor.
       untracked(() => this.showBrand(brandId));
     });
+    interval(60_000)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.now.set(Date.now());
+        this.loadShifts(this.stores());
+      });
   }
 
   ngOnInit(): void {
@@ -438,40 +391,6 @@ export class StoresPage implements OnInit {
         this.setCardError(store.id, { text: storeErrorMessage(err, this.translate), offerClose: false });
       },
     });
-  }
-
-  /**
-   * "Start work" / "Finish work": ASAP orders need an open shift (and the
-   * working hours). Finishing asks through the dialog, which says what stays
-   * on the board and refuses while orders due soon wait to be accepted.
-   */
-  setShift(store: StoreAdminDto, open: boolean): void {
-    if (!open) {
-      this.clearCardError(store.id);
-      this.closingShiftOf.set(store);
-      return;
-    }
-    this.busyId.set(store.id);
-    this.clearCardError(store.id);
-    this.kitchen.setShift(store.id, open).subscribe({
-      next: (shift) => {
-        this.busyId.set(null);
-        this.stores.update((list) => list.map((s) => (s.id === store.id ? { ...s, shiftOpen: shift.open } : s)));
-      },
-      error: (err) => {
-        this.busyId.set(null);
-        this.setCardError(store.id, {
-          text: apiErrorMessage(err, this.translate, { network: 'common.networkError' }),
-          offerClose: false,
-        });
-      },
-    });
-  }
-
-  /** The dialog closed the shift. */
-  shiftClosed(storeId: string, open: boolean): void {
-    this.closingShiftOf.set(null);
-    this.stores.update((list) => list.map((s) => (s.id === storeId ? { ...s, shiftOpen: open } : s)));
   }
 
   remove(store: StoreAdminDto): void {
@@ -530,6 +449,7 @@ export class StoresPage implements OnInit {
         this.stores.set(list);
         this.listError.set(null);
         this.loaded.set(true);
+        this.loadShifts(list);
       },
       error: (err) => {
         if (request !== this.listRequest) return;
@@ -541,6 +461,22 @@ export class StoresPage implements OnInit {
 
   private replace(updated: StoreAdminDto): void {
     this.stores.update((list) => list.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+    this.loadShifts([updated]);
+  }
+
+  /**
+   * The shift of each store that is switched on (a switched-off one reads as
+   * such without it). A store the account may not run the kitchen of
+   * answers 403 and simply shows no line.
+   */
+  private loadShifts(stores: readonly StoreAdminDto[]): void {
+    for (const store of stores) {
+      if (store.status === 'CLOSED') continue;
+      this.kitchen.shift(store.id).subscribe({
+        next: (shift) => this.shifts.update((all) => ({ ...all, [store.id]: shift })),
+        error: () => undefined,
+      });
+    }
   }
 
   private setCardError(id: string, error: CardError): void {

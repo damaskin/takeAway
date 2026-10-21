@@ -41,10 +41,29 @@ export type { PickupPointType };
 
 /**
  * Why a store cannot take an ASAP order right now (pre-orders may still work):
- * outside working hours with no extension, no shift open, or the queue would
- * push the handover past the longest acceptable wait.
+ * - `OUTSIDE_HOURS` — outside working hours with no extension;
+ * - `SHIFT_CLOSED` — no shift open. Since 2026-10-20 the schedule opens and
+ *   closes shifts by itself, so this only shows for a moment between the cron
+ *   passes; kept for older clients;
+ * - `QUEUE_FULL` — the queue would push the handover past the longest
+ *   acceptable wait;
+ * - `PAUSED` — the kitchen paused the store («Технический перерыв»), see
+ *   `pausedUntil`;
+ * - `CLOSING_SOON` — within hours, but an order placed now would not be ready
+ *   before the store closes (`closesAt`, or the extension's end).
+ *
+ * Clients must treat an unknown value as "closed for now, pre-orders may work".
  */
-export type AsapBlockedReason = 'OUTSIDE_HOURS' | 'SHIFT_CLOSED' | 'QUEUE_FULL';
+export type AsapBlockedReason = 'OUTSIDE_HOURS' | 'SHIFT_CLOSED' | 'QUEUE_FULL' | 'PAUSED' | 'CLOSING_SOON';
+
+/**
+ * Why the kitchen paused the store. Shown to the owner and staff only;
+ * customers see a neutral «Технический перерыв».
+ */
+export type StorePauseReason = 'EQUIPMENT' | 'NO_INGREDIENTS' | 'NO_STAFF' | 'OTHER';
+
+/** Every pause reason, in the order the kitchen's pause dialog lists them. */
+export const STORE_PAUSE_REASONS: readonly StorePauseReason[] = ['EQUIPMENT', 'NO_INGREDIENTS', 'NO_STAFF', 'OTHER'];
 
 export interface StoreListItem {
   id: string;
@@ -87,6 +106,14 @@ export interface StoreListItem {
   opensAt?: string | null;
   /** ISO UTC end of the current working-hours window while within hours, else null (also for 24/7). */
   closesAt?: string | null;
+  /**
+   * ISO UTC: the kitchen paused the store until then (`asapBlockedReason`
+   * PAUSED; pre-orders for a time inside the pause are refused too). Null when
+   * not paused. Optional for older API builds.
+   */
+  pausedUntil?: string | null;
+  /** Why the store is paused; null when not paused. Customers are shown a neutral text whatever it is. */
+  pauseReason?: StorePauseReason | null;
   /** Sales tax in basis points: 500 = 5%, 2000 = 20%. */
   taxRateBps: number;
   /** True when the listed prices already include the tax. */

@@ -23,6 +23,7 @@ import { BrandScopeService } from './services/brand-scope.service';
 import { EmailCodeService } from './services/email-code.service';
 import { EmailLoginService } from './services/email-login.service';
 import { KdsPinService } from './services/kds-pin.service';
+import { KitchenPinsService } from './services/kitchen-pins.service';
 import { OAuthIdentityService } from './services/oauth-identity.service';
 import { PasswordService } from './services/password.service';
 import { SignInMethodsService } from './services/sign-in-methods.service';
@@ -68,6 +69,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     EmailLoginService,
     PasswordService,
     KdsPinService,
+    KitchenPinsService,
     KitchenDeviceService,
     OAuthIdentityService,
     SignInMethodsService,
@@ -90,6 +92,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     BrandScopeService,
     PasswordService,
     KdsPinService,
+    KitchenPinsService,
     KitchenDeviceService,
     TokensService,
   ],

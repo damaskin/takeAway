@@ -1,25 +1,27 @@
 import { ConflictException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma, StoreStatus } from '@prisma/client';
-import type {
-  KitchenShiftState,
-  ShiftCloseSummary,
-  ShiftExtendMinutes,
-  ShiftHasUnacceptedOrdersBody,
+import { Prisma, StorePauseReason, StoreStatus } from '@prisma/client';
+import {
+  type KitchenPauseMinutes,
+  type KitchenShiftState,
+  SHIFT_EXTEND_MINUTES,
+  type ShiftExtendMinutes,
+  type ShiftExtensionRefusal,
 } from '@takeaway/shared-types';
 
-import { busyMeterOf, isBusy } from '../catalog/store-availability';
+import { busyMeterOf, closingBoundary, isBusy } from '../catalog/store-availability';
 import { codedConflict } from '../common/http/coded-conflict';
-import { DUE_SOON_SECONDS, KitchenLoadService } from '../kitchen/kitchen-load.service';
 import {
   closingAfter,
   closingBefore,
   hoursAround,
   type HoursAround,
-  openingAfter,
+  nextLocalMidnight,
+  wallClock,
   withinHours,
 } from '../kitchen/opening-hours';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
-import { CARD_PROVIDERS } from '../payments/card-providers';
+import { NotificationsService } from '../notifications/notifications.service';
+import { type PauseEnd, pauseEndedMessage, pauseSetMessage } from '../notifications/store-team-messages';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { StoreAvailabilityNotifier } from '../realtime/store-availability.notifier';
@@ -27,51 +29,72 @@ import { StoreAvailabilityNotifier } from '../realtime/store-availability.notifi
 /** A store's shift as the cabinet and the kitchen board show it (`GET /kds/shift`). */
 export type StoreShiftDto = KitchenShiftState;
 
-const WITH_NAMES = {
-  openedBy: { select: { name: true, email: true, login: true } },
-  closedBy: { select: { name: true, email: true, login: true } },
-} as const;
+const PERSON = { select: { name: true, email: true, login: true } } as const;
+
+const WITH_NAMES = { openedBy: PERSON, closedBy: PERSON } as const;
 
 /** An extension never reaches further than this past the closing it extends. */
 export const MAX_EXTENSION_SECONDS = 4 * 60 * 60;
 
-/** A shift is not closed by the schedule when the next window opens within this. */
-export const AUTO_CLOSE_NEXT_OPENING_SECONDS = 60 * 60;
+/** «Продлить» is offered only this close to the closing (or while an extension runs). */
+export const EXTEND_WINDOW_SECONDS = 60 * 60;
 
-/** {@link autoCloseDue}: `AUTO_CLOSE_GRACE_MINUTES` when unset. */
-export const DEFAULT_AUTO_CLOSE_GRACE_MINUTES = 10;
+/** {@link autoCloseDue}: `AUTO_CLOSE_GRACE_MINUTES` when unset — right at the end of the hours. */
+export const DEFAULT_AUTO_CLOSE_GRACE_MINUTES = 0;
 
-/** The open orders of a store, as "Finish work" needs to see them. */
-const OPEN_ORDER_STATUSES: OrderStatus[] = [
-  OrderStatus.CREATED,
-  OrderStatus.PAID,
-  OrderStatus.ACCEPTED,
-  OrderStatus.IN_PROGRESS,
-  OrderStatus.READY,
-];
+const HOURS_SELECT = { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } } as const;
 
-/** What an open order looks like to the shift rules. */
-interface ShiftOrder {
-  status: OrderStatus;
-  pickupAt: Date;
-  kitchenVisibleAt: Date | null;
-  payments: ReadonlyArray<{ id: string }>;
+const OPEN_SHIFT = {
+  where: { closedAt: null },
+  select: { id: true, openedAt: true, extendedUntil: true },
+  take: 1,
+} as const;
+
+/** What the shift rules read of a store. */
+const SCHEDULE_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  timezone: true,
+  pausedUntil: true,
+  pauseReason: true,
+  pauseComment: true,
+  pausedById: true,
+  workingHours: HOURS_SELECT,
+  shifts: OPEN_SHIFT,
+} as const satisfies Prisma.StoreSelect;
+
+type ScheduleStore = Prisma.StoreGetPayload<{ select: typeof SCHEDULE_SELECT }>;
+
+/** The open shift as the rules below need it. */
+interface OpenShift {
+  openedAt: Date;
+  extendedUntil: Date | null;
+}
+
+/** What `PUT /kds/pause` asks for. */
+export interface PauseInput {
+  /** Null: until the closing (the end of the working-hours window or the extension). */
+  minutes: KitchenPauseMinutes | null;
+  reason: StorePauseReason;
+  comment?: string | null;
 }
 
 /**
- * Opens, extends and closes a store's working shift, and answers what the
- * shift means right now.
+ * The store's shift, which since 2026-10-20 follows the working hours by
+ * itself (docs/kitchen-policy.md, section F): the schedule cron opens it at
+ * the start of each window ({@link openBySchedule}) and closes it at the end
+ * of the window or of the kitchen's extension ({@link closeBySchedule}).
+ * Nobody opens or closes it by hand any more.
  *
- * ASAP orders need an open shift *and* the working hours — or an extension
- * past them (`PUT /kds/shift/extend`); pre-orders for later are taken with
- * the shift closed (docs/kitchen-policy.md). "Finish work" is refused while
- * orders due soon wait for «Принять» (409 `SHIFT_HAS_UNACCEPTED_ORDERS`),
- * and the schedule closes a shift nobody finished after the hours
- * (ShiftScheduleService). Open and close are idempotent, so two tablets
- * tapping the same button do not fight.
- *
- * Also the kitchen's «Загружены» switch, which travels with the shift on
- * the same realtime event so every tablet of the store shows it at once.
+ * What the kitchen still does here:
+ * - «Продлить на 30 мин / 1 ч» in the last hour before the closing, or while
+ *   an extension runs ({@link extend});
+ * - «Пауза» — the coffee machine broke, a cook went home: no ASAP orders and
+ *   no pre-orders before its end ({@link pause}, {@link resume}); it runs out
+ *   by itself ({@link expirePause}) and is cleared when the shift closes;
+ * - «Загружены» ({@link setBusy}), which travels with the shift on the same
+ *   realtime event so every tablet of the store shows it at once.
  */
 @Injectable()
 export class StoreShiftService {
@@ -81,135 +104,71 @@ export class StoreShiftService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly availability: StoreAvailabilityNotifier,
-    private readonly kitchen: KitchenLoadService,
     private readonly rules: StoreAvailabilityService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async current(storeId: string, now: Date = new Date()): Promise<StoreShiftDto> {
     const store = await this.findStore(storeId);
-    const [last, view] = await Promise.all([
+    const [last, view, pausedBy] = await Promise.all([
       this.prisma.storeShift.findFirst({
         where: { storeId },
         orderBy: { openedAt: 'desc' },
         include: WITH_NAMES,
       }),
       this.rules.forStore(storeId, now),
+      store.pausedById && store.pausedUntil && store.pausedUntil > now
+        ? this.prisma.user.findUnique({ where: { id: store.pausedById }, ...PERSON })
+        : Promise.resolve(null),
     ]);
-    return toDto(storeId, last, isBusy(store), view);
-  }
-
-  async open(storeId: string, userId: string): Promise<StoreShiftDto> {
-    await this.findStore(storeId);
-    const existing = await this.prisma.storeShift.findFirst({ where: { storeId, closedAt: null } });
-    if (!existing) {
-      try {
-        await this.prisma.storeShift.create({ data: { storeId, openedById: userId } });
-      } catch (err) {
-        // The partial unique index let only one of two simultaneous taps in;
-        // the other one's shift is the open one, which is what both wanted.
-        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
-      }
-    }
-    return this.announce(storeId);
+    const open = store.shifts[0] ?? null;
+    const refusal = extensionRefusal(hoursAround(store.workingHours, store.timezone, now), open, now);
+    return toDto(storeId, last, {
+      busy: isBusy(store),
+      view,
+      canExtend: refusal === null,
+      pause: store,
+      pausedByName: personName(pausedBy),
+      now,
+    });
   }
 
   /**
-   * "Finish work". Refused with 409 `SHIFT_HAS_UNACCEPTED_ORDERS {count}`
-   * while orders due within 30 minutes wait for «Принять»: closing would
-   * leave customers on their way with an order nobody took on. Orders being
-   * made or ready stay on the board; pre-orders for later come to the board
-   * of the next shift.
-   *
-   * A store left marked busy is switched back to normal: the marker is
-   * about the rush in front of the counter now, and tomorrow's customers
-   * should not see yesterday's.
+   * Opens a shift for the schedule: within the working hours (or around the
+   * clock) with none open. No person opens it (`openedById = null`), and it
+   * is marked as opened by the schedule. Returns whether it opened one.
    */
-  async close(storeId: string, userId: string, now: Date = new Date()): Promise<StoreShiftDto> {
-    const store = await this.findStore(storeId);
-    const summary = await this.closeSummary(storeId, now);
-    if (summary.awaitingAcceptance > 0) {
-      throw new ConflictException({
-        statusCode: HttpStatus.CONFLICT,
-        error: 'Conflict',
-        code: 'SHIFT_HAS_UNACCEPTED_ORDERS',
-        message: `${summary.awaitingAcceptance} order(s) due soon are not accepted yet; accept or reject them first`,
-        count: summary.awaitingAcceptance,
-      } satisfies ShiftHasUnacceptedOrdersBody);
+  async openBySchedule(storeId: string, now: Date = new Date()): Promise<boolean> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
+    if (!store || store.status === StoreStatus.CLOSED || store.shifts.length > 0) return false;
+    if (!withinHours(hoursAround(store.workingHours, store.timezone, now, { backDays: 1 }), now)) return false;
+    try {
+      await this.prisma.storeShift.create({
+        data: { storeId, openedAt: now, openedById: null, openedAutomatically: true },
+      });
+    } catch (err) {
+      // Another API instance opened it first (partial unique index).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return false;
+      throw err;
     }
-    await this.prisma.storeShift.updateMany({
-      where: { storeId, closedAt: null },
-      data: { closedAt: now, closedById: userId },
-    });
-    await this.clearBusy(storeId, store.status);
-    return this.announce(storeId);
-  }
-
-  /** What "Finish work" would leave behind, for the dialog that asks before it. */
-  async closeSummary(storeId: string, now: Date = new Date()): Promise<ShiftCloseSummary> {
-    return summarizeForClose(await this.openOrders(storeId), now);
+    this.logger.log(`Shift of store ${storeId} opened by the schedule`);
+    await this.announce(storeId);
+    return true;
   }
 
   /**
-   * «Продлить на 30 мин / 1 ч»: the kitchen takes ASAP orders past the
-   * working hours. The extension runs from the later of the closing time,
-   * the current extension and now, and never reaches more than four hours
-   * past the closing it extends (for a shift opened outside the hours, four
-   * hours from now). 409 `SHIFT_NOT_OPEN` without a shift,
-   * `SHIFT_EXTENSION_NOT_NEEDED` for a store open around the clock,
-   * `SHIFT_EXTENSION_LIMIT` once the cap is reached.
-   */
-  async extend(storeId: string, minutes: ShiftExtendMinutes, now: Date = new Date()): Promise<StoreShiftDto> {
-    const store = await this.prisma.store.findUnique({
-      where: { id: storeId },
-      select: {
-        timezone: true,
-        workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
-        shifts: { where: { closedAt: null }, select: { id: true, openedAt: true, extendedUntil: true }, take: 1 },
-      },
-    });
-    if (!store) throw new NotFoundException('Store not found');
-    const shift = store.shifts[0];
-    if (!shift) throw codedConflict('SHIFT_NOT_OPEN', 'Start work first; there is no shift to extend');
-
-    const until = extensionTarget(hoursAround(store.workingHours, store.timezone, now), shift, minutes, now);
-    if (until === 'NOT_NEEDED') {
-      throw codedConflict(
-        'SHIFT_EXTENSION_NOT_NEEDED',
-        'The store is open around the clock; there is nothing to extend',
-      );
-    }
-    if (until === 'LIMIT') {
-      throw codedConflict('SHIFT_EXTENSION_LIMIT', 'The shift is already extended as far as it can be');
-    }
-    await this.prisma.storeShift.updateMany({
-      where: { id: shift.id, closedAt: null },
-      data: { extendedUntil: until },
-    });
-    return this.announce(storeId);
-  }
-
-  /**
-   * The schedule closes a shift nobody finished: outside the hours, no
-   * extension running, the next window not opening within the hour,
-   * `AUTO_CLOSE_GRACE_MINUTES` past the end of the last window or extension,
-   * and no order due within 30 minutes still waiting or being made. Ready
-   * orders stay on the board. Closed with no person and marked as closed by
-   * the schedule. Returns whether it closed the shift.
+   * Closes the shift for the schedule: outside the working hours, no
+   * extension running, `AUTO_CLOSE_GRACE_MINUTES` (0 by default) past the
+   * end of the last window or extension. Orders in work do not hold it
+   * open — they stay on the board and are finished as usual; closing only
+   * stops new ASAP orders, which the hours stop anyway. «Загружены» and a
+   * pause are cleared. Returns whether it closed the shift.
    */
   async closeBySchedule(storeId: string, graceSeconds: number, now: Date = new Date()): Promise<boolean> {
-    const store = await this.prisma.store.findUnique({
-      where: { id: storeId },
-      select: {
-        status: true,
-        timezone: true,
-        workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
-        shifts: { where: { closedAt: null }, select: { id: true, openedAt: true, extendedUntil: true }, take: 1 },
-      },
-    });
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
     const shift = store?.shifts[0];
     if (!store || !shift) return false;
     if (!autoCloseDue(hoursAround(store.workingHours, store.timezone, now), shift, graceSeconds, now)) return false;
-    if (keepsShiftOpen(await this.openOrders(storeId), now)) return false;
 
     const closed = await this.prisma.storeShift.updateMany({
       where: { id: shift.id, closedAt: null },
@@ -218,6 +177,109 @@ export class StoreShiftService {
     if (closed.count === 0) return false;
     this.logger.log(`Shift of store ${storeId} closed by the schedule`);
     await this.clearBusy(storeId, store.status);
+    const paused = store.pausedUntil !== null && store.pausedUntil > now;
+    if ((await this.clearPause(storeId)) && paused) await this.tellPauseEnded(store, 'closed');
+    await this.announce(storeId);
+    return true;
+  }
+
+  /**
+   * «Продлить на 30 мин / 1 ч»: the kitchen takes ASAP orders past the
+   * working hours. Allowed only while {@link extensionRefusal} has nothing
+   * against it — a shift open within the hours with the closing at most an
+   * hour away, or an extension still running below its cap — else 409
+   * `SHIFT_EXTENSION_NOT_ALLOWED {reason}`. At 23:57 outside the hours
+   * nothing can be extended, so «Продлить» no longer opens ASAP ordering at
+   * night. The extension runs from the later of the closing, the current
+   * extension and now, and never reaches more than four hours past the
+   * closing it extends.
+   */
+  async extend(storeId: string, minutes: ShiftExtendMinutes, now: Date = new Date()): Promise<StoreShiftDto> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
+    if (!store) throw new NotFoundException('Store not found');
+    const shift = store.shifts[0] ?? null;
+    const hours = hoursAround(store.workingHours, store.timezone, now);
+    const refusal = extensionRefusal(hours, shift, now);
+    const until = shift && refusal === null ? extensionTarget(hours, shift, minutes, now) : 'LIMIT';
+    if (refusal !== null || !shift || until === 'LIMIT') throw extensionNotAllowed(refusal ?? 'LIMIT');
+
+    await this.prisma.storeShift.updateMany({
+      where: { id: shift.id, closedAt: null },
+      data: { extendedUntil: until },
+    });
+    return this.announce(storeId);
+  }
+
+  /**
+   * «Пауза»: no ASAP orders and no pre-orders for a time before its end,
+   * for 15/30/60/120 minutes or — `minutes: null` — until the closing (the
+   * end of the working-hours window or the extension; the next local
+   * midnight for a store open around the clock; before the opening, the end
+   * of the coming window). Setting it again replaces it. The store team and
+   * the owner hear who paused it, why and until when. A store switched off
+   * is refused with 409 `STORE_SWITCHED_OFF`.
+   */
+  async pause(storeId: string, userId: string, input: PauseInput, now: Date = new Date()): Promise<StoreShiftDto> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
+    if (!store) throw new NotFoundException('Store not found');
+    if (store.status === StoreStatus.CLOSED) throw switchedOff('The store is switched off; there is nothing to pause');
+
+    const shift = store.shifts[0] ?? null;
+    const extension = shift?.extendedUntil && shift.extendedUntil > now ? shift.extendedUntil : null;
+    const until = pauseEnd(
+      hoursAround(store.workingHours, store.timezone, now),
+      extension,
+      input.minutes,
+      now,
+      store.timezone,
+    );
+    if (!until) {
+      throw codedConflict('PAUSE_NEEDS_DURATION', 'The store does not open again soon; pick how long to pause');
+    }
+    const comment = input.comment?.trim() || null;
+    await this.prisma.store.update({
+      where: { id: storeId },
+      data: { pausedUntil: until, pauseReason: input.reason, pauseComment: comment, pausedById: userId },
+    });
+
+    const by = await this.prisma.user.findUnique({ where: { id: userId }, ...PERSON });
+    void this.notifications.notifyStoreTeam(
+      storeId,
+      pauseSetMessage({
+        storeName: store.name,
+        until: wallClock(until, store.timezone),
+        reason: input.reason,
+        comment,
+        byName: personName(by),
+      }),
+      { staff: true, owner: true },
+    );
+    return this.announce(storeId);
+  }
+
+  /** «Снять паузу». Idempotent: lifting a pause that already ended changes nothing and tells nobody. */
+  async resume(storeId: string, userId: string, now: Date = new Date()): Promise<StoreShiftDto> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
+    if (!store) throw new NotFoundException('Store not found');
+    const active = store.pausedUntil !== null && store.pausedUntil > now;
+    if (store.pausedUntil !== null && (await this.clearPause(storeId)) && active) {
+      const by = await this.prisma.user.findUnique({ where: { id: userId }, ...PERSON });
+      await this.tellPauseEnded(store, 'lifted', personName(by));
+    }
+    return this.announce(storeId);
+  }
+
+  /**
+   * A pause that ran out: cleared, the team told «Пауза закончилась», and
+   * every client told the store takes orders again. Claimed with a
+   * conditional update, so two API instances never both announce it.
+   * Returns whether this call ended it.
+   */
+  async expirePause(storeId: string, now: Date = new Date()): Promise<boolean> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
+    if (!store?.pausedUntil || store.pausedUntil > now) return false;
+    if (!(await this.clearPause(storeId, now))) return false;
+    await this.tellPauseEnded(store, 'expired');
     await this.announce(storeId);
     return true;
   }
@@ -234,12 +296,7 @@ export class StoreShiftService {
   async setBusy(storeId: string, busy: boolean): Promise<StoreShiftDto> {
     const store = await this.findStore(storeId);
     if (store.status === StoreStatus.CLOSED) {
-      throw new ConflictException({
-        statusCode: HttpStatus.CONFLICT,
-        error: 'Conflict',
-        code: 'STORE_SWITCHED_OFF',
-        message: 'The store is switched off; turn it on before marking it busy',
-      });
+      throw switchedOff('The store is switched off; turn it on before marking it busy');
     }
     if (isBusy(store) !== busy) {
       // Conditional on the status read above, so a store switched off in the
@@ -274,102 +331,92 @@ export class StoreShiftService {
   }
 
   /**
+   * Clears the pause; with `endedBy`, only one that ran out by then. Claimed
+   * conditionally. Returns whether a pause was there to clear.
+   */
+  private async clearPause(storeId: string, endedBy?: Date): Promise<boolean> {
+    const cleared = await this.prisma.store.updateMany({
+      where: { id: storeId, pausedUntil: endedBy ? { not: null, lte: endedBy } : { not: null } },
+      data: { pausedUntil: null, pauseReason: null, pauseComment: null, pausedById: null },
+    });
+    return cleared.count > 0;
+  }
+
+  private async tellPauseEnded(store: { id: string; name: string }, end: PauseEnd, byName?: string | null) {
+    await this.notifications.notifyStoreTeam(store.id, pauseEndedMessage({ storeName: store.name, end, byName }), {
+      staff: true,
+      owner: true,
+    });
+  }
+
+  /**
    * `store.loadChanged` for every connected client, with the load meter and
-   * the current ETA. Storefronts also refetch the store on the
-   * `store.availabilityChanged` that {@link announce} sends right after.
-   * Best effort, like the availability broadcast.
+   * the store's current ETA (the one the storefronts show). Storefronts also
+   * refetch the store on the `store.availabilityChanged` that
+   * {@link announce} sends right after. Best effort, like the availability
+   * broadcast.
    */
   private async announceLoad(storeId: string): Promise<void> {
     try {
       const store = await this.prisma.store.findUnique({
         where: { id: storeId },
-        select: { status: true, busyMeter: true, baseEtaSeconds: true, kitchenParallelism: true },
+        select: { status: true, busyMeter: true, baseEtaSeconds: true },
       });
       if (!store) return;
-      const queue = await this.kitchen.queueWaitSeconds({ id: storeId, ...store });
+      const view = await this.rules.forStore(storeId);
       this.realtime.emitStoreLoad({
         storeId,
         busy: isBusy(store),
         busyMeter: busyMeterOf(store),
-        currentEtaSeconds: store.baseEtaSeconds + queue,
+        currentEtaSeconds: view?.currentEtaSeconds ?? store.baseEtaSeconds,
       });
     } catch (err) {
       this.logger.warn(`store.loadChanged for ${storeId} not sent: ${(err as Error).message}`);
     }
   }
 
-  private openOrders(storeId: string): Promise<ShiftOrder[]> {
-    return this.prisma.order.findMany({
-      where: { storeId, status: { in: OPEN_ORDER_STATUSES } },
-      select: {
-        status: true,
-        pickupAt: true,
-        kitchenVisibleAt: true,
-        payments: {
-          where: { provider: { in: [...CARD_PROVIDERS] }, status: { in: ['REQUIRES_ACTION', 'SUCCEEDED'] } },
-          select: { id: true },
-          take: 1,
-        },
-      },
-    });
-  }
-
-  private async findStore(storeId: string): Promise<{ id: string; status: StoreStatus }> {
-    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: { id: true, status: true } });
+  private async findStore(storeId: string): Promise<ScheduleStore> {
+    const store = await this.prisma.store.findUnique({ where: { id: storeId }, select: SCHEDULE_SELECT });
     if (!store) throw new NotFoundException('Store not found');
     return store;
   }
 }
 
-/**
- * On the kitchen board: started its acceptance clock, or paid, or (for an
- * order from before the clock existed) carrying a card payment.
- */
-function onBoard(order: ShiftOrder): boolean {
-  return order.kitchenVisibleAt !== null || order.status !== OrderStatus.CREATED || order.payments.length > 0;
+function switchedOff(message: string): ConflictException {
+  return new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    code: 'STORE_SWITCHED_OFF',
+    message,
+  });
 }
 
-function dueSoon(order: ShiftOrder, now: Date): boolean {
-  return order.pickupAt.getTime() <= now.getTime() + DUE_SOON_SECONDS * 1000;
-}
-
-/** Sorts a store's open orders into what the "Finish work" dialog shows. */
-export function summarizeForClose(orders: readonly ShiftOrder[], now: Date): ShiftCloseSummary {
-  const summary: ShiftCloseSummary = { awaitingAcceptance: 0, inProgress: 0, ready: 0, later: 0 };
-  for (const order of orders) {
-    if (order.status === OrderStatus.READY) summary.ready += 1;
-    else if (order.status === OrderStatus.IN_PROGRESS) summary.inProgress += 1;
-    else if (!onBoard(order)) continue;
-    else if (!dueSoon(order, now)) summary.later += 1;
-    else if (order.status === OrderStatus.ACCEPTED) summary.inProgress += 1;
-    else summary.awaitingAcceptance += 1;
-  }
-  return summary;
-}
-
-/** Orders that keep a shift from closing by itself: being made, or due within 30 minutes and not ready. */
-export function keepsShiftOpen(orders: readonly ShiftOrder[], now: Date): boolean {
-  return orders.some(
-    (o) => o.status === OrderStatus.IN_PROGRESS || (o.status !== OrderStatus.READY && onBoard(o) && dueSoon(o, now)),
-  );
+function extensionNotAllowed(reason: ShiftExtensionRefusal): ConflictException {
+  const why: Record<ShiftExtensionRefusal, string> = {
+    NO_SHIFT: 'No shift is open; the schedule opens it at the start of the working hours',
+    AROUND_THE_CLOCK: 'The store is open around the clock; there is nothing to extend',
+    OUTSIDE_HOURS: 'The store is closed by its working hours; an extension is only offered before the closing',
+    TOO_EARLY: 'The closing is more than an hour away; extend in the last hour before it',
+    LIMIT: 'The shift is already extended as far as it can be (four hours past the closing)',
+  };
+  return new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    code: 'SHIFT_EXTENSION_NOT_ALLOWED',
+    message: why[reason],
+    reason,
+  });
 }
 
 /**
- * The hours side of the auto-close rule: outside the hours, no extension
- * running, the next window more than an hour away, and the grace past the
- * last closing (or extension, or the opening of a shift started after
- * hours) gone by.
+ * The hours side of the auto-close rule: outside the hours (a store open
+ * around the clock never closes), no extension running, and the grace past
+ * the end of the last window — or of the extension, or the opening of a
+ * shift started outside the hours — gone by.
  */
-export function autoCloseDue(
-  hours: HoursAround,
-  shift: { openedAt: Date; extendedUntil: Date | null },
-  graceSeconds: number,
-  now: Date,
-): boolean {
+export function autoCloseDue(hours: HoursAround, shift: OpenShift, graceSeconds: number, now: Date): boolean {
   if (hours.alwaysOpen || withinHours(hours, now)) return false;
   if (shift.extendedUntil && shift.extendedUntil > now) return false;
-  const next = openingAfter(hours, now);
-  if (next && next.getTime() - now.getTime() <= AUTO_CLOSE_NEXT_OPENING_SECONDS * 1000) return false;
   const ended = Math.max(
     closingBefore(hours, now)?.getTime() ?? 0,
     shift.extendedUntil?.getTime() ?? 0,
@@ -379,30 +426,61 @@ export function autoCloseDue(
 }
 
 /**
+ * Why «Продлить» cannot be offered now, or null when it can: a shift is
+ * open, and either the store is within its hours with the closing at most
+ * an hour away, or an extension is running — in both cases below the
+ * four-hour cap.
+ */
+export function extensionRefusal(hours: HoursAround, shift: OpenShift | null, now: Date): ShiftExtensionRefusal | null {
+  if (!shift) return 'NO_SHIFT';
+  if (hours.alwaysOpen) return 'AROUND_THE_CLOCK';
+  const running = shift.extendedUntil !== null && shift.extendedUntil > now;
+  if (withinHours(hours, now)) {
+    const closes = closingAfter(hours, now);
+    if (!closes) return 'AROUND_THE_CLOCK';
+    if (!running && closes.getTime() - now.getTime() > EXTEND_WINDOW_SECONDS * 1000) return 'TOO_EARLY';
+  } else if (!running) {
+    return 'OUTSIDE_HOURS';
+  }
+  return extensionTarget(hours, shift, Math.min(...SHIFT_EXTEND_MINUTES), now) === 'LIMIT' ? 'LIMIT' : null;
+}
+
+/**
  * Where an extension of `minutes` ends: from the later of the closing
  * time, the current extension and now, capped at four hours past the
  * closing it extends — the current window's end within the hours, the
- * last window's end for a shift that was open then, else now.
+ * last window's end while an extension runs past it.
  */
-export function extensionTarget(
-  hours: HoursAround,
-  shift: { openedAt: Date; extendedUntil: Date | null },
-  minutes: number,
-  now: Date,
-): Date | 'NOT_NEEDED' | 'LIMIT' {
-  if (hours.alwaysOpen) return 'NOT_NEEDED';
-  const inHours = withinHours(hours, now);
-  const closes = inHours ? closingAfter(hours, now) : null;
-  if (inHours && !closes) return 'NOT_NEEDED';
-
+export function extensionTarget(hours: HoursAround, shift: OpenShift, minutes: number, now: Date): Date | 'LIMIT' {
+  const closes = withinHours(hours, now) ? closingAfter(hours, now) : null;
   const current = shift.extendedUntil?.getTime() ?? 0;
   const from = Math.max(closes?.getTime() ?? 0, current, now.getTime());
-  const lastClosing = closingBefore(hours, now);
-  const capBase =
-    closes?.getTime() ?? (lastClosing && shift.openedAt < lastClosing ? lastClosing.getTime() : now.getTime());
+  const capBase = closes?.getTime() ?? closingBefore(hours, now)?.getTime() ?? now.getTime();
   const until = Math.min(from + minutes * 60_000, capBase + MAX_EXTENSION_SECONDS * 1000);
   if (until <= Math.max(current, now.getTime())) return 'LIMIT';
   return new Date(until);
+}
+
+/**
+ * When a pause of `minutes` ends; with `null`, at the closing — the end of
+ * the current window or the running extension, whichever is later. A store
+ * open around the clock (or whose window does not close within the week)
+ * pauses until the next local midnight; before the opening, until the end
+ * of the coming window. Null when nothing opens within the span looked at.
+ */
+export function pauseEnd(
+  hours: HoursAround,
+  extendedUntil: Date | null,
+  minutes: number | null,
+  now: Date,
+  timeZone: string,
+): Date | null {
+  if (minutes !== null) return new Date(now.getTime() + minutes * 60_000);
+  const inHours = withinHours(hours, now);
+  const boundary = closingBoundary({ closesAt: inHours ? closingAfter(hours, now) : null, extendedUntil });
+  if (boundary) return boundary;
+  if (inHours) return nextLocalMidnight(now, timeZone);
+  return hours.windows.find((w) => w.start > now)?.end ?? null;
 }
 
 type ShiftRow = Prisma.StoreShiftGetPayload<{ include: typeof WITH_NAMES }>;
@@ -414,10 +492,18 @@ function personName(user: { name: string | null; email: string | null; login: st
 export function toDto(
   storeId: string,
   shift: ShiftRow | null,
-  busy = false,
-  view: StoreAvailabilityView | null = null,
+  extra: {
+    busy?: boolean;
+    view?: StoreAvailabilityView | null;
+    canExtend?: boolean;
+    pause?: { pausedUntil: Date | null; pauseReason: StorePauseReason | null; pauseComment: string | null } | null;
+    pausedByName?: string | null;
+    now?: Date;
+  } = {},
 ): StoreShiftDto {
+  const { busy = false, view = null, canExtend = false, pause = null, pausedByName = null, now = new Date() } = extra;
   const open = shift != null && shift.closedAt == null;
+  const paused = pause?.pausedUntil && pause.pausedUntil > now ? pause : null;
   return {
     storeId,
     open,
@@ -432,5 +518,11 @@ export function toDto(
     asapOpen: view?.openNow ?? false,
     asapBlockedReason: view?.asapBlockedReason ?? null,
     closedAutomatically: !open && shift?.closedAutomatically === true,
+    openedAutomatically: shift?.openedAutomatically === true,
+    canExtend: open && canExtend,
+    pausedUntil: paused?.pausedUntil?.toISOString() ?? null,
+    pauseReason: paused?.pauseReason ?? null,
+    pauseComment: paused?.pauseComment ?? null,
+    pausedByName: paused ? pausedByName : null,
   };
 }

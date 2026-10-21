@@ -42,7 +42,8 @@ export class AdminStoresController {
   // STORE_MANAGER needs read access so the admin can show their assigned stores
   // for hours / stop-list management; STAFF gets read for the stop-list flow.
   // The kitchen board and stop-list read it too, so a PIN session may — and
-  // sees only the store its PIN opens.
+  // sees only its person's stores in the tablet's brand: more than one, and
+  // the board offers to switch between them.
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.STAFF)
   @KdsSessionAllowed()
@@ -52,7 +53,8 @@ export class AdminStoresController {
     const stores = await this.admin.listStores(scope, brandId);
     const own = await this.stores.getScope(user.id, user.role);
     const reachable = own === '*' ? stores : stores.filter((s) => own.includes(s.id));
-    return user.kdsStoreId ? reachable.filter((s) => s.id === user.kdsStoreId) : reachable;
+    const kitchen = user.kdsStoreIds;
+    return kitchen ? reachable.filter((s) => kitchen.includes(s.id)) : reachable;
   }
 
   @Get(':id')

@@ -9,7 +9,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AdminOrdersApi, type AdminOrderSummary } from '../../core/orders/orders.service';
-import { type AdminRole, canAccess, canOnStores } from '../../core/permissions/permissions';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { PlanAccess } from '../../core/plans/plan-access.service';
 import { BarChartComponent } from '../../shared/charts/bar-chart.component';
 import { DonutChartComponent } from '../../shared/charts/donut-chart.component';
@@ -517,7 +517,7 @@ interface DashboardOrder {
               }
             </div>
           </article>
-          <app-store-shifts-widget [brandId]="brandId" [canToggle]="canToggleShifts()" />
+          <app-store-shifts-widget [brandId]="brandId" />
           @if (canSeeMenu()) {
             <app-menu-summary-widget [brandId]="brandId" />
           }
@@ -660,7 +660,6 @@ export class DashboardPage {
   private readonly role = computed(() => this.auth.user()?.role as AdminRole | undefined);
   readonly canSeeKitchen = computed(() => canAccess(this.role(), 'kitchen'));
   readonly canSeeMenu = computed(() => canAccess(this.role(), 'menu'));
-  readonly canToggleShifts = computed(() => canOnStores(this.role(), 'edit'));
   /** The currency of every amount: the one the API counted in, the brand's until it answers. */
   readonly currency = computed(() => this.data()?.currency ?? this.activeBrand.active()?.currency ?? null);
   readonly currencies = computed(() => this.data()?.currencies ?? []);

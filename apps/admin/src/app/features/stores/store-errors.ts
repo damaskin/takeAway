@@ -13,6 +13,7 @@ const STORE_ERRORS: ApiErrorWording = {
     KDS_PIN_NOT_CONFIGURED: 'admin.stores.errors.pinNotConfigured',
     KDS_PIN_FORMAT: 'admin.stores.errors.pinFormat',
     KDS_PIN_TOO_SIMPLE: 'admin.stores.errors.pinTooSimple',
+    KDS_PIN_MULTI_BRAND: 'admin.staff.errors.pinMultiBrand',
     STAFF_NOT_EDITABLE: 'admin.staff.errors.notEditable',
     IMAGE_TOO_LARGE: 'admin.images.errors.tooLarge',
     IMAGE_TYPE: 'admin.images.errors.type',

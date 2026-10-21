@@ -118,12 +118,18 @@ class OrderController extends AutoDisposeFamilyAsyncNotifier<Order, String> {
     }
   }
 
+  /// Cancels the order — only before the kitchen accepts it. A cancel the
+  /// API turns down as too late (`ORDER_NOT_CANCELLABLE`: accepted, or the
+  /// money taken, a moment ago) re-reads the order first, so the screen shows
+  /// it as it is now before the error is told.
   Future<void> cancel() async {
     try {
       state = AsyncData(await _api.cancelOrder(arg));
       ref.invalidate(ordersProvider);
     } on Object catch (error) {
-      throw ApiError.from(error);
+      final apiError = ApiError.from(error);
+      if (apiError.code == 'ORDER_NOT_CANCELLABLE') await refresh();
+      throw apiError;
     }
   }
 

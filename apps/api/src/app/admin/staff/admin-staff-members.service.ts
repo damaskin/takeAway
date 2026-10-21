@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,15 +12,23 @@ import type { StaffInviteResult, StaffMember, StaffPasswordReset, StaffRoleName 
 import { generateTempPassword } from '@takeaway/utils';
 
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
+import {
+  isPinCollision,
+  KitchenPinsService,
+  kdsPinMultiBrand,
+  kdsPinTaken,
+} from '../../auth/services/kitchen-pins.service';
 import { PasswordService } from '../../auth/services/password.service';
 import { TokensService } from '../../auth/services/tokens.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { codedConflict } from '../../common/http/coded-conflict';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StaffInviteMailer } from './staff-invite-mailer.service';
-import { createLoginAccount } from './staff-login';
+import { createLoginAccount, loginInUse } from './staff-login';
 
 const STAFF_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
+/** Who works the kitchen tablet, and so may have a PIN. */
+const PIN_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF];
 
 /**
  * What a build without KDS_PIN_SECRET stores instead of a PIN hash. Such a
@@ -27,8 +36,8 @@ const STAFF_ROLES: Role[] = [Role.STORE_MANAGER, Role.STAFF, Role.MENU_EDITOR];
  */
 const UNSET_PIN_PREFIX = 'unset:';
 
-/** Stores the caller manages: id → name. */
-type Reach = Map<string, string>;
+/** Stores the caller manages: id → name and brand. */
+type Reach = Map<string, { name: string; brandId: string }>;
 
 const MEMBER_SELECT = {
   id: true,
@@ -41,11 +50,23 @@ const MEMBER_SELECT = {
   createdAt: true,
   kdsPinHash: true,
   kdsPinStoreId: true,
+  kdsPinBrandId: true,
 } satisfies Prisma.UserSelect;
 
 type MemberRow = Prisma.UserGetPayload<{ select: typeof MEMBER_SELECT }> & {
   userStores: { storeId: string; createdAt: Date }[];
 };
+
+/** What the invite form sends. */
+export interface InviteInput {
+  email?: string;
+  login?: string;
+  name?: string;
+  role: StaffRoleName;
+  tempPassword?: string;
+  pin?: string;
+  storeIds: string[];
+}
 
 /**
  * Person-centric staff management: an employee is one account with one
@@ -66,10 +87,15 @@ type MemberRow = Prisma.UserGetPayload<{ select: typeof MEMBER_SELECT }> & {
  * managers, and nobody edits their own access here.
  *
  * An account is global (one role, one password, one kitchen PIN), so its
- * role is changed, and stores are added to it, only when every store it
- * works at is within the caller's brands — see
+ * role is changed, its PIN set, and stores are added to it, only when every
+ * store it works at is within the caller's brands — see
  * {@link BrandScopeService.managesUser}. Taking it off the caller's own
  * stores stays possible.
+ *
+ * The kitchen PIN lives on the person, one for every store they work at in
+ * the brand (KitchenPinsService). Kitchen staff may have nothing else: they
+ * are invited with a name, stores and a PIN, and sign in on the tablet only
+ * until the owner adds a login.
  */
 @Injectable()
 export class AdminStaffMembersService {
@@ -81,6 +107,7 @@ export class AdminStaffMembersService {
     private readonly scope: BrandScopeService,
     private readonly inviteMailer: StaffInviteMailer,
     private readonly tokens: TokensService,
+    private readonly kitchenPins: KitchenPinsService,
   ) {}
 
   async list(user: AuthenticatedUser, brandId?: string): Promise<StaffMember[]> {
@@ -106,9 +133,10 @@ export class AdminStaffMembersService {
 
   /**
    * Replaces the person's stores within the caller's reach. Taking away the
-   * last one takes the person off the team. A kitchen PIN bound to a store
-   * the person no longer works at is cleared — it would otherwise keep
-   * opening that store's tablet.
+   * last one takes the person off the team. A kitchen PIN that no longer
+   * opens any of the person's stores — a brand PIN with no store of its
+   * brand left, an old PIN whose store went — is reset, and the person's
+   * tablet sessions end with it.
    */
   async setStores(userId: string, storeIds: string[], user: AuthenticatedUser, brandId?: string): Promise<StaffMember> {
     const reach = await this.reach(user, brandId);
@@ -125,12 +153,6 @@ export class AdminStaffMembersService {
     const ops: Prisma.PrismaPromise<unknown>[] = [];
     if (toRemove.length > 0) {
       ops.push(this.prisma.userStore.deleteMany({ where: { userId, storeId: { in: toRemove } } }));
-      ops.push(
-        this.prisma.user.updateMany({
-          where: { id: userId, kdsPinStoreId: { in: toRemove } },
-          data: { kdsPinHash: null, kdsPinStoreId: null },
-        }),
-      );
     }
     if (toAdd.length > 0) {
       ops.push(
@@ -141,6 +163,7 @@ export class AdminStaffMembersService {
       );
     }
     if (ops.length > 0) await this.prisma.$transaction(ops);
+    if (toRemove.length > 0) await this.dropOrphanPin(userId);
 
     return this.reload(userId, reach, user);
   }
@@ -173,37 +196,47 @@ export class AdminStaffMembersService {
    * With a login instead of an email it is always a new account (see
    * {@link createLoginAccount}): a taken login is 409 LOGIN_IN_USE, whoever
    * has it. Nobody is mailed — the owner hands over the login and password.
+   *
+   * Kitchen staff may come with neither: a name, stores and a PIN make an
+   * account that only unlocks the kitchen tablet ({@link inviteWithPinOnly}).
+   * A PIN may come with an email or a login too; it is checked (format,
+   * free at the brand) before anybody is created or linked.
    */
-  async invite(
-    input: {
-      email?: string;
-      login?: string;
-      name?: string;
-      role: StaffRoleName;
-      tempPassword: string;
-      storeIds: string[];
-    },
-    user: AuthenticatedUser,
-    brandId?: string,
-  ): Promise<StaffInviteResult> {
+  async invite(input: InviteInput, user: AuthenticatedUser, brandId?: string): Promise<StaffInviteResult> {
     const reach = await this.reach(user, brandId);
     this.assertWithinReach(input.storeIds, reach);
     this.assertRoleAllowed(input.role, user);
-    if (input.login !== undefined) {
-      if (input.email !== undefined) throw new BadRequestException('Send either email or login');
-      return this.inviteByLogin({ ...input, login: input.login }, reach, user);
+    if (input.email !== undefined && input.login !== undefined) {
+      throw new BadRequestException('Send either email or login');
     }
-    if (input.email === undefined) throw new BadRequestException('Send either email or login');
-    const email = input.email.toLowerCase();
+    const pinBrand = input.pin !== undefined ? this.pinBrandFor(input.storeIds, reach, input.role) : null;
+    if (input.email === undefined && input.login === undefined) {
+      return this.inviteWithPinOnly(input, pinBrand, reach, user);
+    }
+    if (input.tempPassword === undefined) {
+      throw new BadRequestException('tempPassword is required with an email or a login');
+    }
+    const withPassword = { ...input, tempPassword: input.tempPassword };
+    if (input.login !== undefined) {
+      if (pinBrand && input.pin) await this.kitchenPins.newPinData(pinBrand, input.pin);
+      return this.inviteByLogin({ ...withPassword, login: input.login }, pinBrand, reach, user);
+    }
+    const email = (input.email as string).toLowerCase();
 
     const existing = await this.prisma.user.findUnique({
       where: { email },
       select: { id: true, role: true, userStores: { select: { storeId: true } } },
     });
 
+    if (pinBrand && input.pin) {
+      // A PIN belongs to one brand; an existing account must not work for another.
+      if (existing && ![null, pinBrand].includes(await this.kitchenPins.brandOf(existing.id))) throw kdsPinMultiBrand();
+      await this.kitchenPins.newPinData(pinBrand, input.pin, existing?.id);
+    }
+
     let userId: string;
     if (!existing) {
-      const passwordHash = await this.passwords.hash(input.tempPassword);
+      const passwordHash = await this.passwords.hash(withPassword.tempPassword);
       const created = await this.prisma.user.create({
         data: {
           email,
@@ -241,6 +274,7 @@ export class AdminStaffMembersService {
       data: input.storeIds.map((storeId) => ({ userId, storeId })),
       skipDuplicates: true,
     });
+    if (pinBrand && input.pin) await this.kitchenPins.assign(userId, pinBrand, input.pin);
     const member = await this.reload(userId, reach, user);
     // The person is on the team either way; the email only tells them so.
     const inviteEmail = await this.inviteMailer.send({
@@ -255,7 +289,15 @@ export class AdminStaffMembersService {
   }
 
   private async inviteByLogin(
-    input: { login: string; name?: string; role: StaffRoleName; tempPassword: string; storeIds: string[] },
+    input: {
+      login: string;
+      name?: string;
+      role: StaffRoleName;
+      tempPassword: string;
+      pin?: string;
+      storeIds: string[];
+    },
+    pinBrand: string | null,
     reach: Reach,
     user: AuthenticatedUser,
   ): Promise<StaffInviteResult> {
@@ -269,8 +311,161 @@ export class AdminStaffMembersService {
       data: input.storeIds.map((storeId) => ({ userId, storeId })),
       skipDuplicates: true,
     });
+    if (pinBrand && input.pin) await this.kitchenPins.assign(userId, pinBrand, input.pin);
     const member = await this.reload(userId, reach, user);
     return { ...member, inviteEmail: 'NO_EMAIL', accountCreated: true };
+  }
+
+  /**
+   * Kitchen staff with no email and no login: a name, stores and a PIN.
+   * There is no password at all — the account cannot sign in to the
+   * cabinet, only unlock the kitchen tablet of its stores — until the owner
+   * adds a login ({@link addSignIn}). The account and its PIN are created in
+   * one write, so a PIN taken in the meantime leaves nothing behind.
+   */
+  private async inviteWithPinOnly(
+    input: InviteInput,
+    pinBrand: string | null,
+    reach: Reach,
+    user: AuthenticatedUser,
+  ): Promise<StaffInviteResult> {
+    if (input.role !== Role.STAFF) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        code: 'STAFF_SIGN_IN_REQUIRED',
+        message: 'Only kitchen staff can be invited without an email or a login',
+      });
+    }
+    const name = input.name?.trim();
+    if (!name || !input.pin || !pinBrand) {
+      throw new BadRequestException('Someone invited without an email or a login needs a name and a PIN');
+    }
+    const pin = await this.kitchenPins.newPinData(pinBrand, input.pin);
+    let userId: string;
+    try {
+      ({ id: userId } = await this.prisma.user.create({
+        data: { name, role: Role.STAFF, ...pin },
+        select: { id: true },
+      }));
+    } catch (err) {
+      throw isPinCollision(err) ? kdsPinTaken() : err;
+    }
+    await this.prisma.userStore.createMany({
+      data: input.storeIds.map((storeId) => ({ userId, storeId })),
+      skipDuplicates: true,
+    });
+    const member = await this.reload(userId, reach, user);
+    this.logger.log(`Kitchen staff ${userId} invited with a PIN only by ${user.id} (${user.role})`);
+    return { ...member, inviteEmail: 'NO_EMAIL', accountCreated: true };
+  }
+
+  /**
+   * Sets (or replaces) the person's kitchen PIN: one for every store they
+   * work at in the brand. 409 `KDS_PIN_TAKEN` when somebody else at the
+   * brand has it, `KDS_PIN_MULTI_BRAND` for someone who also works for
+   * another brand. The person's tablet sessions end.
+   */
+  async setKdsPin(userId: string, pin: string, user: AuthenticatedUser, brandId?: string): Promise<StaffMember> {
+    const reach = await this.reach(user, brandId);
+    const row = await this.findOnTeam(userId, reach);
+    this.assertEditable(row, user);
+    if (!PIN_ROLES.includes(row.role)) throw new NotFoundException('User is not eligible for a KDS PIN');
+    // A PIN signs in as the account: never for one that also works elsewhere.
+    await this.assertManaged(userId, user);
+    const pinBrand = await this.kitchenPins.brandOf(userId);
+    if (!pinBrand) throw new NotFoundException('Staff member not found');
+    await this.kitchenPins.assign(userId, pinBrand, pin);
+    this.logger.log(`Kitchen PIN set: user ${userId} by ${user.id} (${user.role})`);
+    return this.reload(userId, reach, user);
+  }
+
+  /** «Сбросить PIN»: the person can no longer unlock the tablet; their tablet sessions end. */
+  async clearKdsPin(userId: string, user: AuthenticatedUser, brandId?: string): Promise<StaffMember> {
+    const reach = await this.reach(user, brandId);
+    const row = await this.findOnTeam(userId, reach);
+    this.assertEditable(row, user);
+    // Only a PIN of the caller's own: a brand PIN of a brand in reach, an
+    // old PIN at a store in reach.
+    const brands = new Set([...reach.values()].map((s) => s.brandId));
+    const ours = row.kdsPinBrandId
+      ? brands.has(row.kdsPinBrandId)
+      : !!row.kdsPinStoreId && reach.has(row.kdsPinStoreId);
+    if (row.kdsPinHash && ours) {
+      await this.kitchenPins.clear(userId);
+      this.logger.log(`Kitchen PIN reset: user ${userId} by ${user.id} (${user.role})`);
+    }
+    return this.reload(userId, reach, user);
+  }
+
+  /**
+   * A way into the cabinet for someone invited with a PIN only: an email or
+   * a login and a temporary password, changed at the first sign-in. Owners
+   * and platform admins (the controller). Someone who already has an email
+   * or a login gets their password reset instead (409 `STAFF_HAS_SIGN_IN`).
+   * An email is also sent the invite letter with a link to set a password.
+   */
+  async addSignIn(
+    userId: string,
+    input: { email?: string; login?: string; tempPassword: string },
+    user: AuthenticatedUser,
+    brandId?: string,
+  ): Promise<StaffInviteResult> {
+    const reach = await this.reach(user, brandId);
+    const row = await this.findOnTeam(userId, reach);
+    this.assertEditable(row, user);
+    await this.assertManaged(userId, user);
+    if (row.email || row.login) {
+      throw codedConflict(
+        'STAFF_HAS_SIGN_IN',
+        'This person already signs in with an email or a login — reset the password instead',
+      );
+    }
+    const passwordHash = await this.passwords.hash(input.tempPassword);
+    if (input.login !== undefined) {
+      const login = input.login.trim().toLowerCase();
+      const taken = await this.prisma.user.findFirst({
+        where: { OR: [{ login }, { email: login }] },
+        select: { id: true },
+      });
+      if (taken) throw loginInUse();
+      await this.writeSignIn(userId, { login, passwordHash, passwordMustChange: true }, loginInUse);
+    } else if (input.email !== undefined) {
+      const email = input.email.toLowerCase();
+      const taken = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (taken) throw emailInUse();
+      await this.writeSignIn(userId, { email, passwordHash, passwordMustChange: true }, emailInUse);
+    } else {
+      throw new BadRequestException('Send either email or login');
+    }
+    this.logger.log(`Sign-in added: user ${userId} by ${user.id} (${user.role})`);
+
+    const member = await this.reload(userId, reach, user);
+    const inviteEmail =
+      input.email !== undefined
+        ? await this.inviteMailer.send({
+            userId,
+            email: input.email.toLowerCase(),
+            name: row.name,
+            role: row.role as StaffRoleName,
+            storeIds: row.userStores.map((s) => s.storeId),
+            newAccount: true,
+          })
+        : 'NO_EMAIL';
+    return { ...member, inviteEmail, accountCreated: true };
+  }
+
+  private async writeSignIn(
+    userId: string,
+    data: Prisma.UserUpdateInput,
+    taken: () => ConflictException,
+  ): Promise<void> {
+    try {
+      await this.prisma.user.update({ where: { id: userId }, data });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw taken();
+      throw err;
+    }
   }
 
   /**
@@ -278,7 +473,8 @@ export class AdminStaffMembersService {
    * and has no access to their email, or one who left with it. Owners and
    * platform admins only (the controller), and only for someone whose every
    * store is within the caller's brands — an account is global, and its
-   * password opens the other brands' cabinets too.
+   * password opens the other brands' cabinets too. Someone invited with a
+   * PIN only has no password to reset (409 `STAFF_NO_SIGN_IN`): add a login.
    *
    * The new password is generated here and answered once; it is never
    * stored in the clear, logged or mailed. It has to be changed at the next
@@ -295,10 +491,76 @@ export class AdminStaffMembersService {
     const row = await this.findOnTeam(userId, reach);
     this.assertEditable(row, user);
     await this.assertManaged(userId, user);
+    if (!row.email && !row.login) {
+      throw codedConflict('STAFF_NO_SIGN_IN', 'This person signs in with a kitchen PIN only — add a login first');
+    }
 
-    // Sessions first: if that fails nothing has changed and the owner tries
-    // again, rather than the password changing to one nobody was shown.
-    // Access tokens already issued run out within minutes, as on any reset.
+    const { tempPassword, sessions } = await this.replacePassword(userId);
+    const resetEmail = await this.mailReset(row);
+    // Who did it to whom, for the audit trail — ids only, no password, no address.
+    this.logger.log(
+      `Staff password reset: user ${userId} by ${user.id} (${user.role}); sessions ended: ${sessions}; email: ${resetEmail}`,
+    );
+    return { tempPassword, resetEmail };
+  }
+
+  /**
+   * «Сбросить пароль» on the brand owner's page, for the platform team: an
+   * owner locked out of their cabinet on a server without mail has no other
+   * way back. Platform admins only (the controller). The same as an
+   * employee's reset — a temporary password answered once, to be changed at
+   * the next sign-in; every session of the owner ends; a link to set their
+   * own when the server can send mail.
+   */
+  async resetOwnerPassword(brandId: string, user: AuthenticatedUser): Promise<StaffPasswordReset> {
+    if (user.role !== Role.SUPER_ADMIN) {
+      throw this.forbidden('STAFF_NOT_EDITABLE', 'Only the platform team can reset an owner’s password');
+    }
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: {
+        owner: { select: { id: true, role: true, email: true, name: true } },
+        stores: { select: { id: true } },
+      },
+    });
+    if (!brand) throw new NotFoundException('Brand not found');
+    const owner = brand.owner;
+    if (!owner) throw new NotFoundException('The brand has no owner');
+    // A platform admin set as somebody's owner is still a platform admin:
+    // their password is not the brand page's to change.
+    if (owner.role !== Role.BRAND_ADMIN || owner.id === user.id) {
+      throw this.forbidden('STAFF_NOT_EDITABLE', 'This account’s password cannot be reset here');
+    }
+
+    const { tempPassword, sessions } = await this.replacePassword(owner.id);
+    let resetEmail: StaffPasswordReset['resetEmail'] = 'NO_EMAIL';
+    if (owner.email) {
+      try {
+        resetEmail = await this.inviteMailer.sendPasswordReset({
+          userId: owner.id,
+          email: owner.email,
+          name: owner.name,
+          storeIds: brand.stores.map((s) => s.id),
+        });
+      } catch (err) {
+        this.logger.error(`Password reset email for owner ${owner.id} failed: ${(err as Error).message}`);
+        resetEmail = 'FAILED';
+      }
+    }
+    this.logger.log(
+      `Owner password reset: user ${owner.id} of brand ${brandId} by ${user.id}; sessions ended: ${sessions}; email: ${resetEmail}`,
+    );
+    return { tempPassword, resetEmail };
+  }
+
+  /**
+   * Ends every session, then sets a generated temporary password to be
+   * changed at the next sign-in and voids set-password links mailed before.
+   * Sessions first: if that fails nothing has changed and the caller tries
+   * again, rather than the password changing to one nobody was shown.
+   * Access tokens already issued run out within minutes, as on any reset.
+   */
+  private async replacePassword(userId: string): Promise<{ tempPassword: string; sessions: number }> {
     const sessions = await this.tokens.revokeAll(userId);
     const tempPassword = generateTempPassword();
     const passwordHash = await this.passwords.hash(tempPassword);
@@ -309,13 +571,7 @@ export class AdminStaffMembersService {
         data: { consumedAt: new Date() },
       }),
     ]);
-
-    const resetEmail = await this.mailReset(row);
-    // Who did it to whom, for the audit trail — ids only, no password, no address.
-    this.logger.log(
-      `Staff password reset: user ${userId} by ${user.id} (${user.role}); sessions ended: ${sessions}; email: ${resetEmail}`,
-    );
-    return { tempPassword, resetEmail };
+    return { tempPassword, sessions };
   }
 
   /** The set-password link after a reset. The password has changed by now, so a failure here only says so. */
@@ -336,6 +592,42 @@ export class AdminStaffMembersService {
     }
   }
 
+  /**
+   * The brand a PIN given on the invite form belongs to: that of the
+   * chosen stores. Only kitchen staff and managers work the tablet (400
+   * `KDS_PIN_ROLE`), and a PIN belongs to one brand (409
+   * `KDS_PIN_MULTI_BRAND` for stores of two — a platform admin's view).
+   */
+  private pinBrandFor(storeIds: string[], reach: Reach, role: StaffRoleName): string {
+    if (!PIN_ROLES.includes(role)) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'Bad Request',
+        code: 'KDS_PIN_ROLE',
+        message: 'A kitchen PIN is for kitchen staff and store managers',
+      });
+    }
+    const brands = new Set(storeIds.map((id) => reach.get(id)?.brandId));
+    const [only] = [...brands];
+    if (brands.size !== 1 || !only) throw kdsPinMultiBrand();
+    return only;
+  }
+
+  /** Resets a PIN that opens none of the person's stores any more. */
+  private async dropOrphanPin(userId: string): Promise<void> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { kdsPinHash: true, kdsPinBrandId: true, kdsPinStoreId: true },
+    });
+    if (!row?.kdsPinHash) return;
+    const where: Prisma.UserStoreWhereInput = row.kdsPinBrandId
+      ? { userId, store: { brandId: row.kdsPinBrandId } }
+      : row.kdsPinStoreId
+        ? { userId, storeId: row.kdsPinStoreId }
+        : { userId, storeId: '' };
+    if ((await this.prisma.userStore.count({ where })) === 0) await this.kitchenPins.clear(userId);
+  }
+
   private async reach(user: AuthenticatedUser, brandId?: string): Promise<Reach> {
     const brandIds = await this.scope.resolveBrandIds(user);
     if (brandId && brandIds !== null && !brandIds.includes(brandId)) {
@@ -347,10 +639,10 @@ export class AdminStaffMembersService {
     if (user.role === Role.STORE_MANAGER) where.userStores = { some: { userId: user.id } };
     const stores = await this.prisma.store.findMany({
       where,
-      select: { id: true, name: true },
+      select: { id: true, name: true, brandId: true },
       orderBy: { name: 'asc' },
     });
-    return new Map(stores.map((s) => [s.id, s.name]));
+    return new Map(stores.map((s) => [s.id, { name: s.name, brandId: s.brandId }]));
   }
 
   /** The person, with their stores inside the reach; 404 unless they work at one of them. */
@@ -414,14 +706,20 @@ export class AdminStaffMembersService {
 
   private toMember(row: MemberRow, reach: Reach, user: AuthenticatedUser): StaffMember {
     const stores = row.userStores
-      .map((s) => ({ id: s.storeId, name: reach.get(s.storeId) ?? '' }))
+      .map((s) => ({ id: s.storeId, name: reach.get(s.storeId)?.name ?? '' }))
       .sort((a, b) => a.name.localeCompare(b.name));
     const since = row.userStores.reduce<Date | null>(
       (earliest, s) => (earliest === null || s.createdAt < earliest ? s.createdAt : earliest),
       null,
     );
-    const pinStoreId = row.kdsPinStoreId && stores.some((s) => s.id === row.kdsPinStoreId) ? row.kdsPinStoreId : null;
     const pinUsable = !!row.kdsPinHash && !row.kdsPinHash.startsWith(UNSET_PIN_PREFIX);
+    // A brand PIN opens every listed store of its brand; an old PIN its one store.
+    const brands = new Set(row.userStores.map((s) => reach.get(s.storeId)?.brandId));
+    const brandPin = pinUsable && row.kdsPinBrandId !== null && brands.has(row.kdsPinBrandId);
+    const legacyStore =
+      pinUsable && row.kdsPinBrandId === null && row.kdsPinStoreId && stores.some((s) => s.id === row.kdsPinStoreId)
+        ? row.kdsPinStoreId
+        : null;
     return {
       userId: row.id,
       email: row.email,
@@ -432,8 +730,8 @@ export class AdminStaffMembersService {
       blocked: row.blockedAt !== null,
       addedAt: (since ?? row.createdAt).toISOString(),
       stores,
-      kdsPinStoreId: pinStoreId,
-      hasKdsPin: pinStoreId !== null && pinUsable,
+      kdsPinStoreId: legacyStore,
+      hasKdsPin: brandPin || legacyStore !== null,
       editable: this.isEditable(row, user),
     };
   }

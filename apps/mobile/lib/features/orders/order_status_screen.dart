@@ -1,11 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../app/router.dart';
@@ -236,43 +236,6 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     }
   }
 
-  void _showQr(Order order) {
-    unawaited(HapticFeedback.selectionClick());
-    unawaited(
-      showDialog<void>(
-        context: context,
-        builder: (context) => Dialog(
-          backgroundColor: Colors.white,
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                QrImageView(
-                  data: order.qrToken,
-                  size: 240,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.circle, color: Color(0xFF1A1414)),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.circle,
-                    color: Color(0xFF1A1414),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(order.orderCode, style: AppTheme.mono(size: 40, color: const Color(0xFF1A1414), letterSpacing: 6)),
-                const SizedBox(height: 4),
-                Text(
-                  AppLocalizations.of(context).qrHint,
-                  style: context.text.bodyMedium?.copyWith(color: const Color(0xFF6B5E54)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -309,7 +272,6 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
                 justPlaced: widget.justPlaced,
                 onCancel: () => _cancel(order),
                 onReceipt: () => _resendReceipt(order),
-                onQr: () => _showQr(order),
               ),
             ),
       bottomNavigationBar: order == null
@@ -474,7 +436,6 @@ class _OrderBody extends ConsumerWidget {
     required this.justPlaced,
     required this.onCancel,
     required this.onReceipt,
-    required this.onQr,
   });
 
   final Order order;
@@ -483,7 +444,6 @@ class _OrderBody extends ConsumerWidget {
   final bool justPlaced;
   final VoidCallback onCancel;
   final VoidCallback onReceipt;
-  final VoidCallback onQr;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -510,13 +470,15 @@ class _OrderBody extends ConsumerWidget {
               const SizedBox(height: 4),
               AnimatedSwitcher(
                 duration: Motion.medium,
-                child: _Headline(key: ValueKey('$status$wait'), order: order, wait: wait),
+                child: _Headline(key: ValueKey('$status$wait'), order: order, wait: wait, now: now),
               ),
               const SizedBox(height: 4),
+              // The time the countdown runs to: the kitchen's new estimate
+              // once it gave one.
               Text(
                 order.isDelivery
-                    ? l10n.deliveryAt(formatClock(context, order.pickupAt))
-                    : l10n.pickupAt(formatClock(context, order.pickupAt)),
+                    ? l10n.deliveryAt(formatClock(context, order.dueAt))
+                    : l10n.pickupAt(formatClock(context, order.dueAt)),
                 style: context.text.bodyMedium?.copyWith(color: brand.textSecondary),
               ),
               const SizedBox(height: 20),
@@ -536,14 +498,17 @@ class _OrderBody extends ConsumerWidget {
         const SizedBox(height: 24),
         OrderStepper(status: status, delivery: order.isDelivery),
         const SizedBox(height: 20),
+        if (showCode) ...[_CodeCard(order: order), const SizedBox(height: 12)],
         _PaymentCard(order: order),
-        if (showCode) ...[const SizedBox(height: 12), _CodeCard(order: order, onQr: onQr)],
         const SizedBox(height: 16),
         _StoreCard(order: order, userPosition: userPosition),
         const SizedBox(height: 12),
         _ItemsCard(order: order),
         const SizedBox(height: 16),
-        if (status.isCancellable) SecondaryButton(label: l10n.cancelOrder, danger: true, onPressed: onCancel),
+        if (order.customerCanCancel)
+          SecondaryButton(label: l10n.cancelOrder, danger: true, onPressed: onCancel)
+        else if (_cancelledByStoreOnly(status))
+          _CancelByPhone(phone: phone),
         if (!status.isCancelled && status != OrderStatus.created)
           Padding(
             padding: const EdgeInsets.only(top: 8),
@@ -564,10 +529,11 @@ class _OrderBody extends ConsumerWidget {
 /// open, or that the kitchen is running late — and an expired order says why
 /// it ended and where the money is.
 class _Headline extends StatelessWidget {
-  const _Headline({required this.order, required this.wait, super.key});
+  const _Headline({required this.order, required this.wait, required this.now, super.key});
 
   final Order order;
   final OrderWaitNote? wait;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -589,6 +555,9 @@ class _Headline extends StatelessWidget {
         orderStatusLabel(context, status, delivery: order.isDelivery),
         switch (wait) {
           OrderWaitNote.late => l10n.orderRunningLate,
+          OrderWaitNote.newEstimate => l10n.orderNewEstimate(
+            math.max(1, (order.dueAt.difference(now).inSeconds / 60).ceil()),
+          ),
           OrderWaitNote.preorderAwaitingOpening => l10n.orderPreorderAwaitingOpening,
           OrderWaitNote.awaitingAcceptance => l10n.orderAwaitingAcceptance,
           null => null,
@@ -693,68 +662,98 @@ class _PaymentCard extends StatelessWidget {
   }
 }
 
-class _CodeCard extends StatelessWidget {
-  const _CodeCard({required this.order, required this.onQr});
+/// Not cancellable by the customer any more, but not over either: the
+/// kitchen accepted the order or the money was taken, so only the store can
+/// call it off (owner decision 2026-10-20).
+bool _cancelledByStoreOnly(OrderStatus status) => switch (status) {
+  OrderStatus.created || OrderStatus.paid || OrderStatus.accepted || OrderStatus.inProgress => true,
+  _ => false,
+};
 
-  final Order order;
-  final VoidCallback onQr;
+/// In place of «Отменить заказ» once only the store can cancel the order:
+/// «Заказ уже готовят — для отмены позвоните в точку», and a tap calls the
+/// store when it has a phone.
+class _CancelByPhone extends StatelessWidget {
+  const _CancelByPhone({required this.phone});
+
+  final String? phone;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
+    final number = phone;
+    final callable = number != null && number.isNotEmpty;
+    return Material(
+      key: const ValueKey('cancel-by-phone'),
+      color: brand.foam,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.card),
+        side: BorderSide(color: brand.borderLight),
+      ),
+      child: InkWell(
+        onTap: callable ? () => openPhone(number) : null,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(callable ? Icons.call_rounded : Icons.info_outline_rounded, color: brand.caramel),
+              const SizedBox(width: 12),
+              Expanded(child: Text(l10n.cancelByPhone, style: context.text.bodyMedium)),
+              if (callable) Icon(Icons.chevron_right_rounded, color: brand.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The pickup code, as large as the card allows: the order is handed over
+/// by it. There is no QR — nobody at the counter scans one.
+class _CodeCard extends StatelessWidget {
+  const _CodeCard({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    const spacing = 12.0;
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+      key: const ValueKey('pickup-code'),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       decoration: BoxDecoration(
         color: brand.foam,
         borderRadius: BorderRadius.circular(Radii.card),
         border: Border.all(color: brand.caramel, width: 1.5),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(l10n.pickupCode, style: context.text.labelMedium?.copyWith(color: brand.textSecondary)),
-                const SizedBox(height: 2),
-                Semantics(
-                  label: '${l10n.pickupCode} ${order.orderCode.split('').join(' ')}',
-                  child: Text(
-                    order.orderCode,
-                    style: AppTheme.mono(size: 44, weight: FontWeight.w700, color: brand.textPrimary, letterSpacing: 8),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Material(
-            color: brand.caramelSoft,
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: onQr,
+          Text(l10n.pickupCode, style: context.text.titleSmall?.copyWith(color: brand.textSecondary)),
+          Semantics(
+            label: '${l10n.pickupCode} ${order.orderCode.split('').join(' ')}',
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              // The spacing trails the last digit too; as much on the left
+              // keeps the code centred.
               child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  children: [
-                    QrImageView(
-                      data: order.qrToken,
-                      size: 56,
-                      padding: EdgeInsets.zero,
-                      eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.circle, color: brand.textPrimary),
-                      dataModuleStyle: QrDataModuleStyle(
-                        dataModuleShape: QrDataModuleShape.circle,
-                        color: brand.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(l10n.showQr, style: context.text.labelSmall),
-                  ],
+                padding: const EdgeInsets.only(left: spacing),
+                child: Text(
+                  order.orderCode,
+                  style: AppTheme.mono(
+                    size: 64,
+                    weight: FontWeight.w700,
+                    color: brand.textPrimary,
+                    letterSpacing: spacing,
+                  ),
                 ),
               ),
             ),
           ),
+          Text(l10n.pickupCodeHint, style: context.text.bodyMedium?.copyWith(color: brand.textSecondary)),
         ],
       ),
     );

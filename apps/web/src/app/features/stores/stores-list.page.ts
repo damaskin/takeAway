@@ -1,4 +1,14 @@
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Injector,
+  OnInit,
+  afterNextRender,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { StoreListItem } from '@takeaway/shared-types';
 import {
@@ -22,6 +32,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { LastStoreService } from '../../core/catalog/last-store.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { hasLocation, storeAddress } from '../../core/catalog/store-place';
+import { prefersReducedMotion, stickyTopInset } from '../../core/layout/sticky-inset';
 
 type Filter = 'ALL' | 'OPEN' | 'NEAR';
 
@@ -70,7 +81,7 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
         <lib-leaflet-map
           [markers]="storeMarkers()"
           [userPosition]="userPosition()"
-          (markerClicked)="selectedId.set($event)"
+          (markerClicked)="onMarkerClicked($event)"
         />
 
         <!-- What the places sell: the map's legend and filter in one -->
@@ -193,6 +204,7 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
             <a
               [routerLink]="inactive(store) ? null : ['/stores', store.slug]"
               (mouseenter)="inactive(store) || selectedId.set(store.id)"
+              [attr.data-store-id]="store.id"
               class="flex flex-col"
               [style.border]="
                 selectedId() === store.id ? '2px solid var(--color-caramel)' : '1px solid var(--color-border-light)'
@@ -306,6 +318,8 @@ export class StoresListPage implements OnInit {
   private readonly fmt = inject(LocaleFormatService);
   private readonly translate = inject(TranslateService);
   private readonly lastStoreSlug = inject(LastStoreService).slug;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   /** `menu` when opened from «Меню» (route data): the heading asks the customer to choose a place. */
   readonly intent = input<'menu' | 'stores'>('stores');
@@ -383,6 +397,30 @@ export class StoresListPage implements OnInit {
         }
       },
       error: () => undefined,
+    });
+  }
+
+  /**
+   * A pin tapped on the map: its store is selected and its card scrolled
+   * into view — down the sidebar on a desktop, down the page under the map
+   * on a phone, where the card was off screen and the customer saw nothing
+   * happen. Hovering a card selects it too, but never scrolls.
+   */
+  onMarkerClicked(storeId: string): void {
+    this.selectedId.set(storeId);
+    afterNextRender(() => this.revealCard(storeId), { injector: this.injector });
+  }
+
+  private revealCard(storeId: string): void {
+    const card = this.host.nativeElement.querySelector<HTMLElement>(`[data-store-id="${storeId}"]`);
+    if (!card) return;
+    // On a phone the page scrolls: centre the card, clear of the sticky header.
+    // On a desktop the sidebar scrolls: move it as little as will show the card.
+    const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 900px)').matches;
+    card.style.scrollMarginTop = `${stickyTopInset() + 12}px`;
+    card.scrollIntoView({
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      block: phone ? 'center' : 'nearest',
     });
   }
 

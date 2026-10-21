@@ -208,6 +208,21 @@ export interface Order extends OrderSummary {
   pickedUpAt: string | null;
   cancelledAt: string | null;
   expiredAt: string | null;
+  /**
+   * ISO UTC: when the kitchen expects the order to be ready, set when it
+   * accepted or started the order too late to make `pickupAt` (now + the
+   * order's own cooking time). Null otherwise. Clients count down to
+   * `readyEstimateAt ?? pickupAt`; `pickupAt` stays the original promise.
+   * Optional for older API builds.
+   */
+  readyEstimateAt?: string | null;
+  /**
+   * The customer may cancel the order now: the kitchen has not accepted it
+   * and no money has been charged (a hold or a charge put off until the
+   * accept is fine). Since 2026-10-20 an accepted order cannot be cancelled
+   * by the customer — they call the store. Optional for older API builds.
+   */
+  canCancel?: boolean;
 }
 
 export interface CreateOrderInput {
@@ -330,6 +345,27 @@ export interface CheckoutErrorBody {
   reason?: AsapBlockedReason | null;
   /** ASAP_UNAVAILABLE: ISO UTC start of the next working-hours window, when outside them. */
   opensAt?: string | null;
+  /** ASAP_UNAVAILABLE with reason PAUSED: ISO UTC end of the kitchen's pause («технический перерыв до 12:30»). */
+  pausedUntil?: string | null;
+  /**
+   * ASAP_UNAVAILABLE with reason CLOSING_SOON: ISO UTC closing boundary — the end of the working-hours
+   * window, or of the kitchen's extension when later («закрывается в 21:00»).
+   */
+  closesAt?: string | null;
+}
+
+/**
+ * Body of the 409 `POST /orders/:id/cancel` answers once the customer may no
+ * longer cancel: the kitchen accepted the order (`ACCEPTED`, also for any
+ * later status), or money was charged for it (`CHARGED`). Clients show «Заказ
+ * уже готовят — для отмены позвоните в точку».
+ */
+export interface OrderNotCancellableBody {
+  statusCode: 409;
+  error: 'Conflict';
+  code: 'ORDER_NOT_CANCELLABLE';
+  message: string;
+  reason: 'ACCEPTED' | 'CHARGED';
 }
 
 export interface OrderStatusEvent {

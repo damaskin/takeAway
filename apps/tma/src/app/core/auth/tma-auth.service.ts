@@ -147,6 +147,8 @@ export function initialiseTmaSession(): Observable<unknown> {
     switchMap((ok) => {
       tg.ready();
       tg.expand();
+      // Long lists scroll instead of collapsing the Mini App on a downward swipe.
+      tg.disableVerticalSwipes();
       return of(ok);
     }),
   );

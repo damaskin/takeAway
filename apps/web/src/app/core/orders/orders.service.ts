@@ -59,6 +59,17 @@ export interface OrderView {
   createdAt: string;
   readyAt: string | null;
   cancelledAt: string | null;
+  /**
+   * When the kitchen now expects it ready, set when it accepted or started
+   * the order too late for `pickupAt`; the countdown runs to it
+   * (`orderDueAt`). Absent from an API older than this build.
+   */
+  readyEstimateAt?: string | null;
+  /**
+   * The customer may still cancel: not accepted yet and no money taken.
+   * Absent from an API older than this build — then CREATED and PAID count.
+   */
+  canCancel?: boolean;
   // Delivery fields — null / 0 on PICKUP orders.
   deliveryAddressLine?: string | null;
   deliveryCity?: string | null;
@@ -121,6 +132,10 @@ export class OrdersApi {
     return this.http.get<OrderView>(`${this.api.baseUrl}/orders/${id}`);
   }
 
+  /**
+   * Allowed only before the kitchen accepts and while no money is taken;
+   * otherwise 409 `ORDER_NOT_CANCELLABLE` with `reason: 'ACCEPTED' | 'CHARGED'`.
+   */
   cancel(id: string): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
   }

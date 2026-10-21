@@ -23,8 +23,10 @@ NestJS API as the web app and the Telegram Mini App.
   shown struck through), delivery where the store offers it, promo code, gift
   card, loyalty points, pay with a bound Agroprombank card or at the counter.
   Outside working hours only a scheduled pickup can be chosen.
-- **Live order** — Socket.IO with polling as a fallback, ETA ring, steps,
-  pickup code and QR, "I'm here", cancel, order again, receipt by email.
+- **Live order** — Socket.IO with polling as a fallback, ETA ring (to the
+  kitchen's new estimate when it took the order late), steps, the pickup code
+  the counter hands the order over by, "I'm here", cancel until the kitchen
+  accepts (then a call to the store), order again, receipt by email.
 - **Notifications («Уведомления»)** — brand campaigns and takeAway's own
   announcements, behind a bell with the unread count on the stores and menu
   headers and in the profile; a message opens the store's menu it links to,

@@ -722,6 +722,18 @@ abstract class AppLocalizations {
   /// **'Long queue — order ahead only'**
   String get storeQueueFullPreorder;
 
+  /// Store card while the kitchen paused the store; pre-orders for later are taken.
+  ///
+  /// In en, this message translates to:
+  /// **'Short break until {time} · order ahead'**
+  String storePausedPreorder(String time);
+
+  /// Store card when an order for now would not be ready before the store closes.
+  ///
+  /// In en, this message translates to:
+  /// **'Closing soon — order ahead only'**
+  String get storeClosingSoonPreorder;
+
   /// Beside the wait of an open store: when it closes.
   ///
   /// In en, this message translates to:
@@ -1112,6 +1124,30 @@ abstract class AppLocalizations {
   /// **'There is a long queue right now — pick a time for your order.'**
   String get asapBlockedQueueFull;
 
+  /// No description provided for @asapBlockedPausedUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is on a short break until {time} — pick a time for your order.'**
+  String asapBlockedPausedUntil(String time);
+
+  /// No description provided for @asapBlockedPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is on a short break — pick a time for your order.'**
+  String get asapBlockedPaused;
+
+  /// No description provided for @asapBlockedClosingSoonAt.
+  ///
+  /// In en, this message translates to:
+  /// **'The store closes at {time} — there is no time left to make an order for now. Pick a time.'**
+  String asapBlockedClosingSoonAt(String time);
+
+  /// No description provided for @asapBlockedClosingSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'The store closes soon — there is no time left to make an order for now. Pick a time.'**
+  String get asapBlockedClosingSoon;
+
   /// No description provided for @asapBlockedClosed.
   ///
   /// In en, this message translates to:
@@ -1466,11 +1502,17 @@ abstract class AppLocalizations {
   /// **'The store will confirm your pre-order when it opens'**
   String get orderPreorderAwaitingOpening;
 
-  /// Accepted or being made, and past its pickup time.
+  /// Accepted or being made, and past its due time (the kitchen's new estimate, else the pickup time).
   ///
   /// In en, this message translates to:
   /// **'Running a little late'**
   String get orderRunningLate;
+
+  /// The kitchen accepted or started the order too late for its pickup time and gave a new estimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Cooking · ready in {minutes} min'**
+  String orderNewEstimate(int minutes);
 
   /// No description provided for @orderExpiredNotAccepted.
   ///
@@ -1586,23 +1628,17 @@ abstract class AppLocalizations {
   /// **'Awaiting payment'**
   String get paymentStateAwaiting;
 
-  /// No description provided for @pickupCode.
+  /// Over the order number on the order screen; the kitchen hands the order over by it.
   ///
   /// In en, this message translates to:
-  /// **'Pickup code'**
+  /// **'Your code'**
   String get pickupCode;
 
-  /// No description provided for @showQr.
+  /// No description provided for @pickupCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Show QR'**
-  String get showQr;
-
-  /// No description provided for @qrHint.
-  ///
-  /// In en, this message translates to:
-  /// **'Show this at the counter'**
-  String get qrHint;
+  /// **'Show it at the counter'**
+  String get pickupCodeHint;
 
   /// No description provided for @iAmHere.
   ///
@@ -1631,8 +1667,14 @@ abstract class AppLocalizations {
   /// No description provided for @cancelOrderBody.
   ///
   /// In en, this message translates to:
-  /// **'If your card was charged or held, the money goes back.'**
+  /// **'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.'**
   String get cancelOrderBody;
+
+  /// In place of «Cancel order» once the kitchen accepted the order or the money was taken; also the error when a cancel comes too late.
+  ///
+  /// In en, this message translates to:
+  /// **'Your order is already being made — call the store to cancel it'**
+  String get cancelByPhone;
 
   /// No description provided for @keepOrder.
   ///

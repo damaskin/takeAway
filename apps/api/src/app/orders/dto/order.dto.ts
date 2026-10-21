@@ -221,6 +221,23 @@ export class OrderDto {
   @ApiProperty({ nullable: true, type: String })
   expiredAt!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'When the kitchen expects the order ready, set when it accepted or started it too late to make pickupAt ' +
+      "(now + the order's own cooking). Clients count down to readyEstimateAt ?? pickupAt; pickupAt stays the " +
+      'original promise.',
+  })
+  readyEstimateAt!: string | null;
+
+  @ApiProperty({
+    description:
+      'The customer may cancel now: CREATED or PAID and nothing captured (a hold or a charge put off until the ' +
+      'accept is fine). Otherwise POST /orders/:id/cancel answers 409 ORDER_NOT_CANCELLABLE.',
+  })
+  canCancel!: boolean;
+
   // ── Delivery fields (null for PICKUP / DINE_IN orders) ──────────────────
 
   @ApiProperty({ nullable: true, type: String })

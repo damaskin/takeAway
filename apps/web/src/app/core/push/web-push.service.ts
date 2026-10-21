@@ -11,10 +11,10 @@ import { API_CONFIG } from '../api/api.config';
  * `/devices`. Idempotent — calling it twice is a no-op because the API
  * uses an upsert keyed by token.
  *
- * The order-status page calls this once after a successful order create
- * so customers get the READY push without an explicit "enable
- * notifications" toggle. Browsers that haven't yet granted permission
- * silently bail; users can re-arm via /profile/notifications later.
+ * Only the push switch on /profile/notifications calls it: the site asks
+ * for the browser's permission when the customer turns pushes on there,
+ * not after an order. Nothing subscribes on its own — the order page does
+ * not. Without permission it returns false and nothing is stored.
  */
 @Injectable({ providedIn: 'root' })
 export class WebPushService {

@@ -1,3 +1,5 @@
+import type { KitchenOrderRemovedReason, StorePauseReason } from '@takeaway/shared-types';
+
 import type {
   KitchenAction,
   KitchenOrder,
@@ -14,9 +16,13 @@ export interface KitchenOrderChanged {
   orderId: string;
   /** The full board row; null on "removed", and on updates that only say "look again". */
   order: (Omit<KitchenOrder, 'status'> & { status: string }) | null;
+  /** "removed": why the ticket left the board without the kitchen. Absent from older API builds. */
+  reason?: KitchenOrderRemovedReason;
+  /** "removed": the order's code, for the notice. */
+  orderCode?: string;
 }
 
-/** A `kds.shiftChanged` event: someone started or finished work at the store. */
+/** A `kds.shiftChanged` event: the schedule opened or closed the shift, the kitchen extended or paused it. */
 export interface KitchenShiftChanged {
   storeId: string;
   shift: StoreShift;
@@ -113,34 +119,143 @@ export function startDue(order: KitchenOrder, now: number): boolean {
   );
 }
 
-/** What the banner over the board says about the working hours, if anything. */
-export type ShiftBanner =
-  | { kind: 'closingSoon'; at: string; extended: boolean }
-  | { kind: 'outsideHours'; opensAt: string | null };
+/** The moment as epoch ms when it is still ahead of `now`, else null. */
+function ahead(iso: string | null | undefined, now: number): number | null {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) && t > now ? t : null;
+}
+
+/** The banner over the board 15 minutes before the closing (or the end of the extension). */
+export interface ShiftBanner {
+  kind: 'closingSoon';
+  /** ISO time the orders "for now" stop. */
+  at: string;
+  /** It is the extension that ends, not the working hours. */
+  extended: boolean;
+  /** «Продлить на 30 мин / 1 ч» may be offered (`StoreShift.canExtend`). */
+  canExtend: boolean;
+}
 
 /**
- * With a shift open: 15 minutes before the hours (or the extension) end,
- * "ASAP orders stop at 21:00"; past them without an extension, "the store is
- * closed by the schedule — no ASAP orders". Both offer «Продлить». Worked
- * out against the board's own clock, so it flips on time between two reads
- * of the shift.
+ * With a shift open, 15 minutes before the hours (or the extension) end:
+ * "ASAP orders stop at 21:00", with «Продлить» while the API allows it.
+ * Nothing outside the hours: the schedule closed the shift, and nothing can
+ * be extended then. Worked out against the board's own clock, so it shows
+ * on time between two reads of the shift.
  */
 export function shiftBanner(shift: StoreShift | null, now: number): ShiftBanner | null {
   if (!shift?.open) return null;
-  const ahead = (iso: string | null | undefined): number | null => {
-    const t = iso ? Date.parse(iso) : NaN;
-    return Number.isFinite(t) && t > now ? t : null;
-  };
-  const extension = ahead(shift.extendedUntil);
-  const closing = ahead(shift.closesAt);
+  const extension = ahead(shift.extendedUntil, now);
+  const closing = ahead(shift.closesAt, now);
   const end = Math.max(extension ?? 0, closing ?? 0);
-  if (end > 0) {
-    if (end - now > CLOSING_SOON_MS) return null;
-    return { kind: 'closingSoon', at: new Date(end).toISOString(), extended: end === extension };
+  if (end === 0 || end - now > CLOSING_SOON_MS) return null;
+  return {
+    kind: 'closingSoon',
+    at: new Date(end).toISOString(),
+    extended: end === extension,
+    canExtend: shift.canExtend === true,
+  };
+}
+
+/**
+ * Where the store stands by its schedule, for the line over the board, the
+ * «Точки» cards and the dashboard:
+ * - `open` until the closing, `extended` until the end of the extension,
+ *   `aroundTheClock` for a store with no hours on file;
+ * - `opening` — within the hours, but the schedule has not opened the
+ *   shift yet (it does within a minute);
+ * - `closed` by the schedule, with the next opening when known;
+ * - `switchedOff` — the store is CLOSED in its settings.
+ */
+export type ScheduleStatus =
+  | { kind: 'switchedOff' }
+  | { kind: 'open'; until: string }
+  | { kind: 'extended'; until: string }
+  | { kind: 'aroundTheClock' }
+  | { kind: 'opening' }
+  | { kind: 'closed'; opensAt: string | null };
+
+export function scheduleStatus(
+  shift: StoreShift | null,
+  storeStatus: string | undefined,
+  now: number,
+): ScheduleStatus | null {
+  if (storeStatus === 'CLOSED') return { kind: 'switchedOff' };
+  if (!shift) return null;
+  const extension = ahead(shift.extendedUntil, now);
+  const closing = ahead(shift.closesAt, now);
+  if (shift.open && extension && (!closing || extension > closing)) {
+    return { kind: 'extended', until: new Date(extension).toISOString() };
   }
-  const passed = (iso: string | null | undefined) => !!iso && Date.parse(iso) <= now;
-  const outside = shift.asapBlockedReason === 'OUTSIDE_HOURS' || passed(shift.closesAt) || passed(shift.extendedUntil);
-  return outside ? { kind: 'outsideHours', opensAt: shift.opensAt ?? null } : null;
+  if (closing) return shift.open ? { kind: 'open', until: new Date(closing).toISOString() } : { kind: 'opening' };
+  const opensAt = ahead(shift.opensAt, now);
+  // Neither a closing nor an opening ahead, and not outside the hours: no hours on file.
+  if (!shift.closesAt && !opensAt && shift.asapBlockedReason !== 'OUTSIDE_HOURS') {
+    return shift.open ? { kind: 'aroundTheClock' } : { kind: 'opening' };
+  }
+  return { kind: 'closed', opensAt: opensAt === null ? null : new Date(opensAt).toISOString() };
+}
+
+/** Why orders "for now" do not come although the store is open by the schedule, when that is worth saying. */
+export function asapNote(shift: StoreShift | null): 'queueFull' | 'closingSoon' | null {
+  if (shift?.asapBlockedReason === 'QUEUE_FULL') return 'queueFull';
+  if (shift?.asapBlockedReason === 'CLOSING_SOON') return 'closingSoon';
+  return null;
+}
+
+/** The kitchen's «Пауза» while it runs. */
+export interface ActivePause {
+  until: string;
+  reason: StorePauseReason | null;
+  comment: string | null;
+  byName: string | null;
+}
+
+export function activePause(shift: StoreShift | null, now: number): ActivePause | null {
+  if (!shift || ahead(shift.pausedUntil, now) === null || !shift.pausedUntil) return null;
+  return {
+    until: shift.pausedUntil,
+    reason: shift.pauseReason ?? null,
+    comment: shift.pauseComment ?? null,
+    byName: shift.pausedByName ?? null,
+  };
+}
+
+/**
+ * The card's timers (item 16). While nobody has accepted the order, only
+ * the acceptance pill counts down (to the auto-cancel) and the pickup time
+ * is plain text; the countdown to the pickup comes after the accept. Two
+ * timers on one card were read as one.
+ */
+export function showsPickupCountdown(order: KitchenOrder): boolean {
+  return !awaitsAcceptance(order);
+}
+
+/**
+ * The acceptance pill of an unaccepted card: red and pulsing once overdue;
+ * before that an ASAP order already shows its auto-cancel countdown, a
+ * pre-order (which waits for hours, legitimately) only says it waits.
+ */
+export function acceptPill(order: KitchenOrder, now: number): { overdue: boolean; countdown: boolean } | null {
+  if (!awaitsAcceptance(order)) return null;
+  const overdue = acceptOverdue(order, now);
+  return { overdue, countdown: !!order.acceptDeadlineAt && (overdue || order.pickupMode !== 'SCHEDULED') };
+}
+
+/**
+ * The notice for a ticket that left the board without the kitchen: the
+ * customer cancelled it, or nobody accepted it in time. Only for a ticket
+ * the board was showing; null for everything else (the kitchen's own
+ * moves, a rejection it made itself, an unpaid order it never saw).
+ */
+export function removalNotice(
+  list: readonly KitchenOrder[],
+  event: KitchenOrderChanged,
+): { reason: 'CANCELLED_BY_CUSTOMER' | 'NOT_ACCEPTED'; code: string } | null {
+  if (event.kind !== 'removed') return null;
+  if (event.reason !== 'CANCELLED_BY_CUSTOMER' && event.reason !== 'NOT_ACCEPTED') return null;
+  const shown = list.find((o) => o.id === event.orderId);
+  return shown ? { reason: event.reason, code: event.orderCode ?? shown.orderCode } : null;
 }
 
 /** The one button a ticket shows, by where it stands. */

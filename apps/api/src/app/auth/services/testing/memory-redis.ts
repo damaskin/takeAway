@@ -8,8 +8,9 @@ interface Entry {
 
 /**
  * Test-only, in-memory stand-in for the parts of RedisService the email
- * sign-in codes use — values with TTLs, `SET … EX … NX`, MULTI — on a clock
- * the test moves by hand with {@link advance}.
+ * sign-in codes and the Telegram link codes use — values with TTLs,
+ * `SET … EX … NX`, GETDEL, MULTI — on a clock the test moves by hand with
+ * {@link advance}.
  */
 export class MemoryRedis {
   private readonly entries = new Map<string, Entry>();
@@ -73,6 +74,11 @@ export class MemoryRedis {
         this.entries.delete(key);
       }
       return removed;
+    },
+    getdel: async (key: string): Promise<string | null> => {
+      const entry = this.live(key);
+      this.entries.delete(key);
+      return entry?.value ?? null;
     },
     ttl: async (key: string): Promise<number> => {
       const entry = this.live(key);

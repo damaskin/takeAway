@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
-import type { KitchenDeviceStores } from '@takeaway/shared-types';
+import type { AuthSession, KitchenDeviceStores, KitchenSessionStore } from '@takeaway/shared-types';
 import { of, throwError } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
@@ -22,6 +22,14 @@ const NONAME: KitchenDeviceStores = {
   ],
 };
 
+const STORE_1 = { id: 'store-1', name: 'NoName - центр', city: 'Тирасполь' };
+const STORE_2 = { id: 'store-2', name: 'NoName - вокзал', city: 'Тирасполь' };
+
+/** What POST /auth/kds/pin answers: a session bound to the brand, with the person's stores there. */
+function session(stores: KitchenSessionStore[]): Partial<AuthSession> {
+  return { accessToken: 'a', kdsBrandId: 'brand-1', kdsStoreId: stores[0]?.id, kdsStores: stores };
+}
+
 describe('PinLoginPage', () => {
   let api: { deviceStores: jest.Mock; pairDevice: jest.Mock; bindDevice: jest.Mock };
   let loginWithPin: jest.Mock;
@@ -37,7 +45,7 @@ describe('PinLoginPage', () => {
         .mockReturnValue(of({ deviceToken: 'paired-token', brandId: 'brand-1', brandName: 'NoName' })),
       bindDevice: jest.fn(),
     };
-    loginWithPin = jest.fn().mockReturnValue(of({}));
+    loginWithPin = jest.fn().mockReturnValue(of(session([STORE_1])));
     TestBed.configureTestingModule({
       imports: [PinLoginPage],
       providers: [
@@ -78,9 +86,8 @@ describe('PinLoginPage', () => {
     expect(page.stores().map((s) => s.id)).toEqual(['store-1', 'store-2']);
   });
 
-  it('accepts a 6-digit PIN and sends it only on «Войти», with the tablet token', () => {
+  it('takes the PIN first — no store to pick — and sends it only on «Войти», with the tablet token', () => {
     const page = make({ token: 'tablet-token' });
-    page.selectStore('store-1');
     for (const d of '4821') page.press(d);
     expect(loginWithPin).not.toHaveBeenCalled(); // no auto-submit at four digits
     expect(page.canSubmit()).toBe(true);
@@ -88,8 +95,44 @@ describe('PinLoginPage', () => {
     expect(page.pin()).toBe('482137');
 
     page.submit();
-    expect(loginWithPin).toHaveBeenCalledWith('store-1', '482137', 'tablet-token');
+    expect(loginWithPin).toHaveBeenCalledWith({ pin: '482137', deviceToken: 'tablet-token' });
+    // One store: straight to its board.
     expect(navigate).toHaveBeenCalledWith(['/kitchen'], { queryParams: { store: 'store-1' } });
+  });
+
+  it('asks which store to open when the person works at several', () => {
+    const page = make({ token: 'tablet-token' });
+    localStorage.setItem('takeaway.admin.kitchenStoreId', 'store-2');
+    loginWithPin.mockReturnValue(of(session([STORE_1, STORE_2])));
+    for (const d of '482137') page.press(d);
+    page.submit();
+
+    expect(page.state()).toBe('choose');
+    expect(page.choices().map((s) => s.id)).toEqual(['store-1', 'store-2']);
+    expect(navigate).not.toHaveBeenCalledWith(['/kitchen'], expect.anything());
+
+    page.open('store-2');
+    expect(localStorage.getItem('takeaway.admin.kitchenStoreId')).toBe('store-2');
+    expect(navigate).toHaveBeenCalledWith(['/kitchen'], { queryParams: { store: 'store-2' } });
+  });
+
+  it('asks for the store of an old PIN two people share, keeps the PIN, and sends it again with the store', () => {
+    const page = make({ token: 'tablet-token' });
+    loginWithPin.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'KDS_PIN_STORE_REQUIRED' } })),
+    );
+    for (const d of '4821') page.press(d);
+    page.submit();
+
+    expect(page.needStore()).toBe(true);
+    expect(page.pin()).toBe('4821');
+    expect(page.canSubmit()).toBe(false);
+    expect(page.error()).toBeNull();
+
+    page.selectStore('store-2');
+    expect(page.canSubmit()).toBe(true);
+    page.submit();
+    expect(loginWithPin).toHaveBeenLastCalledWith({ pin: '4821', deviceToken: 'tablet-token', storeId: 'store-2' });
   });
 
   it('cannot send fewer than four digits', () => {

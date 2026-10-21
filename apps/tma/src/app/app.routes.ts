@@ -48,6 +48,18 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/profile/profile.page').then((m) => m.TmaProfilePage),
       },
       {
+        path: 'profile/personal',
+        loadComponent: () => import('./features/profile/personal-info.page').then((m) => m.TmaPersonalInfoPage),
+      },
+      {
+        path: 'profile/gift-cards',
+        loadComponent: () => import('./features/profile/gift-cards.page').then((m) => m.TmaGiftCardsPage),
+      },
+      {
+        path: 'profile/notifications',
+        loadComponent: () => import('./features/profile/notifications.page').then((m) => m.TmaNotificationsPage),
+      },
+      {
         path: 'feedback',
         loadComponent: () => import('./features/feedback/feedback.page').then((m) => m.TmaFeedbackPage),
       },

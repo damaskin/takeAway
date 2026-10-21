@@ -49,6 +49,17 @@ export interface OrderView {
     totalCents: number;
   }>;
   payment?: OrderPaymentView;
+  /**
+   * When the kitchen expects it ready, set once it accepted or started the
+   * order too late for `pickupAt`. The countdown runs to it (`orderDueAt`).
+   * Absent from an older API.
+   */
+  readyEstimateAt?: string | null;
+  /**
+   * The customer may cancel now: not accepted, no money taken. Absent from an
+   * older API — see `customerCanCancel`.
+   */
+  canCancel?: boolean;
 }
 
 export interface OrderSummary {
@@ -89,6 +100,15 @@ export class OrdersApi {
 
   get(id: string): Observable<OrderView> {
     return this.http.get<OrderView>(`${this.api.baseUrl}/orders/${id}`);
+  }
+
+  /**
+   * The customer calls the order off before the kitchen accepts it. Refused
+   * with 409 `ORDER_NOT_CANCELLABLE {reason: ACCEPTED | CHARGED}` once it
+   * is accepted or its money was taken (an older API answers 400 or 409).
+   */
+  cancel(id: string): Observable<OrderView> {
+    return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
   }
 
   reportLocation(

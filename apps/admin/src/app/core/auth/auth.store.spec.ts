@@ -55,4 +55,17 @@ describe('AuthStore', () => {
     expect(store.isAuthenticated()).toBe(false);
     expect(localStorage.getItem('takeaway.admin.session')).toBeNull();
   });
+
+  it('knows a kitchen PIN session by its brand, and one saved before brand-wide PINs by its store', () => {
+    const store = new AuthStore();
+    store.set(makeSession());
+    expect(store.kitchenSession()).toBe(false);
+
+    store.set({ ...makeSession(), kdsBrandId: 'brand-1', kdsStoreId: 'store-1' });
+    expect(store.kitchenSession()).toBe(true);
+    expect(new AuthStore().kitchenSession()).toBe(true);
+
+    localStorage.setItem('takeaway.admin.session', JSON.stringify({ ...makeSession(), kdsStoreId: 'store-1' }));
+    expect(new AuthStore().kitchenSession()).toBe(true);
+  });
 });

@@ -37,11 +37,42 @@ export interface AuthSession extends AuthTokens {
    */
   mustChangePassword?: boolean;
   /**
-   * Set when the session was opened with a kitchen PIN: the one store it
-   * works. The API lets such a session reach only that store's kitchen
-   * board and stop-list; the admin shows nothing else.
+   * Kitchen PIN session: the store the board opens on — the one the tablet
+   * asked for, or the person's only (first) store. Sessions saved by builds
+   * before 2026-10-20 carry only this.
    */
   kdsStoreId?: string;
+  /**
+   * Set when the session was opened with a kitchen PIN: the brand of the
+   * tablet. The API lets such a session reach only the kitchen board and
+   * stop-list of the person's stores in this brand (and the Telegram link);
+   * the admin shows nothing else.
+   */
+  kdsBrandId?: string;
+  /**
+   * Kitchen PIN session: the person's stores in the tablet's brand. With
+   * more than one the tablet asks which to open, and the board switches
+   * between them without the PIN again.
+   */
+  kdsStores?: KitchenSessionStore[];
+}
+
+/** One of the stores a kitchen PIN session works. */
+export interface KitchenSessionStore {
+  id: string;
+  name: string;
+  city: string;
+}
+
+/**
+ * `POST /auth/kds/pin` — the PIN first, the store after. `storeId` is sent
+ * only to settle an old store-scoped PIN two people share (409
+ * `KDS_PIN_STORE_REQUIRED`), or by tablets that still pick the store first.
+ */
+export interface KdsPinLoginRequest {
+  pin: string;
+  deviceToken?: string;
+  storeId?: string;
 }
 
 export interface PasswordChangeSelfRequest {
@@ -62,13 +93,38 @@ export interface AuthUser {
   currency: 'USD' | 'EUR' | 'GBP' | 'AED' | 'THB' | 'IDR';
   role: UserRole;
   /**
-   * Telegram chat id the user's account is linked to. `null` means the
-   * account has no Telegram bound — for staff it means they haven't
-   * completed the /admin/telegram-link flow yet; for CUSTOMER it's
-   * expected (customers sign in via Telegram and the id is set there).
-   * Serialized as a string because the upstream BigInt overflows JSON.
+   * The Telegram account a customer signs in with (Mini App, Telegram
+   * Login), as a string because the upstream BigInt overflows JSON. Staff
+   * notifications do not use it: see {@link TelegramNotifyStatus}.
    */
   telegramUserId: string | null;
+}
+
+/**
+ * `GET /auth/telegram/notify-link` — whether the signed-in employee, owner or
+ * platform admin gets work notifications (new orders, alerts) from the bot.
+ */
+export interface TelegramNotifyStatus {
+  /** Work notifications go to a Telegram chat. */
+  linked: boolean;
+  /**
+   * The bot can link a chat on this server: it has a username and receives
+   * messages (its webhook is configured). False — the cabinet offers the
+   * older Telegram sign-in button instead, where there is one.
+   */
+  botLinkAvailable: boolean;
+}
+
+/**
+ * `POST /auth/telegram/notify-link` — a one-time link to the bot. Opened on
+ * the person's phone (as a QR code or the link itself), it starts the bot
+ * with `/start link_<code>`, and the bot writes to that chat from then on.
+ */
+export interface TelegramNotifyLinkCode {
+  /** `https://t.me/<bot>?start=link_<code>`. */
+  url: string;
+  /** When the code stops working (ISO, UTC); about ten minutes. */
+  expiresAt: string;
 }
 
 export interface RefreshRequest {

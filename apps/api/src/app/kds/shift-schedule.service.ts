@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
+import { hoursAround, withinHours } from '../kitchen/opening-hours';
 import { AVAILABILITY_SELECT, StoreAvailabilityService } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -13,20 +14,35 @@ interface SeenState {
   openNow: boolean;
 }
 
+/** What one pass did. */
+export interface SchedulePass {
+  opened: number;
+  closed: number;
+  pausesEnded: number;
+  announced: number;
+}
+
 /**
  * The clock side of the shift (docs/kitchen-policy.md, section F), every
- * minute:
+ * minute. Since 2026-10-20 the shift follows the working hours by itself:
  *
- * - closes a shift nobody finished once the working hours (and any
- *   extension) are over — StoreShiftService.closeBySchedule has the rule;
- * - tells clients when a store's availability changed by itself: the hours
+ * - a kitchen pause that ran out ends («Пауза закончилась» to the team);
+ * - the shift closes exactly at the end of the working hours or of the
+ *   kitchen's extension (`AUTO_CLOSE_GRACE_MINUTES` after it, 0 by
+ *   default), whatever orders are still in work — they stay on the board;
+ * - a shift opens at the start of each window for every store that is not
+ *   switched off; a store open around the clock (or with no hours on file)
+ *   keeps one open;
+ * - clients hear when a store's availability changed by itself: the hours
  *   or an extension started or ended, the queue filled up or drained.
- *   `store.availabilityChanged` keeps its fixed payload; kitchen screens of a
- *   store with a shift open also get a fresh `kds.shiftChanged`.
+ *   `store.availabilityChanged` keeps its fixed payload; kitchen screens of
+ *   a store with a shift open also get a fresh `kds.shiftChanged`.
  *
- * What it last saw is kept in memory, so after a restart the first pass only
- * takes note; a second API instance announcing the same change again is
- * harmless — clients just refetch the store.
+ * Every step announces what it changed itself, and the last one skips those
+ * stores. What it last saw is kept in memory, so after a restart the first
+ * pass only takes note; a second API instance announcing the same change
+ * again is harmless — clients just refetch the store. Opening and closing
+ * are claimed in the database, so two instances never open two shifts.
  */
 @Injectable()
 export class ShiftScheduleService {
@@ -42,7 +58,7 @@ export class ShiftScheduleService {
     private readonly realtime: RealtimeGateway,
   ) {}
 
-  /** `AUTO_CLOSE_GRACE_MINUTES` (10 by default; 0 closes right at the end of the hours), in seconds. */
+  /** `AUTO_CLOSE_GRACE_MINUTES` (0 by default: right at the end of the hours), in seconds. */
   get autoCloseGraceSeconds(): number {
     const raw = this.config.get<string | number>('AUTO_CLOSE_GRACE_MINUTES');
     const value = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
@@ -65,8 +81,11 @@ export class ShiftScheduleService {
     }
   }
 
-  async sweep(now: Date): Promise<{ closed: number; announced: number }> {
-    const closedStores = await this.autoClose(now);
+  async sweep(now: Date): Promise<SchedulePass> {
+    const pausesEnded = await this.endPauses(now);
+    const closed = await this.autoClose(now);
+    const opened = await this.autoOpen(now);
+    const handled = new Set([...pausesEnded, ...closed, ...opened]);
 
     const stores = await this.prisma.store.findMany({
       where: { status: { not: 'CLOSED' }, brand: { moderationStatus: 'APPROVED' } },
@@ -83,8 +102,8 @@ export class ShiftScheduleService {
       const state: SeenState = { acceptingOrders: view.acceptingOrders, openNow: view.openNow };
       const before = this.seen.get(store.id);
       this.seen.set(store.id, state);
-      // The close already announced itself.
-      if (!before || closedStores.has(store.id)) continue;
+      // An open, a close or a pause that ended already announced itself.
+      if (!before || handled.has(store.id)) continue;
       if (before.acceptingOrders === state.acceptingOrders && before.openNow === state.openNow) continue;
 
       this.realtime.emitStoreAvailabilityChanged({
@@ -99,21 +118,56 @@ export class ShiftScheduleService {
     }
     for (const id of [...this.seen.keys()]) if (!present.has(id)) this.seen.delete(id);
 
-    return { closed: closedStores.size, announced };
+    return { opened: opened.size, closed: closed.size, pausesEnded: pausesEnded.size, announced };
   }
 
+  /** Pauses that ran out by now. */
+  private async endPauses(now: Date): Promise<Set<string>> {
+    const due = await this.prisma.store.findMany({ where: { pausedUntil: { lte: now } }, select: { id: true } });
+    return this.each(due, 'end the pause of', (storeId) => this.shifts.expirePause(storeId, now));
+  }
+
+  /** Open shifts whose hours (and extension) are over. */
   private async autoClose(now: Date): Promise<Set<string>> {
-    const closed = new Set<string>();
     const open = await this.prisma.storeShift.findMany({ where: { closedAt: null }, select: { storeId: true } });
     const grace = this.autoCloseGraceSeconds;
-    for (const { storeId } of open) {
+    return this.each(
+      open.map((s) => ({ id: s.storeId })),
+      'close the shift of',
+      (storeId) => this.shifts.closeBySchedule(storeId, grace, now),
+    );
+  }
+
+  /** Stores that are not switched off, have no shift open and are within their hours (or open around the clock). */
+  private async autoOpen(now: Date): Promise<Set<string>> {
+    const stores = await this.prisma.store.findMany({
+      where: { status: { not: 'CLOSED' }, shifts: { none: { closedAt: null } } },
+      select: {
+        id: true,
+        timezone: true,
+        workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
+      },
+    });
+    const due = stores.filter((s) =>
+      withinHours(hoursAround(s.workingHours, s.timezone, now, { backDays: 1, aheadDays: 1 }), now),
+    );
+    return this.each(due, 'open the shift of', (storeId) => this.shifts.openBySchedule(storeId, now));
+  }
+
+  /** Runs one step per store; one store must not stop the others — the next pass tries again. */
+  private async each(
+    stores: ReadonlyArray<{ id: string }>,
+    what: string,
+    step: (storeId: string) => Promise<boolean>,
+  ): Promise<Set<string>> {
+    const done = new Set<string>();
+    for (const { id } of stores) {
       try {
-        if (await this.shifts.closeBySchedule(storeId, grace, now)) closed.add(storeId);
+        if (await step(id)) done.add(id);
       } catch (err) {
-        // One store must not stop the others; the next pass tries again.
-        this.logger.error(`Could not close the shift of store ${storeId} by schedule: ${(err as Error).message}`);
+        this.logger.error(`Could not ${what} store ${id} by schedule: ${(err as Error).message}`);
       }
     }
-    return closed;
+    return done;
   }
 }

@@ -66,6 +66,11 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// `{'code': 'ASAP_UNAVAILABLE', 'reason': 'QUEUE_FULL'}`; null = placed.
   Map<String, dynamic>? orderRefusal;
 
+  /// What the order reads as once a cancel is refused as too late (409
+  /// `ORDER_NOT_CANCELLABLE`, the kitchen accepted it a moment ago); null =
+  /// the cancel goes through.
+  Order? acceptedBeforeCancel;
+
   /// What `GET /stores/{id}/suggestions` answers; null = 404, as on an API
   /// from before the endpoint.
   StoreSuggestions? suggestionsAnswer;
@@ -260,6 +265,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     double storeLongitude = 0,
     String pickupMode = 'ASAP',
     DateTime? pickupAt,
+    DateTime? readyEstimateAt,
+    bool? canCancel,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
@@ -294,6 +301,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     ],
     'createdAt': DateTime.now().toUtc().toIso8601String(),
     'payment': ?payment,
+    'readyEstimateAt': ?readyEstimateAt?.toUtc().toIso8601String(),
+    'canCancel': ?canCancel,
   });
 
   // ── Catalog ────────────────────────────────────────────────────────────
@@ -573,6 +582,15 @@ class FakeApi extends Fake implements TakeAwayApi {
 
   @override
   Future<Order> cancelOrder(String id) async {
+    final accepted = acceptedBeforeCancel;
+    if (accepted != null) {
+      currentOrder = accepted;
+      throw _apiError('/orders/$id/cancel', 409, {
+        'code': 'ORDER_NOT_CANCELLABLE',
+        'reason': 'ACCEPTED',
+        'message': 'The kitchen has accepted the order',
+      });
+    }
     cancelled.add(id);
     return currentOrder = sampleOrder(status: 'CANCELLED');
   }

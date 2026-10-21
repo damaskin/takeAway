@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -13,6 +13,7 @@ import { generateTempPassword, tempPasswordValid } from '@takeaway/utils';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { emailOrLoginValidator, signInIdentifier } from '../../core/auth/sign-in-identifier';
+import { newPinProblem } from '../../core/kitchen/kitchen-pin';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type StoreAdminDto } from '../../core/catalog/admin-catalog.service';
 import {
@@ -39,6 +40,11 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
  * Someone without an email is invited by a login instead (the same field:
  * no '@' makes it a login). Nothing is mailed then; the owner hands the
  * login and the temporary password over, and only the owner can reset it.
+ *
+ * Kitchen staff may also be invited with a PIN only — a name, stores and
+ * the PIN, no email, login or password: they unlock the kitchen tablet and
+ * nothing else, until the owner adds a login on their page. Kitchen staff
+ * and managers invited the usual way may get their PIN right here too.
  */
 @Component({
   selector: 'app-staff-form',
@@ -49,48 +55,55 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
       <section class="invited" data-testid="invite-result">
         <h1 class="invited-title">{{ 'admin.staff.invited.title' | translate }}</h1>
         <p class="invited-text">{{ r.name || r.email || r.login }} · {{ 'admin.staff.role.' + r.role | translate }}</p>
-        @switch (r.inviteEmail) {
-          @case ('NO_EMAIL') {
-            <p class="invited-text" data-testid="invite-no-email">{{ 'admin.staff.invited.noEmail' | translate }}</p>
+        @if (!r.email && !r.login) {
+          <p class="invited-text" data-testid="invite-pin-only">{{ 'admin.staff.invited.pinOnly' | translate }}</p>
+        } @else {
+          @switch (r.inviteEmail) {
+            @case ('NO_EMAIL') {
+              <p class="invited-text" data-testid="invite-no-email">{{ 'admin.staff.invited.noEmail' | translate }}</p>
+            }
+            @case ('SENT') {
+              <p class="invited-text" data-testid="invite-sent">
+                {{
+                  (r.accountCreated ? 'admin.staff.invited.sentNew' : 'admin.staff.invited.sentExisting')
+                    | translate: { email: r.email }
+                }}
+              </p>
+            }
+            @default {
+              <p class="invited-warn" role="alert" data-testid="invite-not-sent">
+                {{
+                  (r.inviteEmail === 'FAILED' ? 'admin.staff.invited.failed' : 'admin.staff.invited.notConfigured')
+                    | translate
+                }}
+              </p>
+            }
           }
-          @case ('SENT') {
-            <p class="invited-text" data-testid="invite-sent">
-              {{
-                (r.accountCreated ? 'admin.staff.invited.sentNew' : 'admin.staff.invited.sentExisting')
-                  | translate: { email: r.email }
-              }}
-            </p>
-          }
-          @default {
-            <p class="invited-warn" role="alert" data-testid="invite-not-sent">
-              {{
-                (r.inviteEmail === 'FAILED' ? 'admin.staff.invited.failed' : 'admin.staff.invited.notConfigured')
-                  | translate
-              }}
-            </p>
+          @if (r.inviteEmail !== 'SENT' || r.accountCreated) {
+            <dl class="invited-handover">
+              <div>
+                <dt>{{ 'admin.staff.invited.cabinet' | translate }}</dt>
+                <dd>{{ loginUrl }}</dd>
+              </div>
+              <div>
+                <dt>{{ 'admin.staff.invited.login' | translate }}</dt>
+                <dd data-testid="invite-login">{{ r.login || r.email }}</dd>
+              </div>
+              <div>
+                <dt>{{ 'admin.staff.tempPassword' | translate }}</dt>
+                <dd>
+                  @if (r.accountCreated) {
+                    {{ sentPassword() }}
+                  } @else {
+                    {{ 'admin.staff.invited.ownPassword' | translate }}
+                  }
+                </dd>
+              </div>
+            </dl>
           }
         }
-        @if (r.inviteEmail !== 'SENT' || r.accountCreated) {
-          <dl class="invited-handover">
-            <div>
-              <dt>{{ 'admin.staff.invited.cabinet' | translate }}</dt>
-              <dd>{{ loginUrl }}</dd>
-            </div>
-            <div>
-              <dt>{{ 'admin.staff.invited.login' | translate }}</dt>
-              <dd data-testid="invite-login">{{ r.login || r.email }}</dd>
-            </div>
-            <div>
-              <dt>{{ 'admin.staff.tempPassword' | translate }}</dt>
-              <dd>
-                @if (r.accountCreated) {
-                  {{ sentPassword() }}
-                } @else {
-                  {{ 'admin.staff.invited.ownPassword' | translate }}
-                }
-              </dd>
-            </div>
-          </dl>
+        @if (r.hasKdsPin) {
+          <p class="invited-text" data-testid="invite-pin">{{ 'admin.staff.invited.pinSet' | translate }}</p>
         }
         <div class="invited-actions">
           <a routerLink="/staff" class="invited-primary">{{ 'admin.staff.invited.toList' | translate }}</a>
@@ -105,39 +118,66 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
         backLabel="admin.staff.title"
         title="admin.staff.addTitle"
         saveLabel="admin.staff.addCta"
-        [saveDisabled]="form.invalid || storeIds().length === 0"
+        [saveDisabled]="!submittable()"
         [saving]="saving()"
         [error]="error()"
         (save)="submit()"
       >
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col" style="gap: 14px">
+          @if (form.controls.role.value === 'STAFF') {
+            <fieldset class="sign-in-way" data-testid="sign-in-way">
+              <legend class="field-label">{{ 'admin.staff.signInWay' | translate }}</legend>
+              <label>
+                <input type="radio" name="signInWay" [checked]="!pinOnly()" (change)="setPinOnly(false)" />
+                {{ 'admin.staff.signInPassword' | translate }}
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="signInWay"
+                  data-testid="sign-in-pin-only"
+                  [checked]="pinOnly()"
+                  (change)="setPinOnly(true)"
+                />
+                {{ 'admin.staff.signInPinOnly' | translate }}
+              </label>
+            </fieldset>
+          }
+
           <div class="form-row">
+            @if (!pinOnly()) {
+              <div class="field">
+                <label class="field-label" for="staff-identifier">{{ 'admin.staff.identifier' | translate }}</label>
+                <input
+                  id="staff-identifier"
+                  formControlName="identifier"
+                  type="text"
+                  inputmode="email"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  class="field-input"
+                  [attr.aria-describedby]="'staff-identifier-hint'"
+                />
+                <p
+                  id="staff-identifier-hint"
+                  class="rule"
+                  [class.rule-bad]="identifierInvalid()"
+                  data-testid="identifier-rule"
+                >
+                  {{ 'admin.staff.identifierHint' | translate: loginRule }}
+                </p>
+              </div>
+            }
             <div class="field">
-              <label class="field-label" for="staff-identifier">{{ 'admin.staff.identifier' | translate }}</label>
-              <input
-                id="staff-identifier"
-                formControlName="identifier"
-                type="text"
-                inputmode="email"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                class="field-input"
-                [attr.aria-describedby]="'staff-identifier-hint'"
-              />
-              <p
-                id="staff-identifier-hint"
-                class="rule"
-                [class.rule-bad]="identifierInvalid()"
-                data-testid="identifier-rule"
-              >
-                {{ 'admin.staff.identifierHint' | translate: loginRule }}
-              </p>
+              <label class="field-label" for="staff-name">{{ 'admin.staff.name' | translate }}</label>
+              <input id="staff-name" formControlName="name" type="text" autocomplete="name" class="field-input" />
+              @if (pinOnly()) {
+                <p class="rule" [class.rule-bad]="nameMissing()" data-testid="name-rule">
+                  {{ 'admin.staff.nameRequired' | translate }}
+                </p>
+              }
             </div>
-            <label class="field">
-              <span class="field-label">{{ 'admin.staff.name' | translate }}</span>
-              <input formControlName="name" type="text" autocomplete="name" class="field-input" />
-            </label>
           </div>
 
           <div class="form-row">
@@ -157,37 +197,71 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
                 }
               </ul>
             </div>
-            <div class="field">
-              <label class="field-label" for="staff-temp-password">{{ 'admin.staff.tempPassword' | translate }}</label>
-              <div class="flex" style="gap: 8px">
-                <input
-                  id="staff-temp-password"
-                  formControlName="tempPassword"
-                  type="text"
-                  autocomplete="off"
-                  spellcheck="false"
-                  class="field-input field-input-mono"
-                  style="flex: 1; min-width: 0"
-                  [attr.aria-describedby]="'staff-temp-password-rule'"
-                />
-                <button type="button" class="generate" data-testid="generate-password" (click)="generate()">
-                  {{ 'admin.staff.generate' | translate }}
-                </button>
+            @if (!pinOnly()) {
+              <div class="field">
+                <label class="field-label" for="staff-temp-password">{{
+                  'admin.staff.tempPassword' | translate
+                }}</label>
+                <div class="flex" style="gap: 8px">
+                  <input
+                    id="staff-temp-password"
+                    formControlName="tempPassword"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    class="field-input field-input-mono"
+                    style="flex: 1; min-width: 0"
+                    [attr.aria-describedby]="'staff-temp-password-rule'"
+                  />
+                  <button type="button" class="generate" data-testid="generate-password" (click)="generate()">
+                    {{ 'admin.staff.generate' | translate }}
+                  </button>
+                </div>
+                <p
+                  id="staff-temp-password-rule"
+                  class="rule"
+                  [class.rule-bad]="passwordInvalid()"
+                  data-testid="password-rule"
+                >
+                  {{ 'admin.staff.tempPasswordRule' | translate: rule }}
+                </p>
               </div>
-              <p
-                id="staff-temp-password-rule"
-                class="rule"
-                [class.rule-bad]="passwordInvalid()"
-                data-testid="password-rule"
-              >
-                {{ 'admin.staff.tempPasswordRule' | translate: rule }}
-              </p>
-            </div>
+            }
           </div>
 
-          <p class="rule" data-testid="temp-password-hint">
-            {{ (byLogin() ? 'admin.staff.tempPasswordHintLogin' : 'admin.staff.tempPasswordHint') | translate }}
-          </p>
+          @if (pinOnly()) {
+            <p class="rule" data-testid="pin-only-hint">{{ 'admin.staff.pinOnlyHint' | translate }}</p>
+          } @else {
+            <p class="rule" data-testid="temp-password-hint">
+              {{ (byLogin() ? 'admin.staff.tempPasswordHintLogin' : 'admin.staff.tempPasswordHint') | translate }}
+            </p>
+          }
+
+          @if (worksTheTablet()) {
+            <div class="field" style="max-width: 320px">
+              <label class="field-label" for="staff-pin">{{ 'admin.staff.kitchenPin' | translate }}</label>
+              <input
+                id="staff-pin"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="6"
+                class="field-input field-input-mono"
+                style="letter-spacing: 0.2em"
+                data-testid="invite-pin-input"
+                [value]="pin()"
+                (input)="onPinInput($event)"
+                [placeholder]="'admin.stores.kitchen.pinPlaceholder' | translate"
+              />
+              <p class="rule" [class.rule-bad]="pinInvalid()" data-testid="pin-rule">
+                @if (pinInvalid() && pinProblem() === 'TOO_SIMPLE') {
+                  {{ 'admin.stores.errors.pinTooSimple' | translate }}
+                } @else {
+                  {{ (pinOnly() ? 'admin.staff.pinRequiredHint' : 'admin.staff.pinOptionalHint') | translate }}
+                }
+              </p>
+            </div>
+          }
 
           <app-staff-store-picker [stores]="stores()" [(selected)]="storeIds" />
         </form>
@@ -208,6 +282,25 @@ import { StaffStorePickerComponent } from './staff-store-picker.component';
       }
       .roles-on {
         color: var(--color-text-primary);
+      }
+      .sign-in-way {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        font-size: 14px;
+      }
+      .sign-in-way legend {
+        width: 100%;
+        margin-bottom: 6px;
+      }
+      .sign-in-way label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
       }
       .rule {
         margin: 6px 0 0;
@@ -320,6 +413,13 @@ export class StaffFormPage {
   readonly result = signal<StaffInviteResult | null>(null);
   /** The temporary password of the invite just sent, to hand over when no email went out. */
   readonly sentPassword = signal('');
+  /** Kitchen staff signing in with a PIN only: no email, login or password. */
+  readonly pinOnly = signal(false);
+  /** The kitchen PIN typed on the form — required with {@link pinOnly}, optional otherwise. */
+  readonly pin = signal('');
+  readonly pinProblem = computed(() => newPinProblem(this.pin()));
+  /** Red once something was typed that is not a PIN that can be set (or nothing, when it is required). */
+  readonly pinInvalid = computed(() => this.pin().length > 0 && this.pinProblem() !== null);
 
   readonly rule = { min: STAFF_PASSWORD_MIN_LENGTH, max: STAFF_PASSWORD_MAX_LENGTH };
   readonly loginRule = { min: STAFF_LOGIN_MIN_LENGTH, max: STAFF_LOGIN_MAX_LENGTH };
@@ -348,6 +448,10 @@ export class StaffFormPage {
   });
 
   constructor() {
+    // Only kitchen staff can do with a PIN alone.
+    this.form.controls.role.valueChanges.pipe(takeUntilDestroyed()).subscribe((role) => {
+      if (role !== 'STAFF' && this.pinOnly()) this.setPinOnly(false);
+    });
     effect(() => {
       const brandId = this.brandCtx.activeId();
       untracked(() =>
@@ -388,6 +492,39 @@ export class StaffFormPage {
     return value.length > 0 && !tempPasswordValid(value);
   });
 
+  private readonly roleValue = toSignal(this.form.controls.role.valueChanges, {
+    initialValue: this.form.controls.role.value,
+  });
+  /** Kitchen staff and managers work the tablet, so their PIN can be set right away. */
+  readonly worksTheTablet = computed(() => this.roleValue() === 'STAFF' || this.roleValue() === 'STORE_MANAGER');
+
+  private readonly nameValue = toSignal(this.form.controls.name.valueChanges, { initialValue: '' });
+  /** Someone with a PIN only is known by name alone. */
+  readonly nameMissing = computed(() => this.pinOnly() && this.nameValue().trim().length === 0);
+
+  /** Kitchen staff only: the switch between a login with a password and a PIN alone. */
+  setPinOnly(on: boolean): void {
+    this.pinOnly.set(on);
+    for (const control of [this.form.controls.identifier, this.form.controls.tempPassword]) {
+      if (on) control.disable();
+      else control.enable();
+    }
+  }
+
+  onPinInput(event: Event): void {
+    const field = event.target as HTMLInputElement;
+    const digits = field.value.replace(/\D/g, '').slice(0, 6);
+    field.value = digits;
+    this.pin.set(digits);
+  }
+
+  /** Everything the chosen way in needs, and at least one store. */
+  submittable(): boolean {
+    if (this.storeIds().length === 0) return false;
+    if (this.pinOnly()) return this.form.controls.name.value.trim().length > 0 && this.pinProblem() === null;
+    return this.form.valid && (this.pin() === '' || !this.worksTheTablet() || this.pinProblem() === null);
+  }
+
   /** Fills in a strong temporary password; the field shows it so it can be copied or dictated. */
   generate(): void {
     this.form.controls.tempPassword.setValue(generateTempPassword());
@@ -397,14 +534,21 @@ export class StaffFormPage {
   submit(): void {
     const storeIds = this.storeIds();
     const v = this.form.getRawValue();
-    const identifier = signInIdentifier(v.identifier);
-    if (this.form.invalid || storeIds.length === 0 || !identifier) return;
+    if (!this.submittable()) return;
+    let body: InviteStaffRequest;
+    if (this.pinOnly()) {
+      body = { role: 'STAFF', name: v.name.trim(), pin: this.pin(), storeIds };
+    } else {
+      const identifier = signInIdentifier(v.identifier);
+      if (!identifier) return;
+      body = { role: v.role, tempPassword: v.tempPassword, storeIds };
+      if (identifier.kind === 'email') body.email = identifier.value;
+      else body.login = identifier.value;
+      if (v.name.trim()) body.name = v.name.trim();
+      if (this.pin() && this.worksTheTablet()) body.pin = this.pin();
+    }
     this.saving.set(true);
     this.error.set(null);
-    const body: InviteStaffRequest = { role: v.role, tempPassword: v.tempPassword, storeIds };
-    if (identifier.kind === 'email') body.email = identifier.value;
-    else body.login = identifier.value;
-    if (v.name.trim()) body.name = v.name.trim();
     this.staffApi.invite(body, this.brandCtx.activeId()).subscribe({
       next: (result) => {
         this.saving.set(false);
@@ -422,6 +566,8 @@ export class StaffFormPage {
   inviteAnother(): void {
     this.result.set(null);
     this.sentPassword.set('');
+    this.pin.set('');
+    this.setPinOnly(false);
     this.form.reset({ identifier: '', name: '', role: 'STAFF', tempPassword: '' });
   }
 }

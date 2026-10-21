@@ -112,6 +112,10 @@ PUBLIC_TMA_URL=https://test-tma.takeaway.md
 # --- Telegram: the test bot, never production's ------------------------------
 $(grep -E '^TELEGRAM_BOT_(USERNAME|TOKEN)=' "$TG_ENV")
 TELEGRAM_LOGIN_CLIENT_ID=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$TG_ENV" | cut -d= -f2 | cut -d: -f1)
+# The test bot's webhook (docs/staff-access.md): staging's API registers it
+# with the test bot at start, so staff link notifications through the bot.
+TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook
+TELEGRAM_WEBHOOK_SECRET=$(rnd)
 
 # --- off on staging until set up for it --------------------------------------
 # Card payments: the bank's live merchant must never see test orders.

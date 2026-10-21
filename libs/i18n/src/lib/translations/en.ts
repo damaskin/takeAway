@@ -34,6 +34,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       opensOnAt: 'Closed now · opens {{date}} at {{time}} · order ahead',
       closedPreorder: 'Closed now · order ahead',
       queueFull: 'Long queue — order ahead only',
+      paused: 'Short break until {{time}} · order ahead',
+      closingSoon: 'Closing soon — order ahead only',
       until: 'until {{time}}',
     },
     /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
@@ -43,6 +45,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       opensOnAt: 'The store opens {{date}} at {{time}} — pick a time for your order.',
       shiftClosed: 'The store has not started work yet — pick a time for your order.',
       queueFull: 'There is a long queue right now — pick a time for your order.',
+      pausedUntil: 'The store is on a short break until {{time}} — pick a time for your order.',
+      paused: 'The store is on a short break — pick a time for your order.',
+      closingSoonAt: 'The store closes at {{time}} — there is no time left to make an order for now. Pick a time.',
+      closingSoon: 'The store closes soon — there is no time left to make an order for now. Pick a time.',
     },
     /** Day headings over the pickup windows at checkout. */
     pickupDay: {
@@ -323,7 +329,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noSlots: 'No windows free in the next 24 hours. Try "Now".',
       noSlotsClosed: 'No windows free in the next 24 hours.',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
-      slotFull: 'This window is fully booked',
+      /** A full window in the «Later» picker, shown but not selectable. */
+      slotTaken: '{{time}} — taken',
+      /** The picker's first line while no window is chosen (the chosen one filled up). */
+      slotChoose: 'Choose a time',
       prepHint: "We'll start preparing at {{time}} so it's fresh when you arrive.",
       name: 'Name on the order',
       notes: 'Notes for the order (optional)',
@@ -422,6 +431,32 @@ export const TRANSLATIONS_EN: TranslationTree = {
         notAcceptedRefunded: 'The store did not confirm the order — the money is on its way back',
         paymentNotCompleted: 'The payment did not go through — the order is cancelled',
       },
+      /** Under the status once the kitchen gave a new time — see readyEstimateAt. */
+      estimate: {
+        inMinutes: 'Preparing · ready in {{min}} min',
+        at: 'Preparing · ready by {{time}}',
+      },
+      /** The words around the time in the big circle. */
+      ring: {
+        /** Under a countdown of less than an hour. */
+        untilPickup: 'until pickup',
+        /** Over the clock time of an order an hour or more away. */
+        readyBy: 'Ready by',
+      },
+      /** Cancelling is the customer's only before the kitchen accepts and while no money is taken. */
+      cancel: {
+        confirmTitle: 'Cancel order #{{code}}?',
+        confirmBody:
+          'The store has not started on it yet. If money is held on your card, we release the hold — nothing is charged.',
+        confirm: 'Yes, cancel',
+        keep: 'Keep the order',
+        cancelling: 'Cancelling…',
+        acceptedCall: 'The order is already being made — call the store to cancel it',
+        acceptedNoPhone: 'The order is already being made — it can no longer be cancelled',
+        chargedCall: 'The payment has gone through — call the store to cancel the order',
+        chargedNoPhone: 'The payment has gone through — the order cannot be cancelled here',
+        failed: 'Could not cancel the order. Please try again.',
+      },
       callStore: 'Call the store',
       codeLabel: 'code {{code}}',
       iAmHere: "I'm here",
@@ -433,7 +468,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       ready: 'Ready',
       thanks: 'Thanks!',
       yourCode: 'Your code',
+      codeHint: 'Say it at the counter to collect your order',
       pickupIn: 'Pickup in ~{{min}} min',
+      /** An hour or more away: the clock time on the store's clock, «09:15» or «09:15 tomorrow». */
+      pickupAt: 'Pickup at {{time}}',
       backToMenu: 'Back to menu',
       notFound: 'Order not found',
     },
@@ -807,6 +845,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       next: 'New password',
       rule: 'At least {{min}} characters (up to {{max}}), and not the current one.',
       confirm: 'Repeat the new password',
+      titleVoluntary: 'Change password',
+      subtitleVoluntary:
+        'Enter your current password and pick a new one. Your other devices are signed out of the cabinet.',
+      back: '← Back',
+      done: 'Password changed. Your other devices were signed out of the cabinet.',
+      pinSession:
+        'You signed in with a PIN on the kitchen tablet. Change your password after signing in with your email or login and password.',
       save: 'Save',
       saving: 'Saving…',
       errors: {
@@ -855,7 +900,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       install: 'Install app',
       installHint: 'Opens the cabinet in its own window, with an icon on the desktop or home screen',
       pinSessionNote:
-        'Signed in with a PIN — kitchen and stop-list only. The other sections open after signing in with a password.',
+        'Signed in with a PIN — kitchen, stop-list and Telegram only. The other sections open after signing in with a password.',
+      changePassword: 'Change password',
       brand: 'Brand',
       role: {
         SUPER_ADMIN: 'Platform admin',
@@ -1000,9 +1046,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       role: { STORE_MANAGER: 'Manager', STAFF: 'Kitchen staff', MENU_EDITOR: 'Menu editor' },
       roleHint: {
         STORE_MANAGER:
-          'runs their stores: orders, the kitchen and shifts, the menu and stop-list, opening hours, kitchen staff and their PINs. Does not see analytics, promotions or brand settings.',
+          'runs their stores: orders, the kitchen, pauses and extended hours, the menu and stop-list, opening hours, kitchen staff and their PINs. Does not see analytics, promotions or brand settings.',
         STAFF:
-          'works the kitchen: accepts and prepares orders (signs in on the tablet with a PIN), opens the shift, keeps the stop-list. Does not change the menu or settings.',
+          'works the kitchen: accepts and prepares orders (signs in on the tablet with a PIN), pauses the store and extends its hours, keeps the stop-list. Does not change the menu or settings.',
         MENU_EDITOR: 'edits the menu only: items, prices, photos, add-ins. Does not see orders or the kitchen.',
       },
       blocked: 'Blocked',
@@ -1013,6 +1059,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       tempPasswordHintLogin:
         'Without an email nothing is sent: pass the login and temporary password on in person. They will be asked to change the password on first sign-in, and if they forget it, only the owner can reset it.',
       generate: 'Generate',
+      signInWay: 'How they sign in',
+      signInPassword: 'With an email or login and a password',
+      signInPinOnly: 'With a PIN on the kitchen tablet only',
+      pinOnlyHint:
+        'No email, login or password: they sign in on the kitchen tablet with a PIN only. A login and password can be added on their page later.',
+      nameRequired: 'Required: the list and the kitchen know them by name.',
+      pinOptionalHint: 'Optional. 6 digits, not all the same or in a row — one PIN for all their stores.',
+      pinRequiredHint: '6 digits, not all the same or in a row — one PIN for all their stores.',
       addCta: 'Invite',
       invited: {
         title: 'Invite sent',
@@ -1027,6 +1081,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         cabinet: 'Cabinet',
         login: 'Login',
         ownPassword: 'their current password',
+        pinOnly:
+          'They sign in on the kitchen tablet with a PIN — they have no login or password. Those can be added on their page.',
+        pinSet: 'The kitchen PIN is set — it opens the tablet at all their stores.',
         toList: 'Back to the team',
         another: 'Invite another',
       },
@@ -1053,6 +1110,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         nothing: 'Nobody matches — change the filters.',
       },
       pinAt: 'PIN · {{store}}',
+      pinAll: 'PIN',
       noPin: 'No PIN',
       noStoresWarning: 'No store is ticked — once saved, this person is taken off the team.',
       readOnlySelf: "This is your own account — you can't change your role or stores here.",
@@ -1061,11 +1119,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       confirmRemoveFromTeam:
         '{{name}} will no longer work at any of your stores and leaves the list. Their kitchen PIN at those stores is reset. Continue?',
       kitchenPin: 'Kitchen PIN',
-      pinOpens: 'The PIN opens the kitchen tablet of "{{store}}".',
+      pinOpensAll: 'The PIN opens the kitchen tablet at all their stores.',
+      pinOpensLegacy: 'The old PIN opens "{{store}}" only. Set a new one — it works at all their stores.',
       pinNone: 'No PIN yet — on the kitchen tablet this person signs in with email or login and password.',
+      pinNoneNoSignIn: 'No PIN — without one they cannot sign in on the kitchen tablet.',
       pinHint:
-        'A PIN works at one store: a new PIN for another store replaces the old one. Taking a store off the list resets its PIN.',
-      pinStore: 'Store for the PIN',
+        'One PIN for every store of the brand they work at: on the tablet they type the PIN, then pick the store. A new PIN replaces the old one and signs them out of the tablets.',
       password: {
         title: 'Password',
         hint: 'Forgot their password and cannot get to their email? Reset it: the old password stops working, they are signed out of the cabinet and the kitchen tablet, and you get a temporary password to pass on. They will be asked to change it when they sign in.',
@@ -1079,6 +1138,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         noEmail: 'This person has no email — pass the temporary password on in person.',
         notEditable: 'This person also works for another brand — only takeAway support can reset their password.',
       },
+      signIn: {
+        title: 'Cabinet sign-in',
+        none: 'They sign in with a PIN on the kitchen tablet only. To let them into the cabinet too, add an email or a login and a temporary password — they change it at the first sign-in.',
+        add: 'Add sign-in',
+        done: 'Done. Pass the sign-in details on:',
+      },
       errors: {
         storeOutOfScope: 'One of the chosen stores is outside your access.',
         roleNotAllowed: 'A store manager cannot appoint managers — the brand owner does that.',
@@ -1086,6 +1151,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         alreadyOnTeam: 'This person is already on the team — open them in the list and tick the stores there.',
         emailTaken: 'This email is already in use. Ask the employee to use a different email.',
         loginTaken: 'This login is already taken. Pick another one.',
+        signInRequired: 'Only kitchen staff can be invited without an email or a login.',
+        hasSignIn: 'They already have an email or a login — reset the password if they forgot it.',
+        noSignIn: 'They sign in with a PIN only — add an email or a login first.',
+        pinRole: 'A kitchen PIN is for kitchen staff and store managers.',
+        pinMultiBrand:
+          'They also work for another brand, and a PIN works in one. On the tablet they sign in with email or login and password.',
         notFound: 'Staff member not found — they may have been taken off the team already.',
         forbidden: "You don't have permission for this.",
         invalidField: 'Check the field "{{field}}".',
@@ -1098,6 +1169,16 @@ export const TRANSLATIONS_EN: TranslationTree = {
         cta: 'Set as owner',
         tempPasswordHint: 'Temporary password (required only for a new account)',
         tempPasswordPlaceholder: 'Leave blank if the user already exists',
+        current: 'Current owner',
+        passwordHint:
+          'The owner forgot the password and no email arrives? Reset it: the old password stops working, the owner is signed out on every device, and you get a temporary password to pass on. They will be asked to change it when they sign in.',
+        passwordConfirm:
+          "Reset the owner {{name}}'s password? The old one stops working and they are signed out on every device.",
+        passwordDone: 'Password reset; the owner was signed out on every device. Temporary password:',
+        emailOff:
+          'No email was sent: mail is not set up on the server. Pass the temporary password on to the owner yourself.',
+        emailFailed:
+          'No email was sent: the mail server refused it. Pass the temporary password on to the owner yourself.',
       },
     },
     integrations: {
@@ -1137,15 +1218,24 @@ export const TRANSLATIONS_EN: TranslationTree = {
       confirmDisconnect: 'Disconnect this integration? Imported items stay in the catalog.',
     },
     telegramLink: {
-      title: 'Link Telegram for order notifications',
+      title: 'Telegram: order notifications',
       subtitle:
-        'Tap the Telegram button below — the bot will push you a message the moment a new paid order lands at one of your stores.',
-      startHint: 'You will be redirected to Telegram to confirm. This does not replace your email/password login.',
-      linking: 'Linking…',
-      linked: 'Linked',
-      linkedNote:
-        'You will now receive order events in Telegram. Tap the button again to relink under a different account.',
-      unavailable: 'Telegram is not configured on this deployment — ask your admin to set the bot username.',
+        "The bot sends your stores' new orders, reminders about unaccepted ones and other events to Telegram. Link your phone — you can do it from the kitchen tablet too.",
+      linked: 'Linked — notifications go to Telegram.',
+      linkedNote: 'To get them on another phone, link that one — the previous chat stops getting messages.',
+      notLinked: 'Not linked — no notifications go to Telegram.',
+      makeLink: 'Link Telegram',
+      relink: 'Link another phone',
+      qrLabel: 'QR code of the link to the bot',
+      scan: 'Scan the code with your phone camera, or open the link on your phone — the takeAway bot opens. Tap «Start».',
+      open: 'Open in Telegram',
+      expires: 'One-time link, valid until {{time}}.',
+      expired: 'The link has expired — get a new one.',
+      waiting: 'Waiting for you to tap «Start» in the bot…',
+      unlink: 'Unlink',
+      unlinkConfirm: 'Unlink Telegram? Order notifications stop coming.',
+      botUnavailable: 'Linking through the bot is not set up on this server yet — contact takeAway support.',
+      legacyHint: 'Until the bot is set up, you can link Telegram by signing in with Telegram:',
       button: 'Link Telegram',
       failed: 'Telegram did not confirm the link. Try again.',
     },
@@ -1347,35 +1437,67 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
       },
       shift: {
-        closedTitle: 'Shift not started',
-        closedHint:
-          'While the shift is closed, no orders "for now" are taken. Pre-orders for later keep coming and wait on the board.',
-        start: 'Start work',
-        finish: 'Finish work',
-        openSince: 'Shift running since {{time}}, the store takes orders',
-        openSinceBy: 'Shift running since {{time}} ({{name}}), the store takes orders',
-        storeClosed:
-          'The store is closed in its settings, so a shift cannot start. It can be opened on the Stores page.',
-        extendedUntil: 'extended until {{time}}',
-        autoClosed: 'The shift was closed automatically at {{time}}, after the working hours.',
+        storeClosed: 'The store is switched off in its settings — no orders. It can be switched on on the Stores page.',
         closingSoon: 'The working hours end at {{time}} — orders "for now" stop then.',
         closingSoonExtended: 'The extension ends at {{time}} — orders "for now" stop then.',
-        outsideHours: 'The store is closed by its working hours — no orders "for now".',
-        opensAt: 'Opens at {{time}}.',
         extend30: 'Extend by 30 min',
         extend60: 'Extend by 1 h',
         extendLimit: 'It cannot be extended further: at most 4 hours past the closing time.',
+        extendNotAllowed: 'The closing can be extended only in the last hour before it.',
       },
-      shiftClose: {
-        title: 'Finish work?',
-        body: 'Orders "for now" stop. Pre-orders for later keep coming.',
-        bodyStore: '«{{store}}» stops taking orders "for now". Pre-orders for later keep coming.',
-        awaiting:
-          'Orders for the next 30 minutes not accepted: {{count}}. Accept or reject them on the kitchen board first — the customers are waiting.',
-        inProgress: 'Being made: {{count}}. They stay on the board — finish them.',
-        ready: 'Ready and waiting for the customer: {{count}}. They stay on the board until handed over.',
-        later: 'Pre-orders for later: {{count}}. They come to the board in the next shift.',
-        empty: 'No unfinished orders on the board.',
+      /** The store's state on the board, the «Точки» cards and the dashboard: the schedule runs the shift. */
+      schedule: {
+        open: 'Open by the schedule until {{time}}',
+        extended: 'Extended until {{time}}',
+        aroundTheClock: 'Open around the clock',
+        opening: 'Open by the schedule — the shift opens within a minute',
+        opensAt: 'Closed by the schedule · opens today at {{time}} · pre-orders keep coming',
+        opensTomorrowAt: 'Closed by the schedule · opens tomorrow at {{time}} · pre-orders keep coming',
+        opensOnAt: 'Closed by the schedule · opens {{date}} at {{time}} · pre-orders keep coming',
+        closed: 'Closed by the schedule',
+        switchedOff: 'The store is switched off in its settings — no orders',
+        queueFull: 'No orders "for now": the queue is long. Pre-orders keep coming.',
+        closingSoon:
+          'No more orders "for now" — there is no time to make them before the closing. Pre-orders keep coming.',
+        pausedUntil: 'Paused until {{time}}',
+        pausedBy: '({{name}})',
+        resume: 'End the pause',
+      },
+      pause: {
+        button: 'Pause',
+        buttonOn: 'Paused until {{time}}',
+        hint: 'Technical trouble: orders "for now" and pre-orders for the time of the pause stop.',
+        title: 'Pause the store?',
+        body: 'While paused, the store takes no orders "for now" and no pre-orders for that time — customers see "Short break". Orders on the board stay and can be finished. Staff and the owner get a Telegram message.',
+        reasonLabel: 'What happened',
+        reasons: {
+          EQUIPMENT: 'Equipment broke',
+          NO_INGREDIENTS: 'Out of ingredients',
+          NO_STAFF: 'Short of staff',
+          OTHER: 'Other',
+        },
+        durationLabel: 'For how long',
+        durations: {
+          m15: '15 min',
+          m30: '30 min',
+          m60: '1 h',
+          m120: '2 h',
+          untilClose: 'Until the end of the day',
+        },
+        commentLabel: 'Comment for staff and the owner (optional)',
+        commentPlaceholder: 'For example: the coffee machine',
+        confirm: 'Pause the store',
+        done: 'The store is paused until {{time}}',
+        resumed: 'The pause is over — the store takes orders again',
+        errors: {
+          STORE_SWITCHED_OFF: 'The store is switched off in its settings — there is nothing to pause.',
+          PAUSE_NEEDS_DURATION: 'The store does not open again soon — pick how long to pause.',
+        },
+      },
+      /** A ticket that left the board without the kitchen. */
+      removed: {
+        CANCELLED_BY_CUSTOMER: 'Order #{{code}} was cancelled by the customer',
+        NOT_ACCEPTED: 'Order #{{code}} was cancelled automatically — nobody accepted it in time',
       },
       preorders: {
         title: 'Pre-orders',
@@ -1384,6 +1506,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
+        awaitingPreorder: 'Waiting to be accepted',
         autoCancelIn: 'cancelled automatically in {{time}}',
         late: '{{minutes}} min late',
       },
@@ -1396,7 +1519,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         on: 'Busy · on',
         offHint: 'Mark the kitchen as busy: customers see the store as busy, orders keep coming.',
         onHint: 'Clear the «Busy» mark',
-        note: 'Marked «Busy»: customers see the store as busy. Clear it with the same button, or it clears itself when the shift ends.',
+        note: 'Marked «Busy»: customers see the store as busy. Clear it with the same button, or it clears itself at the closing.',
       },
       arrival: {
         here: 'Customer is here',
@@ -1581,9 +1704,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       compareStores: 'Compare stores →',
       storeLine: '{{orders}} orders · {{share}} of revenue',
       shifts: {
-        title: 'Stores and shifts',
+        title: 'Stores now',
         empty: 'No stores yet.',
-        storeClosed: 'Store closed',
       },
       menu: {
         title: 'Menu',
@@ -2082,15 +2204,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       open: 'Open store',
       close: 'Close store',
       openBlocked: 'Finish the readiness checklist first',
-      shift: {
-        open: 'Shift running — the store takes orders',
-        closed: 'Shift not started — no orders "for now", pre-orders keep coming',
-        storeClosed:
-          'The store is closed in its settings, so a shift cannot start. The owner or a manager can open it.',
-        storeClosedCanOpen:
-          'The store is closed in its settings, so a shift cannot start. Open the store first with "Open store".',
-        storeClosedShiftOpen: 'The store is closed in its settings but a shift is still running — you can finish it.',
-      },
+      /** The shift follows the working hours; the kitchen extends the closing and pauses the store on its board. */
+      scheduleHint:
+        'Orders "for now" open and close with the working hours. The kitchen can extend the closing or pause the store.',
       timezoneMissing: {
         title: 'No time zone set — working hours are read as UTC',
         body: 'Customers see shifted working hours, and the store may look closed even during a shift.',
@@ -2248,7 +2364,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         baseEta: 'Base time per order, min',
         baseEtaHint:
-          "The store's time is only ringing up, packing and handing over. Cooking time is set on each item (and by default on its category in Menu); the queue comes on top.",
+          "The store's time is only ringing up, packing and handing over. The «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).",
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
@@ -2317,7 +2433,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         empty: 'No photos yet.',
       },
       kitchen: {
-        hint: "Staff unlock this store's kitchen tablet with a 6-digit PIN (4–5 digit PINs given out earlier keep working). A PIN works at this store only.",
+        hint: "Who can open this store's kitchen tablet: the store's kitchen staff and managers with a PIN. Each person has one PIN for all their stores, set on their card under Staff.",
+        canEnter: 'Sign in with a PIN: {{count}}',
+        setOnCard: 'Whoever has no PIN cannot sign in on the tablet — open them and set the PIN on their card.',
         where: 'On the tablet, open',
         empty: 'No kitchen staff or managers are assigned to this store yet.',
         toStaff: 'Add them under Staff',
@@ -2340,7 +2458,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         slugFormat: 'Lower-case latin letters, digits and hyphens only, e.g. noname-centre.',
         notReady: 'The store cannot open yet. Missing: {{missing}}.',
         galleryFull: 'A gallery holds at most {{max}} photos — remove one to add another.',
-        pinTaken: 'Another staff member of this store already uses this PIN — choose a different one.',
+        pinTaken: 'Someone else at this business already uses this PIN — choose a different one.',
         pinNotConfigured:
           'Kitchen PIN sign-in is not set up on the server. Ask the administrator to set KDS_PIN_SECRET — PINs cannot be saved until then.',
         pinFormat: 'A new PIN is exactly 6 digits.',
@@ -3236,7 +3354,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       staff: {
         title: 'Staff',
-        hint: 'Orders by who tapped the button in the kitchen. Hours are the shifts a person opened: a shift belongs to the store, so its hours go to whoever started it.',
+        hint: 'Orders by who tapped the button in the kitchen. Hours are the shifts a person opened themselves. Since 20 Oct 2026 shifts open by the schedule, so no new hours are counted.',
         empty: 'No staff handled orders in this period.',
         cols: {
           person: 'Employee',
@@ -3317,6 +3435,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       signIn: 'Sign in',
       delete: 'Delete',
       usePassword: 'Sign in with email and password',
+      storeRequired:
+        'This PIN was set for one store, and someone at another store has the same one. Pick your store and press «Sign in» again.',
+      chooseTitle: 'Where are you working today?',
+      chooseHint: 'Your PIN opens all your stores. Switch to another one on the kitchen screen — no PIN needed.',
     },
     device: {
       pairing: 'Binding the tablet…',
@@ -3329,7 +3451,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       unboundNow: 'This tablet was unbound from the business — bind it again.',
       linkInvalid:
         'This tablet link no longer works: it was already used or has expired. Make a new one on the Staff page.',
-      noPins: 'Nobody at this business has a PIN yet. Set PINs on the Staff page.',
+      noPins: "Nobody at this business has a PIN yet. Set a PIN on the person's card under Staff.",
       unbind: 'Unbind this tablet',
       unbindConfirm: 'Unbind this tablet from the business? PIN sign-in needs it bound again.',
     },
@@ -3406,15 +3528,31 @@ export const TRANSLATIONS_EN: TranslationTree = {
     orderStatus: {
       orderClosed: 'Order closed',
       goToPayment: 'Go to payment',
+      cooking: 'Being made · ready in {{min}} min',
+      readyAt: 'by {{time}}',
+      readyAtOn: 'by {{time}}, {{date}}',
+      cancel: 'Cancel order',
+      cancelling: 'Cancelling…',
+      cancelConfirm: 'Cancel order {{code}}?',
+      cancelFailed: 'Could not cancel the order. Please try again.',
+      callToCancel: 'Your order is already being made — call the store to cancel it',
     },
     profile: {
       loyalty: 'LOYALTY',
-      tierGold: 'Gold',
-      pointsSuffix: 'pts',
       pointsLine: '{{points}} pts',
-      toPlatinum: '{{points}} pts to Platinum',
-      signOut: 'Sign out',
       fallbackName: 'Telegram user',
+      signedInVia: 'Signed in with Telegram',
+      signedInHint: 'In the Mini App your account is your Telegram, so there is nothing to sign out of.',
+      personal: {
+        nameFromTelegram: 'Your name comes from Telegram',
+        phoneInvalid: 'Check the number, e.g. +373 69 123 456',
+        emailInvalid: 'Check the email address',
+      },
+      notifications: {
+        subtitle:
+          'Order messages come from the takeAway bot right in this Telegram chat. Choose what it tells you about.',
+        fromBot: 'Order messages come from the bot',
+      },
     },
     checkout: {
       title: 'Checkout',
@@ -3423,6 +3561,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       schedule: 'Schedule',
       noSlots: 'No windows free — try ASAP.',
       noSlotsClosed: 'No windows free in the next 24 hours.',
+      slotPicker: 'Time to have your order ready',
+      slotFull: '{{time}} — full',
       closedNow: 'The store is closed right now — pick a time to collect your order later.',
       location: 'Pickup location',
       readyIn: 'Ready in ~{{min}} min',
@@ -3488,8 +3628,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     stores: {
       title: 'Pick a store',
-      search: 'District, landmark…',
+      search: 'Name or address…',
       nearby: 'Nearby',
+      nearMe: 'Near me',
+      locating: 'Locating…',
+      locationDenied: 'No access to your location — allow it to see the stores near you.',
+      locationDeniedSettings: 'No access to your location. Allow it in Telegram settings.',
+      openSettings: 'Open settings',
+      locationUnavailable: 'Could not find where you are. Please try again.',
     },
     menu: {
       change: 'Change',

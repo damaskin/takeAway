@@ -5,57 +5,102 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
-import type { KdsPinService } from '../../auth/services/kds-pin.service';
+import { KdsPinService } from '../../auth/services/kds-pin.service';
+import { KitchenPinsService } from '../../auth/services/kitchen-pins.service';
 import type { PasswordService } from '../../auth/services/password.service';
+import type { TokensService } from '../../auth/services/tokens.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { RedisService } from '../../redis/redis.service';
 import { AdminStaffService } from './admin-staff.service';
+
+/** The real PIN rules (KdsPinService, KitchenPinsService) over a fake database. */
+function kitchenPinsFor(prisma: unknown, configured = true) {
+  const config = { get: (key: string) => (key === 'KDS_PIN_SECRET' && configured ? 'a-real-secret' : undefined) };
+  const pins = new KdsPinService(config as unknown as ConfigService, {} as RedisService);
+  const tokens = { revokeKitchenSessions: jest.fn().mockResolvedValue(1) };
+  const kitchenPins = new KitchenPinsService(prisma as PrismaService, pins, tokens as unknown as TokensService);
+  return { pins, tokens, kitchenPins };
+}
 
 describe('AdminStaffService — kitchen PINs', () => {
   const manager = { id: 'manager-1', role: Role.STORE_MANAGER } as AuthenticatedUser;
   const owner = { id: 'owner-1', role: Role.BRAND_ADMIN } as AuthenticatedUser;
+  const brandPin = new KdsPinService(
+    { get: () => 'a-real-secret' } as unknown as ConfigService,
+    {} as RedisService,
+  ).brandHash('brand-1', '480317');
 
   function build(managerStores: string[] = ['store-1'], configured = true) {
+    const roster = [
+      {
+        createdAt: new Date('2026-09-01T08:00:00Z'),
+        // An old PIN of this store.
+        user: {
+          id: 'barista-1',
+          email: 'ion@noname.md',
+          name: 'Ion',
+          role: Role.STAFF,
+          blockedAt: null,
+          kdsPinHash: 'hash',
+          kdsPinStoreId: 'store-1',
+          kdsPinBrandId: null as string | null,
+        },
+      },
+      {
+        createdAt: new Date('2026-09-02T08:00:00Z'),
+        // An old PIN of another store.
+        user: {
+          id: 'barista-2',
+          email: 'ana@noname.md',
+          name: 'Ana',
+          role: Role.STAFF,
+          blockedAt: null,
+          kdsPinHash: 'hash',
+          kdsPinStoreId: 'store-2',
+          kdsPinBrandId: null as string | null,
+        },
+      },
+      {
+        createdAt: new Date('2026-09-03T08:00:00Z'),
+        // The brand's PIN, which opens every store of the brand the person works at.
+        user: {
+          id: 'barista-3',
+          email: 'ira@noname.md',
+          name: 'Ira',
+          role: Role.STAFF,
+          blockedAt: null,
+          kdsPinHash: 'brand-hash',
+          kdsPinStoreId: null as string | null,
+          kdsPinBrandId: 'brand-1' as string | null,
+        },
+      },
+    ];
     const prisma = {
-      store: { findUnique: jest.fn().mockResolvedValue({ id: 'store-1', brandId: 'brand-1' }) },
+      store: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'store-1', brandId: 'brand-1' }),
+        findMany: jest.fn().mockResolvedValue([{ id: 'store-1' }, { id: 'store-2' }]),
+      },
       userStore: {
         findUnique: jest.fn(({ where }: { where: { userId_storeId: { userId: string; storeId: string } } }) => {
           const { userId, storeId } = where.userId_storeId;
           if (userId === manager.id) return Promise.resolve(managerStores.includes(storeId) ? { storeId } : null);
           return Promise.resolve({ userId, storeId });
         }),
-        findMany: jest.fn().mockResolvedValue([
-          {
-            createdAt: new Date('2026-09-01T08:00:00Z'),
-            user: {
-              id: 'barista-1',
-              email: 'ion@noname.md',
-              name: 'Ion',
-              role: Role.STAFF,
-              blockedAt: null,
-              kdsPinHash: 'hash',
-              kdsPinStoreId: 'store-1',
-            },
-          },
-          {
-            createdAt: new Date('2026-09-02T08:00:00Z'),
-            user: {
-              id: 'barista-2',
-              email: 'ana@noname.md',
-              name: 'Ana',
-              role: Role.STAFF,
-              blockedAt: null,
-              kdsPinHash: 'hash',
-              kdsPinStoreId: 'store-2',
-            },
-          },
-        ]),
+        findMany: jest.fn(async ({ where }: { where: { userId?: string } }) =>
+          where.userId ? [{ store: { brandId: 'brand-1' } }] : roster,
+        ),
       },
       user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'barista-1', role: Role.STAFF }),
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+          const row = roster.find((r) => r.user.id === where.id)?.user;
+          return row ?? { id: where.id, role: Role.STAFF, kdsPinHash: null, kdsPinStoreId: null, kdsPinBrandId: null };
+        }),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
     };
@@ -63,60 +108,87 @@ describe('AdminStaffService — kitchen PINs', () => {
       resolveBrandIds: jest.fn().mockResolvedValue(['brand-1']),
       managesUser: jest.fn().mockResolvedValue(true),
     };
-    const pins = {
-      isValidFormat: () => true,
-      hash: () => 'hash',
-      isUsableHash: (h: string | null) => !!h && !h.startsWith('unset:'),
-      assertConfigured: () => {
-        if (!configured) {
-          throw new ServiceUnavailableException({ code: 'KDS_PIN_NOT_CONFIGURED' });
-        }
-      },
-    };
+    const { kitchenPins, tokens } = kitchenPinsFor(prisma, configured);
     const svc = new AdminStaffService(
       prisma as unknown as PrismaService,
       {} as PasswordService,
-      pins as unknown as KdsPinService,
+      kitchenPins,
       scope as unknown as BrandScopeService,
     );
-    return { svc, prisma };
+    return { svc, prisma, tokens, roster };
   }
 
-  it('says who already has a PIN for this store — one for another store does not count', async () => {
+  it('says who can open this store’s tablet: an old PIN of this store, or the brand’s PIN', async () => {
     const { svc } = build();
     const roster = await svc.list('store-1', owner);
     expect(roster.map((r) => [r.userId, r.hasKdsPin])).toEqual([
       ['barista-1', true],
       ['barista-2', false],
+      ['barista-3', true],
     ]);
+  });
+
+  it('sets the person’s one PIN for the whole brand from the store page, and ends their tablet sessions', async () => {
+    const { svc, prisma, tokens } = build();
+    await svc.setKdsPin('store-1', 'barista-1', '480317', manager);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'barista-1' },
+      data: { kdsPinHash: brandPin, kdsPinBrandId: 'brand-1', kdsPinStoreId: null },
+    });
+    expect(tokens.revokeKitchenSessions).toHaveBeenCalledWith('barista-1');
   });
 
   it("keeps a store manager out of the brand's other stores", async () => {
     const { svc, prisma } = build(['store-2']);
-    await expect(svc.setKdsPin('store-1', 'barista-1', '4821', manager)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.setKdsPin('store-1', 'barista-1', '480317', manager)).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
-  it('answers a PIN another barista of the store already uses with a 409 the admin can translate', async () => {
+  it('answers a PIN somebody else at the brand already uses with a 409 the admin can translate', async () => {
     const { svc, prisma } = build();
-    prisma.user.update.mockRejectedValueOnce(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
-    const error = await svc.setKdsPin('store-1', 'barista-1', '4821', manager).catch((e: unknown) => e);
+    prisma.user.findFirst.mockResolvedValueOnce({ id: 'barista-3' });
+    const error = await svc.setKdsPin('store-1', 'barista-1', '480317', manager).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_TAKEN' });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('counts an old store PIN with the same digits as taken, and loses a race to the unique index the same way', async () => {
+    const { svc, prisma } = build();
+    // Free as a brand PIN, but an old PIN of store-2 has these digits.
+    prisma.user.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'barista-2' });
+    const legacy = await svc.setKdsPin('store-1', 'barista-1', '480317', manager).catch((e: unknown) => e);
+    expect((legacy as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_TAKEN' });
+
+    prisma.user.update.mockRejectedValueOnce(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+    const race = await svc.setKdsPin('store-1', 'barista-1', '480317', manager).catch((e: unknown) => e);
+    expect((race as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_TAKEN' });
+  });
+
+  it('resets a PIN that opens this store, and leaves one of another store alone', async () => {
+    const { svc, prisma, tokens } = build();
+    await svc.clearKdsPin('store-1', 'barista-2', owner);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+
+    await svc.clearKdsPin('store-1', 'barista-3', owner);
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'barista-3' },
+      data: { kdsPinHash: null, kdsPinBrandId: null, kdsPinStoreId: null },
+    });
+    expect(tokens.revokeKitchenSessions).toHaveBeenCalledWith('barista-3');
   });
 
   it('does not count a placeholder left by a build without KDS_PIN_SECRET as a PIN', async () => {
-    const { svc, prisma } = build();
-    const rows = await prisma.userStore.findMany();
-    rows[0].user.kdsPinHash = 'unset:c3RvcmUtMQ';
-    prisma.userStore.findMany.mockResolvedValueOnce(rows);
-    const roster = await svc.list('store-1', owner);
-    expect(roster.find((r) => r.userId === 'barista-1')?.hasKdsPin).toBe(false);
+    const { svc, roster } = build();
+    const first = roster[0];
+    if (first) first.user.kdsPinHash = 'unset:c3RvcmUtMQ';
+    const list = await svc.list('store-1', owner);
+    expect(list.find((r) => r.userId === 'barista-1')?.hasKdsPin).toBe(false);
   });
 
   it('refuses to set a PIN with 503 KDS_PIN_NOT_CONFIGURED when the server has no secret', async () => {
     const { svc, prisma } = build(['store-1'], false);
-    const error = await svc.setKdsPin('store-1', 'barista-1', '4821', manager).catch((e: unknown) => e);
+    const error = await svc.setKdsPin('store-1', 'barista-1', '480317', manager).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ServiceUnavailableException);
     expect((error as HttpException).getResponse()).toMatchObject({ code: 'KDS_PIN_NOT_CONFIGURED' });
     expect(prisma.user.update).not.toHaveBeenCalled();
@@ -132,6 +204,7 @@ interface Account {
   blockedAt: Date | null;
   kdsPinHash: string | null;
   kdsPinStoreId: string | null;
+  kdsPinBrandId?: string | null;
 }
 
 /**
@@ -183,6 +256,8 @@ describe('AdminStaffService — accounts that also work for another brand', () =
       },
       store: {
         findUnique: async ({ where }: { where: { id: string } }) => stores.find((st) => st.id === where.id) ?? null,
+        findMany: async ({ where }: { where: { brandId: string } }) =>
+          stores.filter((st) => st.brandId === where.brandId).map((st) => ({ id: st.id })),
       },
       userStore: {
         findUnique: async ({ where }: { where: { userId_storeId: { userId: string; storeId: string } } }) => {
@@ -218,12 +293,20 @@ describe('AdminStaffService — accounts that also work for another brand', () =
       user: {
         findUnique: async ({ where }: { where: { id?: string; email?: string } }) =>
           users.find((u) => (where.id ? u.id === where.id : u.email === where.email)) ?? null,
-        findFirst: jest.fn(async ({ where }: { where: { OR: { login?: string; email?: string }[] } }) => {
-          const hit = users.find((u) =>
-            where.OR.some((c) => (c.login !== undefined ? u.login === c.login : u.email === c.email)),
-          );
-          return hit ? { id: hit.id } : null;
-        }),
+        findFirst: jest.fn(
+          async ({
+            where,
+          }: {
+            where: { OR?: { login?: string; email?: string }[]; kdsPinBrandId?: string | null };
+          }) => {
+            // A PIN lookup (KitchenPinsService): nobody here has one.
+            if (where.kdsPinBrandId !== undefined) return null;
+            const hit = users.find((u) =>
+              (where.OR ?? []).some((c) => (c.login !== undefined ? u.login === c.login : u.email === c.email)),
+            );
+            return hit ? { id: hit.id } : null;
+          },
+        ),
         create: jest.fn(async ({ data }: { data: Partial<Account> & { role: Role } }) => {
           const created = { ...account(`new-${users.length}`, null, data.role), ...data };
           users.push(created);
@@ -234,17 +317,11 @@ describe('AdminStaffService — accounts that also work for another brand', () =
         ),
       },
     };
-    const pins = {
-      assertConfigured: () => undefined,
-      isValidFormat: () => true,
-      hash: () => 'hmac',
-      isUsableHash: (h: string | null) => !!h,
-    };
     const db = prisma as unknown as PrismaService;
     const svc = new AdminStaffService(
       db,
       { hash: async () => 'bcrypt' } as unknown as PasswordService,
-      pins as unknown as KdsPinService,
+      kitchenPinsFor(prisma).kitchenPins,
       new BrandScopeService(db),
     );
     const storesOf = (userId: string) =>
@@ -342,13 +419,17 @@ describe('AdminStaffService — accounts that also work for another brand', () =
     await expect(svc.remove('store-own', 'victim', owner)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('keeps every power for a super admin', async () => {
+  it('lets a super admin set a PIN — of one brand: someone working for two is told why not', async () => {
     const { svc, prisma, pivot } = world();
-    pivot.push({ userId: 'victim', storeId: 'store-own', createdAt: at });
-    await svc.setKdsPin('store-own', 'victim', '4821', superAdmin);
+    await svc.setKdsPin('store-own', 'barista', '480317', superAdmin);
     expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'victim' },
-      data: { kdsPinHash: 'hmac', kdsPinStoreId: 'store-own' },
+      where: { id: 'barista' },
+      data: { kdsPinHash: expect.stringMatching(/^[0-9a-f]{64}$/), kdsPinBrandId: 'brand-own', kdsPinStoreId: null },
     });
+
+    pivot.push({ userId: 'victim', storeId: 'store-own', createdAt: at });
+    const twoBrands = await svc.setKdsPin('store-own', 'victim', '480317', superAdmin).catch((e: unknown) => e);
+    expect(twoBrands).toBeInstanceOf(ConflictException);
+    expect(responseOf(twoBrands)).toMatchObject({ code: 'KDS_PIN_MULTI_BRAND' });
   });
 });

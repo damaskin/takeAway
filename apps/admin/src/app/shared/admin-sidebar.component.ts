@@ -276,10 +276,14 @@ export class AdminSidebarComponent {
   readonly pendingOrders = computed(() => this.orderAlerts.pendingCount());
   /** Customer feedback nobody has read yet; zero hides it. */
   readonly newFeedback = computed(() => this.feedback.newCount() ?? 0);
-  /** A brand's staff write to the platform team; the platform team is who they write to. */
+  /**
+   * A brand's staff write to the platform team; the platform team is who
+   * they write to. Not from a kitchen PIN session: the API refuses it
+   * there, and a shared tablet is not where someone writes in their name.
+   */
   readonly canWriteSupport = computed(() => {
     const role = this.authStore.user()?.role as AdminRole | undefined;
-    return role !== undefined && SUPPORT_ROLES.includes(role);
+    return role !== undefined && SUPPORT_ROLES.includes(role) && !this.kitchenOnly();
   });
   /**
    * «Написать в поддержку» was pressed. The layout opens the dialog: inside
@@ -388,7 +392,7 @@ export class AdminSidebarComponent {
    * password sees every section of their role, so the footer says why the
    * menu is short — otherwise it reads as a bug.
    */
-  readonly kitchenOnly = computed(() => this.authStore.kdsStoreId() !== null);
+  readonly kitchenOnly = computed(() => this.authStore.kitchenSession());
 
   readonly visibleItems = computed(() => {
     const flags = this.flags.flags();

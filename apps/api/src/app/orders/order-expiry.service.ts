@@ -239,12 +239,15 @@ export class OrderExpiryService {
       },
       expired.userId,
     );
-    // Drop it off the kitchen board — CREATED orders are shown there.
+    // Drop it off the kitchen board — CREATED orders are shown there. The
+    // board says so when nobody accepted it in time.
     this.realtime.emitKdsOrderChanged({
       storeId: expired.storeId,
       kind: 'removed',
       orderId: expired.id,
       order: null,
+      reason: options.details?.['rule'] === 'accept_timeout' ? 'NOT_ACCEPTED' : 'EXPIRED',
+      orderCode: expired.orderCode,
     });
     void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, {
       expiry: {

@@ -48,7 +48,6 @@ dependencies:
   # UI
   cached_network_image: ^3.4.1
   google_fonts: ^8.2.1
-  qr_flutter: ^4.1.0
   intl: ^0.20.2
   url_launcher: ^6.3.2
   share_plus: ^13.3.0

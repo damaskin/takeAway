@@ -58,6 +58,9 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     'GIFT_CARD_CANCELLED' => l10n.errGiftCardCancelled,
     'GIFT_CARD_BALANCE_CHANGED' => l10n.errGiftCardBalanceChanged,
     'TOO_MANY_UNPAID_ORDERS' => l10n.errTooManyUnpaidOrders,
+    // A cancel that came too late: the kitchen accepted the order, or the
+    // money was taken, a moment ago.
+    'ORDER_NOT_CANCELLABLE' => l10n.cancelByPhone,
     _ => null,
   };
 }

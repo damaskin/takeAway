@@ -48,7 +48,9 @@ const LABEL: Record<OAuthProviderKey | 'TELEGRAM', string> = {
  *     balances and saved cards is a support decision, not a button.
  *
  * Staff and admin accounts are left out on purpose: they sign in with a
- * password, and a social login must never become a way into one.
+ * password, and a social login must never become a way into one. A
+ * Telegram id still sitting on a staff account (linked for notifications
+ * before 2026-10-20) moves to the customer who links it here.
  */
 @Injectable()
 export class SignInMethodsService {
@@ -125,7 +127,19 @@ export class SignInMethodsService {
 
       const label = LABEL[identity.kind === 'oauth' ? identity.provider : 'TELEGRAM'];
       if (owner.role !== Role.CUSTOMER) {
-        throw new ConflictException(`This ${label} account belongs to a staff account`);
+        if (identity.kind !== 'telegram') {
+          throw new ConflictException(`This ${label} account belongs to a staff account`);
+        }
+        // Staff who linked Telegram for notifications before 2026-10-20 had
+        // it written here, as a sign-in. It moves to the customer; the staff
+        // account keeps the chat for its notifications.
+        await tx.user.update({
+          where: { id: owner.id },
+          data: { telegramUserId: null, telegramNotifyChatId: owner.telegramNotifyChatId ?? owner.telegramUserId },
+        });
+        await this.assertFreeSlot(tx, current, identity);
+        await this.attach(tx, current, identity);
+        return { userId: current.id, switched: null };
       }
 
       const [ownerOrders, currentOrders] = await Promise.all([

@@ -171,4 +171,70 @@ describe('StaffFormPage', () => {
     const { page } = make('STORE_MANAGER');
     expect(page.roleOptions()).toEqual(['STAFF', 'MENU_EDITOR']);
   });
+
+  describe('kitchen staff with a PIN only', () => {
+    it('offers the PIN-only way in for kitchen staff alone', () => {
+      const { page, element, detect } = make();
+      expect(element.querySelector('[data-testid="sign-in-way"]')).not.toBeNull();
+      page.form.controls.role.setValue('STORE_MANAGER');
+      detect();
+      expect(element.querySelector('[data-testid="sign-in-way"]')).toBeNull();
+    });
+
+    it('invites with a name, stores and a PIN — no login, no password — and says what that means', () => {
+      const { page, element, detect } = make();
+      invite.mockReturnValue(
+        of(invited({ email: null, login: null, name: 'Ира', inviteEmail: 'NO_EMAIL', hasKdsPin: true })),
+      );
+      page.setPinOnly(true);
+      detect();
+      expect(element.querySelector('#staff-identifier')).toBeNull();
+      expect(element.querySelector('#staff-temp-password')).toBeNull();
+      expect(page.submittable()).toBe(false);
+
+      page.form.controls.name.setValue('Ира');
+      page.pin.set('123456');
+      expect(page.submittable()).toBe(false); // a first guess
+      page.pin.set('480317');
+      expect(page.submittable()).toBe(true);
+
+      page.submit();
+      detect();
+      expect(invite).toHaveBeenCalledWith(
+        { role: 'STAFF', name: 'Ира', pin: '480317', storeIds: ['store-1'] },
+        'brand-1',
+      );
+      expect(element.querySelector('[data-testid="invite-pin-only"]')?.textContent).toContain('по PIN');
+      expect(element.querySelector('[data-testid="invite-no-email"]')).toBeNull();
+      expect(element.querySelector('[data-testid="invite-login"]')).toBeNull();
+    });
+
+    it('wants the name when there is no login', () => {
+      const { page, element, detect } = make();
+      page.setPinOnly(true);
+      page.pin.set('480317');
+      detect();
+      expect(page.submittable()).toBe(false);
+      expect(element.querySelector('[data-testid="name-rule"]')?.classList).toContain('rule-bad');
+    });
+
+    it('goes back to login and password when the role is not kitchen staff any more', () => {
+      const { page } = make();
+      page.setPinOnly(true);
+      page.form.controls.role.setValue('MENU_EDITOR');
+      expect(page.pinOnly()).toBe(false);
+      expect(page.form.controls.identifier.enabled).toBe(true);
+    });
+
+    it('sends a PIN given with an email invite, and leaves it out when none was typed', () => {
+      const { page } = make();
+      page.form.patchValue({ identifier: 'anna@noname.md', tempPassword: 'Temp-pass-42' });
+      page.pin.set('480317');
+      page.submit();
+      expect(invite).toHaveBeenLastCalledWith(
+        { email: 'anna@noname.md', role: 'STAFF', tempPassword: 'Temp-pass-42', pin: '480317', storeIds: ['store-1'] },
+        'brand-1',
+      );
+    });
+  });
 });

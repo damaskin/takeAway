@@ -546,7 +546,7 @@ function toCents(units: number | null): number | null {
             }
           }
           @case ('kitchen') {
-            <app-store-kitchen-access [storeId]="storeId()" />
+            <app-store-kitchen-access [storeId]="storeId()" [brandId]="store()?.brandId ?? null" />
           }
         }
       }

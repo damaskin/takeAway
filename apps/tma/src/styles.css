@@ -19,6 +19,29 @@ body {
   height: 100%;
 }
 
+:root {
+  /*
+   * The strip at the bottom of the screen that is not ours: the iPhone's
+   * home indicator, Android's gesture bar, Telegram's own controls. Telegram
+   * reports it (Bot API 8.0) — TelegramBridgeService writes
+   * --tg-safe-area-bottom, telegram-web-app.js its own
+   * --tg-safe-area-inset-bottom and --tg-content-safe-area-inset-bottom —
+   * and the webview may know it as env(). They describe the same strip, so
+   * the largest wins; 0 where nothing covers the page.
+   */
+  --tma-safe-bottom: max(
+    var(--tg-safe-area-bottom, 0px),
+    calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px)),
+    env(safe-area-inset-bottom, 0px)
+  );
+  /* The tab bar: 56px of tabs, raised above that strip. */
+  --tma-tab-bar-height: calc(56px + var(--tma-safe-bottom));
+  /* What a page under the tab bar keeps free at its end: the bar and some air. */
+  --tma-tab-page-bottom: calc(88px + var(--tma-safe-bottom));
+  /* A page without the tab bar (checkout, a profile screen): room above Telegram's main button. */
+  --tma-page-bottom: calc(100px + var(--tma-safe-bottom));
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);

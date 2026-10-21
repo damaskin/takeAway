@@ -9,6 +9,11 @@ export interface OrderProgressInput {
   pickupMode?: string;
   /** ISO time the order is promised for. */
   pickupAt: string;
+  /**
+   * ISO time the kitchen expects it ready after accepting or starting it too
+   * late for `pickupAt`; absent or null otherwise (and from older APIs).
+   */
+  readyEstimateAt?: string | null;
   totalCents?: number;
   /** Where the money stands; absent from an API that predates it. */
   payment?: { state: string } | null;
@@ -34,13 +39,24 @@ export function isAwaitingAcceptance(order: OrderProgressInput): boolean {
   return state === 'NONE' && order.totalCents === 0;
 }
 
+/**
+ * The time the customer's countdown runs to: the kitchen's new estimate once
+ * it accepted or started the order too late for the original promise, else
+ * the promise itself (`pickupAt`).
+ */
+export function orderDueAt(order: Pick<OrderProgressInput, 'pickupAt' | 'readyEstimateAt'>): string {
+  return order.readyEstimateAt ?? order.pickupAt;
+}
+
 /** See {@link orderWaitNote}. */
 export type OrderWaitNote = 'late' | 'preorderAwaitingOpening' | 'awaitingAcceptance';
 
 /**
  * The line that explains the wait:
- * - `late` — accepted or being made, and its time has passed. The customer
- *   may already be at the counter: «Немного задерживаемся»;
+ * - `late` — accepted or being made, and its time ({@link orderDueAt}) has
+ *   passed. The customer may already be at the counter: «Немного
+ *   задерживаемся». An order the kitchen accepted late carries a new
+ *   estimate and counts down to it instead of reading as late;
  * - `preorderAwaitingOpening` — a pre-order on the board while the store is
  *   closed (overnight, or before the shift): it is accepted once it opens;
  * - `awaitingAcceptance` — on the board, not accepted yet;
@@ -55,7 +71,7 @@ export function orderWaitNote(
   now: Date = new Date(),
 ): OrderWaitNote | null {
   if (order.status === 'ACCEPTED' || order.status === 'IN_PROGRESS') {
-    const due = Date.parse(order.pickupAt);
+    const due = Date.parse(orderDueAt(order));
     return Number.isFinite(due) && due < now.getTime() ? 'late' : null;
   }
   if (!isAwaitingAcceptance(order)) return null;

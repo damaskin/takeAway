@@ -48,8 +48,16 @@ export class OrdersController {
     return this.orders.getForUser(user.id, id);
   }
 
+  /**
+   * The customer cancels before the kitchen accepts, while nothing is
+   * charged. Afterwards 409 `ORDER_NOT_CANCELLABLE {reason}` — they call the store.
+   */
   @Post('orders/:id/cancel')
   @ApiOkResponse({ type: OrderDto })
+  @ApiConflictResponse({
+    description:
+      '`ORDER_NOT_CANCELLABLE` with `reason` ACCEPTED (the kitchen took the order on) or CHARGED (money was taken).',
+  })
   cancel(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<OrderDto> {
     return this.orders.cancel(user.id, id);
   }

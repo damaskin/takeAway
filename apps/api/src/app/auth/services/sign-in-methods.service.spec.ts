@@ -14,6 +14,7 @@ interface FakeUser {
   emailVerifiedAt: Date | null;
   name: string | null;
   telegramUserId: bigint | null;
+  telegramNotifyChatId?: bigint | null;
   blockedAt: Date | null;
   locale: 'EN' | 'RU';
 }
@@ -182,6 +183,20 @@ describe('SignInMethodsService', () => {
       { a: 1, b: 1 },
     );
     await expect(svc.linkOAuth('a', 'GOOGLE', 'token')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('takes over a Telegram id a staff account kept for its notifications; the staff account keeps the chat', async () => {
+    const { svc, users } = setup([
+      customer('me'),
+      customer('barista-at-work', { role: Role.STAFF, telegramUserId: 777n }),
+    ]);
+    const result = await svc.linkTelegram('me', 'id-token');
+    expect(result.methods.telegram).toBe(true);
+    expect(users.find((u) => u.id === 'me')?.telegramUserId).toBe(777n);
+    expect(users.find((u) => u.id === 'barista-at-work')).toMatchObject({
+      telegramUserId: null,
+      telegramNotifyChatId: 777n,
+    });
   });
 
   it('never links a social login to a staff account', async () => {
