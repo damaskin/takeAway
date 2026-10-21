@@ -189,14 +189,17 @@ export function createSandboxWebBank(options: SandboxWebBankOptions): SandboxWeb
     }
 
     const amount = (sum / 100).toFixed(2);
+    // Relative, so the buttons stay on the page's own path when a proxy serves
+    // it under a prefix (staging: https://test-api.takeaway.md/sandbox-bank/PaymentStart).
+    const action = WEB_PAYMENT_PATH.slice(1);
     html(
       res,
       200,
       `<h1>Песочница «Клевер» — Web-платёж</h1>
 <p>${escapeHtml(params['Desc'] ?? '')}</p>
 <p>К оплате: <b>${amount}</b> ${params['ispreauth'] === '1' ? '(сумма будет заблокирована)' : ''}</p>
-<form method="post" action="${WEB_PAYMENT_PATH}/pay"><input type="hidden" name="nivid" value="${escapeHtml(nivid)}"><button>Оплатить</button></form>
-<form method="post" action="${WEB_PAYMENT_PATH}/decline"><input type="hidden" name="nivid" value="${escapeHtml(nivid)}"><button>Отказаться</button></form>
+<form method="post" action="${action}/pay"><input type="hidden" name="nivid" value="${escapeHtml(nivid)}"><button>Оплатить</button></form>
+<form method="post" action="${action}/decline"><input type="hidden" name="nivid" value="${escapeHtml(nivid)}"><button>Отказаться</button></form>
 <p><small>Сумма ${WEB_DECLINE_AMOUNT} коп. отклоняется всегда.</small></p>`,
     );
   }

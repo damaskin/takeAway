@@ -117,10 +117,17 @@ TELEGRAM_LOGIN_CLIENT_ID=$(grep -E '^TELEGRAM_BOT_TOKEN=' "$TG_ENV" | cut -d= -f
 TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook
 TELEGRAM_WEBHOOK_SECRET=$(rnd)
 
-# --- off on staging until set up for it --------------------------------------
-# Card payments: the bank's live merchant must never see test orders.
+# --- card payments: a fake bank, never the live merchant ---------------------
+# docker-compose.staging.yml runs the sandbox bank beside the api and points
+# every AGROPROMBANK_* setting at it, over the two lines after it. Without that
+# line card payments are off. Test cards and the SMS code: docs/environments.md.
+# It also reads CARD_PAYMENT_FLOW=token|web (default token, as production) and
+# AGROPROMBANK_HOLD_UNTIL_ACCEPTED=true|false (default false, as production).
+EXTRA_COMPOSE_FILES=docker-compose.staging.yml
 AGROPROMBANK_ENABLED=false
 AGROPROMBANK_WEB_ENABLED=false
+
+# --- off on staging until set up for it --------------------------------------
 # Google / Apple sign-in need test-* origins registered with Google and Apple.
 GOOGLE_OAUTH_CLIENT_IDS=
 GOOGLE_OAUTH_WEB_CLIENT_ID=

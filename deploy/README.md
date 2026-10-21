@@ -90,10 +90,20 @@ deploy/
   docker-compose.shared-edge.override.yml
                             Host-local. Present only on the shared host; makes
                             deploy.sh reload the edge instead of our own nginx.
+  docker-compose.staging.yml
+                            Staging only: the fake bank (agro-mock) and the api
+                            pointed at it. On when staging's .env.production says
+                            EXTRA_COMPOSE_FILES=docker-compose.staging.yml;
+                            production refuses it (scripts/lib/env.sh)
+  docker-compose.sandbox.yml
+                            The separate takeaway-agrotest stack (fake bank only)
+  Dockerfile.agro-mock      The fake bank's image, for those two
   .env.production.example   Copy to .env.production and fill in
   nginx/
     nginx.conf              Top-level config (gzip, WS upgrade map, include conf.d)
     snippets/               Shared location blocks (api proxy, SPA, map tile cache)
+    sandbox-bank/           Staging only: the fake bank's payment page on the api
+                            host, mounted by docker-compose.staging.yml
     conf.d/                 HTTPS vhosts, one per subdomain, as *.conf.template with
                             {{HOST}} placeholders, rendered per environment into
                             *.rendered.conf (not committed); 05-tile-cache.conf is the
@@ -101,7 +111,8 @@ deploy/
   scripts/
     lib/env.sh              Which environment a checkout is (production's defaults)
     render-nginx.sh         Render conf.d templates for this environment (deploy.sh runs it)
-    deploy.sh               Full deploy: render nginx + build + extract SPAs + migrate + reload
+    deploy.sh               Full deploy: DB snapshot (production) + render nginx + build + extract SPAs + migrate + reload
+    snapshot-db.sh          Encrypted snapshot of the database (deploy.sh runs it; also by hand before a risky change)
     extract-spa.sh          Build and atomically swap SPA assets into <root>/www
     issue-cert.sh           One-off Let's Encrypt issuance for all of the environment's hosts
     renew-cert.sh           Weekly cron renewal with automatic nginx reload
@@ -201,9 +212,45 @@ bash deploy/scripts/deploy.sh
 first second beats a CrashLoopBackOff discovered after a twenty-minute SPA
 build.
 
-It runs: build the API image → bring up postgres/redis/minio → wait for
-Postgres → build and swap the four SPAs → `prisma migrate deploy` → bring up
-api + nginx → reload whichever nginx is in front → prune the build cache.
+It runs: snapshot the database (production only) → render the vhosts →
+build the API image → bring up postgres/redis/minio → wait for Postgres →
+build and swap the four SPAs → `prisma migrate deploy` → bring up api +
+nginx → reload whichever nginx is in front → prune the build cache.
+
+### The pre-deploy snapshot
+
+Every production deploy starts with an encrypted snapshot of the database,
+before it touches anything: `backups/pre-deploy-<version>-<UTC time>.sql.gz.enc`
+(`<version>` is `git describe`, so a release is `pre-deploy-v2026.10.20-…`),
+written by `scripts/snapshot-db.sh`, encrypted with `BACKUP_ENCRYPTION_KEY`
+and deleted after 30 days. That is the way back from a release whose
+migration went wrong; nobody takes a dump by hand before a release any more.
+Staging is not snapshotted (it is a copy of production), and neither is a
+first deploy, which has no database yet.
+
+**If it fails, the deploy stops** — nothing has been rendered, built or
+migrated, production is exactly as it was, and the log says what to fix:
+
+| The deploy log says                                        | Fix, then run the deploy again                                                                                                            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `…/backups is not writable by deploy`                      | Once, as root: `chown deploy:deploy /opt/takeaway/backups && chmod 750 /opt/takeaway/backups`                                             |
+| `BACKUP_ENCRYPTION_KEY is not set`                         | Put the existing key back into `deploy/.env.production` (the owner keeps a copy off the server); a new one would not open earlier backups |
+| `pg_dump failed` / `does not decrypt to a complete dump`   | Postgres trouble or a full disk: `server-check.sh`, `df -h /`                                                                             |
+| `production's database exists but postgres is not running` | `docker compose -f docker-compose.prod.yml start postgres` in `deploy/`                                                                   |
+
+Only when production is already down and this deploy is the fix, run it by
+hand on the server without the snapshot — CI cannot do this, and a line in
+`.env.production` is ignored:
+
+```bash
+SKIP_PRE_DEPLOY_SNAPSHOT='postgres will not start, fix in v2026.10.21' bash deploy/scripts/deploy.sh
+```
+
+`backups/` belongs to `deploy`, mode 750: CI connects as `deploy`, and the
+nightly cron runs as root, which can write anywhere. On a new host the first
+`deploy.sh` creates it that way; one left `root:root` from before October 2026
+needs the `chown` above once. `server-check.sh` reports the owner and the newest
+pre-deploy snapshot.
 
 ### First-time setup on a new host
 
@@ -225,7 +272,10 @@ deploy/.env.production`, fill in the secrets.
 
 All compose commands below run from `/opt/takeaway/repo/deploy`. On the
 shared host, add `-f docker-compose.shared-edge.override.yml` after the first
-`-f` — or just use `deploy.sh`, which assembles the file list itself.
+`-f` — or just use `deploy.sh`, which assembles the file list itself. On
+staging, when its `.env.production` names `EXTRA_COMPOSE_FILES`, add those too
+(`-f docker-compose.staging.yml`) to anything that starts or recreates the api:
+without them it comes back with card payments off.
 
 - **Tail API logs:**
   ```bash
@@ -257,18 +307,29 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
   customer database is not. Destroying the key renders every copy unreadable,
   which is how an erasure request is honoured against immutable backups.
 
-- **Restore from a backup:**
+- **Snapshot before a risky change.** Every production release already takes
+  one (see «The pre-deploy snapshot»). By hand, before a hand-made UPDATE or
+  anything else you might want to undo — as `deploy` or root:
+
+  ```bash
+  bash /opt/takeaway/repo/deploy/scripts/snapshot-db.sh before-price-fix
+  ```
+
+  It writes `backups/pre-<label>-<UTC time>.sql.gz.enc`, encrypted with the
+  same key and expiring after 30 days. Never take a bare `pg_dump` into
+  `backups/` or anywhere else on the box: a plaintext dump never expires and
+  stays readable after the key is destroyed, so it defeats the point above.
+  `scripts/server-check.sh` flags any unencrypted file there.
+  `scripts/lib/backup.sh` lists every kind of file in `backups/` and how
+  long each is kept.
+
+- **Restore from a backup** (any `*.sql.gz.enc`, into an empty database):
 
   ```bash
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
     -pass env:BACKUP_ENCRYPTION_KEY -in pg-YYYY-MM-DD.sql.gz.enc \
     | gunzip \
     | docker compose -f docker-compose.prod.yml exec -T postgres psql -U takeaway takeaway
-  ```
-
-- **Ad-hoc dump (unencrypted — keep it on the box):**
-  ```bash
-  docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U takeaway takeaway | gzip > backup-$(date +%F).sql.gz
   ```
 
 ## Troubleshooting
@@ -281,3 +342,4 @@ shared host, add `-f docker-compose.shared-edge.override.yml` after the first
 | Prisma P1000 on boot                   | The api container joined `rayn-prod_default` and is resolving the wrong `postgres`. Detach it.                                      |
 | API container will not open its volume | `init-env-production.sh` was run against live prod and rotated the Postgres password.                                               |
 | Deploy dies mid-build, disk full       | Shared 15 GiB disk. `docker builder prune -f` and `docker image prune -f`.                                                          |
+| Production deploy stops at «snapshot»  | Nothing was changed. The line above the error says why; fixes in «The pre-deploy snapshot».                                         |
