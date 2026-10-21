@@ -54,7 +54,10 @@ work="$(mktemp -d)"
 chmod 700 "$work"
 trap 'rm -rf "$work"' EXIT
 
-compose() { docker compose -f "$TAKEAWAY_DEPLOY_DIR/docker-compose.prod.yml" "$@"; }
+# With staging's extra files (its fake bank): `up -d api` without them would
+# recreate the api with card payments off.
+takeaway_compose_files
+compose() { docker compose "${TAKEAWAY_COMPOSE_FILES[@]}" "$@"; }
 
 echo "==> [1/6] dumping production (read-only)"
 docker exec "$PROD_PG" pg_dump -U "$PROD_DB_USER" -d "$PROD_DB" -Fc --no-owner --no-privileges > "$work/prod.dump"

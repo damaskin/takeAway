@@ -24,6 +24,7 @@ import argparse
 import glob
 import os
 import re
+import socket
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -62,6 +63,10 @@ def version_name():
     with open(os.path.join(ROOT, "pubspec.yaml"), encoding="utf-8") as f:
         return re.search(r"^version:\s*([^+\s]+)", f.read(), re.M).group(1)
 
+
+# The client's HTTP timeout defaults to 60 s, and Play answers the last chunk
+# of a ~50 MB bundle only after processing it, which takes longer.
+socket.setdefaulttimeout(600)
 
 creds = service_account.Credentials.from_service_account_file(
     args.key, scopes=["https://www.googleapis.com/auth/androidpublisher"])

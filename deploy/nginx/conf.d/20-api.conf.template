@@ -22,6 +22,12 @@ server {
   # existing client base URLs.
   include /etc/nginx/snippets/api-proxy.conf;
 
+  # Routes an environment's compose overlay mounts into /etc/nginx/api.d/ —
+  # on staging, the fake bank's payment page (nginx/sandbox-bank/,
+  # docker-compose.staging.yml). Production mounts nothing there, and a
+  # pattern that matches no file includes nothing.
+  include /etc/nginx/api.d/*.conf;
+
   # Anything else is the API's 404 to give, under the general limit.
   location / {
     limit_req zone=api burst=40 nodelay;

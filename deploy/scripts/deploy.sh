@@ -5,6 +5,8 @@
 # Idempotent — safe to re-run on every push.
 #
 # Phases:
+#   -  Production only: an encrypted snapshot of the database, before
+#      anything changes (snapshot-db.sh).
 #   0. Render this environment's nginx vhosts.
 #   1. Build the api image (and bring it up, detached).
 #   2. Build + extract the SPAs into <root>/www.
@@ -13,16 +15,12 @@
 
 set -euo pipefail
 
+# Taken from the caller before .env.production is read, so it can only ever
+# be one hand-run's decision, never a line someone left in the file.
+skip_snapshot="${SKIP_PRE_DEPLOY_SNAPSHOT:-}"
+
 DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$DEPLOY_DIR"
-
-COMPOSE_FILES=(-f docker-compose.prod.yml)
-SHARED_EDGE=0
-if [ -f docker-compose.shared-edge.override.yml ]; then
-  COMPOSE_FILES+=(-f docker-compose.shared-edge.override.yml)
-  SHARED_EDGE=1
-fi
-compose() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
 
 echo "==> loading .env.production"
 if [ ! -f .env.production ]; then
@@ -33,6 +31,14 @@ fi
 . "$DEPLOY_DIR/scripts/lib/env.sh"
 takeaway_require_server_layout
 echo "==> environment: $APP_ENVIRONMENT — $TAKEAWAY_ROOT, compose project $COMPOSE_PROJECT_NAME, images :$IMAGE_TAG"
+
+# The stack, the shared-edge override where the server has one, and the
+# extra files this environment names (staging's fake bank) — lib/env.sh.
+takeaway_compose_files
+compose() { docker compose "${TAKEAWAY_COMPOSE_FILES[@]}" "$@"; }
+SHARED_EDGE=0
+[ -f docker-compose.shared-edge.override.yml ] && SHARED_EDGE=1
+[ -z "$EXTRA_COMPOSE_FILES" ] || echo "==> extra compose files: $EXTRA_COMPOSE_FILES"
 
 # Pre-flight: vars the API hard-requires on boot. A missing one used to put
 # the api container into a CrashLoopBackOff with nginx serving 502 — fail
@@ -75,6 +81,54 @@ BUILD_COMMIT="$(git -C "$(cd "$DEPLOY_DIR/.." && pwd)" rev-parse HEAD 2>/dev/nul
 BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export BUILD_VERSION BUILD_COMMIT BUILD_TIME
 echo "==> build version: $BUILD_VERSION ($BUILD_COMMIT) at $BUILD_TIME"
+
+# A production release snapshots the database before anything below can
+# change it — the vhosts, the images and above all the migrations:
+# backups/pre-deploy-<version>-<UTC time>.sql.gz.enc, encrypted like every
+# file there and expired after 30 days (lib/backup.sh). It replaces the
+# pg_dump people used to take by hand before a release, which was plaintext
+# and never expired.
+#
+# Fatal when it fails: nothing has changed yet, so the cost is a re-run once
+# the cause is fixed, and each cause says what to fix. A release that went
+# ahead anyway would leave a bad migration nothing newer than last night's
+# backup to go back to. Not taken on staging (a copy of production, made
+# again by staging-refresh.sh) or on a first deploy, which has no database
+# yet. SKIP_PRE_DEPLOY_SNAPSHOT is for a hand-run when production is down
+# and this deploy is the fix; CI cannot set it.
+running_postgres() {
+  docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+    --filter "label=com.docker.compose.service=postgres" | head -1
+}
+postgres_volume() {
+  docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" \
+    --filter "label=com.docker.compose.volume=postgres_data" | head -1
+}
+if [ "$APP_ENVIRONMENT" != production ]; then
+  :
+elif [ -n "$skip_snapshot" ]; then
+  echo "!!  WARNING: SKIP_PRE_DEPLOY_SNAPSHOT ($skip_snapshot) — deploying production without a snapshot." >&2
+  echo "!!  The newest way back is last night's backup." >&2
+elif [ -n "$(running_postgres)" ]; then
+  echo "==> snapshot of the production database before the deploy"
+  if ! bash "$DEPLOY_DIR/scripts/snapshot-db.sh" "deploy-$BUILD_VERSION"; then
+    echo "ERROR: no pre-deploy snapshot (the reason is above), so nothing was deployed — production is unchanged." >&2
+    echo "Fix that and run the deploy again." >&2
+    exit 1
+  fi
+elif [ -n "$(postgres_volume)" ]; then
+  echo "ERROR: production's database exists but postgres is not running, so it cannot be snapshotted" >&2
+  echo "before the deploy. Nothing was deployed. Start it and run the deploy again:" >&2
+  echo "  cd $DEPLOY_DIR && docker compose -f docker-compose.prod.yml start postgres" >&2
+  echo "If it will not start and this deploy is the fix, run by hand on the server:" >&2
+  echo "  SKIP_PRE_DEPLOY_SNAPSHOT='<why>' bash $DEPLOY_DIR/scripts/deploy.sh" >&2
+  exit 1
+else
+  echo "==> no production database yet — first deploy, nothing to snapshot"
+  # Made now, as deploy, so the nightly (root) does not create it root's
+  # and stop the next release (lib/backup.sh, takeaway_require_backup_dir).
+  (umask 027 && mkdir -p "$TAKEAWAY_ROOT/backups")
+fi
 
 echo "==> [0/4] render nginx vhosts, ensure host directories + bootstrap self-signed cert"
 # First, before anything slow: git has just replaced the templates, and the

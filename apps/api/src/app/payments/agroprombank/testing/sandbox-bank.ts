@@ -64,6 +64,11 @@ export interface SandboxBankOptions {
   merchantPublicKeyPem: string;
   /** Private key the sandbox signs its responses with. */
   bankPrivateKeyPem: string;
+  /**
+   * The one-time password every binding "texts", instead of a random one —
+   * for a shared test environment, where testers cannot read the mock's log.
+   */
+  fixedOtp?: string;
   /** Called for every request/decision; defaults to silence. */
   log?: (message: string) => void;
 }
@@ -116,7 +121,7 @@ export function createSandboxBank(options: SandboxBankOptions): SandboxBank {
       }
 
       const requestId = String(randomInt(100_000, 999_999));
-      const otp = String(randomInt(100_000, 999_999));
+      const otp = options.fixedOtp ?? String(randomInt(100_000, 999_999));
       tokenRequests.set(requestId, {
         requestId,
         otp,
