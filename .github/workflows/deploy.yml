@@ -12,7 +12,9 @@ name: Deploy to production
 # are tagged separately and never match this trigger.
 #
 # Before anything reaches the server the release is checked: the commit is on
-# main, and staging has deployed it (or something built on it) successfully.
+# main, and staging has deployed it (or something built on it) successfully —
+# or deployed a commit below it, and the release adds only files staging
+# skips (paths-ignore in deploy-staging.yml), like the changelog PR does.
 # The deploy job then waits on the `production` environment — the owner
 # approves it in GitHub (repository Settings → Environments → production).
 
@@ -81,19 +83,15 @@ jobs:
           SHA: ${{ steps.resolve.outputs.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A successful staging deploy of this commit, or of a later one that
-          # contains it: either way this code has been up on test.takeaway.md.
+          # A successful staging deploy of this commit or of a later one that
+          # contains it — or of the newest one below it, when everything in
+          # between is files staging does not deploy on (its paths-ignore: the
+          # changelog PR before a release). Either way this code has been up on
+          # test.takeaway.md. The rules: deploy/scripts/release-staging-check.sh.
           runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-staging.yml/runs?status=success&event=push&per_page=100" \
             --jq '.workflow_runs[].head_sha')"
-          for run_sha in $runs; do
-            if git merge-base --is-ancestor "$SHA" "$run_sha" 2>/dev/null; then
-              echo "staging deployed $run_sha, which contains $SHA"
-              exit 0
-            fi
-          done
-          echo "::error::No successful staging deploy contains $SHA yet. Let \"Deploy to staging\" finish \
-          for it (or rerun it), check test.takeaway.md, then release again."
-          exit 1
+          # shellcheck disable=SC2086  # one argument per SHA
+          bash deploy/scripts/release-staging-check.sh "$SHA" $runs
 
   deploy:
     needs: verify

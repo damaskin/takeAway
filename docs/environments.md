@@ -35,8 +35,11 @@ set up yet.
    Something wrong: a new PR, back to step 2.
 4. **Release.** When what is on staging is what should go out:
    - move `[Unreleased]` in `docs/CHANGELOG.md` under a heading with the
-     release's date, in a PR like any other;
-   - tag the commit that was checked on staging (usually `origin/main`):
+     release's date, in a PR like any other. It changes only docs, so staging
+     does not redeploy for it (`paths-ignore` in `deploy-staging.yml`), and
+     there is nothing to wait for: the code on staging is the code released;
+   - tag `origin/main` — the commit checked on staging, or that commit with
+     docs-only commits such as the changelog's on top:
      ```bash
      git fetch origin
      git tag -a v2026.10.20 origin/main -m "Release 2026.10.20"
@@ -46,10 +49,23 @@ set up yet.
      target `main` → _Publish_. A second release on the same day is
      `v2026.10.20.2`.
 5. **Approve.** `Deploy to production` first checks that the commit is on
-   `main` and that staging has deployed it (or a later commit containing it),
-   then waits on the `production` environment: GitHub asks the owner to
-   approve (Actions → the run → _Review deployments_). After approval it
-   deploys and runs the same server-side smoke test as before.
+   `main` and that staging has run it: staging has deployed the commit or a
+   later one containing it, or the newest commit below it that staging
+   deployed differs from it only in files staging ignores (`**/*.md`,
+   `docs/**` — read from `deploy-staging.yml` itself, so the two lists cannot
+   drift apart). A code commit whose staging deploy failed or is still running is
+   refused, with the files staging has not run. Then it waits on the
+   `production` environment: GitHub asks the owner to approve (Actions → the
+   run → _Review deployments_). After approval it deploys and runs the same
+   server-side smoke test as before.
+
+   To see what the check will say before tagging (the rules and their tests:
+   `deploy/scripts/release-staging-check.sh`, `….test.sh`):
+
+   ```bash
+   git fetch origin
+   bash deploy/scripts/release-staging-check.sh origin/main $(gh api 'repos/{owner}/{repo}/actions/workflows/deploy-staging.yml/runs?status=success&event=push&per_page=100' --jq '.workflow_runs[].head_sha')
+   ```
 
 Because `main` is what the next release ships, unfinished work that has to
 be merged early goes behind a flag (`DELIVERY_ENABLED`-style), not into a

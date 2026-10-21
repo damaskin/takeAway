@@ -114,6 +114,7 @@ deploy/
     staging-refresh.sh      Replace staging's data with a sanitized copy of production's
     edge-staging-routes.sh  One-time: route staging's names through the shared edge
     wipe-business-data.sh   Clear an environment down to its SUPER_ADMINs (backup first)
+    release-staging-check.sh  Has staging run this release? deploy.yml's check (+ .test.sh)
     sql/                    The SQL those two run
   ssh/                      SSH keypair for CI/CD (gitignored)
 ```

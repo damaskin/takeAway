@@ -61,6 +61,21 @@ jobs:
       - name: Build (affected)
         run: pnpm nx affected -t build --parallel=3
 
+  # The rules deploy.yml applies before a release tag may reach production.
+  # Plain bash outside Nx, so nothing else would run its tests — and this
+  # runs them with Ubuntu's awk and git, the ones the release job uses.
+  release-check:
+    name: Release check script
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test release-staging-check.sh
+        run: bash deploy/scripts/release-staging-check.test.sh
+
   # Separate job so a browser download does not slow the fast feedback loop
   # above. The e2e suite drives the real Angular app against a stateful fake
   # API, so it needs no Postgres and no Redis — and it had been failing
