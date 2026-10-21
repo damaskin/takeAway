@@ -278,12 +278,7 @@ Why not `sudo` from `deploy.sh`: it would tie every deploy to `deploy`'s
 passwordless sudo, which should not be the thing that keeps backups working,
 and a snapshot owned by the user who took it is simpler to reason about.
 
-## Not on staging yet
-
-- **Card payments.** The fake bank from `docker-compose.sandbox.yml`
-  (`agro-mock`) can be wired in so test orders are paid with test cards.
-
-### Card payments on staging
+## Card payments on staging: one-time step (October 2026)
 
 A staging bootstrapped after this was added has the line already. One
 bootstrapped before it (the first one, 2026-10-18) gets it by hand, once:
