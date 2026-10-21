@@ -7,7 +7,14 @@ takeAway lets customers pre-order coffee and food for pickup from partner coffee
 - Account deletion: Profile -> Delete account (Apple-linked accounts are asked to confirm with Apple, and the Apple tokens are revoked).
 - Privacy Policy: https://takeaway.md/privacy, Terms: https://takeaway.md/terms, Support: https://takeaway.md/support
 
-Changes after the 2.1(a) review of October 12, 2026:
-- Test locations and test menu items were removed from the live catalog.
-- Menu items that have no photo are now shown as text rows (name, description, price) instead of a generic placeholder picture, on iPhone and iPad.
-- The App Store screenshots were retaken from this build.
+New in 1.7.0:
+- The order screen shows the pickup code in large type instead of a QR code (stores hand orders over by the code).
+- An order can be cancelled only until the store accepts it; after that the screen offers "Call the store".
+- When the store accepts an order late, the countdown shows the store's new estimate.
+- Store cards explain a short break ("Технический перерыв") or an imminent closing and offer ordering ahead.
+
+New in 1.6.0:
+- A store that is closed right now still takes pre-orders for a later time (for example tomorrow morning); "Now" is disabled with the reason.
+- Notifications inbox (bell icon next to search, visible after sign-in): messages from coffee shops and from takeAway; tapping a push opens the message.
+- The order screen says when the store has not confirmed the order yet or is running late, with a "Call the store" button.
+- Menu items without a photo are still shown as text rows, as accepted in 1.5.0.
