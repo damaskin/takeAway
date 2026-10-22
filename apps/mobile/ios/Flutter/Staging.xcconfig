@@ -1,0 +1,11 @@
+// «takeAway Test», flavor staging (--flavor staging): a separate app that
+// installs next to the store one and talks to test.takeaway.md
+// (config/staging.json, docs/environments.md). TestFlight only — never
+// submitted for review.
+PRODUCT_BUNDLE_IDENTIFIER = md.takeaway.ios.staging
+APP_DISPLAY_NAME = takeAway Test
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-staging
+
+// A scheme of its own, or the store app could catch the test app's sign-in
+// and payment returns. Must match Env.appUrlScheme.
+APP_URL_SCHEME = takeawaytest

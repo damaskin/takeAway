@@ -22,5 +22,7 @@ void main() {
     expect(PaymentReturn.parse(Uri.parse('takeaway://tglogin?code=abc')), isNull);
     expect(PaymentReturn.parse(Uri.parse('takeaway://pay?status=success')), isNull);
     expect(PaymentReturn.parse(Uri.parse('https://takeaway.md/pay?orderId=ord_1')), isNull);
+    // The test app's links («takeAway Test», --flavor staging) are not ours.
+    expect(PaymentReturn.parse(Uri.parse('takeawaytest://pay?orderId=ord_1&status=success')), isNull);
   });
 }

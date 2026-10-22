@@ -69,7 +69,7 @@ demo notifications -e visible false
 if ! adb shell pm list packages | grep -q "package:$PKG"; then
   echo "== first install"
   flutter build apk --debug --dart-define-from-file="$CONFIG" >/dev/null
-  adb install -r build/app/outputs/flutter-apk/app-debug.apk >/dev/null
+  adb install -r build/app/outputs/flutter-apk/app-prod-debug.apk >/dev/null
 fi
 adb shell cmd locale set-app-locales "$PKG" --locales ru-RU
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION POST_NOTIFICATIONS; do

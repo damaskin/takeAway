@@ -66,3 +66,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  # Plain `flutter run` / `flutter build` make the store app; --flavor
+  # staging makes «takeAway Test», the test app (README → "Test app").
+  default-flavor: prod

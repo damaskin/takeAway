@@ -10,6 +10,7 @@ has not run on staging first.
 | Storefront     | https://test.takeaway.md                                    | https://takeaway.md                          |
 | Cabinet        | https://test-admin.takeaway.md                              | https://admin.takeaway.md                    |
 | Mini App       | https://test-tma.takeaway.md (bot @takeaway_test_bot)       | https://tma.takeaway.md (bot @takaway_tgbot) |
+| Phone app      | «takeAway Test» — TestFlight / Firebase, see below          | takeAway — App Store / Google Play           |
 | API / CDN      | test-api.takeaway.md / test-cdn.takeaway.md                 | api.takeaway.md / cdn.takeaway.md            |
 | Deploys        | every push to `main`, automatically                         | a release tag `vYYYY.MM.DD`, after approval  |
 | Data           | a sanitized copy of production (see below)                  | real                                         |
@@ -22,8 +23,8 @@ edge nginx. They share nothing else: own containers, volumes, database,
 MinIO, Redis, images (`takeaway/api:staging` vs `takeaway/api:local`),
 secrets and Telegram bot.
 
-The mobile apps talk to production only. A staging build of the app is not
-set up yet.
+The store apps (App Store, Google Play, their TestFlight builds) talk to
+production only. Staging has its own phone app, «takeAway Test» (below).
 
 ## How a task gets to customers
 
@@ -95,6 +96,30 @@ Platform releases are dated tags (`v2026.10.20`); the mobile apps keep their
 own versions (`1.6.0`) and release branches. Only `vYYYY.MM.DD…` tags deploy
 the server.
 
+## The test app: «takeAway Test»
+
+A separate app for iOS and Android that talks to staging
+(`test-api.takeaway.md`) and installs next to the store app: its own ids
+(`md.takeaway.ios.staging`, `md.takeaway.app.staging`), name, icon (cream
+mark on caramel) and URL scheme (`takeawaytest://`), so a sign-in or payment
+return of one app never opens the other. It is the Flutter app built with
+`--flavor staging --dart-define-from-file=config/staging.json`; how to build
+and hand it out is in `apps/mobile/README.md` → «Test app».
+
+- **iOS** — TestFlight, internal group «takeAway team» (the owner and the
+  manager). Never sent to App Review: the Fastfile refuses a listing for it.
+- **Android** — Firebase App Distribution, group `takeaway-team`: an e-mail
+  with the install link, then the Firebase App Tester app.
+- **Sign-in** — Telegram through @takeaway_test_bot (its BotFather entry has
+  `takeawaytest://tglogin` and the Android app). Google and Apple are off, as
+  on staging's web.
+- **Card payments** — the fake bank, as on the site: bind a card with any last
+  four digits except `0000`, SMS code `111111`.
+- **No push**: staging has no Firebase or APNs credentials.
+
+A new version of the test app is needed only when the app's code changes;
+staging's data and API change under it without a new build.
+
 ## Staging's data
 
 Staging starts as a copy of production taken with
@@ -113,7 +138,8 @@ cuts everything that could reach a real person or a real system from it
 
 Staging's environment is the other wall: its own Telegram bot (a test order
 cannot message a café's real staff), card payments against a fake bank,
-Google and Apple sign-in off, no push credentials, no SMTP.
+Google and Apple sign-in off, no push credentials, no SMTP. The bank's page
+sends the test app back through `MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay`.
 
 It still holds real people's names and phone numbers. Staging is for the
 team only — do not hand its links to customers or cafés.
@@ -336,9 +362,26 @@ container and volumes stay until removed by hand
 (`docker rm -f takeaway-staging-agro-mock-1`,
 `docker volume rm takeaway-staging_sandbox_bank_keys takeaway-staging_sandbox_bank_state`).
 
+## The test app's payment return: one-time step (October 2026)
+
+A staging bootstrapped after the test app was added has
+`MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay` already. The first one
+(2026-10-18) gets it by hand, once — it matters only with
+`CARD_PAYMENT_FLOW=web`, where the bank's page has to send the test app back
+(the default `token` flow never leaves the app):
+
+```bash
+ssh hetzner
+echo 'MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay' \
+  | sudo -u deploy tee -a /opt/takeaway-staging/repo/deploy/.env.production
+sudo -u deploy bash /opt/takeaway-staging/repo/deploy/scripts/deploy.sh
+```
+
+Without it the API falls back to `takeaway://pay`, which opens the store app.
+
 ## Not on staging yet
 
 - **Google and Apple sign-in** — need the test-\* origins registered in Google
-  Cloud and Apple Developer.
-- **A staging build of the app** pointing at test-api.takeaway.md.
+  Cloud and Apple Developer (the test app has them off too).
+- **Push to the test app** — staging has no Firebase or APNs credentials.
 - **Email** — no SMTP in either environment.

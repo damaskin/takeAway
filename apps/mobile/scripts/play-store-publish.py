@@ -43,7 +43,7 @@ parser.add_argument("--lang", default="ru-RU")
 parser.add_argument("--track", default="production")
 parser.add_argument("--status", default="draft", choices=("draft", "completed"))
 parser.add_argument("--hold", action="store_true", help="commit with changesNotSentForReview")
-parser.add_argument("--aab", default=os.path.join(ROOT, "build", "app", "outputs", "bundle", "release", "app-release.aab"))
+parser.add_argument("--aab", default=os.path.join(ROOT, "build", "app", "outputs", "bundle", "prodRelease", "app-prod-release.aab"))
 parser.add_argument("--screens", default=os.path.join(ROOT, "build", "play-store-screenshots", "phone"))
 parser.add_argument("--key", default=os.environ.get(
     "PLAY_SERVICE_ACCOUNT", os.path.join(os.path.expanduser("~"), ".takeaway", "play", "play-publisher.json")))

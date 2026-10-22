@@ -108,6 +108,8 @@ CORS_ALLOWED_ORIGINS=https://test.takeaway.md,https://test-admin.takeaway.md,htt
 ADMIN_APP_URL=https://test-admin.takeaway.md
 PUBLIC_WEB_URL=https://test.takeaway.md
 PUBLIC_TMA_URL=https://test-tma.takeaway.md
+# The test app «takeAway Test» has a URL scheme of its own (apps/mobile/README.md).
+MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay
 
 # --- Telegram: the test bot, never production's ------------------------------
 $(grep -E '^TELEGRAM_BOT_(USERNAME|TOKEN)=' "$TG_ENV")
@@ -132,7 +134,7 @@ AGROPROMBANK_WEB_ENABLED=false
 GOOGLE_OAUTH_CLIENT_IDS=
 GOOGLE_OAUTH_WEB_CLIENT_ID=
 APPLE_OAUTH_CLIENT_IDS=
-# Push to phones: no staging app build yet.
+# Push to phones: the test app has no Firebase keys, nor does staging.
 FIREBASE_PROJECT_ID=
 APNS_ENABLED=false
 SMTP_HOST=

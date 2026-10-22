@@ -1,0 +1,9 @@
+// The store app, flavor prod: Debug-prod, Release-prod and Profile-prod
+// (the default — pubspec.yaml: default-flavor). Its twin is Staging.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = md.takeaway.ios
+APP_DISPLAY_NAME = takeAway
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
+// Telegram Login and the bank's page come back through it (Info.plist);
+// must match Env.appUrlScheme.
+APP_URL_SCHEME = takeaway

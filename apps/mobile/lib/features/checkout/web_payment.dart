@@ -5,18 +5,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/config/env.dart';
 import '../../core/network/api_error.dart';
 import '../../core/providers.dart';
 
-/// How the bank's verdict comes back: `takeaway://pay?orderId=…&status=…`.
-/// The API sends the customer there after its own return page; the scheme
-/// and host are registered in AndroidManifest.xml and Info.plist.
+/// How the bank's verdict comes back: `takeaway://pay?orderId=…&status=…`
+/// (`takeawaytest://` in the test app, see [Env.appUrlScheme]). The API
+/// sends the customer there after its own return page
+/// (MOBILE_PAYMENT_RETURN_URL); the scheme and host are registered in
+/// AndroidManifest.xml and Info.plist.
 enum PaymentReturnStatus { success, pending, fail, unknown }
 
 class PaymentReturn {
   const PaymentReturn({required this.orderId, required this.status});
 
-  static const scheme = 'takeaway';
+  static String get scheme => Env.appUrlScheme;
   static const host = 'pay';
 
   final String orderId;

@@ -70,16 +70,29 @@ jobs:
           flutter analyze --fatal-infos
           flutter test
 
-      # Proves the Android project still assembles. Built against the
-      # production API with the debug signing key (no keystore in CI), so the
-      # artifact is for testers, not for the store.
-      - name: Build release APK
+      # Proves the Android project still assembles, both apps. The store
+      # app (flavor prod, the default) against the production API, the test
+      # app («takeAway Test», flavor staging) against staging; both with the
+      # debug signing key (no keystore in CI), so the artifacts are for
+      # testers, not for the store. Testers get the test app signed with the
+      # upload key through Firebase (scripts/android-test-app.sh): Telegram's
+      # App Link only opens that one.
+      - name: Build release APKs
         working-directory: apps/mobile
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+          flutter build apk --release --flavor staging --dart-define-from-file=config/staging.json
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: takeaway-android-apk
-          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk
+          retention-days: 14
+
+      - name: Upload test app APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: takeaway-test-android-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-staging-release.apk
           retention-days: 14
