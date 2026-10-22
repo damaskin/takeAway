@@ -415,14 +415,23 @@ CI also builds the test app's APK (artifact `takeaway-test-android-apk`),
 signed with the debug key: it signs in through the Telegram app, but
 Telegram's page cannot hand it back.
 
-Set up once (done 2026-10-22): Bundle ID by `FLAVOR=staging … signing`, the
-App Store Connect record «takeAway Test» by hand (Apple refuses it through
-the API), `FLAVOR=staging … beta_group`; the Firebase Android app and the
-group; in @BotFather → @takeaway_test_bot → Login Widget: Redirect URI
-`takeawaytest://tglogin` and Native Login → Android, package
-`md.takeaway.app.staging`, SHA-256 of the upload key → App URL
-`https://app314551967-login.tg.dev`, which is `telegramTestAppReleaseHost`
-in `build.gradle.kts` and `_testAppReleaseLink` in `env.dart`.
+Set up once (2026-10-22):
+
+- done: Bundle ID `md.takeaway.ios.staging` with its App Store profile
+  (`FLAVOR=staging … signing`); the Firebase Android app and the group
+  (the owner and the manager); in @BotFather → @takeaway_test_bot → Login
+  Widget: Redirect URI `takeawaytest://tglogin` and Native Login → Android,
+  package `md.takeaway.app.staging`, SHA-256 of the upload key → App URL
+  `https://app314551967-login.tg.dev`, which is `telegramTestAppReleaseHost`
+  in `build.gradle.kts` and `_testAppReleaseLink` in `env.dart`;
+- still to do: the App Store Connect record, by hand (Apple refuses it
+  through the API): Apps → + → New App, iOS, name «takeAway Test» (any free
+  name — the phone shows the bundle's), Russian, bundle id
+  `md.takeaway.ios.staging`, SKU `md.takeaway.ios.staging`. Then on the Mac
+  `FLAVOR=staging bash apps/mobile/scripts/ios-testflight.sh` (the first
+  upload), `… beta_group`, and `TESTER_EMAIL=… … add_tester` for each tester
+  — the manager's App Store Connect user first needs the new app among his
+  visible apps (Users and Access).
 
 ## Tests
 
