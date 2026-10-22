@@ -10,6 +10,10 @@ colour — caramel against cream — so paper texture and JPEG noise stay behind
 its edges are redrawn smooth, and it is painted in the brand colours below
 rather than the artwork's own, which are a shade off.
 
+The test app («takeAway Test», --flavor staging) gets the same mark with the
+colours swapped — cream on caramel — so the two side by side on a phone are
+told apart at a glance: AppIcon-staging on iOS, android/app/src/staging.
+
 Needs Pillow and numpy. Writes into ios/ and android/ in place; review the
 diff and commit the result together with any change to the source.
 """
@@ -17,6 +21,7 @@ diff and commit the result together with any change to the source.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,8 +31,10 @@ from PIL import Image, ImageDraw, ImageFilter
 HERE = Path(__file__).resolve().parent
 APP = HERE.parent
 IOS_ICONS = APP / 'ios/Runner/Assets.xcassets/AppIcon.appiconset'
+IOS_TEST_ICONS = APP / 'ios/Runner/Assets.xcassets/AppIcon-staging.appiconset'
 IOS_LAUNCH = APP / 'ios/Runner/Assets.xcassets/LaunchImage.imageset'
 RES = APP / 'android/app/src/main/res'
+TEST_RES = APP / 'android/app/src/staging/res'
 
 CARAMEL = (0xC7, 0x7D, 0x3B)  # brand_caramel
 CREAM = (0xF8, 0xF3, 0xEB)  # brand_cream
@@ -86,44 +93,66 @@ def rounded_square(size: int, radius_ratio: float) -> Image.Image:
     return m.resize((size, size), Image.LANCZOS)
 
 
+def write_ios_icons(master: Image.Image, folder: Path) -> None:
+    """Every size the store app's Contents.json lists; another set gets a copy."""
+    contents = IOS_ICONS / 'Contents.json'
+    if folder != IOS_ICONS:
+        folder.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(contents, folder / 'Contents.json')
+    for image in json.loads(contents.read_text(encoding='utf-8'))['images']:
+        points = float(image['size'].split('x')[0])
+        px = round(points * int(image['scale'].rstrip('x')))
+        master.resize((px, px), Image.LANCZOS).save(folder / image['filename'], optimize=True)
+
+
+def write_launcher_icons(mask: Image.Image, res: Path, mark, field) -> None:
+    """Android launcher icons: adaptive layers and the legacy whole icon."""
+    for density, k in DENSITIES.items():
+        folder = res / f'mipmap-{density}'
+        folder.mkdir(parents=True, exist_ok=True)
+        # Adaptive icon (API 26+): the field is the ic_launcher_background
+        # colour resource; the mark sits inside the 66 dp safe circle of the
+        # 108 dp layer.
+        layer = round(108 * k)
+        mark_on_canvas(mask, layer, 0.48, mark).save(folder / 'ic_launcher_foreground.png', optimize=True)
+        # Themed icon (Android 13): one colour, the launcher tints it.
+        mark_on_canvas(mask, layer, 0.48, WHITE).save(folder / 'ic_launcher_monochrome.png', optimize=True)
+        # Legacy launchers get the whole icon, shape included.
+        size = round(48 * k)
+        legacy = mark_on_canvas(mask, size, 0.58, mark, field)
+        legacy.putalpha(rounded_square(size, 0.22))
+        legacy.save(folder / 'ic_launcher.png', optimize=True)
+
+
 def main() -> None:
     source = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / 'brand' / 'mark-source.jpg'
     mask = extract_mark(source)
 
     # iOS: the store and home-screen icon has no transparency — cream field,
-    # caramel mark. 58% of the height reads at 60 pt without crowding.
-    master = mark_on_canvas(mask, 1024, 0.58, CARAMEL, CREAM).convert('RGB')
-    contents = json.loads((IOS_ICONS / 'Contents.json').read_text(encoding='utf-8'))
-    for image in contents['images']:
-        points = float(image['size'].split('x')[0])
-        px = round(points * int(image['scale'].rstrip('x')))
-        master.resize((px, px), Image.LANCZOS).save(IOS_ICONS / image['filename'], optimize=True)
+    # caramel mark. 58% of the height reads at 60 pt without crowding. The
+    # test app's swaps the two.
+    write_ios_icons(mark_on_canvas(mask, 1024, 0.58, CARAMEL, CREAM).convert('RGB'), IOS_ICONS)
+    write_ios_icons(mark_on_canvas(mask, 1024, 0.58, CREAM, CARAMEL).convert('RGB'), IOS_TEST_ICONS)
 
     # iOS launch screen: the mark alone, on the storyboard's cream.
     for scale, name in ((1, 'LaunchImage.png'), (2, 'LaunchImage@2x.png'), (3, 'LaunchImage@3x.png')):
         mark_on_canvas(mask, 120 * scale, 0.8, CARAMEL).save(IOS_LAUNCH / name, optimize=True)
 
-    for density, k in DENSITIES.items():
-        folder = RES / f'mipmap-{density}'
-        # Adaptive icon (API 26+): the cream background is a colour resource;
-        # the mark sits inside the 66 dp safe circle of the 108 dp layer.
-        layer = round(108 * k)
-        mark_on_canvas(mask, layer, 0.48, CARAMEL).save(folder / 'ic_launcher_foreground.png', optimize=True)
-        # Themed icon (Android 13): one colour, the launcher tints it.
-        mark_on_canvas(mask, layer, 0.48, WHITE).save(folder / 'ic_launcher_monochrome.png', optimize=True)
-        # Legacy launchers get the whole icon, shape included.
-        size = round(48 * k)
-        legacy = mark_on_canvas(mask, size, 0.58, CARAMEL, CREAM)
-        legacy.putalpha(rounded_square(size, 0.22))
-        legacy.save(folder / 'ic_launcher.png', optimize=True)
+    write_launcher_icons(mask, RES, CARAMEL, CREAM)
+    # The test app's field colour: android/app/src/staging/res/values/colors.xml.
+    write_launcher_icons(mask, TEST_RES, CREAM, CARAMEL)
 
+    for density, k in DENSITIES.items():
         drawables = RES / f'drawable-{density}'
         # Pre-Android 12 splash: the mark on the launch background.
         mark_on_canvas(mask, round(120 * k), 0.8, CARAMEL).save(drawables / 'splash_logo.png', optimize=True)
         # Status bar: a white silhouette; the system colours it.
         mark_on_canvas(mask, round(24 * k), 0.84, WHITE).save(drawables / 'ic_stat_takeaway.png', optimize=True)
 
-    print(f'mark {mask.width}x{mask.height} from {source.name}: iOS icons, launch image, Android icons and splash written')
+    print(
+        f'mark {mask.width}x{mask.height} from {source.name}: iOS icons, launch image, Android icons and splash written, '
+        "with the test app's icons"
+    )
 
 
 if __name__ == '__main__':

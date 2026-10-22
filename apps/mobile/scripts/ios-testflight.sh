@@ -5,6 +5,7 @@
 #
 #   bash apps/mobile/scripts/ios-testflight.sh            # signing → archive → verify_ipa → upload
 #   bash apps/mobile/scripts/ios-testflight.sh archive    # one lane (see ios/fastlane/Fastfile)
+#   FLAVOR=staging bash apps/mobile/scripts/ios-testflight.sh   # «takeAway Test» on staging
 #
 # Settings and secrets live on the Mac, outside the repo, in
 # ~/.appstoreconnect/takeaway.env (TAKEAWAY_IOS_ENV overrides the path):
@@ -12,7 +13,8 @@
 #   KEYCHAIN_PASSWORD                        build keychain, made on first run
 #   FLUTTER                                  flutter binary, 3.38.8 or newer
 #   APPLE_TEAM_ID, BUILD_KEYCHAIN            optional, see the Fastfile
-# The dart-defines come from apps/mobile/config/prod.json (not in git).
+# The dart-defines come from apps/mobile/config/prod.json (not in git), or
+# config/staging.json (in git) for FLAVOR=staging.
 #
 # An archive takes a while: over SSH, start it with nohup and follow the log,
 # or a dropped session kills the build halfway.
@@ -38,6 +40,6 @@ lanes=("$@")
 [ ${#lanes[@]} -eq 0 ] && lanes=(signing archive verify_ipa upload)
 
 for lane in "${lanes[@]}"; do
-  echo "== fastlane ios $lane =="
+  echo "== fastlane ios $lane (${FLAVOR:-prod}) =="
   fastlane ios "$lane"
 done

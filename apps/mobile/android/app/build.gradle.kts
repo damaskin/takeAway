@@ -21,12 +21,18 @@ val keystoreProperties = Properties().apply {
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
 // Telegram Login's App Link host (@BotFather → Login Widget → Native Login).
-// BotFather takes one SHA-256 per Android entry and derives the host from it,
-// so each signing key has its own: the release host is registered with the
-// Play App Signing key Google signs store builds with, the debug host with
-// ~/.android/debug.keystore. Must match TELEGRAM_ANDROID_APP_LINK (env.dart).
+// BotFather takes one package and SHA-256 per Android entry and derives the
+// host from them, so each app and signing key has its own: the store app's
+// release host is registered with the Play App Signing key Google signs store
+// builds with, its debug host with ~/.android/debug.keystore; the test app
+// (@takeaway_test_bot) with the upload key its release builds are signed
+// with. Must match telegramAndroidAppLink in env.dart. A build with no host
+// registered gets one that resolves nowhere: its intent filter never
+// verifies, and the app falls back to its URL scheme.
 val telegramReleaseHost = "app3387643188-login.tg.dev"
 val telegramDebugHost = "app3004048938-login.tg.dev"
+val telegramTestAppReleaseHost = "not-registered.invalid"
+val telegramUnregisteredHost = "not-registered.invalid"
 
 android {
     namespace = "md.takeaway.app"
@@ -49,7 +55,27 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["telegramAppLinkHost"] = telegramDebugHost
+    }
+
+    // prod is the store app and the default (pubspec.yaml: default-flavor);
+    // staging is «takeAway Test», a separate app against test.takeaway.md
+    // that installs next to it (docs/environments.md). The flavor sets what
+    // the app is — id, name, URL scheme; config/<env>.json what it talks to.
+    flavorDimensions += "app"
+    productFlavors {
+        create("prod") {
+            dimension = "app"
+            resValue("string", "app_name", "takeAway")
+            manifestPlaceholders["appUrlScheme"] = "takeaway"
+        }
+        create("staging") {
+            dimension = "app"
+            applicationIdSuffix = ".staging"
+            resValue("string", "app_name", "takeAway Test")
+            // Env.appUrlScheme. A scheme of its own, or the store app could
+            // catch the test app's sign-in and payment returns.
+            manifestPlaceholders["appUrlScheme"] = "takeawaytest"
+        }
     }
 
     signingConfigs {
@@ -66,11 +92,22 @@ android {
     buildTypes {
         release {
             signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
-            // A release APK signed with the upload or debug key (not from
-            // Play) fails this host's verification and gets Telegram's page
-            // back instead of the app; the Telegram-app path still works.
-            manifestPlaceholders["telegramAppLinkHost"] = telegramReleaseHost
         }
+    }
+}
+
+// The App Link host per flavor and build type. A store-app release APK
+// signed with the upload or debug key (not from Play) fails its host's
+// verification and gets Telegram's page back instead of the app; the
+// Telegram-app path still works.
+androidComponents {
+    onVariants { variant ->
+        val release = variant.buildType == "release"
+        val host = when (variant.flavorName) {
+            "staging" -> if (release) telegramTestAppReleaseHost else telegramUnregisteredHost
+            else -> if (release) telegramReleaseHost else telegramDebugHost
+        }
+        variant.manifestPlaceholders.put("telegramAppLinkHost", host)
     }
 }
 

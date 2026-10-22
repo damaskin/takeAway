@@ -17,7 +17,12 @@ require 'fileutils'
 #   BUILD_KEYCHAIN     keychain name, default takeaway-build.keychain
 #   APPLE_TEAM_ID      default FGN8R2D6QW (Ivan Damaschin)
 #   FLUTTER            flutter binary, 3.38.8 or newer; default `flutter`
+#   FLAVOR             prod (default): the store app, md.takeaway.ios;
+#                      staging: «takeAway Test», md.takeaway.ios.staging,
+#                      against test.takeaway.md — TestFlight only, never
+#                      listed or sent to review
 #   DART_DEFINES_FILE  default ../config/prod.json (copy of prod.example.json)
+#                      for prod, ../config/staging.json (in git) for staging
 #   BUILD_NUMBER       optional; default is the latest TestFlight build + 1
 #
 # The certificate lives in a keychain of its own: the login keychain is locked
@@ -25,20 +30,34 @@ require 'fileutils'
 
 default_platform(:ios)
 
-APP_ID = "md.takeaway.ios"
-APP_NAME = "takeAway"
+# The flavor is the scheme; its Release configuration and identity are in
+# Runner.xcodeproj and ios/Flutter/{Prod,Staging}.xcconfig.
+FLAVORS = {
+  "prod" => { app_id: "md.takeaway.ios", name: "takeAway", ipa: "takeAway.ipa", build_dir: "ios-release",
+              defines: "prod.json" },
+  "staging" => { app_id: "md.takeaway.ios.staging", name: "takeAway Test", ipa: "takeAway-Test.ipa",
+                 build_dir: "ios-release-staging", defines: "staging.json" }
+}.freeze
+FLAVOR = ENV.fetch("FLAVOR", "prod")
+UI.user_error!("FLAVOR must be one of #{FLAVORS.keys.join(', ')}, not #{FLAVOR}") unless FLAVORS.key?(FLAVOR)
+TEST_APP = FLAVOR != "prod"
+
+APP_ID = FLAVORS[FLAVOR][:app_id]
+APP_NAME = FLAVORS[FLAVOR][:name]
 TEAM_ID = ENV.fetch("APPLE_TEAM_ID", "FGN8R2D6QW")
 KEYCHAIN_NAME = ENV.fetch("BUILD_KEYCHAIN", "takeaway-build.keychain")
 PROFILE_NAME = "#{APP_ID} AppStore"
-IPA_NAME = "takeAway.ipa"
+IPA_NAME = FLAVORS[FLAVOR][:ipa]
+SCHEME = FLAVOR
+CONFIGURATION = "Release-#{FLAVOR}"
 
 IOS_DIR = File.expand_path("..", __dir__)
 MOBILE_DIR = File.expand_path("..", IOS_DIR)
 WORKSPACE = File.join(IOS_DIR, "Runner.xcworkspace")
 XCODEPROJ = File.join(IOS_DIR, "Runner.xcodeproj")
-BUILD_DIR = File.join(MOBILE_DIR, "build", "ios-release")
+BUILD_DIR = File.join(MOBILE_DIR, "build", FLAVORS[FLAVOR][:build_dir])
 FLUTTER = ENV.fetch("FLUTTER", "flutter")
-DART_DEFINES_FILE = File.expand_path(ENV.fetch("DART_DEFINES_FILE", File.join(MOBILE_DIR, "config", "prod.json")))
+DART_DEFINES_FILE = File.expand_path(ENV.fetch("DART_DEFINES_FILE", File.join(MOBILE_DIR, "config", FLAVORS[FLAVOR][:defines])))
 
 # What Runner/Runner.entitlements asks for: push through APNs (Firebase
 # Cloud Messaging) and Sign in with Apple. The App ID must carry the same, or
@@ -176,12 +195,18 @@ platform :ios do
   desc "Build the signed archive and the IPA (no upload)"
   lane :archive do
     UI.user_error!("No #{DART_DEFINES_FILE}: copy config/prod.example.json there and fill it in") unless File.exist?(DART_DEFINES_FILE)
+    api = JSON.parse(File.read(DART_DEFINES_FILE))["API_BASE_URL"].to_s
+    # The test app on production's API, or the store app on staging's, is
+    # a mix-up of FLAVOR and DART_DEFINES_FILE, never what anyone wants.
+    if TEST_APP == !api.include?("test-api.")
+      UI.user_error!("#{APP_NAME} with #{File.basename(DART_DEFINES_FILE)} (API #{api.empty? ? 'default' : api}) — wrong defines file?")
+    end
     write_google_url_scheme
     unlock_build_keychain
     identity = distribution_identity
     name = build_name
     number = next_build_number(name)
-    UI.message("Building #{APP_NAME} #{name} (#{number})")
+    UI.message("Building #{APP_NAME} #{name} (#{number}), flavor #{FLAVOR}, API #{api}")
 
     # Flutter writes the version, the build number and the dart-defines into
     # Generated.xcconfig; the archive below compiles the Dart code with them.
@@ -195,7 +220,7 @@ platform :ios do
     FileUtils.rm_rf(File.join(MOBILE_DIR, "build", "native_assets"))
     Dir.chdir(MOBILE_DIR) do
       sh(FLUTTER, "pub", "get")
-      sh(FLUTTER, "build", "ios", "--release", "--no-codesign",
+      sh(FLUTTER, "build", "ios", "--release", "--no-codesign", "--flavor=#{FLAVOR}",
          "--dart-define-from-file=#{DART_DEFINES_FILE}", "--build-name=#{name}", "--build-number=#{number}")
     end
     cocoapods(podfile: File.join(IOS_DIR, "Podfile"), try_repo_update_on_error: true)
@@ -206,7 +231,7 @@ platform :ios do
       use_automatic_signing: false,
       path: XCODEPROJ,
       targets: ["Runner"],
-      build_configurations: ["Release"],
+      build_configurations: [CONFIGURATION],
       team_id: TEAM_ID,
       code_sign_identity: "Apple Distribution",
       profile_name: PROFILE_NAME
@@ -214,8 +239,8 @@ platform :ios do
 
     build_app(
       workspace: WORKSPACE,
-      scheme: "Runner",
-      configuration: "Release",
+      scheme: SCHEME,
+      configuration: CONFIGURATION,
       export_method: "app-store",
       output_directory: BUILD_DIR,
       output_name: IPA_NAME,
@@ -427,6 +452,7 @@ platform :ios do
   # Apple approves it.
   desc "Upload the App Store listing; SUBMIT=1 sends it to App Review"
   lane :store_listing do
+    UI.user_error!("#{APP_NAME} is for TestFlight only: it has no listing and is never sent to review") if TEST_APP
     screenshots = ENV["SCREENSHOTS_PATH"].to_s
     submit = ENV["SUBMIT"] == "1"
     options = {

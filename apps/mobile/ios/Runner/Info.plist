@@ -4,8 +4,11 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- APP_DISPLAY_NAME, APP_URL_SCHEME and the bundle id are per flavor:
+	     Flutter/Prod.xcconfig (the store app), Flutter/Staging.xcconfig
+	     («takeAway Test»). -->
 	<key>CFBundleDisplayName</key>
-	<string>takeAway</string>
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -18,7 +21,7 @@
 		<string>ru</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>takeAway</string>
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -32,15 +35,16 @@
 		<!-- Telegram Login returns here from the Telegram app with a code.
 		     Must match TELEGRAM_REDIRECT_URI and the redirect URI registered
 		     in @BotFather. The bank's payment page comes back through the
-		     same scheme: takeaway://pay?orderId=…&status=… -->
+		     same scheme: takeaway://pay?orderId=…&status=… (takeawaytest://
+		     in the test app). -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>md.takeaway.ios.telegram-login</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).telegram-login</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>takeaway</string>
+				<string>$(APP_URL_SCHEME)</string>
 			</array>
 		</dict>
 		<!-- Google Sign-In returns through the reversed iOS client id. Set

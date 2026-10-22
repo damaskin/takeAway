@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The test app's icon field: caramel under a cream mark, the store
+         app's colours swapped (tool/generate_icons.py). -->
+    <color name="ic_launcher_background">#C77D3B</color>
+</resources>

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show appFlavor;
 
 /// Build-time configuration.
 ///
@@ -18,28 +19,49 @@ abstract final class Env {
   /// The public website, for links the app shares.
   static const webOrigin = String.fromEnvironment('WEB_ORIGIN', defaultValue: 'https://takeaway.md');
 
+  /// The test app, «takeAway Test» (`--flavor staging`): a separate app
+  /// that installs next to the store one. Its identity — ids, name, URL
+  /// scheme, Telegram App Link — follows the flavor, which is what the
+  /// native side registers; which backend it talks to follows the
+  /// dart-defines (config/staging.json).
+  static bool get isTestApp => appFlavor == 'staging';
+
+  /// The app's own URL scheme: Telegram Login and the bank's page come back
+  /// through it. Registered per flavor in Info.plist (APP_URL_SCHEME,
+  /// ios/Flutter/{Prod,Staging}.xcconfig) and AndroidManifest.xml
+  /// (build.gradle.kts); the test app has a scheme of its own, so a link
+  /// meant for one of two apps installed side by side never opens the other.
+  static String get appUrlScheme => isTestApp ? 'takeawaytest' : 'takeaway';
+
   /// Where Telegram Login sends the customer back from the Telegram app, and
   /// on iOS from the page too. Must be listed under the bot's Redirect URIs
   /// in @BotFather (Login Widget). The custom scheme needs nothing else.
-  static const telegramRedirectUri = String.fromEnvironment(
-    'TELEGRAM_REDIRECT_URI',
-    defaultValue: 'takeaway://tglogin',
-  );
+  static const _telegramRedirectUri = String.fromEnvironment('TELEGRAM_REDIRECT_URI');
+  static String get telegramRedirectUri =>
+      _telegramRedirectUri.isEmpty ? '$appUrlScheme://tglogin' : _telegramRedirectUri;
 
   /// Where Telegram Login's page, open in a Custom Tab on Android, sends the
   /// customer back: the App Link @BotFather issued for the Android app
   /// (Login Widget → Native Login → App URL, plus `/tglogin`). Chrome only
   /// leaves a page for an app on a tap, and the page at this address has the
-  /// button for it. BotFather derives the host from the signing key, so
-  /// release builds (signed by Play App Signing) and debug builds (the debug
-  /// keystore) have different ones; each must match the autoVerify intent
-  /// filter, whose host build.gradle.kts sets per build type. The define
-  /// overrides both.
+  /// button for it. BotFather derives the host from the package and the
+  /// signing key, so release builds (signed by Play App Signing; the test
+  /// app by our upload key) and debug builds (the debug keystore) have
+  /// different ones; each must match the autoVerify intent filter, whose
+  /// host build.gradle.kts sets per flavor and build type. Empty — no App
+  /// Link registered for this build — falls back to [telegramRedirectUri],
+  /// and the define overrides it all (`none` for empty).
   static const _telegramAndroidAppLink = String.fromEnvironment('TELEGRAM_ANDROID_APP_LINK');
   static String get telegramAndroidAppLink {
+    if (_telegramAndroidAppLink == 'none') return '';
     if (_telegramAndroidAppLink.isNotEmpty) return _telegramAndroidAppLink;
+    if (isTestApp) return kReleaseMode ? _testAppReleaseLink : '';
     return kReleaseMode ? 'https://app3387643188-login.tg.dev/tglogin' : 'https://app3004048938-login.tg.dev/tglogin';
   }
+
+  /// The test app's App Link from @takeaway_test_bot, for its upload-key
+  /// signed builds (`md.takeaway.app.staging`); empty until registered.
+  static const _testAppReleaseLink = '';
 
   /// Map tiles, as a `{z}/{x}/{y}` URL template. By default our own caching
   /// proxy in front of OpenStreetMap (takeaway.md/tiles — nginx plus
