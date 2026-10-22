@@ -60,8 +60,8 @@ abstract final class Env {
   }
 
   /// The test app's App Link from @takeaway_test_bot, for its upload-key
-  /// signed builds (`md.takeaway.app.staging`); empty until registered.
-  static const _testAppReleaseLink = '';
+  /// signed builds (`md.takeaway.app.staging`).
+  static const _testAppReleaseLink = 'https://app314551967-login.tg.dev/tglogin';
 
   /// Map tiles, as a `{z}/{x}/{y}` URL template. By default our own caching
   /// proxy in front of OpenStreetMap (takeaway.md/tiles — nginx plus

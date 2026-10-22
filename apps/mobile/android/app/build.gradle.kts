@@ -27,11 +27,11 @@ val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 // builds with, its debug host with ~/.android/debug.keystore; the test app
 // (@takeaway_test_bot) with the upload key its release builds are signed
 // with. Must match telegramAndroidAppLink in env.dart. A build with no host
-// registered gets one that resolves nowhere: its intent filter never
-// verifies, and the app falls back to its URL scheme.
+// registered (the test app's debug builds) gets one that resolves nowhere:
+// its intent filter never verifies, and the app falls back to its URL scheme.
 val telegramReleaseHost = "app3387643188-login.tg.dev"
 val telegramDebugHost = "app3004048938-login.tg.dev"
-val telegramTestAppReleaseHost = "not-registered.invalid"
+val telegramTestAppReleaseHost = "app314551967-login.tg.dev"
 val telegramUnregisteredHost = "not-registered.invalid"
 
 android {

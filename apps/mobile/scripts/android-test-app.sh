@@ -19,8 +19,9 @@
 # with that key's SHA-256, and Telegram's App Link opens only an app signed
 # with it (README → "Test app").
 #
-#   FIREBASE_TEST_APP_ID  the Firebase Android app of md.takeaway.app.staging
-#   TESTER_GROUP          default takeaway-team
+#   FIREBASE_TEST_APP_ID  default: the Firebase Android app of
+#                         md.takeaway.app.staging in takeaway-md
+#   TESTER_GROUP          default takeaway-team («takeAway team»)
 #   BUILD_NUMBER          default: the pubspec's; App Distribution doesn't care
 #   NOTES                 release notes; default: the commit it was built from
 set -euo pipefail
@@ -28,7 +29,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FIREBASE_PROJECT=takeaway-md
-FIREBASE_TEST_APP_ID="${FIREBASE_TEST_APP_ID:-}"
+FIREBASE_TEST_APP_ID="${FIREBASE_TEST_APP_ID:-1:78542530066:android:e0c6c0d8e42f47a5ae5acb}"
 TESTER_GROUP="${TESTER_GROUP:-takeaway-team}"
 APK=build/app/outputs/flutter-apk/app-staging-release.apk
 
@@ -49,7 +50,6 @@ for step in "${steps[@]}"; do
       flutter "${args[@]}"
       ;;
     distribute)
-      : "${FIREBASE_TEST_APP_ID:?set FIREBASE_TEST_APP_ID (Firebase → Project settings → md.takeaway.app.staging)}"
       [ -f "$APK" ] || { echo "no $APK — run the build step first" >&2; exit 1; }
       notes="${NOTES:-$(git log -1 --format='%h %s')}"
       echo "== firebase appdistribution:distribute → $TESTER_GROUP"

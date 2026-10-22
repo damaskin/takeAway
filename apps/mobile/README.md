@@ -57,22 +57,38 @@ native build hooks, so it runs there and the generated files are committed.
 
 ## Configuration
 
+Two things make a build: the **flavor** — which app it is — and the
+**dart-defines** — which backend it talks to.
+
+| Flavor           | App                                                    | Android package           | iOS bundle id             | URL scheme     |
+| ---------------- | ------------------------------------------------------ | ------------------------- | ------------------------- | -------------- |
+| `prod` (default) | takeAway, the store app                                | `md.takeaway.app`         | `md.takeaway.ios`         | `takeaway`     |
+| `staging`        | takeAway Test, see [Test app](#test-app-takeaway-test) | `md.takeaway.app.staging` | `md.takeaway.ios.staging` | `takeawaytest` |
+
+`pubspec.yaml` sets `default-flavor: prod`, so `flutter run` and `flutter
+build` without `--flavor` make the store app, as they always have. The flavor
+lives in `android/app/build.gradle.kts` (product flavors) and in
+`ios/Flutter/{Prod,Staging}.xcconfig` with the Xcode schemes `prod` /
+`staging` and configurations `Debug-prod`, `Release-staging`… The app reads
+it through `appFlavor` (`Env.isTestApp`, `Env.appUrlScheme`).
+
 Everything environment-specific is a `--dart-define`, collected in JSON files
 under `config/`:
 
-| File                       | Committed | Use                                                           |
-| -------------------------- | --------- | ------------------------------------------------------------- |
-| `config/local.json`        | yes       | Android emulator against the API on this machine              |
-| `config/prod.example.json` | yes       | Template for release builds                                   |
-| `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in |
+| File                       | Committed | Use                                                             |
+| -------------------------- | --------- | --------------------------------------------------------------- |
+| `config/local.json`        | yes       | Android emulator against the API on this machine                |
+| `config/staging.json`      | yes       | The test app against staging (test-api.takeaway.md), no secrets |
+| `config/prod.example.json` | yes       | Template for release builds                                     |
+| `config/prod.json`         | no        | Copy of the template with the Google / Firebase ids filled in   |
 
 | Define                                                                                                                      | Default                                     | Meaning                                                                              |
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`               | REST base including `/api`                                                           |
 | `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                    | Socket.IO origin (namespace `/ws`)                                                   |
 | `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                       | Public site, for links the app shares                                                |
-| `TELEGRAM_REDIRECT_URI`                                                                                                     | `takeaway://tglogin`                        | Telegram Login redirect; must match @BotFather                                       |
-| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per build type (release / debug host)       | Android: where Telegram's page returns; see below                                    |
+| `TELEGRAM_REDIRECT_URI`                                                                                                     | `<URL scheme>://tglogin`                    | Telegram Login redirect; must match @BotFather                                       |
+| `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per flavor and build type                   | Android: where Telegram's page returns, `none` for the scheme; see below             |
 | `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button                    | The **web** OAuth client id, the audience the API checks                             |
 | `GOOGLE_IOS_CLIENT_ID`                                                                                                      | empty                                       | iOS OAuth client id                                                                  |
 | `APPLE_SIGN_IN`                                                                                                             | `false`                                     | Offer Sign in with Apple on iOS                                                      |
@@ -104,7 +120,8 @@ it only when `NODE_ENV` is not `production` **and** `TELEGRAM_BOT_TOKEN` is
 empty, so it cannot work against a real deployment.
 
 Against production (`https://api.takeaway.md`) the app runs without any
-config: `flutter run`.
+config: `flutter run`. Against staging, as the test app:
+`flutter run --flavor staging --dart-define-from-file=config/staging.json`.
 
 ## Sign-in setup
 
@@ -133,6 +150,10 @@ once:
    | Android | debug keystore (`B0:EB:0B:…`)             | `app3004048938-login.tg.dev` |
    | iOS     | `FGN8R2D6QW.md.takeaway.ios`              | `app2815347853-login.tg.dev` |
 
+   The test app's bot, @takeaway_test_bot, has `takeawaytest://tglogin` and
+   (since 2026-10-22) Android `md.takeaway.app.staging` with the upload key
+   (`76:7E:37:…`) → `app314551967-login.tg.dev`; see [Test app](#test-app-takeaway-test).
+
    The Play entry uses the original app-signing key even though Play has since
    upgraded it to a quantum-ready one: Android checks App Links against the
    whole signing lineage, and the original key is what Play Console's Digital
@@ -141,10 +162,11 @@ once:
    registered.
 
 3. On Android, Telegram's page (no Telegram app on the device) comes back
-   through the App Link of the build's signing key: the release host in
-   release builds, the debug host otherwise (`TELEGRAM_ANDROID_APP_LINK`
-   overrides it; `build.gradle.kts` puts the same host into the autoVerify
-   intent filter in `AndroidManifest.xml`). The page leaves for
+   through the App Link of the build's package and signing key: the release
+   host in release builds, the debug host otherwise, the test app's own host
+   in its release builds and none in its debug builds (`Env.telegramAndroidAppLink`;
+   `TELEGRAM_ANDROID_APP_LINK` overrides it; `build.gradle.kts` puts the same
+   host into the autoVerify intent filter in `AndroidManifest.xml`). The page leaves for
    its redirect on its own once the login is confirmed in Telegram, and
    Chrome opens an app from a page only on a tap — with the custom scheme the
    customer stayed on "Continue with Telegram" for good. The App Link loads
@@ -225,6 +247,7 @@ keyPassword=...
 
 ```bash
 flutter build appbundle --release --dart-define-from-file=config/prod.json
+# → build/app/outputs/bundle/prodRelease/app-prod-release.aab (flavor prod, the default)
 ```
 
 Without `key.properties` the release build is signed with the debug key —
@@ -313,9 +336,11 @@ tail -f /tmp/takeaway-ios.log
 ```
 
 The lanes run `signing` (Bundle ID with Push and Sign in with Apple,
-certificate, App Store profile), `archive` (the version from `pubspec.yaml`,
-the build number one above the latest in TestFlight, manual signing for the
-Runner target only), `verify_ipa` and `upload`. `fastlane ios builds` shows
+certificate, App Store profile), `archive` (scheme `prod`, configuration
+`Release-prod`; the version from `pubspec.yaml`, the build number one above
+the latest in TestFlight, manual signing for the Runner target only),
+`verify_ipa` and `upload`. `FLAVOR=staging` does the same for the test app
+(below). `fastlane ios builds` shows
 Apple's processing; `fastlane ios beta_group` makes the internal group that
 sees every build.
 
@@ -328,6 +353,76 @@ and their testers.
 
 `Runner.entitlements` has `aps-environment = development`; the App Store
 profile turns it into production when the archive is signed.
+
+## Test app («takeAway Test»)
+
+A second app, flavor `staging`, for testing on staging's data
+(test.takeaway.md, `docs/environments.md`) while production holds only real
+businesses. It installs next to the store app, under its own name and an
+icon with the colours swapped (cream mark on caramel), and is never listed
+in a store: TestFlight internal testing on iOS, Firebase App Distribution on
+Android.
+
+|                   | iOS                                                | Android                                                                      |
+| ----------------- | -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Id                | `md.takeaway.ios.staging` (team `FGN8R2D6QW`)      | `md.takeaway.app.staging`                                                    |
+| Store record      | App Store Connect «takeAway Test», TestFlight only | Firebase app `1:78542530066:android:e0c6c0d8e42f47a5ae5acb` in `takeaway-md` |
+| Testers           | internal group «takeAway team» (all builds)        | App Distribution group `takeaway-team`                                       |
+| Signed with       | the team's distribution certificate                | the upload key (`~/.takeaway/android`), never debug                          |
+| Telegram redirect | `takeawaytest://tglogin`                           | `takeawaytest://tglogin`, page: `app314551967-login.tg.dev`                  |
+
+What differs from the store app:
+
+- **Backend** — `config/staging.json`: test-api.takeaway.md, links to
+  test.takeaway.md. The Telegram client id comes from that API, so sign-in
+  goes through the test bot @takeaway_test_bot by itself.
+- **URL scheme** `takeawaytest`, for Telegram Login and the bank's page. With
+  the same scheme as the store app, the phone could hand the test app's
+  sign-in to the store app. The bank's Web-платёж returns to
+  `MOBILE_PAYMENT_RETURN_URL` of the API, which on staging must be
+  `takeawaytest://pay` (staging pays with bound cards — the `token` flow —
+  unless switched to `web`).
+- **Off**, as on staging itself: Google and Apple sign-in (no test-\* ids
+  registered), push (no Firebase keys; staging has no push credentials).
+- Paying by card: the fake bank — any last four digits except `0000`,
+  SMS code `111111` (`docs/environments.md`).
+
+**iOS → TestFlight**, on the Mac mini like the store app:
+
+```bash
+cd ~/MyWorks/takeAway && git fetch && git checkout -f -B main origin/main
+FLAVOR=staging nohup bash apps/mobile/scripts/ios-testflight.sh > /tmp/takeaway-ios-staging.log 2>&1 &
+```
+
+`FLAVOR=staging` switches the Fastfile to the test app's bundle id, scheme
+`staging`, configuration `Release-staging`, IPA `takeAway-Test.ipa` in
+`build/ios-release-staging` and `config/staging.json`. The archive refuses a
+defines file whose API does not match the flavor, and `store_listing`
+refuses the test app outright. `beta_group`, `add_tester`, `invite_user`,
+`builds` and `testflight_status` work on it the same way.
+
+**Android → Firebase App Distribution**, on the PC with the upload key:
+
+```bash
+bash apps/mobile/scripts/android-test-app.sh            # build the APK, send it to takeaway-team
+NOTES="Новая корзина" bash apps/mobile/scripts/android-test-app.sh
+```
+
+Testers get an e-mail from Firebase once; later builds show up in the
+Firebase App Tester app. Add one with
+`firebase appdistribution:testers:add <email> --group-alias takeaway-team --project takeaway-md`.
+CI also builds the test app's APK (artifact `takeaway-test-android-apk`),
+signed with the debug key: it signs in through the Telegram app, but
+Telegram's page cannot hand it back.
+
+Set up once (done 2026-10-22): Bundle ID by `FLAVOR=staging … signing`, the
+App Store Connect record «takeAway Test» by hand (Apple refuses it through
+the API), `FLAVOR=staging … beta_group`; the Firebase Android app and the
+group; in @BotFather → @takeaway_test_bot → Login Widget: Redirect URI
+`takeawaytest://tglogin` and Native Login → Android, package
+`md.takeaway.app.staging`, SHA-256 of the upload key → App URL
+`https://app314551967-login.tg.dev`, which is `telegramTestAppReleaseHost`
+in `build.gradle.kts` and `_testAppReleaseLink` in `env.dart`.
 
 ## Tests
 
@@ -366,7 +461,9 @@ of ASAP.
   the mark out of the logo artwork in `tool/brand/mark-source.jpg` and redraws
   the iOS icon set and launch image, the Android launcher icons (legacy,
   adaptive, monochrome), splash mark and notification icon, in the brand
-  colours. A new logo: replace that file and run it again.
+  colours, and the test app's icons with the colours swapped
+  (`AppIcon-staging`, `android/app/src/staging`). A new logo: replace that
+  file and run it again.
 - **Map tiles** — OpenStreetMap through our cache at `takeaway.md/tiles`, with
   retries, a fallback to OSM and a 30-day disk cache on the phone; see
   [docs/map-tiles.md](../../docs/map-tiles.md). A commercial source, if ever
