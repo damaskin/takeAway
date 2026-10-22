@@ -182,6 +182,16 @@ server — every call, decision and code. Invoices it sees start with `9`
 
 ## Production's clean start (October 2026)
 
+**Done 2026-10-22, 08:03 UTC** (owner's go after App Review approved iOS 1.6.0).
+Staging was refreshed from production at 08:03 just before, so it holds the
+last copy of that data. Production kept one `SUPER_ADMIN` and nothing else.
+The pre-wipe backups are
+`/opt/takeaway/backups/pre-wipe-20261022T080355Z.sql.gz.enc` and
+`…-uploads.tar.gz.enc`, with a copy that does not expire in
+`D:\MyWorks\_archive6-10-22_takeaway-prod-pre-wipe` on the owner's PC.
+Running `staging-refresh.sh` from now on copies the new, real production —
+the old test data stays only in those backups.
+
 All the data in production until October 2026 was testing. Production is
 emptied once, down to the platform administrators: every brand, store, menu,
 order, payment, promo, gift card, campaign and every account except
@@ -295,6 +305,8 @@ passwordless sudo, which should not be the thing that keeps backups working,
 and a snapshot owned by the user who took it is simpler to reason about.
 
 ## Card payments on staging: one-time step (October 2026)
+
+**Done 2026-10-22:** staging's `.env.production` has the line, the fake bank runs (`sandbox bank: payment page routed`, `/api/config/features` → `agroprombankEnabled: true`, `cardPaymentFlow: "token"`).
 
 A staging bootstrapped after this was added has the line already. One
 bootstrapped before it (the first one, 2026-10-18) gets it by hand, once:
