@@ -162,9 +162,11 @@ production — run it only when that is what you want.
   knows the same Telegram accounts, so a copied customer signs in as themself.
 - **Staff** — login (email) and password, the same as they were in
   production when the copy was taken.
-- **Kitchen PIN** — works: staging shares production's `KDS_PIN_SECRET` on
-  purpose, so the copied PINs are valid. Production gets a fresh secret at its
-  clean start.
+- **Kitchen PIN** — staging kept the `KDS_PIN_SECRET` production had until
+  its clean start, so PINs copied before 2026-10-22 work. Production got a
+  fresh secret on 2026-10-23: a PIN set in production since then does not
+  open the tablet on staging after a refresh — set a new one on staging's
+  «Сотрудники» page.
 - **Telegram for staff notifications** — linked through @takeaway_test_bot:
   staging's API registers the test bot's webhook
   (`TELEGRAM_WEBHOOK_URL=https://test-api.takeaway.md/api/telegram/webhook`,
@@ -214,9 +216,11 @@ last copy of that data. Production kept one `SUPER_ADMIN` and nothing else.
 The pre-wipe backups are
 `/opt/takeaway/backups/pre-wipe-20261022T080355Z.sql.gz.enc` and
 `…-uploads.tar.gz.enc`, with a copy that does not expire in
-`D:\MyWorks\_archive6-10-22_takeaway-prod-pre-wipe` on the owner's PC.
+`D:\MyWorks\_archive\2026-10-22_takeaway-prod-pre-wipe` on the owner's PC.
 Running `staging-refresh.sh` from now on copies the new, real production —
-the old test data stays only in those backups.
+the old test data stays only in those backups. Production's fresh
+`KDS_PIN_SECRET` went in on 2026-10-23 11:30 UTC (the api restarted healthy
+and registered the bot's webhook again); staging keeps the old one.
 
 All the data in production until October 2026 was testing. Production is
 emptied once, down to the platform administrators: every brand, store, menu,
