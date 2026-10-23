@@ -217,7 +217,13 @@ platform :ios do
     # A leftover from a simulator run (scripts/app-store-screenshots.sh) made
     # App Store Connect refuse the IPA (91169); without the directory the IPA
     # shipped no objective_c at all. So: clear it, then build it for devices.
+    #
+    # Flutter's build cache (.dart_tool/flutter_build) goes too: a build with
+    # the same flavor, version and defines as an earlier one counts the native
+    # assets as up to date and does not put them back after the rm_rf (the
+    # first staging IPA of 1.7.0 (1) came out without objective_c that way).
     FileUtils.rm_rf(File.join(MOBILE_DIR, "build", "native_assets"))
+    FileUtils.rm_rf(File.join(MOBILE_DIR, ".dart_tool", "flutter_build"))
     Dir.chdir(MOBILE_DIR) do
       sh(FLUTTER, "pub", "get")
       sh(FLUTTER, "build", "ios", "--release", "--no-codesign", "--flavor=#{FLAVOR}",
