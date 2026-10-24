@@ -1683,4 +1683,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get errTooManyUnpaidOrders =>
       'You already have unpaid orders — pay for or cancel one before placing a new one';
+
+  @override
+  String get standTitle => 'Server';
+
+  @override
+  String get standHint =>
+      'For testing the app. Orders and payments on the test server are not real. After switching, sign in again.';
+
+  @override
+  String get standProd => 'Production';
+
+  @override
+  String get standTest => 'Test';
+
+  @override
+  String get standLocal => 'Local';
+
+  @override
+  String standBadge(String stand, String host) {
+    return '$stand server · $host';
+  }
 }

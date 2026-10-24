@@ -58,7 +58,8 @@ native build hooks, so it runs there and the generated files are committed.
 ## Configuration
 
 Two things make a build: the **flavor** — which app it is — and the
-**dart-defines** — which backend it talks to.
+**dart-defines** — its integrations and the backend it starts on. The backend
+can then be switched on the phone, see [Stands](#stands-production-and-test-in-one-app).
 
 | Flavor           | App                                                    | Android package           | iOS bundle id             | URL scheme     |
 | ---------------- | ------------------------------------------------------ | ------------------------- | ------------------------- | -------------- |
@@ -84,9 +85,9 @@ under `config/`:
 
 | Define                                                                                                                      | Default                                     | Meaning                                                                              |
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`               | REST base including `/api`                                                           |
-| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                    | Socket.IO origin (namespace `/ws`)                                                   |
-| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                       | Public site, for links the app shares                                                |
+| `API_BASE_URL`                                                                                                              | `https://api.takeaway.md/api`               | REST base including `/api`: the stand a fresh install starts on, see below           |
+| `REALTIME_URL`                                                                                                              | origin of `API_BASE_URL`                    | Socket.IO origin (namespace `/ws`), for the «Локальный» stand only                   |
+| `WEB_ORIGIN`                                                                                                                | `https://takeaway.md`                       | Public site, for links the app shares; for the «Локальный» stand only                |
 | `TELEGRAM_REDIRECT_URI`                                                                                                     | `<URL scheme>://tglogin`                    | Telegram Login redirect; must match @BotFather                                       |
 | `TELEGRAM_ANDROID_APP_LINK`                                                                                                 | per flavor and build type                   | Android: where Telegram's page returns, `none` for the scheme; see below             |
 | `GOOGLE_SERVER_CLIENT_ID`                                                                                                   | empty = no Google button                    | The **web** OAuth client id, the audience the API checks                             |
@@ -120,8 +121,9 @@ it only when `NODE_ENV` is not `production` **and** `TELEGRAM_BOT_TOKEN` is
 empty, so it cannot work against a real deployment.
 
 Against production (`https://api.takeaway.md`) the app runs without any
-config: `flutter run`. Against staging, as the test app:
-`flutter run --flavor staging --dart-define-from-file=config/staging.json`.
+config: `flutter run`. Against staging: the same build, switched to «Тест»
+on the phone (see [Stands](#stands-production-and-test-in-one-app)), or
+started there with `--dart-define=API_BASE_URL=https://test-api.takeaway.md/api`.
 
 ## Sign-in setup
 
@@ -354,7 +356,59 @@ and their testers.
 `Runner.entitlements` has `aps-environment = development`; the App Store
 profile turns it into production when the archive is signed.
 
+## Stands: production and test in one app
+
+Since 2026-10-24 the store app itself switches between backends, as the
+Zhmyak scanner does, so testing on staging needs no second app. A **long
+press on the cup logo** of the sign-in sheet (guests) or of Профиль → «О
+приложении» (signed in) opens the hidden «Сервер» sheet
+(`lib/features/auth/stand_sheet.dart`):
+
+| Stand       | API                                | Website                  |
+| ----------- | ---------------------------------- | ------------------------ |
+| «Прод»      | `https://api.takeaway.md/api`      | takeaway.md              |
+| «Тест»      | `https://test-api.takeaway.md/api` | test.takeaway.md         |
+| «Локальный» | the build's `API_BASE_URL`         | the build's `WEB_ORIGIN` |
+
+«Локальный» exists only in builds with an `API_BASE_URL` of their own
+(`config/local.json`); a build whose `API_BASE_URL` is production's or
+staging's just starts on that stand (`Stand.buildDefault`), so the store
+build starts on «Прод». The choice is kept on the phone (`app.stand`).
+
+Picking another stand signs out (the API forgets the refresh token and this
+device's push registration), drops what the phone kept of that server — the
+store picked last, cached feature flags — and **starts the app over**
+(`lib/app/app_root.dart`): a new provider container, so no session, socket,
+cached menu or open screen of one server survives on the other. The catalog
+cache is kept per stand (`catalog`, `catalog-test`). Off production every
+screen has a corner ribbon «TEST» (or «LOCAL»), and the sign-in sheet and «О
+приложении» name the stand under the logo.
+
+On the test stand:
+
+- **Telegram** signs in through @takeaway_test_bot — the API hands the app
+  its client id. That bot must list `takeaway://tglogin` under Login Widget →
+  Redirect URIs (the store app's scheme; the test app's
+  `takeawaytest://tglogin` stays until that app is retired). It has no App
+  Link for `md.takeaway.app`, so on Android Telegram's page returns through
+  the scheme too (`Env.telegramAndroidAppLink` is empty off production).
+- **Google and Apple** are offered only where the API says it completes them
+  (`GET /auth/methods`); staging has no client ids, so only Telegram shows.
+- **Push**: the device registers with staging's API, which has no push
+  credentials — no pushes, order screens still update over the socket.
+- **Cards**: the fake bank — any last four digits except `0000`, SMS code
+  `111111` (`docs/environments.md`). Its Web-платёж (if staging is switched
+  to the `web` flow) returns to `MOBILE_PAYMENT_RETURN_URL`, which for the
+  store app is the default `takeaway://pay`.
+
+App Review never sees the sheet unless it long-presses the logo; it starts
+on production like every customer.
+
 ## Test app («takeAway Test»)
+
+**Superseded by the stand switch above.** Once a store version with the
+switch is out, testers use the store app and this one is retired;
+the flavor and its distribution are still in the build until then.
 
 A second app, flavor `staging`, for testing on staging's data
 (test.takeaway.md, `docs/environments.md`) while production holds only real

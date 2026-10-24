@@ -76,10 +76,12 @@ final signInOptionsProvider = FutureProvider<SignInOptions>((ref) async {
     ref.watch(telegramConfigProvider.future),
     ref.watch(authMethodsProvider.future),
   ).wait;
+  // Google and Apple need this build's client ids on the API too: staging
+  // has none, so on the test stand only Telegram is offered.
   return SignInOptions(
     telegram: telegram != null,
-    google: Env.googleSignInConfigured,
-    apple: ref.watch(appleAuthorizationProvider).available,
+    google: Env.googleSignInConfigured && methods.google,
+    apple: ref.watch(appleAuthorizationProvider).available && methods.apple,
     dev: Env.devSignIn,
     email: methods.email,
   );
@@ -110,7 +112,10 @@ class AuthService {
   AuthService(this._ref);
 
   final Ref _ref;
-  bool _googleReady = false;
+
+  /// Google Sign-In is set up once per process — the plugin refuses a
+  /// second `initialize`, and switching stands starts the app over.
+  static Future<void>? _googleInit;
 
   TakeAwayApi get _api => _ref.read(apiProvider);
   SessionManager get _sessions => _ref.read(sessionManagerProvider);
@@ -179,12 +184,14 @@ class AuthService {
 
   Future<OAuthLoginRequest> _googleCredential() async {
     final google = GoogleSignIn.instance;
-    if (!_googleReady) {
-      await google.initialize(
+    try {
+      await (_googleInit ??= google.initialize(
         clientId: Platform.isIOS && Env.googleIosClientId.isNotEmpty ? Env.googleIosClientId : null,
         serverClientId: Env.googleServerClientId,
-      );
-      _googleReady = true;
+      ));
+    } on Object {
+      _googleInit = null;
+      rethrow;
     }
     final GoogleSignInAccount account;
     try {
@@ -301,7 +308,7 @@ class AuthService {
   }
 
   Future<void> _forgetSession() async {
-    if (_googleReady) unawaited(GoogleSignIn.instance.signOut().catchError((Object _) {}));
+    if (_googleInit != null) unawaited(GoogleSignIn.instance.signOut().catchError((Object _) {}));
     await _sessions.end(SessionEndReason.signedOut);
   }
 }

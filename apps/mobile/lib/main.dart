@@ -6,29 +6,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'app/app.dart';
+import 'app/app_root.dart';
 import 'core/auth/session_manager.dart';
+import 'core/config/env.dart';
+import 'core/config/stand.dart';
 import 'core/providers.dart';
 import 'core/push/push_service.dart';
 import 'core/storage/json_cache.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final container = await bootstrap();
-  runApp(UncontrolledProviderScope(container: container, child: const TakeAwayApp()));
+  runApp(AppRoot(container: await bootstrap(), boot: bootstrap));
 }
 
-/// Everything the app needs before its first frame: preferences, the
-/// session restored from secure storage, the catalog cache and date
-/// symbols. Shared by `main()` and the on-device integration test.
+/// Everything the app needs before its first frame: preferences and the
+/// stand saved in them, the session restored from secure storage, the
+/// catalog cache and date symbols. Shared by `main()`, the stand switch
+/// (see [AppRoot]) and the on-device integration test.
 Future<ProviderContainer> bootstrap() async {
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+  final prefs = await SharedPreferences.getInstance();
+  // The backend first: the API client, links and the cache all follow it.
+  final stand = Env.stand = Stand.restore(prefs);
   final storage = SecureSessionStorage();
-  final (prefs, session, cache, _, _) = await (
-    SharedPreferences.getInstance(),
+  final (session, cache, _, _) = await (
     SessionManager.restore(storage),
-    FileJsonCache.open(),
+    FileJsonCache.open(stand),
     initializeDateFormatting('en'),
     initializeDateFormatting('ru'),
   ).wait;

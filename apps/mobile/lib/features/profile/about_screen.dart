@@ -8,6 +8,7 @@ import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../shared/web_pages.dart';
 import '../../shared/widgets/cup_logo.dart';
+import '../auth/stand_sheet.dart';
 import 'settings_list.dart';
 
 final _packageInfoProvider = FutureProvider<PackageInfo>((ref) => PackageInfo.fromPlatform());
@@ -24,7 +25,14 @@ class AboutScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
         children: [
-          const Center(child: AnimatedCupLogo(size: 120)),
+          Center(
+            // The stand picker, also for testers who are signed in.
+            child: GestureDetector(
+              onLongPress: () => unawaited(showStandSheet(context)),
+              child: const AnimatedCupLogo(size: 120),
+            ),
+          ),
+          const StandBadge(),
           const SizedBox(height: 16),
           Text(l10n.appName, style: context.text.displaySmall, textAlign: TextAlign.center),
           const SizedBox(height: 8),

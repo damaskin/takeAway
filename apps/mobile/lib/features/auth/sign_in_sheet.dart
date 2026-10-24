@@ -16,6 +16,7 @@ import '../../shared/web_pages.dart';
 import '../../shared/widgets/cup_logo.dart';
 import 'auth_service.dart';
 import 'email_sign_in_form.dart';
+import 'stand_sheet.dart';
 
 /// Opens the sign-in sheet; completes with true once the customer is in.
 /// Call sites resume what the customer was doing (adding to cart,
@@ -108,7 +109,11 @@ class _SignInSheetState extends ConsumerState<SignInSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Center(child: CupLogo()),
+          Center(
+            // Testers switch the server here (see showStandSheet).
+            child: GestureDetector(onLongPress: () => unawaited(showStandSheet(context)), child: const CupLogo()),
+          ),
+          const StandBadge(),
           const SizedBox(height: 16),
           Text(l10n.signInTitle, style: context.text.headlineMedium, textAlign: TextAlign.center),
           const SizedBox(height: 8),

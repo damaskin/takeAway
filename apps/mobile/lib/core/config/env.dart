@@ -1,29 +1,38 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show appFlavor;
 
-/// Build-time configuration.
-///
-/// Everything here comes from `--dart-define` / `--dart-define-from-file`
-/// (see `config/*.json`), so one binary is always bound to one backend and
-/// nothing environment-specific has to be edited in code. Optional
-/// integrations (Google, Firebase) stay switched off until their keys are
-/// supplied — the corresponding UI simply does not render.
-abstract final class Env {
-  /// REST base, including the global `/api` prefix.
-  static const apiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'https://api.takeaway.md/api');
+import 'stand.dart';
 
-  /// Socket.IO origin. Defaults to the origin of [apiBaseUrl]; the gateway
-  /// lives at `/socket.io` on the API host, namespace `/ws`.
-  static const _realtimeUrl = String.fromEnvironment('REALTIME_URL');
+/// Build-time configuration, plus the [Stand] the app runs against.
+///
+/// Integrations come from `--dart-define` / `--dart-define-from-file` (see
+/// `config/*.json`), so nothing environment-specific has to be edited in
+/// code. Optional ones (Google, Firebase) stay switched off until their keys
+/// are supplied — the corresponding UI simply does not render. The backend
+/// is the [stand]: the build names the one it starts on, a tester may switch
+/// it on the phone (see [Stand]).
+abstract final class Env {
+  /// The backend of the running app. Set by `bootstrap()` before the
+  /// provider container is made, and only then: switching stands starts
+  /// the app over with a container of its own.
+  static Stand stand = Stand.buildDefault;
+
+  /// REST base, including the global `/api` prefix.
+  static String get apiBaseUrl => stand.apiBaseUrl;
+
+  /// Socket.IO origin: the API host; the gateway lives at `/socket.io`,
+  /// namespace `/ws`.
+  static String get realtimeUrl => stand.realtimeUrl;
 
   /// The public website, for links the app shares.
-  static const webOrigin = String.fromEnvironment('WEB_ORIGIN', defaultValue: 'https://takeaway.md');
+  static String get webOrigin => stand.webOrigin;
 
   /// The test app, «takeAway Test» (`--flavor staging`): a separate app
   /// that installs next to the store one. Its identity — ids, name, URL
   /// scheme, Telegram App Link — follows the flavor, which is what the
-  /// native side registers; which backend it talks to follows the
-  /// dart-defines (config/staging.json).
+  /// native side registers; it starts on the stand its dart-defines name
+  /// (config/staging.json: [Stand.test]). Superseded by the stand switch
+  /// of the store app.
   static bool get isTestApp => appFlavor == 'staging';
 
   /// The app's own URL scheme: Telegram Login and the bank's page come back
@@ -51,11 +60,17 @@ abstract final class Env {
   /// host build.gradle.kts sets per flavor and build type. Empty — no App
   /// Link registered for this build — falls back to [telegramRedirectUri],
   /// and the define overrides it all (`none` for empty).
+  ///
+  /// The links belong to the bot: production's @takaway_tgbot knows the
+  /// store app. On the test stand the store app signs in through
+  /// @takeaway_test_bot, which has no App Link for it, so it comes back
+  /// through [telegramRedirectUri] (listed under that bot's Redirect URIs).
   static const _telegramAndroidAppLink = String.fromEnvironment('TELEGRAM_ANDROID_APP_LINK');
   static String get telegramAndroidAppLink {
     if (_telegramAndroidAppLink == 'none') return '';
     if (_telegramAndroidAppLink.isNotEmpty) return _telegramAndroidAppLink;
     if (isTestApp) return kReleaseMode ? _testAppReleaseLink : '';
+    if (stand != Stand.prod) return '';
     return kReleaseMode ? 'https://app3387643188-login.tg.dev/tglogin' : 'https://app3004048938-login.tg.dev/tglogin';
   }
 
@@ -105,12 +120,6 @@ abstract final class Env {
   /// debug builds.
   static const _devSignIn = bool.fromEnvironment('DEV_SIGN_IN');
   static bool get devSignIn => kDebugMode && _devSignIn;
-
-  static String get realtimeUrl {
-    if (_realtimeUrl.isNotEmpty) return _realtimeUrl;
-    final api = Uri.parse(apiBaseUrl);
-    return api.replace(path: '').toString().replaceAll(RegExp(r'[/?#]+$'), '');
-  }
 
   static bool get googleSignInConfigured => googleServerClientId.isNotEmpty;
 }
