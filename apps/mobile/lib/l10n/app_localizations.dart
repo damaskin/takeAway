@@ -3103,6 +3103,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You already have unpaid orders — pay for or cancel one before placing a new one'**
   String get errTooManyUnpaidOrders;
+
+  /// Hidden tester sheet (long press on the logo): which backend the app talks to.
+  ///
+  /// In en, this message translates to:
+  /// **'Server'**
+  String get standTitle;
+
+  /// No description provided for @standHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For testing the app. Orders and payments on the test server are not real. After switching, sign in again.'**
+  String get standHint;
+
+  /// No description provided for @standProd.
+  ///
+  /// In en, this message translates to:
+  /// **'Production'**
+  String get standProd;
+
+  /// No description provided for @standTest.
+  ///
+  /// In en, this message translates to:
+  /// **'Test'**
+  String get standTest;
+
+  /// A developer's own API, in builds made with API_BASE_URL.
+  ///
+  /// In en, this message translates to:
+  /// **'Local'**
+  String get standLocal;
+
+  /// Under the logo when the app is not on production, e.g. «Test server · test-api.takeaway.md».
+  ///
+  /// In en, this message translates to:
+  /// **'{stand} server · {host}'**
+  String standBadge(String stand, String host);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

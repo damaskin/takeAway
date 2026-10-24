@@ -232,19 +232,27 @@ final pickupSlotsProvider = FutureProvider.autoDispose.family<List<PickupSlot>, 
   }
 });
 
+/// The API's last answer about its features, for when it cannot be reached.
+abstract final class FeatureFlagsCache {
+  static const delivery = 'flags.delivery';
+  static const cards = 'flags.cards';
+  static const cardFlow = 'flags.cardFlow';
+  static const keys = [delivery, cards, cardFlow];
+}
+
 final featureFlagsProvider = FutureProvider<FeatureFlags>((ref) async {
   final prefs = ref.watch(sharedPreferencesProvider);
   try {
     final flags = await ref.watch(apiProvider).features();
-    unawaited(prefs.setBool('flags.delivery', flags.deliveryEnabled));
-    unawaited(prefs.setBool('flags.cards', flags.agroprombankEnabled));
-    unawaited(prefs.setString('flags.cardFlow', flags.cardPaymentFlow.name));
+    unawaited(prefs.setBool(FeatureFlagsCache.delivery, flags.deliveryEnabled));
+    unawaited(prefs.setBool(FeatureFlagsCache.cards, flags.agroprombankEnabled));
+    unawaited(prefs.setString(FeatureFlagsCache.cardFlow, flags.cardPaymentFlow.name));
     return flags;
   } on Object {
     return FeatureFlags(
-      deliveryEnabled: prefs.getBool('flags.delivery') ?? false,
-      agroprombankEnabled: prefs.getBool('flags.cards') ?? false,
-      cardPaymentFlow: CardPaymentFlow.tryParse(prefs.getString('flags.cardFlow')),
+      deliveryEnabled: prefs.getBool(FeatureFlagsCache.delivery) ?? false,
+      agroprombankEnabled: prefs.getBool(FeatureFlagsCache.cards) ?? false,
+      cardPaymentFlow: CardPaymentFlow.tryParse(prefs.getString(FeatureFlagsCache.cardFlow)),
     );
   }
 });

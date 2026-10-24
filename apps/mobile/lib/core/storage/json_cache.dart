@@ -3,11 +3,14 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../config/stand.dart';
+
 /// Last-known-good copies of catalog responses (stores, menus).
 ///
 /// Only public, non-personal data goes here. The app renders the cached
 /// copy immediately and replaces it when the network answers, which also
-/// keeps the menu browsable offline — the same promise the PWA makes.
+/// keeps the menu browsable offline — the same promise the PWA makes. Each
+/// stand has a cache of its own: one server's menus never show on another.
 abstract interface class JsonCache {
   Future<Object?> read(String key);
   Future<void> write(String key, Object? json);
@@ -16,9 +19,10 @@ abstract interface class JsonCache {
 class FileJsonCache implements JsonCache {
   FileJsonCache._(this._dir);
 
-  static Future<FileJsonCache> open() async {
+  static Future<FileJsonCache> open(Stand stand) async {
     final base = await getApplicationCacheDirectory();
-    final dir = Directory('${base.path}${Platform.pathSeparator}catalog');
+    final name = stand == Stand.prod ? 'catalog' : 'catalog-${stand.name}';
+    final dir = Directory('${base.path}${Platform.pathSeparator}$name');
     if (!dir.existsSync()) await dir.create(recursive: true);
     return FileJsonCache._(dir);
   }

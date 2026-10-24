@@ -47,20 +47,20 @@ final onboardingDoneProvider = NotifierProvider<OnboardingController, bool>(Onbo
 /// checkout; the app itself still opens on the stores list (see
 /// `initialLocation`), so a launch starts from where to order.
 class ActiveStoreController extends Notifier<String?> {
-  static const _key = 'app.activeStoreId';
+  static const prefsKey = 'app.activeStoreId';
 
   @override
-  String? build() => ref.watch(sharedPreferencesProvider).getString(_key);
+  String? build() => ref.watch(sharedPreferencesProvider).getString(prefsKey);
 
   void select(String storeId) {
     if (state == storeId) return;
     state = storeId;
-    unawaited(ref.read(sharedPreferencesProvider).setString(_key, storeId));
+    unawaited(ref.read(sharedPreferencesProvider).setString(prefsKey, storeId));
   }
 
   void clear() {
     state = null;
-    unawaited(ref.read(sharedPreferencesProvider).remove(_key));
+    unawaited(ref.read(sharedPreferencesProvider).remove(prefsKey));
   }
 }
 

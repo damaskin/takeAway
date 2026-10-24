@@ -1111,5 +1111,28 @@
   "errTooManyUnpaidOrders": "You already have unpaid orders — pay for or cancel one before placing a new one",
   "@errTooManyUnpaidOrders": {
     "description": "Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS)."
+  },
+  "standTitle": "Server",
+  "@standTitle": {
+    "description": "Hidden tester sheet (long press on the logo): which backend the app talks to."
+  },
+  "standHint": "For testing the app. Orders and payments on the test server are not real. After switching, sign in again.",
+  "standProd": "Production",
+  "standTest": "Test",
+  "standLocal": "Local",
+  "@standLocal": {
+    "description": "A developer's own API, in builds made with API_BASE_URL."
+  },
+  "standBadge": "{stand} server · {host}",
+  "@standBadge": {
+    "description": "Under the logo when the app is not on production, e.g. «Test server · test-api.takeaway.md».",
+    "placeholders": {
+      "stand": {
+        "type": "String"
+      },
+      "host": {
+        "type": "String"
+      }
+    }
   }
 }

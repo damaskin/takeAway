@@ -108,8 +108,9 @@ CORS_ALLOWED_ORIGINS=https://test.takeaway.md,https://test-admin.takeaway.md,htt
 ADMIN_APP_URL=https://test-admin.takeaway.md
 PUBLIC_WEB_URL=https://test.takeaway.md
 PUBLIC_TMA_URL=https://test-tma.takeaway.md
-# The test app «takeAway Test» has a URL scheme of its own (apps/mobile/README.md).
-MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay
+# No MOBILE_PAYMENT_RETURN_URL: the bank's page goes back to the store app,
+# switched to staging on the phone (apps/mobile/README.md → Stands), through
+# the API's default takeaway://pay.
 
 # --- Telegram: the test bot, never production's ------------------------------
 $(grep -E '^TELEGRAM_BOT_(USERNAME|TOKEN)=' "$TG_ENV")

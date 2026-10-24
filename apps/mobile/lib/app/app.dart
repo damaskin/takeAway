@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/config/env.dart';
+import '../core/config/stand.dart';
 import '../core/storage/app_prefs.dart';
 import '../core/theme/app_theme.dart';
+import '../core/theme/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../shared/keyboard_dismiss.dart';
 import 'router.dart';
@@ -32,9 +35,18 @@ class TakeAwayApp extends ConsumerWidget {
         // Keep text scaling generous but bounded so layouts built for a
         // phone in the hand do not collapse at 200 %.
         final media = MediaQuery.of(context);
-        return MediaQuery(
+        final app = MediaQuery(
           data: media.copyWith(textScaler: media.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.35)),
           child: DismissKeyboardOnTapOutside(child: child!),
+        );
+        // Off production a corner ribbon says so on every screen.
+        final stand = Env.stand;
+        if (stand == Stand.prod) return app;
+        return Banner(
+          message: stand.name.toUpperCase(),
+          location: BannerLocation.topEnd,
+          color: Palette.berry,
+          child: app,
         );
       },
     );

@@ -96,7 +96,22 @@ Platform releases are dated tags (`v2026.10.20`); the mobile apps keep their
 own versions (`1.6.0`) and release branches. Only `vYYYY.MM.DD…` tags deploy
 the server.
 
-## The test app: «takeAway Test»
+## The phone app on staging
+
+Since 2026-10-24 the store app itself switches to staging: a long press on
+the cup logo of the sign-in sheet or of Профиль → «О приложении» opens a
+hidden «Сервер» sheet with «Прод» and «Тест». Switching signs out and starts
+the app over against `test-api.takeaway.md`; a «TEST» ribbon stays in the
+corner until it is switched back. Telegram signs in through
+@takeaway_test_bot, which needs `takeaway://tglogin` among its Redirect URIs
+(BotFather → Login Widget); Google and Apple are not offered there, cards go
+through the fake bank as on the site. Details: `apps/mobile/README.md` →
+Stands.
+
+### The test app «takeAway Test» (being retired)
+
+Superseded by the switch above; used until a store version with the switch
+is out.
 
 A separate app for iOS and Android that talks to staging
 (`test-api.takeaway.md`) and installs next to the store app: its own ids
@@ -139,7 +154,7 @@ cuts everything that could reach a real person or a real system from it
 Staging's environment is the other wall: its own Telegram bot (a test order
 cannot message a café's real staff), card payments against a fake bank,
 Google and Apple sign-in off, no push credentials, no SMTP. The bank's page
-sends the test app back through `MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay`.
+sends the phone app back through the default `takeaway://pay`.
 
 It still holds real people's names and phone numbers. Staging is for the
 team only — do not hand its links to customers or cafés.
@@ -366,22 +381,15 @@ container and volumes stay until removed by hand
 (`docker rm -f takeaway-staging-agro-mock-1`,
 `docker volume rm takeaway-staging_sandbox_bank_keys takeaway-staging_sandbox_bank_state`).
 
-## The test app's payment return: one-time step (October 2026)
+## The app's payment return on staging
 
-A staging bootstrapped after the test app was added has
-`MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay` already. The first one
-(2026-10-18) gets it by hand, once — it matters only with
-`CARD_PAYMENT_FLOW=web`, where the bank's page has to send the test app back
-(the default `token` flow never leaves the app):
-
-```bash
-ssh hetzner
-echo 'MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay' \
-  | sudo -u deploy tee -a /opt/takeaway-staging/repo/deploy/.env.production
-sudo -u deploy bash /opt/takeaway-staging/repo/deploy/scripts/deploy.sh
-```
-
-Without it the API falls back to `takeaway://pay`, which opens the store app.
+Staging leaves `MOBILE_PAYMENT_RETURN_URL` unset: the API falls back to
+`takeaway://pay`, which opens the store app — since 2026-10-24 the app
+staging is tested with (see [the phone app on staging](#the-phone-app-on-staging)).
+It matters only with `CARD_PAYMENT_FLOW=web`; the default `token` flow never
+leaves the app. A staging bootstrapped between 2026-10-22 and 2026-10-24 got
+`MOBILE_PAYMENT_RETURN_URL=takeawaytest://pay`, for the retired test app;
+delete that line from `deploy/.env.production` and deploy.
 
 ## Not on staging yet
 

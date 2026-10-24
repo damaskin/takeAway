@@ -1704,4 +1704,25 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get errTooManyUnpaidOrders =>
       'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый';
+
+  @override
+  String get standTitle => 'Сервер';
+
+  @override
+  String get standHint =>
+      'Для проверки приложения. На тестовом сервере заказы и оплаты не настоящие. После смены сервера нужно войти заново.';
+
+  @override
+  String get standProd => 'Прод';
+
+  @override
+  String get standTest => 'Тест';
+
+  @override
+  String get standLocal => 'Локальный';
+
+  @override
+  String standBadge(String stand, String host) {
+    return 'Сервер «$stand» · $host';
+  }
 }

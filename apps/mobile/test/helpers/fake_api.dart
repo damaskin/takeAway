@@ -695,6 +695,12 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<void> registerDevice(DeviceRegistration body) async {}
 
+  /// The refresh token of every sign-out.
+  final logouts = <String>[];
+
+  @override
+  Future<void> logout(RefreshRequest body) async => logouts.add(body.refreshToken);
+
   /// Every feedback the app sent.
   final feedback = <CreateFeedbackRequest>[];
 

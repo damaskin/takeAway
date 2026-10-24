@@ -98,10 +98,15 @@ class PushService {
   /// `<userId>|<fcm token>` once the API has this device for that user,
   /// `<userId>|` once it was detached for them (so it is not detached again
   /// on every launch). Survives restarts.
-  static const _registrationKey = 'push.registration';
+  static const registrationKey = 'push.registration';
+
+  /// The notification that launched the app is handed on once per process:
+  /// switching stands starts the app over, and must not open it again.
+  static bool _initialMessageTaken = false;
 
   final Ref _ref;
   bool _initialized = false;
+  final _subscriptions = <StreamSubscription<Object?>>[];
   String? _token;
   String? _apnsToken;
   bool _syncing = false;
@@ -124,27 +129,35 @@ class PushService {
   Future<void> init() async {
     if (_initialized || !configured) return;
     try {
-      await Firebase.initializeApp(
-        options: FirebaseOptions(
-          apiKey: Env.firebaseApiKey,
-          appId: Platform.isIOS ? Env.firebaseIosAppId : Env.firebaseAndroidAppId,
-          messagingSenderId: Env.firebaseSenderId,
-          projectId: Env.firebaseProjectId,
-        ),
-      );
+      // Already up when the app was started over on another stand.
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: FirebaseOptions(
+            apiKey: Env.firebaseApiKey,
+            appId: Platform.isIOS ? Env.firebaseIosAppId : Env.firebaseAndroidAppId,
+            messagingSenderId: Env.firebaseSenderId,
+            projectId: Env.firebaseProjectId,
+          ),
+        );
+      }
       final messaging = FirebaseMessaging.instance;
       // In the foreground the app shows its own in-app notice (see
       // [foreground]), which knows to stay quiet about the order already on
       // screen. Letting iOS show its banner as well put the same news up
       // twice; Android shows none for a foreground push anyway.
       await messaging.setForegroundNotificationPresentationOptions(badge: true, sound: true);
-      FirebaseMessaging.onMessage.listen((m) => _foreground.add(_toMessage(m)));
-      FirebaseMessaging.onMessageOpenedApp.listen((m) => _opened.add(_toMessage(m)));
-      messaging.onTokenRefresh.listen((token) => unawaited(_onTokenRefresh(token)));
-      final initial = await messaging.getInitialMessage();
+      _subscriptions.addAll([
+        FirebaseMessaging.onMessage.listen((m) => _foreground.add(_toMessage(m))),
+        FirebaseMessaging.onMessageOpenedApp.listen((m) => _opened.add(_toMessage(m))),
+        messaging.onTokenRefresh.listen((token) => unawaited(_onTokenRefresh(token))),
+      ]);
+      final initial = _initialMessageTaken ? null : await messaging.getInitialMessage();
+      _initialMessageTaken = true;
       if (initial != null) {
         // Let the router settle before navigating.
-        Future<void>.delayed(const Duration(milliseconds: 600), () => _opened.add(_toMessage(initial)));
+        Future<void>.delayed(const Duration(milliseconds: 600), () {
+          if (!_opened.isClosed) _opened.add(_toMessage(initial));
+        });
       }
       _initialized = true;
       await syncToken();
@@ -274,7 +287,7 @@ class PushService {
     if (userId == null) return;
     try {
       await _ref.read(apiProvider).registerDevice(_registration(token));
-      await _prefs.setString(_registrationKey, '$userId|$token');
+      await _prefs.setString(registrationKey, '$userId|$token');
     } on Object catch (error) {
       debugPrint('Device registration failed: $error');
     }
@@ -285,13 +298,13 @@ class PushService {
   /// asking.
   Future<void> _detach() async {
     final userId = _ref.read(currentUserIdProvider);
-    if (userId == null || _prefs.getString(_registrationKey) == '$userId|') return;
+    if (userId == null || _prefs.getString(registrationKey) == '$userId|') return;
     final token = _token ?? await _fetchToken();
     if (token == null) return;
     _token = token;
     try {
       await _ref.read(apiProvider).unregisterDevice(_registration(token));
-      await _prefs.setString(_registrationKey, '$userId|');
+      await _prefs.setString(registrationKey, '$userId|');
     } on Object catch (error) {
       debugPrint('Device detach failed: $error');
     }
@@ -307,11 +320,11 @@ class PushService {
       // The server prunes dead tokens on its own, and the next account to
       // sign in on this phone takes the token over.
     }
-    await _prefs.remove(_registrationKey);
+    await _prefs.remove(registrationKey);
   }
 
   bool _registeredFor(String userId) {
-    final stored = _prefs.getString(_registrationKey);
+    final stored = _prefs.getString(registrationKey);
     return stored != null && stored.startsWith('$userId|') && stored.length > userId.length + 1;
   }
 
@@ -329,8 +342,21 @@ class PushService {
     );
   }
 
+  /// Stops listening to Firebase: the app is being started over.
+  void dispose() {
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    unawaited(_opened.close());
+    unawaited(_foreground.close());
+  }
+
   static PushMessage _toMessage(RemoteMessage message) =>
       PushMessage.fromData(message.data, title: message.notification?.title, body: message.notification?.body);
 }
 
-final pushServiceProvider = Provider<PushService>((ref) => PushService(ref));
+final pushServiceProvider = Provider<PushService>((ref) {
+  final service = PushService(ref);
+  ref.onDispose(service.dispose);
+  return service;
+});
