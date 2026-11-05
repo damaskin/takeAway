@@ -8,6 +8,7 @@ import {
   describeOrderItemOptions,
   expiredOutcome,
   formatCountdown,
+  orderCancellation,
   orderDueAt,
   orderWaitNote,
   phoneHref,
@@ -72,6 +73,11 @@ interface TextLine {
   params: Record<string, string | number>;
 }
 
+/** A line of the cancelled order's card: why, the store's own words, the money. */
+interface CancellationLine extends TextLine {
+  kind: 'reason' | 'comment' | 'money';
+}
+
 /** Why the customer can no longer cancel: the kitchen took the order, or the money is taken. */
 type CancelBlock = 'ACCEPTED' | 'CHARGED';
 
@@ -128,6 +134,27 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
             </p>
           }
         </header>
+
+        <!-- A cancelled order says why and where the money is, as the push did. -->
+        @if (cancellationLines(); as lines) {
+          <article
+            role="status"
+            data-testid="cancel-reason"
+            class="w-full flex flex-col"
+            style="gap: 6px; padding: 14px 18px; border-radius: 16px; background: var(--color-cream); border: 1px solid var(--color-border-light)"
+          >
+            @for (line of lines; track line.key) {
+              <span
+                [attr.data-testid]="'cancel-' + line.kind"
+                [style.font-weight]="line.kind === 'reason' ? 600 : 400"
+                [style.color]="line.kind === 'reason' ? 'var(--color-espresso)' : 'var(--color-text-secondary)'"
+                [style.font-style]="line.kind === 'comment' ? 'italic' : 'normal'"
+                style="font-family: var(--font-sans); font-size: 14px; line-height: 1.4"
+                >{{ line.key | translate: line.params }}</span
+              >
+            }
+          </article>
+        }
 
         <!-- Where the money stands. The first thing a customer wants after
              tapping pay is confirmation that it worked; the order's own
@@ -603,6 +630,8 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     const order = this.order();
     if (!order) return { key: '', params: {} };
     if (order.status === 'EXPIRED') return { key: `web.orderStatus.expired.${expiredOutcome(order)}`, params: {} };
+    const cancelledBy = this.cancellation()?.by;
+    if (cancelledBy) return { key: `common.orderCancelled.by.${cancelledBy}`, params: {} };
     const wait = this.waitNote();
     if (wait) return { key: `web.orderStatus.wait.${wait}`, params: {} };
     const estimate = this.estimateLine();
@@ -619,6 +648,30 @@ export class OrderStatusPage implements OnInit, OnDestroy {
       default:
         return { key: '', params: {} };
     }
+  });
+
+  /** Who cancelled the order, why and where the money is — see `orderCancellation`. */
+  readonly cancellation = computed(() => {
+    const o = this.order();
+    return o ? orderCancellation(o) : null;
+  });
+
+  /**
+   * Under the headline of a cancelled order: the store's reason (or, for a
+   * declined card, what to do), its comment as typed, and the money. Null
+   * when there is nothing to say.
+   */
+  readonly cancellationLines = computed((): CancellationLine[] | null => {
+    const c = this.cancellation();
+    if (!c) return null;
+    const lines: CancellationLine[] = [];
+    if (c.reason) lines.push({ kind: 'reason', key: `common.orderCancelled.reason.${c.reason}`, params: {} });
+    if (c.by === 'cardDeclined')
+      lines.push({ kind: 'reason', key: 'common.orderCancelled.cardDeclinedHint', params: {} });
+    if (c.comment)
+      lines.push({ kind: 'comment', key: 'common.orderCancelled.comment', params: { comment: c.comment } });
+    if (c.money) lines.push({ kind: 'money', key: `common.orderCancelled.money.${c.money}`, params: {} });
+    return lines.length > 0 ? lines : null;
   });
 
   /**

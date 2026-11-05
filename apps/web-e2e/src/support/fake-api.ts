@@ -272,6 +272,9 @@ export async function installFakeApi(
       createdAt: new Date().toISOString(),
       readyAt: null,
       cancelledAt: null,
+      cancelledBy: null,
+      cancelReason: null,
+      cancelComment: null,
       readyEstimateAt: null,
       canCancel: true,
       ...patch,
@@ -463,7 +466,12 @@ export async function installFakeApi(
           409,
         );
       }
-      Object.assign(order, { status: 'CANCELLED', canCancel: false, cancelledAt: new Date().toISOString() });
+      Object.assign(order, {
+        status: 'CANCELLED',
+        canCancel: false,
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: 'CUSTOMER',
+      });
       return json(route, order);
     }
     if (path.match(/^\/orders\/[^/]+$/) && method === 'GET') {

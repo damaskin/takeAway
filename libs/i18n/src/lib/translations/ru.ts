@@ -62,6 +62,38 @@ export const TRANSLATIONS_RU = {
       pickedUpTitle: 'Заказ выдан. Хорошего дня!',
       pickedUpSlogan: 'Ноль минут в очереди — как и обещали. До встречи!',
     },
+    /**
+     * Who called a cancelled order off, why and where the money is — see
+     * orderCancellation in @takeaway/utils. The same story as the push.
+     */
+    orderCancelled: {
+      by: {
+        store: 'Заведение отменило заказ',
+        customer: 'Вы отменили заказ',
+        cardDeclined: 'Банк отклонил оплату картой',
+      },
+      /** The status on an order history card. */
+      badge: {
+        store: 'Отменён заведением',
+        customer: 'Отменён вами',
+        cardDeclined: 'Карта отклонена',
+      },
+      /** The kitchen's reason, as the push words it. */
+      reason: {
+        OUT_OF_STOCK: 'Части позиций сейчас нет в наличии.',
+        TOO_BUSY: 'Заведение сейчас перегружено заказами.',
+        CLOSING: 'Заведение закрывается.',
+        OTHER: 'Заведение не может принять заказ.',
+      },
+      cardDeclinedHint: 'Оформите заказ ещё раз с другой картой.',
+      comment: 'Комментарий заведения: «{{comment}}»',
+      money: {
+        notCharged: 'Деньги с карты не списывались.',
+        released: 'Деньги не списаны, блокировка на карте снята.',
+        refunded: 'Деньги вернутся на карту.',
+        holdPending: 'Блокировка на карте будет снята автоматически.',
+      },
+    },
     brand: 'takeAway',
     signIn: 'Войти',
     signOut: 'Выйти',
