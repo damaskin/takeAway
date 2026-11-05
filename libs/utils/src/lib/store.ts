@@ -33,6 +33,21 @@ export function storeAvailability(store: {
   return store.openNow === false ? 'scheduledOnly' : 'open';
 }
 
+/**
+ * A store's status at a glance, as the stores map colours its pin:
+ * - `busy` — takes an order for now, but the kitchen marked itself
+ *   «Загружены» (status OVERLOADED), so the wait is longer;
+ * - `closed` — no order for now: outside hours, paused, a full queue, the
+ *   closing too close (pre-orders only), or no orders at all;
+ * - `open` — takes an order for now.
+ */
+export type StoreTone = 'open' | 'busy' | 'closed';
+
+export function storeTone(store: { status: string; acceptingOrders?: boolean; openNow?: boolean }): StoreTone {
+  if (storeAvailability(store) !== 'open') return 'closed';
+  return store.status === 'OVERLOADED' ? 'busy' : 'open';
+}
+
 const AVAILABILITY_RANK: Record<StoreAvailability, number> = { open: 0, scheduledOnly: 1, closed: 2 };
 
 /**
