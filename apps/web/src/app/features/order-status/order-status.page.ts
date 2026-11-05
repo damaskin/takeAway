@@ -135,6 +135,22 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
           }
         </header>
 
+        <!-- While the order is in work this page is where its status shows up. -->
+        @if (!isTerminal(o.status)) {
+          <div
+            role="note"
+            data-testid="keep-open"
+            class="w-full flex items-start"
+            style="gap: 10px; padding: 12px 16px; border-radius: 14px; background: var(--color-cream); border: 1px solid var(--color-border-light)"
+          >
+            <span aria-hidden="true" style="font-size: 16px; line-height: 20px">ℹ️</span>
+            <span
+              style="font-family: var(--font-sans); font-size: 14px; line-height: 20px; color: var(--color-text-secondary)"
+              >{{ 'web.orderStatus.keepOpen' | translate }}</span
+            >
+          </div>
+        }
+
         <!-- A cancelled order says why and where the money is, as the push did. -->
         @if (cancellationLines(); as lines) {
           <article

@@ -508,6 +508,8 @@ export const TRANSLATIONS_RU = {
       pickupAt: 'Заберёте в {{time}}',
       backToMenu: 'Вернуться в меню',
       notFound: 'Заказ не найден',
+      /** Above the order while it is still in work: the page updates by itself. */
+      keepOpen: 'Не закрывайте эту страницу — статус заказа обновляется здесь сам.',
     },
     auth: {
       welcomeBack: 'С возвращением',

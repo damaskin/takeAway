@@ -235,11 +235,29 @@ describe('OrderStatusPage — waiting for the store', () => {
     expect(text()).toContain('Оплата не завершилась — заказ отменён');
   });
 
+  describe('keeping the page open (item 14)', () => {
+    it('asks to keep the page open while the order is in work', async () => {
+      for (const status of ['CREATED', 'ACCEPTED', 'IN_PROGRESS', 'READY'] as const) {
+        TestBed.resetTestingModule();
+        const { testText } = await open({ ...ORDER, status });
+        expect(testText('keep-open')).toBe('ℹ️ Не закрывайте эту страницу — статус заказа обновляется здесь сам.');
+      }
+    });
+
+    it('drops the request once the order is over', async () => {
+      for (const status of ['PICKED_UP', 'CANCELLED', 'EXPIRED'] as const) {
+        TestBed.resetTestingModule();
+        const { byTestId } = await open({ ...ORDER, status });
+        expect(byTestId('keep-open')).toBeNull();
+      }
+    });
+  });
+
   describe('a cancelled order says why (item 7)', () => {
     const NOT_CHARGED = { state: 'NONE' as const, amountCents: 0, cardMask: null, paidAt: null };
 
     it("gives the store's reason, its comment and the money, as the push did", async () => {
-      const { testText } = await open({
+      const { testText, byTestId } = await open({
         ...ORDER,
         status: 'CANCELLED',
         cancelledBy: 'STORE',
@@ -251,6 +269,7 @@ describe('OrderStatusPage — waiting for the store', () => {
       expect(testText('cancel-reason')).toBe(
         'Части позиций сейчас нет в наличии. Комментарий заведения: «Нет овсяного молока» Деньги с карты не списывались.',
       );
+      expect(byTestId('keep-open')).toBeNull();
     });
 
     it('says the money is on its way back once a charge was refunded', async () => {

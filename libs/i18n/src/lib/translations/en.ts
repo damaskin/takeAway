@@ -506,6 +506,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupAt: 'Pickup at {{time}}',
       backToMenu: 'Back to menu',
       notFound: 'Order not found',
+      /** Above the order while it is still in work: the page updates by itself. */
+      keepOpen: 'Keep this page open — your order status updates here on its own.',
     },
     auth: {
       welcomeBack: 'Welcome back',
