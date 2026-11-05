@@ -332,7 +332,7 @@ takeaway/
         (+ BUSY_EXTRA_WAIT_SECONDS, пока точка «Загружена»)
   ```
 
-  - `baseEtaSeconds` — постоянная накладная точки: пробить, собрать, выдать
+  - `baseEtaSeconds` — «Время для принятия заказа» A (с 2026-11-05, целые минуты 1–60, по умолчанию 10): постоянная накладная точки — принять, пробить, собрать, выдать — и одновременно срок принятия заказа кухней (ниже, «Срок принятия заказа»)
   - невыполненная работа — сумма `Order.workSeconds` по статусам `CREATED / PAID / ACCEPTED / IN_PROGRESS` у заказов со временем выдачи в ближайшие 30 минут, плюс все `IN_PROGRESS` (считаются наполовину сделанными); предзаказы на потом очередь «сейчас» не раздувают
   - `prepSeconds` — самая долгая позиция в заказе (не сумма): бариста тянет шот, пока взбивается молоко
   - `workSeconds` — сумма по позициям с учётом количества: сколько заказ стоит кухне. Заказ из четырёх напитков грузит бар вчетверо сильнее, чем заставляет ждать своего клиента, поэтому это два разных числа
@@ -374,7 +374,7 @@ takeaway/
 - **Состояние платежа для клиента**: `GET /orders/:id` возвращает поле `payment` — `{ state: NONE | PENDING | HELD | PAID | FAILED | REFUNDED, amountCents, cardMask, paidAt }`. Считается по последней строке `Payment` заказа; `REQUIRES_ACTION` у преавторизации читается как `HELD`. Клиенты показывают его первым блоком на экране заказа
 - После оплаты: генерация **order code** (4-значный) и **QR-кода** для получения
 - **TTL неоплаченного заказа** (`ORDER_PAYMENT_TTL_MINUTES`, по умолчанию 15, считается и от последней попытки оплаты): раз в минуту `OrderExpiryService` переводит просроченные `CREATED` в `EXPIRED` и возвращает промокод, остаток подарочной карты и окно выдачи. То же освобождение выполняется при отмене заказа клиентом и при отказе кухни
-- **Срок принятия заказа** (`docs/kitchen-policy.md`, раздел E): часы отсчитываются от `Order.kitchenVisibleAt` (заказ появился на доске — при создании, если платить картой нечего, иначе когда легла бронь, отложенное списание или оплата). Через `ORDER_ACCEPT_ALERT_SECONDS` (180) без принятия — Telegram сотрудникам и владельцу, карточка мигает; через `ORDER_ACCEPT_TIMEOUT_SECONDS` (480; предзаказ — не раньше чем за 10 минут до выдачи) — `EXPIRED` (`not_accepted`): бронь снимается, отложенное списание отменяется, промокод/баллы/подарочная карта возвращаются, пуш клиенту. Списанные деньги сначала возвращаются; не вышло — заказ остаётся, ops-чат, сотрудники и владелец получают сообщение. Старые `ORDER_ACCEPT_TTL_MINUTES` (30) и `ORDER_ACCEPT_GRACE_MINUTES` (15) остались страховкой
+- **Срок принятия заказа** (`docs/kitchen-policy.md`, раздел E): часы отсчитываются от `Order.kitchenVisibleAt` (заказ появился на доске — при создании, если платить картой нечего, иначе когда легла бронь, отложенное списание или оплата). Срок у каждой точки свой — A = `Store.baseEtaSeconds` («Время для принятия заказа», 1–60 мин; с 2026-11-05, раньше общие `ORDER_ACCEPT_ALERT_SECONDS`=180 и `ORDER_ACCEPT_TIMEOUT_SECONDS`=480 — удалены). Через A/2 без принятия — Telegram сотрудникам и владельцу, карточка краснеет «Примите заказ»; через A (предзаказ — не раньше чем за 10 минут до выдачи) — `EXPIRED` (`not_accepted`): бронь снимается, отложенное списание отменяется, промокод/баллы/подарочная карта возвращаются, пуш клиенту. Списанные деньги сначала возвращаются; не вышло — заказ остаётся, ops-чат, сотрудники и владелец получают сообщение. Старые `ORDER_ACCEPT_TTL_MINUTES` (30) и `ORDER_ACCEPT_GRACE_MINUTES` (15) остались страховкой (срок страховки — `max(ORDER_ACCEPT_TTL_MINUTES, A + ORDER_ACCEPT_GRACE_MINUTES)`, раньше A она не срабатывает)
 
 ### 3.5. Заказы и live-статус
 
@@ -402,7 +402,7 @@ takeaway/
 
 - **Баллы**: `LoyaltyAccount.pointsBalance` + append-only `PointsLedger` (типы: `EARN` / `SPEND` / `EXPIRE` / `ADJUST`)
 - **Уровни** (фактический enum): `SILVER` / `GOLD` / `PLATINUM` (Bronze в реализации нет — упрощено)
-- **Промокоды**: `Promo` с типами `PERCENT` / `FIXED` / `BOGO` / `POINTS_MULTIPLIER`, лимиты на total/per-user. Статусы — черновик → активен → пауза → завершён (`PROMO_TRANSITIONS` в `libs/shared-types`): запущенный промокод хранится как `SCHEDULED` до `startsAt` и `RUNNING` после, на чекауте работают оба внутри дат; API отдаёт статус «по факту» (активный после `endsAt` — `EXPIRED`). `Promo.inactiveDays` (3/7/14) + `segmentStoreId` — код только для неактивных клиентов (сегмент ниже), остальным чекаут отвечает `PROMO_NOT_ELIGIBLE`; гостевой `/promo/preview` этого не проверяет.
+- **Промокоды**: `Promo` с типами `PERCENT` / `FIXED` / `BOGO` / `POINTS_MULTIPLIER`, лимиты на total/per-user. С 2026-11-05 новые коды — только `PERCENT`: `POST /admin/promo` другие типы отклоняет, `PATCH /admin/promo/:id` оставляет коду его тип или меняет на `PERCENT` (иначе 400 `PROMO_TYPE`); старые коды других типов работают до конца срока. Статусы — черновик → активен → пауза → завершён (`PROMO_TRANSITIONS` в `libs/shared-types`): запущенный промокод хранится как `SCHEDULED` до `startsAt` и `RUNNING` после, на чекауте работают оба внутри дат; API отдаёт статус «по факту» (активный после `endsAt` — `EXPIRED`). `Promo.inactiveDays` (3/7/14) + `segmentStoreId` — код только для неактивных клиентов (сегмент ниже), остальным чекаут отвечает `PROMO_NOT_ELIGIBLE`; гостевой `/promo/preview` этого не проверяет.
 - **Уровни лояльности в кабинете бизнеса**: только статичные карточки Silver/Gold/Platinum/Signature на вкладке «Промокоды» (число участников «—», бонусы — текст без логики). Уровни платформенные (`LoyaltyAccount` на пользователя, не на бренд) и влияют только на прогресс в профиле клиента.
 - **Рефералка**: реализовано — каждый юзер получает уникальный код, бонус обеим сторонам начисляется на первом PAID-заказе реферала
 - **Подписки (Coffeepass)**: НЕ реализовано — кандидат на v1.x
@@ -411,7 +411,7 @@ takeaway/
 ### 3.7. Подарочные карты
 
 - Реализовано как admin-driven flow (v1):
-  - Brand admin выпускает карту через `/admin/gift-cards` → код шарится клиенту out-of-band
+  - Brand admin выпускает карту через `/admin/gift-cards` → код шарится клиенту out-of-band. С 2026-11-05 карты выпускаются только в `RUP` (`IssueGiftCardDto.currency`); уже выпущенные в других валютах работают как раньше
   - Клиент вводит код в чекаут (рядом с промо), баланс применяется как скидка через `GiftCardRedemption`
   - Поддержка частичного погашения (баланс остаётся)
   - Отказ в карте на чекауте — 400 с кодом в теле (`GiftCardErrorCode` в `libs/shared-types`: `GIFT_CARD_UNKNOWN`, `GIFT_CARD_OTHER_BRAND`, `GIFT_CARD_CURRENCY`, `GIFT_CARD_EXPIRED`, `GIFT_CARD_USED_UP`, `GIFT_CARD_CANCELLED`) и прежним английским `message` — по нему переводят версии приложения, вышедшие до кодов; списание, которое опередил другой заказ, — 409 `GIFT_CARD_BALANCE_CHANGED`
@@ -584,7 +584,8 @@ Category (id, brandId, slug, name, sortOrder, availableFrom?, availableTo?, visi
           kind[HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER], defaultPrepTimeSeconds?,
           externalProvider?, externalId?)
 Product (id, brandId, categoryId, slug, name, basePriceCents, prepTimeSeconds,
-         caffeineLevel?, calories?, P/F/C, allergens[], dietTags[VEGAN|GLUTEN_FREE|...],
+         calories?, P/F/C,
+         caffeineLevel?, allergens[], dietTags[] — устарели с 2026-11-05: колонки с данными сохранены, кабинет их не редактирует, API не принимает и не отдаёт,
          imageUrls[], visible, sortOrder, availableFrom?, availableTo?,
          externalProvider?, externalId?)
 Variation (id, productId, type[SIZE|TEMP|MILK|CUP], name, priceDeltaCents,
@@ -605,7 +606,7 @@ StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка за�
 
 **Категории «только как добавка».** `Category.addOnsOnly = true` — товары категории не продаются отдельно (например, «Дополнительные ингредиенты», пришедшие из Poster как обычные товары). Такая категория остаётся в кабинете, стоп-листе и синхронизации с POS, но `GET /stores/:id/menu` её не отдаёт, `GET /products/:idOrSlug` отвечает 404 на её товары, `POST /cart/items` — 404, а оформление снимает уже лежащую в корзине строку (`CART_CHANGED`, `PRODUCT_UNAVAILABLE`). Так же теперь обрабатывается товар скрытой категории (`visible = false`). Синхронизация с POS пишет в категорию только название и порядок, поэтому флаг переживает повторный импорт. Дальше такую категорию можно превратить в источник справочника: связать её товары с записями `Ingredient` (например, `Ingredient.productId`), чтобы цена добавки и её стоп-лист шли из POS.
 
-**Вид категории.** `Category.kind` — что лежит в категории: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY` или `OTHER` (по умолчанию). Миграция `20261011120000_category_kind_option_presets` проставила вид существующим категориям по названию — те же начала слов на русском и английском и тот же порядок (еда → холодные напитки → горячие → выпечка, первое совпадение), что и `inferCategoryKind` в `libs/utils` (тест в API сверяет регулярки миграции с утилитой). Кабинет предлагает вид новой категории по названию, `POST /admin/categories` без `kind` ставит его так же; синхронизация с POS задаёт вид только новой категории и никогда не перезаписывает его, как и `defaultPrepTimeSeconds`. От вида зависят только кабинет (поля товара: кофеин и «без кофеина»/«без сахара» — напиткам, «вегетарианское»/«без глютена» — еде, чек-лист аллергенов — всем; варианты MILK/TEMPERATURE/CUP — только напиткам; у товара, перенесённого в категорию другого вида, скрытые поля сохраняются, кабинет предлагает их очистить) и клиентские заглушки — меню, корзина и цены от него не зависят. Аллергены чек-листа хранятся кодами (`GLUTEN`, `MILK`, `LACTOSE`, … — `ALLERGEN_CODES` в `libs/utils`, названия — `common.allergens` в i18n; приложение знает те же коды) в том же `Product.allergens`, рядом со свободным текстом, который был до чек-листа и сохраняется как есть; клиенты печатают код на языке покупателя (`allergenChips`), текст — как есть.
+**Вид категории.** `Category.kind` — что лежит в категории: `HOT_DRINKS`, `COLD_DRINKS`, `FOOD`, `BAKERY` или `OTHER` (по умолчанию). Миграция `20261011120000_category_kind_option_presets` проставила вид существующим категориям по названию — те же начала слов на русском и английском и тот же порядок (еда → холодные напитки → горячие → выпечка, первое совпадение), что и `inferCategoryKind` в `libs/utils` (тест в API сверяет регулярки миграции с утилитой). Кабинет предлагает вид новой категории по названию, `POST /admin/categories` без `kind` ставит его так же; синхронизация с POS задаёт вид только новой категории и никогда не перезаписывает его, как и `defaultPrepTimeSeconds`. От вида зависят кабинет (варианты MILK/TEMPERATURE/CUP — только напиткам, готовые наборы опций), клиентские заглушки товаров без фото и деление «напиток / еда» в аналитике покупателя (любимый напиток и еда) — меню, корзина и цены от него не зависят. Кофеин, «особенности» (`dietTags`) и аллергены убраны из карточки товара 2026-11-05.
 
 **Время приготовления по умолчанию.** `Category.defaultPrepTimeSeconds` — с каким `prepTimeSeconds` создаётся новый товар категории (кабинет подставляет его в форму; `POST /admin/products` без `prepTimeSeconds` берёт его на сервере). `POST /admin/categories/:id/prep-time/apply` ставит его всем товарам категории. Базовое время точки (`Store.baseEtaSeconds`) — только пробить, упаковать и выдать; готовка считается по товарам.
 
@@ -632,6 +633,7 @@ Order (id, userId, storeId, status[CREATED|PAID|ACCEPTED|IN_PROGRESS|READY|PICKE
        posExternalId?,                                             // iiko/Poster order id
        acceptedAt?, startedAt?, readyAt?, pickedUpAt?,
        outForDeliveryAt?, deliveredAt?, cancelledAt?, expiredAt?,
+       cancelledBy?[CUSTOMER|STORE], cancelReason?[OUT_OF_STOCK|TOO_BUSY|CLOSING|OTHER|CARD_DECLINED], cancelComment?,  // кто и почему отменил — видно клиенту (с 2026-11-05); пишет OrdersService.cancelOrder вместе со статусом
        kitchenVisibleAt?,                                          // на доске кухни: отсюда срок принятия
        readyEstimateAt?,                                           // кухня приняла/начала поздно: новое время готовности (pickupAt — исходное обещание)
        acceptAlertSentAt?, startReminderSentAt?, lateNotifiedAt?, lateAlertSentAt?)  // одноразовые напоминания
@@ -824,7 +826,7 @@ GET    /stores/:idOrSlug/menu        (категории + продукты + va
                                      //   категория несёт kind (HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER), товар — categoryKind
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
                                      //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке;
-                                     //   categoryKind товара, modifiers[].group (null = «Добавки»); allergens — коды чек-листа и/или свободный текст
+                                     //   categoryKind товара, modifiers[].group (null = «Добавки»); allergens/caffeineLevel/dietTags с 2026-11-05 не отдаются
 GET    /stores/:idOrSlug/pickup-slots?cartId=  → 15-минутные окна выдачи на 24 часа вперёд (с cartId — занятость с работой корзины)
 GET    /stores/:idOrSlug/suggestions?productIds=a,b[&limit=6]  → { productIds: string[], source: 'copurchase' | 'rule' }
                                      //   что предложить к товарам в руках: совместные покупки за 90 дней (точки, иначе бренда),
@@ -941,7 +943,7 @@ GET                    /admin/products/stores?brandId=   точки бренда
                                                     + POST/DELETE /admin/products/:id/images, PUT /admin/products/:id/images/order
                                                     + POST/PATCH/DELETE /admin/products/:id/variations[/...]
                                                     + POST/PATCH/DELETE /admin/products/:id/modifiers[/...]
-GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (GET ?brandId=, ответы несут priceCents, group и products[]); POST/PATCH { name, priceCents?, isAvailable?, group? },
+GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «Добавки» (страница кабинета — только SUPER_ADMIN с 2026-11-05; API — прежние роли, им пользуется редактор опций товара) (GET ?brandId=, ответы несут priceCents, group и products[]); POST/PATCH { name, priceCents?, isAvailable?, group? },
                                                     PATCH { isAvailable } — «закончилось/появилось», новое name/priceCents переносится в опции с прежними значениями;
                                                     DELETE убирает добавку из всех товаров
 #   POST /admin/products/:id/modifiers и /variations принимают { ingredientId } без name/priceDeltaCents — берутся из справочника
@@ -1008,7 +1010,7 @@ POST                   /admin/orders/:id/refund          { amountCents?, reason?
 GET/POST               /admin/promo                      // PRO (promo); статус в ответе — «по факту»
 GET/PATCH              /admin/promo/:id                  // PRO: правка черновика / запланированного или на паузе без использований
 PATCH                  /admin/promo/:id/status           // { status: RUNNING|PAUSED|EXPIRED } — черновик → активен → пауза → завершён
-GET/POST/DELETE        /admin/gift-cards[/:id]
+GET/POST/DELETE        /admin/gift-cards[/:id]?brandId=   // SUPER_ADMIN — brandId обязателен; кабинет шлёт бренд из шапки; POST — только currency=RUP
 GET/POST               /admin/campaigns                  ?brandId= (SUPER_ADMIN — обязательно) // PRO (campaigns) — весь контроллер
 GET                    /admin/campaigns/preview          ?brandId=&audience=&channel=[&inactiveDays=3|7|14&storeId=] → охват по каналам + настроенные транспорты
 POST                   /admin/campaigns/test             ?brandId= { title, body, channel } → { outcome, via[], error? } — только себе, заголовок «<бренд>: …»
