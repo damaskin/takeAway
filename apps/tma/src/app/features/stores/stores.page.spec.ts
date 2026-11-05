@@ -159,6 +159,36 @@ describe('TmaStoresPage', () => {
     expect(el().textContent).toContain('350');
   });
 
+  it('colours each pin by how the store is doing and explains the colours under the map', async () => {
+    listStores.mockReturnValue(
+      of([
+        store('centre', 'NoName Centre', 'ул. Ленина 1'),
+        { ...store('busy', 'NoName Загружена', 'ул. Ленина 2'), status: 'OVERLOADED' },
+        { ...store('paused', 'NoName Пауза', 'ул. Ленина 3'), openNow: false, asapBlockedReason: 'PAUSED' },
+        { ...store('night', 'NoName Ночь', 'ул. Ленина 4'), openNow: false, asapBlockedReason: 'OUTSIDE_HOURS' },
+        { ...store('off', 'NoName Выключена', 'ул. Ленина 5'), status: 'CLOSED', acceptingOrders: false },
+      ]),
+    );
+    fixture = TestBed.createComponent(TmaStoresPage);
+    await fixture.whenStable();
+
+    const tones = Object.fromEntries(
+      map()
+        .markers()
+        .map((m) => [m.id, m.tone]),
+    );
+    expect(tones).toEqual({ centre: 'open', busy: 'busy', paused: 'closed', night: 'closed', off: 'closed' });
+
+    const legend = Array.from(el().querySelectorAll<HTMLElement>('[data-testid="map-legend"] [data-tone]')).map(
+      (item) => [item.dataset['tone'], item.textContent?.trim()],
+    );
+    expect(legend).toEqual([
+      ['open', 'Открыта'],
+      ['busy', 'Загружена'],
+      ['closed', 'Закрыта'],
+    ]);
+  });
+
   it('says a paused store is on a break and still takes orders for later', async () => {
     listStores.mockReturnValue(
       of([
