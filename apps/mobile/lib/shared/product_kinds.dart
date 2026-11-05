@@ -1,8 +1,8 @@
 import 'package:takeaway_api/takeaway_api.dart';
 
-/// What a product is, by the kind of its menu category. Decides whether the
-/// caffeine chip and «Пожелание бариста» make sense, and what the cart
-/// suggests next to a drink.
+/// What a product is, by the kind of its menu category. Decides whether
+/// «Пожелание бариста» makes sense and what the cart suggests next to a
+/// drink.
 enum ProductKind {
   hotDrinks('HOT_DRINKS'),
   coldDrinks('COLD_DRINKS'),
