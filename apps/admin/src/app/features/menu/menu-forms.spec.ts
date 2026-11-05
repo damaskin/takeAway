@@ -1,10 +1,11 @@
-import { signal } from '@angular/core';
+import { type Provider, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { of } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
   AdminCatalogApi,
@@ -44,10 +45,15 @@ const TWO_STORES = [
 /** What a checkbox change event looks like to the component. */
 const tick = (checked: boolean) => ({ target: { checked } }) as unknown as Event;
 
-function setup<T>(component: new (...args: never[]) => T, api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>) {
+function setup<T>(
+  component: new (...args: never[]) => T,
+  api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>,
+  providers: Provider[] = [],
+) {
   TestBed.configureTestingModule({
     imports: [component],
     providers: [
+      ...providers,
       provideTranslateService(),
       provideRouter([]),
       {
@@ -288,6 +294,31 @@ describe('ProductFormComponent', () => {
 describe('ProductOptionsPanelComponent', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
+  // «Добавки» is the platform team's page since 2026-11-05: a brand gets a
+  // hint it can act on here, with no link to a page it cannot open.
+  it('links the add-ons library for the platform team only', () => {
+    for (const [role, linked] of [
+      ['BRAND_ADMIN', false],
+      ['MENU_EDITOR', false],
+      ['SUPER_ADMIN', true],
+    ] as const) {
+      TestBed.resetTestingModule();
+      const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
+      const fixture = setup(ProductOptionsPanelComponent, { getProduct }, [
+        { provide: AuthStore, useValue: { user: signal({ role }) } },
+      ]);
+      fixture.componentRef.setInput('productId', 'p1');
+      fixture.componentRef.setInput('currency', 'MDL');
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('a[href="/ingredients"]') !== null).toBe(linked);
+      expect(el.textContent).toContain('общие для всех товаров бренда');
+      expect(el.textContent).not.toContain('справочнике «Добавки»');
+    }
+  });
+
   it('creates «Ванильный сироп» without inventing a slug in the browser', () => {
     const createModifier = jest.fn().mockReturnValue(of({}));
     const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
@@ -515,14 +546,14 @@ describe('ProductOptionsPanelComponent', () => {
       expect(createModifier).toHaveBeenCalledWith('p1', { name: 'Корица', maxCount: 1 });
     });
 
-    it('says that taking a library add-on off the product keeps it in the library', () => {
+    it('says that taking a library add-on off the product keeps it on the other products', () => {
       const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
       const deleteModifier = jest.fn().mockReturnValue(of(undefined));
       const component = panel({ deleteModifier }).componentInstance;
 
       component.deleteModifier(vanillaOnLatte);
 
-      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('В справочнике «Добавки» она останется'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('У других товаров она останется'));
       expect(deleteModifier).toHaveBeenCalledWith('m1');
     });
   });

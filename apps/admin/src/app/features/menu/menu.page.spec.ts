@@ -62,7 +62,7 @@ const CATEGORIES: CategoryAdminDto[] = [
 const text = (el: Element | null | undefined) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
 describe('MenuPage — products without a photo', () => {
-  async function render() {
+  async function render(role = 'BRAND_ADMIN') {
     TestBed.configureTestingModule({
       imports: [MenuPage],
       providers: [
@@ -79,7 +79,7 @@ describe('MenuPage — products without a photo', () => {
             listStopList: () => of([]),
           },
         },
-        { provide: AuthStore, useValue: { user: signal({ role: 'BRAND_ADMIN' }) } },
+        { provide: AuthStore, useValue: { user: signal({ role }) } },
         {
           provide: ActiveBrandService,
           useValue: {
@@ -114,6 +114,26 @@ describe('MenuPage — products without a photo', () => {
 
     expect(text(el.querySelector('[data-testid="menu-no-photo-summary"]'))).toContain('Товаров без фото в меню: 1.');
     expect([...el.querySelectorAll('[data-testid="category-no-photo"]')].map(text)).toEqual(['без фото: 1']);
+  });
+
+  // «Добавки» is the platform team's page since 2026-11-05: the note on an
+  // add-ons-only category tells a brand where to add one instead of linking it.
+  it('links the add-ons library from an add-ons-only category for the platform team only', async () => {
+    for (const [role, linked] of [
+      ['BRAND_ADMIN', false],
+      ['SUPER_ADMIN', true],
+    ] as const) {
+      TestBed.resetTestingModule();
+      const fixture = await render(role);
+      fixture.componentInstance.selectCategory('extras');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="menu-add-ons-only-note"]');
+      expect(text(note)).toContain('откройте опции напитка и добавьте её в разделе «Добавки»');
+      expect(note?.querySelector('a[href="/ingredients"]') != null).toBe(linked);
+    }
   });
 
   it('marks the row of a product without a photo', async () => {

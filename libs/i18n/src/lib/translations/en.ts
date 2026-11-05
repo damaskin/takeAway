@@ -1911,7 +1911,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
           'The category and its products are left out of the menu on the site, in Telegram and in the app, and cannot be put in a cart. They stay in the admin, the stop-list and the POS sync. Meant for "extra ingredients" imported from Poster.',
         addOnsOnlyBadge: 'Add-ons only',
         addOnsOnlyNote:
-          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, add it to the add-ons library and pick it in the drink\'s options.',
+          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, open the drink\'s options and add it under "Add-ons" — pick it from the list or type its name.',
         addOnsOnlyLink: 'Open add-ons →',
         kind: 'What the category holds',
         kindSuggested: 'Picked from the name — change it if it is wrong.',
@@ -1996,7 +1996,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         presetKind: 'Set for',
         previewTitle: 'Set for «{{kind}}»',
         previewHint:
-          'Untick what you do not sell and type your prices. Add-ons already in the add-ons library come from there, with their price.',
+          'Untick what you do not sell and type your prices. Add-ons the brand already has come with their usual price.',
         fromLibrary: 'from the library',
         inSet: 'already in the set',
         save: 'Save the set ({{count}})',
@@ -2041,14 +2041,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         delete: 'Delete',
         deleteConfirm: 'Delete "{{name}}"?',
         deleteLinkedConfirm:
-          'Take "{{name}}" off this product? It stays in the add-ons library — you can pick it here again or delete it there.',
+          'Take "{{name}}" off this product? Other products keep it, and you can pick it here again from the list.',
         noVariations: 'No variations yet.',
         noModifiers: 'No extras yet.',
         ingredient: 'Stock from the library',
         ingredientNone: 'Not tracked — always shown',
         outOfStock: 'Out of stock',
         libraryHint:
-          'Extras and milks live in the add-ons library: their name, usual price and stock. Pick one from the list or type a new one — it joins the library. "Delete" here only takes the add-on off this product.',
+          'Extras and milks are shared by all the brand\'s products: pick one from the list or type a new one — other products can pick it later too. Ran out in a store? Mark it in the stop-list. "Delete" here only takes the add-on off this product.',
         libraryLink: 'Open the add-ons library →',
         fromLibrary: 'From the library',
         fromLibraryPlaceholder: 'Pick an add-on',
