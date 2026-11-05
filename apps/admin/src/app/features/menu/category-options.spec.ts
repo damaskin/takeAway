@@ -4,7 +4,7 @@ import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { of } from 'rxjs';
 
 import { AdminCatalogApi, type CategoryOptionDto, type IngredientDto } from '../../core/catalog/admin-catalog.service';
-import { hiddenProductData, joinAllergens, productFieldsFor, splitAllergens } from './category-kind';
+import { productFieldsFor } from './category-kind';
 import { CategoryOptionsPanelComponent } from './category-options-panel.component';
 import { buildPresetPreview, groupOptions, presetPreviewOptions } from './category-preset-preview';
 
@@ -34,53 +34,24 @@ const setOption = (patch: Partial<CategoryOptionDto>): CategoryOptionDto => ({
 });
 
 describe('product fields by kind', () => {
-  it('gives drinks caffeine and every choice group, food and bakery sizes only', () => {
-    expect(productFieldsFor('HOT_DRINKS')).toMatchObject({
-      caffeine: true,
-      variationTypes: ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'],
-    });
-    expect(productFieldsFor('FOOD')).toEqual({
-      caffeine: false,
-      dietTags: ['VEGAN', 'VEGETARIAN', 'GLUTEN_FREE', 'LACTOSE_FREE'],
-      variationTypes: ['SIZE'],
-    });
-    expect(productFieldsFor('BAKERY').caffeine).toBe(false);
-    expect(productFieldsFor('COLD_DRINKS').dietTags).toEqual(['VEGAN', 'LACTOSE_FREE', 'SUGAR_FREE', 'DECAF']);
+  it('gives drinks every choice group, food and bakery sizes only', () => {
+    expect(productFieldsFor('HOT_DRINKS')).toEqual({ variationTypes: ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'] });
+    expect(productFieldsFor('COLD_DRINKS').variationTypes).toEqual(['SIZE', 'TEMPERATURE', 'MILK', 'CUP']);
+    expect(productFieldsFor('FOOD')).toEqual({ variationTypes: ['SIZE'] });
+    expect(productFieldsFor('BAKERY')).toEqual({ variationTypes: ['SIZE'] });
   });
 
-  it('keeps everything for OTHER and for a category from an older API', () => {
+  it('keeps every choice group for OTHER and for a category from an older API', () => {
     for (const kind of ['OTHER', undefined, null] as const) {
-      expect(productFieldsFor(kind).dietTags).toHaveLength(6);
-      expect(productFieldsFor(kind).caffeine).toBe(true);
+      expect(productFieldsFor(kind).variationTypes).toHaveLength(4);
     }
   });
 
-  it('names the values a kind hides', () => {
-    expect(hiddenProductData('FOOD', { caffeineLevel: '2', dietTags: ['DECAF', 'VEGAN'] })).toEqual({
-      caffeine: true,
-      dietTags: ['DECAF'],
-    });
-    expect(hiddenProductData('FOOD', { caffeineLevel: '', dietTags: [] })).toEqual({ caffeine: false, dietTags: [] });
-    expect(hiddenProductData('HOT_DRINKS', { caffeineLevel: 3, dietTags: ['VEGETARIAN'] })).toEqual({
-      caffeine: false,
-      dietTags: ['VEGETARIAN'],
-    });
-  });
-});
-
-describe('allergen checklist', () => {
-  it('reads codes, free text naming an allergen, and the rest', () => {
-    expect(splitAllergens(['MILK', 'орехи', 'следы горчицы', 'Milk', 'Eggs', 'лактоза'])).toEqual({
-      codes: ['MILK', 'NUTS', 'EGGS', 'LACTOSE'],
-      legacy: { NUTS: ['орехи'], MILK: ['Milk'], EGGS: ['Eggs'], LACTOSE: ['лактоза'] },
-      other: ['следы горчицы'],
-    });
-  });
-
-  it('writes ticked allergens in checklist order — typed ones as typed — then the rest, once each', () => {
-    expect(
-      joinAllergens({ codes: ['NUTS', 'GLUTEN', 'MILK'], legacy: { NUTS: ['орехи'] } }, ['соль', 'Орехи']),
-    ).toEqual(['GLUTEN', 'MILK', 'орехи', 'соль']);
+  // Caffeine, diet tags and allergens left the menu on 2026-11-05.
+  it('has no caffeine or diet tags for any kind', () => {
+    for (const kind of ['HOT_DRINKS', 'COLD_DRINKS', 'FOOD', 'BAKERY', 'OTHER'] as const) {
+      expect(Object.keys(productFieldsFor(kind))).toEqual(['variationTypes']);
+    }
   });
 });
 

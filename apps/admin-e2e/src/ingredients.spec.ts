@@ -4,8 +4,10 @@ import { installFakeApi, signIn } from './support/fake-api';
 
 /**
  * The add-ons library («Добавки»): each add-on with its usual price and the
- * products it is in. An owner marks oat milk as run out in one place, and
- * every product's oat-milk option hides for customers.
+ * products it is in. The platform team (the only role that sees the page
+ * since 2026-11-05; the fake API signs in as SUPER_ADMIN) marks oat milk as
+ * run out in one place, and every product's oat-milk option hides for
+ * customers.
  */
 
 test.beforeEach(async ({ context }) => {

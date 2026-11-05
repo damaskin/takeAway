@@ -76,23 +76,6 @@ export function parseCount(raw: string, min = 0, max = Number.MAX_SAFE_INTEGER):
   return value < min || value > max ? null : value;
 }
 
-export const MAX_ALLERGENS = 20;
-export const MAX_ALLERGEN_LENGTH = 40;
-
-/** "молоко, орехи; глютен" → ["молоко", "орехи", "глютен"], without repeats. */
-export function parseAllergens(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const part of raw.split(/[,;\n]/)) {
-    const item = part.trim().replace(/\s+/g, ' ');
-    const key = item.toLocaleLowerCase();
-    if (!item || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
-}
-
 function optionalText(check: (text: string) => boolean, error: string): ValidatorFn {
   return (control: AbstractControl<string | null>): ValidationErrors | null => {
     const text = (control.value ?? '').trim();
@@ -113,11 +96,6 @@ export const amountValidator: ValidatorFn = optionalText((text) => parseAmount(t
 export function countValidator(min = 0, max = Number.MAX_SAFE_INTEGER): ValidatorFn {
   return optionalText((text) => parseCount(text, min, max) !== null, 'count');
 }
-
-export const allergensValidator: ValidatorFn = optionalText((text) => {
-  const items = parseAllergens(text);
-  return items.length <= MAX_ALLERGENS && items.every((item) => item.length <= MAX_ALLERGEN_LENGTH);
-}, 'allergens');
 
 /** The API's slug rule; empty means "build it from the name". */
 export const slugValidator: ValidatorFn = optionalText((text) => /^[a-z0-9-]{2,60}$/.test(text), 'slug');

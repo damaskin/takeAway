@@ -150,9 +150,7 @@ async function main(): Promise<void> {
       description: 'Espresso with steamed milk and a thin layer of foam.',
       basePriceCents: 450,
       prepTimeSeconds: 180,
-      caffeineLevel: 2,
       calories: 150,
-      allergens: ['milk'],
     },
   });
 
@@ -195,8 +193,6 @@ async function main(): Promise<void> {
       basePriceCents: 950,
       prepTimeSeconds: 300,
       calories: 380,
-      dietTags: ['VEGAN'],
-      allergens: ['gluten'],
     },
   });
 
@@ -212,7 +208,6 @@ async function main(): Promise<void> {
       basePriceCents: 480,
       prepTimeSeconds: 60,
       calories: 420,
-      allergens: ['gluten', 'nuts', 'milk'],
     },
   });
 

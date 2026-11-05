@@ -1,30 +1,15 @@
-import { TRANSLATIONS_RU } from '@takeaway/i18n';
-import { TRANSLATIONS_EN } from '@takeaway/i18n/en';
 import type { CategoryKind } from '@takeaway/shared-types';
-import { ALLERGEN_CODES, type AllergenCode, allergenCode } from '@takeaway/utils';
 
-import type { DietTag, VariationType } from '../../core/catalog/admin-catalog.service';
+import type { VariationType } from '../../core/catalog/admin-catalog.service';
 
-/** Every diet tag, in the order the editor lists them. */
-export const ALL_DIET_TAGS: readonly DietTag[] = [
-  'VEGAN',
-  'VEGETARIAN',
-  'GLUTEN_FREE',
-  'LACTOSE_FREE',
-  'DECAF',
-  'SUGAR_FREE',
-];
-
-const DRINK_DIET_TAGS: readonly DietTag[] = ['VEGAN', 'LACTOSE_FREE', 'SUGAR_FREE', 'DECAF'];
-const FOOD_DIET_TAGS: readonly DietTag[] = ['VEGAN', 'VEGETARIAN', 'GLUTEN_FREE', 'LACTOSE_FREE'];
 const ALL_VARIATION_TYPES: readonly VariationType[] = ['SIZE', 'TEMPERATURE', 'MILK', 'CUP'];
 
-/** What the product editor offers for a product of a category kind. */
+/**
+ * What the product editor offers for a product of a category kind. Caffeine
+ * and diet tags used to follow the kind too; they left the menu on
+ * 2026-11-05, so only the options editor's choice groups are left.
+ */
 export interface ProductFields {
-  /** The caffeine level select — drinks only. */
-  caffeine: boolean;
-  /** Diet tags that mean something for the kind: no «Без кофеина» on a shawarma. */
-  dietTags: readonly DietTag[];
   /** Choice groups the options editor can add: milk and cups are for drinks. */
   variationTypes: readonly VariationType[];
 }
@@ -35,91 +20,10 @@ export interface ProductFields {
  */
 export function productFieldsFor(kind: CategoryKind | null | undefined): ProductFields {
   switch (kind) {
-    case 'HOT_DRINKS':
-    case 'COLD_DRINKS':
-      return { caffeine: true, dietTags: DRINK_DIET_TAGS, variationTypes: ALL_VARIATION_TYPES };
     case 'FOOD':
     case 'BAKERY':
-      return { caffeine: false, dietTags: FOOD_DIET_TAGS, variationTypes: ['SIZE'] };
+      return { variationTypes: ['SIZE'] };
     default:
-      return { caffeine: true, dietTags: ALL_DIET_TAGS, variationTypes: ALL_VARIATION_TYPES };
+      return { variationTypes: ALL_VARIATION_TYPES };
   }
-}
-
-/**
- * Values a product keeps in fields its kind does not show — a latte moved
- * to «Выпечка» still has its caffeine level. They are saved as they are;
- * the editor names them so the owner can clear them on purpose.
- */
-export function hiddenProductData(
-  kind: CategoryKind | null | undefined,
-  values: { caffeineLevel: string | number | null; dietTags: readonly DietTag[] },
-): { caffeine: boolean; dietTags: DietTag[] } {
-  const fields = productFieldsFor(kind);
-  const hasCaffeine = values.caffeineLevel !== null && values.caffeineLevel !== '';
-  return {
-    caffeine: !fields.caffeine && hasCaffeine,
-    dietTags: values.dietTags.filter((tag) => !fields.dietTags.includes(tag)),
-  };
-}
-
-/** Each allergen's name as the apps print it, in both languages, lower case → its code. */
-const ALLERGEN_NAMES: ReadonlyMap<string, AllergenCode> = new Map(
-  ALLERGEN_CODES.flatMap((code) =>
-    [TRANSLATIONS_RU.common.allergens[code], TRANSLATIONS_EN.common.allergens[code]].map(
-      (name) => [name.toLocaleLowerCase(), code] as const,
-    ),
-  ),
-);
-
-/**
- * The checklist allergen an entry of `Product.allergens` stands for: a
- * code (or another spelling of one, `allergenCode`), or free text that is
- * its name in Russian or English («молоко», «Eggs»). Null for anything else.
- */
-export function checklistAllergen(value: string): AllergenCode | null {
-  return allergenCode(value) ?? ALLERGEN_NAMES.get(value.trim().toLocaleLowerCase()) ?? null;
-}
-
-/**
- * A product's allergens as the checklist reads them: the boxes ticked
- * (codes), the free-text entries that name one of them (kept as typed
- * while the box stays ticked) and everything else, shown in «Другие».
- */
-export interface AllergenState {
-  codes: AllergenCode[];
-  /** Free text that names a checklist allergen, by its code («молоко» → MILK). */
-  legacy: Partial<Record<AllergenCode, string[]>>;
-  other: string[];
-}
-
-export function splitAllergens(values: readonly string[]): AllergenState {
-  const state: AllergenState = { codes: [], legacy: {}, other: [] };
-  for (const value of values) {
-    const code = checklistAllergen(value);
-    if (!code) {
-      state.other.push(value);
-      continue;
-    }
-    if (!state.codes.includes(code)) state.codes.push(code);
-    if (value !== code) state.legacy[code] = [...(state.legacy[code] ?? []), value];
-  }
-  return state;
-}
-
-/**
- * What to store: each ticked allergen — as the free text it came in as, or
- * as its code — in checklist order, then the other entries. Nothing a
- * business typed is rewritten behind its back; unticking a box drops it.
- */
-export function joinAllergens(state: Pick<AllergenState, 'codes' | 'legacy'>, other: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const code of ALLERGEN_CODES) {
-    if (!state.codes.includes(code)) continue;
-    out.push(...(state.legacy[code]?.length ? (state.legacy[code] ?? []) : [code]));
-  }
-  for (const value of other) {
-    if (!out.some((v) => v.toLocaleLowerCase() === value.toLocaleLowerCase())) out.push(value);
-  }
-  return out;
 }

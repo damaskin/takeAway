@@ -1,10 +1,11 @@
-import { signal } from '@angular/core';
+import { type Provider, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { of } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
   AdminCatalogApi,
@@ -29,13 +30,10 @@ const LATTE: ProductAdminDto = {
   visible: true,
   sortOrder: 0,
   imageUrls: [],
-  caffeineLevel: null,
   calories: null,
   proteinsGrams: null,
   fatsGrams: null,
   carbsGrams: null,
-  allergens: [],
-  dietTags: [],
   storeIds: ['s1'],
 };
 
@@ -47,10 +45,15 @@ const TWO_STORES = [
 /** What a checkbox change event looks like to the component. */
 const tick = (checked: boolean) => ({ target: { checked } }) as unknown as Event;
 
-function setup<T>(component: new (...args: never[]) => T, api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>) {
+function setup<T>(
+  component: new (...args: never[]) => T,
+  api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>,
+  providers: Provider[] = [],
+) {
   TestBed.configureTestingModule({
     imports: [component],
     providers: [
+      ...providers,
       provideTranslateService(),
       provideRouter([]),
       {
@@ -88,7 +91,7 @@ describe('ProductFormComponent', () => {
     const createProduct = jest.fn().mockReturnValue(of(LATTE));
     const component = form(null, { createProduct });
 
-    component.form.patchValue({ name: ' Флэт уайт ', price: '35,50', prepMinutes: '2,5', allergens: 'молоко' });
+    component.form.patchValue({ name: ' Флэт уайт ', price: '35,50', prepMinutes: '2,5' });
     component.submit();
 
     expect(createProduct).toHaveBeenCalledWith({
@@ -98,8 +101,6 @@ describe('ProductFormComponent', () => {
       basePriceCents: 3550,
       prepTimeSeconds: 150,
       visible: true,
-      allergens: ['молоко'],
-      dietTags: [],
     });
   });
 
@@ -116,13 +117,18 @@ describe('ProductFormComponent', () => {
 
   it('clears an emptied nutrition value on edit instead of leaving the old one', () => {
     const updateProduct = jest.fn().mockReturnValue(of(LATTE));
-    const component = form({ ...LATTE, calories: 120, caffeineLevel: 2 }, { updateProduct });
+    const component = form({ ...LATTE, calories: 120, carbsGrams: 12.5 }, { updateProduct });
 
-    expect(component.form.getRawValue()).toMatchObject({ price: '35', prepMinutes: '3', calories: '120' });
-    component.form.patchValue({ calories: '', caffeineLevel: '' });
+    expect(component.form.getRawValue()).toMatchObject({
+      price: '35',
+      prepMinutes: '3',
+      calories: '120',
+      carbs: '12,5',
+    });
+    component.form.patchValue({ calories: '' });
     component.submit();
 
-    expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ calories: null, caffeineLevel: null }));
+    expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ calories: null, carbsGrams: 12.5 }));
     expect(updateProduct.mock.calls[0][1]).not.toHaveProperty('categoryId');
   });
 
@@ -195,20 +201,28 @@ describe('ProductFormComponent', () => {
 
     const text = (fixture: { nativeElement: unknown }) => (fixture.nativeElement as HTMLElement).textContent ?? '';
 
-    it('offers caffeine and drink tags for a coffee, allergens and food tags for a shawarma', () => {
-      const coffee = kindForm(null, 'coffee');
-      const el = coffee.nativeElement as HTMLElement;
-      expect(el.querySelector('[data-testid="product-caffeine"]')).not.toBeNull();
-      expect(el.querySelector('[data-testid="product-diet-tags"]')?.textContent).toContain('Без кофеина');
-      expect(el.querySelector('[data-testid="product-diet-tags"]')?.textContent).not.toContain('Вегетарианское');
+    // Caffeine, «Особенности» and allergens left the menu on 2026-11-05;
+    // energy and nutrition stay in «Для покупателя» for every kind.
+    it('asks a coffee and a shawarma alike for energy and nutrition only', () => {
+      for (const categoryId of ['coffee', 'shawarma']) {
+        TestBed.resetTestingModule();
+        const el = kindForm(null, categoryId).nativeElement as HTMLElement;
+        const details = el.querySelector('fieldset')?.textContent ?? '';
+        expect(details).toContain('Для покупателя');
+        expect(details).toContain('Калорийность, ккал');
+        expect(details).toContain('Углеводы, г');
+        expect(el.querySelector('[data-testid="product-details-hint"]')).not.toBeNull();
+        expect(details).not.toContain('Кофеин');
+        expect(details).not.toContain('Особенности');
+        expect(details).not.toContain('Аллергены');
+        expect(el.querySelector('[data-testid="product-caffeine"]')).toBeNull();
+        expect(el.querySelector('[data-testid="product-diet-tags"]')).toBeNull();
+        expect(el.querySelector('[data-testid="product-allergens"]')).toBeNull();
+      }
 
       TestBed.resetTestingModule();
       const food = kindForm(null, 'shawarma');
       const foodEl = food.nativeElement as HTMLElement;
-      expect(foodEl.querySelector('[data-testid="product-caffeine"]')).toBeNull();
-      expect(foodEl.querySelector('[data-testid="product-diet-tags"]')?.textContent).not.toContain('Без кофеина');
-      expect(foodEl.querySelector('[data-testid="product-diet-tags"]')?.textContent).toContain('Вегетарианское');
-      expect(foodEl.querySelector('[data-testid="product-allergens"]')?.textContent).toContain('Кунжут');
       // The illustration the website and Telegram show until there is a
       // photo; the app shows a text row, and the hint says both.
       expect(foodEl.querySelector('[data-testid="product-placeholder"] img')?.getAttribute('src')).toBe(
@@ -235,59 +249,31 @@ describe('ProductFormComponent', () => {
       expect(createProduct.mock.calls[1][0]).toMatchObject({ applyCategoryOptions: false });
     });
 
-    // A latte moved to «Шаурма» by mistake: its caffeine is not silently dropped.
-    it('keeps what a moved product has in hidden fields, says so, and clears it only on request', () => {
+    // What a product had in the retired fields stays in the database: the
+    // form neither shows it nor sends it, so a save cannot overwrite it.
+    it('never sends caffeine, diet tags or allergens, even for a product that still has them', () => {
       const updateProduct = jest.fn().mockReturnValue(of(LATTE));
       const latte = {
         ...LATTE,
         categoryId: 'coffee',
         caffeineLevel: 2,
         dietTags: ['DECAF', 'VEGAN'],
+        allergens: ['MILK'],
       } as ProductAdminDto;
       const fixture = kindForm(latte, 'coffee', { updateProduct });
       const component = fixture.componentInstance;
 
-      expect(component.hiddenNote()).toBeNull();
       component.form.controls.categoryId.setValue('shawarma');
       fixture.detectChanges();
       expect(component.kind()).toBe('FOOD');
-      expect(text(fixture)).toContain('Кофеин, «Без кофеина»');
+      expect(text(fixture)).not.toContain('Кофеин');
 
       component.submit();
-      expect(updateProduct).toHaveBeenLastCalledWith(
-        'p1',
-        expect.objectContaining({ categoryId: 'shawarma', caffeineLevel: 2, dietTags: ['DECAF', 'VEGAN'] }),
-      );
-
-      component.clearHidden();
-      component.submit();
-      expect(updateProduct).toHaveBeenLastCalledWith(
-        'p1',
-        expect.objectContaining({ caffeineLevel: null, dietTags: ['VEGAN'] }),
-      );
-    });
-
-    it('ticks allergens as codes and keeps what was typed before the checklist', () => {
-      const updateProduct = jest.fn().mockReturnValue(of(LATTE));
-      const product = { ...LATTE, categoryId: 'shawarma', allergens: ['молоко', 'следы горчицы'] } as ProductAdminDto;
-      const component = kindForm(product, 'shawarma', { updateProduct }).componentInstance;
-
-      expect(component.hasAllergen('MILK')).toBe(true);
-      expect(component.form.controls.allergens.value).toBe('следы горчицы');
-
-      component.toggleAllergen('GLUTEN', tick(true));
-      component.submit();
-      expect(updateProduct).toHaveBeenLastCalledWith(
-        'p1',
-        expect.objectContaining({ allergens: ['GLUTEN', 'молоко', 'следы горчицы'] }),
-      );
-
-      component.toggleAllergen('MILK', tick(false));
-      component.submit();
-      expect(updateProduct).toHaveBeenLastCalledWith(
-        'p1',
-        expect.objectContaining({ allergens: ['GLUTEN', 'следы горчицы'] }),
-      );
+      const sent = updateProduct.mock.calls[0][1];
+      expect(sent).toMatchObject({ categoryId: 'shawarma' });
+      expect(sent).not.toHaveProperty('caffeineLevel');
+      expect(sent).not.toHaveProperty('dietTags');
+      expect(sent).not.toHaveProperty('allergens');
     });
   });
 
@@ -307,6 +293,31 @@ describe('ProductFormComponent', () => {
 
 describe('ProductOptionsPanelComponent', () => {
   beforeEach(() => TestBed.resetTestingModule());
+
+  // «Добавки» is the platform team's page since 2026-11-05: a brand gets a
+  // hint it can act on here, with no link to a page it cannot open.
+  it('links the add-ons library for the platform team only', () => {
+    for (const [role, linked] of [
+      ['BRAND_ADMIN', false],
+      ['MENU_EDITOR', false],
+      ['SUPER_ADMIN', true],
+    ] as const) {
+      TestBed.resetTestingModule();
+      const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
+      const fixture = setup(ProductOptionsPanelComponent, { getProduct }, [
+        { provide: AuthStore, useValue: { user: signal({ role }) } },
+      ]);
+      fixture.componentRef.setInput('productId', 'p1');
+      fixture.componentRef.setInput('currency', 'MDL');
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('a[href="/ingredients"]') !== null).toBe(linked);
+      expect(el.textContent).toContain('общие для всех товаров бренда');
+      expect(el.textContent).not.toContain('справочнике «Добавки»');
+    }
+  });
 
   it('creates «Ванильный сироп» without inventing a slug in the browser', () => {
     const createModifier = jest.fn().mockReturnValue(of({}));
@@ -535,14 +546,14 @@ describe('ProductOptionsPanelComponent', () => {
       expect(createModifier).toHaveBeenCalledWith('p1', { name: 'Корица', maxCount: 1 });
     });
 
-    it('says that taking a library add-on off the product keeps it in the library', () => {
+    it('says that taking a library add-on off the product keeps it on the other products', () => {
       const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
       const deleteModifier = jest.fn().mockReturnValue(of(undefined));
       const component = panel({ deleteModifier }).componentInstance;
 
       component.deleteModifier(vanillaOnLatte);
 
-      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('В справочнике «Добавки» она останется'));
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining('У других товаров она останется'));
       expect(deleteModifier).toHaveBeenCalledWith('m1');
     });
   });

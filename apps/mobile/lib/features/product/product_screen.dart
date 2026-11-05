@@ -13,7 +13,6 @@ import '../../l10n/app_localizations.dart';
 import '../../shared/money_text.dart';
 import '../../shared/product_kinds.dart';
 import '../../shared/widgets/app_button.dart';
-import '../../shared/widgets/chips.dart';
 import '../../shared/widgets/product_image.dart';
 import '../../shared/widgets/quantity_stepper.dart';
 import '../../shared/widgets/skeleton.dart';
@@ -327,13 +326,13 @@ class _Details extends StatelessWidget {
   final VoidCallback onShowNotes;
   final Widget? pairing;
 
-  /// A drink by its category; on an API without kinds, anything with a
-  /// caffeine level or a size, milk or cup to choose.
+  /// A drink by its category; on an API without kinds, anything with a size,
+  /// temperature, milk or cup to choose. (The caffeine level used to count
+  /// too; it left the menu on 2026-11-05.)
   bool get _isDrink {
     final known = kind;
     if (known != null) return known.isDrink;
-    final p = product ?? preview;
-    return (p?.caffeineLevel ?? 0) > 0 || (product?.variations.isNotEmpty ?? false);
+    return product?.variations.isNotEmpty ?? false;
   }
 
   @override
@@ -341,9 +340,6 @@ class _Details extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final p = product ?? preview;
-    // Caffeine means nothing on a croissant.
-    final showCaffeine = (p?.caffeineLevel ?? 0) > 0 && !(kind?.isFood ?? false);
-    final allergens = p == null ? '' : allergensText(l10n, p.allergens);
     final drink = _isDrink;
 
     return Column(
@@ -377,20 +373,8 @@ class _Details extends StatelessWidget {
                 _MetaChip(icon: Icons.timer_outlined, label: l10n.minutes(minutesCeil(p.prepTimeSeconds))),
               if (p.calories != null)
                 _MetaChip(icon: Icons.local_fire_department_outlined, label: l10n.productCalories(p.calories!)),
-              if (showCaffeine) _CaffeineChip(level: p.caffeineLevel!),
-              for (final tag in p.dietTags)
-                _MetaChip(icon: Icons.eco_outlined, label: dietTagLabel(l10n, tag), tint: brand.mint),
             ],
           ),
-          if (allergens.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _MetaChip(
-              icon: Icons.info_outline_rounded,
-              label: l10n.productContains(allergens),
-              tint: brand.amber,
-              wrap: true,
-            ),
-          ],
           if (p.description != null && p.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
             Text(p.description!, style: context.text.bodyLarge?.copyWith(color: brand.textSecondary)),
@@ -491,66 +475,27 @@ class _Details extends StatelessWidget {
 }
 
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label, this.tint, this.wrap = false});
+  const _MetaChip({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
-  final Color? tint;
-
-  /// A long label (the allergens) wraps instead of running off the edge.
-  final bool wrap;
 
   @override
   Widget build(BuildContext context) {
     final brand = context.brand;
-    final color = tint ?? brand.textSecondary;
-    final text = Text(label, style: context.text.labelMedium?.copyWith(color: brand.textPrimary));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: (tint ?? brand.latte).withValues(alpha: tint == null ? 0.6 : 0.16),
-        borderRadius: BorderRadius.circular(wrap ? Radii.input : Radii.pill),
+        color: brand.latte.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(Radii.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: color),
+          Icon(icon, size: 15, color: brand.textSecondary),
           const SizedBox(width: 5),
-          if (wrap) Flexible(child: text) else text,
+          Text(label, style: context.text.labelMedium?.copyWith(color: brand.textPrimary)),
         ],
-      ),
-    );
-  }
-}
-
-class _CaffeineChip extends StatelessWidget {
-  const _CaffeineChip({required this.level});
-
-  final int level;
-
-  @override
-  Widget build(BuildContext context) {
-    final brand = context.brand;
-    final label = AppLocalizations.of(context).productCaffeine;
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        label: '$label: $level/4',
-        excludeSemantics: true,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: brand.latte.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(Radii.pill),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < 4; i++)
-                Icon(Icons.coffee_rounded, size: 15, color: i < level ? brand.caramel : brand.border),
-            ],
-          ),
-        ),
       ),
     );
   }

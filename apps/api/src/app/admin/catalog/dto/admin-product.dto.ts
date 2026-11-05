@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
-import { DietTag, VariationType } from '@prisma/client';
+import { VariationType } from '@prisma/client';
 import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
 import { Transform } from 'class-transformer';
 import {
@@ -44,6 +44,12 @@ const MAX_PREP_SECONDS = 24 * 60 * 60;
 const nameRequired = (o: { name?: unknown; ingredientId?: unknown }) =>
   o.name !== undefined || typeof o.ingredientId !== 'string';
 
+/**
+ * Caffeine, allergens and diet tags are gone from the menu since 2026-11-05:
+ * the global ValidationPipe (`forbidNonWhitelisted`) refuses a request that
+ * still sends `caffeineLevel`, `allergens` or `dietTags` — the admin is the
+ * only writer, and a stale admin tab gets a clear 400 until it reloads.
+ */
 export class CreateProductDto {
   @ApiProperty()
   @IsString()
@@ -86,13 +92,6 @@ export class CreateProductDto {
   @Max(MAX_PREP_SECONDS)
   prepTimeSeconds?: number;
 
-  @ApiPropertyOptional({ minimum: 0, maximum: 4 })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(4)
-  caffeineLevel?: number;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
@@ -116,20 +115,6 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   carbsGrams?: number;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @IsString({ each: true })
-  @Length(1, 40, { each: true })
-  allergens?: string[];
-
-  @ApiPropertyOptional({ enum: DietTag, isArray: true })
-  @IsOptional()
-  @IsArray()
-  @IsEnum(DietTag, { each: true })
-  dietTags?: DietTag[];
 
   @ApiPropertyOptional({ type: [String], maxItems: MAX_PRODUCT_IMAGES })
   @IsOptional()

@@ -8,7 +8,6 @@ import 'package:takeaway_mobile/features/product/product_options.dart';
 import 'package:takeaway_mobile/l10n/app_localizations.dart';
 import 'package:takeaway_mobile/shared/checkout_errors.dart';
 import 'package:takeaway_mobile/shared/product_kinds.dart';
-import 'package:takeaway_mobile/shared/widgets/chips.dart';
 
 import '../helpers/fake_api.dart';
 
@@ -300,14 +299,6 @@ void main() {
   group('words', () {
     final ru = lookupAppLocalizations(const Locale('ru'));
     final en = lookupAppLocalizations(const Locale('en'));
-
-    test('allergen codes in the language of the app, free text as it is', () {
-      expect(
-        allergensText(ru, ['GLUTEN', 'milk', 'SULFITES', 'орехи пекан', ' ', 'GLUTEN']),
-        'глютен, молоко, сульфиты, орехи пекан',
-      );
-      expect(allergensText(en, ['EGGS', 'SHELLFISH']), 'eggs, shellfish');
-    });
 
     testWidgets('order-path codes with what they need, and none for an unknown code', (tester) async {
       late BuildContext context;

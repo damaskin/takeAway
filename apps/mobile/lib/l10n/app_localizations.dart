@@ -926,18 +926,6 @@ abstract class AppLocalizations {
   /// **'{kcal} kcal'**
   String productCalories(int kcal);
 
-  /// No description provided for @productCaffeine.
-  ///
-  /// In en, this message translates to:
-  /// **'Caffeine'**
-  String get productCaffeine;
-
-  /// No description provided for @productAllergens.
-  ///
-  /// In en, this message translates to:
-  /// **'Allergens'**
-  String get productAllergens;
-
   /// No description provided for @productNutrition.
   ///
   /// In en, this message translates to:
@@ -955,42 +943,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not load this item.'**
   String get productLoadFailed;
-
-  /// No description provided for @dietVegan.
-  ///
-  /// In en, this message translates to:
-  /// **'Vegan'**
-  String get dietVegan;
-
-  /// No description provided for @dietVegetarian.
-  ///
-  /// In en, this message translates to:
-  /// **'Vegetarian'**
-  String get dietVegetarian;
-
-  /// No description provided for @dietGlutenFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Gluten-free'**
-  String get dietGlutenFree;
-
-  /// No description provided for @dietLactoseFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Lactose-free'**
-  String get dietLactoseFree;
-
-  /// No description provided for @dietDecaf.
-  ///
-  /// In en, this message translates to:
-  /// **'Decaf'**
-  String get dietDecaf;
-
-  /// No description provided for @dietSugarFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Sugar-free'**
-  String get dietSugarFree;
 
   /// No description provided for @cartTitle.
   ///
@@ -2810,12 +2762,6 @@ abstract class AppLocalizations {
   /// **'E.g. warm it up, no sauce…'**
   String get productNoteFoodHint;
 
-  /// No description provided for @productContains.
-  ///
-  /// In en, this message translates to:
-  /// **'Contains: {list}'**
-  String productContains(String list);
-
   /// No description provided for @productAddonsNone.
   ///
   /// In en, this message translates to:
@@ -2845,84 +2791,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Often bought together'**
   String get upsellTogether;
-
-  /// No description provided for @allergenGluten.
-  ///
-  /// In en, this message translates to:
-  /// **'gluten'**
-  String get allergenGluten;
-
-  /// No description provided for @allergenMilk.
-  ///
-  /// In en, this message translates to:
-  /// **'milk'**
-  String get allergenMilk;
-
-  /// No description provided for @allergenLactose.
-  ///
-  /// In en, this message translates to:
-  /// **'lactose'**
-  String get allergenLactose;
-
-  /// No description provided for @allergenEggs.
-  ///
-  /// In en, this message translates to:
-  /// **'eggs'**
-  String get allergenEggs;
-
-  /// No description provided for @allergenNuts.
-  ///
-  /// In en, this message translates to:
-  /// **'nuts'**
-  String get allergenNuts;
-
-  /// No description provided for @allergenPeanuts.
-  ///
-  /// In en, this message translates to:
-  /// **'peanuts'**
-  String get allergenPeanuts;
-
-  /// No description provided for @allergenSoy.
-  ///
-  /// In en, this message translates to:
-  /// **'soy'**
-  String get allergenSoy;
-
-  /// No description provided for @allergenFish.
-  ///
-  /// In en, this message translates to:
-  /// **'fish'**
-  String get allergenFish;
-
-  /// No description provided for @allergenShellfish.
-  ///
-  /// In en, this message translates to:
-  /// **'shellfish'**
-  String get allergenShellfish;
-
-  /// No description provided for @allergenSesame.
-  ///
-  /// In en, this message translates to:
-  /// **'sesame'**
-  String get allergenSesame;
-
-  /// No description provided for @allergenCelery.
-  ///
-  /// In en, this message translates to:
-  /// **'celery'**
-  String get allergenCelery;
-
-  /// No description provided for @allergenMustard.
-  ///
-  /// In en, this message translates to:
-  /// **'mustard'**
-  String get allergenMustard;
-
-  /// No description provided for @allergenSulphites.
-  ///
-  /// In en, this message translates to:
-  /// **'sulphites'**
-  String get allergenSulphites;
 
   /// No description provided for @errCartEmpty.
   ///

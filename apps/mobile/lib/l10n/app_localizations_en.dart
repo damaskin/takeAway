@@ -486,12 +486,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get productCaffeine => 'Caffeine';
-
-  @override
-  String get productAllergens => 'Allergens';
-
-  @override
   String productNutrition(String p, String f, String c) {
     return 'Protein $p g · Fat $f g · Carbs $c g';
   }
@@ -501,24 +495,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get productLoadFailed => 'Could not load this item.';
-
-  @override
-  String get dietVegan => 'Vegan';
-
-  @override
-  String get dietVegetarian => 'Vegetarian';
-
-  @override
-  String get dietGlutenFree => 'Gluten-free';
-
-  @override
-  String get dietLactoseFree => 'Lactose-free';
-
-  @override
-  String get dietDecaf => 'Decaf';
-
-  @override
-  String get dietSugarFree => 'Sugar-free';
 
   @override
   String get cartTitle => 'Your order';
@@ -1527,11 +1503,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get productNoteFoodHint => 'E.g. warm it up, no sauce…';
 
   @override
-  String productContains(String list) {
-    return 'Contains: $list';
-  }
-
-  @override
   String get productAddonsNone => 'none';
 
   @override
@@ -1545,45 +1516,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get upsellTogether => 'Often bought together';
-
-  @override
-  String get allergenGluten => 'gluten';
-
-  @override
-  String get allergenMilk => 'milk';
-
-  @override
-  String get allergenLactose => 'lactose';
-
-  @override
-  String get allergenEggs => 'eggs';
-
-  @override
-  String get allergenNuts => 'nuts';
-
-  @override
-  String get allergenPeanuts => 'peanuts';
-
-  @override
-  String get allergenSoy => 'soy';
-
-  @override
-  String get allergenFish => 'fish';
-
-  @override
-  String get allergenShellfish => 'shellfish';
-
-  @override
-  String get allergenSesame => 'sesame';
-
-  @override
-  String get allergenCelery => 'celery';
-
-  @override
-  String get allergenMustard => 'mustard';
-
-  @override
-  String get allergenSulphites => 'sulphites';
 
   @override
   String get errCartEmpty => 'Your cart is empty';

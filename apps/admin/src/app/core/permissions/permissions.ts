@@ -58,8 +58,11 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // takes orders on, kitchen STAFF included.
   kitchen: [SA, BA, SM, ST],
   menu: [SA, BA, SM, ME],
-  // The add-ins library and its in-stock switches — whoever edits the menu.
-  ingredients: [SA, BA, SM, ME],
+  // The add-ins library page and its brand-wide in-stock switches — the
+  // platform team only since 2026-11-05. Brands still build add-ons from a
+  // product's options (the API keeps /admin/ingredients open to them) and
+  // stop them per store in the stop-list.
+  ingredients: [SA],
   // Per-store "ran out" switches for dishes, drinks and add-ins. Kitchen
   // STAFF work it; it only toggles, so the menu editor role is not needed.
   stopList: [SA, BA, SM, ST],

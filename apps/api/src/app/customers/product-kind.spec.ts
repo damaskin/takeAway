@@ -3,7 +3,6 @@ import { type ProductKindSignals, productKind } from './product-kind';
 const product = (over: Partial<ProductKindSignals>): ProductKindSignals => ({
   name: 'Позиция',
   categoryName: null,
-  caffeineLevel: null,
   drinkOptions: false,
   ...over,
 });
@@ -11,14 +10,14 @@ const product = (over: Partial<ProductKindSignals>): ProductKindSignals => ({
 describe('productKind', () => {
   it('goes by the kind the business gave the category', () => {
     expect(productKind(product({ categoryKind: 'COLD_DRINKS', categoryName: 'Сезонное' }))).toBe('DRINK');
-    expect(productKind(product({ categoryKind: 'BAKERY', caffeineLevel: 1 }))).toBe('FOOD');
+    expect(productKind(product({ categoryKind: 'BAKERY', drinkOptions: true }))).toBe('FOOD');
     expect(productKind(product({ categoryKind: 'FOOD', name: 'Латте-шаурма' }))).toBe('FOOD');
     // OTHER says nothing: the other signals decide.
     expect(productKind(product({ categoryKind: 'OTHER', categoryName: 'Горячие напитки' }))).toBe('DRINK');
   });
 
-  it('trusts caffeine and drink options first', () => {
-    expect(productKind(product({ caffeineLevel: 0, categoryName: 'Десерты' }))).toBe('DRINK');
+  it('trusts drink options over the names', () => {
+    expect(productKind(product({ drinkOptions: true, categoryName: 'Десерты' }))).toBe('DRINK');
     expect(productKind(product({ drinkOptions: true }))).toBe('DRINK');
   });
 

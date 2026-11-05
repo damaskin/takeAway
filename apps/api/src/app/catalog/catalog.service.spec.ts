@@ -438,6 +438,49 @@ describe('CatalogService', () => {
     expect(menu.categories.map((c) => c.products[0]?.categoryKind)).toEqual(['FOOD', 'HOT_DRINKS']);
   });
 
+  // Retired on 2026-11-05: the columns keep their data, the apps no longer get it.
+  it('leaves caffeine, allergens and diet tags out of the menu and the product', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'store-1', slug: 'cafe', brandId: 'brand-1' });
+    const row = {
+      id: 'p-latte',
+      categoryId: 'c-hot',
+      brandId: 'brand-1',
+      slug: 'latte',
+      name: 'Латте',
+      description: null,
+      basePriceCents: 450,
+      prepTimeSeconds: 180,
+      caffeineLevel: 2,
+      calories: 150,
+      proteinsGrams: 5,
+      fatsGrams: 6,
+      carbsGrams: 12,
+      allergens: ['MILK'],
+      dietTags: ['VEGETARIAN'],
+      imageUrls: [],
+      sortOrder: 0,
+    };
+    prisma.category.findMany.mockResolvedValue([
+      { id: 'c-hot', slug: 'coffee', name: 'Кофе', kind: 'HOT_DRINKS', products: [row] },
+    ]);
+    prisma.product.findFirst.mockResolvedValue({
+      ...row,
+      variations: [],
+      modifiers: [],
+      category: { kind: 'HOT_DRINKS' },
+    });
+
+    const listed = (await service.getMenu('cafe')).categories[0]?.products[0];
+    const detail = await service.getProduct('latte');
+
+    for (const product of [listed, detail]) {
+      expect(product).toMatchObject({ calories: 150, proteinsGrams: 5, fatsGrams: 6, carbsGrams: 12 });
+      expect(product).not.toHaveProperty('caffeineLevel');
+      expect(product).not.toHaveProperty('allergens');
+      expect(product).not.toHaveProperty('dietTags');
+    }
+  });
+
   it('sends the category kind and the add-on groups with a product', async () => {
     const modifier = (id: string, group: string | null) => ({
       id,

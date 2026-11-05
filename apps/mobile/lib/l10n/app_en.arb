@@ -348,8 +348,6 @@
       }
     }
   },
-  "productCaffeine": "Caffeine",
-  "productAllergens": "Allergens",
   "productNutrition": "Protein {p} g · Fat {f} g · Carbs {c} g",
   "@productNutrition": {
     "placeholders": {
@@ -366,12 +364,6 @@
   },
   "productNoStore": "Choose a store to order this.",
   "productLoadFailed": "Could not load this item.",
-  "dietVegan": "Vegan",
-  "dietVegetarian": "Vegetarian",
-  "dietGlutenFree": "Gluten-free",
-  "dietLactoseFree": "Lactose-free",
-  "dietDecaf": "Decaf",
-  "dietSugarFree": "Sugar-free",
   "cartTitle": "Your order",
   "cartEmptyTitle": "Your cart is empty",
   "cartEmptyBody": "Add something tasty from the menu.",
@@ -1016,14 +1008,6 @@
   "locationUnavailable": "Couldn't tell where you are. Try again in a moment.",
   "productNoteFood": "Order comment",
   "productNoteFoodHint": "E.g. warm it up, no sauce…",
-  "productContains": "Contains: {list}",
-  "@productContains": {
-    "placeholders": {
-      "list": {
-        "type": "String"
-      }
-    }
-  },
   "productAddonsNone": "none",
   "productRequired": "required",
   "productPairsWith": "Goes well with it",
@@ -1032,19 +1016,6 @@
   "@upsellTogether": {
     "description": "Title of a suggestions row, only over what the store's customers really bought together with these products."
   },
-  "allergenGluten": "gluten",
-  "allergenMilk": "milk",
-  "allergenLactose": "lactose",
-  "allergenEggs": "eggs",
-  "allergenNuts": "nuts",
-  "allergenPeanuts": "peanuts",
-  "allergenSoy": "soy",
-  "allergenFish": "fish",
-  "allergenShellfish": "shellfish",
-  "allergenSesame": "sesame",
-  "allergenCelery": "celery",
-  "allergenMustard": "mustard",
-  "allergenSulphites": "sulphites",
   "errCartEmpty": "Your cart is empty",
   "errStoreNotTakingOrders": "This store is not taking orders right now",
   "errStoreClosedAtTime": "The store is closed at that time — pick another time",

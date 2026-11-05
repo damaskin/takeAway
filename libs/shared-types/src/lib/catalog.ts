@@ -7,17 +7,17 @@ import type { PickupPointType } from './shared-types';
 export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
 export type StoreFulfillment = 'TAKEAWAY' | 'DINE_IN' | 'DRIVE_THRU' | 'DELIVERY';
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
-export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
 export type StoreKind = 'COFFEE' | 'FOOD';
 
 /** Every store kind, in the order the admin and the filters list them. */
 export const STORE_KINDS: readonly StoreKind[] = ['COFFEE', 'FOOD'];
 
 /**
- * What a menu category holds. Decides which fields the product editor
- * shows (caffeine for drinks, allergens for food), which ready-made option
- * sets the admin offers (see `OPTION_PRESETS`) and which placeholder a
- * product without a photo gets. OTHER shows everything and offers no set.
+ * What a menu category holds. Decides which choice groups the product's
+ * options editor offers (milk and cups are for drinks), which ready-made
+ * option sets the admin offers (see `OPTION_PRESETS`), which placeholder a
+ * product without a photo gets and whether it counts as a drink or food.
+ * OTHER offers every group and no set.
  */
 export type CategoryKind = 'HOT_DRINKS' | 'COLD_DRINKS' | 'FOOD' | 'BAKERY' | 'OTHER';
 
@@ -206,13 +206,10 @@ export interface ProductSummary {
   description: string | null;
   basePriceCents: number;
   prepTimeSeconds: number;
-  caffeineLevel: number | null;
   calories: number | null;
   proteinsGrams: number | null;
   fatsGrams: number | null;
   carbsGrams: number | null;
-  allergens: string[];
-  dietTags: DietTag[];
   imageUrls: string[];
   sortOrder: number;
   onStopList?: boolean;

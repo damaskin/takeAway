@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { Observable } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import {
   AdminCatalogApi,
   type IngredientDto,
@@ -12,6 +13,7 @@ import {
   type VariationAdminDto,
   type VariationType,
 } from '../../core/catalog/admin-catalog.service';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { LocaleFormatService } from '@takeaway/i18n';
 import { CATEGORY_KINDS, type CategoryKind, MODIFIER_GROUP_MAX_LENGTH, optionPresetFor } from '@takeaway/shared-types';
 import { productFieldsFor } from './category-kind';
@@ -378,7 +380,9 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
 
       <p class="hint" style="grid-column: 1 / -1; margin: 0">
         {{ 'admin.menu.options.libraryHint' | translate }}
-        <a routerLink="/ingredients" class="link">{{ 'admin.menu.options.libraryLink' | translate }}</a>
+        @if (canOpenLibrary()) {
+          <a routerLink="/ingredients" class="link">{{ 'admin.menu.options.libraryLink' | translate }}</a>
+        }
       </p>
       <datalist id="ingredient-names">
         @for (i of ingredients(); track i.id) {
@@ -401,6 +405,10 @@ export class ProductOptionsPanelComponent {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly auth = inject(AuthStore);
+
+  /** The add-ons library page is the platform team's (see `ADMIN_ROLES.ingredients`): no link for a brand. */
+  readonly canOpenLibrary = computed(() => canAccess(this.auth.user()?.role as AdminRole | undefined, 'ingredients'));
 
   readonly productId = input.required<string>();
   readonly currency = input<string | null>(null);
