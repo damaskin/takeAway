@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { OrderItemSnapshot } from '@takeaway/shared-types';
+import type { OrderCancelReason, OrderCancelledBy, OrderItemSnapshot } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -60,6 +60,13 @@ export interface OrderView {
   readyAt: string | null;
   cancelledAt: string | null;
   /**
+   * Who cancelled the order, the store's reason and its comment — read them
+   * with `orderCancellation`. Absent from an API older than this build.
+   */
+  cancelledBy?: OrderCancelledBy | null;
+  cancelReason?: OrderCancelReason | null;
+  cancelComment?: string | null;
+  /**
    * When the kitchen now expects it ready, set when it accepted or started
    * the order too late for `pickupAt`; the countdown runs to it
    * (`orderDueAt`). Absent from an API older than this build.
@@ -117,6 +124,9 @@ export interface OrderSummary {
   storeTimezone?: string | null;
   itemCount: number;
   createdAt: string;
+  /** Who cancelled a cancelled order and the store's reason; absent from an API older than this build. */
+  cancelledBy?: OrderCancelledBy | null;
+  cancelReason?: OrderCancelReason | null;
 }
 
 @Injectable({ providedIn: 'root' })

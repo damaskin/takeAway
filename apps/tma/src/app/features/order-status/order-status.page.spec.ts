@@ -44,6 +44,8 @@ function order(over: Partial<OrderView> = {}): OrderView {
 describe('TmaOrderStatusPage', () => {
   let orders: { get: jest.Mock; cancel: jest.Mock; reportLocation: jest.Mock };
   let confirm: jest.Mock;
+  /** The page's `order.statusChanged` handler, as it subscribed. */
+  let pushStatus: (event: { status: OrderView['status'] }) => void;
 
   async function open(first: OrderView, opts: { phone?: string } = {}) {
     orders = { get: jest.fn(() => of(first)), cancel: jest.fn(), reportLocation: jest.fn(() => of({})) };
@@ -62,7 +64,13 @@ describe('TmaOrderStatusPage', () => {
         },
         {
           provide: RealtimeService,
-          useValue: { subscribeToOrder: () => () => undefined, onStoreAvailabilityChanged: () => () => undefined },
+          useValue: {
+            subscribeToOrder: (_id: string, handler: typeof pushStatus) => {
+              pushStatus = handler;
+              return () => undefined;
+            },
+            onStoreAvailabilityChanged: () => () => undefined,
+          },
         },
         { provide: FeatureFlagsStore, useValue: { load: jest.fn(), webPaymentsEnabled: signal(false) } },
         { provide: WebPaymentApi, useValue: { issuedPageUrl: () => null, forget: jest.fn(), start: jest.fn() } },
@@ -102,6 +110,85 @@ describe('TmaOrderStatusPage', () => {
     expect(root.querySelector('h1')?.textContent?.trim()).toBe('Отменён');
     expect(byTestId('call-to-cancel')).toBeNull();
     destroy();
+  });
+
+  describe('a cancelled order says why (item 7)', () => {
+    const NOT_CHARGED = { state: 'NONE' as const, amountCents: 0, cardMask: null, paidAt: null };
+    const lines = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('[data-testid="cancel-reason"] span'), (el) => el.textContent?.trim());
+
+    it("gives the store's reason, its comment and the money, as the push did", async () => {
+      const { root, byTestId, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'STORE',
+          cancelReason: 'OUT_OF_STOCK',
+          cancelComment: 'Нет овсяного молока',
+          payment: NOT_CHARGED,
+        }),
+      );
+      expect(root.querySelector('h1')?.textContent?.trim()).toBe('Отменён');
+      expect(byTestId('order-slogan')?.textContent?.trim()).toBe('Заведение отменило заказ');
+      expect(lines(root)).toEqual([
+        'Части позиций сейчас нет в наличии.',
+        'Комментарий заведения: «Нет овсяного молока»',
+        'Деньги с карты не списывались.',
+      ]);
+      destroy();
+    });
+
+    it("says it was the customer's own cancel, with the hold lifted", async () => {
+      const { root, byTestId, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'CUSTOMER',
+          payment: { state: 'REFUNDED', amountCents: 4500, cardMask: null, paidAt: null },
+        }),
+      );
+      expect(byTestId('order-slogan')?.textContent?.trim()).toBe('Вы отменили заказ');
+      expect(lines(root)).toEqual(['Деньги не списаны, блокировка на карте снята.']);
+      destroy();
+    });
+
+    it('tells a declined card apart and what to do next', async () => {
+      const { root, byTestId, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'STORE',
+          cancelReason: 'CARD_DECLINED',
+          payment: NOT_CHARGED,
+        }),
+      );
+      expect(byTestId('order-slogan')?.textContent?.trim()).toBe('Банк отклонил оплату картой');
+      expect(lines(root)).toEqual(['Оформите заказ ещё раз с другой картой.', 'Деньги с карты не списывались.']);
+      destroy();
+    });
+
+    it('shows the reason as soon as the kitchen turns the order down, from the re-read', async () => {
+      const { root, byTestId, settle, destroy } = await open(order());
+      expect(byTestId('cancel-reason')).toBeNull();
+
+      orders.get.mockReturnValue(
+        of(
+          order({
+            status: 'CANCELLED',
+            canCancel: false,
+            cancelledBy: 'STORE',
+            cancelReason: 'TOO_BUSY',
+            payment: { state: 'REFUNDED', amountCents: 4500, cardMask: null, paidAt: null },
+          }),
+        ),
+      );
+      pushStatus({ status: 'CANCELLED' });
+      await settle();
+
+      expect(byTestId('order-slogan')?.textContent?.trim()).toBe('Заведение отменило заказ');
+      expect(lines(root)).toEqual(['Заведение сейчас перегружено заказами.', 'Деньги вернутся на карту.']);
+      destroy();
+    });
   });
 
   it('keeps the order when the customer says no', async () => {

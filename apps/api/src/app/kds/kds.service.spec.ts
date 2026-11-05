@@ -119,8 +119,10 @@ describe('KdsService.accept', () => {
 
     expect(orders.cancelOrder).toHaveBeenCalledWith(
       expect.objectContaining({ id: order.id }),
-      expect.objectContaining({ by: 'store', reason: 'CARD_DECLINED' }),
+      expect.objectContaining({ by: 'store', reason: 'CARD_DECLINED', bankMessage: 'Insufficient funds' }),
     );
+    // The bank's words stay on the event; the customer's screen says their card was declined.
+    expect(orders.cancelOrder.mock.calls[0][1]).not.toHaveProperty('comment');
     expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(
       expect.objectContaining({ id: order.id }),
       'CANCELLED',

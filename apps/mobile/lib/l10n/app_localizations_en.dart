@@ -812,6 +812,56 @@ class AppLocalizationsEn extends AppLocalizations {
   String get orderExpiredPaymentNotCompleted => 'The payment did not go through — the order is cancelled';
 
   @override
+  String get orderCancelledByStore => 'The store cancelled your order';
+
+  @override
+  String get orderCancelledByCustomer => 'You cancelled this order';
+
+  @override
+  String get orderCancelledCardDeclined => 'The bank declined your card';
+
+  @override
+  String get orderCancelledBadgeStore => 'Cancelled by the store';
+
+  @override
+  String get orderCancelledBadgeCustomer => 'Cancelled by you';
+
+  @override
+  String get orderCancelledBadgeCardDeclined => 'Card declined';
+
+  @override
+  String get cancelReasonOutOfStock => 'Some items are out of stock.';
+
+  @override
+  String get cancelReasonTooBusy => 'The store is too busy right now.';
+
+  @override
+  String get cancelReasonClosing => 'The store is closing.';
+
+  @override
+  String get cancelReasonOther => 'The store cannot take the order.';
+
+  @override
+  String get cancelCardDeclinedHint => 'Please order again with another card.';
+
+  @override
+  String cancelStoreComment(String comment) {
+    return 'Note from the store: “$comment”';
+  }
+
+  @override
+  String get cancelMoneyNotCharged => 'Your card was not charged.';
+
+  @override
+  String get cancelMoneyReleased => 'You were not charged and the card hold is released.';
+
+  @override
+  String get cancelMoneyRefunded => 'The money is on its way back to your card.';
+
+  @override
+  String get cancelMoneyHoldPending => 'The card hold will be released automatically.';
+
+  @override
   String get statusUnknown => 'Updating…';
 
   @override

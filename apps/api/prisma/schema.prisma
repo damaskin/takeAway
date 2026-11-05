@@ -156,6 +156,22 @@ enum OrderStatus {
   EXPIRED
 }
 
+/// Who called a CANCELLED order off.
+enum OrderCanceller {
+  CUSTOMER
+  STORE
+}
+
+/// Why the store called an order off: the kitchen's own reason when it
+/// turned the order down, or the customer's card declined when it accepted.
+enum OrderCancelReason {
+  OUT_OF_STOCK
+  TOO_BUSY
+  CLOSING
+  OTHER
+  CARD_DECLINED
+}
+
 enum OrderEventType {
   STATUS_CHANGED
   ETA_UPDATED
@@ -1561,6 +1577,14 @@ model Order {
   outForDeliveryAt    DateTime?
   deliveredAt         DateTime?
   cancelledAt         DateTime?
+  /// Who cancelled the order, why and what the kitchen added — what the
+  /// customer's order screen says about it. Mirrors the CANCELLED event;
+  /// null unless CANCELLED, and on orders cancelled before 2026-11-05 whose
+  /// event did not say. `cancelComment` is the kitchen's own words, shown as
+  /// is; never the bank's message on a declined card.
+  cancelledBy         OrderCanceller?
+  cancelReason        OrderCancelReason?
+  cancelComment       String?
   expiredAt           DateTime?
   /// When the order became the kitchen's to accept — shown on the board:
   /// at creation when nothing has to be paid by card, else when the card

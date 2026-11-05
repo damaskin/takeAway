@@ -18,6 +18,16 @@ export type OrderStatusEnum =
   | 'CANCELLED'
   | 'EXPIRED';
 
+/** Who called a CANCELLED order off. */
+export type OrderCancelledBy = 'CUSTOMER' | 'STORE';
+
+/**
+ * Why the store called an order off: the kitchen's reason when it turned the
+ * order down before accepting it, or `CARD_DECLINED` — the customer's card
+ * was declined when the kitchen accepted it.
+ */
+export type OrderCancelReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER' | 'CARD_DECLINED';
+
 export type OrderEventTypeEnum =
   | 'STATUS_CHANGED'
   | 'ETA_UPDATED'
@@ -137,6 +147,13 @@ export interface OrderSummary {
   storeTimezone: string;
   itemCount: number;
   createdAt: string;
+  /**
+   * Who cancelled a CANCELLED order; null otherwise and on orders cancelled
+   * before 2026-11-05 whose record did not say. Optional for older API builds.
+   */
+  cancelledBy?: OrderCancelledBy | null;
+  /** Why the store cancelled it; null for the customer's own cancel. Optional for older API builds. */
+  cancelReason?: OrderCancelReason | null;
 }
 
 // The snapshot shapes below are type aliases rather than interfaces so they
@@ -207,6 +224,12 @@ export interface Order extends OrderSummary {
   readyAt: string | null;
   pickedUpAt: string | null;
   cancelledAt: string | null;
+  /**
+   * The kitchen's comment when it turned the order down, shown to the
+   * customer as is (≤ 200 chars). Never the bank's message on a declined
+   * card. Optional for older API builds.
+   */
+  cancelComment?: string | null;
   expiredAt: string | null;
   /**
    * ISO UTC: when the kitchen expects the order to be ready, set when it

@@ -63,6 +63,38 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickedUpTitle: 'Order picked up. Have a great day!',
       pickedUpSlogan: 'Zero minutes in a queue, as promised. See you soon!',
     },
+    /**
+     * Who called a cancelled order off, why and where the money is — see
+     * orderCancellation in @takeaway/utils. The same story as the push.
+     */
+    orderCancelled: {
+      by: {
+        store: 'The store cancelled your order',
+        customer: 'You cancelled this order',
+        cardDeclined: 'The bank declined your card',
+      },
+      /** The status on an order history card. */
+      badge: {
+        store: 'Cancelled by the store',
+        customer: 'Cancelled by you',
+        cardDeclined: 'Card declined',
+      },
+      /** The kitchen's reason, as the push words it. */
+      reason: {
+        OUT_OF_STOCK: 'Some items are out of stock.',
+        TOO_BUSY: 'The store is too busy right now.',
+        CLOSING: 'The store is closing.',
+        OTHER: 'The store cannot take the order.',
+      },
+      cardDeclinedHint: 'Please order again with another card.',
+      comment: 'Note from the store: “{{comment}}”',
+      money: {
+        notCharged: 'Your card was not charged.',
+        released: 'You were not charged and the card hold is released.',
+        refunded: 'The money is on its way back to your card.',
+        holdPending: 'The card hold will be released automatically.',
+      },
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',
@@ -462,6 +494,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupAt: 'Pickup at {{time}}',
       backToMenu: 'Back to menu',
       notFound: 'Order not found',
+      /** Above the order while it is still in work: the page updates by itself. */
+      keepOpen: 'Keep this page open — your order status updates here on its own.',
     },
     auth: {
       welcomeBack: 'Welcome back',

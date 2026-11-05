@@ -820,6 +820,56 @@ class AppLocalizationsRu extends AppLocalizations {
   String get orderExpiredPaymentNotCompleted => 'Оплата не завершилась — заказ отменён';
 
   @override
+  String get orderCancelledByStore => 'Заведение отменило заказ';
+
+  @override
+  String get orderCancelledByCustomer => 'Вы отменили заказ';
+
+  @override
+  String get orderCancelledCardDeclined => 'Банк отклонил оплату картой';
+
+  @override
+  String get orderCancelledBadgeStore => 'Отменён заведением';
+
+  @override
+  String get orderCancelledBadgeCustomer => 'Отменён вами';
+
+  @override
+  String get orderCancelledBadgeCardDeclined => 'Карта отклонена';
+
+  @override
+  String get cancelReasonOutOfStock => 'Части позиций сейчас нет в наличии.';
+
+  @override
+  String get cancelReasonTooBusy => 'Заведение сейчас перегружено заказами.';
+
+  @override
+  String get cancelReasonClosing => 'Заведение закрывается.';
+
+  @override
+  String get cancelReasonOther => 'Заведение не может принять заказ.';
+
+  @override
+  String get cancelCardDeclinedHint => 'Оформите заказ ещё раз с другой картой.';
+
+  @override
+  String cancelStoreComment(String comment) {
+    return 'Комментарий заведения: «$comment»';
+  }
+
+  @override
+  String get cancelMoneyNotCharged => 'Деньги с карты не списывались.';
+
+  @override
+  String get cancelMoneyReleased => 'Деньги не списаны, блокировка на карте снята.';
+
+  @override
+  String get cancelMoneyRefunded => 'Деньги вернутся на карту.';
+
+  @override
+  String get cancelMoneyHoldPending => 'Блокировка на карте будет снята автоматически.';
+
+  @override
   String get statusUnknown => 'Обновляем…';
 
   @override

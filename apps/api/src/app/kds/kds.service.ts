@@ -134,7 +134,7 @@ export class KdsService {
       by: 'store',
       allowedStatuses: REJECTABLE_STATUSES,
       reason: 'CARD_DECLINED',
-      comment: bankMessage,
+      bankMessage,
     });
     void this.notifications.notifyOrderStatus(
       {

@@ -1,4 +1,11 @@
-import { expiredOutcome, formatCountdown, isAwaitingAcceptance, orderDueAt, orderWaitNote } from './order-progress';
+import {
+  expiredOutcome,
+  formatCountdown,
+  isAwaitingAcceptance,
+  orderCancellation,
+  orderDueAt,
+  orderWaitNote,
+} from './order-progress';
 
 describe('isAwaitingAcceptance', () => {
   const order = { pickupAt: '2026-10-15T06:15:00Z', totalCents: 4500 };
@@ -88,5 +95,65 @@ describe('formatCountdown', () => {
 
   it('never goes below zero', () => {
     expect(formatCountdown(-30_000)).toBe('0:00');
+  });
+});
+
+describe('orderCancellation', () => {
+  const cancelled = { status: 'CANCELLED', totalCents: 4500 };
+
+  it('says nothing about an order that is not cancelled', () => {
+    expect(orderCancellation({ ...cancelled, status: 'EXPIRED' })).toBeNull();
+    expect(orderCancellation({ ...cancelled, status: 'READY', cancelledBy: 'STORE' })).toBeNull();
+  });
+
+  it("gives the kitchen's reason and its comment, trimmed", () => {
+    expect(
+      orderCancellation({
+        ...cancelled,
+        cancelledBy: 'STORE',
+        cancelReason: 'OUT_OF_STOCK',
+        cancelComment: '  Нет овсяного молока ',
+        payment: { state: 'NONE' },
+      }),
+    ).toEqual({ by: 'store', reason: 'OUT_OF_STOCK', comment: 'Нет овсяного молока', money: 'notCharged' });
+    expect(
+      orderCancellation({ ...cancelled, cancelledBy: 'STORE', cancelReason: 'TOO_BUSY', cancelComment: '   ' }),
+    ).toMatchObject({ by: 'store', reason: 'TOO_BUSY', comment: null });
+  });
+
+  it('tells a declined card from the kitchen turning the order down', () => {
+    expect(
+      orderCancellation({ ...cancelled, cancelledBy: 'STORE', cancelReason: 'CARD_DECLINED', cancelComment: 'x' }),
+    ).toEqual({ by: 'cardDeclined', reason: null, comment: null, money: 'notCharged' });
+  });
+
+  it("keeps the customer's own cancel free of a reason", () => {
+    expect(
+      orderCancellation({ ...cancelled, cancelledBy: 'CUSTOMER', cancelReason: 'OTHER', cancelComment: 'x' }),
+    ).toMatchObject({ by: 'customer', reason: null, comment: null });
+  });
+
+  it('leaves who and why open on an order cancelled before they were kept', () => {
+    expect(orderCancellation({ ...cancelled, payment: { state: 'REFUNDED' } })).toEqual({
+      by: null,
+      reason: null,
+      comment: null,
+      money: 'refunded',
+    });
+  });
+
+  it('says where the money is, as the push did', () => {
+    const money = (state: string, cancelledBy = 'STORE', totalCents = 4500) =>
+      orderCancellation({ ...cancelled, totalCents, cancelledBy, payment: { state } })?.money;
+    expect(money('NONE')).toBe('notCharged');
+    expect(money('FAILED')).toBe('notCharged');
+    expect(money('HELD')).toBe('holdPending');
+    expect(money('REFUNDED')).toBe('refunded');
+    expect(money('PAID')).toBe('refunded');
+    // The customer cancels only while nothing is captured: a give-back is the hold coming off.
+    expect(money('REFUNDED', 'CUSTOMER')).toBe('released');
+    expect(money('PENDING')).toBeNull();
+    // Points or a gift card paid for it all: no card money to speak of.
+    expect(money('NONE', 'STORE', 0)).toBeNull();
   });
 });
