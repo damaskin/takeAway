@@ -56,7 +56,10 @@ export class CreatePromoDto {
   @ApiProperty() @IsString() brandId!: string;
   @ApiProperty() @IsString() @Length(2, 32) @Matches(/^[A-Za-z0-9_-]+$/) code!: string;
   @ApiProperty() @IsString() @Length(1, 120) label!: string;
-  @ApiProperty({ enum: PromoType }) @IsEnum(PromoType) type!: PromoType;
+  /** New promo codes are percent only (owner decision 2026-11-05); the other types live on in older codes. */
+  @ApiProperty({ enum: [PromoType.PERCENT], description: 'New promo codes are percent only.' })
+  @IsIn([PromoType.PERCENT], { message: 'new promo codes are percent only' })
+  type!: typeof PromoType.PERCENT;
   @ApiProperty() @IsInt() @Min(0) value!: number;
   @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) minSubtotalCents?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsInt() @Min(0) maxRedemptions?: number;
@@ -91,7 +94,13 @@ export class CreatePromoDto {
 export class UpdatePromoDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(2, 32) @Matches(/^[A-Za-z0-9_-]+$/) code?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @Length(1, 120) label?: string;
-  @ApiPropertyOptional({ enum: PromoType }) @IsOptional() @IsEnum(PromoType) type?: PromoType;
+  @ApiPropertyOptional({
+    enum: PromoType,
+    description: 'PERCENT, or the type the promo already has: an older non-percent code keeps its type until it ends.',
+  })
+  @IsOptional()
+  @IsEnum(PromoType)
+  type?: PromoType;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) value?: number;
   @ApiPropertyOptional({ nullable: true, type: Number })
   @IsOptional()

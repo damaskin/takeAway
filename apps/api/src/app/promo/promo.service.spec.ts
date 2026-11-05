@@ -1,6 +1,9 @@
 import type { Promo } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 
 import type { PrismaService } from '../prisma/prisma.service';
+import { CreatePromoDto, UpdatePromoDto } from './dto/promo.dto';
 import { PromoService } from './promo.service';
 
 const NOW = new Date('2026-10-10T12:00:00Z');
@@ -126,6 +129,32 @@ describe('PromoService.update', () => {
     await svc.update('p1', { inactiveDays: null }, NOW);
     expect(row()).toMatchObject({ inactiveDays: null, segmentStoreId: null });
   });
+
+  it('keeps an older non-percent code editable in its own type', async () => {
+    const { svc, row } = setup({ status: 'DRAFT', type: 'FIXED', value: 500 });
+    await svc.update('p1', { type: 'FIXED', value: 700, label: 'Зимние 7' }, NOW);
+    expect(row()).toMatchObject({ type: 'FIXED', value: 700, label: 'Зимние 7' });
+  });
+
+  it('lets an older code switch to percent', async () => {
+    const { svc, row } = setup({ status: 'DRAFT', type: 'BOGO', value: 1 });
+    await svc.update('p1', { type: 'PERCENT', value: 10 }, NOW);
+    expect(row()).toMatchObject({ type: 'PERCENT', value: 10 });
+  });
+
+  it('switches nothing to a type other than percent', async () => {
+    for (const [from, to] of [
+      ['PERCENT', 'FIXED'],
+      ['FIXED', 'BOGO'],
+      ['PERCENT', 'POINTS_MULTIPLIER'],
+    ] as const) {
+      const { svc, prisma } = setup({ status: 'DRAFT', type: from });
+      await expect(svc.update('p1', { type: to }, NOW)).rejects.toMatchObject({
+        response: { code: 'PROMO_TYPE' },
+      });
+      expect(prisma.promo.update).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe('PromoService.updateStatus', () => {
@@ -197,5 +226,36 @@ describe('PromoService.create', () => {
       }),
     );
     expect(prisma.store.findFirst).toHaveBeenCalledWith({ where: { id: 's1', brandId: 'b1' }, select: { id: true } });
+  });
+});
+
+describe('promo DTOs — percent only', () => {
+  async function failed(cls: typeof CreatePromoDto | typeof UpdatePromoDto, plain: object): Promise<string[]> {
+    const found = await validate(plainToInstance(cls, plain), { whitelist: true, forbidNonWhitelisted: true });
+    return found.flatMap((e) => Object.values(e.constraints ?? {}));
+  }
+
+  const create = {
+    brandId: 'b1',
+    code: 'BACK15',
+    label: 'Возвращайтесь',
+    value: 15,
+    startsAt: day(0).toISOString(),
+    endsAt: day(14).toISOString(),
+  };
+
+  it('creates a percent code', async () => {
+    expect(await failed(CreatePromoDto, { ...create, type: 'PERCENT' })).toEqual([]);
+  });
+
+  it('creates no other type, saying codes are percent only', async () => {
+    for (const type of ['FIXED', 'BOGO', 'POINTS_MULTIPLIER']) {
+      expect(await failed(CreatePromoDto, { ...create, type })).toEqual(['new promo codes are percent only']);
+    }
+  });
+
+  it('still takes any known type on an update — the service decides what an older code may keep', async () => {
+    expect(await failed(UpdatePromoDto, { type: 'FIXED' })).toEqual([]);
+    expect(await failed(UpdatePromoDto, { type: 'GIFT' })).not.toEqual([]);
   });
 });
