@@ -3,36 +3,24 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CategoryKind } from '@takeaway/shared-types';
-import { ALLERGEN_CODES, type AllergenCode } from '@takeaway/utils';
 import { productPlaceholderSrc } from '@takeaway/ui-kit';
 
 import {
   AdminCatalogApi,
   type CategoryAdminDto,
-  type DietTag,
   type ProductAdminDto,
   type ProductFieldsInput,
   type ProductStoreOptionDto,
 } from '../../core/catalog/admin-catalog.service';
-import {
-  type AllergenState,
-  hiddenProductData,
-  joinAllergens,
-  productFieldsFor,
-  splitAllergens,
-} from './category-kind';
 import { describeMenuError } from './menu-errors';
 import {
-  allergensValidator,
   amountValidator,
   countValidator,
   formatAmountInput,
   formatMinutesInput,
   formatMoneyInput,
-  MAX_ALLERGENS,
   minutesValidator,
   moneyValidator,
-  parseAllergens,
   parseAmount,
   parseCount,
   parseMinutes,
@@ -42,7 +30,6 @@ import {
 import { MENU_FORM_STYLES } from './menu-form.styles';
 import { ProductImagesComponent } from './product-images.component';
 
-const CAFFEINE_LEVELS = ['0', '1', '2', '3', '4'] as const;
 const NUTRITION = ['calories', 'proteins', 'fats', 'carbs'] as const;
 
 export interface ProductSavedEvent {
@@ -54,17 +41,16 @@ type ProductControls = ProductFormComponent['form']['controls'];
 
 /**
  * Create / edit one product: the price in the brand's currency, the
- * preparation time in minutes, everything the customer's product page can
- * show (description, nutrition, caffeine, diet tags, allergens) and, once
- * the product exists, its photos. Labels stay visible — placeholders used
- * to be the only labels and vanished as soon as someone started typing.
+ * preparation time in minutes, what the customer's product page shows
+ * (description, energy and nutrition) and, once the product exists, its
+ * photos. Labels stay visible — placeholders used to be the only labels and
+ * vanished as soon as someone started typing.
  *
- * The fields follow the kind of the product's category: a shawarma has no
- * caffeine or «Без кофеина», a latte no «Вегетарианское». A product moved
- * to a category of another kind keeps what it had in the hidden fields;
- * the form says so and offers to clear it, it never drops data silently.
- * A new product starts at the category's default preparation time and with
- * the category's option set (which can be left off).
+ * Caffeine, diet tags («Особенности») and allergens were dropped from the
+ * menu on 2026-11-05; the form neither shows nor sends them, and what a
+ * product had stays in the database untouched. The kind of the category
+ * still picks the placeholder; a new product starts at the category's
+ * default preparation time and with its option set (which can be left off).
  */
 @Component({
   selector: 'app-product-form',
@@ -170,68 +156,13 @@ type ProductControls = ProductFormComponent['form']['controls'];
               <span class="label">{{ 'admin.menu.product.carbs' | translate }}</span>
               <input class="control" formControlName="carbs" inputmode="decimal" autocomplete="off" />
             </label>
-            @if (fields().caffeine) {
-              <label class="field">
-                <span class="label">{{ 'admin.menu.product.caffeine' | translate }}</span>
-                <select class="control" formControlName="caffeineLevel" data-testid="product-caffeine">
-                  <option value="">{{ 'admin.menu.product.caffeineUnset' | translate }}</option>
-                  @for (level of caffeineLevels; track level) {
-                    <option [value]="level">{{ 'admin.menu.product.caffeineLevel.' + level | translate }}</option>
-                  }
-                </select>
-              </label>
-            }
           </div>
           @if (showNutritionError()) {
             <span class="error">{{ 'admin.menu.errors.number' | translate }}</span>
-          }
-
-          <div class="field">
-            <span class="label">{{ 'admin.menu.product.dietTags' | translate }}</span>
-            <div class="flex flex-wrap" style="gap: 8px 16px" data-testid="product-diet-tags">
-              @for (tag of fields().dietTags; track tag) {
-                <label class="check">
-                  <input type="checkbox" [checked]="hasDietTag(tag)" (change)="toggleDietTag(tag, $event)" />
-                  <span>{{ 'admin.menu.product.diet.' + tag | translate }}</span>
-                </label>
-              }
-            </div>
-          </div>
-
-          <div class="field">
-            <span class="label">{{ 'admin.menu.product.allergensChecklist' | translate }}</span>
-            <div class="flex flex-wrap" style="gap: 8px 16px" data-testid="product-allergens">
-              @for (code of allergenOptions; track code) {
-                <label class="check">
-                  <input type="checkbox" [checked]="hasAllergen(code)" (change)="toggleAllergen(code, $event)" />
-                  <span>{{ 'common.allergens.' + code | translate }}</span>
-                </label>
-              }
-            </div>
-          </div>
-
-          <label class="field">
-            <span class="label">{{ 'admin.menu.product.allergensOther' | translate }}</span>
-            <input class="control" formControlName="allergens" autocomplete="off" />
-            @if (showError('allergens') || allergenOverflow()) {
-              <span class="error">{{ 'admin.menu.errors.allergens' | translate }}</span>
-            } @else {
-              <span class="hint">{{ 'admin.menu.product.allergensOtherHint' | translate }}</span>
-            }
-          </label>
-
-          @if (kind() !== 'OTHER') {
-            <span class="hint" data-testid="product-kind-note">{{
-              'admin.menu.product.kindNote' | translate: { kind: kindName() }
+          } @else {
+            <span class="hint" data-testid="product-details-hint">{{
+              'admin.menu.product.detailsHint' | translate
             }}</span>
-          }
-          @if (hiddenNote(); as fieldsText) {
-            <p class="notice" style="border-left-color: var(--color-amber)" data-testid="product-hidden-data">
-              {{ 'admin.menu.product.hiddenData' | translate: { kind: kindName(), fields: fieldsText } }}
-              <button type="button" class="link" (click)="clearHidden()">
-                {{ 'admin.menu.product.hiddenClear' | translate }}
-              </button>
-            </p>
           }
         </fieldset>
 
@@ -352,8 +283,6 @@ export class ProductFormComponent {
   readonly closed = output<void>();
   readonly imagesChanged = output<{ productId: string; imageUrls: string[] }>();
 
-  readonly caffeineLevels = CAFFEINE_LEVELS;
-  readonly allergenOptions = ALLERGEN_CODES;
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
   readonly submitted = signal(false);
@@ -383,20 +312,11 @@ export class ProductFormComponent {
     proteins: new FormControl('', { nonNullable: true, validators: [amountValidator] }),
     fats: new FormControl('', { nonNullable: true, validators: [amountValidator] }),
     carbs: new FormControl('', { nonNullable: true, validators: [amountValidator] }),
-    caffeineLevel: new FormControl('', { nonNullable: true }),
-    dietTags: new FormControl<DietTag[]>([], { nonNullable: true }),
-    /** Allergens the checklist does not have, as free text. */
-    allergens: new FormControl('', { nonNullable: true, validators: [allergensValidator] }),
     visible: new FormControl(true, { nonNullable: true }),
     slug: new FormControl('', { nonNullable: true, validators: [slugValidator] }),
     /** New product only: copy the category's option set onto it. */
     applyCategoryOptions: new FormControl(true, { nonNullable: true }),
   });
-
-  /** The ticked checklist allergens, and the free text some of them came in as. */
-  readonly allergenCodes = signal<AllergenCode[]>([]);
-  private allergenLegacy: AllergenState['legacy'] = {};
-  readonly allergenOverflow = signal(false);
 
   private readonly pickedCategoryId = toSignal(this.form.controls.categoryId.valueChanges, {
     initialValue: this.form.controls.categoryId.value,
@@ -405,9 +325,8 @@ export class ProductFormComponent {
     const id = this.pickedCategoryId() || this.categoryId();
     return this.categories().find((c) => c.id === id) ?? null;
   });
-  /** The kind of the category picked in the form: the fields follow it as soon as it changes. */
+  /** The kind of the category picked in the form: the placeholder follows it as soon as it changes. */
   readonly kind = computed<CategoryKind>(() => this.category()?.kind ?? 'OTHER');
-  readonly fields = computed(() => productFieldsFor(this.kind()));
   readonly placeholder = computed(() => productPlaceholderSrc(this.kind()));
   readonly categoryOptionCount = computed(() => this.category()?._count?.options ?? 0);
   /** A new product's time was filled in from its category. */
@@ -468,59 +387,6 @@ export class ProductFormComponent {
     return NUTRITION.some((name) => this.showError(name));
   }
 
-  hasDietTag(tag: DietTag): boolean {
-    return this.form.controls.dietTags.value.includes(tag);
-  }
-
-  toggleDietTag(tag: DietTag, event: Event): void {
-    const on = (event.target as HTMLInputElement).checked;
-    const rest = this.form.controls.dietTags.value.filter((t) => t !== tag);
-    this.form.controls.dietTags.setValue(on ? [...rest, tag] : rest);
-    this.form.controls.dietTags.markAsDirty();
-  }
-
-  hasAllergen(code: AllergenCode): boolean {
-    return this.allergenCodes().includes(code);
-  }
-
-  /** Unticking drops the allergen, along with the free text it was typed as. */
-  toggleAllergen(code: AllergenCode, event: Event): void {
-    const on = (event.target as HTMLInputElement).checked;
-    const rest = this.allergenCodes().filter((c) => c !== code);
-    this.allergenCodes.set(on ? [...rest, code] : rest);
-    if (!on) {
-      const { [code]: _dropped, ...legacy } = this.allergenLegacy;
-      this.allergenLegacy = legacy;
-    }
-    this.allergenOverflow.set(false);
-  }
-
-  kindName(): string {
-    return this.translate.instant(`admin.menu.kinds.${this.kind()}.name`);
-  }
-
-  /**
-   * What the product keeps in fields this kind hides, as one line for the
-   * notice — or null when there is nothing hidden.
-   */
-  hiddenNote(): string | null {
-    const v = this.form.getRawValue();
-    const hidden = hiddenProductData(this.kind(), { caffeineLevel: v.caffeineLevel, dietTags: v.dietTags });
-    const names = [
-      ...(hidden.caffeine ? [this.translate.instant('admin.menu.product.caffeine')] : []),
-      ...hidden.dietTags.map((tag) => `«${this.translate.instant(`admin.menu.product.diet.${tag}`)}»`),
-    ];
-    return names.length > 0 ? names.join(', ') : null;
-  }
-
-  /** Clears what the kind hides — on purpose, from the notice. */
-  clearHidden(): void {
-    const fields = this.fields();
-    if (!fields.caffeine) this.form.controls.caffeineLevel.setValue('');
-    this.form.controls.dietTags.setValue(this.form.controls.dietTags.value.filter((t) => fields.dietTags.includes(t)));
-    this.form.markAsDirty();
-  }
-
   submit(): void {
     this.submitted.set(true);
     this.error.set(null);
@@ -534,21 +400,11 @@ export class ProductFormComponent {
       basePriceCents,
       prepTimeSeconds: parseMinutes(v.prepMinutes) ?? undefined,
       visible: v.visible,
-      caffeineLevel: v.caffeineLevel === '' ? null : Number(v.caffeineLevel),
       calories: parseCount(v.calories),
       proteinsGrams: parseAmount(v.proteins),
       fatsGrams: parseAmount(v.fats),
       carbsGrams: parseAmount(v.carbs),
-      allergens: joinAllergens(
-        { codes: this.allergenCodes(), legacy: this.allergenLegacy },
-        parseAllergens(v.allergens),
-      ),
-      dietTags: v.dietTags,
     };
-    if (fields.allergens.length > MAX_ALLERGENS) {
-      this.allergenOverflow.set(true);
-      return;
-    }
 
     const existing = this.product();
     const slug = v.slug.trim();
@@ -591,11 +447,7 @@ export class ProductFormComponent {
     const separator = this.separator();
     this.submitted.set(false);
     this.error.set(null);
-    this.allergenOverflow.set(false);
     this.storeIds.set(product?.storeIds ?? null);
-    const allergens = splitAllergens(product?.allergens ?? []);
-    this.allergenCodes.set(allergens.codes);
-    this.allergenLegacy = allergens.legacy;
     const categoryPrep = product
       ? null
       : (this.categories().find((c) => c.id === categoryId)?.defaultPrepTimeSeconds ?? null);
@@ -610,9 +462,6 @@ export class ProductFormComponent {
       proteins: formatAmountInput(product?.proteinsGrams ?? null, separator),
       fats: formatAmountInput(product?.fatsGrams ?? null, separator),
       carbs: formatAmountInput(product?.carbsGrams ?? null, separator),
-      caffeineLevel: product?.caffeineLevel == null ? '' : String(product.caffeineLevel),
-      dietTags: product?.dietTags ?? [],
-      allergens: allergens.other.join(', '),
       visible: product?.visible ?? true,
       slug: product?.slug ?? '',
       applyCategoryOptions: true,

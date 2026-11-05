@@ -70,13 +70,10 @@ export const PRODUCT = {
   visible: true,
   sortOrder: 0,
   imageUrls: [],
-  caffeineLevel: null,
   calories: null,
   proteinsGrams: null,
   fatsGrams: null,
   carbsGrams: null,
-  allergens: [],
-  dietTags: [],
   storeIds: [STORE.id],
 };
 

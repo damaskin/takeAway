@@ -979,8 +979,6 @@ function withListDefaults(p: ProductAdminDto): ProductAdminDto {
   return {
     ...p,
     imageUrls: p.imageUrls ?? [],
-    allergens: p.allergens ?? [],
-    dietTags: p.dietTags ?? [],
     storeIds: p.storeIds ?? [],
   };
 }

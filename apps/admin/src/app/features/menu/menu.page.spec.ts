@@ -24,13 +24,10 @@ function product(id: string, name: string, imageUrls: string[]): ProductAdminDto
     visible: true,
     sortOrder: 0,
     imageUrls,
-    caffeineLevel: null,
     calories: null,
     proteinsGrams: null,
     fatsGrams: null,
     carbsGrams: null,
-    allergens: [],
-    dietTags: [],
     storeIds: ['s1'],
   };
 }
