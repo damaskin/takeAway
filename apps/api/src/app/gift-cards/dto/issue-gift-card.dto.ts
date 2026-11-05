@@ -1,8 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsEmail, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsDate, IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
+/** Every currency a card can be in — cards issued before RUP-only still carry the others. */
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
+
+/** New cards are issued in Transnistrian rubles only (owner decision 2026-11-05). */
+export const GIFT_CARD_ISSUE_CURRENCIES = ['RUP'] as const;
 
 export class IssueGiftCardDto {
   @ApiProperty({ description: 'Card value in cents.' })
@@ -10,9 +14,9 @@ export class IssueGiftCardDto {
   @Min(1)
   amountCents!: number;
 
-  @ApiProperty({ enum: CURRENCIES })
-  @IsEnum(CURRENCIES)
-  currency!: (typeof CURRENCIES)[number];
+  @ApiProperty({ enum: GIFT_CARD_ISSUE_CURRENCIES, description: 'Gift cards are issued in RUP only.' })
+  @IsIn(GIFT_CARD_ISSUE_CURRENCIES, { message: 'gift cards are issued in RUP only' })
+  currency!: (typeof GIFT_CARD_ISSUE_CURRENCIES)[number];
 
   @ApiPropertyOptional()
   @IsOptional()
