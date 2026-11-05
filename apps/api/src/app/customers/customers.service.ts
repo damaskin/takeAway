@@ -47,7 +47,6 @@ interface FavouriteRow {
   quantity: number;
   categoryName: string | null;
   categoryKind: CategoryKind | null;
-  caffeineLevel: number | null;
   drinkOptions: boolean;
 }
 
@@ -291,7 +290,7 @@ export class CustomersService {
     if (userIds.length === 0) return out;
     const rows = await this.prisma.$queryRaw<FavouriteRow[]>`
       SELECT f."userId" AS "userId", f."name" AS "name", f."quantity" AS "quantity",
-             c."name" AS "categoryName", c."kind"::text AS "categoryKind", pr."caffeineLevel" AS "caffeineLevel",
+             c."name" AS "categoryName", c."kind"::text AS "categoryKind",
              EXISTS (
                SELECT 1 FROM "Variation" v
                WHERE v."productId" = pr.id AND v."type" IN ('TEMPERATURE', 'MILK', 'CUP')
@@ -322,7 +321,6 @@ export class CustomersService {
           name,
           categoryName: r.categoryName,
           categoryKind: r.categoryKind,
-          caffeineLevel: r.caffeineLevel,
           drinkOptions: Boolean(r.drinkOptions),
         }),
       });

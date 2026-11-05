@@ -7,7 +7,7 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import type { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { AdminCatalogService } from './admin-catalog.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/admin-category.dto';
-import { CreateModifierDto, CreateProductDto, CreateVariationDto } from './dto/admin-product.dto';
+import { CreateModifierDto, CreateProductDto, CreateVariationDto, UpdateProductDto } from './dto/admin-product.dto';
 
 /** The HTTP body a Nest exception renders — where the admin reads `code` from. */
 function body(err: unknown): Record<string, unknown> {
@@ -120,6 +120,15 @@ describe('menu DTOs', () => {
       await errors(CreateProductDto, { brandId: 'b1', categoryId: 'c1', name: 'Латте', basePriceCents: 3500 }),
     ).toEqual([]);
     expect(await errors(CreateModifierDto, { name: 'Ванильный сироп' })).toEqual([]);
+  });
+
+  // Retired on 2026-11-05: the columns stay, but nobody may write them any more.
+  it('refuses caffeine, allergens and diet tags on a product', async () => {
+    const base = { brandId: 'b1', categoryId: 'c1', name: 'Латте', basePriceCents: 3500 };
+    expect(await errors(CreateProductDto, { ...base, calories: 120, proteinsGrams: 4.5 })).toEqual([]);
+    expect(await errors(CreateProductDto, { ...base, caffeineLevel: 2 })).toEqual(['caffeineLevel']);
+    expect(await errors(UpdateProductDto, { allergens: ['MILK'] })).toEqual(['allergens']);
+    expect(await errors(UpdateProductDto, { dietTags: ['VEGAN'] })).toEqual(['dietTags']);
   });
 
   it('lets an option picked from the add-ons library leave its name out, and nothing else', async () => {

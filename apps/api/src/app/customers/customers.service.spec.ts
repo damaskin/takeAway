@@ -82,13 +82,12 @@ describe('CustomersService.list', () => {
       [row],
       [{ userId: 'u1', storeId: 's1', storeName: 'Center' }],
       [
-        { userId: 'u1', name: 'Латте', quantity: 7, categoryName: 'Кофе', caffeineLevel: null, drinkOptions: false },
+        { userId: 'u1', name: 'Латте', quantity: 7, categoryName: 'Кофе', drinkOptions: false },
         {
           userId: 'u1',
           name: 'Круассан',
           quantity: 5,
           categoryName: 'Выпечка',
-          caffeineLevel: null,
           drinkOptions: false,
         },
       ],
@@ -174,16 +173,15 @@ describe('CustomersService.detail', () => {
       [row],
       [],
       [
-        { userId: 'u1', name: 'Латте', quantity: 12, categoryName: 'Кофе', caffeineLevel: 2, drinkOptions: true },
+        { userId: 'u1', name: 'Латте', quantity: 12, categoryName: 'Кофе', drinkOptions: true },
         {
           userId: 'u1',
           name: 'Сырники',
           quantity: 6,
           categoryName: 'Завтраки',
-          caffeineLevel: null,
           drinkOptions: false,
         },
-        { userId: 'u1', name: 'Сет', quantity: 5, categoryName: null, caffeineLevel: null, drinkOptions: false },
+        { userId: 'u1', name: 'Сет', quantity: 5, categoryName: null, drinkOptions: false },
       ],
       [{ userId: 'u1', storeId: 's1', storeName: 'Center' }],
     ]);
@@ -197,6 +195,8 @@ describe('CustomersService.detail', () => {
     // Counted by units over counted orders, from 5 up.
     expect(queries[2]?.sql).toContain('HAVING SUM(oi."quantity") >= ?');
     expect(queries[2]?.values).toContain(5);
+    // Drink or food comes from the category and the options, not the retired caffeine level.
+    expect(queries[2]?.sql).not.toContain('caffeineLevel');
     expect(queries).toHaveLength(4);
   });
 
