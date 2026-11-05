@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Order, OrderEventType, Prisma } from '@prisma/client';
 
 import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
-import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PosService } from '../pos/pos.service';
@@ -43,7 +42,6 @@ export class OrderSettlementService {
     private readonly orders: OrdersService,
     private readonly notifications: NotificationsService,
     private readonly pos: PosService,
-    private readonly kitchen: KitchenLoadService,
   ) {}
 
   /**
@@ -142,7 +140,7 @@ export class OrderSettlementService {
       storeId: order.storeId,
       kind: 'created',
       orderId: order.id,
-      order: toBoardRow(kdsRow, this.kitchen.acceptance),
+      order: toBoardRow(kdsRow),
     });
   }
 

@@ -398,7 +398,7 @@ export class OrdersService {
         storeId: order.storeId,
         kind: 'created',
         orderId: order.id,
-        order: toBoardRow(row, this.kitchen.acceptance),
+        order: toBoardRow(row),
       });
     }
 

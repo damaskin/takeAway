@@ -24,7 +24,7 @@ function orderRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 interface Harness {
   service: OrderExpiryService;
   tx: { order: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock } };
-  prisma: { order: { findMany: jest.Mock } };
+  prisma: { order: { findMany: jest.Mock }; store: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
   loyalty: { releaseForOrder: jest.Mock };
@@ -33,7 +33,14 @@ interface Harness {
   holds: { releaseForOrder: jest.Mock; findHold: jest.Mock };
 }
 
-function harness(opts: { env?: Record<string, string>; current?: Record<string, unknown> | null } = {}): Harness {
+function harness(
+  opts: {
+    env?: Record<string, string>;
+    current?: Record<string, unknown> | null;
+    /** Stores with a held order nobody accepted, for the held-order branches. */
+    heldStores?: Array<{ id: string; baseEtaSeconds: number }>;
+  } = {},
+): Harness {
   const current = opts.current === undefined ? orderRow() : opts.current;
 
   const tx = {
@@ -49,6 +56,7 @@ function harness(opts: { env?: Record<string, string>; current?: Record<string, 
 
   const prisma = {
     order: { findMany: jest.fn().mockResolvedValue([]) },
+    store: { findMany: jest.fn().mockResolvedValue(opts.heldStores ?? []) },
     $transaction: jest.fn((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx))),
   };
 
@@ -270,14 +278,22 @@ describe('OrderExpiryService', () => {
      * has passed.
      */
     it('gives a held order its own acceptance window, past its pickup time', async () => {
-      const h = harness({ env: { ORDER_ACCEPT_TTL_MINUTES: '40', ORDER_ACCEPT_GRACE_MINUTES: '20' } });
+      const h = harness({
+        env: { ORDER_ACCEPT_TTL_MINUTES: '40', ORDER_ACCEPT_GRACE_MINUTES: '20' },
+        heldStores: [{ id: 'store-1', baseEtaSeconds: 600 }],
+      });
       const before = Date.now();
 
       await h.service.sweep();
       const after = Date.now();
 
+      expect(h.prisma.store.findMany).toHaveBeenCalledWith({
+        where: { orders: { some: { status: 'CREATED', payments: { some: { status: 'REQUIRES_ACTION' } } } } },
+        select: { id: true, baseEtaSeconds: true },
+      });
       const where = h.prisma.order.findMany.mock.calls[0]?.[0]?.where;
       const held = where.OR[2];
+      expect(held.storeId).toEqual({ in: ['store-1'] });
       expect(held.payments.some.status).toBe('REQUIRES_ACTION');
       const heldCutoff = (held.payments.some.updatedAt.lt as Date).getTime();
       expect(heldCutoff).toBeGreaterThanOrEqual(before - 40 * 60_000);
@@ -285,6 +301,36 @@ describe('OrderExpiryService', () => {
       const pickupCutoff = (held.pickupAt.lt as Date).getTime();
       expect(pickupCutoff).toBeGreaterThanOrEqual(before - 20 * 60_000);
       expect(pickupCutoff).toBeLessThanOrEqual(after - 20 * 60_000);
+    });
+
+    it("never lets a held order go before its store's accept time plus the grace (list 5.0, items 6 and 9)", async () => {
+      const h = harness({
+        heldStores: [
+          { id: 'ten', baseEtaSeconds: 600 },
+          { id: 'old', baseEtaSeconds: 0 },
+          { id: 'hour', baseEtaSeconds: 3600 },
+        ],
+      });
+      const before = Date.now();
+
+      await h.service.sweep();
+      const after = Date.now();
+
+      const held = h.prisma.order.findMany.mock.calls[0]?.[0]?.where.OR.slice(2);
+      // 10 minutes (and an older 0, counted as 10) + 15 is under the 30-minute TTL: 30 it stays.
+      expect(held.map((b: { storeId: unknown }) => b.storeId)).toEqual([{ in: ['ten', 'old'] }, { in: ['hour'] }]);
+      const cutoff = (i: number) => (held[i].payments.some.updatedAt.lt as Date).getTime();
+      expect(cutoff(0)).toBeGreaterThanOrEqual(before - 30 * 60_000);
+      expect(cutoff(0)).toBeLessThanOrEqual(after - 30 * 60_000);
+      // An hour to accept: 60 + 15 minutes.
+      expect(cutoff(1)).toBeGreaterThanOrEqual(before - 75 * 60_000);
+      expect(cutoff(1)).toBeLessThanOrEqual(after - 75 * 60_000);
+    });
+
+    it('has no held branch when no store has a held order waiting', async () => {
+      const h = harness();
+      await h.service.sweep();
+      expect(h.prisma.order.findMany.mock.calls[0]?.[0]?.where.OR).toHaveLength(2);
     });
 
     it('defaults the acceptance window to 30 minutes and 15 past pickup', () => {

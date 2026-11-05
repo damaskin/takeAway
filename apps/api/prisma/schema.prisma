@@ -968,9 +968,12 @@ model Store {
   kinds                 StoreKind[]        @default([COFFEE])
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
-  /// Fixed overhead on every order here, in seconds: ringing it up, plating,
-  /// handover. This is NOT the ETA a customer sees — that is this value plus
-  /// the live queue wait plus their own prep time. See KitchenLoadService.
+  /// «Время для принятия заказа» (since 2026-11-05; was «Базовое время на
+  /// заказ»), in seconds, whole minutes 1–60: half of it after an order
+  /// reached the board the kitchen is reminded to accept it, all of it and
+  /// the order is cancelled (acceptancePolicy in kitchen/kitchen-timeline).
+  /// Still the fixed overhead of the ETA a customer sees — this value plus
+  /// the live queue wait plus their own cooking. See KitchenLoadService.
   baseEtaSeconds        Int                @default(600)
   /// How many orders this kitchen genuinely works at once. Queue wait is
   /// outstanding work divided by this, so it is the one knob that decides

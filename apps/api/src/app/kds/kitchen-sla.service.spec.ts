@@ -1,4 +1,3 @@
-import type { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { OpsChatService } from '../notifications/ops-chat.service';
 import type { OrderExpiryService } from '../orders/order-expiry.service';
@@ -6,20 +5,21 @@ import type { PaymentsService } from '../payments/payments.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { KitchenSlaService } from './kitchen-sla.service';
 
-const POLICY = { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 };
 const at = (iso: string) => new Date(iso);
-const STORE = { name: 'Кофейня', timezone: 'UTC', kitchenParallelism: 2 };
+/** «Время для принятия заказа» 10 minutes: the reminder at 5, the auto-cancel at 10. */
+const STORE = { name: 'Кофейня', timezone: 'UTC', kitchenParallelism: 2, baseEtaSeconds: 600 };
 
-function harness(rows: unknown[] = []) {
+function harness(rows: unknown[] = [], stores: unknown[] = [{ id: 'store-1', baseEtaSeconds: 600 }]) {
   const prisma = {
     order: {
       findMany: jest.fn().mockResolvedValue(rows),
       // Every claim wins unless a test says otherwise.
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    // The stores with orders waiting for «Принять», for the per-store cutoffs.
+    store: { findMany: jest.fn().mockResolvedValue(stores) },
     orderEvent: { create: jest.fn().mockResolvedValue({}) },
   };
-  const kitchen = { acceptance: POLICY };
   const notifications = {
     notifyStoreTeam: jest.fn().mockResolvedValue(1),
     notifyOrderDelayed: jest.fn().mockResolvedValue(undefined),
@@ -29,7 +29,6 @@ function harness(rows: unknown[] = []) {
   const payments = { refundOrder: jest.fn().mockResolvedValue({}) };
   const service = new KitchenSlaService(
     prisma as unknown as PrismaService,
-    kitchen as unknown as KitchenLoadService,
     notifications as unknown as NotificationsService,
     opsChat as unknown as OpsChatService,
     expiry as unknown as OrderExpiryService,
@@ -40,7 +39,7 @@ function harness(rows: unknown[] = []) {
 
 describe('KitchenSlaService', () => {
   describe('acceptance alert', () => {
-    const now = at('2026-10-14T12:03:30Z');
+    const now = at('2026-10-14T12:05:30Z');
     const waiting = {
       id: 'o-1',
       orderCode: '1234',
@@ -49,17 +48,17 @@ describe('KitchenSlaService', () => {
       store: STORE,
     };
 
-    it('tells the staff and the owner once an ASAP order waited 3 minutes', async () => {
+    it('tells the staff and the owner once an ASAP order waited half the store accept time', async () => {
       const { service, prisma, notifications } = harness([waiting]);
 
-      await expect(service.alertUnaccepted(now, POLICY)).resolves.toBe(1);
+      await expect(service.alertUnaccepted(now)).resolves.toBe(1);
 
       const where = prisma.order.findMany.mock.calls[0]?.[0]?.where;
-      expect(where).toMatchObject({
+      expect(where).toEqual({
         status: { in: ['CREATED', 'PAID'] },
         pickupMode: 'ASAP',
         acceptAlertSentAt: null,
-        kitchenVisibleAt: { lte: at('2026-10-14T12:00:30Z') },
+        OR: [{ storeId: { in: ['store-1'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:00:30Z') } }],
       });
       expect(prisma.order.updateMany).toHaveBeenCalledWith({
         where: { status: { in: ['CREATED', 'PAID'] }, id: 'o-1', acceptAlertSentAt: null },
@@ -78,13 +77,62 @@ describe('KitchenSlaService', () => {
     it('stays quiet when another instance already sent it', async () => {
       const { service, prisma, notifications } = harness([waiting]);
       prisma.order.updateMany.mockResolvedValue({ count: 0 });
-      await expect(service.alertUnaccepted(now, POLICY)).resolves.toBe(0);
+      await expect(service.alertUnaccepted(now)).resolves.toBe(0);
       expect(notifications.notifyStoreTeam).not.toHaveBeenCalled();
+    });
+
+    it('cuts off each store at half its own accept time, an older 0 counting as 10 minutes', async () => {
+      const { service, prisma } = harness(
+        [],
+        [
+          { id: 'fast', baseEtaSeconds: 240 },
+          { id: 'slow', baseEtaSeconds: 1200 },
+          { id: 'old', baseEtaSeconds: 0 },
+          { id: 'ten', baseEtaSeconds: 600 },
+        ],
+      );
+
+      await service.alertUnaccepted(now);
+
+      expect(prisma.store.findMany).toHaveBeenCalledWith({
+        where: {
+          orders: {
+            some: {
+              status: { in: ['CREATED', 'PAID'] },
+              kitchenVisibleAt: { not: null },
+              pickupMode: 'ASAP',
+              acceptAlertSentAt: null,
+            },
+          },
+        },
+        select: { id: true, baseEtaSeconds: true },
+      });
+      expect(prisma.order.findMany.mock.calls[0]?.[0]?.where.OR).toEqual([
+        { storeId: { in: ['fast'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:03:30Z') } },
+        { storeId: { in: ['slow'] }, kitchenVisibleAt: { lte: at('2026-10-14T11:55:30Z') } },
+        { storeId: { in: ['old', 'ten'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:00:30Z') } },
+      ]);
+    });
+
+    it('counts the minutes left by the store of the order', async () => {
+      const { service, notifications } = harness([{ ...waiting, store: { ...STORE, baseEtaSeconds: 1200 } }]);
+      await service.alertUnaccepted(at('2026-10-14T12:10:00Z'));
+      expect(notifications.notifyStoreTeam).toHaveBeenCalledWith(
+        'store-1',
+        expect.objectContaining({ body: expect.stringContaining('через 10 мин') }),
+        { staff: true, owner: true },
+      );
+    });
+
+    it('asks nothing more when no store has an order waiting', async () => {
+      const { service, prisma } = harness([waiting], []);
+      await expect(service.alertUnaccepted(now)).resolves.toBe(0);
+      expect(prisma.order.findMany).not.toHaveBeenCalled();
     });
   });
 
   describe('acceptance timeout', () => {
-    const now = at('2026-10-14T12:08:30Z');
+    const now = at('2026-10-14T12:10:30Z');
     const base = {
       orderCode: '1234',
       storeId: 'store-1',
@@ -93,12 +141,28 @@ describe('KitchenSlaService', () => {
       pickupAt: at('2026-10-14T12:10:00Z'),
     };
 
-    it('looks at ASAP orders 8 minutes on the board and pre-orders 10 minutes before pickup, skipping blocked ones', async () => {
-      const { service, prisma } = harness();
-      await service.expireUnaccepted(now, POLICY);
+    it('looks at orders the store accept time on the board and pre-orders 10 minutes before pickup, skipping blocked ones', async () => {
+      const { service, prisma } = harness(
+        [],
+        [
+          { id: 'store-1', baseEtaSeconds: 600 },
+          { id: 'store-2', baseEtaSeconds: 1800 },
+        ],
+      );
+      await service.expireUnaccepted(now);
+      expect(prisma.store.findMany.mock.calls[0]?.[0]?.where).toEqual({
+        orders: { some: { status: { in: ['CREATED', 'PAID'] }, kitchenVisibleAt: { not: null } } },
+      });
       const where = prisma.order.findMany.mock.calls[0]?.[0]?.where;
-      expect(where.kitchenVisibleAt).toEqual({ lte: at('2026-10-14T12:00:30Z') });
-      expect(where.OR).toEqual([{ pickupMode: 'ASAP' }, { pickupAt: { lte: at('2026-10-14T12:18:30Z') } }]);
+      expect(where.AND).toEqual([
+        {
+          OR: [
+            { storeId: { in: ['store-1'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:00:30Z') } },
+            { storeId: { in: ['store-2'] }, kitchenVisibleAt: { lte: at('2026-10-14T11:40:30Z') } },
+          ],
+        },
+        { OR: [{ pickupMode: 'ASAP' }, { pickupAt: { lte: at('2026-10-14T12:20:30Z') } }] },
+      ]);
       expect(where.events.none.payload).toEqual({ path: ['acceptTimeoutBlocked'], equals: true });
     });
 
@@ -108,16 +172,16 @@ describe('KitchenSlaService', () => {
         { ...base, id: 'free', status: 'CREATED', payments: [] },
       ]);
 
-      await expect(service.expireUnaccepted(now, POLICY)).resolves.toBe(2);
+      await expect(service.expireUnaccepted(now)).resolves.toBe(2);
 
       expect(expiry.expire).toHaveBeenCalledWith('held', 'not_accepted', {
-        details: { rule: 'accept_timeout', acceptTimeoutSeconds: 480 },
+        details: { rule: 'accept_timeout', acceptTimeoutSeconds: 600 },
       });
       expect(expiry.expire).toHaveBeenCalledWith('free', 'not_accepted', expect.anything());
       expect(payments.refundOrder).not.toHaveBeenCalled();
     });
 
-    it('tells the store team and the owner it was called off, with the configured timeout', async () => {
+    it('tells the store team and the owner it was called off, with the store accept time', async () => {
       const { service, notifications } = harness([
         { ...base, id: 'held', status: 'CREATED', payments: [{ provider: 'AGROPROMBANK', status: 'REQUIRES_ACTION' }] },
         {
@@ -125,21 +189,21 @@ describe('KitchenSlaService', () => {
           id: 'pre',
           orderCode: '5555',
           pickupMode: 'SCHEDULED',
-          pickupAt: at('2026-10-14T12:15:00Z'),
+          pickupAt: at('2026-10-14T12:17:00Z'),
           status: 'CREATED',
           payments: [],
         },
       ]);
 
-      await service.expireUnaccepted(now, POLICY);
+      await service.expireUnaccepted(now);
 
       expect(notifications.notifyStoreTeam).toHaveBeenCalledWith(
         'store-1',
         {
           title: 'Заказ #1234 отменён автоматически · Кофейня',
           body:
-            'Его не приняли за 8 мин. Клиенту ушло уведомление. / ' +
-            'It was not accepted within 8 min; the customer was told.',
+            'Его не приняли за 10 мин. Клиенту ушло уведомление. / ' +
+            'It was not accepted within 10 min; the customer was told.',
           orderId: 'held',
         },
         { staff: true, owner: true },
@@ -148,7 +212,7 @@ describe('KitchenSlaService', () => {
         'store-1',
         expect.objectContaining({
           title: 'Заказ #5555 отменён автоматически · Кофейня',
-          body: expect.stringContaining('Предзаказ к 12:15 не приняли вовремя'),
+          body: expect.stringContaining('Предзаказ к 12:17 не приняли вовремя'),
         }),
         { staff: true, owner: true },
       );
@@ -157,7 +221,7 @@ describe('KitchenSlaService', () => {
     it('says nothing when another instance expired the order first', async () => {
       const { service, expiry, notifications } = harness([{ ...base, id: 'free', status: 'CREATED', payments: [] }]);
       expiry.expire.mockResolvedValue(false);
-      await expect(service.expireUnaccepted(now, POLICY)).resolves.toBe(0);
+      await expect(service.expireUnaccepted(now)).resolves.toBe(0);
       expect(notifications.notifyStoreTeam).not.toHaveBeenCalled();
     });
 
@@ -166,7 +230,7 @@ describe('KitchenSlaService', () => {
         { ...base, id: 'paid', status: 'PAID', payments: [{ provider: 'AGROPROMBANK_WEB', status: 'SUCCEEDED' }] },
       ]);
 
-      await expect(service.expireUnaccepted(now, POLICY)).resolves.toBe(1);
+      await expect(service.expireUnaccepted(now)).resolves.toBe(1);
 
       expect(payments.refundOrder).toHaveBeenCalledWith('paid', expect.objectContaining({ source: 'sla' }));
       expect(expiry.expire).toHaveBeenCalledWith(
@@ -185,7 +249,7 @@ describe('KitchenSlaService', () => {
       ]);
       payments.refundOrder.mockRejectedValue(new Error('The bank refused the refund: not supported'));
 
-      await expect(service.expireUnaccepted(now, POLICY)).resolves.toBe(0);
+      await expect(service.expireUnaccepted(now)).resolves.toBe(0);
 
       expect(expiry.expire).not.toHaveBeenCalled();
       expect(prisma.orderEvent.create).toHaveBeenCalledWith({
@@ -206,7 +270,7 @@ describe('KitchenSlaService', () => {
       const { service, expiry, prisma } = harness([
         { ...base, id: 'stripe', status: 'CREATED', payments: [{ provider: 'STRIPE', status: 'REQUIRES_ACTION' }] },
       ]);
-      await service.expireUnaccepted(now, POLICY);
+      await service.expireUnaccepted(now);
       expect(expiry.expire).not.toHaveBeenCalled();
       expect(prisma.orderEvent.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ payload: expect.objectContaining({ reason: 'payment_in_flight' }) }),
@@ -218,7 +282,7 @@ describe('KitchenSlaService', () => {
         { ...base, id: 'paid', status: 'PAID', payments: [{ provider: 'STRIPE', status: 'SUCCEEDED' }] },
       ]);
       expiry.expire.mockResolvedValue(false);
-      await service.expireUnaccepted(now, POLICY);
+      await service.expireUnaccepted(now);
       expect(prisma.orderEvent.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ payload: expect.objectContaining({ reason: 'accepted_after_refund' }) }),
       });
@@ -242,10 +306,10 @@ describe('KitchenSlaService', () => {
       const row = { ...preorder, status: 'ACCEPTED', store: store(true) };
 
       const early = harness([row]);
-      await expect(early.service.remindStarts(at('2026-10-14T09:09:00Z'), POLICY)).resolves.toBe(0);
+      await expect(early.service.remindStarts(at('2026-10-14T09:09:00Z'))).resolves.toBe(0);
 
       const { service, notifications } = harness([row]);
-      await expect(service.remindStarts(at('2026-10-14T09:10:00Z'), POLICY)).resolves.toBe(1);
+      await expect(service.remindStarts(at('2026-10-14T09:10:00Z'))).resolves.toBe(1);
       expect(notifications.notifyStoreTeam).toHaveBeenCalledWith(
         'store-1',
         expect.objectContaining({ title: 'Пора готовить предзаказ #4321 к 09:15 · Кофейня' }),
@@ -255,7 +319,7 @@ describe('KitchenSlaService', () => {
 
     it('tells the owner too when no shift is open, and says the store is still closed by its hours', async () => {
       const { service, notifications } = harness([{ ...preorder, status: 'ACCEPTED', store: store(false) }]);
-      await service.remindStarts(at('2026-10-14T09:10:00Z'), POLICY);
+      await service.remindStarts(at('2026-10-14T09:10:00Z'));
       expect(notifications.notifyStoreTeam).toHaveBeenCalledWith(
         'store-1',
         expect.objectContaining({ body: expect.stringContaining('Точка ещё закрыта по графику') }),
@@ -265,8 +329,8 @@ describe('KitchenSlaService', () => {
 
     it('reminds about a pre-order nobody accepted in time to accept it before it is called off', async () => {
       const { service, notifications, prisma } = harness([{ ...preorder, status: 'PAID', store: store(true) }]);
-      // Called off at 09:05; the reminder comes at 09:00, not at the 09:10 start.
-      await expect(service.remindStarts(at('2026-10-14T09:00:00Z'), POLICY)).resolves.toBe(1);
+      // Called off at 09:05; the reminder comes half the accept time before, at 09:00, not at the 09:10 start.
+      await expect(service.remindStarts(at('2026-10-14T09:00:00Z'))).resolves.toBe(1);
       expect(notifications.notifyStoreTeam).toHaveBeenCalledWith(
         'store-1',
         expect.objectContaining({ body: expect.stringContaining('ещё не принят') }),
@@ -346,6 +410,24 @@ describe('KitchenSlaService', () => {
         OR: [{ readyEstimateAt: null }, { readyEstimateAt: { lt: at('2026-10-14T16:30:00Z') } }],
       });
     });
+  });
+
+  it('reminds about an unaccepted pre-order by its own store accept time', async () => {
+    const preorder = {
+      id: 'pre-2',
+      orderCode: '4322',
+      storeId: 'store-1',
+      pickupMode: 'SCHEDULED',
+      pickupAt: at('2026-10-14T09:15:00Z'),
+      prepSeconds: 180,
+      workSeconds: 360,
+      kitchenVisibleAt: at('2026-10-14T01:00:00Z'),
+      status: 'PAID',
+      // 20 minutes: called off at 09:05, reminded 10 minutes before, at 08:55.
+      store: { ...STORE, baseEtaSeconds: 1200, shifts: [{ id: 'shift-1' }] },
+    };
+    await expect(harness([preorder]).service.remindStarts(at('2026-10-14T08:54:00Z'))).resolves.toBe(0);
+    await expect(harness([preorder]).service.remindStarts(at('2026-10-14T08:55:00Z'))).resolves.toBe(1);
   });
 
   it('keeps going when one check fails', async () => {

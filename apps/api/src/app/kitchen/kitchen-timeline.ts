@@ -1,4 +1,9 @@
-import type { KitchenOrderTimeline } from '@takeaway/shared-types';
+import {
+  ACCEPT_WINDOW_MAX_MINUTES,
+  ACCEPT_WINDOW_MIN_MINUTES,
+  DEFAULT_ACCEPT_WINDOW_MINUTES,
+  type KitchenOrderTimeline,
+} from '@takeaway/shared-types';
 
 /**
  * When the kitchen has to do what for one order — start it, accept it at
@@ -14,10 +19,33 @@ export const SCHEDULED_ACCEPT_LEAD_SECONDS = 10 * 60;
 
 /** How long an order may wait for "Accept" before staff are alerted, and before it is called off. */
 export interface AcceptancePolicy {
-  /** `ORDER_ACCEPT_ALERT_SECONDS`, 180 by default. */
+  /** Half the store's accept time: the kitchen is reminded. */
   acceptAlertSeconds: number;
-  /** `ORDER_ACCEPT_TIMEOUT_SECONDS`, 480 by default. */
+  /** The store's whole accept time: the order is called off. */
   acceptTimeoutSeconds: number;
+}
+
+/**
+ * A store's accept time A in seconds — «Время для принятия заказа», kept in
+ * `Store.baseEtaSeconds` (the column the old «Базовое время на заказ» used;
+ * it still goes into the ETA as the per-order overhead). Whole minutes
+ * 1–60; anything under a minute (an older 0, a hand-made row) counts as the
+ * default 10 minutes, anything over an hour as an hour.
+ */
+export function acceptWindowSeconds(baseEtaSeconds: number | null | undefined): number {
+  const seconds = Number(baseEtaSeconds);
+  if (!Number.isFinite(seconds) || seconds < ACCEPT_WINDOW_MIN_MINUTES * 60) return DEFAULT_ACCEPT_WINDOW_MINUTES * 60;
+  return Math.min(Math.round(seconds), ACCEPT_WINDOW_MAX_MINUTES * 60);
+}
+
+/**
+ * The store's acceptance rules (manager's list 5.0, items 6 and 9): the
+ * kitchen is reminded when half its accept time has passed since the order
+ * reached the board, and the order is called off when all of it has.
+ */
+export function acceptancePolicy(store: { baseEtaSeconds: number | null | undefined }): AcceptancePolicy {
+  const window = acceptWindowSeconds(store.baseEtaSeconds);
+  return { acceptAlertSeconds: Math.round(window / 2), acceptTimeoutSeconds: window };
 }
 
 export interface TimelineOrder {
@@ -78,12 +106,12 @@ export function readyEstimate(
 }
 
 /**
- * From when an order nobody has accepted is late to accept: an ASAP order
- * `acceptAlertSeconds` after it reached the board. A pre-order at its start
- * time — but never later than the warning an ASAP order gets before it is
- * called off (timeout − alert before the deadline), and never sooner than
- * an ASAP order would be. Null when the order is accepted, or the clock
- * never started.
+ * From when the kitchen is reminded to accept an order nobody has accepted:
+ * an ASAP order `acceptAlertSeconds` (half the store's accept time) after it
+ * reached the board. A pre-order at its start time — but never later than
+ * the reminder an ASAP order gets before it is called off (timeout − alert
+ * before the deadline), and never sooner than an ASAP order would be. Null
+ * when the order is accepted, or the clock never started.
  */
 export function acceptAlertAt(order: TimelineOrder, kitchenParallelism: number, policy: AcceptancePolicy): Date | null {
   if (!awaitsAcceptance(order) || !order.kitchenVisibleAt) return null;
@@ -96,7 +124,8 @@ export function acceptAlertAt(order: TimelineOrder, kitchenParallelism: number, 
 
 /**
  * When an order nobody has accepted is called off: an ASAP order
- * `acceptTimeoutSeconds` after it reached the board; a pre-order no sooner
+ * `acceptTimeoutSeconds` (the store's accept time) after it reached the
+ * board; a pre-order no sooner
  * than that and not before 10 minutes ahead of its pickup time — a
  * pre-order for the morning placed at night waits for the morning shift.
  */
