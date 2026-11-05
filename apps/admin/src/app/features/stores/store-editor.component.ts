@@ -10,7 +10,12 @@ import {
   Validators,
 } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { STORE_KINDS } from '@takeaway/shared-types';
+import {
+  ACCEPT_WINDOW_MAX_MINUTES,
+  ACCEPT_WINDOW_MIN_MINUTES,
+  DEFAULT_ACCEPT_WINDOW_MINUTES,
+  STORE_KINDS,
+} from '@takeaway/shared-types';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import { DEFAULT_STORE_TIME_ZONE, isUnsetTimeZone, suggestStoreTimeZone } from '@takeaway/utils';
 import { firstValueFrom, merge } from 'rxjs';
@@ -31,7 +36,7 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { AddressLocator } from './address-locator';
 import { LocatorStatusComponent } from './locator-status.component';
-import { STORE_CURRENCIES, STORE_SLUG_PATTERN } from './store-options';
+import { ACCEPT_MINUTES_VALIDATORS, STORE_CURRENCIES, STORE_SLUG_PATTERN, acceptWindowMinutes } from './store-options';
 import { storeErrorMessage } from './store-errors';
 import { StoreKitchenAccessComponent } from './store-kitchen-access.component';
 import { StorePhotosComponent } from './store-photos.component';
@@ -359,10 +364,11 @@ function toCents(units: number | null): number | null {
                     <input
                       formControlName="baseEtaMinutes"
                       type="number"
-                      min="0"
-                      max="60"
-                      step="0.5"
+                      [min]="acceptMinutes.min"
+                      [max]="acceptMinutes.max"
+                      step="1"
                       class="input mono"
+                      data-testid="store-accept-minutes"
                       [class.invalid]="shows('baseEtaMinutes')"
                     />
                     <span class="hint">{{ 'admin.stores.ops.baseEtaHint' | translate }}</span>
@@ -795,8 +801,9 @@ export class StoreEditorComponent implements OnInit {
       { validators: [atLeastOneChecked] },
     ),
     pickupPointType: new FormControl<PickupPointType>('COUNTER', { nonNullable: true }),
-    baseEtaMinutes: new FormControl<number | null>(10, {
-      validators: [Validators.required, Validators.min(0), Validators.max(60)],
+    /** «Время для принятия заказа» (`baseEtaSeconds`): whole minutes 1–60. */
+    baseEtaMinutes: new FormControl<number | null>(DEFAULT_ACCEPT_WINDOW_MINUTES, {
+      validators: ACCEPT_MINUTES_VALIDATORS,
     }),
     kitchenParallelism: new FormControl<number | null>(2, {
       validators: [Validators.required, Validators.min(1), Validators.max(20)],
@@ -849,6 +856,8 @@ export class StoreEditorComponent implements OnInit {
     if (!hands || hands < 1 || !orders || orders < 1) return null;
     return { minutes: 15 * hands, drinks: 5 * hands, orders };
   });
+
+  readonly acceptMinutes = { min: ACCEPT_WINDOW_MIN_MINUTES, max: ACCEPT_WINDOW_MAX_MINUTES };
 
   readonly timezoneUnset = computed(() => isUnsetTimeZone(this.zoneName()));
   /** What the address and the map pin imply, for the one-click fix of an unset zone. */
@@ -1105,7 +1114,7 @@ export class StoreEditorComponent implements OnInit {
       fulfillmentTypes,
       pickupPointType: v.pickupPointType,
       kinds: STORE_KINDS.filter((k) => v.kinds[k]),
-      baseEtaSeconds: Math.round((v.baseEtaMinutes ?? 0) * 60),
+      baseEtaSeconds: Math.round(v.baseEtaMinutes ?? DEFAULT_ACCEPT_WINDOW_MINUTES) * 60,
       kitchenParallelism: v.kitchenParallelism ?? 1,
       slotCapacity: v.slotCapacity ?? 1,
     };
@@ -1156,7 +1165,7 @@ export class StoreEditorComponent implements OnInit {
         DELIVERY: types.includes('DELIVERY'),
       },
       pickupPointType: s.pickupPointType ?? 'COUNTER',
-      baseEtaMinutes: (s.baseEtaSeconds ?? 600) / 60,
+      baseEtaMinutes: acceptWindowMinutes(s.baseEtaSeconds),
       kitchenParallelism: s.kitchenParallelism ?? 2,
       slotCapacity: s.slotCapacity ?? 8,
       delivery: {

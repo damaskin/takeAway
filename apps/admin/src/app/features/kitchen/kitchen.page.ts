@@ -307,7 +307,10 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
             [attr.role]="pill.overdue ? 'alert' : null"
             [attr.data-testid]="pill.overdue ? 'ticket-overdue' : 'ticket-awaiting'"
           >
-            @if (order.pickupMode === 'SCHEDULED' && !pill.overdue) {
+            <!-- Half the store's accept time gone: a reminder to accept, not «просрочен» — the order is accepted or called off. -->
+            @if (pill.overdue) {
+              {{ 'admin.kitchen.card.acceptNow' | translate: { minutes: waitingMinutes(order) } }}
+            } @else if (order.pickupMode === 'SCHEDULED') {
               {{ 'admin.kitchen.card.awaitingPreorder' | translate }}
             } @else {
               {{ 'admin.kitchen.card.awaiting' | translate: { minutes: waitingMinutes(order) } }}

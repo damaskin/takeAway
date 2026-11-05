@@ -60,7 +60,7 @@ export function rejectOutcomeKey(money: KitchenRejectMoney): string {
 
 /** A pre-order waits in «Предзаказы» until its start is this close. */
 export const PREORDER_GROUP_LEAD_MS = 15 * 60_000;
-/** A card nobody accepted in time chimes again this often. */
+/** A card past its accept reminder (half the store's accept time) chimes again this often. */
 export const OVERDUE_CHIME_MS = 30_000;
 /** The "end of the working hours" banner shows this long before them. */
 export const CLOSING_SOON_MS = 15 * 60_000;
@@ -106,7 +106,11 @@ export function lateMinutes(order: KitchenOrder, now: number): number {
   return late > 0 ? Math.max(1, Math.floor(late / 60_000)) : 0;
 }
 
-/** Nobody accepted it in time: the card pulses and chimes until someone does. */
+/**
+ * Half the store's accept time is gone and nobody accepted the order (its
+ * `acceptAlertAt`): the card pulses and chimes until someone does, or the
+ * API calls the order off when all of it is gone.
+ */
 export function acceptOverdue(order: KitchenOrder, now: number): boolean {
   return awaitsAcceptance(order) && !!order.acceptAlertAt && Date.parse(order.acceptAlertAt) <= now;
 }
@@ -234,9 +238,10 @@ export function showsPickupCountdown(order: KitchenOrder): boolean {
 }
 
 /**
- * The acceptance pill of an unaccepted card: red and pulsing once overdue;
- * before that an ASAP order already shows its auto-cancel countdown, a
- * pre-order (which waits for hours, legitimately) only says it waits.
+ * The acceptance pill of an unaccepted card: red and pulsing with «Примите
+ * заказ» from the accept reminder on; before that an ASAP order already
+ * shows its auto-cancel countdown, a pre-order (which waits for hours,
+ * legitimately) only says it waits.
  */
 export function acceptPill(order: KitchenOrder, now: number): { overdue: boolean; countdown: boolean } | null {
   if (!awaitsAcceptance(order)) return null;
