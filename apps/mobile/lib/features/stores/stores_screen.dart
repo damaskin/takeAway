@@ -240,11 +240,13 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
     }
   }
 
+  /// A pin's colour is the store's status, in the status badge's palette
+  /// (see [_PinLegend]): mint while it takes an order for now, amber while
+  /// the kitchen says it is busy («Загружены»), berry while it takes no
+  /// order for now — closed, paused, a full queue or pre-orders only.
   Color _pinColor(BrandColors brand, Store store) {
-    if (!store.takesOrders) return brand.textTertiary;
-    if (store.preorderOnly) return brand.amber;
-    final busy = brand.busy(store.busyMeter);
-    return busy == brand.mint ? brand.caramel : busy;
+    if (!store.isOpen) return brand.berry;
+    return store.status == StoreStatus.overloaded ? brand.amber : brand.mint;
   }
 
   @override
@@ -428,6 +430,10 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
                                 ],
                               ),
                             ),
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+                              child: Align(alignment: Alignment.centerLeft, child: _PinLegend()),
+                            ),
                           ],
                         ),
                       ),
@@ -487,6 +493,46 @@ class _StoresScreenState extends ConsumerState<StoresScreen> {
               );
             },
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// What a pin's colour says, under the list's title — the same colours as
+/// `_pinColor` and the stores' status badges.
+class _PinLegend extends StatelessWidget {
+  const _PinLegend();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+
+    Widget item(String key, Color color, String label) => Row(
+      key: ValueKey('legend-$key'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: context.text.labelMedium?.copyWith(color: brand.textSecondary)),
+      ],
+    );
+
+    return Semantics(
+      container: true,
+      label: l10n.storesLegendLabel,
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 4,
+        children: [
+          item('open', brand.mint, l10n.storesLegendOpen),
+          item('busy', brand.amber, l10n.storesLegendBusy),
+          item('closed', brand.berry, l10n.storesLegendClosed),
         ],
       ),
     );

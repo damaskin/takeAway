@@ -158,6 +158,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       coffee: 'Coffee',
       food: 'Food',
     },
+    /** The legend under the stores map: what a pin's colour says. */
+    storeTones: {
+      label: 'Pin colours on the map',
+      open: 'Open',
+      busy: 'Busy',
+      closed: 'Closed',
+    },
     /** The product page on the site and the product screen in the Mini App. */
     product: {
       addons: 'Add-ons',
@@ -1727,7 +1734,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       viewAll: 'View all →',
       storePerf: 'Stores performance',
       newPromo: '+ New promo',
-      createTitle: 'New promo',
       orderProductLine: 'Order · {{count}} items',
     },
     orderDetail: {
@@ -2696,6 +2702,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Issue prepaid balance customers can redeem at checkout. Codes are random; share them via the recipient email and a copy of the message.',
       amount: 'Amount',
       currency: 'Currency',
+      currencyHint: 'Cards are issued in Transnistrian rubles only.',
+      noBrand: 'Pick a brand in the top bar — cards are issued for one brand.',
       recipientEmail: 'Recipient email (optional)',
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
@@ -2727,6 +2735,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     promo: {
       title: 'Promo codes',
+      createTitle: 'New promo code',
       editTitle: 'Promo code {{code}}',
       editTiers: 'Edit tiers',
       newPromo: '+ New promo',
@@ -2771,6 +2780,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         typeBogo: 'BOGO',
         typePoints: 'Points multiplier (×10)',
         value: 'Value',
+        valuePercent: 'Discount, %',
         starts: 'Starts at',
         ends: 'Ends at',
         statusDraft: 'Draft',
@@ -2846,6 +2856,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         PROMO_ENDED: 'The promo is past its end date — move the end date first.',
         PROMO_DATES: 'The end must be later than the start.',
         PROMO_STORE: 'That store is not one of the brand.',
+        PROMO_TYPE: 'Promo codes are percent only now — a code can only switch to percent.',
       },
     },
     plans: {
@@ -2883,7 +2894,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         promo: {
           title: 'Promo codes',
-          description: 'Discounts and bonuses by code: percent, amount, free item, points multiplier.',
+          description: 'Percent discounts by code — for every customer or only the inactive ones.',
         },
         campaigns: {
           title: 'Push campaigns',

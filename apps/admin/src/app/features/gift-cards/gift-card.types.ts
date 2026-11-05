@@ -14,6 +14,8 @@ export interface GiftCardRow {
   createdAt: string;
 }
 
-export const GIFT_CARD_CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'THB', 'IDR', 'MDL', 'RUP'] as const;
-
-export type GiftCardCurrency = (typeof GIFT_CARD_CURRENCIES)[number];
+/**
+ * New cards are issued in Transnistrian rubles only; the API refuses any
+ * other currency. Older cards in other currencies still list with theirs.
+ */
+export const GIFT_CARD_CURRENCY = 'RUP';

@@ -12,7 +12,7 @@ import {
 import * as L from 'leaflet';
 
 import { MAP_TILES, tileLayerWithFallback } from './map-tiles';
-import { storePinIcon, storePinKind, type StorePinSells } from './store-pin';
+import { storePinColors, storePinIcon, storePinKind, type StorePinSells, type StorePinTone } from './store-pin';
 
 export interface MapMarker {
   id: string;
@@ -25,6 +25,11 @@ export interface MapMarker {
    * both. Left out (order mini-map, admin picker) it is a plain pin.
    */
   sells?: readonly StorePinSells[];
+  /**
+   * The store's status, as the pin's colour: open, busy or closed (see
+   * `STORE_PIN_TONES`). Left out the pin is caramel.
+   */
+  tone?: StorePinTone;
 }
 
 export interface LatLng {
@@ -155,7 +160,7 @@ export class LeafletMapComponent {
     const points: L.LatLngExpression[] = [];
 
     for (const m of this.markers()) {
-      const icon = m.sells ? storePinIcon(storePinKind(m.sells)) : storeIcon();
+      const icon = m.sells ? storePinIcon(storePinKind(m.sells), m.tone) : storeIcon(m.tone);
       const marker = L.marker([m.lat, m.lng], { icon, title: m.label ?? '' });
       marker.on('click', () => this.markerClicked.emit(m.id));
       marker.addTo(layer);
@@ -203,15 +208,15 @@ export class LeafletMapComponent {
   }
 }
 
-/** Caramel teardrop pin for a store / picker marker. */
-function storeIcon(): L.DivIcon {
+/** Teardrop pin for a store / picker marker: caramel, or the colour of [tone]. */
+function storeIcon(tone?: StorePinTone): L.DivIcon {
   return L.divIcon({
     className: '',
     iconSize: [28, 36],
     iconAnchor: [14, 36],
     html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
       <path d="M14 0C6.3 0 0 6.3 0 14c0 9.5 14 22 14 22s14-12.5 14-22C28 6.3 21.7 0 14 0z"
-        fill="var(--color-caramel, #c8702d)"/>
+        fill="${storePinColors(tone).fill}"/>
       <circle cx="14" cy="14" r="5.5" fill="#fff"/>
     </svg>`,
   });

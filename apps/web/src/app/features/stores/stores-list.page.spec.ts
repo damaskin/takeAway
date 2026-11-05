@@ -48,10 +48,10 @@ const store = (id: string, name: string): StoreListItem => ({
 
 const STORES = [store('store-1', 'Центр'), store('store-2', 'Балка'), store('store-3', 'Кировский')];
 
-describe('StoresListPage — a pin tapped on the map', () => {
+describe('StoresListPage — the map', () => {
   let scrolled: Array<{ id: string | null; options: ScrollIntoViewOptions | undefined }>;
 
-  async function open() {
+  async function open(stores: StoreListItem[] = STORES) {
     scrolled = [];
     // jsdom does not lay out or scroll; record what the page asked for.
     Element.prototype.scrollIntoView = function (this: Element, options?: boolean | ScrollIntoViewOptions) {
@@ -65,7 +65,7 @@ describe('StoresListPage — a pin tapped on the map', () => {
       providers: [
         provideRouter([]),
         provideTranslateService({ fallbackLang: 'ru' }),
-        { provide: CatalogService, useValue: { listStores: jest.fn(() => of(STORES)) } },
+        { provide: CatalogService, useValue: { listStores: jest.fn(() => of(stores)) } },
         { provide: RealtimeService, useValue: { onStoreAvailabilityChanged: () => () => undefined } },
       ],
     });
@@ -106,5 +106,27 @@ describe('StoresListPage — a pin tapped on the map', () => {
 
     expect(page.selectedId()).toBe('store-2');
     expect(scrolled).toEqual([]);
+  });
+
+  it('colours each pin by how the store is doing and explains the colours on the map', async () => {
+    const { map, root } = await open([
+      store('open', 'Центр'),
+      { ...store('busy', 'Балка'), status: 'OVERLOADED' },
+      { ...store('queue', 'Кировский'), openNow: false, asapBlockedReason: 'QUEUE_FULL' },
+      { ...store('night', 'Вокзал'), openNow: false, asapBlockedReason: 'OUTSIDE_HOURS' },
+      { ...store('off', 'Ботаника'), status: 'CLOSED', acceptingOrders: false },
+    ]);
+
+    const tones = Object.fromEntries(map.markers().map((m) => [m.id, m.tone]));
+    expect(tones).toEqual({ open: 'open', busy: 'busy', queue: 'closed', night: 'closed', off: 'closed' });
+
+    const legend = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="map-legend"] [data-tone]')).map(
+      (item) => [item.dataset['tone'], item.textContent?.trim()],
+    );
+    expect(legend).toEqual([
+      ['open', 'Открыта'],
+      ['busy', 'Загружена'],
+      ['closed', 'Закрыта'],
+    ]);
   });
 });

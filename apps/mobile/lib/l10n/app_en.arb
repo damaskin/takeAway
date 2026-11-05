@@ -988,6 +988,10 @@
   "storesKindAll": "All",
   "storesKindCoffee": "Coffee",
   "storesKindFood": "Food",
+  "storesLegendLabel": "Pin colours on the map",
+  "storesLegendOpen": "Open",
+  "storesLegendBusy": "Busy",
+  "storesLegendClosed": "Closed",
   "storesNearbyEmpty": "Nothing within {radius}",
   "@storesNearbyEmpty": {
     "placeholders": {

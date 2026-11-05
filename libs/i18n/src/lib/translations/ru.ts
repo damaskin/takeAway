@@ -160,6 +160,13 @@ export const TRANSLATIONS_RU = {
       coffee: 'Кофе',
       food: 'Еда',
     },
+    /** The legend under the stores map: what a pin's colour says. */
+    storeTones: {
+      label: 'Цвет точки на карте',
+      open: 'Открыта',
+      busy: 'Загружена',
+      closed: 'Закрыта',
+    },
     /** The product page on the site and the product screen in the Mini App. */
     product: {
       addons: 'Добавки',
@@ -1725,7 +1732,6 @@ export const TRANSLATIONS_RU = {
       viewAll: 'Все →',
       storePerf: 'По точкам',
       newPromo: '+ Новый промо',
-      createTitle: 'Новая акция',
       orderProductLine: 'Заказ · {{count}} позиций',
     },
     orderDetail: {
@@ -2696,6 +2702,8 @@ export const TRANSLATIONS_RU = {
         'Выпускайте предоплаченный баланс — клиенты вводят код в чекауте как промокод. Код генерируется случайно; передайте его клиенту вместе с поздравлением.',
       amount: 'Сумма',
       currency: 'Валюта',
+      currencyHint: 'Карты выпускаются только в рублях ПМР.',
+      noBrand: 'Выберите бренд в шапке — карты выпускаются для одного бренда.',
       recipientEmail: 'Email получателя (необязательно)',
       message: 'Сообщение (необязательно)',
       issueCta: 'Выпустить карту',
@@ -2727,6 +2735,7 @@ export const TRANSLATIONS_RU = {
     },
     promo: {
       title: 'Промокоды',
+      createTitle: 'Новый промокод',
       editTitle: 'Промокод {{code}}',
       editTiers: 'Настройка уровней',
       newPromo: '+ Новый промо',
@@ -2771,6 +2780,7 @@ export const TRANSLATIONS_RU = {
         typeBogo: 'BOGO',
         typePoints: 'Множитель баллов (×10)',
         value: 'Значение',
+        valuePercent: 'Скидка, %',
         starts: 'Начало',
         ends: 'Конец',
         statusDraft: 'Черновик',
@@ -2847,6 +2857,7 @@ export const TRANSLATIONS_RU = {
         PROMO_ENDED: 'Срок промокода закончился — сначала передвиньте дату окончания.',
         PROMO_DATES: 'Окончание должно быть позже начала.',
         PROMO_STORE: 'Эта точка не относится к бренду.',
+        PROMO_TYPE: 'Промокоды теперь только процентные — сменить тип можно только на процент.',
       },
     },
     plans: {
@@ -2884,7 +2895,7 @@ export const TRANSLATIONS_RU = {
         },
         promo: {
           title: 'Промокоды',
-          description: 'Скидки и бонусы по кодам: процент, сумма, подарок, множитель баллов.',
+          description: 'Скидки по кодам в процентах — для всех клиентов или только для неактивных.',
         },
         campaigns: {
           title: 'Push-рассылки',

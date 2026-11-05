@@ -2726,6 +2726,30 @@ abstract class AppLocalizations {
   /// **'Food'**
   String get storesKindFood;
 
+  /// No description provided for @storesLegendLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin colours on the map'**
+  String get storesLegendLabel;
+
+  /// No description provided for @storesLegendOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get storesLegendOpen;
+
+  /// No description provided for @storesLegendBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Busy'**
+  String get storesLegendBusy;
+
+  /// No description provided for @storesLegendClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get storesLegendClosed;
+
   /// No description provided for @storesNearbyEmpty.
   ///
   /// In en, this message translates to:

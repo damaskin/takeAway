@@ -26,7 +26,8 @@ export type PromoAdminErrorCode =
   | 'PROMO_STATUS_NOT_ALLOWED'
   | 'PROMO_ENDED'
   | 'PROMO_DATES'
-  | 'PROMO_STORE';
+  | 'PROMO_STORE'
+  | 'PROMO_TYPE';
 
 function promoError(status: 400 | 409, code: PromoAdminErrorCode, message: string): Error {
   const body = { statusCode: status, error: status === 409 ? 'Conflict' : 'Bad Request', code, message };
@@ -269,6 +270,11 @@ export class PromoService {
     const starts = dto.startsAt ? new Date(dto.startsAt) : current.startsAt;
     const ends = dto.endsAt ? new Date(dto.endsAt) : current.endsAt;
     this.assertDates(starts, ends);
+    // Promo codes are percent only now: an older code of another type keeps
+    // it until it ends, but nothing switches to one.
+    if (dto.type !== undefined && dto.type !== current.type && dto.type !== PromoType.PERCENT) {
+      throw promoError(400, 'PROMO_TYPE', 'A promo code can only switch to PERCENT');
+    }
     const type = dto.type ?? current.type;
     const value = dto.value ?? current.value;
     this.assertValidValue(type, value);
