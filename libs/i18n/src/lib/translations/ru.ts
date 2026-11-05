@@ -160,6 +160,13 @@ export const TRANSLATIONS_RU = {
       coffee: 'Кофе',
       food: 'Еда',
     },
+    /** The legend under the stores map: what a pin's colour says. */
+    storeTones: {
+      label: 'Цвет точки на карте',
+      open: 'Открыта',
+      busy: 'Загружена',
+      closed: 'Закрыта',
+    },
     /** Allergen codes a product may list; any other value is shown as the business wrote it. */
     allergens: {
       GLUTEN: 'Глютен',

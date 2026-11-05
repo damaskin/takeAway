@@ -158,6 +158,13 @@ export const TRANSLATIONS_EN: TranslationTree = {
       coffee: 'Coffee',
       food: 'Food',
     },
+    /** The legend under the stores map: what a pin's colour says. */
+    storeTones: {
+      label: 'Pin colours on the map',
+      open: 'Open',
+      busy: 'Busy',
+      closed: 'Closed',
+    },
     /** Allergen codes a product may list; any other value is shown as the business wrote it. */
     allergens: {
       GLUTEN: 'Gluten',
