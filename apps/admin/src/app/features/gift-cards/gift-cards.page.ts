@@ -1,10 +1,11 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { API_CONFIG } from '../../core/api/api.config';
+import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { extractMessage } from '../../core/http/extract-message';
 import type { GiftCardRow } from './gift-card.types';
 
@@ -12,6 +13,10 @@ import type { GiftCardRow } from './gift-card.types';
  * Brand-admin gift card roster + manual issue. v1: codes are admin-issued
  * (no Stripe purchase flow). The customer types the code at checkout in
  * the same field as a promo code.
+ *
+ * Lists the cards of the brand picked in the top bar and re-lists when it
+ * changes: a platform admin has no brand of their own, and an owner of
+ * several brands used to see the first one's cards whatever they picked.
  */
 @Component({
   selector: 'app-admin-gift-cards',
@@ -28,14 +33,25 @@ import type { GiftCardRow } from './gift-card.types';
         >
           {{ 'admin.giftCards.subtitle' | translate }}
         </p>
-        <a
-          routerLink="/promotions/gift-cards/new"
-          class="flex items-center"
-          style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
-        >
-          {{ 'admin.giftCards.issueCta' | translate }}
-        </a>
+        @if (activeBrand.activeId()) {
+          <a
+            routerLink="/promotions/gift-cards/new"
+            class="flex items-center"
+            style="height: 36px; padding: 0 16px; background: var(--color-caramel); color: white; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap"
+          >
+            {{ 'admin.giftCards.issueCta' | translate }}
+          </a>
+        }
       </header>
+
+      @if (!activeBrand.activeId() && activeBrand.loaded()) {
+        <p
+          data-testid="gift-cards-no-brand"
+          style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); margin: 0"
+        >
+          {{ activeBrand.loadError() ?? ('admin.giftCards.noBrand' | translate) }}
+        </p>
+      }
 
       <!-- List -->
       <div
@@ -102,18 +118,29 @@ import type { GiftCardRow } from './gift-card.types';
     </section>
   `,
 })
-export class AdminGiftCardsPage {
+export class AdminGiftCardsPage implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
+  readonly activeBrand = inject(ActiveBrandService);
 
   readonly rows = signal<GiftCardRow[]>([]);
   readonly cancelling = signal<string | null>(null);
   readonly error = signal<string | null>(null);
 
   constructor() {
-    this.refresh();
+    // Re-list whenever the active brand changes.
+    effect(() => {
+      const brandId = this.activeBrand.activeId();
+      this.rows.set([]);
+      this.error.set(null);
+      if (brandId) this.refresh(brandId);
+    });
+  }
+
+  ngOnInit(): void {
+    if (!this.activeBrand.loaded()) this.activeBrand.refresh();
   }
 
   cancel(card: GiftCardRow): void {
@@ -152,9 +179,12 @@ export class AdminGiftCardsPage {
     return 'var(--color-berry)';
   }
 
-  private refresh(): void {
-    this.http.get<GiftCardRow[]>(`${this.api.baseUrl}/admin/gift-cards`).subscribe({
-      next: (rs) => this.rows.set(rs),
+  private refresh(brandId: string): void {
+    this.http.get<GiftCardRow[]>(`${this.api.baseUrl}/admin/gift-cards`, { params: { brandId } }).subscribe({
+      next: (rs) => {
+        // A late answer for a brand switched away from is dropped.
+        if (this.activeBrand.activeId() === brandId) this.rows.set(rs);
+      },
       error: (err) => this.error.set(extractMessage(err)),
     });
   }

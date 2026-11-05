@@ -2752,6 +2752,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Issue prepaid balance customers can redeem at checkout. Codes are random; share them via the recipient email and a copy of the message.',
       amount: 'Amount',
       currency: 'Currency',
+      currencyHint: 'Cards are issued in Transnistrian rubles only.',
+      noBrand: 'Pick a brand in the top bar — cards are issued for one brand.',
       recipientEmail: 'Recipient email (optional)',
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
