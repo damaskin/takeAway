@@ -53,7 +53,7 @@ describe('PinLoginPage', () => {
         provideTranslateService({ fallbackLang: 'ru' }),
         { provide: KitchenApi, useValue: api },
         { provide: AuthService, useValue: { loginWithPin } },
-        { provide: KitchenModeService, useValue: { enter: jest.fn() } },
+        { provide: KitchenModeService, useValue: { enter: jest.fn(), rememberStore: jest.fn() } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap(opts.pair ? { pair: opts.pair } : {}) } },
@@ -112,7 +112,7 @@ describe('PinLoginPage', () => {
     expect(navigate).not.toHaveBeenCalledWith(['/kitchen'], expect.anything());
 
     page.open('store-2');
-    expect(localStorage.getItem('takeaway.admin.kitchenStoreId')).toBe('store-2');
+    expect(TestBed.inject(KitchenModeService).rememberStore).toHaveBeenCalledWith('store-2');
     expect(navigate).toHaveBeenCalledWith(['/kitchen'], { queryParams: { store: 'store-2' } });
   });
 
@@ -202,7 +202,7 @@ describe('PinLoginPage', () => {
         provideTranslateService({ fallbackLang: 'ru' }),
         { provide: KitchenApi, useValue: api },
         { provide: AuthService, useValue: { loginWithPin: jest.fn() } },
-        { provide: KitchenModeService, useValue: { enter: jest.fn() } },
+        { provide: KitchenModeService, useValue: { enter: jest.fn(), rememberStore: jest.fn() } },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: convertToParamMap({ pair: 'used-code' }) } },

@@ -67,6 +67,8 @@ export class OrderAlertsService {
 
   /** Orders waiting for "Accept" in the stores being watched. */
   readonly pendingCount = computed(() => this._pending().size);
+  /** The same orders counted per store id; a store with none is absent. */
+  readonly pendingByStore = computed(() => pendingPerStore(this._pending().values()));
   readonly alerts = this._alerts.asReadonly();
   readonly stores = this._stores.asReadonly();
   readonly soundOn = signal(readSoundPreference());
@@ -281,6 +283,28 @@ export class OrderAlertsService {
       // Some mobile browsers only allow notifications from a service worker.
     }
   }
+}
+
+export function pendingPerStore(orders: Iterable<{ storeId: string }>): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const o of orders) counts.set(o.storeId, (counts.get(o.storeId) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Where «Кухня» should open: the store remembered on this device while it
+ * has orders waiting for «Принять», or nothing is waiting anywhere (null —
+ * the board opens on it by itself); else the first store, in the list's
+ * order, that does have some. The sidebar's counter sums every store, so
+ * the board it leads to must show what it counts.
+ */
+export function kitchenStoreToOpen(
+  stores: readonly { id: string }[],
+  pending: ReadonlyMap<string, number>,
+  remembered: string | null,
+): string | null {
+  if (remembered && (pending.get(remembered) ?? 0) > 0) return null;
+  return stores.find((s) => (pending.get(s.id) ?? 0) > 0)?.id ?? null;
 }
 
 function toPending(store: KitchenStore, order: KitchenOrder): PendingOrder {

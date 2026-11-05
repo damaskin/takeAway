@@ -44,7 +44,7 @@ import {
   type StoreShift,
 } from '../../core/kitchen/kitchen.api';
 import { KitchenDeviceService } from '../../core/kitchen/kitchen-device.service';
-import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
+import { KitchenModeService } from '../../core/kitchen/kitchen-mode.service';
 import { KitchenRealtimeService } from '../../core/kitchen/kitchen-realtime.service';
 import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -124,9 +124,15 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
           @if (stores().length > 1) {
             <label class="flex items-center" style="gap: 6px">
               <span class="kitchen-caption">{{ 'admin.kitchen.store' | translate }}</span>
-              <select class="kitchen-select" [value]="storeId()" (change)="pickStore($any($event.target).value)">
+              <!-- Each option says whether it is the one shown: a [value] on the select is set
+                   before the options exist, and the browser then shows the first one instead. -->
+              <select
+                class="kitchen-select"
+                data-testid="kitchen-store"
+                (change)="pickStore($any($event.target).value)"
+              >
                 @for (s of stores(); track s.id) {
-                  <option [value]="s.id">{{ s.name }}</option>
+                  <option [value]="s.id" [selected]="s.id === storeId()">{{ storeLabel(s) }}</option>
                 }
               </select>
             </label>
@@ -204,6 +210,18 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
 
       @if (error()) {
         <p class="kitchen-error" role="alert">{{ error() }}</p>
+      }
+
+      @if (waitingElsewhere().length > 0) {
+        <!-- The sidebar counts every store's unaccepted orders; say where the others are. -->
+        <p class="kitchen-elsewhere" role="status" data-testid="kitchen-elsewhere">
+          <span>{{ 'admin.kitchen.elsewhere' | translate }}</span>
+          @for (w of waitingElsewhere(); track w.id) {
+            <button type="button" class="kitchen-elsewhere-store" (click)="pickStore(w.id)">
+              {{ 'admin.kitchen.storeWaiting' | translate: { name: w.name, count: w.count } }}
+            </button>
+          }
+        </p>
       }
 
       @if (storeId() && shift(); as sh) {
@@ -592,6 +610,26 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
       }
       .kitchen-live-off {
         background: var(--color-berry);
+      }
+      .kitchen-elsewhere {
+        margin: 0;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #8a6720;
+      }
+      .kitchen-elsewhere-store {
+        height: 30px;
+        padding: 0 12px;
+        border-radius: 9999px;
+        border: 1px solid var(--color-amber);
+        background: rgba(233, 168, 75, 0.18);
+        color: inherit;
+        font-size: 13px;
+        font-weight: 700;
       }
       .kitchen-error,
       .kitchen-card-error {
@@ -985,6 +1023,13 @@ export class KitchenPage {
 
   readonly store = computed(() => this.stores().find((s) => s.id === this.storeId()) ?? null);
   readonly clock = computed(() => this.fmt.time(this.now(), this.store()?.timezone));
+  /** Other stores of the brand with orders waiting for «Принять» — what else the sidebar counter counts. */
+  readonly waitingElsewhere = computed(() => {
+    const pending = this.alerts.pendingByStore();
+    return this.stores()
+      .filter((s) => s.id !== this.storeId() && (pending.get(s.id) ?? 0) > 0)
+      .map((s) => ({ id: s.id, name: s.name, count: pending.get(s.id) ?? 0 }));
+  });
 
   /** Read once per board change rather than on every one-second tick. */
   private readonly tickets = computed(
@@ -1021,6 +1066,14 @@ export class KitchenPage {
       const storeId = this.storeId();
       untracked(() => this.follow(storeId));
     });
+    // A link to /kitchen?store=… followed while the board is open (a new-order
+    // pop-up, the sidebar) switches the store; the first one is read with the stores.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const wanted = params.get('store');
+      if (wanted && wanted !== this.storeId() && this.stores().some((s) => s.id === wanted)) {
+        this.storeId.set(wanted);
+      }
+    });
     this.destroyRef.onDestroy(() => {
       this.detach?.();
       if (this.toastTimer) clearTimeout(this.toastTimer);
@@ -1040,9 +1093,15 @@ export class KitchenPage {
 
   pickStore(id: string): void {
     if (!this.stores().some((s) => s.id === id)) return;
-    write(KITCHEN_STORE_KEY, id);
+    this.mode.rememberStore(id);
     this.storeId.set(id);
     void this.router.navigate([], { relativeTo: this.route, queryParams: { store: id }, replaceUrl: true });
+  }
+
+  /** «Качели - Балка · ждут: 1» while orders there wait for «Принять». */
+  storeLabel(store: KitchenStore): string {
+    const count = this.alerts.pendingByStore().get(store.id) ?? 0;
+    return count > 0 ? this.translate.instant('admin.kitchen.storeWaiting', { name: store.name, count }) : store.name;
   }
 
   ordersIn(column: KitchenColumn): KitchenOrder[] {
@@ -1429,7 +1488,7 @@ export class KitchenPage {
         this.stores.set(stores);
         this.loaded.set(true);
         this.error.set(null);
-        const wanted = [this.route.snapshot.queryParamMap.get('store'), this.storeId(), read(KITCHEN_STORE_KEY)];
+        const wanted = [this.route.snapshot.queryParamMap.get('store'), this.storeId(), this.mode.storeId()];
         const start = wanted.map((id) => stores.find((s) => s.id === id)).find(Boolean) ?? stores[0] ?? null;
         this.storeId.set(start?.id ?? null);
       },

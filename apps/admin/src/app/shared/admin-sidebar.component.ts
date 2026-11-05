@@ -11,7 +11,8 @@ import { BrandsService } from '../core/brands/brands.service';
 import { CampaignModerationApi } from '../core/campaigns/campaign-moderation.service';
 import { FeedbackApi } from '../core/feedback/feedback.service';
 import { FeatureFlagsStore } from '../core/config/feature-flags.store';
-import { OrderAlertsService } from '../core/kitchen/order-alerts.service';
+import { KitchenModeService } from '../core/kitchen/kitchen-mode.service';
+import { OrderAlertsService, kitchenStoreToOpen } from '../core/kitchen/order-alerts.service';
 import { PwaService } from '../core/pwa/pwa.service';
 
 import {
@@ -70,6 +71,7 @@ const SUPPORT_ROLES: ReadonlyArray<AdminRole> = ['BRAND_ADMIN', 'STORE_MANAGER',
       @for (item of visibleItems(); track item.label) {
         <a
           [routerLink]="item.link"
+          [queryParams]="item.badge === 'pendingOrders' ? kitchenQuery() : null"
           routerLinkActive="admin-nav-active"
           [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
           class="flex items-center admin-nav"
@@ -259,6 +261,7 @@ export class AdminSidebarComponent {
   private readonly authStore = inject(AuthStore);
   private readonly brands = inject(BrandsService);
   private readonly orderAlerts = inject(OrderAlertsService);
+  private readonly kitchenMode = inject(KitchenModeService);
   private readonly feedback = inject(FeedbackApi);
   private readonly campaignModeration = inject(CampaignModerationApi);
   readonly pwa = inject(PwaService);
@@ -274,6 +277,18 @@ export class AdminSidebarComponent {
   readonly pendingCampaigns = computed(() => this.campaignModeration.pendingCount() ?? 0);
   /** Orders nobody has accepted yet, across the brand's stores; zero hides it. */
   readonly pendingOrders = computed(() => this.orderAlerts.pendingCount());
+  /**
+   * «Кухня» opens the store whose orders the counter shows when the store
+   * this device remembers has none waiting (else the board's own choice).
+   */
+  readonly kitchenQuery = computed(() => {
+    const id = kitchenStoreToOpen(
+      this.orderAlerts.stores(),
+      this.orderAlerts.pendingByStore(),
+      this.kitchenMode.storeId(),
+    );
+    return id ? { store: id } : null;
+  });
   /** Customer feedback nobody has read yet; zero hides it. */
   readonly newFeedback = computed(() => this.feedback.newCount() ?? 0);
   /**

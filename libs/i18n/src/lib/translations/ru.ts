@@ -1407,6 +1407,9 @@ export const TRANSLATIONS_RU = {
       noStores: 'У этого бренда пока нет точек, доступных вам.',
       working: 'Секунду…',
       pendingBadge: 'Ждут принятия: {{count}}',
+      /** Other stores with orders nobody has accepted: what else the sidebar counter counts. */
+      elsewhere: 'Ждут принятия в других точках:',
+      storeWaiting: '{{name}} · ждут: {{count}}',
       stopList: 'Стоп-лист',
       errors: {
         gone: 'Заказ уже изменился — доска обновлена.',

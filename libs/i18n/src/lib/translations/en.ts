@@ -1408,6 +1408,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noStores: 'This brand has no stores you can run yet.',
       working: 'One moment…',
       pendingBadge: 'Waiting to be accepted: {{count}}',
+      /** Other stores with orders nobody has accepted: what else the sidebar counter counts. */
+      elsewhere: 'Waiting to be accepted at other stores:',
+      storeWaiting: '{{name}} · waiting: {{count}}',
       stopList: 'Stop list',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',

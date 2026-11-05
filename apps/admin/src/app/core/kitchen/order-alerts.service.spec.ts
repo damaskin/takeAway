@@ -9,7 +9,7 @@ import { AdminCatalogApi } from '../catalog/admin-catalog.service';
 import type { KitchenOrderChanged } from './kitchen-board';
 import { KitchenApi, type KitchenOrder } from './kitchen.api';
 import { KitchenRealtimeService } from './kitchen-realtime.service';
-import { OrderAlertsService } from './order-alerts.service';
+import { OrderAlertsService, kitchenStoreToOpen } from './order-alerts.service';
 
 function order(id: string, status: KitchenOrder['status']): KitchenOrder {
   return {
@@ -122,5 +122,34 @@ describe('OrderAlertsService', () => {
     TestBed.tick();
     expect(unwatch).toHaveBeenCalled();
     expect(service.pendingCount()).toBe(0);
+  });
+
+  it('counts the waiting orders per store', () => {
+    const service = setup();
+    emit({ storeId: 's1', kind: 'created', orderId: 'new', order: order('new', 'PAID') });
+    expect(service.pendingByStore()).toEqual(new Map([['s1', 2]]));
+  });
+});
+
+describe('kitchenStoreToOpen — where «Кухня» leads (item 12)', () => {
+  const stores = [{ id: 'balka' }, { id: 'centre' }, { id: 'park' }];
+
+  it('leaves the remembered store when it has orders waiting, or nothing waits anywhere', () => {
+    expect(kitchenStoreToOpen(stores, new Map([['centre', 1]]), 'centre')).toBeNull();
+    expect(kitchenStoreToOpen(stores, new Map(), 'centre')).toBeNull();
+  });
+
+  it('leads to the first store with orders waiting when the remembered one has none', () => {
+    expect(
+      kitchenStoreToOpen(
+        stores,
+        new Map([
+          ['park', 2],
+          ['balka', 1],
+        ]),
+        'centre',
+      ),
+    ).toBe('balka');
+    expect(kitchenStoreToOpen(stores, new Map([['park', 1]]), null)).toBe('park');
   });
 });
