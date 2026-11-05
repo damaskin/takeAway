@@ -7,12 +7,10 @@ import { catchError, throwError } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
-  allergenChips,
   defaultVariationSelection,
   describeChoice,
   initialModifierCounts,
   isDrinkKind,
-  isFoodKind,
   isStoreInactive,
   priceWithOptions,
   productKind,
@@ -38,7 +36,7 @@ import { ProductOptionsComponent } from './product-options.component';
  *     pdpDetailCol (fill) —
  *       breadcrumb
  *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
- *       meta: calories, caffeine (drinks — not food or bakery), allergen chips
+ *       meta: calories
  *       options: choice chips per size / temperature / milk / cup, add-on
  *         groups opening in place (see ProductOptionsComponent)
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
@@ -111,30 +109,10 @@ import { ProductOptionsComponent } from './product-options.component';
                 {{ p.description }}
               </p>
             }
-            <!-- Meta: calories, caffeine -->
-            @if (p.calories !== null || showCaffeine()) {
-              <div class="pdp-meta">
-                @if (p.calories !== null) {
-                  <span>🔥 {{ 'web.product.labels.kcal' | translate: { calories: p.calories } }}</span>
-                }
-                @if (showCaffeine()) {
-                  <span class="flex items-center" style="gap: 6px">
-                    {{ 'web.product.labels.caffeine' | translate }}
-                    <span class="flex items-center" style="gap: 2px" aria-hidden="true">
-                      @for (i of [0, 1, 2, 3]; track i) {
-                        <span [style.opacity]="i < (p.caffeineLevel ?? 0) ? 1 : 0.25">☕</span>
-                      }
-                    </span>
-                  </span>
-                }
-              </div>
-            }
-            @if (allergens().length > 0) {
-              <div class="pdp-allergens" data-testid="allergens">
-                <span>{{ 'common.product.allergens' | translate }}:</span>
-                @for (a of allergens(); track a.text) {
-                  <span class="pdp-chip">{{ a.code ? ('common.allergens.' + a.code | translate) : a.text }}</span>
-                }
+            <!-- Meta: calories -->
+            @if (p.calories !== null) {
+              <div class="pdp-meta" data-testid="product-meta">
+                <span>🔥 {{ 'web.product.labels.kcal' | translate: { calories: p.calories } }}</span>
               </div>
             }
           </div>
@@ -307,8 +285,7 @@ import { ProductOptionsComponent } from './product-options.component';
         aspect-ratio: 7 / 6;
         max-height: 480px;
       }
-      .pdp-meta,
-      .pdp-allergens {
+      .pdp-meta {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -317,17 +294,6 @@ import { ProductOptionsComponent } from './product-options.component';
         font-family: var(--font-sans);
         font-size: 13px;
         color: var(--color-text-tertiary);
-      }
-      .pdp-allergens {
-        gap: 6px;
-      }
-      .pdp-chip {
-        padding: 3px 10px;
-        border-radius: var(--radius-pill);
-        background: var(--color-latte);
-        color: var(--color-text-secondary);
-        font-size: 12px;
-        font-weight: 500;
       }
       .pdp-add {
         display: flex;
@@ -439,21 +405,13 @@ export class ProductPage implements OnInit {
     return (product && this.menu()?.categories.find((c) => c.id === product.categoryId)) ?? null;
   });
 
-  /** What the product is — picks the placeholder, the note's wording and whether caffeine is shown. */
+  /** What the product is — picks the placeholder and the note's wording. */
   readonly kind = computed(() => {
     const product = this.product();
     return product ? productKind(product, this.category()) : 'OTHER';
   });
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
-
-  /** Caffeine means nothing on a croissant, whatever the POS sent. */
-  readonly showCaffeine = computed(() => {
-    const level = this.product()?.caffeineLevel;
-    return level !== null && level !== undefined && !isFoodKind(this.kind());
-  });
-
-  readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {

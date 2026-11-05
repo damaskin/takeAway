@@ -47,13 +47,10 @@ function product(id: string, over: Partial<ProductDetail> = {}): ProductDetail {
     description: null,
     basePriceCents: 3000,
     prepTimeSeconds: 120,
-    caffeineLevel: null,
     calories: null,
     proteinsGrams: null,
     fatsGrams: null,
     carbsGrams: null,
-    allergens: [],
-    dietTags: [],
     imageUrls: [],
     sortOrder: 0,
     variations: [],
@@ -64,8 +61,7 @@ function product(id: string, over: Partial<ProductDetail> = {}): ProductDetail {
 
 const LATTE = product('latte', {
   name: 'Латте',
-  caffeineLevel: 2,
-  allergens: ['MILK', 'орехи'],
+  calories: 150,
   variations: [
     { id: 'm', type: 'SIZE', name: 'M', priceDeltaCents: 0, prepTimeDeltaSeconds: 0, sortOrder: 0, isDefault: true },
     { id: 'l', type: 'SIZE', name: 'L', priceDeltaCents: 500, prepTimeDeltaSeconds: 0, sortOrder: 1, isDefault: false },
@@ -76,8 +72,6 @@ const CROISSANT = product('croissant', {
   name: 'Круассан',
   categoryId: 'pastry',
   categoryKind: 'BAKERY',
-  // As a POS might send it: a level on something that has none.
-  caffeineLevel: 1,
 });
 
 const MENU: StoreMenu = {
@@ -157,14 +151,17 @@ describe('ProductPage', () => {
 
   const text = (node: Element | null | undefined) => node?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-  it('asks a drink for a note to the barista and shows its caffeine and allergens', async () => {
-    const harness = await open('latte', LATTE);
+  // Caffeine and allergens left the product page on 2026-11-05, even when an
+  // older API build still sends them; calories stay.
+  it('asks a drink for a note to the barista and shows its calories, not caffeine or allergens', async () => {
+    const harness = await open('latte', { ...LATTE, caffeineLevel: 2, allergens: ['MILK'] } as ProductDetail);
     const el = harness.routeNativeElement as HTMLElement;
 
     expect(text(el.querySelector('label[for="pdp-notes"]'))).toBe('Пожелание бариста');
-    expect(text(el)).toContain('Кофеин');
-    const chips = Array.from(el.querySelectorAll('[data-testid="allergens"] .pdp-chip')).map(text);
-    expect(chips).toEqual(['Молоко', 'орехи']);
+    expect(text(el.querySelector('[data-testid="product-meta"]'))).toContain('150 ккал');
+    expect(text(el)).not.toContain('Кофеин');
+    expect(text(el)).not.toContain('Аллергены');
+    expect(el.querySelector('[data-testid="allergens"]')).toBeNull();
   });
 
   it('prices the choice live and sums it up next to the button', async () => {
@@ -216,12 +213,12 @@ describe('ProductPage', () => {
     add.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 3000 });
   });
 
-  it('treats bakery as food: no caffeine, a plain order note, its own placeholder, nothing paired', async () => {
+  it('treats bakery as food: a plain order note, its own placeholder, nothing paired', async () => {
     const harness = await open('croissant', CROISSANT);
     const el = harness.routeNativeElement as HTMLElement;
 
     expect(text(el.querySelector('label[for="pdp-notes"]'))).toBe('Комментарий к заказу');
-    expect(text(el)).not.toContain('Кофеин');
+    expect(el.querySelector('[data-testid="product-meta"]')).toBeNull();
     expect(el.querySelector('lib-product-image img')?.getAttribute('src')).toBe(
       '/ui-kit/product-placeholders/bakery.svg',
     );

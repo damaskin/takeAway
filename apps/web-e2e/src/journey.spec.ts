@@ -383,7 +383,6 @@ test.describe('customer journey', () => {
     const latte: FakeProduct = {
       ...PRODUCT,
       categoryKind: 'HOT_DRINKS',
-      allergens: ['MILK'],
       variations: [
         {
           id: 'size-m',
@@ -422,7 +421,8 @@ test.describe('customer journey', () => {
     await signIn(page);
 
     await page.goto('/products/flat-white?store=dubai-marina');
-    await expect(page.getByTestId('allergens')).toContainText('Milk');
+    // Allergens left the product page on 2026-11-05.
+    await expect(page.getByTestId('allergens')).toHaveCount(0);
 
     // The default size is picked; a bigger one says what it adds.
     await expect(page.getByRole('radio', { name: 'M', exact: true })).toHaveAttribute('aria-checked', 'true');
