@@ -24,6 +24,17 @@ type Audience = 'ALL' | 'INACTIVE';
 const LIST = '/promotions/promo';
 const DAY_MS = 24 * 60 * 60_000;
 
+const TYPE_LABELS: Record<PromoType, string> = {
+  PERCENT: 'admin.promo.form.typePercent',
+  FIXED: 'admin.promo.form.typeFixed',
+  BOGO: 'admin.promo.form.typeBogo',
+  POINTS_MULTIPLIER: 'admin.promo.form.typePoints',
+};
+
+/** A percent off is 1–100, as the API checks; an older code of another type keeps its own range. */
+const PERCENT_VALUE = [Validators.required, Validators.min(1), Validators.max(100)];
+const OTHER_VALUE = [Validators.required, Validators.min(0)];
+
 /**
  * Create or edit a promo code, on its own route. A draft, and a scheduled
  * or paused promo nobody has used, can change in full; any other promo
@@ -33,6 +44,9 @@ const DAY_MS = 24 * 60 * 60_000;
  * win-back code: only inactive customers can use it, 15 % off for two
  * weeks, once per customer. `&then=campaign` takes the saved code straight
  * to a campaign for those customers.
+ *
+ * New codes are percent off only (owner decision 2026-11-05). An older
+ * code of another type opens with its type shown, not chosen, and keeps it.
  */
 @Component({
   selector: 'app-promo-form',
@@ -80,19 +94,42 @@ const DAY_MS = 24 * 60 * 60_000;
         </div>
 
         <div class="form-row">
-          <label class="field">
-            <span class="field-label">{{ 'admin.promo.table.type' | translate }}</span>
-            <select formControlName="type" class="field-input">
-              <option value="PERCENT">{{ 'admin.promo.form.typePercent' | translate }}</option>
-              <option value="FIXED">{{ 'admin.promo.form.typeFixed' | translate }}</option>
-              <option value="BOGO">{{ 'admin.promo.form.typeBogo' | translate }}</option>
-              <option value="POINTS_MULTIPLIER">{{ 'admin.promo.form.typePoints' | translate }}</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">{{ 'admin.promo.form.value' | translate }}</span>
-            <input formControlName="value" type="number" min="0" class="field-input field-input-mono" />
-          </label>
+          @if (percent()) {
+            <label class="field">
+              <span class="field-label">{{ 'admin.promo.form.valuePercent' | translate }}</span>
+              <input
+                formControlName="value"
+                type="number"
+                min="1"
+                max="100"
+                data-testid="promo-value"
+                class="field-input field-input-mono"
+              />
+            </label>
+          } @else {
+            <!-- An older code of another type keeps it until it ends; new ones are percent only. -->
+            <label class="field">
+              <span class="field-label">{{ 'admin.promo.table.type' | translate }}</span>
+              <input
+                type="text"
+                data-testid="promo-type"
+                class="field-input"
+                [value]="typeLabel() | translate"
+                readonly
+                style="color: var(--color-text-secondary)"
+              />
+            </label>
+            <label class="field">
+              <span class="field-label">{{ 'admin.promo.form.value' | translate }}</span>
+              <input
+                formControlName="value"
+                type="number"
+                min="0"
+                data-testid="promo-value"
+                class="field-input field-input-mono"
+              />
+            </label>
+          }
           @if (!editing()) {
             <label class="field">
               <span class="field-label">{{ 'admin.promo.table.status' | translate }}</span>
@@ -210,11 +247,15 @@ export class PromoFormPage {
   readonly winback = signal(this.query.get('for') === 'inactive');
   readonly thenCampaign = signal(this.query.get('then') === 'campaign');
 
+  /** PERCENT for a new code; an older code's own type when editing it. */
+  readonly type = signal<PromoType>('PERCENT');
+  readonly percent = computed(() => this.type() === 'PERCENT');
+  readonly typeLabel = computed(() => TYPE_LABELS[this.type()]);
+
   readonly form = new FormGroup({
     code: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
     label: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
-    type: new FormControl<PromoType>('PERCENT', { nonNullable: true }),
-    value: new FormControl(10, { nonNullable: true, validators: [Validators.required, Validators.min(0)] }),
+    value: new FormControl(10, { nonNullable: true, validators: PERCENT_VALUE }),
     perUserLimit: new FormControl(0, { nonNullable: true, validators: [Validators.min(0)] }),
     maxRedemptions: new FormControl(0, { nonNullable: true, validators: [Validators.min(0)] }),
     startsAt: new FormControl(toLocalInput(new Date()), { nonNullable: true }),
@@ -261,7 +302,7 @@ export class PromoFormPage {
     const fields = {
       code: v.code.toUpperCase(),
       label: v.label,
-      type: v.type,
+      type: this.type(),
       value: Number(v.value),
       perUserLimit: Number(v.perUserLimit),
       maxRedemptions: Number(v.maxRedemptions),
@@ -319,7 +360,6 @@ export class PromoFormPage {
     this.form.patchValue({
       code: `COMEBACK${Math.floor(100 + Math.random() * 900)}`,
       label: this.translate.instant('admin.promo.winback.label'),
-      type: 'PERCENT',
       value: 15,
       perUserLimit: 1,
       endsAt: toLocalInput(new Date(Date.now() + 14 * DAY_MS)),
@@ -336,10 +376,11 @@ export class PromoFormPage {
       next: (promo) => {
         this.loaded.set(promo);
         this.loadingPromo.set(false);
+        this.type.set(promo.type);
+        this.form.controls.value.setValidators(promo.type === 'PERCENT' ? PERCENT_VALUE : OTHER_VALUE);
         this.form.patchValue({
           code: promo.code,
           label: promo.label,
-          type: promo.type,
           value: promo.value,
           perUserLimit: promo.perUserLimit,
           maxRedemptions: promo.maxRedemptions,
