@@ -177,8 +177,8 @@ class StorePin extends StatelessWidget {
                   child: Icon(icons.icon, color: Colors.white, size: 19),
                 ),
                 // A store selling food as well: the fork and knife on a white
-                // disc over the pin's edge, in the pin's own colour, so a
-                // closed store's badge greys out with it.
+                // disc over the pin's edge, in the pin's own colour, so the
+                // badge says the store's status along with the pin.
                 if (badge != null)
                   Positioned(
                     right: -4,

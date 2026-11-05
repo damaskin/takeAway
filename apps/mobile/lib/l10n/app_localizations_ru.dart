@@ -1525,6 +1525,18 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storesKindFood => 'Еда';
 
   @override
+  String get storesLegendLabel => 'Цвет точки на карте';
+
+  @override
+  String get storesLegendOpen => 'Открыта';
+
+  @override
+  String get storesLegendBusy => 'Загружена';
+
+  @override
+  String get storesLegendClosed => 'Закрыта';
+
+  @override
   String storesNearbyEmpty(String radius) {
     return 'В радиусе $radius ничего нет';
   }

@@ -1505,6 +1505,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storesKindFood => 'Food';
 
   @override
+  String get storesLegendLabel => 'Pin colours on the map';
+
+  @override
+  String get storesLegendOpen => 'Open';
+
+  @override
+  String get storesLegendBusy => 'Busy';
+
+  @override
+  String get storesLegendClosed => 'Closed';
+
+  @override
   String storesNearbyEmpty(String radius) {
     return 'Nothing within $radius';
   }

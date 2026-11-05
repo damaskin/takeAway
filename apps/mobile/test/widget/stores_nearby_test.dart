@@ -176,9 +176,17 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('pins show what a store sells, and a closed one stays grey', (tester) async {
+  testWidgets('pins show what a store sells, coloured by its status as the legend says', (tester) async {
     final stores = api();
-    stores.moreStores.add(storeAt('st_shut', 'Закрытая шаурма', 500, ['FOOD'], status: 'CLOSED'));
+    stores.moreStores.addAll([
+      storeAt('st_shut', 'Закрытая шаурма', 500, ['FOOD'], status: 'CLOSED'),
+      storeAt('st_busy', 'Загруженная кофейня', 600, ['COFFEE'], status: 'OVERLOADED'),
+      {
+        ...storeAt('st_later', 'Кофейня до открытия', 700, ['COFFEE']),
+        'openNow': false,
+        'acceptingOrders': true,
+      },
+    ]);
     final h = await pumpApp(
       tester,
       api: stores,
@@ -203,8 +211,15 @@ void main() {
     expect(icon('st_far', Icons.local_cafe_rounded), findsOneWidget);
     expect(icon('st_far', Icons.restaurant_rounded), findsOneWidget, reason: 'the food badge');
 
-    expect(pin('st_shut').color, BrandColors.light.textTertiary);
+    expect(pin('st_near').color, BrandColors.light.mint, reason: 'open for an order now');
+    expect(pin('st_busy').color, BrandColors.light.amber, reason: 'the kitchen says «Загружены»');
+    expect(pin('st_later').color, BrandColors.light.berry, reason: 'pre-orders only is closed for now');
+    expect(pin('st_shut').color, BrandColors.light.berry);
     expect(icon('st_shut', Icons.restaurant_rounded), findsOneWidget);
+
+    for (final (key, label) in [('open', 'Открыта'), ('busy', 'Загружена'), ('closed', 'Закрыта')]) {
+      expect(find.descendant(of: find.byKey(ValueKey('legend-$key')), matching: find.text(label)), findsOneWidget);
+    }
     await h.unmount(tester);
   });
 
