@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Currency, FulfillmentType, OrderStatus, PickupMode, VariationType } from '@prisma/client';
+import {
+  Currency,
+  FulfillmentType,
+  OrderCancelReason,
+  OrderCanceller,
+  OrderStatus,
+  PickupMode,
+  VariationType,
+} from '@prisma/client';
 import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation } from '@takeaway/shared-types';
 
 export class OrderItemVariationDto implements OrderItemVariation {
@@ -218,6 +226,31 @@ export class OrderDto {
   @ApiProperty({ nullable: true, type: String })
   cancelledAt!: string | null;
 
+  @ApiProperty({
+    enum: OrderCanceller,
+    nullable: true,
+    description:
+      'Who cancelled the order: the customer, or the store (turned it down, or the card was declined on ' +
+      'accept). Null unless CANCELLED, and on orders cancelled before 2026-11-05 whose record did not say.',
+  })
+  cancelledBy!: OrderCanceller | null;
+
+  @ApiProperty({
+    enum: OrderCancelReason,
+    nullable: true,
+    description:
+      "Why the store cancelled it: the kitchen's reason, or CARD_DECLINED. Null for the customer's own cancel.",
+  })
+  cancelReason!: OrderCancelReason | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    maxLength: 200,
+    description: "The kitchen's comment when it turned the order down, shown to the customer as is.",
+  })
+  cancelComment!: string | null;
+
   @ApiProperty({ nullable: true, type: String })
   expiredAt!: string | null;
 
@@ -310,4 +343,10 @@ export class OrderSummaryDto {
 
   @ApiProperty()
   createdAt!: string;
+
+  @ApiProperty({ enum: OrderCanceller, nullable: true, description: 'See OrderDto.cancelledBy.' })
+  cancelledBy!: OrderCanceller | null;
+
+  @ApiProperty({ enum: OrderCancelReason, nullable: true, description: 'See OrderDto.cancelReason.' })
+  cancelReason!: OrderCancelReason | null;
 }
