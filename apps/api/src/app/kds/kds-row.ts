@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 
-import { type AcceptancePolicy, kitchenTimeline } from '../kitchen/kitchen-timeline';
+import { acceptancePolicy, kitchenTimeline } from '../kitchen/kitchen-timeline';
 
 /**
  * One row of the kitchen board — `GET /kds/orders` and every
@@ -9,7 +9,10 @@ import { type AcceptancePolicy, kitchenTimeline } from '../kitchen/kitchen-timel
  * in place without a second read.
  */
 
-/** What a board row needs beyond the order itself: its lines, the customer's arrival pings, the store's parallelism. */
+/**
+ * What a board row needs beyond the order itself: its lines, the customer's
+ * arrival pings, the store's parallelism and accept time.
+ */
 export const BOARD_INCLUDE = {
   items: true,
   events: {
@@ -17,7 +20,7 @@ export const BOARD_INCLUDE = {
     select: { type: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   },
-  store: { select: { kitchenParallelism: true } },
+  store: { select: { kitchenParallelism: true, baseEtaSeconds: true } },
 } satisfies Prisma.OrderInclude;
 
 export type BoardOrder = Prisma.OrderGetPayload<{ include: typeof BOARD_INCLUDE }>;
@@ -38,7 +41,8 @@ export function customerArrival(events: readonly { type: string; createdAt: Date
   return { customerArrival: null, customerArrivedAt: null };
 }
 
-export function toBoardRow(o: BoardOrder, acceptance: AcceptancePolicy) {
+/** The row, its acceptance times by its store's accept time. */
+export function toBoardRow(o: BoardOrder) {
   return {
     id: o.id,
     orderCode: o.orderCode,
@@ -49,7 +53,7 @@ export function toBoardRow(o: BoardOrder, acceptance: AcceptancePolicy) {
     customerName: o.customerName,
     notes: o.notes,
     ...customerArrival(o.events),
-    ...kitchenTimeline(o, o.store.kitchenParallelism, acceptance),
+    ...kitchenTimeline(o, o.store.kitchenParallelism, acceptancePolicy(o.store)),
     items: o.items.map((i) => ({
       productSnapshot: i.productSnapshot,
       quantity: i.quantity,

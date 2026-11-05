@@ -200,7 +200,7 @@ test.describe('kitchen policy on the board', () => {
 
     // Not accepted yet: the acceptance pill is the card's only countdown.
     const waiting = page.getByTestId('ticket-W31');
-    await expect(waiting.getByTestId('ticket-overdue')).toContainText('Ждёт принятия 5 мин');
+    await expect(waiting.getByTestId('ticket-overdue')).toContainText('Примите заказ · ждёт 5 мин');
     await expect(waiting.getByTestId('ticket-overdue')).toContainText('автоотмена через');
     await expect(waiting.getByTestId('ticket-due')).toHaveCount(0);
     await expect(preorders.getByTestId('ticket-P15').getByTestId('ticket-awaiting')).toHaveText('Ждёт принятия');

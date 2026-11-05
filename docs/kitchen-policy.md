@@ -3,9 +3,25 @@
 The rules that decide when a store takes which order, how much the kitchen is
 promised per 15 minutes, what the kitchen board reminds staff of, and how the
 shift follows the working hours. In force since 2026-10-20 (it first came in on
-2026-10-14); it describes what is implemented.
+2026-10-14), with the 2026-11-05 changes below; it describes what is implemented.
 
 ## Owner decisions
+
+### 2026-11-05 (manager's list «правки 5.0»)
+
+- **Each store has its own «Время для принятия заказа» A (items 6 and 9).** The
+  store setting that was «Базовое время на заказ» (`Store.baseEtaSeconds`, the
+  column keeps its name) is now whole minutes from 1 to 60, 10 by default. Half
+  of A after an order reached the board the kitchen is reminded to accept it
+  (Telegram, the card turns red with «Примите заказ»); when all of A has passed
+  the order is cancelled automatically. There is no "overdue acceptance" state:
+  an order is accepted or called off. It replaces the global 3-minute alert and
+  8-minute auto-cancel (`ORDER_ACCEPT_ALERT_SECONDS` / `ORDER_ACCEPT_TIMEOUT_SECONDS`
+  are gone). A still goes into the ETA as the per-order overhead; the queue
+  rework that will also make it the cooking start offset comes later.
+- **The board shows the columns first and «Предзаказы» below them (item 2)**; an
+  accepted pre-order moves to «Новые» at once.
+- **The board shows the store its selector names (item 12)** — section D.
 
 ### 2026-10-20 (manager Maxim's third list)
 
@@ -152,21 +168,23 @@ typical cooking`, where the typical cooking is the median `Product.prepTimeSecon
 - ASAP spill: an ASAP order's `pickupAt` is `now + eta` if that slot has room, else
   the start of the first later slot that has; past `MAX_ASAP_WAIT_SECONDS` the queue
   is full (`QUEUE_FULL`, pre-orders still offered).
-- Store editor: «Базовое время на заказ» says the customer sees base + typical
-  cooking + queue; «Позиций готовится одновременно» (`kitchenParallelism`);
-  «Заказов на 15 минут» (`slotCapacity`).
+- Store editor: «Время для принятия заказа, мин» (`baseEtaSeconds`, whole minutes
+  1–60, was «Базовое время на заказ») says that half of it reminds the kitchen,
+  all of it cancels the order, and that the customer sees it + typical cooking +
+  queue; «Позиций готовится одновременно» (`kitchenParallelism`); «Заказов на 15
+  минут» (`slotCapacity`).
 
 ## D. Kitchen board
 
 Rows of `GET /kds/orders` and of every `kds.orderChanged` that carries a row
 (`apps/api/src/app/kds/kds-row.ts`, timing in `kitchen/kitchen-timeline.ts`) add:
 
-| Field              | Value                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| `startBy`          | `pickupAt − cooking − 120 s`                                                                      |
-| `awaitingSince`    | `kitchenVisibleAt`                                                                                |
-| `acceptAlertAt`    | while awaiting acceptance: ASAP — `awaitingSince + ORDER_ACCEPT_ALERT_SECONDS`; SCHEDULED — see E |
-| `acceptDeadlineAt` | while awaiting acceptance: when it expires (E)                                                    |
+| Field              | Value                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `startBy`          | `pickupAt − cooking − 120 s`                                                               |
+| `awaitingSince`    | `kitchenVisibleAt`                                                                         |
+| `acceptAlertAt`    | while awaiting acceptance: ASAP — `awaitingSince + A/2` (the store's A); SCHEDULED — see E |
+| `acceptDeadlineAt` | while awaiting acceptance: when it expires (E)                                             |
 
 `kds.orderChanged` with kind `removed` adds `reason` (`CANCELLED_BY_CUSTOMER`,
 `REJECTED`, `NOT_ACCEPTED`, `EXPIRED`) and `orderCode`; older boards ignore them.
@@ -184,17 +202,35 @@ Board (`apps/admin/src/app/features/kitchen/kitchen.page.ts`,
 - «Пауза» next to «Загружены» / «Стоп-лист» (section G); while paused it reads
   «Пауза до 12:30» and lifts the pause.
 - Card timers (item 16): while awaiting acceptance the card shows only the
-  acceptance pill — ASAP «Ждёт принятия 3 мин · автоотмена через 4:44» (amber, red
-  and pulsing once overdue); a pre-order «Ждёт принятия», with the countdown once
-  overdue — and the pickup time as plain text («к 00:11»). The countdown to the
-  pickup appears once the order is accepted.
+  acceptance pill — ASAP «Ждёт принятия 3 мин · автоотмена через 4:44» (amber); from
+  `acceptAlertAt` (half the store's A) red and pulsing «Примите заказ · ждёт 5 мин ·
+  автоотмена через 4:44», chiming every 30 s; a pre-order «Ждёт принятия», with the
+  reminder and the countdown from its `acceptAlertAt` — and the pickup time as
+  plain text («к 00:11»). The countdown to the pickup appears once the order is
+  accepted. Nothing says the order is «просрочен»: it is accepted or called off.
+- Store selector (item 12, since 2026-11-05): each `<option>` binds `[selected]`
+  (a `[value]` on the `<select>` was set before the `@for` options existed, so the
+  browser showed the first store by name while the board followed the remembered
+  one). The board opens on `?store=`, else the store it showed last, else the store
+  remembered on the device (`KitchenModeService.storeId`, localStorage
+  `takeaway.admin.kitchenStoreId`, written by the selector and the PIN screen),
+  else the first; a `?store=` link followed while the board is open switches it.
+  Options of stores with orders waiting for «Принять» read «Качели - Балка · ждут:
+  1», and a line over the board names the other stores with waiting orders (a tap
+  opens one). The sidebar «Кухня» (its badge counts every store) links to
+  `/kitchen?store=<first store with waiting orders>` when the remembered store has
+  none waiting.
 - A ticket the customer cancelled leaves with the notice «Заказ #1234 отменён
   клиентом» and a chime; one the SLA called off with «Заказ #1234 отменён
   автоматически — его не приняли вовремя». The kitchen's own moves and rejections
   stay quiet.
-- Pre-orders (SCHEDULED, not started) whose `startBy` is more than 15 minutes away
-  sit in «Предзаказы» above the columns, «к 9:15 · начать в 9:03»; at `startBy` a
-  pre-order not yet IN_PROGRESS chimes and shows «Пора готовить #1234 к 9:15».
+- Pre-orders (SCHEDULED) nobody has accepted yet (CREATED/PAID) whose `startBy` is
+  more than 15 minutes away sit in «Предзаказы» below the columns, «к 9:15 · начать
+  в 9:03» (since 2026-11-05, list 5.0 item 2: the columns come first, and an
+  accepted pre-order moves to «Новые» at once instead of waiting there until 15
+  minutes before its start). «Новые» keeps the API's `pickupAt` order, so orders
+  for now come before accepted pre-orders for later. At `startBy` a pre-order not
+  yet IN_PROGRESS chimes and shows «Пора готовить #1234 к 9:15».
 - The board keeps working with no shift open: orders on it (pre-orders included)
   can be accepted, started and handed over; accepting never looks at the shift.
 - The `kitchen-order-sla` cron sends staff Telegram «Пора готовить предзаказ #1234
@@ -205,19 +241,34 @@ Board (`apps/admin/src/app/features/kitchen/kitchen.page.ts`,
 
 `apps/api/src/app/kds/kitchen-sla.service.ts`, cron `kitchen-order-sla`, every minute.
 
-- **ASAP alert**: awaiting acceptance for `ORDER_ACCEPT_ALERT_SECONDS` (180) → staff
-  and brand-owner Telegram once (`Order.acceptAlertSentAt`).
+- **The store's accept time A** («Время для принятия заказа», `Store.baseEtaSeconds`,
+  whole minutes 1–60, default 10; below a minute counts as 10, see
+  `acceptWindowSeconds` / `acceptancePolicy` in `kitchen/kitchen-timeline.ts`)
+  drives the reminder (A/2) and the timeout (A). Since 2026-11-05; before, the
+  global `ORDER_ACCEPT_ALERT_SECONDS` (180) and `ORDER_ACCEPT_TIMEOUT_SECONDS` (480).
+  The cron's queries carry one `kitchenVisibleAt` cutoff per A in use (the stores
+  with waiting orders grouped by A), so the cutoff stays in the database.
+- **ASAP reminder**: awaiting acceptance for A/2 → staff and brand-owner Telegram
+  once (`Order.acceptAlertSentAt`) «Заказ #1234 ждёт принятия … через N мин он
+  отменится автоматически».
 - **Timeout**: at `acceptDeadlineAt` the order expires with reason `not_accepted`
   through `OrderExpiryService.expire` (promo, gift-card balance, points back; a hold
   released, a deferred charge voided; the customer's "not accepted" push; the board
   drops the ticket with `reason: NOT_ACCEPTED`), and the store team and the owner
-  get «Заказ #1234 отменён автоматически — его не приняли за 8 мин» (the configured
-  `ORDER_ACCEPT_TIMEOUT_SECONDS`; a pre-order says «Предзаказ к 9:15 не приняли
-  вовремя»).
-  - ASAP: `awaitingSince + ORDER_ACCEPT_TIMEOUT_SECONDS` (480).
-  - SCHEDULED: `max(awaitingSince + ORDER_ACCEPT_TIMEOUT_SECONDS, pickupAt − 10 min)`.
+  get «Заказ #1234 отменён автоматически — его не приняли за 10 мин» (the store's A;
+  a pre-order says «Предзаказ к 9:15 не приняли вовремя»).
+  - ASAP: `awaitingSince + A`.
+  - SCHEDULED: `max(awaitingSince + A, pickupAt − 10 min)`; its reminder comes at
+    its start time, but no later than A/2 before that deadline and no sooner than
+    `awaitingSince + A/2`. The «Пора готовить предзаказ» Telegram of an unaccepted
+    pre-order goes out then.
   - Captured payments are refunded first; when that fails the order is not
     cancelled and ops, staff and the owner are told (unchanged).
+  - The older backstop (`OrderExpiryService.sweep`, a held order the kitchen never
+    accepted) lets a held order go after the longer of `ORDER_ACCEPT_TTL_MINUTES`
+    and A + `ORDER_ACCEPT_GRACE_MINUTES` since the hold (30 min with the defaults
+    and A ≤ 15 min), and a scheduled one not before its pickup time + the grace,
+    so it never beats the store's own deadline.
 - **New estimate (item 16)**: when the kitchen accepts or starts an order and
   `now + cooking > pickupAt`, `Order.readyEstimateAt = now + cooking` (a start
   moves it on). `pickupAt` stays the original promise (analytics, slots, the
@@ -315,14 +366,22 @@ button only while `canCancel`, with «Заказ уже готовят — дл�
 
 ## Configuration
 
-| Variable                        | Default |                                                              |
-| ------------------------------- | ------- | ------------------------------------------------------------ |
-| `MAX_ASAP_WAIT_SECONDS`         | 2700    | longest ASAP handover; past it `QUEUE_FULL`                  |
-| `PREORDER_OPENING_LEAD_MINUTES` | 15      | first pre-order slot after an opening nobody is on shift for |
-| `ORDER_ACCEPT_ALERT_SECONDS`    | 180     | alert for an unaccepted order                                |
-| `ORDER_ACCEPT_TIMEOUT_SECONDS`  | 480     | auto-cancel; never below the alert                           |
-| `AUTO_CLOSE_GRACE_MINUTES`      | **0**   | the shift closes this long after the hours (was 10)          |
-| `BUSY_EXTRA_WAIT_SECONDS`       | 300     | unchanged: «Загружены» extra wait                            |
+| Variable                        | Default |                                                                  |
+| ------------------------------- | ------- | ---------------------------------------------------------------- |
+| `MAX_ASAP_WAIT_SECONDS`         | 2700    | longest ASAP handover; past it `QUEUE_FULL`                      |
+| `PREORDER_OPENING_LEAD_MINUTES` | 15      | first pre-order slot after an opening nobody is on shift for     |
+| `AUTO_CLOSE_GRACE_MINUTES`      | **0**   | the shift closes this long after the hours (was 10)              |
+| `BUSY_EXTRA_WAIT_SECONDS`       | 300     | unchanged: «Загружены» extra wait                                |
+| `ORDER_ACCEPT_TTL_MINUTES`      | 30      | backstop for a held order nobody accepted; never below A + grace |
+| `ORDER_ACCEPT_GRACE_MINUTES`    | 15      | the backstop's grace past the pickup time (and on top of A)      |
+
+`ORDER_ACCEPT_ALERT_SECONDS` and `ORDER_ACCEPT_TIMEOUT_SECONDS` were removed on
+2026-11-05: the store setting «Время для принятия заказа» (A) replaced them, and
+the API ignores them if they are still set.
+
+Per store (the store editor): «Время для принятия заказа» A (`baseEtaSeconds`,
+1–60 min, default 10), «Позиций готовится одновременно» (`kitchenParallelism`),
+«Заказов на 15 минут» (`slotCapacity`).
 
 Fixed in code: slot 15 min, pre-order lead 10 min, horizon 24 h, "due soon" 30 min,
 pre-order group lead 15 min, start buffer 120 s, scheduled deadline 10 min before
@@ -337,6 +396,10 @@ pickup, late alert 5 min, extension cap 4 h, extend window 60 min, pause duratio
 - `20261020100000_kitchen_schedule_pause` (no backfill): enum `StorePauseReason`;
   `Store.pausedUntil`, `pauseReason`, `pauseComment`, `pausedById` (not a relation);
   `StoreShift.openedAutomatically`; `Order.readyEstimateAt`.
+- `20261105100000_store_accept_window` (data only, no schema change):
+  `Store.baseEtaSeconds` below a minute becomes 600 (10 min), anything else is
+  rounded to whole minutes and capped at 3600. A store that had 0 now also adds
+  10 minutes to its ETA.
 
 ## Known limits
 

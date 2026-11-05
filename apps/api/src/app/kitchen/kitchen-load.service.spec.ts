@@ -193,7 +193,7 @@ describe('KitchenLoadService', () => {
   });
 
   describe('policy from the environment', () => {
-    it('defaults to a 45-minute ASAP wait, a 15-minute opening lead, alert at 3 and timeout at 8 minutes', () => {
+    it('defaults to a 45-minute ASAP wait and a 15-minute opening lead', () => {
       const { service } = makeService();
       expect(service.policy).toEqual({
         maxAsapWaitSeconds: DEFAULT_MAX_ASAP_WAIT_SECONDS,
@@ -201,32 +201,12 @@ describe('KitchenLoadService', () => {
         preorderHorizonSeconds: 24 * 3600,
         preorderOpeningLeadSeconds: 900,
       });
-      expect(service.acceptance).toEqual({ acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 });
     });
 
     it('reads overrides and ignores nonsense', () => {
-      const { service } = makeService(
-        {},
-        {},
-        {
-          MAX_ASAP_WAIT_SECONDS: '1800',
-          PREORDER_OPENING_LEAD_MINUTES: '0',
-          ORDER_ACCEPT_ALERT_SECONDS: '120',
-          ORDER_ACCEPT_TIMEOUT_SECONDS: 'soon',
-        },
-      );
+      const { service } = makeService({}, {}, { MAX_ASAP_WAIT_SECONDS: '1800', PREORDER_OPENING_LEAD_MINUTES: '0' });
       expect(service.policy.maxAsapWaitSeconds).toBe(1800);
       expect(service.policy.preorderOpeningLeadSeconds).toBe(0);
-      expect(service.acceptance).toEqual({ acceptAlertSeconds: 120, acceptTimeoutSeconds: 480 });
-    });
-
-    it('never times an order out before it alerts about it', () => {
-      const { service } = makeService(
-        {},
-        {},
-        { ORDER_ACCEPT_ALERT_SECONDS: '600', ORDER_ACCEPT_TIMEOUT_SECONDS: '300' },
-      );
-      expect(service.acceptance).toEqual({ acceptAlertSeconds: 600, acceptTimeoutSeconds: 600 });
     });
   });
 

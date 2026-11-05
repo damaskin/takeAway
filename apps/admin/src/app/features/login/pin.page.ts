@@ -7,7 +7,7 @@ import type { AuthSession, KitchenDeviceStores, KitchenSessionStore } from '@tak
 import { AuthService } from '../../core/auth/auth.service';
 import { apiErrorBody, apiErrorCode } from '../../core/http/api-error';
 import { KitchenDeviceService } from '../../core/kitchen/kitchen-device.service';
-import { KITCHEN_STORE_KEY, KitchenModeService, read, write } from '../../core/kitchen/kitchen-mode.service';
+import { KITCHEN_STORE_KEY, KitchenModeService, read } from '../../core/kitchen/kitchen-mode.service';
 import { appendPinDigit, canSubmitPin, pinSlots } from '../../core/kitchen/kitchen-pin';
 
 /** What the screen shows: binding instructions, a link being redeemed, the keypad, or the store to open. */
@@ -428,7 +428,7 @@ export class PinLoginPage {
 
   /** Opens the board on one of the person's stores; the board switches to the others without the PIN. */
   open(storeId: string): void {
-    write(KITCHEN_STORE_KEY, storeId);
+    this.mode.rememberStore(storeId);
     this.mode.enter();
     void this.router.navigate(['/kitchen'], { queryParams: { store: storeId } });
   }

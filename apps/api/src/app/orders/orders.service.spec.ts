@@ -209,7 +209,6 @@ function harness() {
       queueFull: false,
     }),
     assertScheduledSlot: jest.fn().mockResolvedValue(undefined),
-    acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 },
     policy: { maxAsapWaitSeconds: 2700 },
   };
   // Open for ASAP unless a test says otherwise.

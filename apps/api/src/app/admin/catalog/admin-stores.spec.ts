@@ -131,6 +131,18 @@ describe('store DTOs', () => {
     expect(await errors(UpdateStoreDto, { kinds: ['FOOD', 'FOOD'] })).toHaveLength(1);
   });
 
+  it('takes «Время для принятия заказа» in whole minutes from 1 to 60 (list 5.0, items 6 and 9)', async () => {
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 60 })).toEqual([]);
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 600 })).toEqual([]);
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 3600 })).toEqual([]);
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 0 })).toEqual(['baseEtaSeconds must not be less than 60']);
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 3660 })).toEqual([
+      'baseEtaSeconds must not be greater than 3600',
+    ]);
+    expect(await errors(UpdateStoreDto, { baseEtaSeconds: 90 })).toEqual(['baseEtaSeconds must be whole minutes']);
+    expect(await errors(CreateStoreDto, { ...newStore, baseEtaSeconds: 30 })).toHaveLength(2);
+  });
+
   it('takes status on update only — a new store cannot be created open', async () => {
     expect(await errors(CreateStoreDto, { ...newStore, status: 'OPEN' })).toEqual(['property status should not exist']);
     expect(await errors(UpdateStoreDto, { status: 'OPEN' })).toEqual([]);

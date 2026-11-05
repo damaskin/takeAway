@@ -13,9 +13,17 @@ export const KITCHEN_STORE_KEY = 'takeaway.admin.kitchenStoreId';
 @Injectable({ providedIn: 'root' })
 export class KitchenModeService {
   readonly tablet = signal(read(TABLET_KEY) === 'on');
+  /** The store the board opens on when no `?store=` says otherwise: the one picked last on this device. */
+  readonly storeId = signal(read(KITCHEN_STORE_KEY));
 
   constructor() {
     effect(() => write(TABLET_KEY, this.tablet() ? 'on' : null));
+  }
+
+  /** The board, the PIN screen and the sidebar's «Кухня» open this store from now on. */
+  rememberStore(id: string): void {
+    write(KITCHEN_STORE_KEY, id);
+    this.storeId.set(id);
   }
 
   enter(): void {

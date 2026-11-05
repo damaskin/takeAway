@@ -1,6 +1,8 @@
 import {
   acceptAlertAt,
   acceptDeadline,
+  acceptWindowSeconds,
+  acceptancePolicy,
   cookingSeconds,
   kitchenTimeline,
   readyEstimate,
@@ -62,6 +64,44 @@ describe('kitchen timeline', () => {
       acceptAlertAt: null,
       acceptDeadlineAt: null,
     });
+  });
+});
+
+describe("the store's accept time (list 5.0, items 6 and 9)", () => {
+  it('is the store setting in seconds, whole minutes from 1 to 60', () => {
+    expect(acceptWindowSeconds(600)).toBe(600);
+    expect(acceptWindowSeconds(60)).toBe(60);
+    expect(acceptWindowSeconds(3600)).toBe(3600);
+    expect(acceptWindowSeconds(7200)).toBe(3600);
+  });
+
+  it('counts an older 0 (or nothing usable) as the default 10 minutes', () => {
+    expect(acceptWindowSeconds(0)).toBe(600);
+    expect(acceptWindowSeconds(30)).toBe(600);
+    expect(acceptWindowSeconds(null)).toBe(600);
+    expect(acceptWindowSeconds(Number.NaN)).toBe(600);
+  });
+
+  it('reminds the kitchen at half of it and calls the order off at all of it', () => {
+    expect(acceptancePolicy({ baseEtaSeconds: 600 })).toEqual({ acceptAlertSeconds: 300, acceptTimeoutSeconds: 600 });
+    expect(acceptancePolicy({ baseEtaSeconds: 180 })).toEqual({ acceptAlertSeconds: 90, acceptTimeoutSeconds: 180 });
+    expect(acceptancePolicy({ baseEtaSeconds: 0 })).toEqual({ acceptAlertSeconds: 300, acceptTimeoutSeconds: 600 });
+  });
+
+  it('times an ASAP order by the store: reminder at A/2, auto-cancel at A after it reached the board', () => {
+    const policy = acceptancePolicy({ baseEtaSeconds: 20 * 60 });
+    expect(acceptAlertAt(order(), 2, policy)).toEqual(at('2026-10-14T09:10:00Z'));
+    expect(acceptDeadline(order(), policy)).toEqual(at('2026-10-14T09:20:00Z'));
+  });
+
+  it('keeps the pre-order shape: off at max(board + A, pickup − 10 min), reminded A/2 before that', () => {
+    const policy = acceptancePolicy({ baseEtaSeconds: 10 * 60 });
+    const night = order({ pickupMode: 'SCHEDULED', kitchenVisibleAt: at('2026-10-14T01:00:00Z') });
+    expect(acceptDeadline(night, policy)).toEqual(at('2026-10-14T09:05:00Z'));
+    expect(acceptAlertAt(night, 2, policy)).toEqual(at('2026-10-14T09:00:00Z'));
+    const soon = order({ pickupMode: 'SCHEDULED', kitchenVisibleAt: at('2026-10-14T09:00:00Z') });
+    expect(acceptDeadline(soon, policy)).toEqual(at('2026-10-14T09:10:00Z'));
+    expect(acceptAlertAt(soon, 2, policy)).toEqual(at('2026-10-14T09:05:00Z'));
   });
 });
 

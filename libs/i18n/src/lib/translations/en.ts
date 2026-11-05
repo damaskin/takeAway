@@ -1396,6 +1396,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noStores: 'This brand has no stores you can run yet.',
       working: 'One moment…',
       pendingBadge: 'Waiting to be accepted: {{count}}',
+      /** Other stores with orders nobody has accepted: what else the sidebar counter counts. */
+      elsewhere: 'Waiting to be accepted at other stores:',
+      storeWaiting: '{{name}} · waiting: {{count}}',
       stopList: 'Stop list',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
@@ -1489,12 +1492,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       preorders: {
         title: 'Pre-orders',
-        hint: 'move to «New» 15 minutes before cooking starts; they can be accepted now',
+        hint: 'move to «New» once accepted, or 15 minutes before cooking starts',
         dueStart: 'for {{time}} · start at {{start}}',
       },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
         awaitingPreorder: 'Waiting to be accepted',
+        /** Half the store's accept time has passed: the reminder, red and pulsing. */
+        acceptNow: 'Accept the order · waiting {{minutes}} min',
         autoCancelIn: 'cancelled automatically in {{time}}',
         late: '{{minutes}} min late',
       },
@@ -2319,9 +2324,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
           SHELF: 'From a pickup shelf',
           LOCKER: 'From a locker',
         },
-        baseEta: 'Base time per order, min',
+        baseEta: 'Time to accept an order, min',
         baseEtaHint:
-          "The store's time is only ringing up, packing and handing over. The «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).",
+          'Whole minutes, 1 to 60. Half of it gone and the order not accepted — the kitchen is reminded to accept it; all of it gone — the order is cancelled automatically and the customer gets the money back. It is part of the ready time too: the «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).',
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',

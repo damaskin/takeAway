@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus, Prisma } from '@prisma/client';
 
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { acceptWindowSeconds } from '../kitchen/kitchen-timeline';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
@@ -76,7 +77,9 @@ export class OrderExpiryService {
 
   /**
    * How long a paid-for (held) order may wait for the kitchen to accept it
-   * (`ORDER_ACCEPT_TTL_MINUTES`). Counted from the moment the hold landed.
+   * (`ORDER_ACCEPT_TTL_MINUTES`). Counted from the moment the hold landed;
+   * never shorter than the store's accept time plus {@link acceptGraceMinutes}
+   * (see {@link heldBranches}).
    */
   get acceptTtlMinutes(): number {
     return this.minutes('ORDER_ACCEPT_TTL_MINUTES', DEFAULT_ACCEPT_TTL_MINUTES);
@@ -101,8 +104,7 @@ export class OrderExpiryService {
     const now = Date.now();
     const cutoff = new Date(now - this.ttlMinutes * 60_000);
     const pickupCutoff = new Date(now - UNACCEPTED_GRACE_MINUTES * 60_000);
-    const heldCutoff = new Date(now - this.acceptTtlMinutes * 60_000);
-    const heldPickupCutoff = new Date(now - this.acceptGraceMinutes * 60_000);
+    const held = await this.heldBranches(now);
 
     const stale = await this.prisma.order.findMany({
       where: {
@@ -127,10 +129,7 @@ export class OrderExpiryService {
           // Paid for — the amount is held on the card — and the kitchen never
           // accepted it: after its own window, and for a scheduled order not
           // before its pickup time has come and gone. The hold is released.
-          {
-            payments: { some: { status: 'REQUIRES_ACTION', updatedAt: { lt: heldCutoff } } },
-            pickupAt: { lt: heldPickupCutoff },
-          },
+          ...held,
         ],
       },
       select: {
@@ -158,6 +157,34 @@ export class OrderExpiryService {
 
     this.logger.log(`Expired ${released} order(s) left unpaid or never taken by the kitchen`);
     return released;
+  }
+
+  /**
+   * The held-order branches of the sweep, one per wait in use. This is the
+   * backstop behind the acceptance SLA (KitchenSlaService), which calls an
+   * order off at its store's accept time: a store's held order is let go
+   * `max(ORDER_ACCEPT_TTL_MINUTES, accept time + ORDER_ACCEPT_GRACE_MINUTES)`
+   * after the hold, so the backstop never beats the store's own deadline,
+   * and a scheduled one not before its pickup time plus the grace.
+   */
+  private async heldBranches(now: number): Promise<Prisma.OrderWhereInput[]> {
+    const stores = await this.prisma.store.findMany({
+      where: { orders: { some: { status: OrderStatus.CREATED, payments: { some: { status: 'REQUIRES_ACTION' } } } } },
+      select: { id: true, baseEtaSeconds: true },
+    });
+    const ttlSeconds = this.acceptTtlMinutes * 60;
+    const graceSeconds = this.acceptGraceMinutes * 60;
+    const byWait = new Map<number, string[]>();
+    for (const store of stores) {
+      const wait = Math.max(ttlSeconds, acceptWindowSeconds(store.baseEtaSeconds) + graceSeconds);
+      byWait.set(wait, [...(byWait.get(wait) ?? []), store.id]);
+    }
+    const pickupCutoff = new Date(now - graceSeconds * 1000);
+    return [...byWait].map(([wait, storeIds]) => ({
+      storeId: { in: storeIds },
+      payments: { some: { status: 'REQUIRES_ACTION', updatedAt: { lt: new Date(now - wait * 1000) } } },
+      pickupAt: { lt: pickupCutoff },
+    }));
   }
 
   private minutes(key: string, fallback: number): number {
