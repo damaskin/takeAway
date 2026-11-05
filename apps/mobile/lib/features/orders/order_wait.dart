@@ -66,3 +66,89 @@ ExpiredOutcome expiredOutcome(Order order) => switch (order.payment.state) {
   PaymentState.refunded || PaymentState.paid => ExpiredOutcome.notAcceptedRefunded,
   PaymentState.none || PaymentState.held => ExpiredOutcome.notAccepted,
 };
+
+/// Who called a cancelled order off, as the customer reads it. The same
+/// rules as the web (`orderCancellation` in `@takeaway/utils`).
+enum CancelledParty {
+  /// The customer cancelled it themselves.
+  customer,
+
+  /// The kitchen turned it down.
+  store,
+
+  /// The bank declined the card when the kitchen accepted the order.
+  cardDeclined,
+}
+
+/// Where the money of a cancelled order is, in the push's words.
+enum CancelledMoney {
+  /// Nothing was taken from the card.
+  notCharged,
+
+  /// The card hold is lifted. The customer cancels only while nothing is
+  /// captured, so money given back on their own cancel is always a hold.
+  released,
+
+  /// The money is on its way back to the card.
+  refunded,
+
+  /// The hold is still on the card and comes off by itself.
+  holdPending,
+}
+
+/// What the order screen says about a cancelled order.
+class OrderCancellation {
+  const OrderCancellation({required this.by, required this.reason, required this.comment, required this.money});
+
+  /// Null when the order does not say (cancelled before 2026-11-05).
+  final CancelledParty? by;
+
+  /// The kitchen's reason; only when [by] is [CancelledParty.store].
+  final OrderCancelReason? reason;
+
+  /// The kitchen's own words, as typed; only when [by] is [CancelledParty.store].
+  final String? comment;
+
+  /// Null when there was no card money to speak of.
+  final CancelledMoney? money;
+}
+
+/// Who called a cancelled order off, why, and where the money is — the
+/// story the push told. Null for any other status. The money comes from the
+/// order's payment as it is now, like [expiredOutcome].
+OrderCancellation? orderCancellation(Order order) {
+  if (order.status != OrderStatus.cancelled) return null;
+  final by = switch (order.cancelledBy) {
+    OrderCanceller.customer => CancelledParty.customer,
+    OrderCanceller.store when order.cancelReason == OrderCancelReason.cardDeclined => CancelledParty.cardDeclined,
+    OrderCanceller.store => CancelledParty.store,
+    null => null,
+  };
+  final reason = by == CancelledParty.store ? order.cancelReason : null;
+  final comment = by == CancelledParty.store ? order.cancelComment?.trim() : null;
+  return OrderCancellation(
+    by: by,
+    reason: reason == OrderCancelReason.unknown ? null : reason,
+    comment: comment == null || comment.isEmpty ? null : comment,
+    money: switch (order.payment.state) {
+      PaymentState.none || PaymentState.failed => order.totalCents == 0 ? null : CancelledMoney.notCharged,
+      PaymentState.held => CancelledMoney.holdPending,
+      PaymentState.refunded => by == CancelledParty.customer ? CancelledMoney.released : CancelledMoney.refunded,
+      PaymentState.paid => CancelledMoney.refunded,
+      // The bank has not said yet whether anything was taken.
+      PaymentState.pending => null,
+    },
+  );
+}
+
+/// Who cancelled an order in the history list: [OrderSummary] has no
+/// payment, so only the party.
+CancelledParty? cancelledPartyOf(OrderSummary order) {
+  if (order.status != OrderStatus.cancelled) return null;
+  return switch (order.cancelledBy) {
+    OrderCanceller.customer => CancelledParty.customer,
+    OrderCanceller.store when order.cancelReason == OrderCancelReason.cardDeclined => CancelledParty.cardDeclined,
+    OrderCanceller.store => CancelledParty.store,
+    null => null,
+  };
+}

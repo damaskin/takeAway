@@ -74,10 +74,14 @@ class StoreStatusBadge extends StatelessWidget {
 
 /// Order status as a coloured pill.
 class OrderStatusBadge extends StatelessWidget {
-  const OrderStatusBadge({required this.status, this.delivery = false, super.key});
+  const OrderStatusBadge({required this.status, this.delivery = false, this.label, super.key});
 
   final OrderStatus status;
   final bool delivery;
+
+  /// In place of the status's own words — «Отменён заведением» for a
+  /// cancelled order whose canceller is known.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +91,7 @@ class OrderStatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(Radii.pill)),
       child: Text(
-        orderStatusLabel(context, status, delivery: delivery),
+        label ?? orderStatusLabel(context, status, delivery: delivery),
         style: context.text.labelSmall?.copyWith(
           color: status.isCancelled ? brand.berry : Color.lerp(color, Colors.black, 0.35),
           fontWeight: FontWeight.w700,

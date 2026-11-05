@@ -62,6 +62,7 @@ void main() {
 
       expect(api.cancelled, ['ord_1']);
       expect(find.text('Отменён'), findsWidgets);
+      expect(find.text('Вы отменили заказ'), findsOneWidget);
       expect(find.text('Повторить заказ'), findsOneWidget, reason: 'a finished order offers to order again');
       await h.unmount(tester);
     });
@@ -194,6 +195,109 @@ void main() {
       expect(find.text('Спишем при принятии заказа'), findsOneWidget);
       expect(find.textContaining('9104 **** 1234'), findsOneWidget);
       expect(find.text('Если точка не примет заказ, деньги с карты не спишутся.'), findsOneWidget);
+      await h.unmount(tester);
+    });
+  });
+
+  group('a cancelled order says why (item 7)', () {
+    testWidgets("gives the store's reason, its comment and where the money is", (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          status: 'CANCELLED',
+          cancelledBy: 'STORE',
+          cancelReason: 'OUT_OF_STOCK',
+          cancelComment: 'Нет овсяного молока',
+          payment: {'state': 'REFUNDED', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      expect(find.text('Отменён'), findsWidgets);
+      expect(find.text('Заведение отменило заказ'), findsOneWidget);
+      final card = find.byKey(const ValueKey('cancel-reason'));
+      await reveal(tester, card);
+      expect(find.descendant(of: card, matching: find.text('Части позиций сейчас нет в наличии.')), findsOneWidget);
+      expect(
+        find.descendant(of: card, matching: find.text('Комментарий заведения: «Нет овсяного молока»')),
+        findsOneWidget,
+      );
+      expect(find.descendant(of: card, matching: find.text('Деньги вернутся на карту.')), findsOneWidget);
+      await h.unmount(tester);
+    });
+
+    testWidgets('a declined card says to order again with another card', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(status: 'CANCELLED', cancelledBy: 'STORE', cancelReason: 'CARD_DECLINED');
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      expect(find.text('Банк отклонил оплату картой'), findsOneWidget);
+      final card = find.byKey(const ValueKey('cancel-reason'));
+      await reveal(tester, card);
+      expect(find.descendant(of: card, matching: find.text('Оформите заказ ещё раз с другой картой.')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('Деньги с карты не списывались.')), findsOneWidget);
+      await h.unmount(tester);
+    });
+
+    testWidgets('the reason arrives with the live cancel, from the re-read', (tester) async {
+      final api = FakeApi()..currentOrder = FakeApi.sampleOrder(status: 'PAID');
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+      expect(find.byKey(const ValueKey('cancel-reason')), findsNothing);
+
+      api.currentOrder = FakeApi.sampleOrder(
+        status: 'CANCELLED',
+        cancelledBy: 'STORE',
+        cancelReason: 'TOO_BUSY',
+        cancelComment: 'Очередь на 40 минут',
+      );
+      h.realtime.emit(const OrderStatusEvent(orderId: 'ord_1', status: OrderStatus.cancelled, etaSeconds: 0));
+      await settle(tester);
+
+      expect(find.text('Заведение отменило заказ'), findsOneWidget);
+      final card = find.byKey(const ValueKey('cancel-reason'));
+      await reveal(tester, card);
+      expect(find.descendant(of: card, matching: find.text('Заведение сейчас перегружено заказами.')), findsOneWidget);
+      expect(
+        find.descendant(of: card, matching: find.text('Комментарий заведения: «Очередь на 40 минут»')),
+        findsOneWidget,
+      );
+      await h.unmount(tester);
+    });
+
+    testWidgets("the order history says who cancelled, with the kitchen's reason", (tester) async {
+      OrderSummary summary(String id, {String? by, String? reason}) => OrderSummary.fromJson({
+        'id': id,
+        'orderCode': id,
+        'status': 'CANCELLED',
+        'pickupMode': 'ASAP',
+        'pickupAt': DateTime.now().toUtc().toIso8601String(),
+        'totalCents': 2000,
+        'currency': 'MDL',
+        'storeId': 'st_1',
+        'storeName': 'NoName — центр',
+        'itemCount': 1,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'cancelledBy': ?by,
+        'cancelReason': ?reason,
+      });
+      final api = FakeApi()
+        ..myOrdersAnswer = [
+          summary('1001', by: 'STORE', reason: 'CLOSING'),
+          summary('1002', by: 'CUSTOMER'),
+          summary('1003', by: 'STORE', reason: 'CARD_DECLINED'),
+          summary('1004'),
+        ];
+      final h = await pumpApp(tester, api: api);
+      h.container.read(routerProvider).go(Routes.orders);
+      await settle(tester);
+
+      expect(find.text('Отменён заведением'), findsOneWidget);
+      expect(find.text('Заведение закрывается.'), findsOneWidget);
+      expect(find.text('Отменён вами'), findsOneWidget);
+      expect(find.text('Карта отклонена'), findsOneWidget);
+      expect(find.byKey(const ValueKey('history-cancel-reason')), findsOneWidget);
+      expect(find.text('Отменён'), findsWidgets, reason: 'an order that does not say keeps the plain status');
       await h.unmount(tester);
     });
   });

@@ -1532,6 +1532,102 @@ abstract class AppLocalizations {
   /// **'The payment did not go through — the order is cancelled'**
   String get orderExpiredPaymentNotCompleted;
 
+  /// Order screen, under the status of a cancelled order: who cancelled it. The same story as the push.
+  ///
+  /// In en, this message translates to:
+  /// **'The store cancelled your order'**
+  String get orderCancelledByStore;
+
+  /// No description provided for @orderCancelledByCustomer.
+  ///
+  /// In en, this message translates to:
+  /// **'You cancelled this order'**
+  String get orderCancelledByCustomer;
+
+  /// No description provided for @orderCancelledCardDeclined.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank declined your card'**
+  String get orderCancelledCardDeclined;
+
+  /// Order history: the status badge of an order the store cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled by the store'**
+  String get orderCancelledBadgeStore;
+
+  /// No description provided for @orderCancelledBadgeCustomer.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled by you'**
+  String get orderCancelledBadgeCustomer;
+
+  /// No description provided for @orderCancelledBadgeCardDeclined.
+  ///
+  /// In en, this message translates to:
+  /// **'Card declined'**
+  String get orderCancelledBadgeCardDeclined;
+
+  /// Why the kitchen turned the order down, as the push words it.
+  ///
+  /// In en, this message translates to:
+  /// **'Some items are out of stock.'**
+  String get cancelReasonOutOfStock;
+
+  /// No description provided for @cancelReasonTooBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is too busy right now.'**
+  String get cancelReasonTooBusy;
+
+  /// No description provided for @cancelReasonClosing.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closing.'**
+  String get cancelReasonClosing;
+
+  /// No description provided for @cancelReasonOther.
+  ///
+  /// In en, this message translates to:
+  /// **'The store cannot take the order.'**
+  String get cancelReasonOther;
+
+  /// No description provided for @cancelCardDeclinedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Please order again with another card.'**
+  String get cancelCardDeclinedHint;
+
+  /// The kitchen's own words when it turned the order down, shown as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Note from the store: “{comment}”'**
+  String cancelStoreComment(String comment);
+
+  /// Where the money of a cancelled order is, as the push words it.
+  ///
+  /// In en, this message translates to:
+  /// **'Your card was not charged.'**
+  String get cancelMoneyNotCharged;
+
+  /// No description provided for @cancelMoneyReleased.
+  ///
+  /// In en, this message translates to:
+  /// **'You were not charged and the card hold is released.'**
+  String get cancelMoneyReleased;
+
+  /// No description provided for @cancelMoneyRefunded.
+  ///
+  /// In en, this message translates to:
+  /// **'The money is on its way back to your card.'**
+  String get cancelMoneyRefunded;
+
+  /// No description provided for @cancelMoneyHoldPending.
+  ///
+  /// In en, this message translates to:
+  /// **'The card hold will be released automatically.'**
+  String get cancelMoneyHoldPending;
+
   /// No description provided for @statusUnknown.
   ///
   /// In en, this message translates to:
