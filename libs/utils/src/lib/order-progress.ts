@@ -106,6 +106,94 @@ export function expiredOutcome(order: Pick<OrderProgressInput, 'payment'>): Expi
   }
 }
 
+/** The parts of a CANCELLED order {@link orderCancellation} reads. */
+export interface OrderCancellationInput {
+  status: string;
+  totalCents?: number;
+  payment?: { state: string } | null;
+  /** `CUSTOMER` or `STORE`; absent or null on orders that do not say (and from older APIs). */
+  cancelledBy?: string | null;
+  cancelReason?: string | null;
+  cancelComment?: string | null;
+}
+
+/**
+ * Who called the order off, as the customer reads it: `customer` — they did;
+ * `store` — the kitchen turned it down; `cardDeclined` — the bank declined
+ * the card when the kitchen accepted it.
+ */
+export type OrderCancelledParty = 'customer' | 'store' | 'cardDeclined';
+
+/** The kitchen's reasons for turning an order down. */
+export type StoreCancelReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER';
+
+/**
+ * Where the money of a cancelled order is, in the push's words:
+ * - `notCharged` — nothing was taken from the card;
+ * - `released` — the card hold is lifted (the customer's own cancel never
+ *   follows a capture, so a give-back there is always a hold);
+ * - `refunded` — the money is on its way back to the card;
+ * - `holdPending` — the hold is still on the card and comes off by itself.
+ */
+export type OrderCancelledMoney = 'notCharged' | 'released' | 'refunded' | 'holdPending';
+
+/** What the order screen says about a CANCELLED order — see {@link orderCancellation}. */
+export interface OrderCancellation {
+  /** Null when the order does not say who cancelled it (cancelled before 2026-11-05). */
+  by: OrderCancelledParty | null;
+  /** The kitchen's reason; only when `by` is `store`. */
+  reason: StoreCancelReason | null;
+  /** The kitchen's own words, as typed; only when `by` is `store`. */
+  comment: string | null;
+  /** Null when there was no card money to speak of (a zero total, a payment never confirmed). */
+  money: OrderCancelledMoney | null;
+}
+
+const STORE_CANCEL_REASONS: readonly string[] = ['OUT_OF_STOCK', 'TOO_BUSY', 'CLOSING', 'OTHER'];
+
+/**
+ * Who called a CANCELLED order off, why, and where the money is — the same
+ * story the push told. Null for any other status.
+ *
+ * The money comes from the order's payment as it is now, like
+ * {@link expiredOutcome}: a deferred charge called off shows as no payment,
+ * a released hold or a refund as REFUNDED, a hold the bank has not let go
+ * of yet as HELD.
+ */
+export function orderCancellation(order: OrderCancellationInput): OrderCancellation | null {
+  if (order.status !== 'CANCELLED') return null;
+  const by = cancelledParty(order);
+  const reason =
+    by === 'store' && order.cancelReason && STORE_CANCEL_REASONS.includes(order.cancelReason)
+      ? (order.cancelReason as StoreCancelReason)
+      : null;
+  const comment = by === 'store' ? order.cancelComment?.trim() || null : null;
+  return { by, reason, comment, money: cancelledMoney(order, by) };
+}
+
+function cancelledParty(order: OrderCancellationInput): OrderCancelledParty | null {
+  if (order.cancelledBy === 'CUSTOMER') return 'customer';
+  if (order.cancelledBy !== 'STORE') return null;
+  return order.cancelReason === 'CARD_DECLINED' ? 'cardDeclined' : 'store';
+}
+
+function cancelledMoney(order: OrderCancellationInput, by: OrderCancelledParty | null): OrderCancelledMoney | null {
+  switch (order.payment?.state ?? 'NONE') {
+    case 'NONE':
+    case 'FAILED':
+      return order.totalCents === 0 ? null : 'notCharged';
+    case 'HELD':
+      return 'holdPending';
+    case 'REFUNDED':
+      return by === 'customer' ? 'released' : 'refunded';
+    case 'PAID':
+      return 'refunded';
+    default:
+      // PENDING: the bank has not said yet whether anything was taken.
+      return null;
+  }
+}
+
 /**
  * Time left on an order's countdown: «4:05», and «13:05:00» once it is an
  * hour or more away — a pre-order for tomorrow morning is not «780:00».
