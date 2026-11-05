@@ -210,6 +210,21 @@ void main() {
       expect(product.brandId, isNotEmpty);
     });
 
+    test('reads a product from an API that still sends caffeine, allergens and diet tags, and drops them', () {
+      final product = ProductDetail.fromJson({
+        ...fixture('product_detail.json')! as Map<String, dynamic>,
+        'caffeineLevel': 2,
+        'calories': 150,
+        'allergens': ['MILK'],
+        'dietTags': ['VEGAN'],
+      });
+      expect(product.calories, 150);
+      final json = product.toJson();
+      expect(json.keys, isNot(contains('caffeineLevel')));
+      expect(json.keys, isNot(contains('allergens')));
+      expect(json.keys, isNot(contains('dietTags')));
+    });
+
     test('reads category kinds and add-on groups, and null from an API that predates them', () {
       final raw = fixture('menu.json')! as Map<String, dynamic>;
       final categories = (raw['categories'] as List).cast<Map<String, dynamic>>();

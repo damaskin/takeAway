@@ -376,6 +376,9 @@ class Modifier {
   final String? group;
 }
 
+/// A menu item. Caffeine, allergens and diet tags left the menu on
+/// 2026-11-05; an older API build (or a menu cached before) that still sends
+/// them is read without them.
 @JsonSerializable(explicitToJson: true)
 class Product {
   const Product({
@@ -385,12 +388,9 @@ class Product {
     required this.name,
     required this.basePriceCents,
     required this.prepTimeSeconds,
-    required this.allergens,
-    required this.dietTags,
     required this.imageUrls,
     required this.sortOrder,
     this.description,
-    this.caffeineLevel,
     this.calories,
     this.proteinsGrams,
     this.fatsGrams,
@@ -411,15 +411,10 @@ class Product {
   final int basePriceCents;
   @JsonKey(defaultValue: 0)
   final int prepTimeSeconds;
-  final int? caffeineLevel;
   final int? calories;
   final double? proteinsGrams;
   final double? fatsGrams;
   final double? carbsGrams;
-  @JsonKey(defaultValue: <String>[])
-  final List<String> allergens;
-  @JsonKey(defaultValue: <String>[])
-  final List<String> dietTags;
   @JsonKey(defaultValue: <String>[])
   final List<String> imageUrls;
   @JsonKey(defaultValue: 0)
@@ -446,15 +441,12 @@ class ProductDetail extends Product {
     required super.name,
     required super.basePriceCents,
     required super.prepTimeSeconds,
-    required super.allergens,
-    required super.dietTags,
     required super.imageUrls,
     required super.sortOrder,
     required this.brandId,
     required this.variations,
     required this.modifiers,
     super.description,
-    super.caffeineLevel,
     super.calories,
     super.proteinsGrams,
     super.fatsGrams,
