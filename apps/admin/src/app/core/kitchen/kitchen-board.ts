@@ -69,12 +69,14 @@ const NOT_STARTED: readonly string[] = ['CREATED', 'PAID', 'ACCEPTED'];
 const BEING_MADE: readonly string[] = ['ACCEPTED', 'IN_PROGRESS'];
 
 /**
- * A pre-order the kitchen does not have to think about yet: its start is
- * more than 15 minutes away. It waits in «Предзаказы» (it can be accepted
- * there any time), then joins «Новые».
+ * A pre-order the kitchen does not have to think about yet: nobody has
+ * accepted it and its start is more than 15 minutes away. It waits in
+ * «Предзаказы» (it can be accepted there any time) and joins «Новые» as
+ * soon as it is accepted, or 15 minutes before its start (manager's list
+ * 5.0, item 2).
  */
 export function isLaterPreorder(order: KitchenOrder, now: number): boolean {
-  if (order.pickupMode !== 'SCHEDULED' || !order.startBy || !NOT_STARTED.includes(order.status)) return false;
+  if (order.pickupMode !== 'SCHEDULED' || !order.startBy || !awaitsAcceptance(order)) return false;
   return Date.parse(order.startBy) - now > PREORDER_GROUP_LEAD_MS;
 }
 

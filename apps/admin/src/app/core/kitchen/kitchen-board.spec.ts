@@ -154,14 +154,21 @@ describe('kitchen policy on the board', () => {
   it('keeps a pre-order in «Предзаказы» until 15 minutes before its start, then in «Новые»', () => {
     expect(isLaterPreorder(preorder(), now)).toBe(true);
     expect(inColumn(preorder(), 'NEW', now)).toBe(false);
+    expect(isLaterPreorder(preorder({ status: 'CREATED' }), now)).toBe(true);
     const soon = Date.parse('2026-10-14T08:48:00Z');
     expect(isLaterPreorder(preorder(), soon)).toBe(false);
     expect(inColumn(preorder(), 'NEW', soon)).toBe(true);
-    // Accepted early, it still waits there; started, it is in «Готовятся».
-    expect(isLaterPreorder(preorder({ status: 'ACCEPTED' }), now)).toBe(true);
+    // Started, it is in «Готовятся».
     expect(isLaterPreorder(preorder({ status: 'IN_PROGRESS' }), now)).toBe(false);
     // ASAP orders never wait there, whatever their time.
     expect(isLaterPreorder({ ...preorder(), pickupMode: 'ASAP' }, now)).toBe(false);
+  });
+
+  it('moves a pre-order to «Новые» as soon as it is accepted, however far its start (item 2)', () => {
+    const accepted = preorder({ status: 'ACCEPTED' });
+    expect(isLaterPreorder(accepted, now)).toBe(false);
+    expect(inColumn(accepted, 'NEW', now)).toBe(true);
+    expect(laterPreorders([accepted, preorder({ id: 'q' })], now).map((o) => o.id)).toEqual(['q']);
   });
 
   it('lists pre-orders by pickup time', () => {

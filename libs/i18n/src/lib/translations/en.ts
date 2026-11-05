@@ -1501,7 +1501,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       preorders: {
         title: 'Pre-orders',
-        hint: 'move to «New» 15 minutes before cooking starts; they can be accepted now',
+        hint: 'move to «New» once accepted, or 15 minutes before cooking starts',
         dueStart: 'for {{time}} · start at {{start}}',
       },
       card: {

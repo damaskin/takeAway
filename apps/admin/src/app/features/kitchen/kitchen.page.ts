@@ -86,11 +86,13 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
  * (`POST /kds/orders/:id/reject`); the API gives the money back and tells
  * the customer why.
  *
- * The kitchen policy of 2026-10-14 on the board: pre-orders whose start is
- * more than 15 minutes away wait in «Предзаказы»; at their start time a
- * chime and a notice say it is time to make them. A ticket nobody accepted
- * in time pulses and chimes every 30 seconds (the API calls it off at its
- * deadline). Late tickets say by how much.
+ * The kitchen policy of 2026-10-14 on the board: pre-orders nobody has
+ * accepted whose start is more than 15 minutes away wait in «Предзаказы»,
+ * below the columns; accepted, they join «Новые» at once. At their start
+ * time a chime and a notice say it is time to make them. A ticket nobody
+ * accepted within half the store's accept time pulses and chimes every 30
+ * seconds (the API calls it off when the whole of it is up). Late tickets
+ * say by how much.
  *
  * Since 2026-10-20 the working hours open and close the shift: the board
  * says where the store stands by its schedule, offers «Продлить» only in the
@@ -236,20 +238,6 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
       @if (loaded() && stores().length === 0) {
         <p class="kitchen-empty-state">{{ 'admin.kitchen.noStores' | translate }}</p>
       } @else {
-        @if (preorders().length > 0) {
-          <section class="kitchen-preorders" [attr.aria-label]="'admin.kitchen.preorders.title' | translate">
-            <div class="kitchen-col-head kitchen-preorders-head">
-              <span>{{ 'admin.kitchen.preorders.title' | translate }}</span>
-              <span class="kitchen-preorders-hint">{{ 'admin.kitchen.preorders.hint' | translate }}</span>
-              <span>{{ preorders().length }}</span>
-            </div>
-            <div class="kitchen-preorders-cards" data-testid="kitchen-preorders">
-              @for (order of preorders(); track order.id) {
-                <ng-container [ngTemplateOutlet]="ticketCard" [ngTemplateOutletContext]="{ $implicit: order }" />
-              }
-            </div>
-          </section>
-        }
         <div class="kitchen-grid">
           @for (col of columns; track col) {
             <section class="kitchen-col" [attr.aria-label]="meta(col).label | translate">
@@ -267,6 +255,21 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
             </section>
           }
         </div>
+        <!-- Below the columns: what is on now comes first (manager's list 5.0, item 2). -->
+        @if (preorders().length > 0) {
+          <section class="kitchen-preorders" [attr.aria-label]="'admin.kitchen.preorders.title' | translate">
+            <div class="kitchen-col-head kitchen-preorders-head">
+              <span>{{ 'admin.kitchen.preorders.title' | translate }}</span>
+              <span class="kitchen-preorders-hint">{{ 'admin.kitchen.preorders.hint' | translate }}</span>
+              <span>{{ preorders().length }}</span>
+            </div>
+            <div class="kitchen-preorders-cards" data-testid="kitchen-preorders">
+              @for (order of preorders(); track order.id) {
+                <ng-container [ngTemplateOutlet]="ticketCard" [ngTemplateOutletContext]="{ $implicit: order }" />
+              }
+            </div>
+          </section>
+        }
       }
     </section>
 
@@ -958,7 +961,7 @@ export class KitchenPage {
   readonly pausing = signal(false);
   readonly pauseBusy = signal(false);
   readonly pauseError = signal<string | null>(null);
-  /** «Предзаказы»: pre-orders whose start is more than 15 minutes away. */
+  /** «Предзаказы»: pre-orders nobody has accepted whose start is more than 15 minutes away. */
   readonly preorders = computed(() => laterPreorders(this.orders(), this.now()));
 
   /** Pre-orders whose start reminder already went off on this screen. */

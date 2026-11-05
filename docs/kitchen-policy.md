@@ -192,9 +192,13 @@ Board (`apps/admin/src/app/features/kitchen/kitchen.page.ts`,
   клиентом» and a chime; one the SLA called off with «Заказ #1234 отменён
   автоматически — его не приняли вовремя». The kitchen's own moves and rejections
   stay quiet.
-- Pre-orders (SCHEDULED, not started) whose `startBy` is more than 15 minutes away
-  sit in «Предзаказы» above the columns, «к 9:15 · начать в 9:03»; at `startBy` a
-  pre-order not yet IN_PROGRESS chimes and shows «Пора готовить #1234 к 9:15».
+- Pre-orders (SCHEDULED) nobody has accepted yet (CREATED/PAID) whose `startBy` is
+  more than 15 minutes away sit in «Предзаказы» below the columns, «к 9:15 · начать
+  в 9:03» (since 2026-11-05, list 5.0 item 2: the columns come first, and an
+  accepted pre-order moves to «Новые» at once instead of waiting there until 15
+  minutes before its start). «Новые» keeps the API's `pickupAt` order, so orders
+  for now come before accepted pre-orders for later. At `startBy` a pre-order not
+  yet IN_PROGRESS chimes and shows «Пора готовить #1234 к 9:15».
 - The board keeps working with no shift open: orders on it (pre-orders included)
   can be accepted, started and handed over; accepting never looks at the shift.
 - The `kitchen-order-sla` cron sends staff Telegram «Пора готовить предзаказ #1234
