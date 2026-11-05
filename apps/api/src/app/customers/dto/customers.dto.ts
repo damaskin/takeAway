@@ -112,7 +112,7 @@ export class FavouriteProductDto {
     enum: PRODUCT_KINDS,
     nullable: true,
     type: String,
-    description: 'Drink or food, read from caffeine, drink options and the category; null when unclear',
+    description: 'Drink or food, read from the category kind, drink options and the names; null when unclear',
   })
   kind!: ProductKind | null;
 }

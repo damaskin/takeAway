@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
+import { ACCEPT_WINDOW_MAX_MINUTES, ACCEPT_WINDOW_MIN_MINUTES } from '@takeaway/shared-types';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -7,6 +8,7 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsDivisibleBy,
   IsEmail,
   IsEnum,
   IsIn,
@@ -166,14 +168,19 @@ export class CreateStoreDto {
   minOrderCents?: number;
 
   @ApiPropertyOptional({
-    minimum: 0,
-    maximum: 3600,
-    description: 'Fixed per-order overhead in seconds. The queue wait is added on top.',
+    minimum: ACCEPT_WINDOW_MIN_MINUTES * 60,
+    maximum: ACCEPT_WINDOW_MAX_MINUTES * 60,
+    multipleOf: 60,
+    description:
+      '«Время для принятия заказа» in seconds, whole minutes 1–60: the kitchen is reminded when half of it has ' +
+      'passed since the order reached the board, the order is cancelled automatically when all of it has. Also ' +
+      'the per-order overhead of the ETA (the queue wait and the cooking are added on top).',
   })
   @IsOptional()
   @IsInt()
-  @Min(0)
-  @Max(3600)
+  @Min(ACCEPT_WINDOW_MIN_MINUTES * 60)
+  @Max(ACCEPT_WINDOW_MAX_MINUTES * 60)
+  @IsDivisibleBy(60, { message: 'baseEtaSeconds must be whole minutes' })
   baseEtaSeconds?: number;
 
   @ApiPropertyOptional({

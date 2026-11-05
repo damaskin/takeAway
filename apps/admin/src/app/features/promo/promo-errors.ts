@@ -9,6 +9,7 @@ export const PROMO_ERROR_WORDING: ApiErrorWording = {
     PROMO_ENDED: 'admin.promo.errors.PROMO_ENDED',
     PROMO_DATES: 'admin.promo.errors.PROMO_DATES',
     PROMO_STORE: 'admin.promo.errors.PROMO_STORE',
+    PROMO_TYPE: 'admin.promo.errors.PROMO_TYPE',
   },
   network: 'common.networkError',
 };

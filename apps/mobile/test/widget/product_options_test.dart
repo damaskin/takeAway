@@ -83,7 +83,6 @@ FakeApi _api({bool photos = false}) {
     ...pictured(FakeApi.productJson('p_capp', 'Капучино', 3000)),
     'categoryKind': 'HOT_DRINKS',
     'brandId': 'br_1',
-    'allergens': ['MILK'],
     'variations': [
       _variation('v_s', 'SIZE', 'Малый', 0, def: true),
       _variation('v_m', 'SIZE', 'Средний', 300, sort: 1),
@@ -100,6 +99,9 @@ FakeApi _api({bool photos = false}) {
     ...FakeApi.productJson('p_sandwich', 'Сэндвич', 4500, category: 'cat_food'),
     'categoryKind': 'FOOD',
     'brandId': 'br_1',
+    // As an API build from before 2026-11-05 still sends them: the app no
+    // longer shows caffeine or allergens.
+    'caffeineLevel': 2,
     'allergens': ['GLUTEN', 'EGGS', 'кунжут'],
     'variations': <Object>[],
     'modifiers': [
@@ -155,8 +157,8 @@ void main() {
     expect(find.text('+3\u00a0MDL'), findsOneWidget, reason: 'each choice shows what it adds');
     expect(find.text('+8\u00a0MDL'), findsOneWidget);
     expect(find.text('Малый · Коровье'), findsNWidgets(2), reason: 'under the title and by the button');
-    expect(find.byTooltip('Кофеин'), findsOneWidget);
-    expect(find.text('Содержит: молоко'), findsOneWidget);
+    expect(find.text('180 ккал'), findsOneWidget);
+    expect(find.byTooltip('Кофеин'), findsNothing, reason: 'caffeine left the menu on 2026-11-05');
 
     // Add-ons are closed rows, one per group.
     await _reveal(tester, find.text('Добавки · не выбрано'));
@@ -203,13 +205,14 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('food: a required sauce opens marked, no caffeine, allergens worded, an order comment', (tester) async {
+  testWidgets('food: a required sauce opens marked, no caffeine or allergens, an order comment', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());
     await _openProduct(tester, h, 'p_sandwich');
 
-    expect(find.byTooltip('Кофеин'), findsNothing, reason: 'the sandwich has a caffeine level, but it is food');
-    expect(find.text('Содержит: глютен, яйца, кунжут'), findsOneWidget);
+    expect(find.byTooltip('Кофеин'), findsNothing);
+    expect(find.textContaining('Содержит'), findsNothing);
+    expect(find.textContaining('глютен'), findsNothing);
     await _reveal(tester, find.text('Убрать · не выбрано'));
     expect(find.text('Соус · Кетчуп'), findsOneWidget);
     expect(find.text('обязательно'), findsOneWidget);

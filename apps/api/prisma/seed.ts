@@ -150,9 +150,7 @@ async function main(): Promise<void> {
       description: 'Espresso with steamed milk and a thin layer of foam.',
       basePriceCents: 450,
       prepTimeSeconds: 180,
-      caffeineLevel: 2,
       calories: 150,
-      allergens: ['milk'],
     },
   });
 
@@ -195,8 +193,6 @@ async function main(): Promise<void> {
       basePriceCents: 950,
       prepTimeSeconds: 300,
       calories: 380,
-      dietTags: ['VEGAN'],
-      allergens: ['gluten'],
     },
   });
 
@@ -212,7 +208,6 @@ async function main(): Promise<void> {
       basePriceCents: 480,
       prepTimeSeconds: 60,
       calories: 420,
-      allergens: ['gluten', 'nuts', 'milk'],
     },
   });
 
@@ -262,11 +257,13 @@ async function main(): Promise<void> {
       endsAt: new Date('2026-04-30T23:59:59Z'),
       status: PromoStatus.RUNNING,
     },
+    // Promo codes are percent only since 2026-11-05; the other types stay in
+    // the schema for codes issued before, but the demo shows what can be made.
     {
       code: 'CROISSANT2',
-      label: 'Croissant BOGO',
-      type: PromoType.BOGO,
-      value: 1,
+      label: 'Croissant 15% off',
+      type: PromoType.PERCENT,
+      value: 15,
       maxRedemptions: 200,
       startsAt: new Date('2026-04-15T00:00:00Z'),
       endsAt: new Date('2026-05-05T23:59:59Z'),
@@ -274,18 +271,18 @@ async function main(): Promise<void> {
     },
     {
       code: 'SPRING2026',
-      label: 'Spring points boost (2×)',
-      type: PromoType.POINTS_MULTIPLIER,
-      value: 20, // ×2.0
+      label: 'Spring 5% off',
+      type: PromoType.PERCENT,
+      value: 5,
       startsAt: new Date('2026-05-01T00:00:00Z'),
       endsAt: new Date('2026-05-31T23:59:59Z'),
       status: PromoStatus.SCHEDULED,
     },
     {
       code: 'WINTER5',
-      label: 'Loyalty winter $5',
-      type: PromoType.FIXED,
-      value: 500, // cents
+      label: 'Loyalty winter 5% off',
+      type: PromoType.PERCENT,
+      value: 5,
       minSubtotalCents: 1500,
       startsAt: new Date('2025-12-01T00:00:00Z'),
       endsAt: new Date('2026-01-15T23:59:59Z'),

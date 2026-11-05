@@ -92,7 +92,7 @@ test.describe('order page', () => {
 
     await page.getByRole('button', { name: 'Cancel order' }).click();
     await page.getByRole('button', { name: 'Yes, cancel' }).click();
-    await expect(page.getByTestId('order-subtitle')).toHaveText('Cancelled');
+    await expect(page.getByTestId('order-subtitle')).toHaveText('You cancelled this order');
     expect(api.cancels).toEqual(['order-1']);
     await expect(page.getByRole('button', { name: 'Cancel order' })).toHaveCount(0);
   });

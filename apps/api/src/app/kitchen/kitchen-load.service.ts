@@ -7,7 +7,7 @@ import { SOLD_ON_ITS_OWN } from '../catalog/product-listing';
 import { type AvailabilityPolicy, isBusy, slotBlocker } from '../catalog/store-availability';
 import { checkoutError } from '../common/http/checkout-error';
 import { PrismaService } from '../prisma/prisma.service';
-import { type AcceptancePolicy, cookingSeconds } from './kitchen-timeline';
+import { cookingSeconds } from './kitchen-timeline';
 import { hoursAround, type WorkingHour } from './opening-hours';
 import { SLOT_MS, type SlotLoad, ceilToSlot, floorToSlot, slotFits } from './slots';
 import { medianSeconds, typicalPrepCache } from './typical-prep';
@@ -45,10 +45,6 @@ export const MIN_SCHEDULED_LEAD_MINUTES = 10;
 export const DEFAULT_MAX_ASAP_WAIT_SECONDS = 45 * 60;
 /** {@link KitchenLoadService.policy}: `PREORDER_OPENING_LEAD_MINUTES` when unset. */
 export const DEFAULT_PREORDER_OPENING_LEAD_MINUTES = 15;
-/** {@link KitchenLoadService.acceptance}: `ORDER_ACCEPT_ALERT_SECONDS` when unset. */
-export const DEFAULT_ORDER_ACCEPT_ALERT_SECONDS = 3 * 60;
-/** {@link KitchenLoadService.acceptance}: `ORDER_ACCEPT_TIMEOUT_SECONDS` when unset. */
-export const DEFAULT_ORDER_ACCEPT_TIMEOUT_SECONDS = 8 * 60;
 
 /**
  * An order already in progress has, on average, burned half its work by the
@@ -125,6 +121,10 @@ export interface StoreCapacity extends Omit<AsapFacts, 'id'> {
  *           + max(ownPrep, ownWork / kitchenParallelism)
  *           (+ busyExtraWait while the store is marked busy)
  *
+ * `baseEtaSeconds` is the store's «Время для принятия заказа» since
+ * 2026-11-05 (list 5.0, items 6 and 9): the same value times the accept
+ * reminder and the auto-cancel (`acceptancePolicy` in kitchen-timeline).
+ *
  * `outstandingWork` sums `Order.workSeconds` (the whole order's cost to the
  * kitchen) of the orders due within {@link DUE_SOON_SECONDS}. The order's
  * own part is its longest item (`prepSeconds`) or its whole work spread over
@@ -174,17 +174,6 @@ export class KitchenLoadService {
       preorderOpeningLeadSeconds:
         this.wholeNumber('PREORDER_OPENING_LEAD_MINUTES', DEFAULT_PREORDER_OPENING_LEAD_MINUTES, 0) * 60,
     };
-  }
-
-  /**
-   * How long an order waits for «Принять»: staff and the owner are alerted
-   * after `ORDER_ACCEPT_ALERT_SECONDS`, the order is called off after
-   * `ORDER_ACCEPT_TIMEOUT_SECONDS` (never sooner than the alert).
-   */
-  get acceptance(): AcceptancePolicy {
-    const acceptAlertSeconds = this.wholeNumber('ORDER_ACCEPT_ALERT_SECONDS', DEFAULT_ORDER_ACCEPT_ALERT_SECONDS, 1);
-    const timeout = this.wholeNumber('ORDER_ACCEPT_TIMEOUT_SECONDS', DEFAULT_ORDER_ACCEPT_TIMEOUT_SECONDS, 60);
-    return { acceptAlertSeconds, acceptTimeoutSeconds: Math.max(timeout, acceptAlertSeconds) };
   }
 
   /**

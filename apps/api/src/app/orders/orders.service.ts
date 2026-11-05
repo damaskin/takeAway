@@ -15,7 +15,7 @@ import type {
   OrderNotCancellableBody,
 } from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
-import type { Order, PaymentStatus, Prisma } from '@prisma/client';
+import type { Order, OrderCancelReason, OrderCanceller, PaymentStatus, Prisma } from '@prisma/client';
 
 import { checkoutError } from '../common/http/checkout-error';
 import { codedConflict } from '../common/http/coded-conflict';
@@ -398,7 +398,7 @@ export class OrdersService {
         storeId: order.storeId,
         kind: 'created',
         orderId: order.id,
-        order: toBoardRow(row, this.kitchen.acceptance),
+        order: toBoardRow(row),
       });
     }
 
@@ -630,6 +630,8 @@ export class OrdersService {
     store: { name: string; timezone: string };
     items: Array<{ quantity: number }>;
     createdAt: Date;
+    cancelledBy: OrderCanceller | null;
+    cancelReason: OrderCancelReason | null;
   }): OrderSummaryDto {
     return {
       id: o.id,
@@ -644,6 +646,8 @@ export class OrdersService {
       storeTimezone: o.store.timezone,
       itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
       createdAt: o.createdAt.toISOString(),
+      cancelledBy: o.cancelledBy,
+      cancelReason: o.cancelReason,
     };
   }
 
@@ -829,6 +833,10 @@ export class OrdersService {
    * points. The card hold is released after the commit: the bank call cannot
    * join the transaction, and it reports rather than throws — see
    * PaymentHoldsService.
+   *
+   * Who cancelled, the reason and the comment are written on the order with
+   * the status, so the customer's re-read after `order.statusChanged`
+   * already says why.
    */
   async cancelOrder(
     order: Pick<Order, 'id' | 'status'>,
@@ -838,8 +846,11 @@ export class OrdersService {
       allowedStatuses: ReadonlySet<string>;
       /** Only while no payment of the order is captured (the customer's own cancel). */
       nothingCaptured?: boolean;
-      reason?: string;
+      reason?: OrderCancelReason;
+      /** The kitchen's own words, shown to the customer as is. */
       comment?: string;
+      /** What the bank said on a declined card: kept on the event, not shown to the customer. */
+      bankMessage?: string;
     },
   ): Promise<{ order: CancelledOrder; holdReleased: boolean; chargeVoided: boolean }> {
     if (!options.allowedStatuses.has(order.status)) {
@@ -853,7 +864,13 @@ export class OrdersService {
           status: { in: [...options.allowedStatuses] as Order['status'][] },
           ...(options.nothingCaptured ? { payments: { none: { status: { in: CAPTURED } } } } : {}),
         },
-        data: { status: 'CANCELLED', cancelledAt: new Date() },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledBy: options.by === 'customer' ? 'CUSTOMER' : 'STORE',
+          cancelReason: options.reason ?? null,
+          cancelComment: options.comment ?? null,
+        },
       });
       if (claimed.count === 0) throw new ConflictException('The order changed while it was being cancelled');
 
@@ -874,6 +891,7 @@ export class OrdersService {
                 by: options.by,
                 ...(options.reason ? { reason: options.reason } : {}),
                 ...(options.comment ? { comment: options.comment } : {}),
+                ...(options.bankMessage ? { bankMessage: options.bankMessage } : {}),
               } satisfies Prisma.InputJsonValue,
             },
           },
@@ -1154,6 +1172,9 @@ export class OrdersService {
       readyAt: order.readyAt?.toISOString() ?? null,
       pickedUpAt: order.pickedUpAt?.toISOString() ?? null,
       cancelledAt: order.cancelledAt?.toISOString() ?? null,
+      cancelledBy: order.cancelledBy,
+      cancelReason: order.cancelReason,
+      cancelComment: order.cancelComment,
       expiredAt: order.expiredAt?.toISOString() ?? null,
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),

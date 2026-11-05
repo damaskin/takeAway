@@ -2,11 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus, type Prisma } from '@prisma/client';
 
-import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import {
   type AcceptancePolicy,
   SCHEDULED_ACCEPT_LEAD_SECONDS,
   acceptAlertAt,
+  acceptancePolicy,
   startBy,
 } from '../kitchen/kitchen-timeline';
 import { wallClock } from '../kitchen/opening-hours';
@@ -36,7 +36,7 @@ const START_LOOKAHEAD_SECONDS = 12 * 60 * 60;
 /** Marks an order the timeout could not cancel safely, so it is not retried every minute. */
 const BLOCKED_NOTE = 'acceptTimeoutBlocked';
 
-const STORE = { select: { name: true, timezone: true, kitchenParallelism: true } } as const;
+const STORE = { select: { name: true, timezone: true, kitchenParallelism: true, baseEtaSeconds: true } } as const;
 
 type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refund';
 
@@ -44,10 +44,11 @@ type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refun
  * The kitchen's promises, enforced by the clock (docs/kitchen-policy.md,
  * sections D and E), every minute:
  *
- * - an ASAP order nobody accepted for `ORDER_ACCEPT_ALERT_SECONDS` → a
- *   Telegram alert to the store's staff and the brand owner (once);
- * - still nobody after `ORDER_ACCEPT_TIMEOUT_SECONDS` (a pre-order: not
- *   before 10 minutes ahead of its pickup) → the order expires with reason
+ * - an ASAP order nobody accepted for half its store's accept time
+ *   («Время для принятия заказа», `acceptancePolicy`) → a Telegram reminder
+ *   to the store's staff and the brand owner (once);
+ * - still nobody after the whole accept time (a pre-order: not before 10
+ *   minutes ahead of its pickup) → the order expires with reason
  *   `not_accepted` through OrderExpiryService: a hold is released, a charge
  *   waiting for the accept is called off, promo, gift-card balance and
  *   points go back, the customer gets the "not accepted" push, and the
@@ -63,6 +64,10 @@ type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refun
  *   order late (`readyEstimateAt`), else past `pickupAt` — and five minutes
  *   past `pickupAt` an alert to staff and the owner.
  *
+ * Each store has its own accept time, so the reminder and the timeout
+ * queries carry one `kitchenVisibleAt` cutoff per accept time in use
+ * ({@link KitchenSlaService.visibleCutoffs}).
+ *
  * Each notice is claimed with a conditional update of its own column
  * before it is sent, so two API instances never send it twice.
  */
@@ -73,7 +78,6 @@ export class KitchenSlaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly kitchen: KitchenLoadService,
     private readonly notifications: NotificationsService,
     private readonly opsChat: OpsChatService,
     private readonly expiry: OrderExpiryService,
@@ -92,11 +96,10 @@ export class KitchenSlaService {
   }
 
   async sweep(now: Date): Promise<void> {
-    const policy = this.kitchen.acceptance;
     const steps: Array<[string, () => Promise<unknown>]> = [
-      ['acceptance alerts', () => this.alertUnaccepted(now, policy)],
-      ['acceptance timeouts', () => this.expireUnaccepted(now, policy)],
-      ['start reminders', () => this.remindStarts(now, policy)],
+      ['acceptance alerts', () => this.alertUnaccepted(now)],
+      ['acceptance timeouts', () => this.expireUnaccepted(now)],
+      ['start reminders', () => this.remindStarts(now)],
       ['late orders', () => this.flagLate(now)],
     ];
     for (const [name, step] of steps) {
@@ -109,15 +112,16 @@ export class KitchenSlaService {
     }
   }
 
-  /** ASAP orders waiting for «Принять» past the alert time. Pre-orders are alerted with their start reminder. */
-  async alertUnaccepted(now: Date, policy: AcceptancePolicy): Promise<number> {
+  /**
+   * ASAP orders waiting for «Принять» for half their store's accept time.
+   * Pre-orders are reminded with their start reminder.
+   */
+  async alertUnaccepted(now: Date): Promise<number> {
+    const waiting = { pickupMode: 'ASAP', acceptAlertSentAt: null } satisfies Prisma.OrderWhereInput;
+    const cutoffs = await this.visibleCutoffs(now, waiting, (p) => p.acceptAlertSeconds);
+    if (cutoffs.length === 0) return 0;
     const orders = await this.prisma.order.findMany({
-      where: {
-        status: { in: AWAITING },
-        pickupMode: 'ASAP',
-        kitchenVisibleAt: { lte: new Date(now.getTime() - policy.acceptAlertSeconds * 1000) },
-        acceptAlertSentAt: null,
-      },
+      where: { status: { in: AWAITING }, ...waiting, OR: cutoffs },
       select: { id: true, orderCode: true, storeId: true, kitchenVisibleAt: true, store: STORE },
       orderBy: { kitchenVisibleAt: 'asc' },
       take: BATCH,
@@ -127,11 +131,9 @@ export class KitchenSlaService {
     for (const order of orders) {
       if (!(await this.claim(order.id, 'acceptAlertSentAt', { status: { in: AWAITING } }, now))) continue;
       const visibleAt = order.kitchenVisibleAt ?? now;
+      const { acceptTimeoutSeconds } = acceptancePolicy(order.store);
       const waiting = Math.max(1, Math.floor((now.getTime() - visibleAt.getTime()) / 60_000));
-      const left = Math.max(
-        1,
-        Math.ceil((visibleAt.getTime() + policy.acceptTimeoutSeconds * 1000 - now.getTime()) / 60_000),
-      );
+      const left = Math.max(1, Math.ceil((visibleAt.getTime() + acceptTimeoutSeconds * 1000 - now.getTime()) / 60_000));
       await this.notifications.notifyStoreTeam(
         order.storeId,
         {
@@ -148,15 +150,24 @@ export class KitchenSlaService {
     return sent;
   }
 
-  /** Orders nobody accepted in time: expire them, giving the money back first when it was taken. */
-  async expireUnaccepted(now: Date, policy: AcceptancePolicy): Promise<number> {
+  /**
+   * Orders nobody accepted within their store's accept time: expire them,
+   * giving the money back first when it was taken.
+   */
+  async expireUnaccepted(now: Date): Promise<number> {
+    const cutoffs = await this.visibleCutoffs(now, {}, (p) => p.acceptTimeoutSeconds);
+    if (cutoffs.length === 0) return 0;
     const orders = await this.prisma.order.findMany({
       where: {
         status: { in: AWAITING },
-        kitchenVisibleAt: { lte: new Date(now.getTime() - policy.acceptTimeoutSeconds * 1000) },
-        OR: [
-          { pickupMode: 'ASAP' },
-          { pickupAt: { lte: new Date(now.getTime() + SCHEDULED_ACCEPT_LEAD_SECONDS * 1000) } },
+        AND: [
+          { OR: cutoffs },
+          {
+            OR: [
+              { pickupMode: 'ASAP' },
+              { pickupAt: { lte: new Date(now.getTime() + SCHEDULED_ACCEPT_LEAD_SECONDS * 1000) } },
+            ],
+          },
         ],
         events: { none: { type: 'NOTE', payload: { path: [BLOCKED_NOTE], equals: true } } },
       },
@@ -182,13 +193,16 @@ export class KitchenSlaService {
           orderCode: order.orderCode,
           orderId: order.id,
           storeName: order.store.name,
-          timeoutMinutes: Math.round(policy.acceptTimeoutSeconds / 60),
+          timeoutMinutes: Math.round(acceptancePolicy(order.store).acceptTimeoutSeconds / 60),
           scheduledFor: order.pickupMode === 'SCHEDULED' ? wallClock(order.pickupAt, order.store.timezone) : null,
         }),
         { staff: true, owner: true },
       );
-    const details = { rule: 'accept_timeout', acceptTimeoutSeconds: policy.acceptTimeoutSeconds };
     for (const order of orders) {
+      const details = {
+        rule: 'accept_timeout',
+        acceptTimeoutSeconds: acceptancePolicy(order.store).acceptTimeoutSeconds,
+      };
       try {
         if (order.status === OrderStatus.CREATED) {
           // A payment of another provider still going through (Stripe) could
@@ -243,7 +257,7 @@ export class KitchenSlaService {
   }
 
   /** «Пора готовить предзаказ»: pre-orders whose start time came and that nobody has started. */
-  async remindStarts(now: Date, policy: AcceptancePolicy): Promise<number> {
+  async remindStarts(now: Date): Promise<number> {
     const orders = await this.prisma.order.findMany({
       where: {
         pickupMode: 'SCHEDULED',
@@ -279,7 +293,9 @@ export class KitchenSlaService {
     for (const order of orders) {
       const unaccepted = order.status !== OrderStatus.ACCEPTED;
       const parallelism = order.store.kitchenParallelism;
-      const due = unaccepted ? acceptAlertAt(order, parallelism, policy) : startBy(order, parallelism);
+      const due = unaccepted
+        ? acceptAlertAt(order, parallelism, acceptancePolicy(order.store))
+        : startBy(order, parallelism);
       if (!due || due > now) continue;
       if (!(await this.claim(order.id, 'startReminderSentAt', { status: { not: OrderStatus.IN_PROGRESS } }, now))) {
         continue;
@@ -374,6 +390,34 @@ export class KitchenSlaService {
       }
     }
     return flagged;
+  }
+
+  /**
+   * One `kitchenVisibleAt` cutoff per accept time in use: the stores with
+   * orders on the board waiting for «Принять» (and matching `waiting`),
+   * grouped by how many `seconds` their accept time gives such an order,
+   * each group's orders due once that long has passed. Empty when no store
+   * has one waiting. The cutoff stays in the database, so a batch is never
+   * filled with orders of a store with a long accept time that are not due.
+   */
+  private async visibleCutoffs(
+    now: Date,
+    waiting: Prisma.OrderWhereInput,
+    seconds: (policy: AcceptancePolicy) => number,
+  ): Promise<Prisma.OrderWhereInput[]> {
+    const stores = await this.prisma.store.findMany({
+      where: { orders: { some: { status: { in: AWAITING }, kitchenVisibleAt: { not: null }, ...waiting } } },
+      select: { id: true, baseEtaSeconds: true },
+    });
+    const byWait = new Map<number, string[]>();
+    for (const store of stores) {
+      const wait = seconds(acceptancePolicy(store));
+      byWait.set(wait, [...(byWait.get(wait) ?? []), store.id]);
+    }
+    return [...byWait].map(([wait, storeIds]) => ({
+      storeId: { in: storeIds },
+      kitchenVisibleAt: { lte: new Date(now.getTime() - wait * 1000) },
+    }));
   }
 
   /**

@@ -16,11 +16,14 @@ import {
   storeAvailability,
   storeKinds,
   storeMatchesKind,
+  storeTone,
   type StoreKindFilter,
+  type StoreTone,
 } from '@takeaway/utils';
 import {
   LeafletMapComponent,
   STORE_KIND_GLYPHS,
+  STORE_PIN_TONES,
   StoreLogoComponent,
   type LatLng,
   type MapMarker,
@@ -48,6 +51,12 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
   FOOD: 'common.storeKinds.food',
 };
 
+const TONE_LABELS: Record<StoreTone, string> = {
+  open: 'common.storeTones.open',
+  busy: 'common.storeTones.busy',
+  closed: 'common.storeTones.closed',
+};
+
 /**
  * Web Store Locator — pencil A11 (0BWUe).
  *
@@ -69,6 +78,8 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
  *
  * The pins show what each place sells (cup, fork and knife, or both), and
  * the «Все / Кофе / Еда» chips over the map narrow the map and the list.
+ * A pin's colour is the store's status — open, busy («Загружена») or closed
+ * for an order now — in the cards' palette, with a legend at the map's foot.
  */
 @Component({
   selector: 'app-stores-list',
@@ -111,6 +122,29 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
             </button>
           }
         </div>
+
+        <!-- What a pin's colour says -->
+        <ul
+          class="stores-legend absolute flex items-center"
+          data-testid="map-legend"
+          [attr.aria-label]="'common.storeTones.label' | translate"
+          style="bottom: 20px; left: 20px; gap: 12px; margin: 0; padding: 6px 12px; list-style: none; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 9999px; box-shadow: var(--shadow-soft); z-index: 400"
+        >
+          @for (t of tones; track t) {
+            <li
+              class="flex items-center"
+              [attr.data-tone]="t"
+              style="gap: 6px; font-family: var(--font-sans); font-size: 12px; font-weight: 500; color: var(--color-text-primary)"
+            >
+              <span
+                aria-hidden="true"
+                [style.background]="toneColor(t)"
+                style="width: 10px; height: 10px; border-radius: 50%; flex: none"
+              ></span>
+              {{ toneLabel(t) | translate }}
+            </li>
+          }
+        </ul>
 
         <!-- Map top bar (overlay) -->
         <div
@@ -303,6 +337,12 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
           bottom: 12px;
           left: 16px !important;
         }
+        /* …and the legend moves up under the search bar, clear of the chips. */
+        .stores-legend {
+          top: 84px;
+          bottom: auto !important;
+          left: 16px !important;
+        }
         .stores-sidebar {
           width: 100% !important;
           border-left: none !important;
@@ -330,6 +370,7 @@ export class StoresListPage implements OnInit {
   readonly selectedId = signal<string | null>(null);
   readonly filters: Filter[] = ['ALL', 'OPEN', 'NEAR'];
   readonly kinds: StoreKindFilter[] = ['ALL', 'COFFEE', 'FOOD'];
+  readonly tones: StoreTone[] = ['open', 'busy', 'closed'];
   readonly query = signal('');
   readonly userPosition = signal<LatLng | null>(null);
   readonly locating = signal(false);
@@ -375,6 +416,7 @@ export class StoresListPage implements OnInit {
         label: s.name,
         kind: 'store',
         sells: storeKinds(s),
+        tone: storeTone(s),
       })),
   );
 
@@ -465,6 +507,15 @@ export class StoresListPage implements OnInit {
   /** The chip's glyph — the same one the pins draw; none for «Все». */
   glyph(k: StoreKindFilter): string | null {
     return k === 'ALL' ? null : STORE_KIND_GLYPHS[k];
+  }
+
+  /** The legend's dot: the very colour the pins of [tone] take. */
+  toneColor(tone: StoreTone): string {
+    return STORE_PIN_TONES[tone].fill;
+  }
+
+  toneLabel(tone: StoreTone): string {
+    return TONE_LABELS[tone];
   }
 
   etaMinutes(store: StoreListItem): number {

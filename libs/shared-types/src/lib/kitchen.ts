@@ -12,20 +12,38 @@ export interface KitchenOrderTimeline {
   /**
    * ISO UTC: when the kitchen should start for the order to be ready by
    * `pickupAt` — pickupAt − max(prep, kitchen work ÷ parallelism) − 2 min.
-   * A pre-order whose start is more than 15 minutes away waits in the
-   * «Предзаказы» group.
+   * A pre-order nobody has accepted whose start is more than 15 minutes
+   * away waits in the «Предзаказы» group.
    */
   startBy: string;
   /** ISO UTC: the order reached the board and the acceptance clock started. Null for orders from before 2026-10-14. */
   awaitingSince: string | null;
   /**
    * ISO UTC: from here an order nobody has accepted pulses on the board and
-   * staff and the owner get a Telegram alert. Null once accepted.
+   * staff and the owner get a Telegram alert — half the store's accept time
+   * after `awaitingSince` for an order for now. Null once accepted.
    */
   acceptAlertAt: string | null;
-  /** ISO UTC: an order still unaccepted then is cancelled (EXPIRED) and the customer's money released. Null once accepted. */
+  /**
+   * ISO UTC: an order still unaccepted then is cancelled (EXPIRED) and the
+   * customer's money released — the store's whole accept time after
+   * `awaitingSince` for an order for now. Null once accepted.
+   */
   acceptDeadlineAt: string | null;
 }
+
+/**
+ * A store's «Время для принятия заказа» (`baseEtaSeconds` on the store, in
+ * seconds), set in whole minutes: half of it after an order reached the
+ * board the kitchen is reminded to accept it, all of it and the order is
+ * cancelled automatically. It is also part of the ready time a customer
+ * sees. Since 2026-11-05 (manager's list 5.0, items 6 and 9); before, it was
+ * «Базовое время на заказ» and the accept times were the same for every store.
+ */
+export const ACCEPT_WINDOW_MIN_MINUTES = 1;
+export const ACCEPT_WINDOW_MAX_MINUTES = 60;
+/** A new store's accept time, and what a store with none set (an older 0) counts with. */
+export const DEFAULT_ACCEPT_WINDOW_MINUTES = 10;
 
 /**
  * `PUT /kds/shift/extend` body: take ASAP orders this much longer past the

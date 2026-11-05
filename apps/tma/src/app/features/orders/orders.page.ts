@@ -2,6 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LocaleFormatService } from '@takeaway/i18n';
+import { orderCancellation } from '@takeaway/utils';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { OrdersApi, type OrderStatusString, type OrderSummary } from '../../core/orders/orders.service';
@@ -134,12 +135,19 @@ type Tab = 'ACTIVE' | 'HISTORY';
                     >{{ formatDate(o.createdAt) }} ·
                     {{ 'tma.orders.itemsCount' | translate: { count: o.itemCount } }}</span
                   >
+                  @if (cancelReason(o); as reason) {
+                    <span
+                      data-testid="history-cancel-reason"
+                      style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                      >{{ reason | translate }}</span
+                    >
+                  }
                 </div>
                 <span
                   [style.background]="statusBg(o.status)"
                   [style.color]="statusColor(o.status)"
                   style="padding: 4px 10px; border-radius: 9999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap"
-                  >{{ statusLabel(o.status) | translate }}</span
+                  >{{ statusLabel(o) | translate }}</span
                 >
               </div>
               <div class="flex items-center justify-between">
@@ -190,9 +198,19 @@ export class TmaOrdersPage {
     this.tab.set(tab);
   }
 
-  /** Returns a translation key — resolved via | translate in the template. */
-  statusLabel(status: OrderStatusString): string {
-    return `tma.orders.status.${status}`;
+  /**
+   * Returns a translation key — resolved via | translate in the template. A
+   * cancelled order says who cancelled it, when the API told.
+   */
+  statusLabel(order: OrderSummary): string {
+    const by = orderCancellation(order)?.by;
+    return by ? `common.orderCancelled.badge.${by}` : `tma.orders.status.${order.status}`;
+  }
+
+  /** The store's reason under a cancelled order, as a translation key. */
+  cancelReason(order: OrderSummary): string | null {
+    const reason = orderCancellation(order)?.reason;
+    return reason ? `common.orderCancelled.reason.${reason}` : null;
   }
 
   isActive(status: OrderStatusString): boolean {

@@ -82,7 +82,9 @@ jobs:
   # silently for months because nothing ever ran it.
   e2e:
     name: Customer journey (e2e)
-    runs-on: ubuntu-latest
+    # Pinned: `ubuntu-latest` moved to 26.04, where `playwright install`
+    # refuses to fetch Chromium ("does not support chromium on ubuntu26.04").
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:

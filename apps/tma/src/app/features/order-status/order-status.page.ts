@@ -7,6 +7,7 @@ import {
   describeOrderItemOptions,
   expiredOutcome,
   formatCountdown,
+  orderCancellation,
   orderWaitNote,
   phoneHref,
   productKind,
@@ -32,6 +33,13 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
 
 /** What the bank said when it sent the customer back (`?payment=…`). */
 type PaymentReturn = 'success' | 'pending' | 'fail';
+
+/** A line of the cancelled order's card: why, the store's own words, the money. */
+interface CancellationLine {
+  kind: 'reason' | 'comment' | 'money';
+  key: string;
+  params: Record<string, string>;
+}
 
 /** Payment states where the order still waits for its money. */
 const UNSETTLED: readonly OrderPaymentState[] = ['NONE', 'PENDING', 'FAILED'];
@@ -90,6 +98,27 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
           >
             {{ line.key | translate: line.params }}
           </p>
+        }
+
+        <!-- A cancelled order says why and where the money is, as the push did. -->
+        @if (cancellationLines(); as lines) {
+          <div
+            role="status"
+            data-testid="cancel-reason"
+            class="w-full flex flex-col"
+            style="gap: 6px; padding: 14px 16px; border-radius: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light)"
+          >
+            @for (line of lines; track line.key) {
+              <span
+                [attr.data-testid]="'cancel-' + line.kind"
+                [style.font-weight]="line.kind === 'reason' ? 600 : 400"
+                [style.color]="line.kind === 'reason' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'"
+                [style.font-style]="line.kind === 'comment' ? 'italic' : 'normal'"
+                style="font-family: var(--font-sans); font-size: 14px; line-height: 1.4; text-align: center"
+                >{{ line.key | translate: line.params }}</span
+              >
+            }
+          </div>
         }
 
         <!-- Where the money stands: the first thing a customer looks for
@@ -539,6 +568,30 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     return this.translate.instant('tma.orderStatus.readyAtOn', { time, date: this.fmt.dayMonth(clock.at, zone) });
   });
 
+  /** Who cancelled the order, why and where the money is — see `orderCancellation`. */
+  readonly cancellation = computed(() => {
+    const o = this.order();
+    return o ? orderCancellation(o) : null;
+  });
+
+  /**
+   * Under the headline of a cancelled order: the store's reason (or, for a
+   * declined card, what to do), its comment as typed, and the money. Null
+   * when there is nothing to say.
+   */
+  readonly cancellationLines = computed((): CancellationLine[] | null => {
+    const c = this.cancellation();
+    if (!c) return null;
+    const lines: CancellationLine[] = [];
+    if (c.reason) lines.push({ kind: 'reason', key: `common.orderCancelled.reason.${c.reason}`, params: {} });
+    if (c.by === 'cardDeclined')
+      lines.push({ kind: 'reason', key: 'common.orderCancelled.cardDeclinedHint', params: {} });
+    if (c.comment)
+      lines.push({ kind: 'comment', key: 'common.orderCancelled.comment', params: { comment: c.comment } });
+    if (c.money) lines.push({ kind: 'money', key: `common.orderCancelled.money.${c.money}`, params: {} });
+    return lines.length > 0 ? lines : null;
+  });
+
   /** «Отменить заказ» is there: not accepted yet and no money taken. */
   readonly canCancel = computed(() => {
     const o = this.order();
@@ -775,9 +828,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   /**
    * The line under the headline: the zero-minute queue once ready, why an
-   * expired order ended, or what the wait is for («Ждём подтверждения
-   * точки», «Готовим · будет готово через 6 мин», «Немного задерживаемся»).
-   * A translation key with its parameters.
+   * expired order ended, who cancelled a cancelled one, or what the wait is
+   * for («Ждём подтверждения точки», «Готовим · будет готово через 6 мин»,
+   * «Немного задерживаемся»). A translation key with its parameters.
    */
   slogan(): { key: string; params?: Record<string, unknown> } | null {
     const order = this.order();
@@ -785,6 +838,8 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     if (order.status === 'READY') return { key: 'common.orderDone.readySlogan' };
     if (order.status === 'PICKED_UP') return { key: 'common.orderDone.pickedUpSlogan' };
     if (order.status === 'EXPIRED') return { key: `web.orderStatus.expired.${expiredOutcome(order)}` };
+    const cancelledBy = this.cancellation()?.by;
+    if (cancelledBy) return { key: `common.orderCancelled.by.${cancelledBy}` };
     // Accepted late with a new time named: say when, not «Немного задерживаемся».
     const minutes = freshEstimateMinutes(order, new Date(this.now()));
     if (minutes !== null) return { key: 'tma.orderStatus.cooking', params: { min: minutes } };

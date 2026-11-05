@@ -348,8 +348,6 @@
       }
     }
   },
-  "productCaffeine": "Caffeine",
-  "productAllergens": "Allergens",
   "productNutrition": "Protein {p} g · Fat {f} g · Carbs {c} g",
   "@productNutrition": {
     "placeholders": {
@@ -366,12 +364,6 @@
   },
   "productNoStore": "Choose a store to order this.",
   "productLoadFailed": "Could not load this item.",
-  "dietVegan": "Vegan",
-  "dietVegetarian": "Vegetarian",
-  "dietGlutenFree": "Gluten-free",
-  "dietLactoseFree": "Lactose-free",
-  "dietDecaf": "Decaf",
-  "dietSugarFree": "Sugar-free",
   "cartTitle": "Your order",
   "cartEmptyTitle": "Your cart is empty",
   "cartEmptyBody": "Add something tasty from the menu.",
@@ -636,6 +628,42 @@
   "orderExpiredNotAccepted": "The store did not confirm the order — you were not charged",
   "orderExpiredNotAcceptedRefunded": "The store did not confirm the order — the money is on its way back",
   "orderExpiredPaymentNotCompleted": "The payment did not go through — the order is cancelled",
+  "orderCancelledByStore": "The store cancelled your order",
+  "@orderCancelledByStore": {
+    "description": "Order screen, under the status of a cancelled order: who cancelled it. The same story as the push."
+  },
+  "orderCancelledByCustomer": "You cancelled this order",
+  "orderCancelledCardDeclined": "The bank declined your card",
+  "orderCancelledBadgeStore": "Cancelled by the store",
+  "@orderCancelledBadgeStore": {
+    "description": "Order history: the status badge of an order the store cancelled."
+  },
+  "orderCancelledBadgeCustomer": "Cancelled by you",
+  "orderCancelledBadgeCardDeclined": "Card declined",
+  "cancelReasonOutOfStock": "Some items are out of stock.",
+  "@cancelReasonOutOfStock": {
+    "description": "Why the kitchen turned the order down, as the push words it."
+  },
+  "cancelReasonTooBusy": "The store is too busy right now.",
+  "cancelReasonClosing": "The store is closing.",
+  "cancelReasonOther": "The store cannot take the order.",
+  "cancelCardDeclinedHint": "Please order again with another card.",
+  "cancelStoreComment": "Note from the store: “{comment}”",
+  "@cancelStoreComment": {
+    "description": "The kitchen's own words when it turned the order down, shown as typed.",
+    "placeholders": {
+      "comment": {
+        "type": "String"
+      }
+    }
+  },
+  "cancelMoneyNotCharged": "Your card was not charged.",
+  "@cancelMoneyNotCharged": {
+    "description": "Where the money of a cancelled order is, as the push words it."
+  },
+  "cancelMoneyReleased": "You were not charged and the card hold is released.",
+  "cancelMoneyRefunded": "The money is on its way back to your card.",
+  "cancelMoneyHoldPending": "The card hold will be released automatically.",
   "statusUnknown": "Updating…",
   "stepReceived": "Received",
   "stepPreparing": "Preparing",
@@ -996,6 +1024,10 @@
   "storesKindAll": "All",
   "storesKindCoffee": "Coffee",
   "storesKindFood": "Food",
+  "storesLegendLabel": "Pin colours on the map",
+  "storesLegendOpen": "Open",
+  "storesLegendBusy": "Busy",
+  "storesLegendClosed": "Closed",
   "storesNearbyEmpty": "Nothing within {radius}",
   "@storesNearbyEmpty": {
     "placeholders": {
@@ -1016,14 +1048,6 @@
   "locationUnavailable": "Couldn't tell where you are. Try again in a moment.",
   "productNoteFood": "Order comment",
   "productNoteFoodHint": "E.g. warm it up, no sauce…",
-  "productContains": "Contains: {list}",
-  "@productContains": {
-    "placeholders": {
-      "list": {
-        "type": "String"
-      }
-    }
-  },
   "productAddonsNone": "none",
   "productRequired": "required",
   "productPairsWith": "Goes well with it",
@@ -1032,19 +1056,6 @@
   "@upsellTogether": {
     "description": "Title of a suggestions row, only over what the store's customers really bought together with these products."
   },
-  "allergenGluten": "gluten",
-  "allergenMilk": "milk",
-  "allergenLactose": "lactose",
-  "allergenEggs": "eggs",
-  "allergenNuts": "nuts",
-  "allergenPeanuts": "peanuts",
-  "allergenSoy": "soy",
-  "allergenFish": "fish",
-  "allergenShellfish": "shellfish",
-  "allergenSesame": "sesame",
-  "allergenCelery": "celery",
-  "allergenMustard": "mustard",
-  "allergenSulphites": "sulphites",
   "errCartEmpty": "Your cart is empty",
   "errStoreNotTakingOrders": "This store is not taking orders right now",
   "errStoreClosedAtTime": "The store is closed at that time — pick another time",

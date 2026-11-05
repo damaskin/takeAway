@@ -14,6 +14,7 @@ import {
   type StopListEntryDto,
   type StoreAdminDto,
 } from '../../core/catalog/admin-catalog.service';
+import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { OnboardingReturnComponent } from '../../shared/onboarding-return.component';
 import { describeMenuError } from './menu-errors';
 import { MenuCategoriesComponent } from './menu-categories.component';
@@ -205,7 +206,9 @@ type StockUntil = 'manual' | 'endOfDay';
         @if (selectedCategory()?.addOnsOnly) {
           <p class="addons-note" data-testid="menu-add-ons-only-note">
             {{ 'admin.menu.category.addOnsOnlyNote' | translate }}
-            <a routerLink="/ingredients">{{ 'admin.menu.category.addOnsOnlyLink' | translate }}</a>
+            @if (canOpenLibrary()) {
+              <a routerLink="/ingredients">{{ 'admin.menu.category.addOnsOnlyLink' | translate }}</a>
+            }
           </p>
         }
 
@@ -634,6 +637,8 @@ export class MenuPage {
 
   /** Sold-out marks live per store; kitchen staff and menu editors do not set them here. */
   readonly canManageStock = computed(() => STOCK_ROLES.includes(this.auth.user()?.role ?? ''));
+  /** The add-ons library page is the platform team's (see `ADMIN_ROLES.ingredients`): no link for a brand. */
+  readonly canOpenLibrary = computed(() => canAccess(this.auth.user()?.role as AdminRole | undefined, 'ingredients'));
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly stockStoreId = signal<string | null>(null);
   readonly stockStore = computed(() => this.stores().find((s) => s.id === this.stockStoreId()) ?? null);
@@ -979,8 +984,6 @@ function withListDefaults(p: ProductAdminDto): ProductAdminDto {
   return {
     ...p,
     imageUrls: p.imageUrls ?? [],
-    allergens: p.allergens ?? [],
-    dietTags: p.dietTags ?? [],
     storeIds: p.storeIds ?? [],
   };
 }

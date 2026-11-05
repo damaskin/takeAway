@@ -493,12 +493,6 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
-  String get productCaffeine => 'Кофеин';
-
-  @override
-  String get productAllergens => 'Аллергены';
-
-  @override
   String productNutrition(String p, String f, String c) {
     return 'Белки $p г · Жиры $f г · Углеводы $c г';
   }
@@ -508,24 +502,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get productLoadFailed => 'Не удалось загрузить позицию.';
-
-  @override
-  String get dietVegan => 'Веган';
-
-  @override
-  String get dietVegetarian => 'Вегетарианское';
-
-  @override
-  String get dietGlutenFree => 'Без глютена';
-
-  @override
-  String get dietLactoseFree => 'Без лактозы';
-
-  @override
-  String get dietDecaf => 'Без кофеина';
-
-  @override
-  String get dietSugarFree => 'Без сахара';
 
   @override
   String get cartTitle => 'Ваш заказ';
@@ -842,6 +818,56 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get orderExpiredPaymentNotCompleted => 'Оплата не завершилась — заказ отменён';
+
+  @override
+  String get orderCancelledByStore => 'Заведение отменило заказ';
+
+  @override
+  String get orderCancelledByCustomer => 'Вы отменили заказ';
+
+  @override
+  String get orderCancelledCardDeclined => 'Банк отклонил оплату картой';
+
+  @override
+  String get orderCancelledBadgeStore => 'Отменён заведением';
+
+  @override
+  String get orderCancelledBadgeCustomer => 'Отменён вами';
+
+  @override
+  String get orderCancelledBadgeCardDeclined => 'Карта отклонена';
+
+  @override
+  String get cancelReasonOutOfStock => 'Части позиций сейчас нет в наличии.';
+
+  @override
+  String get cancelReasonTooBusy => 'Заведение сейчас перегружено заказами.';
+
+  @override
+  String get cancelReasonClosing => 'Заведение закрывается.';
+
+  @override
+  String get cancelReasonOther => 'Заведение не может принять заказ.';
+
+  @override
+  String get cancelCardDeclinedHint => 'Оформите заказ ещё раз с другой картой.';
+
+  @override
+  String cancelStoreComment(String comment) {
+    return 'Комментарий заведения: «$comment»';
+  }
+
+  @override
+  String get cancelMoneyNotCharged => 'Деньги с карты не списывались.';
+
+  @override
+  String get cancelMoneyReleased => 'Деньги не списаны, блокировка на карте снята.';
+
+  @override
+  String get cancelMoneyRefunded => 'Деньги вернутся на карту.';
+
+  @override
+  String get cancelMoneyHoldPending => 'Блокировка на карте будет снята автоматически.';
 
   @override
   String get statusUnknown => 'Обновляем…';
@@ -1525,6 +1551,18 @@ class AppLocalizationsRu extends AppLocalizations {
   String get storesKindFood => 'Еда';
 
   @override
+  String get storesLegendLabel => 'Цвет точки на карте';
+
+  @override
+  String get storesLegendOpen => 'Открыта';
+
+  @override
+  String get storesLegendBusy => 'Загружена';
+
+  @override
+  String get storesLegendClosed => 'Закрыта';
+
+  @override
   String storesNearbyEmpty(String radius) {
     return 'В радиусе $radius ничего нет';
   }
@@ -1547,11 +1585,6 @@ class AppLocalizationsRu extends AppLocalizations {
   String get productNoteFoodHint => 'Например: разогреть, без соуса…';
 
   @override
-  String productContains(String list) {
-    return 'Содержит: $list';
-  }
-
-  @override
   String get productAddonsNone => 'не выбрано';
 
   @override
@@ -1565,45 +1598,6 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get upsellTogether => 'Часто берут вместе';
-
-  @override
-  String get allergenGluten => 'глютен';
-
-  @override
-  String get allergenMilk => 'молоко';
-
-  @override
-  String get allergenLactose => 'лактоза';
-
-  @override
-  String get allergenEggs => 'яйца';
-
-  @override
-  String get allergenNuts => 'орехи';
-
-  @override
-  String get allergenPeanuts => 'арахис';
-
-  @override
-  String get allergenSoy => 'соя';
-
-  @override
-  String get allergenFish => 'рыба';
-
-  @override
-  String get allergenShellfish => 'моллюски и ракообразные';
-
-  @override
-  String get allergenSesame => 'кунжут';
-
-  @override
-  String get allergenCelery => 'сельдерей';
-
-  @override
-  String get allergenMustard => 'горчица';
-
-  @override
-  String get allergenSulphites => 'сульфиты';
 
   @override
   String get errCartEmpty => 'Корзина пуста';

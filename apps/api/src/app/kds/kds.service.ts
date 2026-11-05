@@ -6,7 +6,6 @@ import {
   type StoreRejectionInfo,
   type StoreRejectReason,
 } from '../notifications/notifications.service';
-import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { readyEstimate } from '../kitchen/kitchen-timeline';
 import { wallClock } from '../kitchen/opening-hours';
 import { OrdersService } from '../orders/orders.service';
@@ -40,7 +39,6 @@ export class KdsService {
     private readonly cards: CardPaymentsService,
     private readonly holds: PaymentHoldsService,
     private readonly orders: OrdersService,
-    private readonly kitchen: KitchenLoadService,
   ) {}
 
   async listOpen(storeId: string): Promise<BoardRow[]> {
@@ -61,8 +59,7 @@ export class KdsService {
     const payable = orders.filter(
       (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
     );
-    const acceptance = this.kitchen.acceptance;
-    return payable.map((o) => toBoardRow(o, acceptance));
+    return payable.map((o) => toBoardRow(o));
   }
 
   /**
@@ -137,7 +134,7 @@ export class KdsService {
       by: 'store',
       allowedStatuses: REJECTABLE_STATUSES,
       reason: 'CARD_DECLINED',
-      comment: bankMessage,
+      bankMessage,
     });
     void this.notifications.notifyOrderStatus(
       {
@@ -362,7 +359,6 @@ export class KdsService {
       where: { storeId, id: { in: ids } },
       include: BOARD_INCLUDE,
     });
-    const acceptance = this.kitchen.acceptance;
-    return orders.map((o) => toBoardRow(o, acceptance));
+    return orders.map((o) => toBoardRow(o));
   }
 }

@@ -25,6 +25,10 @@ type Filter = 'all' | 'out' | 'unused';
  * Each add-on can carry the group an extra made of it starts in on a
  * product («Ваниль» → «Сиропы»); the customer apps show add-ons by group.
  *
+ * Since 2026-11-05 only the platform team opens this page
+ * (`ADMIN_ROLES.ingredients`); a brand adds add-ons from a product's options
+ * and stops them per store in the stop-list.
+ *
  * The add and edit forms are bound to form groups: the plain
  * `<form (ngSubmit)>` they used to be never fired without one, so "Add"
  * reloaded the page and nothing was ever added here.

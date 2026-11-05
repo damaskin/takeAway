@@ -11,7 +11,6 @@ export * from './lib/store-time-zone';
 export * from './lib/phone';
 export * from './lib/product-kind';
 export * from './lib/product-options';
-export * from './lib/allergens';
 export * from './lib/upsell';
 export * from './lib/category-kind';
 export * from './lib/contact';

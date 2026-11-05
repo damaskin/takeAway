@@ -75,6 +75,17 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
   payment: json['payment'] == null ? OrderPayment.none : _paymentFromJson(json['payment']),
   readyEstimateAt: json['readyEstimateAt'] == null ? null : DateTime.parse(json['readyEstimateAt'] as String),
   canCancel: json['canCancel'] as bool?,
+  cancelledBy: $enumDecodeNullable(
+    _$OrderCancellerEnumMap,
+    json['cancelledBy'],
+    unknownValue: JsonKey.nullForUndefinedEnumValue,
+  ),
+  cancelReason: $enumDecodeNullable(
+    _$OrderCancelReasonEnumMap,
+    json['cancelReason'],
+    unknownValue: OrderCancelReason.unknown,
+  ),
+  cancelComment: json['cancelComment'] as String?,
 );
 
 const _$OrderStatusEnumMap = {
@@ -99,6 +110,17 @@ const _$FulfillmentTypeEnumMap = {
   FulfillmentType.delivery: 'DELIVERY',
 };
 
+const _$OrderCancellerEnumMap = {OrderCanceller.customer: 'CUSTOMER', OrderCanceller.store: 'STORE'};
+
+const _$OrderCancelReasonEnumMap = {
+  OrderCancelReason.outOfStock: 'OUT_OF_STOCK',
+  OrderCancelReason.tooBusy: 'TOO_BUSY',
+  OrderCancelReason.closing: 'CLOSING',
+  OrderCancelReason.other: 'OTHER',
+  OrderCancelReason.cardDeclined: 'CARD_DECLINED',
+  OrderCancelReason.unknown: 'unknown',
+};
+
 OrderSummary _$OrderSummaryFromJson(Map<String, dynamic> json) => OrderSummary(
   id: json['id'] as String,
   orderCode: json['orderCode'] as String,
@@ -111,6 +133,16 @@ OrderSummary _$OrderSummaryFromJson(Map<String, dynamic> json) => OrderSummary(
   storeName: json['storeName'] as String,
   itemCount: (json['itemCount'] as num).toInt(),
   createdAt: DateTime.parse(json['createdAt'] as String),
+  cancelledBy: $enumDecodeNullable(
+    _$OrderCancellerEnumMap,
+    json['cancelledBy'],
+    unknownValue: JsonKey.nullForUndefinedEnumValue,
+  ),
+  cancelReason: $enumDecodeNullable(
+    _$OrderCancelReasonEnumMap,
+    json['cancelReason'],
+    unknownValue: OrderCancelReason.unknown,
+  ),
 );
 
 Map<String, dynamic> _$CreateOrderRequestToJson(CreateOrderRequest instance) => <String, dynamic>{

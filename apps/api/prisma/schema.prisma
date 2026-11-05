@@ -103,9 +103,10 @@ enum VariationType {
   CUP
 }
 
-/// What a menu category holds: which fields its products have in the
-/// editor, which ready-made option sets the admin offers, which placeholder
-/// a product without a photo gets. OTHER shows everything.
+/// What a menu category holds: which choice groups its products' options
+/// editor offers, which ready-made option sets the admin offers, which
+/// placeholder a product without a photo gets, drink or food in the
+/// analytics. OTHER offers everything.
 enum CategoryKind {
   HOT_DRINKS
   COLD_DRINKS
@@ -120,6 +121,8 @@ enum CategoryOptionKind {
   MODIFIER
 }
 
+// Deprecated since 2026-11-05: only `Product.dietTags` uses it, which nothing
+// reads or writes any more. Kept so the column's data survives.
 enum DietTag {
   VEGAN
   VEGETARIAN
@@ -151,6 +154,22 @@ enum OrderStatus {
   DELIVERED
   CANCELLED
   EXPIRED
+}
+
+/// Who called a CANCELLED order off.
+enum OrderCanceller {
+  CUSTOMER
+  STORE
+}
+
+/// Why the store called an order off: the kitchen's own reason when it
+/// turned the order down, or the customer's card declined when it accepted.
+enum OrderCancelReason {
+  OUT_OF_STOCK
+  TOO_BUSY
+  CLOSING
+  OTHER
+  CARD_DECLINED
 }
 
 enum OrderEventType {
@@ -968,9 +987,12 @@ model Store {
   kinds                 StoreKind[]        @default([COFFEE])
   // 0..100 — higher means kitchen is busier.
   busyMeter             Int                @default(0)
-  /// Fixed overhead on every order here, in seconds: ringing it up, plating,
-  /// handover. This is NOT the ETA a customer sees — that is this value plus
-  /// the live queue wait plus their own prep time. See KitchenLoadService.
+  /// «Время для принятия заказа» (since 2026-11-05; was «Базовое время на
+  /// заказ»), in seconds, whole minutes 1–60: half of it after an order
+  /// reached the board the kitchen is reminded to accept it, all of it and
+  /// the order is cancelled (acceptancePolicy in kitchen/kitchen-timeline).
+  /// Still the fixed overhead of the ETA a customer sees — this value plus
+  /// the live queue wait plus their own cooking. See KitchenLoadService.
   baseEtaSeconds        Int                @default(600)
   /// How many orders this kitchen genuinely works at once. Queue wait is
   /// outstanding work divided by this, so it is the one knob that decides
@@ -1178,12 +1200,16 @@ model Product {
   basePriceCents   Int
   // Base preparation time in seconds; variations/modifiers add deltas.
   prepTimeSeconds  Int          @default(180)
+  // Deprecated since 2026-11-05, unused: no longer edited in the admin or sent
+  // to the apps. Kept (with allergens and dietTags) so the data survives.
   caffeineLevel    Int? // 0..4 cups
   calories         Int?
   proteinsGrams    Float?
   fatsGrams        Float?
   carbsGrams       Float?
+  // Deprecated since 2026-11-05, unused — see caffeineLevel.
   allergens        String[]     @default([])
+  // Deprecated since 2026-11-05, unused — see caffeineLevel.
   dietTags         DietTag[]    @default([])
   imageUrls        String[]     @default([])
   visible          Boolean      @default(true)
@@ -1551,6 +1577,14 @@ model Order {
   outForDeliveryAt    DateTime?
   deliveredAt         DateTime?
   cancelledAt         DateTime?
+  /// Who cancelled the order, why and what the kitchen added — what the
+  /// customer's order screen says about it. Mirrors the CANCELLED event;
+  /// null unless CANCELLED, and on orders cancelled before 2026-11-05 whose
+  /// event did not say. `cancelComment` is the kitchen's own words, shown as
+  /// is; never the bank's message on a declined card.
+  cancelledBy         OrderCanceller?
+  cancelReason        OrderCancelReason?
+  cancelComment       String?
   expiredAt           DateTime?
   /// When the order became the kitchen's to accept — shown on the board:
   /// at creation when nothing has to be paid by card, else when the card

@@ -63,6 +63,38 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickedUpTitle: 'Order picked up. Have a great day!',
       pickedUpSlogan: 'Zero minutes in a queue, as promised. See you soon!',
     },
+    /**
+     * Who called a cancelled order off, why and where the money is — see
+     * orderCancellation in @takeaway/utils. The same story as the push.
+     */
+    orderCancelled: {
+      by: {
+        store: 'The store cancelled your order',
+        customer: 'You cancelled this order',
+        cardDeclined: 'The bank declined your card',
+      },
+      /** The status on an order history card. */
+      badge: {
+        store: 'Cancelled by the store',
+        customer: 'Cancelled by you',
+        cardDeclined: 'Card declined',
+      },
+      /** The kitchen's reason, as the push words it. */
+      reason: {
+        OUT_OF_STOCK: 'Some items are out of stock.',
+        TOO_BUSY: 'The store is too busy right now.',
+        CLOSING: 'The store is closing.',
+        OTHER: 'The store cannot take the order.',
+      },
+      cardDeclinedHint: 'Please order again with another card.',
+      comment: 'Note from the store: “{{comment}}”',
+      money: {
+        notCharged: 'Your card was not charged.',
+        released: 'You were not charged and the card hold is released.',
+        refunded: 'The money is on its way back to your card.',
+        holdPending: 'The card hold will be released automatically.',
+      },
+    },
     brand: 'takeAway',
     signIn: 'Sign in',
     signOut: 'Sign out',
@@ -158,29 +190,18 @@ export const TRANSLATIONS_EN: TranslationTree = {
       coffee: 'Coffee',
       food: 'Food',
     },
-    /** Allergen codes a product may list; any other value is shown as the business wrote it. */
-    allergens: {
-      GLUTEN: 'Gluten',
-      MILK: 'Milk',
-      LACTOSE: 'Lactose',
-      EGGS: 'Eggs',
-      NUTS: 'Nuts',
-      PEANUTS: 'Peanuts',
-      SOY: 'Soy',
-      FISH: 'Fish',
-      SHELLFISH: 'Shellfish',
-      SESAME: 'Sesame',
-      CELERY: 'Celery',
-      MUSTARD: 'Mustard',
-      SULPHITES: 'Sulphites',
+    /** The legend under the stores map: what a pin's colour says. */
+    storeTones: {
+      label: 'Pin colours on the map',
+      open: 'Open',
+      busy: 'Busy',
+      closed: 'Closed',
     },
     /** The product page on the site and the product screen in the Mini App. */
     product: {
       addons: 'Add-ons',
       required: 'required',
       notChosen: 'none',
-      caffeine: 'Caffeine',
-      allergens: 'Allergens',
       decrease: 'Fewer: {{name}}',
       increase: 'More: {{name}}',
       noteDrink: 'Note for the barista',
@@ -300,7 +321,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         temperature: 'Temperature',
         cup: 'Cup',
         addons: 'Add-ons',
-        caffeine: 'Caffeine',
         specialInstructions: 'Special instructions',
         kcal: '{{calories}} kcal',
       },
@@ -474,6 +494,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       pickupAt: 'Pickup at {{time}}',
       backToMenu: 'Back to menu',
       notFound: 'Order not found',
+      /** Above the order while it is still in work: the page updates by itself. */
+      keepOpen: 'Keep this page open — your order status updates here on its own.',
     },
     auth: {
       welcomeBack: 'Welcome back',
@@ -1408,6 +1430,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noStores: 'This brand has no stores you can run yet.',
       working: 'One moment…',
       pendingBadge: 'Waiting to be accepted: {{count}}',
+      /** Other stores with orders nobody has accepted: what else the sidebar counter counts. */
+      elsewhere: 'Waiting to be accepted at other stores:',
+      storeWaiting: '{{name}} · waiting: {{count}}',
       stopList: 'Stop list',
       errors: {
         gone: 'The order has already changed — the board is refreshed.',
@@ -1501,12 +1526,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       },
       preorders: {
         title: 'Pre-orders',
-        hint: 'move to «New» 15 minutes before cooking starts; they can be accepted now',
+        hint: 'move to «New» once accepted, or 15 minutes before cooking starts',
         dueStart: 'for {{time}} · start at {{start}}',
       },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
         awaitingPreorder: 'Waiting to be accepted',
+        /** Half the store's accept time has passed: the reminder, red and pulsing. */
+        acceptNow: 'Accept the order · waiting {{minutes}} min',
         autoCancelIn: 'cancelled automatically in {{time}}',
         late: '{{minutes}} min late',
       },
@@ -1746,7 +1773,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
       viewAll: 'View all →',
       storePerf: 'Stores performance',
       newPromo: '+ New promo',
-      createTitle: 'New promo',
       orderProductLine: 'Order · {{count}} items',
     },
     orderDetail: {
@@ -1870,13 +1896,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         description: 'Description',
         basePriceCents: 'Price',
         prepTimeSeconds: 'Preparation time',
-        caffeineLevel: 'Caffeine',
         calories: 'Energy',
         proteinsGrams: 'Protein',
         fatsGrams: 'Fat',
         carbsGrams: 'Carbohydrates',
-        allergens: 'Allergens',
-        dietTags: 'Dietary',
         priceDeltaCents: 'Surcharge',
         minCount: 'Minimum',
         maxCount: 'Maximum',
@@ -1895,27 +1918,27 @@ export const TRANSLATIONS_EN: TranslationTree = {
         HOT_DRINKS: {
           name: 'Hot drinks',
           short: 'Hot',
-          hint: 'Coffee, tea, cocoa. The product card has caffeine and size, milk, syrups.',
+          hint: 'Coffee, tea, cocoa. Options are size, milk, syrups.',
         },
         COLD_DRINKS: {
           name: 'Cold drinks',
           short: 'Cold',
-          hint: 'Iced coffee, lemonades, smoothies, shakes. The product card has caffeine and size, milk, ice, syrups.',
+          hint: 'Iced coffee, lemonades, smoothies, shakes. Options are size, milk, ice, syrups.',
         },
         FOOD: {
           name: 'Food',
           short: 'Food',
-          hint: 'Shawarma, burgers, sandwiches, breakfasts. The product card has allergens, no caffeine; add-ons are sauces, «add», «remove».',
+          hint: 'Shawarma, burgers, sandwiches, breakfasts. Add-ons are sauces, «add», «remove».',
         },
         BAKERY: {
           name: 'Bakery and desserts',
           short: 'Bakery',
-          hint: 'Croissants, cakes, cookies. The product card has allergens, no caffeine; add-ons are warming up, jam.',
+          hint: 'Croissants, cakes, cookies. Add-ons are warming up, jam.',
         },
         OTHER: {
           name: 'Other',
           short: 'Other',
-          hint: 'Anything else: the product card shows every field, there is no ready-made option set.',
+          hint: 'Anything else: every option group is available, there is no ready-made set.',
         },
       },
       category: {
@@ -1933,7 +1956,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
           'The category and its products are left out of the menu on the site, in Telegram and in the app, and cannot be put in a cart. They stay in the admin, the stop-list and the POS sync. Meant for "extra ingredients" imported from Poster.',
         addOnsOnlyBadge: 'Add-ons only',
         addOnsOnlyNote:
-          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, add it to the add-ons library and pick it in the drink\'s options.',
+          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, open the drink\'s options and add it under "Add-ons" — pick it from the list or type its name.',
         addOnsOnlyLink: 'Open add-ons →',
         kind: 'What the category holds',
         kindSuggested: 'Picked from the name — change it if it is wrong.',
@@ -1984,41 +2007,15 @@ export const TRANSLATIONS_EN: TranslationTree = {
         options: 'Options',
         hideOptions: 'Hide options',
         details: 'For customers',
+        detailsHint: 'Customers see energy and nutrition on the product page. Optional.',
         calories: 'Energy, kcal',
         proteins: 'Protein, g',
         fats: 'Fat, g',
         carbs: 'Carbohydrates, g',
-        caffeine: 'Caffeine',
-        caffeineUnset: 'not set',
-        caffeineLevel: {
-          '0': '0 — caffeine-free',
-          '1': '1 — mild',
-          '2': '2 — medium',
-          '3': '3 — strong',
-          '4': '4 — very strong',
-        },
-        dietTags: 'Dietary',
-        diet: {
-          VEGAN: 'Vegan',
-          VEGETARIAN: 'Vegetarian',
-          GLUTEN_FREE: 'Gluten-free',
-          LACTOSE_FREE: 'Lactose-free',
-          DECAF: 'Decaf',
-          SUGAR_FREE: 'Sugar-free',
-        },
-        allergens: 'Allergens',
-        allergensHint: 'Separated by commas, e.g. milk, nuts, gluten',
         photosAfterCreate: 'Products with a photo sell better — add one right after creating the product.',
         stores: 'Sold in stores',
         storesHint: 'Same price in every store. New stores of the brand get the product automatically.',
         storesNone: 'No store is ticked — nobody will see the product.',
-        kindNote: 'Card fields for a «{{kind}}» category.',
-        hiddenData:
-          'The product has values a «{{kind}}» category does not show: {{fields}}. They are kept as they are — clear them if they are not needed.',
-        hiddenClear: 'Clear',
-        allergensChecklist: 'Allergens',
-        allergensOther: 'Other allergens',
-        allergensOtherHint: 'Comma-separated — whatever the list does not have.',
         applyCategoryOptions: 'Add the category options ({{count}})',
         applyCategoryOptionsHint:
           "Variations and add-ons from the category's options, with their prices. They can be changed on this product later.",
@@ -2044,7 +2041,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         presetKind: 'Set for',
         previewTitle: 'Set for «{{kind}}»',
         previewHint:
-          'Untick what you do not sell and type your prices. Add-ons already in the add-ons library come from there, with their price.',
+          'Untick what you do not sell and type your prices. Add-ons the brand already has come with their usual price.',
         fromLibrary: 'from the library',
         inSet: 'already in the set',
         save: 'Save the set ({{count}})',
@@ -2089,14 +2086,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
         delete: 'Delete',
         deleteConfirm: 'Delete "{{name}}"?',
         deleteLinkedConfirm:
-          'Take "{{name}}" off this product? It stays in the add-ons library — you can pick it here again or delete it there.',
+          'Take "{{name}}" off this product? Other products keep it, and you can pick it here again from the list.',
         noVariations: 'No variations yet.',
         noModifiers: 'No extras yet.',
         ingredient: 'Stock from the library',
         ingredientNone: 'Not tracked — always shown',
         outOfStock: 'Out of stock',
         libraryHint:
-          'Extras and milks live in the add-ons library: their name, usual price and stock. Pick one from the list or type a new one — it joins the library. "Delete" here only takes the add-on off this product.',
+          'Extras and milks are shared by all the brand\'s products: pick one from the list or type a new one — other products can pick it later too. Ran out in a store? Mark it in the stop-list. "Delete" here only takes the add-on off this product.',
         libraryLink: 'Open the add-ons library →',
         fromLibrary: 'From the library',
         fromLibraryPlaceholder: 'Pick an add-on',
@@ -2116,7 +2113,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         surcharge: 'The surcharge is a number of zero or more, such as 5 or 7.50.',
         count: 'Counts and positions are whole numbers, such as 1 or 3.',
         slug: 'Lowercase latin letters, digits and hyphens only, 2 to 60 characters.',
-        allergens: 'At most 20 allergens, 40 characters each.',
         imageType: 'Only JPEG, PNG, WebP and AVIF images are accepted.',
         imageSize: 'The file is larger than 5 MB. Make it smaller and try again.',
         storageUnavailable: 'Photo uploads are not set up on the server. Contact your administrator.',
@@ -2362,9 +2358,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
           SHELF: 'From a pickup shelf',
           LOCKER: 'From a locker',
         },
-        baseEta: 'Base time per order, min',
+        baseEta: 'Time to accept an order, min',
         baseEtaHint:
-          "The store's time is only ringing up, packing and handing over. The «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).",
+          'Whole minutes, 1 to 60. Half of it gone and the order not accepted — the kitchen is reminded to accept it; all of it gone — the order is cancelled automatically and the customer gets the money back. It is part of the ready time too: the «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).',
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
@@ -2745,6 +2741,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         'Issue prepaid balance customers can redeem at checkout. Codes are random; share them via the recipient email and a copy of the message.',
       amount: 'Amount',
       currency: 'Currency',
+      currencyHint: 'Cards are issued in Transnistrian rubles only.',
+      noBrand: 'Pick a brand in the top bar — cards are issued for one brand.',
       recipientEmail: 'Recipient email (optional)',
       message: 'Message (optional)',
       issueCta: 'Issue gift card',
@@ -2776,6 +2774,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     promo: {
       title: 'Promo codes',
+      createTitle: 'New promo code',
       editTitle: 'Promo code {{code}}',
       editTiers: 'Edit tiers',
       newPromo: '+ New promo',
@@ -2820,6 +2819,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         typeBogo: 'BOGO',
         typePoints: 'Points multiplier (×10)',
         value: 'Value',
+        valuePercent: 'Discount, %',
         starts: 'Starts at',
         ends: 'Ends at',
         statusDraft: 'Draft',
@@ -2895,6 +2895,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         PROMO_ENDED: 'The promo is past its end date — move the end date first.',
         PROMO_DATES: 'The end must be later than the start.',
         PROMO_STORE: 'That store is not one of the brand.',
+        PROMO_TYPE: 'Promo codes are percent only now — a code can only switch to percent.',
       },
     },
     plans: {
@@ -2932,7 +2933,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         promo: {
           title: 'Promo codes',
-          description: 'Discounts and bonuses by code: percent, amount, free item, points multiplier.',
+          description: 'Percent discounts by code — for every customer or only the inactive ones.',
         },
         campaigns: {
           title: 'Push campaigns',

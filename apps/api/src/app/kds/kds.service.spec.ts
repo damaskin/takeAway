@@ -1,7 +1,6 @@
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 
-import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
@@ -77,10 +76,6 @@ describe('KdsService.accept', () => {
         { provide: CardPaymentsService, useValue: payments },
         { provide: OrdersService, useValue: orders },
         { provide: PaymentHoldsService, useValue: holds },
-        {
-          provide: KitchenLoadService,
-          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
-        },
       ],
     }).compile();
 
@@ -124,8 +119,10 @@ describe('KdsService.accept', () => {
 
     expect(orders.cancelOrder).toHaveBeenCalledWith(
       expect.objectContaining({ id: order.id }),
-      expect.objectContaining({ by: 'store', reason: 'CARD_DECLINED' }),
+      expect.objectContaining({ by: 'store', reason: 'CARD_DECLINED', bankMessage: 'Insufficient funds' }),
     );
+    // The bank's words stay on the event; the customer's screen says their card was declined.
+    expect(orders.cancelOrder.mock.calls[0][1]).not.toHaveProperty('comment');
     expect(notifications.notifyOrderStatus).toHaveBeenCalledWith(
       expect.objectContaining({ id: order.id }),
       'CANCELLED',
@@ -258,16 +255,52 @@ describe('KdsService.listOpen', () => {
         { provide: CardPaymentsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
         { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
-        {
-          provide: KitchenLoadService,
-          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
-        },
       ],
     }).compile();
 
     const rows = await module.get(KdsService).listOpen('store-1');
 
     expect(rows.map((r) => r.id)).toEqual(['held', 'accepted']);
+  });
+
+  it("times the acceptance by the store's accept time: the reminder at half, the auto-cancel at all of it", async () => {
+    const row = {
+      id: 'held',
+      storeId: 'store-1',
+      orderCode: '1',
+      status: 'PAID',
+      pickupMode: 'ASAP',
+      pickupAt: new Date('2026-09-22T10:00:00.000Z'),
+      createdAt: new Date('2026-09-22T09:50:00.000Z'),
+      customerName: null,
+      notes: null,
+      items: [],
+      events: [],
+      prepSeconds: 120,
+      workSeconds: 120,
+      kitchenVisibleAt: new Date('2026-09-22T09:50:00.000Z'),
+      payments: [],
+      store: { kitchenParallelism: 2, baseEtaSeconds: 14 * 60 },
+    };
+    const module = await Test.createTestingModule({
+      providers: [
+        KdsService,
+        { provide: PrismaService, useValue: { order: { findMany: jest.fn().mockResolvedValue([row]) } } },
+        { provide: RealtimeGateway, useValue: {} },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CardPaymentsService, useValue: {} },
+        { provide: OrdersService, useValue: {} },
+        { provide: PaymentHoldsService, useValue: { cardPaymentRequired: () => true } },
+      ],
+    }).compile();
+
+    const [shown] = await module.get(KdsService).listOpen('store-1');
+
+    expect(shown).toMatchObject({
+      awaitingSince: '2026-09-22T09:50:00.000Z',
+      acceptAlertAt: '2026-09-22T09:57:00.000Z',
+      acceptDeadlineAt: '2026-09-22T10:04:00.000Z',
+    });
   });
 });
 
@@ -303,10 +336,6 @@ describe('KdsService.reject', () => {
         { provide: NotificationsService, useValue: notifications },
         { provide: CardPaymentsService, useValue: cards },
         { provide: PaymentHoldsService, useValue: {} },
-        {
-          provide: KitchenLoadService,
-          useValue: { acceptance: { acceptAlertSeconds: 180, acceptTimeoutSeconds: 480 } },
-        },
         { provide: OrdersService, useValue: orders },
       ],
     }).compile();

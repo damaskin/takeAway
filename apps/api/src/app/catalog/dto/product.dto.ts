@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CategoryKind, DietTag, VariationType } from '@prisma/client';
+import { CategoryKind, VariationType } from '@prisma/client';
 
 export class VariationDto {
   @ApiProperty()
@@ -80,9 +80,6 @@ export class ProductDto {
   prepTimeSeconds!: number;
 
   @ApiProperty({ nullable: true, type: Number })
-  caffeineLevel!: number | null;
-
-  @ApiProperty({ nullable: true, type: Number })
   calories!: number | null;
 
   @ApiProperty({ nullable: true, type: Number })
@@ -93,12 +90,6 @@ export class ProductDto {
 
   @ApiProperty({ nullable: true, type: Number })
   carbsGrams!: number | null;
-
-  @ApiProperty({ type: [String] })
-  allergens!: string[];
-
-  @ApiProperty({ enum: DietTag, isArray: true })
-  dietTags!: DietTag[];
 
   @ApiProperty({ type: [String] })
   imageUrls!: string[];

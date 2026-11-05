@@ -4,7 +4,6 @@ import {
   formatMinutesInput,
   formatMoneyInput,
   moneyValidator,
-  parseAllergens,
   parseAmount,
   parseCount,
   parseMinutes,
@@ -77,11 +76,6 @@ describe('menu input', () => {
     expect(parseCount('3,5')).toBeNull();
     expect(parseCount('0', 1)).toBeNull();
     expect(parseCount('100', 0, 99)).toBeNull();
-  });
-
-  it('splits allergens on commas, trims them and drops repeats', () => {
-    expect(parseAllergens('молоко, Орехи;глютен,, орехи ')).toEqual(['молоко', 'Орехи', 'глютен']);
-    expect(parseAllergens('   ')).toEqual([]);
   });
 
   it('lets an empty price field through for `required` to report', () => {

@@ -6,6 +6,7 @@ import {
   sortStoresByAvailability,
   storeAvailability,
   storeHoursNote,
+  storeTone,
   todaysOpeningHours,
 } from './store';
 
@@ -44,6 +45,27 @@ describe('storeAvailability', () => {
 
   it('keeps an API without the newer fields open', () => {
     expect(storeAvailability({ status: 'OPEN' })).toBe('open');
+  });
+});
+
+describe('storeTone', () => {
+  it('is open while an order for now is taken', () => {
+    expect(storeTone({ status: 'OPEN', acceptingOrders: true, openNow: true })).toBe('open');
+    expect(storeTone({ status: 'OPEN' })).toBe('open');
+  });
+
+  it('is busy while the kitchen says «Загружены» and still takes an order for now', () => {
+    expect(storeTone({ status: 'OVERLOADED', acceptingOrders: true, openNow: true })).toBe('busy');
+  });
+
+  it('is closed for pre-orders only — outside hours, paused, a full queue', () => {
+    expect(storeTone({ status: 'OPEN', acceptingOrders: true, openNow: false })).toBe('closed');
+    expect(storeTone({ status: 'OVERLOADED', acceptingOrders: true, openNow: false })).toBe('closed');
+  });
+
+  it('is closed when no order is taken at all', () => {
+    expect(storeTone({ status: 'CLOSED', acceptingOrders: true, openNow: true })).toBe('closed');
+    expect(storeTone({ status: 'OPEN', acceptingOrders: false, openNow: false })).toBe('closed');
   });
 });
 

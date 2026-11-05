@@ -6,11 +6,14 @@ import {
   storeAvailability,
   storeKinds,
   storeMatchesKind,
+  storeTone,
   type StoreKindFilter,
+  type StoreTone,
 } from '@takeaway/utils';
 import {
   LeafletMapComponent,
   STORE_KIND_GLYPHS,
+  STORE_PIN_TONES,
   StoreLogoComponent,
   type LatLng,
   type MapMarker,
@@ -36,13 +39,20 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
   FOOD: 'common.storeKinds.food',
 };
 
+const TONE_LABELS: Record<StoreTone, string> = {
+  open: 'common.storeTones.open',
+  busy: 'common.storeTones.busy',
+  closed: 'common.storeTones.closed',
+};
+
 /**
  * TMA Store Selector — pencil POOLf.
  *
  * Body (gap 16):
  *   searchBar (44px, foam) — narrows the map and the list by name or address
  *   mapFrame  (160px) — a tap on a pin selects that store's card below and
- *             scrolls it into view
+ *             scrolls it into view; a pin's colour is the store's status
+ *             (open, busy, closed for an order now), with a legend under it
  *   "Nearby" section label + «Рядом со мной»: where the customer is (Telegram's
  *             LocationManager, else the browser), then the stores by distance
  *             with the customer's own dot on the map
@@ -116,12 +126,36 @@ const KIND_LABELS: Record<StoreKindFilter, string> = {
 
       <!-- Map: a tap on a pin picks that store below -->
       @if (storeMarkers().length > 0) {
-        <div style="height: 160px; border-radius: 16px; overflow: hidden">
-          <lib-leaflet-map
-            [markers]="storeMarkers()"
-            [userPosition]="userPosition()"
-            (markerClicked)="selectFromMap($event)"
-          />
+        <div class="flex flex-col" style="gap: 8px">
+          <div style="height: 160px; border-radius: 16px; overflow: hidden">
+            <lib-leaflet-map
+              [markers]="storeMarkers()"
+              [userPosition]="userPosition()"
+              (markerClicked)="selectFromMap($event)"
+            />
+          </div>
+          <!-- What a pin's colour says -->
+          <ul
+            class="flex items-center flex-wrap"
+            data-testid="map-legend"
+            [attr.aria-label]="'common.storeTones.label' | translate"
+            style="gap: 4px 14px; margin: 0; padding: 0 4px; list-style: none"
+          >
+            @for (t of tones; track t) {
+              <li
+                class="flex items-center"
+                [attr.data-tone]="t"
+                style="gap: 6px; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+              >
+                <span
+                  aria-hidden="true"
+                  [style.background]="toneColor(t)"
+                  style="width: 10px; height: 10px; border-radius: 50%; flex: none"
+                ></span>
+                {{ toneLabel(t) | translate }}
+              </li>
+            }
+          </ul>
         </div>
       }
 
@@ -246,6 +280,7 @@ export class TmaStoresPage implements OnInit {
   readonly stores = signal<StoreListItem[]>([]);
   readonly kind = signal<StoreKindFilter>('ALL');
   readonly kinds: StoreKindFilter[] = ['ALL', 'COFFEE', 'FOOD'];
+  readonly tones: StoreTone[] = ['open', 'busy', 'closed'];
   /** What the customer typed into the search bar. */
   readonly query = signal('');
   /** Where the customer is, once they shared it: the stores come by distance and the map shows a dot. */
@@ -283,6 +318,7 @@ export class TmaStoresPage implements OnInit {
         label: s.name,
         kind: 'store',
         sells: storeKinds(s),
+        tone: storeTone(s),
       })),
   );
 
@@ -367,6 +403,15 @@ export class TmaStoresPage implements OnInit {
   /** The chip's glyph — the same one the pins draw; none for «Все». */
   glyph(k: StoreKindFilter): string | null {
     return k === 'ALL' ? null : STORE_KIND_GLYPHS[k];
+  }
+
+  /** The legend's dot: the very colour the pins of [tone] take. */
+  toneColor(tone: StoreTone): string {
+    return STORE_PIN_TONES[tone].fill;
+  }
+
+  toneLabel(tone: StoreTone): string {
+    return TONE_LABELS[tone];
   }
 
   distanceLabel(meters: number): string {

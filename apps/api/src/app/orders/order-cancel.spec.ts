@@ -64,6 +64,9 @@ function cancelledRow(base: ReturnType<typeof orderRow>) {
     readyAt: null,
     pickedUpAt: null,
     cancelledAt: at('2026-10-20T09:02:00Z'),
+    cancelledBy: 'CUSTOMER',
+    cancelReason: null,
+    cancelComment: null,
     expiredAt: null,
     readyEstimateAt: null,
     deliveryAddressLine: null,
@@ -90,7 +93,7 @@ function harness(found: ReturnType<typeof orderRow>) {
     },
   };
   const prisma = {
-    order: { findUnique: jest.fn().mockResolvedValue(found) },
+    order: { findUnique: jest.fn().mockResolvedValue(found), findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const release = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
@@ -125,6 +128,7 @@ describe('OrdersService.cancel (item 19)', () => {
 
     expect(dto.status).toBe('CANCELLED');
     expect(dto.canCancel).toBe(false);
+    expect(dto).toMatchObject({ cancelledBy: 'CUSTOMER', cancelReason: null, cancelComment: null });
     // Claimed only while still waiting and with nothing captured, so an accept
     // (which captures first) racing it cannot leave charged money behind.
     expect(tx.order.updateMany).toHaveBeenCalledWith({
@@ -133,7 +137,13 @@ describe('OrdersService.cancel (item 19)', () => {
         status: { in: ['CREATED', 'PAID'] },
         payments: { none: { status: { in: ['SUCCEEDED', 'PARTIALLY_REFUNDED'] } } },
       },
-      data: { status: 'CANCELLED', cancelledAt: expect.any(Date) },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: expect.any(Date),
+        cancelledBy: 'CUSTOMER',
+        cancelReason: null,
+        cancelComment: null,
+      },
     });
     expect(holds.releaseForOrder).toHaveBeenCalledWith('order-1', 'order-cancelled-by-customer');
     expect(realtime.emitKdsOrderChanged).toHaveBeenCalledWith({
@@ -199,6 +209,112 @@ describe('OrdersService.cancel (item 19)', () => {
   it("answers 404 for somebody else's order", async () => {
     const { service } = harness(orderRow({ userId: 'user-2' }));
     await expect(service.cancel('user-1', 'order-1')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+/**
+ * The customer's order screen says who cancelled the order and why (item 7,
+ * 2026-11-05): written on the order with the status, so the re-read that
+ * follows `order.statusChanged` already carries it.
+ */
+describe('OrdersService.cancelOrder — who and why', () => {
+  const STORE_REJECT = { actorId: 'staff-1', by: 'store' as const, allowedStatuses: new Set(['CREATED', 'PAID']) };
+
+  it("keeps the kitchen's reason and comment on the order and its event", async () => {
+    const { service, tx } = harness(orderRow({ status: 'PAID' }));
+
+    await service.cancelOrder(
+      { id: 'order-1', status: 'PAID' },
+      { ...STORE_REJECT, reason: 'OUT_OF_STOCK', comment: 'Нет овсяного молока' },
+    );
+
+    expect(tx.order.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: expect.any(Date),
+          cancelledBy: 'STORE',
+          cancelReason: 'OUT_OF_STOCK',
+          cancelComment: 'Нет овсяного молока',
+        },
+      }),
+    );
+    expect(tx.order.update.mock.calls[0][0].data.events.create.payload).toEqual({
+      from: 'PAID',
+      by: 'store',
+      reason: 'OUT_OF_STOCK',
+      comment: 'Нет овсяного молока',
+    });
+  });
+
+  it("keeps the bank's message on a declined card off the customer's screen", async () => {
+    const { service, tx } = harness(orderRow({ status: 'PAID' }));
+
+    await service.cancelOrder(
+      { id: 'order-1', status: 'PAID' },
+      { ...STORE_REJECT, reason: 'CARD_DECLINED', bankMessage: 'Insufficient funds' },
+    );
+
+    expect(tx.order.updateMany.mock.calls[0][0].data).toMatchObject({
+      cancelledBy: 'STORE',
+      cancelReason: 'CARD_DECLINED',
+      cancelComment: null,
+    });
+    expect(tx.order.update.mock.calls[0][0].data.events.create.payload).toEqual({
+      from: 'PAID',
+      by: 'store',
+      reason: 'CARD_DECLINED',
+      bankMessage: 'Insufficient funds',
+    });
+  });
+
+  it("shows the customer who cancelled, why and the kitchen's comment", async () => {
+    const found = orderRow();
+    const { service, tx } = harness(found);
+    tx.order.update.mockResolvedValue({
+      ...cancelledRow(found),
+      cancelledBy: 'STORE',
+      cancelReason: 'TOO_BUSY',
+      cancelComment: 'Очередь на 40 минут',
+    });
+
+    const dto = await service.cancel('user-1', 'order-1');
+
+    expect(dto).toMatchObject({ cancelledBy: 'STORE', cancelReason: 'TOO_BUSY', cancelComment: 'Очередь на 40 минут' });
+  });
+
+  it('says nothing about an order cancelled before the reason was kept', async () => {
+    const found = orderRow();
+    const { service, tx } = harness(found);
+    tx.order.update.mockResolvedValue({
+      ...cancelledRow(found),
+      cancelledBy: null,
+      cancelReason: null,
+      cancelComment: null,
+    });
+
+    const dto = await service.cancel('user-1', 'order-1');
+
+    expect(dto).toMatchObject({ cancelledBy: null, cancelReason: null, cancelComment: null });
+  });
+
+  it('tells the order history who cancelled and why', async () => {
+    const found = orderRow();
+    const { service, prisma } = harness(found);
+    prisma.order.findMany.mockResolvedValue([
+      {
+        ...cancelledRow(found),
+        cancelledBy: 'STORE',
+        cancelReason: 'CLOSING',
+        cancelComment: 'Закрываемся раньше',
+        items: [{ quantity: 2 }],
+      },
+    ]);
+
+    const [summary] = await service.listForUser('user-1', 20, 'HISTORY');
+
+    expect(summary).toMatchObject({ status: 'CANCELLED', cancelledBy: 'STORE', cancelReason: 'CLOSING', itemCount: 2 });
+    expect(summary).not.toHaveProperty('cancelComment');
   });
 });
 

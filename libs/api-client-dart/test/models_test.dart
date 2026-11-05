@@ -210,6 +210,21 @@ void main() {
       expect(product.brandId, isNotEmpty);
     });
 
+    test('reads a product from an API that still sends caffeine, allergens and diet tags, and drops them', () {
+      final product = ProductDetail.fromJson({
+        ...fixture('product_detail.json')! as Map<String, dynamic>,
+        'caffeineLevel': 2,
+        'calories': 150,
+        'allergens': ['MILK'],
+        'dietTags': ['VEGAN'],
+      });
+      expect(product.calories, 150);
+      final json = product.toJson();
+      expect(json.keys, isNot(contains('caffeineLevel')));
+      expect(json.keys, isNot(contains('allergens')));
+      expect(json.keys, isNot(contains('dietTags')));
+    });
+
     test('reads category kinds and add-on groups, and null from an API that predates them', () {
       final raw = fixture('menu.json')! as Map<String, dynamic>;
       final categories = (raw['categories'] as List).cast<Map<String, dynamic>>();
@@ -410,6 +425,68 @@ void main() {
       expect(older.customerCanCancel, isTrue);
       expect(Order.fromJson({...orderJson(), 'status': 'ACCEPTED'}).customerCanCancel, isFalse);
       expect(Order.fromJson(orderJson()).customerCanCancel, isFalse, reason: 'IN_PROGRESS');
+    });
+
+    test('reads who cancelled the order, why and what the kitchen added', () {
+      final rejected = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'OUT_OF_STOCK',
+        'cancelComment': 'Нет овсяного молока',
+      });
+      expect(rejected.cancelledBy, OrderCanceller.store);
+      expect(rejected.cancelReason, OrderCancelReason.outOfStock);
+      expect(rejected.cancelComment, 'Нет овсяного молока');
+      expect(rejected.copyWithStatus(OrderStatus.cancelled).cancelComment, 'Нет овсяного молока');
+
+      final declined = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'CARD_DECLINED',
+      });
+      expect(declined.cancelReason, OrderCancelReason.cardDeclined);
+      expect(declined.cancelComment, isNull);
+
+      final own = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'CUSTOMER',
+        'cancelReason': null,
+      });
+      expect(own.cancelledBy, OrderCanceller.customer);
+      expect(own.cancelReason, isNull);
+
+      final older = Order.fromJson(orderJson());
+      expect(older.cancelledBy, isNull);
+      expect(older.cancelReason, isNull);
+
+      // A party or a reason from a newer API does not break the order.
+      final newer = Order.fromJson({...orderJson(), 'cancelledBy': 'SYSTEM', 'cancelReason': 'WEATHER'});
+      expect(newer.cancelledBy, isNull);
+      expect(newer.cancelReason, OrderCancelReason.unknown);
+    });
+
+    test('reads who cancelled an order in the history list', () {
+      final summary = OrderSummary.fromJson({
+        'id': 'ord_1',
+        'orderCode': '4821',
+        'status': 'CANCELLED',
+        'pickupMode': 'ASAP',
+        'pickupAt': '2026-09-22T19:40:00.000Z',
+        'totalCents': 4050,
+        'currency': 'MDL',
+        'storeId': 'st_1',
+        'storeName': 'NoName',
+        'itemCount': 2,
+        'createdAt': '2026-09-22T19:30:00.000Z',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'CLOSING',
+      });
+      expect(summary.cancelledBy, OrderCanceller.store);
+      expect(summary.cancelReason, OrderCancelReason.closing);
+      expect(summary.withStatus(OrderStatus.cancelled).cancelReason, OrderCancelReason.closing);
     });
 
     test('parses socket status events, tolerating unknown statuses', () {

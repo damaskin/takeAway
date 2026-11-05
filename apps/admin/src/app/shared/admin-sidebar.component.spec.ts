@@ -15,7 +15,7 @@ import { PwaService } from '../core/pwa/pwa.service';
 import { AdminSidebarComponent } from './admin-sidebar.component';
 
 describe('AdminSidebarComponent — a kitchen PIN session', () => {
-  function render(kitchenSession: boolean) {
+  function render(kitchenSession: boolean, pendingByStore: ReadonlyMap<string, number> = new Map()) {
     TestBed.configureTestingModule({
       imports: [AdminSidebarComponent],
       providers: [
@@ -27,7 +27,14 @@ describe('AdminSidebarComponent — a kitchen PIN session', () => {
         },
         { provide: FeatureFlagsStore, useValue: { flags: signal({}) } },
         { provide: BrandsService, useValue: { pendingCount: signal(null), planRequests: signal(null) } },
-        { provide: OrderAlertsService, useValue: { pendingCount: signal(0) } },
+        {
+          provide: OrderAlertsService,
+          useValue: {
+            pendingCount: signal([...pendingByStore.values()].reduce((a, b) => a + b, 0)),
+            pendingByStore: signal(pendingByStore),
+            stores: signal([{ id: 'balka' }, { id: 'centre' }]),
+          },
+        },
         { provide: FeedbackApi, useValue: { newCount: signal(null) } },
         { provide: CampaignModerationApi, useValue: { pendingCount: signal(null) } },
         { provide: PwaService, useValue: { canInstall: signal(false) } },
@@ -64,5 +71,17 @@ describe('AdminSidebarComponent — a kitchen PIN session', () => {
     expect(el.querySelector('[data-testid="pin-session-note"]')).toBeNull();
     expect(el.querySelectorAll('a.admin-nav').length).toBeGreaterThan(3);
     expect(el.querySelector('.admin-support')).not.toBeNull();
+  });
+
+  it('leads «Кухня» to the store with orders waiting when the remembered one has none (item 12)', () => {
+    localStorage.setItem('takeaway.admin.kitchenStoreId', 'centre');
+    try {
+      const el = render(true, new Map([['balka', 1]]));
+      const kitchen = el.querySelector('a.admin-nav[href^="/kitchen"]');
+      expect(kitchen?.getAttribute('href')).toBe('/kitchen?store=balka');
+      expect(kitchen?.querySelector('.admin-nav-badge-live')?.textContent?.trim()).toBe('1');
+    } finally {
+      localStorage.removeItem('takeaway.admin.kitchenStoreId');
+    }
   });
 });

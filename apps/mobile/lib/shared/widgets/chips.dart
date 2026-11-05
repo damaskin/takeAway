@@ -74,10 +74,14 @@ class StoreStatusBadge extends StatelessWidget {
 
 /// Order status as a coloured pill.
 class OrderStatusBadge extends StatelessWidget {
-  const OrderStatusBadge({required this.status, this.delivery = false, super.key});
+  const OrderStatusBadge({required this.status, this.delivery = false, this.label, super.key});
 
   final OrderStatus status;
   final bool delivery;
+
+  /// In place of the status's own words — «Отменён заведением» for a
+  /// cancelled order whose canceller is known.
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -87,7 +91,7 @@ class OrderStatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(Radii.pill)),
       child: Text(
-        orderStatusLabel(context, status, delivery: delivery),
+        label ?? orderStatusLabel(context, status, delivery: delivery),
         style: context.text.labelSmall?.copyWith(
           color: status.isCancelled ? brand.berry : Color.lerp(color, Colors.black, 0.35),
           fontWeight: FontWeight.w700,
@@ -123,40 +127,3 @@ String orderStatusLabel(BuildContext context, OrderStatus status, {bool delivery
     OrderStatus.unknown => l10n.statusUnknown,
   };
 }
-
-/// Diet tag chip label.
-String dietTagLabel(AppLocalizations l10n, String tag) => switch (tag) {
-  'VEGAN' => l10n.dietVegan,
-  'VEGETARIAN' => l10n.dietVegetarian,
-  'GLUTEN_FREE' => l10n.dietGlutenFree,
-  'LACTOSE_FREE' => l10n.dietLactoseFree,
-  'DECAF' => l10n.dietDecaf,
-  'SUGAR_FREE' => l10n.dietSugarFree,
-  _ => tag,
-};
-
-/// Allergen label for the «Содержит: …» line. The admin stores codes
-/// (`GLUTEN`, `MILK`…, matched in any case); free text it may hold instead is
-/// shown as it is.
-String allergenLabel(AppLocalizations l10n, String raw) => switch (raw.trim().toUpperCase()) {
-  'GLUTEN' => l10n.allergenGluten,
-  'MILK' => l10n.allergenMilk,
-  'LACTOSE' => l10n.allergenLactose,
-  'EGGS' || 'EGG' => l10n.allergenEggs,
-  'NUTS' || 'TREE_NUTS' => l10n.allergenNuts,
-  'PEANUTS' || 'PEANUT' => l10n.allergenPeanuts,
-  'SOY' || 'SOYA' => l10n.allergenSoy,
-  'FISH' => l10n.allergenFish,
-  'SHELLFISH' || 'CRUSTACEANS' => l10n.allergenShellfish,
-  'SESAME' => l10n.allergenSesame,
-  'CELERY' => l10n.allergenCelery,
-  'MUSTARD' => l10n.allergenMustard,
-  'SULPHITES' || 'SULFITES' => l10n.allergenSulphites,
-  _ => raw.trim(),
-};
-
-/// «глютен, молоко» — [allergens] worded, blanks and repeats left out.
-String allergensText(AppLocalizations l10n, Iterable<String> allergens) => {
-  for (final raw in allergens)
-    if (raw.trim().isNotEmpty) allergenLabel(l10n, raw),
-}.join(', ');

@@ -112,15 +112,10 @@ interface FooterLink {
                 style="font-family: var(--font-sans); font-size: 16px; font-weight: 600; color: var(--color-espresso)"
                 >{{ store.name }}</span
               >
-              <!-- No address yet: the wait instead, but only while it takes an
-                   order for now — paused or closing, a wait is a promise nobody keeps. -->
+              <!-- No wait in minutes here: the card names the place, the menu tells the wait. -->
               @if (address(store); as a) {
                 <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
                   a
-                }}</span>
-              } @else if (!closed(store) && !preorderOnly(store)) {
-                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
-                  'common.readyIn' | translate: { min: etaMin(store) }
                 }}</span>
               }
               @if (preorderOnly(store)) {
@@ -138,18 +133,11 @@ interface FooterLink {
                 >{{ 'common.storeClosed.badge' | translate }}</span
               >
             } @else if (preorderOnly(store)) {
-              <!-- Closed for an order now: a wait would be a promise nobody keeps. -->
+              <!-- Closed for an order now: takes pre-orders only. -->
               <span
                 class="flex items-center justify-center"
                 style="background: #e9a84b33; color: #8a6720; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 700; white-space: nowrap"
                 >{{ 'common.storeLater.badge' | translate }}</span
-              >
-            } @else {
-              <span
-                class="flex items-center justify-center"
-                [style.background]="etaBg(store)"
-                style="color: white; border-radius: var(--radius-pill); padding: 4px 12px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-                >{{ etaMin(store) }} {{ 'common.units.min' | translate }}</span
               >
             }
           </a>
@@ -483,16 +471,6 @@ export class HomePage implements OnInit {
 
   address(store: StoreListItem): string {
     return storeAddress(store);
-  }
-
-  etaMin(store: StoreListItem): number {
-    return Math.max(1, Math.round(store.currentEtaSeconds / 60));
-  }
-
-  etaBg(store: StoreListItem): string {
-    if (store.busyMeter >= 75) return 'var(--color-berry)';
-    if (store.busyMeter >= 40) return 'var(--color-amber)';
-    return 'var(--color-mint)';
   }
 
   price(pick: MenuPick): string {

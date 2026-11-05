@@ -486,12 +486,6 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get productCaffeine => 'Caffeine';
-
-  @override
-  String get productAllergens => 'Allergens';
-
-  @override
   String productNutrition(String p, String f, String c) {
     return 'Protein $p g · Fat $f g · Carbs $c g';
   }
@@ -501,24 +495,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get productLoadFailed => 'Could not load this item.';
-
-  @override
-  String get dietVegan => 'Vegan';
-
-  @override
-  String get dietVegetarian => 'Vegetarian';
-
-  @override
-  String get dietGlutenFree => 'Gluten-free';
-
-  @override
-  String get dietLactoseFree => 'Lactose-free';
-
-  @override
-  String get dietDecaf => 'Decaf';
-
-  @override
-  String get dietSugarFree => 'Sugar-free';
 
   @override
   String get cartTitle => 'Your order';
@@ -834,6 +810,56 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get orderExpiredPaymentNotCompleted => 'The payment did not go through — the order is cancelled';
+
+  @override
+  String get orderCancelledByStore => 'The store cancelled your order';
+
+  @override
+  String get orderCancelledByCustomer => 'You cancelled this order';
+
+  @override
+  String get orderCancelledCardDeclined => 'The bank declined your card';
+
+  @override
+  String get orderCancelledBadgeStore => 'Cancelled by the store';
+
+  @override
+  String get orderCancelledBadgeCustomer => 'Cancelled by you';
+
+  @override
+  String get orderCancelledBadgeCardDeclined => 'Card declined';
+
+  @override
+  String get cancelReasonOutOfStock => 'Some items are out of stock.';
+
+  @override
+  String get cancelReasonTooBusy => 'The store is too busy right now.';
+
+  @override
+  String get cancelReasonClosing => 'The store is closing.';
+
+  @override
+  String get cancelReasonOther => 'The store cannot take the order.';
+
+  @override
+  String get cancelCardDeclinedHint => 'Please order again with another card.';
+
+  @override
+  String cancelStoreComment(String comment) {
+    return 'Note from the store: “$comment”';
+  }
+
+  @override
+  String get cancelMoneyNotCharged => 'Your card was not charged.';
+
+  @override
+  String get cancelMoneyReleased => 'You were not charged and the card hold is released.';
+
+  @override
+  String get cancelMoneyRefunded => 'The money is on its way back to your card.';
+
+  @override
+  String get cancelMoneyHoldPending => 'The card hold will be released automatically.';
 
   @override
   String get statusUnknown => 'Updating…';
@@ -1505,6 +1531,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get storesKindFood => 'Food';
 
   @override
+  String get storesLegendLabel => 'Pin colours on the map';
+
+  @override
+  String get storesLegendOpen => 'Open';
+
+  @override
+  String get storesLegendBusy => 'Busy';
+
+  @override
+  String get storesLegendClosed => 'Closed';
+
+  @override
   String storesNearbyEmpty(String radius) {
     return 'Nothing within $radius';
   }
@@ -1527,11 +1565,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get productNoteFoodHint => 'E.g. warm it up, no sauce…';
 
   @override
-  String productContains(String list) {
-    return 'Contains: $list';
-  }
-
-  @override
   String get productAddonsNone => 'none';
 
   @override
@@ -1545,45 +1578,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get upsellTogether => 'Often bought together';
-
-  @override
-  String get allergenGluten => 'gluten';
-
-  @override
-  String get allergenMilk => 'milk';
-
-  @override
-  String get allergenLactose => 'lactose';
-
-  @override
-  String get allergenEggs => 'eggs';
-
-  @override
-  String get allergenNuts => 'nuts';
-
-  @override
-  String get allergenPeanuts => 'peanuts';
-
-  @override
-  String get allergenSoy => 'soy';
-
-  @override
-  String get allergenFish => 'fish';
-
-  @override
-  String get allergenShellfish => 'shellfish';
-
-  @override
-  String get allergenSesame => 'sesame';
-
-  @override
-  String get allergenCelery => 'celery';
-
-  @override
-  String get allergenMustard => 'mustard';
-
-  @override
-  String get allergenSulphites => 'sulphites';
 
   @override
   String get errCartEmpty => 'Your cart is empty';

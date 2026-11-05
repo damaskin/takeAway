@@ -6,7 +6,6 @@ import type { BrandPlan, CategoryKind, StoreKind } from '@takeaway/shared-types'
 import { API_CONFIG } from '../api/api.config';
 
 export type VariationType = 'SIZE' | 'TEMPERATURE' | 'MILK' | 'CUP';
-export type DietTag = 'VEGAN' | 'VEGETARIAN' | 'GLUTEN_FREE' | 'LACTOSE_FREE' | 'DECAF' | 'SUGAR_FREE';
 
 export interface BrandDto {
   id: string;
@@ -263,13 +262,10 @@ export interface ProductAdminDto {
   sortOrder: number;
   /** In display order; the first one is the menu picture. */
   imageUrls: string[];
-  caffeineLevel: number | null;
   calories: number | null;
   proteinsGrams: number | null;
   fatsGrams: number | null;
   carbsGrams: number | null;
-  allergens: string[];
-  dietTags: DietTag[];
   /** Stores that sell it (same price everywhere); empty = sold nowhere. */
   storeIds: string[];
 }
@@ -352,20 +348,21 @@ export interface ApplyCategoryOptionsResult {
   modifiers: number;
 }
 
-/** What the product editor sends; `null` clears an optional value. */
+/**
+ * What the product editor sends; `null` clears an optional value. Caffeine,
+ * allergens and diet tags are not editable since 2026-11-05 — the API
+ * refuses them.
+ */
 export interface ProductFieldsInput {
   name: string;
   description: string | null;
   basePriceCents: number;
   prepTimeSeconds?: number;
   visible: boolean;
-  caffeineLevel: number | null;
   calories: number | null;
   proteinsGrams: number | null;
   fatsGrams: number | null;
   carbsGrams: number | null;
-  allergens: string[];
-  dietTags: DietTag[];
 }
 
 export interface CreateProductInput extends Partial<Omit<ProductFieldsInput, 'name' | 'basePriceCents'>> {

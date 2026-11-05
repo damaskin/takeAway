@@ -926,18 +926,6 @@ abstract class AppLocalizations {
   /// **'{kcal} kcal'**
   String productCalories(int kcal);
 
-  /// No description provided for @productCaffeine.
-  ///
-  /// In en, this message translates to:
-  /// **'Caffeine'**
-  String get productCaffeine;
-
-  /// No description provided for @productAllergens.
-  ///
-  /// In en, this message translates to:
-  /// **'Allergens'**
-  String get productAllergens;
-
   /// No description provided for @productNutrition.
   ///
   /// In en, this message translates to:
@@ -955,42 +943,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not load this item.'**
   String get productLoadFailed;
-
-  /// No description provided for @dietVegan.
-  ///
-  /// In en, this message translates to:
-  /// **'Vegan'**
-  String get dietVegan;
-
-  /// No description provided for @dietVegetarian.
-  ///
-  /// In en, this message translates to:
-  /// **'Vegetarian'**
-  String get dietVegetarian;
-
-  /// No description provided for @dietGlutenFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Gluten-free'**
-  String get dietGlutenFree;
-
-  /// No description provided for @dietLactoseFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Lactose-free'**
-  String get dietLactoseFree;
-
-  /// No description provided for @dietDecaf.
-  ///
-  /// In en, this message translates to:
-  /// **'Decaf'**
-  String get dietDecaf;
-
-  /// No description provided for @dietSugarFree.
-  ///
-  /// In en, this message translates to:
-  /// **'Sugar-free'**
-  String get dietSugarFree;
 
   /// No description provided for @cartTitle.
   ///
@@ -1531,6 +1483,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The payment did not go through — the order is cancelled'**
   String get orderExpiredPaymentNotCompleted;
+
+  /// Order screen, under the status of a cancelled order: who cancelled it. The same story as the push.
+  ///
+  /// In en, this message translates to:
+  /// **'The store cancelled your order'**
+  String get orderCancelledByStore;
+
+  /// No description provided for @orderCancelledByCustomer.
+  ///
+  /// In en, this message translates to:
+  /// **'You cancelled this order'**
+  String get orderCancelledByCustomer;
+
+  /// No description provided for @orderCancelledCardDeclined.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank declined your card'**
+  String get orderCancelledCardDeclined;
+
+  /// Order history: the status badge of an order the store cancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled by the store'**
+  String get orderCancelledBadgeStore;
+
+  /// No description provided for @orderCancelledBadgeCustomer.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled by you'**
+  String get orderCancelledBadgeCustomer;
+
+  /// No description provided for @orderCancelledBadgeCardDeclined.
+  ///
+  /// In en, this message translates to:
+  /// **'Card declined'**
+  String get orderCancelledBadgeCardDeclined;
+
+  /// Why the kitchen turned the order down, as the push words it.
+  ///
+  /// In en, this message translates to:
+  /// **'Some items are out of stock.'**
+  String get cancelReasonOutOfStock;
+
+  /// No description provided for @cancelReasonTooBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is too busy right now.'**
+  String get cancelReasonTooBusy;
+
+  /// No description provided for @cancelReasonClosing.
+  ///
+  /// In en, this message translates to:
+  /// **'The store is closing.'**
+  String get cancelReasonClosing;
+
+  /// No description provided for @cancelReasonOther.
+  ///
+  /// In en, this message translates to:
+  /// **'The store cannot take the order.'**
+  String get cancelReasonOther;
+
+  /// No description provided for @cancelCardDeclinedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Please order again with another card.'**
+  String get cancelCardDeclinedHint;
+
+  /// The kitchen's own words when it turned the order down, shown as typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Note from the store: “{comment}”'**
+  String cancelStoreComment(String comment);
+
+  /// Where the money of a cancelled order is, as the push words it.
+  ///
+  /// In en, this message translates to:
+  /// **'Your card was not charged.'**
+  String get cancelMoneyNotCharged;
+
+  /// No description provided for @cancelMoneyReleased.
+  ///
+  /// In en, this message translates to:
+  /// **'You were not charged and the card hold is released.'**
+  String get cancelMoneyReleased;
+
+  /// No description provided for @cancelMoneyRefunded.
+  ///
+  /// In en, this message translates to:
+  /// **'The money is on its way back to your card.'**
+  String get cancelMoneyRefunded;
+
+  /// No description provided for @cancelMoneyHoldPending.
+  ///
+  /// In en, this message translates to:
+  /// **'The card hold will be released automatically.'**
+  String get cancelMoneyHoldPending;
 
   /// No description provided for @statusUnknown.
   ///
@@ -2774,6 +2822,30 @@ abstract class AppLocalizations {
   /// **'Food'**
   String get storesKindFood;
 
+  /// No description provided for @storesLegendLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin colours on the map'**
+  String get storesLegendLabel;
+
+  /// No description provided for @storesLegendOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get storesLegendOpen;
+
+  /// No description provided for @storesLegendBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Busy'**
+  String get storesLegendBusy;
+
+  /// No description provided for @storesLegendClosed.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed'**
+  String get storesLegendClosed;
+
   /// No description provided for @storesNearbyEmpty.
   ///
   /// In en, this message translates to:
@@ -2810,12 +2882,6 @@ abstract class AppLocalizations {
   /// **'E.g. warm it up, no sauce…'**
   String get productNoteFoodHint;
 
-  /// No description provided for @productContains.
-  ///
-  /// In en, this message translates to:
-  /// **'Contains: {list}'**
-  String productContains(String list);
-
   /// No description provided for @productAddonsNone.
   ///
   /// In en, this message translates to:
@@ -2845,84 +2911,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Often bought together'**
   String get upsellTogether;
-
-  /// No description provided for @allergenGluten.
-  ///
-  /// In en, this message translates to:
-  /// **'gluten'**
-  String get allergenGluten;
-
-  /// No description provided for @allergenMilk.
-  ///
-  /// In en, this message translates to:
-  /// **'milk'**
-  String get allergenMilk;
-
-  /// No description provided for @allergenLactose.
-  ///
-  /// In en, this message translates to:
-  /// **'lactose'**
-  String get allergenLactose;
-
-  /// No description provided for @allergenEggs.
-  ///
-  /// In en, this message translates to:
-  /// **'eggs'**
-  String get allergenEggs;
-
-  /// No description provided for @allergenNuts.
-  ///
-  /// In en, this message translates to:
-  /// **'nuts'**
-  String get allergenNuts;
-
-  /// No description provided for @allergenPeanuts.
-  ///
-  /// In en, this message translates to:
-  /// **'peanuts'**
-  String get allergenPeanuts;
-
-  /// No description provided for @allergenSoy.
-  ///
-  /// In en, this message translates to:
-  /// **'soy'**
-  String get allergenSoy;
-
-  /// No description provided for @allergenFish.
-  ///
-  /// In en, this message translates to:
-  /// **'fish'**
-  String get allergenFish;
-
-  /// No description provided for @allergenShellfish.
-  ///
-  /// In en, this message translates to:
-  /// **'shellfish'**
-  String get allergenShellfish;
-
-  /// No description provided for @allergenSesame.
-  ///
-  /// In en, this message translates to:
-  /// **'sesame'**
-  String get allergenSesame;
-
-  /// No description provided for @allergenCelery.
-  ///
-  /// In en, this message translates to:
-  /// **'celery'**
-  String get allergenCelery;
-
-  /// No description provided for @allergenMustard.
-  ///
-  /// In en, this message translates to:
-  /// **'mustard'**
-  String get allergenMustard;
-
-  /// No description provided for @allergenSulphites.
-  ///
-  /// In en, this message translates to:
-  /// **'sulphites'**
-  String get allergenSulphites;
 
   /// No description provided for @errCartEmpty.
   ///

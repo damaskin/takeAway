@@ -495,6 +495,10 @@ class _OrderBody extends ConsumerWidget {
             ],
           ),
         ),
+        if (orderCancellation(order) case final cancellation?) ...[
+          const SizedBox(height: 16),
+          _CancellationCard(cancellation: cancellation),
+        ],
         const SizedBox(height: 24),
         OrderStepper(status: status, delivery: order.isDelivery),
         const SizedBox(height: 20),
@@ -526,8 +530,8 @@ class _OrderBody extends ConsumerWidget {
 /// The status in words. At the counter it is the product's whole promise:
 /// the order is ready and the customer did not queue for it. While it waits
 /// the line under it says what for — the store's confirmation, the store to
-/// open, or that the kitchen is running late — and an expired order says why
-/// it ended and where the money is.
+/// open, or that the kitchen is running late — an expired order says why it
+/// ended and where the money is, and a cancelled one who called it off.
 class _Headline extends StatelessWidget {
   const _Headline({required this.order, required this.wait, required this.now, super.key});
 
@@ -549,6 +553,15 @@ class _Headline extends StatelessWidget {
           ExpiredOutcome.notAccepted => l10n.orderExpiredNotAccepted,
           ExpiredOutcome.notAcceptedRefunded => l10n.orderExpiredNotAcceptedRefunded,
           ExpiredOutcome.paymentNotCompleted => l10n.orderExpiredPaymentNotCompleted,
+        },
+      ),
+      OrderStatus.cancelled => (
+        l10n.statusCancelled,
+        switch (orderCancellation(order)?.by) {
+          CancelledParty.store => l10n.orderCancelledByStore,
+          CancelledParty.customer => l10n.orderCancelledByCustomer,
+          CancelledParty.cardDeclined => l10n.orderCancelledCardDeclined,
+          null => null,
         },
       ),
       final status => (
@@ -577,6 +590,68 @@ class _Headline extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Under the headline of a cancelled order: the store's reason (or, for a
+/// declined card, what to do), its comment as typed, and where the money
+/// is — the story the push told.
+class _CancellationCard extends StatelessWidget {
+  const _CancellationCard({required this.cancellation});
+
+  final OrderCancellation cancellation;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final brand = context.brand;
+    final c = cancellation;
+    final reason = switch (c.reason) {
+      OrderCancelReason.outOfStock => l10n.cancelReasonOutOfStock,
+      OrderCancelReason.tooBusy => l10n.cancelReasonTooBusy,
+      OrderCancelReason.closing => l10n.cancelReasonClosing,
+      OrderCancelReason.other => l10n.cancelReasonOther,
+      OrderCancelReason.cardDeclined ||
+      OrderCancelReason.unknown ||
+      null => c.by == CancelledParty.cardDeclined ? l10n.cancelCardDeclinedHint : null,
+    };
+    final money = switch (c.money) {
+      CancelledMoney.notCharged => l10n.cancelMoneyNotCharged,
+      CancelledMoney.released => l10n.cancelMoneyReleased,
+      CancelledMoney.refunded => l10n.cancelMoneyRefunded,
+      CancelledMoney.holdPending => l10n.cancelMoneyHoldPending,
+      null => null,
+    };
+    final comment = c.comment;
+    if (reason == null && comment == null && money == null) return const SizedBox.shrink();
+
+    return Container(
+      key: const ValueKey('cancel-reason'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: brand.foam,
+        borderRadius: BorderRadius.circular(Radii.card),
+        border: Border.all(color: brand.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (reason != null) Text(reason, style: context.text.titleSmall),
+          if (comment != null) ...[
+            if (reason != null) const SizedBox(height: 4),
+            Text(
+              l10n.cancelStoreComment(comment),
+              style: context.text.bodyMedium?.copyWith(color: brand.textSecondary, fontStyle: FontStyle.italic),
+            ),
+          ],
+          if (money != null) ...[
+            if (reason != null || comment != null) const SizedBox(height: 6),
+            Text(money, style: context.text.bodyMedium?.copyWith(color: brand.textSecondary)),
+          ],
+        ],
+      ),
     );
   }
 }

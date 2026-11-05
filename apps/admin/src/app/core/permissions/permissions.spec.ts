@@ -86,6 +86,15 @@ describe('permissions map', () => {
       expect(navLink('stopList')).toBe('/stop-list');
     });
 
+    // «Добавки» left the brand's sidebar on 2026-11-05: only the platform team opens the library page.
+    it('opens the add-ons library («Добавки») to SUPER_ADMIN only', () => {
+      expect(canAccess('SUPER_ADMIN', 'ingredients')).toBe(true);
+      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'ingredients')).toBe(false);
+        expect(canAccess(role, 'menu')).toBe(role !== 'STAFF' && role !== 'RIDER');
+      }
+    });
+
     it('limits MENU_EDITOR to menu (+ telegram link is excluded)', () => {
       expect(canAccess('MENU_EDITOR', 'menu')).toBe(true);
       expect(canAccess('MENU_EDITOR', 'orders')).toBe(false);

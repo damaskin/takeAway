@@ -121,13 +121,10 @@ function summary(id: string, name: string, categoryId: string): ProductSummary {
     description: null,
     basePriceCents: 2500,
     prepTimeSeconds: 60,
-    caffeineLevel: null,
     calories: null,
     proteinsGrams: null,
     fatsGrams: null,
     carbsGrams: null,
-    allergens: [],
-    dietTags: [],
     imageUrls: [],
     sortOrder: 0,
   };

@@ -15,6 +15,7 @@ import '../../shared/widgets/pressable.dart';
 import '../../shared/widgets/skeleton.dart';
 import '../../shared/widgets/state_views.dart';
 import '../auth/sign_in_sheet.dart';
+import 'order_wait.dart';
 import 'orders_providers.dart';
 
 class OrdersScreen extends ConsumerWidget {
@@ -133,6 +134,26 @@ class _OrderCard extends StatelessWidget {
 
   final OrderSummary order;
 
+  /// Who cancelled a cancelled order, in place of the bare «Отменён».
+  String? _cancelledLabel(AppLocalizations l10n) => switch (cancelledPartyOf(order)) {
+    CancelledParty.store => l10n.orderCancelledBadgeStore,
+    CancelledParty.customer => l10n.orderCancelledBadgeCustomer,
+    CancelledParty.cardDeclined => l10n.orderCancelledBadgeCardDeclined,
+    null => null,
+  };
+
+  /// The kitchen's reason under the badge of an order it turned down.
+  String? _cancelReason(AppLocalizations l10n) {
+    if (cancelledPartyOf(order) != CancelledParty.store) return null;
+    return switch (order.cancelReason) {
+      OrderCancelReason.outOfStock => l10n.cancelReasonOutOfStock,
+      OrderCancelReason.tooBusy => l10n.cancelReasonTooBusy,
+      OrderCancelReason.closing => l10n.cancelReasonClosing,
+      OrderCancelReason.other => l10n.cancelReasonOther,
+      _ => null,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -177,7 +198,17 @@ class _OrderCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text('$date · ${l10n.itemsCount(order.itemCount)}', style: context.text.bodySmall),
                   const SizedBox(height: 8),
-                  OrderStatusBadge(status: order.status),
+                  OrderStatusBadge(status: order.status, label: _cancelledLabel(l10n)),
+                  if (_cancelReason(l10n) case final reason?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      reason,
+                      key: const ValueKey('history-cancel-reason'),
+                      style: context.text.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),

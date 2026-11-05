@@ -71,6 +71,9 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// the cancel goes through.
   Order? acceptedBeforeCancel;
 
+  /// What `GET /me/orders` answers, whatever the group.
+  List<OrderSummary> myOrdersAnswer = const [];
+
   /// What `GET /stores/{id}/suggestions` answers; null = 404, as on an API
   /// from before the endpoint.
   StoreSuggestions? suggestionsAnswer;
@@ -139,13 +142,10 @@ class FakeApi extends Fake implements TakeAwayApi {
     'description': 'Двойной эспрессо и молоко.',
     'basePriceCents': price,
     'prepTimeSeconds': 180,
-    'caffeineLevel': 3,
     'calories': 180,
     'proteinsGrams': null,
     'fatsGrams': null,
     'carbsGrams': null,
-    'allergens': <String>[],
-    'dietTags': <String>[],
     'imageUrls': <String>[],
     'sortOrder': 0,
     'onStopList': false,
@@ -267,6 +267,9 @@ class FakeApi extends Fake implements TakeAwayApi {
     DateTime? pickupAt,
     DateTime? readyEstimateAt,
     bool? canCancel,
+    String? cancelledBy,
+    String? cancelReason,
+    String? cancelComment,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
@@ -303,6 +306,9 @@ class FakeApi extends Fake implements TakeAwayApi {
     'payment': ?payment,
     'readyEstimateAt': ?readyEstimateAt?.toUtc().toIso8601String(),
     'canCancel': ?canCancel,
+    'cancelledBy': ?cancelledBy,
+    'cancelReason': ?cancelReason,
+    'cancelComment': ?cancelComment,
   });
 
   // ── Catalog ────────────────────────────────────────────────────────────
@@ -592,7 +598,7 @@ class FakeApi extends Fake implements TakeAwayApi {
       });
     }
     cancelled.add(id);
-    return currentOrder = sampleOrder(status: 'CANCELLED');
+    return currentOrder = sampleOrder(status: 'CANCELLED', cancelledBy: 'CUSTOMER');
   }
 
   @override
@@ -600,7 +606,7 @@ class FakeApi extends Fake implements TakeAwayApi {
       const CustomerLocationResult(level: 'HERE', distanceM: 0, recorded: true);
 
   @override
-  Future<List<OrderSummary>> myOrders({String group = 'ALL', int take = 30}) async => const [];
+  Future<List<OrderSummary>> myOrders({String group = 'ALL', int take = 30}) async => myOrdersAnswer;
 
   @override
   Future<LoyaltyAccount> loyalty() async => const LoyaltyAccount(
