@@ -7,12 +7,10 @@ import { catchError, throwError } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
-  allergenChips,
   defaultVariationSelection,
   describeChoice,
   initialModifierCounts,
   isDrinkKind,
-  isFoodKind,
   isStoreInactive,
   priceWithOptions,
   productKind,
@@ -36,7 +34,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
  * tcContent (0/16/16/16 padding, gap 20):
  *   hero — 220px image: the photo, or the placeholder for the product's kind
  *   infoRow — title (Fraunces 20/700) · live price (Inter 18/700 caramel)
- *   meta — calories, prep time, caffeine (not for food or bakery), allergen chips
+ *   meta — calories, prep time
  *   description
  *   options — choice chips per size / temperature / milk / cup, add-on
  *     groups opening in place (see TmaProductOptionsComponent)
@@ -85,17 +83,6 @@ import { TmaProductOptionsComponent } from './product-options.component';
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
                 >⌛ {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}</span
               >
-              @if (showCaffeine()) {
-                <span
-                  role="img"
-                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-                  [attr.aria-label]="'common.product.caffeine' | translate"
-                >
-                  @for (i of [0, 1, 2, 3]; track i) {
-                    <span [style.opacity]="i < (p.caffeineLevel ?? 0) ? 1 : 0.25">☕</span>
-                  }
-                </span>
-              }
             </div>
           </div>
           <span style="font-family: var(--font-sans); font-size: 20px; font-weight: 700; color: var(--color-caramel)">{{
@@ -109,22 +96,6 @@ import { TmaProductOptionsComponent } from './product-options.component';
           >
             {{ p.description }}
           </p>
-        }
-
-        @if (allergens().length > 0) {
-          <div
-            class="flex items-center flex-wrap"
-            data-testid="allergens"
-            style="gap: 6px; font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-          >
-            <span>{{ 'common.product.allergens' | translate }}:</span>
-            @for (a of allergens(); track a.text) {
-              <span
-                style="padding: 3px 9px; border-radius: 9999px; background: var(--color-latte); color: var(--color-text-secondary); font-weight: 500"
-                >{{ a.code ? ('common.allergens.' + a.code | translate) : a.text }}</span
-              >
-            }
-          </div>
         }
 
         <app-tma-product-options
@@ -251,7 +222,7 @@ export class TmaProductPage implements OnInit, OnDestroy {
     return p ? describeChoice(p, this.selectedVariations(), this.modifierCounts()) : '';
   });
 
-  /** What the product is — picks the placeholder, the note's wording and whether caffeine is shown. */
+  /** What the product is — picks the placeholder and the note's wording. */
   readonly kind = computed(() => {
     const p = this.product();
     if (!p) return 'OTHER';
@@ -260,14 +231,6 @@ export class TmaProductPage implements OnInit, OnDestroy {
   });
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
-
-  /** Caffeine means nothing on a croissant, whatever the POS sent. */
-  readonly showCaffeine = computed(() => {
-    const level = this.product()?.caffeineLevel;
-    return level !== null && level !== undefined && !isFoodKind(this.kind());
-  });
-
-  readonly allergens = computed(() => allergenChips(this.product()?.allergens));
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {
