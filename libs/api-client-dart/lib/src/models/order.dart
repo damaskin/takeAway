@@ -63,6 +63,33 @@ enum FulfillmentType {
   delivery,
 }
 
+/// Who called a cancelled order off.
+@JsonEnum(alwaysCreate: true)
+enum OrderCanceller {
+  @JsonValue('CUSTOMER')
+  customer,
+  @JsonValue('STORE')
+  store,
+}
+
+/// Why the store called an order off: the kitchen's reason when it turned
+/// the order down, or [cardDeclined] — the bank declined the card when the
+/// kitchen accepted it. [unknown] is a reason this build does not know yet.
+@JsonEnum(alwaysCreate: true)
+enum OrderCancelReason {
+  @JsonValue('OUT_OF_STOCK')
+  outOfStock,
+  @JsonValue('TOO_BUSY')
+  tooBusy,
+  @JsonValue('CLOSING')
+  closing,
+  @JsonValue('OTHER')
+  other,
+  @JsonValue('CARD_DECLINED')
+  cardDeclined,
+  unknown,
+}
+
 @JsonEnum(alwaysCreate: true)
 enum PaymentState {
   @JsonValue('NONE')
@@ -182,6 +209,9 @@ class Order {
     this.payment = OrderPayment.none,
     this.readyEstimateAt,
     this.canCancel,
+    this.cancelledBy,
+    this.cancelReason,
+    this.cancelComment,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
@@ -248,6 +278,18 @@ class Order {
   /// yet and no money taken. Null from API versions that predate it.
   final bool? canCancel;
 
+  /// Who cancelled a cancelled order. Null otherwise, on orders cancelled
+  /// before 2026-11-05 whose record did not say, and from older APIs.
+  @JsonKey(unknownEnumValue: JsonKey.nullForUndefinedEnumValue)
+  final OrderCanceller? cancelledBy;
+
+  /// Why the store cancelled it; null for the customer's own cancel.
+  @JsonKey(unknownEnumValue: OrderCancelReason.unknown)
+  final OrderCancelReason? cancelReason;
+
+  /// The kitchen's comment when it turned the order down, shown as is.
+  final String? cancelComment;
+
   /// What the countdown runs to: the kitchen's new estimate once it accepted
   /// or started the order too late, else the promise. The same rule as the
   /// web (`orderDueAt` in `@takeaway/utils`).
@@ -307,6 +349,9 @@ class Order {
     readyEstimateAt: readyEstimateAt,
     // A cancel the order allowed before is off once the kitchen took it.
     canCancel: next.isCancellable ? canCancel : false,
+    cancelledBy: cancelledBy,
+    cancelReason: cancelReason,
+    cancelComment: cancelComment,
   );
 }
 
@@ -327,6 +372,8 @@ class OrderSummary {
     required this.storeName,
     required this.itemCount,
     required this.createdAt,
+    this.cancelledBy,
+    this.cancelReason,
   });
 
   factory OrderSummary.fromJson(Map<String, dynamic> json) => _$OrderSummaryFromJson(json);
@@ -344,6 +391,14 @@ class OrderSummary {
   final int itemCount;
   final DateTime createdAt;
 
+  /// See [Order.cancelledBy].
+  @JsonKey(unknownEnumValue: JsonKey.nullForUndefinedEnumValue)
+  final OrderCanceller? cancelledBy;
+
+  /// See [Order.cancelReason].
+  @JsonKey(unknownEnumValue: OrderCancelReason.unknown)
+  final OrderCancelReason? cancelReason;
+
   OrderSummary withStatus(OrderStatus next) => OrderSummary(
     id: id,
     orderCode: orderCode,
@@ -356,6 +411,8 @@ class OrderSummary {
     storeName: storeName,
     itemCount: itemCount,
     createdAt: createdAt,
+    cancelledBy: cancelledBy,
+    cancelReason: cancelReason,
   );
 }
 

@@ -412,6 +412,68 @@ void main() {
       expect(Order.fromJson(orderJson()).customerCanCancel, isFalse, reason: 'IN_PROGRESS');
     });
 
+    test('reads who cancelled the order, why and what the kitchen added', () {
+      final rejected = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'OUT_OF_STOCK',
+        'cancelComment': 'Нет овсяного молока',
+      });
+      expect(rejected.cancelledBy, OrderCanceller.store);
+      expect(rejected.cancelReason, OrderCancelReason.outOfStock);
+      expect(rejected.cancelComment, 'Нет овсяного молока');
+      expect(rejected.copyWithStatus(OrderStatus.cancelled).cancelComment, 'Нет овсяного молока');
+
+      final declined = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'CARD_DECLINED',
+      });
+      expect(declined.cancelReason, OrderCancelReason.cardDeclined);
+      expect(declined.cancelComment, isNull);
+
+      final own = Order.fromJson({
+        ...orderJson(),
+        'status': 'CANCELLED',
+        'cancelledBy': 'CUSTOMER',
+        'cancelReason': null,
+      });
+      expect(own.cancelledBy, OrderCanceller.customer);
+      expect(own.cancelReason, isNull);
+
+      final older = Order.fromJson(orderJson());
+      expect(older.cancelledBy, isNull);
+      expect(older.cancelReason, isNull);
+
+      // A party or a reason from a newer API does not break the order.
+      final newer = Order.fromJson({...orderJson(), 'cancelledBy': 'SYSTEM', 'cancelReason': 'WEATHER'});
+      expect(newer.cancelledBy, isNull);
+      expect(newer.cancelReason, OrderCancelReason.unknown);
+    });
+
+    test('reads who cancelled an order in the history list', () {
+      final summary = OrderSummary.fromJson({
+        'id': 'ord_1',
+        'orderCode': '4821',
+        'status': 'CANCELLED',
+        'pickupMode': 'ASAP',
+        'pickupAt': '2026-09-22T19:40:00.000Z',
+        'totalCents': 4050,
+        'currency': 'MDL',
+        'storeId': 'st_1',
+        'storeName': 'NoName',
+        'itemCount': 2,
+        'createdAt': '2026-09-22T19:30:00.000Z',
+        'cancelledBy': 'STORE',
+        'cancelReason': 'CLOSING',
+      });
+      expect(summary.cancelledBy, OrderCanceller.store);
+      expect(summary.cancelReason, OrderCancelReason.closing);
+      expect(summary.withStatus(OrderStatus.cancelled).cancelReason, OrderCancelReason.closing);
+    });
+
     test('parses socket status events, tolerating unknown statuses', () {
       final event = OrderStatusEvent.fromJson({
         'orderId': 'ord_1',
