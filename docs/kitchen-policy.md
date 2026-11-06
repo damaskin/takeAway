@@ -3,9 +3,24 @@
 The rules that decide when a store takes which order, how much the kitchen is
 promised per 15 minutes, what the kitchen board reminds staff of, and how the
 shift follows the working hours. In force since 2026-10-20 (it first came in on
-2026-10-14), with the 2026-11-05 changes below; it describes what is implemented.
+2026-10-14), with the 2026-11-05 and 2026-11-06 changes below; it describes what is
+implemented.
 
 ## Owner decisions
+
+### 2026-11-06 (manager's answers on list 5.0)
+
+- **«Заказов на 15 минут» is gone (item 6).** A pickup slot is full by kitchen
+  work only — `900 s × kitchenParallelism` — however many orders it holds
+  (section C). The store editor no longer shows the field, the API no longer
+  reads `Store.slotCapacity` (the column stays, deprecated) and ignores it if an
+  old admin tab still sends it. `PickupSlot.capacity` is always 0, kept on the
+  wire for the app builds that require it. The queue policy (item 13) will
+  replace the 15-minute slots with free windows.
+- **No store card shows a wait in minutes (item 8)**: not the home pages, the
+  stores lists, the store picker or the map sheet, on the web, in the Mini App
+  or in the app. The wait stays where an order is being made: the menu header
+  (web, app), the cart and checkout, the order screens.
 
 ### 2026-11-05 (manager's list «правки 5.0»)
 
@@ -97,7 +112,7 @@ applied to database rows by `StoreAvailabilityService` (kitchen module).
 | `closesAt`          | ISO UTC end of the current window while within the hours; null outside them and for a store that does not close within the week.                                                                                                      |
 | `pausedUntil`       | ISO UTC end of the kitchen's pause while it runs, else null.                                                                                                                                                                          |
 | `pauseReason`       | `EQUIPMENT` / `NO_INGREDIENTS` / `NO_STAFF` / `OTHER` while paused, else null. Customers are shown a neutral «Технический перерыв».                                                                                                   |
-| `currentEtaSeconds` | The «N мин» badge: base + queue (+ busy wait) + **a typical order's cooking**, spilled to the first slot with room (section C).                                                                                                       |
+| `currentEtaSeconds` | The menu header's «Готово через N мин» (no store card shows it since 2026-11-06): base + queue (+ busy wait) + **a typical order's cooking**, spilled to the first slot with room (section C).                                        |
 
 - `SHIFT_CLOSED` now shows only for the minute between the start of the hours and
   the schedule's pass that opens the shift.
@@ -131,7 +146,8 @@ closesAt}`: `reason` is the store's `asapBlockedReason`; `pausedUntil` is set fo
   - SCHEDULED is taken with the shift closed when the slot is bookable:
     `PICKUP_TIME_OUT_OF_RANGE` (sooner than 10 minutes or further than 24 hours),
     `STORE_CLOSED_AT_TIME` (outside the hours, **during a pause**, or inside the
-    opening lead below), `PICKUP_SLOT_FULL` (capacity, with this order's work).
+    opening lead below), `PICKUP_SLOT_FULL` (no kitchen time left in the slot for
+    this order's work).
 - The cart (`POST /cart/items`) fills whenever the store is `acceptingOrders` —
   also while paused.
 - `GET /stores/:idOrSlug/pickup-slots?cartId=` — 24 hours of 15-minute slots;
@@ -147,10 +163,12 @@ closesAt}`: `reason` is the store's `asapBlockedReason`; `pausedUntil` is set fo
 
 `apps/api/src/app/kitchen/kitchen-load.service.ts`, `slots.ts`, `typical-prep.ts`.
 
-- A slot (15 minutes) is full when it holds `Store.slotCapacity` orders (status not
-  CANCELLED/EXPIRED), or when the work of its orders plus the new order's would
-  exceed `900 s × Store.kitchenParallelism`. An order bigger than a whole slot on its
-  own still fits an empty one.
+- A slot (15 minutes) is full when the work of its orders (status not
+  CANCELLED/EXPIRED) plus the new order's would exceed
+  `900 s × Store.kitchenParallelism`. An order bigger than a whole slot on its own
+  still fits an empty one. The number of orders does not count: «Заказов на 15 минут»
+  (`Store.slotCapacity`) capped it until 2026-11-06 and is no longer read;
+  `PickupSlot.taken` still says how many there are, `capacity` is always 0.
 - The queue counts orders due soon (CREATED/PAID/ACCEPTED/IN_PROGRESS with
   `pickupAt ≤ now + 30 min`) plus every IN_PROGRESS one (at half its work), divided
   by `kitchenParallelism`, plus `BUSY_EXTRA_WAIT_SECONDS` while «Загружены».
@@ -171,8 +189,9 @@ typical cooking`, where the typical cooking is the median `Product.prepTimeSecon
 - Store editor: «Время для принятия заказа, мин» (`baseEtaSeconds`, whole minutes
   1–60, was «Базовое время на заказ») says that half of it reminds the kitchen,
   all of it cancels the order, and that the customer sees it + typical cooking +
-  queue; «Позиций готовится одновременно» (`kitchenParallelism`); «Заказов на 15
-  минут» (`slotCapacity`).
+  queue; «Позиций готовится одновременно» (`kitchenParallelism`), with what it
+  means for one 15-minute slot. «Заказов на 15 минут» (`slotCapacity`) was
+  removed on 2026-11-06.
 
 ## D. Kitchen board
 
@@ -380,8 +399,8 @@ button only while `canCancel`, with «Заказ уже готовят — дл�
 the API ignores them if they are still set.
 
 Per store (the store editor): «Время для принятия заказа» A (`baseEtaSeconds`,
-1–60 min, default 10), «Позиций готовится одновременно» (`kitchenParallelism`),
-«Заказов на 15 минут» (`slotCapacity`).
+1–60 min, default 10), «Позиций готовится одновременно» (`kitchenParallelism`).
+«Заказов на 15 минут» (`slotCapacity`) was removed on 2026-11-06.
 
 Fixed in code: slot 15 min, pre-order lead 10 min, horizon 24 h, "due soon" 30 min,
 pre-order group lead 15 min, start buffer 120 s, scheduled deadline 10 min before
