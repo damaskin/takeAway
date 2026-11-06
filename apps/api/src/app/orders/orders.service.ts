@@ -8,11 +8,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  AsapBlockedReason,
-  KitchenOrderRemovedReason,
-  OrderItemSnapshot,
-  OrderNotCancellableBody,
+import {
+  ORDER_REVIEWABLE_STATUSES,
+  type AsapBlockedReason,
+  type KitchenOrderRemovedReason,
+  type OrderItemSnapshot,
+  type OrderNotCancellableBody,
 } from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
 import type { Order, OrderCancelReason, OrderCanceller, PaymentStatus, Prisma } from '@prisma/client';
@@ -41,7 +42,14 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
-import type { OrderDto, OrderItemDto, OrderPaymentDto, OrderPaymentState, OrderSummaryDto } from './dto/order.dto';
+import type {
+  CustomerOrderSummaryDto,
+  OrderDto,
+  OrderItemDto,
+  OrderPaymentDto,
+  OrderPaymentState,
+  OrderSummaryDto,
+} from './dto/order.dto';
 import { withoutCoordinates } from './order-event-payload';
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
@@ -447,6 +455,7 @@ export class OrdersService {
           orderBy: { createdAt: 'desc' },
           include: { cardToken: { select: { maskedPan: true } } },
         },
+        review: { select: { rating: true, comment: true, createdAt: true } },
       },
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
@@ -457,7 +466,7 @@ export class OrdersService {
     userId: string,
     take = 20,
     statusGroup: 'ACTIVE' | 'HISTORY' | 'ALL' = 'ALL',
-  ): Promise<OrderSummaryDto[]> {
+  ): Promise<CustomerOrderSummaryDto[]> {
     const activeStatuses = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRESS', 'READY'] as const;
     const historyStatuses = ['PICKED_UP', 'CANCELLED', 'EXPIRED'] as const;
     const where: Prisma.OrderWhereInput = { userId };
@@ -468,9 +477,17 @@ export class OrdersService {
       where,
       orderBy: { createdAt: 'desc' },
       take: Math.min(100, Math.max(1, take)),
-      include: { items: { select: { quantity: true } }, store: { select: { name: true, timezone: true } } },
+      include: {
+        items: { select: { quantity: true } },
+        store: { select: { name: true, timezone: true } },
+        review: { select: { rating: true } },
+      },
     });
-    return orders.map((o) => this.toSummary(o));
+    return orders.map((o) => ({
+      ...this.toSummary(o),
+      canReview: canCustomerReview(o),
+      reviewRating: o.review?.rating ?? null,
+    }));
   }
 
   /**
@@ -1132,8 +1149,11 @@ export class OrdersService {
         updatedAt: Date;
         cardToken?: { maskedPan: string | null } | null;
       }>;
+      /** Left out where the order cannot have one yet (just created, just cancelled). */
+      review?: { rating: number; comment: string | null; createdAt: Date } | null;
     },
   ): OrderDto {
+    const review = order.review ?? null;
     return {
       id: order.id,
       orderCode: order.orderCode,
@@ -1178,6 +1198,10 @@ export class OrdersService {
       expiredAt: order.expiredAt?.toISOString() ?? null,
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),
+      canReview: canCustomerReview({ status: order.status, review }),
+      review: review
+        ? { rating: review.rating, comment: review.comment, createdAt: review.createdAt.toISOString() }
+        : null,
       deliveryAddressLine: order.deliveryAddressLine,
       deliveryCity: order.deliveryCity,
       deliveryLatitude: order.deliveryLatitude,
@@ -1215,6 +1239,19 @@ export function canCustomerCancel(order: {
   payments: ReadonlyArray<{ status: PaymentStatus }>;
 }): boolean {
   return CANCELLABLE_STATUSES.has(order.status) && cancelRefusal(order) === null;
+}
+
+/**
+ * `Order.canReview`: the customer has the order (PICKED_UP or DELIVERED) and
+ * has not reviewed it. Cancelled and expired orders never can.
+ */
+export function canCustomerReview(order: { status: string; review?: unknown }): boolean {
+  return isHandedOver(order.status) && !order.review;
+}
+
+/** The order reached the customer: the only statuses a review is taken for. */
+export function isHandedOver(status: string): boolean {
+  return (ORDER_REVIEWABLE_STATUSES as readonly string[]).includes(status);
 }
 
 function notCancellable(reason: OrderNotCancellableBody['reason']): ConflictException {

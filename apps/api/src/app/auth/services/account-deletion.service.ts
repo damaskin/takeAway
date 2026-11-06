@@ -113,6 +113,11 @@ export class AccountDeletionService {
    *   feedback            kept — it is about the service, like an order
    *                       comment — with the "how to reach me" contact the
    *                       customer may have typed into it nulled.
+   *   orderReviews        kept untouched — stars and comment are about the
+   *                       order, read by the platform team. They point at
+   *                       this tombstone like the orders do, so the admin
+   *                       shows the author as a deleted account with no
+   *                       name or contacts.
    *   ownedBrands         must be empty, see above.
    *
    * After the commit: every refresh token of the user is deleted from Redis

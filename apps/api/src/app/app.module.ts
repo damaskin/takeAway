@@ -32,6 +32,7 @@ import { KitchenModule } from './kitchen/kitchen.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
+import { OrderReviewsModule } from './order-reviews/order-reviews.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PlansModule } from './plans/plans.module';
 import { PosModule } from './pos/pos.module';
@@ -68,6 +69,7 @@ import { UsersModule } from './users/users.module';
     PromoModule,
     LoyaltyModule,
     OrdersModule,
+    OrderReviewsModule,
     PaymentsModule,
     PosModule,
     RealtimeModule,

@@ -12,7 +12,7 @@ import { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
 import { CartChangedErrorDto } from './dto/cart-changed.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
-import { OrderDto, OrderSummaryDto } from './dto/order.dto';
+import { CustomerOrderSummaryDto, OrderDto, OrderSummaryDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 
 // Per account. A customer places one order and retries a few times at most
@@ -90,12 +90,12 @@ export class OrdersController {
   @Get('me/orders')
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'group', required: false, enum: ['ACTIVE', 'HISTORY', 'ALL'] })
-  @ApiOkResponse({ type: OrderSummaryDto, isArray: true })
+  @ApiOkResponse({ type: CustomerOrderSummaryDto, isArray: true })
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('take') take?: string,
     @Query('group') group?: 'ACTIVE' | 'HISTORY' | 'ALL',
-  ): Promise<OrderSummaryDto[]> {
+  ): Promise<CustomerOrderSummaryDto[]> {
     return this.orders.listForUser(user.id, take ? Number(take) : undefined, group ?? 'ALL');
   }
 
