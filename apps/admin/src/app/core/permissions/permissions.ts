@@ -58,11 +58,12 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // takes orders on, kitchen STAFF included.
   kitchen: [SA, BA, SM, ST],
   menu: [SA, BA, SM, ME],
-  // The add-ins library page and its brand-wide in-stock switches — the
-  // platform team only since 2026-11-05. Brands still build add-ons from a
-  // product's options (the API keeps /admin/ingredients open to them) and
-  // stop them per store in the stop-list.
-  ingredients: [SA],
+  // The add-ins library page («Добавки») — whoever edits the menu. Since
+  // 2026-11-06 a brand's roles switch an add-in on and off for the whole
+  // brand and set its price there; adding, renaming and deleting add-ins is
+  // the platform team's (see `canEditAddInLibrary`). Per-store stops stay in
+  // the stop-list.
+  ingredients: [SA, BA, SM, ME],
   // Per-store "ran out" switches for dishes, drinks and add-ins. Kitchen
   // STAFF work it; it only toggles, so the menu editor role is not needed.
   stopList: [SA, BA, SM, ST],
@@ -183,4 +184,16 @@ const STORE_ACTIONS: Record<StoreAction, ReadonlyArray<AdminRole>> = {
 export function canOnStores(role: AdminRole | undefined | null, action: StoreAction): boolean {
   if (!role) return false;
   return STORE_ACTIONS[action].includes(role);
+}
+
+/**
+ * Adding, renaming, regrouping and deleting the add-ins of a brand library
+ * — also typing a new one into a product's options or a category's set.
+ * The platform team only since 2026-11-06 (Maxim: a brand switches its
+ * add-ins on and off but does not add or delete them); a brand picks from
+ * its library. Mirrors the API's INGREDIENT_LIBRARY_LOCKED and
+ * INGREDIENT_NOT_IN_LIBRARY.
+ */
+export function canEditAddInLibrary(role: AdminRole | undefined | null): boolean {
+  return role === SA;
 }

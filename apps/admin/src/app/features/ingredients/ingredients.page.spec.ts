@@ -5,6 +5,7 @@ import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { of } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type IngredientDto } from '../../core/catalog/admin-catalog.service';
 import { IngredientsPage } from './ingredients.page';
@@ -29,7 +30,8 @@ const CINNAMON: IngredientDto = {
   products: [],
 };
 
-function setup(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}) {
+/** The platform team by default; a brand's roles see the restricted page. */
+function setup(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}, role = 'SUPER_ADMIN') {
   const mocks = {
     listIngredients: jest.fn().mockReturnValue(of([VANILLA, CINNAMON])),
     createIngredient: jest.fn((input: { name: string; priceCents: number }) =>
@@ -45,6 +47,7 @@ function setup(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}) {
       provideTranslateService(),
       provideRouter([]),
       { provide: AdminCatalogApi, useValue: mocks },
+      { provide: AuthStore, useValue: { user: signal({ role }) } },
       {
         provide: ActiveBrandService,
         useValue: { active: signal({ id: 'b1', name: 'NoName Coffee', currency: 'RUP' }) },
@@ -172,6 +175,69 @@ describe('IngredientsPage («Добавки»)', () => {
     page.editForm.controls.group.setValue('');
     page.saveEdit({ ...VANILLA, group: 'Сиропы' });
     expect(mocks.updateIngredient).toHaveBeenLastCalledWith('ing-vanilla', { group: null });
+  });
+
+  // Maxim, 2026-11-06: «Бренд может включать или выключать добавки, но он не
+  // может добавлять/удалять новые добавки» — and the brand sets the prices.
+  describe("a brand's restricted page", () => {
+    for (const role of ['BRAND_ADMIN', 'MENU_EDITOR', 'STORE_MANAGER']) {
+      it(`offers ${role} the switch and the price only`, () => {
+        const { el } = setup({}, role);
+
+        expect(el.querySelector('[data-testid="ingredient-add"]')).toBeNull();
+        expect(el.querySelector('[data-testid="ingredient-delete"]')).toBeNull();
+        expect(el.querySelectorAll('[data-testid="ingredient-toggle"]')).toHaveLength(2);
+        const edit = el.querySelector('[data-testid="ingredient-edit-start"]');
+        expect(edit?.textContent?.trim()).toBe('Изменить цену');
+        expect(el.querySelector('[data-testid="ingredients-hint"]')?.textContent).toContain('команды takeAway');
+      });
+    }
+
+    it('switches an add-in off for the whole brand', () => {
+      const { fixture, mocks, el } = setup({}, 'BRAND_ADMIN');
+
+      el.querySelector<HTMLButtonElement>('[data-testid="ingredient-toggle"]')?.click();
+      fixture.detectChanges();
+
+      expect(mocks.updateIngredient).toHaveBeenCalledWith('ing-vanilla', { isAvailable: false });
+    });
+
+    it('edits the price alone, with no name or group to change', () => {
+      const { fixture, page, mocks, el } = setup({}, 'BRAND_ADMIN');
+
+      page.startEdit(VANILLA);
+      fixture.detectChanges();
+      const form = el.querySelector('[data-testid="ingredient-edit"]');
+      expect(form?.querySelector('input[formcontrolname="name"]')).toBeNull();
+      expect(form?.querySelector('input[formcontrolname="group"]')).toBeNull();
+      expect(form?.textContent).toContain('Ванильный сироп');
+
+      // Even if something filled them, only the price goes.
+      page.editForm.setValue({ name: 'Ваниль', price: '6', group: 'Сиропы' });
+      page.saveEdit(VANILLA);
+      expect(mocks.updateIngredient).toHaveBeenCalledWith('ing-vanilla', { priceCents: 600 });
+    });
+
+    it('neither adds nor deletes from code paths either', () => {
+      const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
+      const { page, mocks } = setup({}, 'MENU_EDITOR');
+
+      page.addForm.setValue({ name: 'Корица', price: '', group: '' });
+      page.add();
+      page.remove(VANILLA);
+
+      expect(mocks.createIngredient).not.toHaveBeenCalled();
+      expect(mocks.deleteIngredient).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('sends a brand with an empty library to the takeAway team', () => {
+      const { el } = setup({ listIngredients: jest.fn().mockReturnValue(of([])) }, 'BRAND_ADMIN');
+
+      expect(el.querySelector('[data-testid="ingredients-empty"]')?.textContent).toContain(
+        'Попросите команду takeAway добавить нужные',
+      );
+    });
   });
 
   it('deletes nothing when the question is declined', () => {

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { StoreFulfillment } from '@prisma/client';
+import type { CategoryKind, StoreFulfillment } from '@prisma/client';
+import { showsNutrition } from '@takeaway/utils';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
@@ -274,10 +275,7 @@ export class CatalogService {
             description: p.description,
             basePriceCents: p.basePriceCents,
             prepTimeSeconds: p.prepTimeSeconds,
-            calories: p.calories,
-            proteinsGrams: p.proteinsGrams,
-            fatsGrams: p.fatsGrams,
-            carbsGrams: p.carbsGrams,
+            ...nutritionOf(p, c.kind),
             imageUrls: p.imageUrls,
             sortOrder: p.sortOrder,
             onStopList: stopList.has(p.id),
@@ -353,10 +351,7 @@ export class CatalogService {
       description: product.description,
       basePriceCents: product.basePriceCents,
       prepTimeSeconds: product.prepTimeSeconds,
-      calories: product.calories,
-      proteinsGrams: product.proteinsGrams,
-      fatsGrams: product.fatsGrams,
-      carbsGrams: product.carbsGrams,
+      ...nutritionOf(product, product.category.kind),
       imageUrls: product.imageUrls,
       sortOrder: product.sortOrder,
       categoryKind: product.category.kind,
@@ -382,6 +377,28 @@ export class CatalogService {
       })),
     };
   }
+}
+
+interface Nutrition {
+  calories: number | null;
+  proteinsGrams: number | null;
+  fatsGrams: number | null;
+  carbsGrams: number | null;
+}
+
+/**
+ * Calories and nutrition as the storefronts get them: for a meal (FOOD)
+ * only, since 2026-11-06. A drink or a pastry may still have figures
+ * stored from before; they stay in the database and are not sent.
+ */
+function nutritionOf(product: Nutrition, kind: CategoryKind): Nutrition {
+  if (!showsNutrition(kind)) return { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null };
+  return {
+    calories: product.calories,
+    proteinsGrams: product.proteinsGrams,
+    fatsGrams: product.fatsGrams,
+    carbsGrams: product.carbsGrams,
+  };
 }
 
 /**

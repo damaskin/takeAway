@@ -21,6 +21,20 @@ function row(patch: Record<string, unknown> = {}) {
   };
 }
 
+/** The body of a refusal, where the admin reads `code` from. */
+async function refusal(promise: Promise<unknown>): Promise<{ status: number; code: unknown }> {
+  try {
+    await promise;
+  } catch (err) {
+    const response = (err as ForbiddenException).getResponse() as { code?: unknown };
+    return { status: (err as ForbiddenException).getStatus(), code: response.code };
+  }
+  throw new Error('expected a refusal');
+}
+
+/** The platform team: no brand restriction. */
+const PLATFORM = null;
+
 /** Just enough of Prisma for the library; `$transaction` runs the callback against the same fakes. */
 function build() {
   const prisma = {
@@ -72,7 +86,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
   it('creates an add-on with its usual price on the brand picked in the admin', async () => {
     const { svc, prisma } = build();
 
-    const created = await svc.create({ brandId: 'b1', name: 'Шот эспрессо', priceCents: 1000 }, ['b1']);
+    const created = await svc.create({ brandId: 'b1', name: 'Шот эспрессо', priceCents: 1000 }, PLATFORM);
 
     expect(prisma.ingredient.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -103,7 +117,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
     const { svc, prisma } = build();
     prisma.ingredient.create.mockRejectedValueOnce({ code: 'P2002' });
 
-    await expect(svc.create({ brandId: 'b1', name: 'Ванильный сироп' }, ['b1'])).rejects.toBeInstanceOf(
+    await expect(svc.create({ brandId: 'b1', name: 'Ванильный сироп' }, PLATFORM)).rejects.toBeInstanceOf(
       ConflictException,
     );
   });
@@ -139,7 +153,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
     it('renames the options that still carry the old name, and only those', async () => {
       const { svc, prisma } = build();
 
-      await svc.update('ing-vanilla', { name: 'Сироп «Ваниль»' }, ['b1']);
+      await svc.update('ing-vanilla', { name: 'Сироп «Ваниль»' }, PLATFORM);
 
       const rename = {
         where: { ingredientId: 'ing-vanilla', name: 'Ванильный сироп' },
@@ -156,7 +170,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
     it('moves the extras and set add-ons still in the old group to the new one', async () => {
       const { svc, prisma } = build();
 
-      const updated = await svc.update('ing-vanilla', { group: 'Сиропы' }, ['b1']);
+      const updated = await svc.update('ing-vanilla', { group: 'Сиропы' }, PLATFORM);
 
       const regroup = { where: { ingredientId: 'ing-vanilla', group: null }, data: { group: 'Сиропы' } };
       expect(prisma.modifier.updateMany).toHaveBeenCalledWith(regroup);
@@ -202,6 +216,54 @@ describe('AdminIngredientsService — the add-ons library', () => {
     });
   });
 
+  // Maxim, 2026-11-06: «Бренд может включать или выключать добавки, но он не
+  // может добавлять/удалять новые добавки». The brand also sets the price.
+  describe("a brand's own library", () => {
+    const BRAND = ['b1'];
+
+    it('lets the brand switch an add-in off and back on, and set its price', async () => {
+      const { svc, prisma } = build();
+
+      expect((await svc.update('ing-vanilla', { isAvailable: false }, BRAND)).isAvailable).toBe(false);
+      await svc.update('ing-vanilla', { priceCents: 700 }, BRAND);
+
+      expect(prisma.ingredient.update).toHaveBeenCalledTimes(2);
+      expect(prisma.modifier.updateMany).toHaveBeenCalledWith({
+        where: { ingredientId: 'ing-vanilla', priceDeltaCents: 500 },
+        data: { priceDeltaCents: 700 },
+      });
+    });
+
+    it('lets a name or group through when it is the one the add-in already has', async () => {
+      const { svc, prisma } = build();
+
+      await svc.update('ing-vanilla', { name: 'Ванильный сироп', group: null, isAvailable: false }, BRAND);
+
+      expect(prisma.ingredient.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to add, rename, regroup or delete an add-in, with a code the admin explains', async () => {
+      const { svc, prisma } = build();
+      const locked = { status: 403, code: 'INGREDIENT_LIBRARY_LOCKED' };
+
+      expect(await refusal(svc.create({ brandId: 'b1', name: 'Корица' }, BRAND))).toEqual(locked);
+      expect(await refusal(svc.update('ing-vanilla', { name: 'Ваниль' }, BRAND))).toEqual(locked);
+      expect(await refusal(svc.update('ing-vanilla', { group: 'Сиропы', priceCents: 600 }, BRAND))).toEqual(locked);
+      expect(await refusal(svc.delete('ing-vanilla', BRAND))).toEqual(locked);
+
+      expect(prisma.ingredient.create).not.toHaveBeenCalled();
+      expect(prisma.ingredient.update).not.toHaveBeenCalled();
+      expect(prisma.ingredient.delete).not.toHaveBeenCalled();
+    });
+
+    it('still checks the brand before the lock', async () => {
+      const { svc } = build();
+
+      const err = await refusal(svc.create({ brandId: 'b2', name: 'Корица' }, BRAND));
+      expect(err).toEqual({ status: 403, code: undefined });
+    });
+  });
+
   describe('delete', () => {
     it('takes the add-on off every product, with the cart lines made with it', async () => {
       const { svc, prisma } = build();
@@ -219,7 +281,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
         // What is left in each cart, for the new subtotal.
         .mockResolvedValue([{ unitPriceCents: 4500, quantity: 1 }]);
 
-      await svc.delete('ing-vanilla', ['b1']);
+      await svc.delete('ing-vanilla', PLATFORM);
 
       expect(prisma.cartItem.findMany).toHaveBeenNthCalledWith(1, {
         where: { productId: { in: ['p-latte', 'p-cap', 'p-raf'] } },
@@ -235,7 +297,7 @@ describe('AdminIngredientsService — the add-ons library', () => {
     it('deletes an add-on no product uses without touching options or carts', async () => {
       const { svc, prisma } = build();
 
-      await svc.delete('ing-vanilla', ['b1']);
+      await svc.delete('ing-vanilla', PLATFORM);
 
       expect(prisma.cartItem.findMany).not.toHaveBeenCalled();
       expect(prisma.modifier.deleteMany).not.toHaveBeenCalled();

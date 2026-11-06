@@ -637,7 +637,7 @@ export class MenuPage {
 
   /** Sold-out marks live per store; kitchen staff and menu editors do not set them here. */
   readonly canManageStock = computed(() => STOCK_ROLES.includes(this.auth.user()?.role ?? ''));
-  /** The add-ons library page is the platform team's (see `ADMIN_ROLES.ingredients`): no link for a brand. */
+  /** Whoever may open the add-ons library page (see `ADMIN_ROLES.ingredients`) gets a link to it. */
   readonly canOpenLibrary = computed(() => canAccess(this.auth.user()?.role as AdminRole | undefined, 'ingredients'));
   readonly stores = signal<StoreAdminDto[]>([]);
   readonly stockStoreId = signal<string | null>(null);

@@ -55,6 +55,8 @@ export const CATEGORY = {
   description: null,
   sortOrder: 0,
   visible: true,
+  // A drink: its products have no calories or nutrition to fill in (2026-11-06).
+  kind: 'HOT_DRINKS',
   _count: { products: 1 },
 };
 
@@ -104,11 +106,14 @@ export const STAFF_MEMBER = {
   editable: true,
 };
 
+/** The roles a suite can sign in as; the platform team unless it says otherwise. */
+export type FakeRole = 'SUPER_ADMIN' | 'BRAND_ADMIN' | 'MENU_EDITOR';
+
 const USER = {
   id: 'user-1',
   email: 'owner@takeaway.md',
   name: 'Sam',
-  role: 'SUPER_ADMIN',
+  role: 'SUPER_ADMIN' as FakeRole,
   locale: 'RU',
   phone: null,
   currency: 'MDL',
@@ -293,27 +298,31 @@ export const PLATFORM_OVERVIEW = {
 };
 
 /** Signs the browser in before the app boots, the way a real session is. */
-export async function signIn(context: BrowserContext): Promise<void> {
-  await context.addInitScript((user) => {
-    localStorage.setItem(
-      'takeaway.admin.session',
-      JSON.stringify({
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        accessTokenExpiresInSeconds: 3600,
-        refreshTokenExpiresInSeconds: 86_400,
-        user,
-        mustChangePassword: false,
-      }),
-    );
-  }, USER);
+export async function signIn(context: BrowserContext, role: FakeRole = 'SUPER_ADMIN'): Promise<void> {
+  await context.addInitScript(
+    (user) => {
+      localStorage.setItem(
+        'takeaway.admin.session',
+        JSON.stringify({
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          accessTokenExpiresInSeconds: 3600,
+          refreshTokenExpiresInSeconds: 86_400,
+          user,
+          mustChangePassword: false,
+        }),
+      );
+    },
+    { ...USER, role },
+  );
 }
 
 function json(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-export async function installFakeApi(context: BrowserContext): Promise<void> {
+/** `role` must match the one {@link signIn} used: `/auth/me` answers with it. */
+export async function installFakeApi(context: BrowserContext, role: FakeRole = 'SUPER_ADMIN'): Promise<void> {
   await context.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, '');
 
@@ -326,7 +335,7 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
         posIntegrationsEnabled: true,
       });
     }
-    if (path === '/auth/me') return json(route, USER);
+    if (path === '/auth/me') return json(route, { ...USER, role });
     // «Забыли пароль?»: a server with the Telegram bot and no SMTP yet — production today.
     if (path === '/auth/password/forgot') return json(route, { channels: ['telegram'], linkTtlMinutes: 60 });
     if (path === '/auth/password/reset') return route.fulfill({ status: 204 });

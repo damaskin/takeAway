@@ -13,7 +13,7 @@ import {
   type VariationAdminDto,
   type VariationType,
 } from '../../core/catalog/admin-catalog.service';
-import { type AdminRole, canAccess } from '../../core/permissions/permissions';
+import { type AdminRole, canAccess, canEditAddInLibrary } from '../../core/permissions/permissions';
 import { LocaleFormatService } from '@takeaway/i18n';
 import { CATEGORY_KINDS, type CategoryKind, MODIFIER_GROUP_MAX_LENGTH, optionPresetFor } from '@takeaway/shared-types';
 import { productFieldsFor } from './category-kind';
@@ -41,8 +41,12 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
  * wrong surcharge meant deleting the option and building it again.
  *
  * Extras and milks are add-ons of the brand library («Добавки»): one is
- * picked from it at its usual price, and a new one typed here joins it.
- * Deleting an option takes the add-on off this product only.
+ * picked from it at its usual price. Only the platform team types a new
+ * one here (it joins the library); since 2026-11-06 a brand picks extras
+ * and milks from its library only and asks the takeAway team for a new one
+ * — the API refuses the rest (INGREDIENT_NOT_IN_LIBRARY). Sizes,
+ * temperatures and cups stay the brand's own. Deleting an option takes the
+ * add-on off this product only.
  *
  * Extras sit in groups the customer sees («Сиропы», «Соусы», «Убрать»);
  * one picked from the library lands in its library group. The choice
@@ -94,7 +98,9 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
                   <label class="field">
                     <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
                     <select class="control small" formControlName="ingredientId">
-                      <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                      @if (canAddToLibrary() || !v.ingredientId) {
+                        <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                      }
                       @for (i of ingredients(); track i.id) {
                         <option [value]="i.id">
                           {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
@@ -158,16 +164,31 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
                 }
               </select>
             </label>
-            <label class="field">
-              <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
-              <input
-                class="control small"
-                formControlName="name"
-                maxlength="60"
-                [attr.list]="variationAdd.controls.type.value === 'MILK' ? 'ingredient-names' : null"
-                [placeholder]="'admin.menu.options.namePlaceholder' | translate"
-              />
-            </label>
+            @if (milkFromLibrary()) {
+              <label class="field">
+                <span class="label">{{ 'admin.menu.options.milkFromLibrary' | translate }}</span>
+                <select class="control small" formControlName="ingredientId" data-testid="variation-library-pick">
+                  <option value="">{{ 'admin.menu.options.fromLibraryPlaceholder' | translate }}</option>
+                  @for (i of ingredients(); track i.id) {
+                    <option [value]="i.id">
+                      {{ i.name }} · {{ formatDelta(i.priceCents)
+                      }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
+                    </option>
+                  }
+                </select>
+              </label>
+            } @else {
+              <label class="field">
+                <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
+                <input
+                  class="control small"
+                  formControlName="name"
+                  maxlength="60"
+                  [attr.list]="variationAdd.controls.type.value === 'MILK' ? 'ingredient-names' : null"
+                  [placeholder]="'admin.menu.options.namePlaceholder' | translate"
+                />
+              </label>
+            }
             <label class="field">
               <span class="label">{{
                 'admin.menu.options.priceDelta' | translate: { currency: currencyLabel() }
@@ -190,7 +211,7 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
               {{ 'admin.menu.options.addVariation' | translate }}
             </button>
           </div>
-          @if (variationAddSubmitted() && optionError(variationAdd); as key) {
+          @if (variationAddSubmitted() && variationAddError(); as key) {
             <span class="error">{{ key | translate }}</span>
           }
         </form>
@@ -247,7 +268,9 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
                 <label class="field">
                   <span class="label">{{ 'admin.menu.options.ingredient' | translate }}</span>
                   <select class="control small" formControlName="ingredientId">
-                    <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                    @if (canAddToLibrary() || !m.ingredientId) {
+                      <option value="">{{ 'admin.menu.options.ingredientNone' | translate }}</option>
+                    }
                     @for (i of ingredients(); track i.id) {
                       <option [value]="i.id">
                         {{ i.name }}{{ i.isAvailable ? '' : ' — ' + ('admin.menu.options.outOfStock' | translate) }}
@@ -324,62 +347,72 @@ function presetGroupNames(lang: 'ru' | 'en'): string[] {
               {{ 'admin.menu.options.addFromLibrary' | translate }}
             </button>
           </form>
+        } @else if (!canAddToLibrary() && !loading()) {
+          <p class="hint" style="margin: 0" data-testid="option-library-empty">
+            {{
+              (ingredients().length === 0 ? 'admin.ingredients.emptyBrand' : 'admin.menu.options.noLibraryAddIns')
+                | translate
+            }}
+          </p>
         }
 
-        <form [formGroup]="modifierAdd" (ngSubmit)="addModifier()" class="flex flex-col" style="gap: 8px">
-          <div class="form-row-tight">
+        <!-- A new add-in typed here joins the library: the platform team's only (2026-11-06). -->
+        @if (canAddToLibrary()) {
+          <form [formGroup]="modifierAdd" (ngSubmit)="addModifier()" class="flex flex-col" style="gap: 8px">
+            <div class="form-row-tight">
+              <label class="field">
+                <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
+                <input
+                  class="control small"
+                  formControlName="name"
+                  maxlength="80"
+                  list="ingredient-names"
+                  [placeholder]="'admin.menu.options.modPlaceholder' | translate"
+                />
+              </label>
+              <label class="field">
+                <span class="label">{{
+                  'admin.menu.options.priceDelta' | translate: { currency: currencyLabel() }
+                }}</span>
+                <input
+                  class="control small"
+                  formControlName="price"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  placeholder="0"
+                />
+              </label>
+              <label class="field">
+                <span class="label">{{ 'admin.menu.options.maxCount' | translate }}</span>
+                <input class="control small" formControlName="maxCount" inputmode="numeric" autocomplete="off" />
+              </label>
+            </div>
             <label class="field">
-              <span class="label">{{ 'admin.menu.options.name' | translate }}</span>
+              <span class="label">{{ 'admin.menu.options.group' | translate }}</span>
               <input
                 class="control small"
-                formControlName="name"
-                maxlength="80"
-                list="ingredient-names"
-                [placeholder]="'admin.menu.options.modPlaceholder' | translate"
+                formControlName="group"
+                list="option-groups"
+                [attr.maxlength]="groupMaxLength"
+                [placeholder]="'admin.menu.options.groupPlaceholder' | translate"
+                data-testid="modifier-group-input"
               />
+              <span class="hint">{{ 'admin.menu.options.groupHint' | translate }}</span>
             </label>
-            <label class="field">
-              <span class="label">{{
-                'admin.menu.options.priceDelta' | translate: { currency: currencyLabel() }
-              }}</span>
-              <input
-                class="control small"
-                formControlName="price"
-                inputmode="decimal"
-                autocomplete="off"
-                placeholder="0"
-              />
-            </label>
-            <label class="field">
-              <span class="label">{{ 'admin.menu.options.maxCount' | translate }}</span>
-              <input class="control small" formControlName="maxCount" inputmode="numeric" autocomplete="off" />
-            </label>
-          </div>
-          <label class="field">
-            <span class="label">{{ 'admin.menu.options.group' | translate }}</span>
-            <input
-              class="control small"
-              formControlName="group"
-              list="option-groups"
-              [attr.maxlength]="groupMaxLength"
-              [placeholder]="'admin.menu.options.groupPlaceholder' | translate"
-              data-testid="modifier-group-input"
-            />
-            <span class="hint">{{ 'admin.menu.options.groupHint' | translate }}</span>
-          </label>
-          <div class="flex items-center flex-wrap" style="gap: 8px 16px">
-            <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
-              {{ 'admin.menu.options.addModifier' | translate }}
-            </button>
-          </div>
-          @if (modifierAddSubmitted() && optionError(modifierAdd); as key) {
-            <span class="error">{{ key | translate }}</span>
-          }
-        </form>
+            <div class="flex items-center flex-wrap" style="gap: 8px 16px">
+              <button type="submit" class="primary small disabled:opacity-50" [disabled]="busy()">
+                {{ 'admin.menu.options.addModifier' | translate }}
+              </button>
+            </div>
+            @if (modifierAddSubmitted() && optionError(modifierAdd); as key) {
+              <span class="error">{{ key | translate }}</span>
+            }
+          </form>
+        }
       </section>
 
-      <p class="hint" style="grid-column: 1 / -1; margin: 0">
-        {{ 'admin.menu.options.libraryHint' | translate }}
+      <p class="hint" style="grid-column: 1 / -1; margin: 0" data-testid="option-library-hint">
+        {{ (canAddToLibrary() ? 'admin.menu.options.libraryHint' : 'admin.menu.options.libraryHintBrand') | translate }}
         @if (canOpenLibrary()) {
           <a routerLink="/ingredients" class="link">{{ 'admin.menu.options.libraryLink' | translate }}</a>
         }
@@ -407,8 +440,14 @@ export class ProductOptionsPanelComponent {
   private readonly fmt = inject(LocaleFormatService);
   private readonly auth = inject(AuthStore);
 
-  /** The add-ons library page is the platform team's (see `ADMIN_ROLES.ingredients`): no link for a brand. */
-  readonly canOpenLibrary = computed(() => canAccess(this.auth.user()?.role as AdminRole | undefined, 'ingredients'));
+  private readonly role = computed(() => this.auth.user()?.role as AdminRole | undefined);
+  /** Whoever may open the add-ons library page (see `ADMIN_ROLES.ingredients`) gets a link to it. */
+  readonly canOpenLibrary = computed(() => canAccess(this.role(), 'ingredients'));
+  /**
+   * The platform team may type a new extra or milk here, which joins the
+   * library; a brand picks from its library only (see `canEditAddInLibrary`).
+   */
+  readonly canAddToLibrary = computed(() => canEditAddInLibrary(this.role()));
 
   readonly productId = input.required<string>();
   readonly currency = input<string | null>(null);
@@ -494,6 +533,8 @@ export class ProductOptionsPanelComponent {
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(60)] }),
     price: new FormControl('', { nonNullable: true, validators: [moneyValidator()] }),
     isDefault: new FormControl(false, { nonNullable: true }),
+    /** A milk picked from the library, when the name cannot be typed ({@link milkFromLibrary}); '' = none yet. */
+    ingredientId: new FormControl('', { nonNullable: true }),
   });
 
   readonly variationEdit = new FormGroup({
@@ -561,15 +602,29 @@ export class ProductOptionsPanelComponent {
     this.modifierEditSubmitted.set(false);
   }
 
+  /** A brand adds a milk by picking it from the library, not by typing a name. */
+  milkFromLibrary(): boolean {
+    return !this.canAddToLibrary() && this.variationAdd.controls.type.value === 'MILK';
+  }
+
+  /** The translation key of what is wrong with the new choice, if anything. */
+  variationAddError(): string | null {
+    if (!this.milkFromLibrary()) return this.optionError(this.variationAdd);
+    if (!this.variationAdd.controls.ingredientId.value) return 'admin.menu.options.pickFromLibrary';
+    return this.variationAdd.controls.price.invalid ? 'admin.menu.errors.surcharge' : null;
+  }
+
   addVariation(): void {
     this.variationAddSubmitted.set(true);
     const v = this.variationAdd.getRawValue();
     const priceDeltaCents = v.price.trim() ? parseMoney(v.price) : undefined;
-    if (this.variationAdd.invalid || priceDeltaCents === null) return;
+    if (this.variationAddError() || priceDeltaCents === null) return;
+    // The milk's name comes from its library entry.
+    const what = this.milkFromLibrary() ? { ingredientId: v.ingredientId } : { name: v.name.trim() };
     this.mutate(
       this.api.createVariation(this.productId(), {
         type: v.type,
-        name: v.name.trim(),
+        ...what,
         // Left empty: a milk from the library costs its usual price, anything else nothing.
         ...(priceDeltaCents === undefined ? {} : { priceDeltaCents }),
         isDefault: v.isDefault,
@@ -577,7 +632,7 @@ export class ProductOptionsPanelComponent {
       () => {
         this.variationAddSubmitted.set(false);
         // Keep the group: several sizes are usually added in a row.
-        this.variationAdd.reset({ type: v.type, name: '', price: '', isDefault: false });
+        this.variationAdd.reset({ type: v.type, name: '', price: '', isDefault: false, ingredientId: '' });
       },
     );
   }
@@ -626,7 +681,9 @@ export class ProductOptionsPanelComponent {
     );
   }
 
+  /** Types a new extra, which joins the library: the platform team's form only. */
   addModifier(): void {
+    if (!this.canAddToLibrary()) return;
     this.modifierAddSubmitted.set(true);
     const m = this.modifierAdd.getRawValue();
     const priceDeltaCents = m.price.trim() ? parseMoney(m.price) : undefined;

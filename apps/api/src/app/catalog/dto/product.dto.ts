@@ -1,6 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CategoryKind, VariationType } from '@prisma/client';
 
+/** Calories and nutrition are a meal's: the storefronts get them for FOOD products only. */
+const NUTRITION_NOTE = 'Null unless the kind of the product category is FOOD (meals only, since 2026-11-06)';
+
 export class VariationDto {
   @ApiProperty()
   id!: string;
@@ -79,16 +82,16 @@ export class ProductDto {
   @ApiProperty()
   prepTimeSeconds!: number;
 
-  @ApiProperty({ nullable: true, type: Number })
+  @ApiProperty({ nullable: true, type: Number, description: NUTRITION_NOTE })
   calories!: number | null;
 
-  @ApiProperty({ nullable: true, type: Number })
+  @ApiProperty({ nullable: true, type: Number, description: NUTRITION_NOTE })
   proteinsGrams!: number | null;
 
-  @ApiProperty({ nullable: true, type: Number })
+  @ApiProperty({ nullable: true, type: Number, description: NUTRITION_NOTE })
   fatsGrams!: number | null;
 
-  @ApiProperty({ nullable: true, type: Number })
+  @ApiProperty({ nullable: true, type: Number, description: NUTRITION_NOTE })
   carbsGrams!: number | null;
 
   @ApiProperty({ type: [String] })

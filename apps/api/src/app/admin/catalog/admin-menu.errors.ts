@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 /**
  * Stable codes on the menu editor's domain errors. The admin translates the
@@ -16,6 +16,8 @@ export type MenuErrorCode =
   | 'IMAGES_CHANGED'
   | 'INGREDIENT_UNKNOWN'
   | 'INGREDIENT_NAME_TAKEN'
+  | 'INGREDIENT_LIBRARY_LOCKED'
+  | 'INGREDIENT_NOT_IN_LIBRARY'
   | 'OPTION_NAME_REQUIRED'
   | 'STORE_UNKNOWN';
 
@@ -29,6 +31,10 @@ export function menuConflict(
 
 export function menuBadRequest(code: MenuErrorCode, message: string): BadRequestException {
   return new BadRequestException({ statusCode: 400, error: 'Bad Request', code, message });
+}
+
+export function menuForbidden(code: MenuErrorCode, message: string): ForbiddenException {
+  return new ForbiddenException({ statusCode: 403, error: 'Forbidden', code, message });
 }
 
 export function menuNotFound(code: MenuErrorCode, message: string): NotFoundException {

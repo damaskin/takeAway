@@ -1,6 +1,6 @@
 import type { CategoryKind, CategoryWithProducts, ProductSummary } from '@takeaway/shared-types';
 
-import { isDrinkKind, isFoodKind, menuProductKinds, productKind } from './product-kind';
+import { isDrinkKind, isFoodKind, menuProductKinds, productKind, showsNutrition } from './product-kind';
 
 function product(id: string, categoryKind?: CategoryKind): ProductSummary {
   return {
@@ -59,6 +59,15 @@ describe('isDrinkKind / isFoodKind', () => {
     expect(isFoodKind('FOOD') && isFoodKind('BAKERY')).toBe(true);
     expect(isDrinkKind('OTHER') || isFoodKind('OTHER')).toBe(false);
     expect(isDrinkKind('BAKERY')).toBe(false);
+  });
+});
+
+describe('showsNutrition', () => {
+  it('shows calories and nutrition for meals only', () => {
+    expect(showsNutrition('FOOD')).toBe(true);
+    for (const kind of ['HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER'] as const) {
+      expect(showsNutrition(kind)).toBe(false);
+    }
   });
 });
 

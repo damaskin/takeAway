@@ -1,8 +1,10 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { of } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { AdminCatalogApi, type CategoryOptionDto, type IngredientDto } from '../../core/catalog/admin-catalog.service';
 import { productFieldsFor } from './category-kind';
 import { CategoryOptionsPanelComponent } from './category-options-panel.component';
@@ -111,6 +113,26 @@ describe('preset preview', () => {
     expect(presetPreviewOptions(rows.map((r) => (r.key === 'size.large' ? { ...r, price: 'десять' } : r)))).toBeNull();
   });
 
+  // A brand's editor (2026-11-06): only the takeAway team adds add-ins to the library.
+  it("for a brand, offers the library's milks and add-ons only; sizes stay free", () => {
+    const rows = buildPresetPreview('HOT_DRINKS', 'ru', [library('Ванильный сироп', 500, 'i-vanilla')], [], ',', false);
+
+    expect(rows.find((r) => r.key === 'syrup.vanilla')).toMatchObject({
+      ingredientId: 'i-vanilla',
+      notInLibrary: false,
+      include: true,
+    });
+    expect(rows.find((r) => r.key === 'milk.oat')).toMatchObject({ notInLibrary: true, include: false });
+    expect(rows.find((r) => r.key === 'size.large')).toMatchObject({ notInLibrary: false, include: true });
+
+    // Even ticked by hand, a row the library lacks is not sent.
+    const options = presetPreviewOptions(rows.map((r) => ({ ...r, include: true })));
+    expect(options?.some((o) => o.kind === 'VARIATION' && o.variationType === 'MILK')).toBe(false);
+    expect(options?.filter((o) => o.kind === 'MODIFIER')).toEqual([
+      { kind: 'MODIFIER', ingredientId: 'i-vanilla', priceDeltaCents: 500, group: 'Сиропы', maxCount: 2 },
+    ]);
+  });
+
   it('groups a set: choice groups in order, then add-on groups as they come, ungrouped as one', () => {
     const groups = groupOptions([
       setOption({ id: 'a', name: 'Ваниль', group: 'Сиропы' }),
@@ -132,11 +154,12 @@ describe('CategoryOptionsPanelComponent', () => {
   beforeEach(() => TestBed.resetTestingModule());
   afterEach(() => jest.restoreAllMocks());
 
-  function panel(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>, kind = 'COLD_DRINKS') {
+  function panel(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>>, kind = 'COLD_DRINKS', role = 'SUPER_ADMIN') {
     TestBed.configureTestingModule({
       imports: [CategoryOptionsPanelComponent],
       providers: [
         provideTranslateService(),
+        { provide: AuthStore, useValue: { user: signal({ role }) } },
         {
           provide: AdminCatalogApi,
           useValue: {
@@ -188,6 +211,35 @@ describe('CategoryOptionsPanelComponent', () => {
     ]);
     expect(component.preview()).toBeNull();
     expect(component.options()).toEqual(saved);
+  });
+
+  it('lets a brand save a set from its library, marking what only the takeAway team can add', () => {
+    const addCategoryOptions = jest.fn().mockReturnValue(of([]));
+    const fixture = panel({ addCategoryOptions }, 'COLD_DRINKS', 'BRAND_ADMIN');
+    const component = fixture.componentInstance;
+    const el = fixture.nativeElement as HTMLElement;
+
+    component.startPreview();
+    fixture.detectChanges();
+    const preview = el.querySelector('[data-testid="category-preset-preview"]');
+    expect(preview?.textContent).toContain('их добавит команда takeAway');
+    const locked = [...el.querySelectorAll('[data-testid="preset-row-not-in-library"]')];
+    expect(locked.length).toBeGreaterThan(0);
+    expect(locked[0]?.textContent).toContain('нет в справочнике');
+    expect(locked.every((row) => row.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled)).toBe(true);
+
+    const noIce = component.preview()?.find((r) => r.key === 'ice.none');
+    expect(noIce?.notInLibrary).toBe(true);
+    component.toggleRow('ice.none', { target: { checked: true } } as unknown as Event);
+    expect(component.preview()?.find((r) => r.key === 'ice.none')?.include).toBe(false);
+
+    component.savePreview();
+    const sent = addCategoryOptions.mock.calls[0][1] as Array<{ kind: string; name?: string; ingredientId?: string }>;
+    // The oat milk the library has, and the sizes; no add-on the library lacks.
+    expect(sent).toContainEqual(
+      expect.objectContaining({ kind: 'VARIATION', variationType: 'MILK', ingredientId: 'i-oat' }),
+    );
+    expect(sent.filter((o) => o.kind === 'MODIFIER' && !o.ingredientId)).toEqual([]);
   });
 
   it('lets an OTHER category borrow another kind’s set', () => {

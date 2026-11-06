@@ -203,7 +203,11 @@ export interface CreateVariationInput {
   prepTimeDeltaSeconds?: number;
   isDefault?: boolean;
   sortOrder?: number;
-  /** Omitted on create: a milk joins the library entry of its name. `null` = not tracked. */
+  /**
+   * Omitted on create: a milk joins the library entry of its name (one the
+   * library lacks is made for the platform team, refused for a brand).
+   * `null` = not tracked (the platform team's call for a milk).
+   */
   ingredientId?: string | null;
 }
 
@@ -220,7 +224,11 @@ export interface CreateModifierInput {
   minCount?: number;
   maxCount?: number;
   sortOrder?: number;
-  /** Omitted on create: joins the library entry of its name. `null` = not tracked. */
+  /**
+   * Omitted on create: joins the library entry of its name (one the library
+   * lacks is made for the platform team, refused for a brand). `null` = not
+   * tracked (the platform team's call).
+   */
   ingredientId?: string | null;
   /** Omitted on create: the library entry's group. `null` = «Добавки». */
   group?: string | null;
@@ -676,6 +684,7 @@ export class AdminCatalogApi {
     return this.http.get<IngredientDto[]>(`${this.api.baseUrl}/admin/ingredients`, { params: { brandId } });
   }
 
+  /** The platform team only: a brand gets 403 INGREDIENT_LIBRARY_LOCKED. */
   createIngredient(input: {
     brandId: string;
     name: string;
@@ -690,7 +699,10 @@ export class AdminCatalogApi {
     return this.http.get<string[]>(`${this.api.baseUrl}/admin/ingredients/groups`, { params: { brandId } });
   }
 
-  /** A new name, price or group also reaches every option that still carries the old one. */
+  /**
+   * A new name, price or group also reaches every option that still carries
+   * the old one. A brand may change `isAvailable` and `priceCents` only.
+   */
   updateIngredient(
     id: string,
     input: { name?: string; priceCents?: number; isAvailable?: boolean; group?: string | null },
@@ -698,7 +710,7 @@ export class AdminCatalogApi {
     return this.http.patch<IngredientDto>(`${this.api.baseUrl}/admin/ingredients/${id}`, input);
   }
 
-  /** Takes the add-on off every product that offers it, then out of the library. */
+  /** Takes the add-on off every product that offers it, then out of the library. The platform team only. */
   deleteIngredient(id: string): Observable<void> {
     return this.http.delete<void>(`${this.api.baseUrl}/admin/ingredients/${id}`);
   }

@@ -1966,7 +1966,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
           'The category and its products are left out of the menu on the site, in Telegram and in the app, and cannot be put in a cart. They stay in the admin, the stop-list and the POS sync. Meant for "extra ingredients" imported from Poster.',
         addOnsOnlyBadge: 'Add-ons only',
         addOnsOnlyNote:
-          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, open the drink\'s options and add it under "Add-ons" — pick it from the list or type its name.',
+          'This category is "only as an add-on": customers do not see it and cannot order these items on their own. To offer an add-on with a drink, open the drink\'s options and add it under "Add-ons" — pick it from the brand\'s add-ons library.',
         addOnsOnlyLink: 'Open add-ons →',
         kind: 'What the category holds',
         kindSuggested: 'Picked from the name — change it if it is wrong.',
@@ -2052,6 +2052,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         previewTitle: 'Set for «{{kind}}»',
         previewHint:
           'Untick what you do not sell and type your prices. Add-ons the brand already has come with their usual price.',
+        previewHintBrand:
+          "Untick what you do not sell and type your prices. Milks and add-ons come from the brand's library at their usual price. The ones the library lacks cannot be picked — the takeAway team adds them: write to support.",
+        notInLibrary: 'not in the library',
         fromLibrary: 'from the library',
         inSet: 'already in the set',
         save: 'Save the set ({{count}})',
@@ -2104,6 +2107,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         outOfStock: 'Out of stock',
         libraryHint:
           'Extras and milks are shared by all the brand\'s products: pick one from the list or type a new one — other products can pick it later too. Ran out in a store? Mark it in the stop-list. "Delete" here only takes the add-on off this product.',
+        libraryHintBrand:
+          'Extras and milks come from the brand\'s library — pick one from the list. The takeAway team adds new ones: write to support. Ran out in a store? Mark it in the stop-list. "Delete" here only takes the add-on off this product.',
+        noLibraryAddIns:
+          'This product already has every add-on of the library. Need a new one? Ask the takeAway team via «Write to support».',
+        milkFromLibrary: 'Milk from the library',
+        pickFromLibrary: 'Pick a milk from the library.',
         libraryLink: 'Open the add-ons library →',
         fromLibrary: 'From the library',
         fromLibraryPlaceholder: 'Pick an add-on',
@@ -2136,6 +2145,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         IMAGES_CHANGED: 'The photos were just changed in another window. Reload the page.',
         INGREDIENT_UNKNOWN: 'This add-in is no longer in the library. Refresh the page.',
         INGREDIENT_NAME_TAKEN: 'The library already has an add-on with this name.',
+        INGREDIENT_LIBRARY_LOCKED:
+          'Only the takeAway team adds, renames and deletes add-ons. You can switch add-ons on and off and change their prices.',
+        INGREDIENT_NOT_IN_LIBRARY:
+          "This add-on is not in the brand's library. Pick one from the list — the takeAway team adds new ones: write to support.",
         OPTION_NAME_REQUIRED: 'Enter a name or pick an add-on from the library.',
         STORE_UNKNOWN: 'One of the stores does not belong to this brand. Refresh the page.',
         status: {
@@ -2174,6 +2187,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
     ingredients: {
       title: 'Add-ons',
       hint: "All of the brand's add-ons in one place: milks, syrups, shots, toppings — with a name, a usual price and stock. To offer one in a product, pick it in Menu → Options: the price comes from here. When one runs out, mark it «Out of stock» — it is hidden from customers in every product, and the products stay on the menu.",
+      hintBrand:
+        "All of the brand's add-ons in one place: milks, syrups, shots, toppings. Ran out everywhere? Mark it «Out of stock» and customers stop seeing it in every product and store; ran out in one store — mark it in the stop-list. The brand sets the prices. For a new add-on, a new name or a removal, ask the takeAway team via «Write to support».",
       menuLink: 'Go to the menu →',
       newLabel: 'New add-on',
       newPlaceholder: 'E.g. Lactose-free milk',
@@ -2194,10 +2209,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       unused: "Not in any product yet — pick it in a product's options",
       edit: 'Edit',
       editHint: 'A new name and price apply in every product where they were not changed by hand.',
+      editPrice: 'Change price',
+      editPriceHint: 'The new price applies in every product where it was not changed by hand.',
       deleteConfirm: 'Delete «{{name}}» from the library?',
       deleteUsedConfirm:
         'Delete «{{name}}»? It is taken off every product that has it ({{count}}): {{products}}. Customer carts with it are updated.',
       empty: "The library is empty. Add the first add-on above — then pick it in a product's options.",
+      emptyBrand:
+        "The brand's library has no add-ons yet. Ask the takeAway team to add the ones you need via «Write to support».",
       nothingFound: 'Nothing found.',
     },
     stores: {

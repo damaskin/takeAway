@@ -341,6 +341,9 @@ class _Details extends StatelessWidget {
     final brand = context.brand;
     final p = product ?? preview;
     final drink = _isDrink;
+    // A meal's calories and nutrition; a drink or a pastry shows none, even
+    // from an API that still sends them. Unknown kind (an API without kinds): none.
+    final nutrition = kind?.showsNutrition ?? false;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,7 +374,7 @@ class _Details extends StatelessWidget {
             children: [
               if (p.prepTimeSeconds > 0)
                 _MetaChip(icon: Icons.timer_outlined, label: l10n.minutes(minutesCeil(p.prepTimeSeconds))),
-              if (p.calories != null)
+              if (nutrition && p.calories != null)
                 _MetaChip(icon: Icons.local_fire_department_outlined, label: l10n.productCalories(p.calories!)),
             ],
           ),
@@ -379,7 +382,7 @@ class _Details extends StatelessWidget {
             const SizedBox(height: 14),
             Text(p.description!, style: context.text.bodyLarge?.copyWith(color: brand.textSecondary)),
           ],
-          if (p.hasNutrition) ...[
+          if (nutrition && p.hasNutrition) ...[
             const SizedBox(height: 10),
             Text(
               l10n.productNutrition(_grams(p.proteinsGrams), _grams(p.fatsGrams), _grams(p.carbsGrams)),

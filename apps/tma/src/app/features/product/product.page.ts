@@ -14,6 +14,7 @@ import {
   isStoreInactive,
   priceWithOptions,
   productKind,
+  showsNutrition,
   suggestionRow,
   type SuggestionRow,
   type VariationSelection,
@@ -34,7 +35,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
  * tcContent (0/16/16/16 padding, gap 20):
  *   hero — 220px image: the photo, or the placeholder for the product's kind
  *   infoRow — title (Fraunces 20/700) · live price (Inter 18/700 caramel)
- *   meta — calories, prep time
+ *   meta — calories (a meal only), prep time
  *   description
  *   options — choice chips per size / temperature / milk / cup, add-on
  *     groups opening in place (see TmaProductOptionsComponent)
@@ -75,7 +76,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
               >{{ p.name }}</span
             >
             <div class="flex items-center flex-wrap" style="gap: 4px 12px">
-              @if (p.calories !== null) {
+              @if (hasNutrition() && p.calories !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
                   >🔥 {{ 'tma.product.labels.kcal' | translate: { calories: p.calories } }}</span
                 >
@@ -231,6 +232,9 @@ export class TmaProductPage implements OnInit, OnDestroy {
   });
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
+
+  /** Calories are a meal's: a drink or a pastry shows none, whatever an older API sends. */
+  readonly hasNutrition = computed(() => showsNutrition(this.kind()));
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {

@@ -14,7 +14,7 @@ NestJS API as the web app and the Telegram Mini App.
 - **Menu** — categories with a scroll-spy bar, search, quick add for items
   without options, product screen with sizes, milks and the like as chips
   with their prices, add-ons by group opening in place, calories and
-  nutrition, and something to eat suggested under a drink. Products with a
+  nutrition for a meal, and something to eat suggested under a drink. Products with a
   photo fill each category's grid; those without are listed under it as text
   rows (no stand-in pictures anywhere — App Review reads them as placeholder
   content). Prices are always in the store's currency.

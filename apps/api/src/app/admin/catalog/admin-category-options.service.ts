@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertInScope, type BrandScope } from './admin-catalog.service';
 import { prismaCode } from './admin-menu.errors';
 import { copyCategoryOptions } from './category-option-copy';
-import { linkedIngredient, linkId, optionDefaults, optionGroup } from './ingredient-link';
+import { linkedIngredient, linkId, mayEditLibrary, optionDefaults, optionGroup } from './ingredient-link';
 import type {
   AddCategoryOptionsDto,
   ApplyCategoryOptionsResultDto,
@@ -46,16 +46,19 @@ export class AdminCategoryOptionsService {
   /**
    * Appends options to the set, skipping the ones it already has, so a
    * preset sent twice adds nothing. Every add-on and milk is linked to the
-   * brand library, created there (at the price and in the group given)
-   * when missing — the stop-list and library prices then work for it.
+   * brand library — the stop-list and library prices then work for it. The
+   * platform team's editor adds a missing one there (at the price and in the
+   * group given); a brand's must pick ones the library has, or the whole
+   * request is refused with INGREDIENT_NOT_IN_LIBRARY (2026-11-06).
    */
   async add(categoryId: string, dto: AddCategoryOptionsDto, scope: BrandScope): Promise<CategoryOptionDto[]> {
     const category = await this.findCategory(categoryId, scope);
+    const mayAdd = mayEditLibrary(scope);
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.categoryOption.findMany({ where: { categoryId } });
       let sortOrder = current.reduce((max, o) => Math.max(max, o.sortOrder), -1) + 1;
       for (const input of dto.options) {
-        const option = await this.resolve(tx, category.brandId, input);
+        const option = await this.resolve(tx, category.brandId, input, mayAdd);
         if (current.some((o) => sameSetOption(o, option))) continue;
         if (option.isDefault) {
           await tx.categoryOption.updateMany({
@@ -147,20 +150,17 @@ export class AdminCategoryOptionsService {
   }
 
   /** A set option ready to store: linked to the library, named and priced from it where left out. */
-  private async resolve(tx: Prisma.TransactionClient, brandId: string, input: CategoryOptionInputDto) {
+  private async resolve(tx: Prisma.TransactionClient, brandId: string, input: CategoryOptionInputDto, mayAdd: boolean) {
     const isVariation = input.kind === CategoryOptionKind.VARIATION;
     const variationType = isVariation ? (input.variationType ?? null) : null;
     // Add-ons and milk come from the library; a size or a cup is not stocked.
     const autoLink = !isVariation || variationType === 'MILK';
-    const linked = await linkedIngredient(
-      tx,
-      brandId,
-      input.ingredientId,
-      input.name,
+    const linked = await linkedIngredient(tx, brandId, input.ingredientId, input.name, {
       autoLink,
-      input.priceDeltaCents,
-      isVariation ? null : (input.group ?? null),
-    );
+      mayAdd,
+      priceForNew: input.priceDeltaCents,
+      groupForNew: isVariation ? null : (input.group ?? null),
+    });
     const { name, priceDeltaCents } = optionDefaults(input, linked);
     return {
       kind: input.kind,

@@ -20,6 +20,10 @@ enum ProductKind {
   /// Something to eat — what the cart offers next to a drink.
   bool get isFood => this == food || this == bakery;
 
+  /// Calories and nutrition are shown for a meal only (since 2026-11-06):
+  /// not for drinks, bakery or anything else.
+  bool get showsNutrition => this == food;
+
   /// The kind the API names; null for none, or one this build does not know.
   static ProductKind? tryParse(String? raw) {
     final value = raw?.trim().toUpperCase();
