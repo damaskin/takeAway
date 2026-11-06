@@ -61,9 +61,10 @@ const TONE_LABELS: Record<StoreTone, string> = {
  * Closed stores (switched off, or nothing bookable in the next 24 hours)
  * come last, dimmed, and do not open: there is nothing to order there. A
  * store closed for an order now but taking pre-orders (overnight, before the
- * shift) opens as usual and says when it opens instead of the wait. The list
- * refreshes itself while on screen, so a store that starts its shift lights
- * up without a reload.
+ * shift) opens as usual and says when it opens. No card shows a wait in
+ * minutes (manager's list 5.0, item 8): an open one says until when it works.
+ * The list refreshes itself while on screen, so a store that starts its shift
+ * lights up without a reload.
  *
  * The pins show what each place sells (cup, fork and knife, or both); the
  * «Все / Кофе / Еда» chips above the map narrow the map and the list.
@@ -236,19 +237,13 @@ const TONE_LABELS: Record<StoreTone, string> = {
               </p>
             }
             <div class="flex items-center flex-wrap" style="gap: 4px 14px">
-              @if (preorderOnly(s)) {
+              <!-- No wait in minutes: when it opens or until when it works, never «N мин». -->
+              @if (hoursLine(s); as line) {
                 <span
                   data-testid="store-hours"
                   style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                  >🕘 {{ hoursLine(s) }}</span
+                  >🕘 {{ line }}</span
                 >
-              } @else {
-                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
-                  >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}
-                  @if (hoursLine(s); as until) {
-                    · {{ until }}
-                  }
-                </span>
               }
               @if (s.distanceMeters !== null) {
                 <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
@@ -392,10 +387,6 @@ export class TmaStoresPage implements OnInit {
     return storeAddress(store);
   }
 
-  minutes(seconds: number): number {
-    return Math.max(1, Math.round(seconds / 60));
-  }
-
   kindLabel(k: StoreKindFilter): string {
     return KIND_LABELS[k];
   }
@@ -420,11 +411,6 @@ export class TmaStoresPage implements OnInit {
 
   inactive(store: StoreListItem): boolean {
     return storeAvailability(store) === 'closed';
-  }
-
-  /** Closed for an order now, open for a pre-order: the card says when it opens instead of the wait. */
-  preorderOnly(store: StoreListItem): boolean {
-    return storeAvailability(store) === 'scheduledOnly';
   }
 
   /** «Сейчас закрыто · откроется в 9:00 · можно заказать ко времени», or «до 21:00» while open. */

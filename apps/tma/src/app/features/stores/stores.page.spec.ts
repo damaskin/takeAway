@@ -208,6 +208,27 @@ describe('TmaStoresPage', () => {
     );
   });
 
+  it('shows no wait in minutes on a card: an open store says until when it works, the badges stay', async () => {
+    listStores.mockReturnValue(
+      of([
+        { ...store('centre', 'NoName Centre', 'ул. Ленина 1'), closesAt: '2026-11-06T21:00:00.000Z' },
+        { ...store('busy', 'NoName Загружена', 'ул. Ленина 2'), status: 'OVERLOADED', currentEtaSeconds: 1500 },
+        { ...store('night', 'NoName Ночь', 'ул. Ленина 4'), openNow: false, asapBlockedReason: 'OUTSIDE_HOURS' },
+      ]),
+    );
+    fixture = TestBed.createComponent(TmaStoresPage);
+    await fixture.whenStable();
+    const card = (id: string): string => el().querySelector(`#tma-store-${id}`)?.textContent ?? '';
+
+    for (const id of ['centre', 'busy', 'night']) {
+      expect(card(id)).not.toMatch(/\d+\s*мин/);
+      expect(card(id)).not.toContain('⏱');
+    }
+    expect(card('centre')).toContain('🕘 до 21:00');
+    expect(card('busy')).toContain('Загружен');
+    expect(card('night')).toContain('Заказ ко времени');
+  });
+
   it('offers Telegram’s settings when location was refused there', async () => {
     located = { kind: 'denied', canOpenSettings: true };
     el().querySelector<HTMLButtonElement>('[data-testid="near-me"]')?.click();

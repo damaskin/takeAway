@@ -75,6 +75,7 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                   >
                 }
               </div>
+              <!-- No wait in minutes here: the card names the place, checkout tells the wait. -->
               @if (closed(s)) {
                 <span
                   class="flex items-center justify-center"
@@ -82,18 +83,11 @@ import { TmaTabBarComponent } from '../../shared/tab-bar.component';
                   >{{ 'common.storeClosed.badge' | translate }}</span
                 >
               } @else if (preorderOnly(s)) {
-                <!-- Closed for an order now: a wait would be a promise nobody keeps. -->
+                <!-- Closed for an order now: takes pre-orders only. -->
                 <span
                   class="flex items-center justify-center"
                   style="height: 26px; padding: 0 10px; background: #e9a84b33; color: #8a6720; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 700; white-space: nowrap"
                   >{{ 'common.storeLater.badge' | translate }}</span
-                >
-              } @else {
-                <span
-                  class="flex items-center justify-center"
-                  [style.background]="etaColor(s.busyMeter)"
-                  style="height: 26px; padding: 0 10px; color: white; border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-                  >⏱ {{ minutes(s.currentEtaSeconds) }} {{ 'common.units.min' | translate }}</span
                 >
               }
             </div>
@@ -138,15 +132,5 @@ export class TmaHomePage implements OnInit {
     this.catalog
       .listStores()
       .subscribe({ next: (s) => this.stores.set(sortStoresByAvailability(s)), error: () => undefined });
-  }
-
-  minutes(seconds: number): number {
-    return Math.max(1, Math.round(seconds / 60));
-  }
-
-  etaColor(busy: number): string {
-    if (busy >= 75) return 'var(--color-berry)';
-    if (busy >= 40) return 'var(--color-amber)';
-    return 'var(--color-mint)';
   }
 }
