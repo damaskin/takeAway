@@ -20,7 +20,6 @@ interface StoreRow {
   status: string;
   baseEtaSeconds: number;
   kitchenParallelism: number;
-  slotCapacity: number;
   timezone: string;
   workingHours: Array<{ weekday: number; opensAt: number; closesAt: number; isClosed: boolean }>;
   shifts: Array<{ extendedUntil: Date | null }>;
@@ -38,7 +37,6 @@ const STORE: StoreRow = {
   status: 'OPEN',
   baseEtaSeconds: 300,
   kitchenParallelism: 2,
-  slotCapacity: 4,
   timezone: 'UTC',
   // Open around the clock, so these cases isolate capacity from hours.
   workingHours: [],
@@ -236,22 +234,15 @@ describe('KitchenLoadService', () => {
       expect(quote.etaSeconds).toBe(300 + 300 + 120);
     });
 
-    it('spills into the next slot with room when its own slot is full by count', async () => {
-      // Ready at 08:07; the 08:00 slot already holds four handovers (capacity).
+    it('does not spill because its slot holds many orders: only kitchen work fills a slot (2026-11-06)', async () => {
+      // Ready at 08:07; the 08:00 slot holds twelve one-minute handovers — 720 s of 1800.
       const { service } = makeService(
         {},
-        {
-          booked: booked(
-            ['2026-10-14T08:05:00Z', 60],
-            ['2026-10-14T08:06:00Z', 60],
-            ['2026-10-14T08:08:00Z', 60],
-            ['2026-10-14T08:10:00Z', 60],
-          ),
-        },
+        { booked: booked(...Array.from({ length: 12 }, () => ['2026-10-14T08:05:00Z', 60] as [string, number])) },
       );
       const quote = await service.quote('store-1', 120, 120, now);
-      expect(quote.pickupAt.toISOString()).toBe('2026-10-14T08:15:00.000Z');
-      expect(quote.etaSeconds).toBe(15 * 60);
+      expect(quote.pickupAt.toISOString()).toBe('2026-10-14T08:07:00.000Z');
+      expect(quote.etaSeconds).toBe(300 + 120);
       expect(quote.queueFull).toBe(false);
     });
 
@@ -263,10 +254,10 @@ describe('KitchenLoadService', () => {
     });
 
     it('reports the queue full when no slot within MAX_ASAP_WAIT_SECONDS has room — never PICKUP_SLOT_FULL', async () => {
-      const everySlotFull = [];
+      // Every slot already holds all 1800 s of work two hands do in 15 minutes.
+      const everySlotFull: Array<[string, number]> = [];
       for (let t = now.getTime(); t < now.getTime() + 2 * 3600_000; t += SLOT_MS) {
-        for (let i = 0; i < 4; i++)
-          everySlotFull.push(['' + new Date(t + 60_000).toISOString(), 60] as [string, number]);
+        everySlotFull.push([new Date(t + 60_000).toISOString(), 1800]);
       }
       const { service } = makeService({}, { booked: booked(...everySlotFull) });
       const quote = await service.quote('store-1', 120, 120, now);
@@ -275,7 +266,7 @@ describe('KitchenLoadService', () => {
     });
 
     it('is the same arithmetic for the store list (no work of its own)', () => {
-      const store = { id: 's', kitchenParallelism: 2, status: 'OPEN', baseEtaSeconds: 600, slotCapacity: 8 };
+      const store = { id: 's', kitchenParallelism: 2, status: 'OPEN', baseEtaSeconds: 600 };
       const plan = asapPlan(store, 3000, undefined, 0, 0, now, { maxAsapWaitSeconds: 2700 });
       // 600 + 3000 = 60 minutes > 45: only pre-orders.
       expect(plan.queueFull).toBe(true);
@@ -295,18 +286,28 @@ describe('KitchenLoadService', () => {
       expect(slots[slots.length - 1]?.startsAt.toISOString()).toBe('2026-10-15T08:00:00.000Z');
     });
 
-    it('marks a slot unavailable once it holds slotCapacity orders', async () => {
-      const full = new Date('2026-10-14T09:00:00.000Z');
+    it('keeps a slot open however many orders it holds while the kitchen has time (2026-11-06)', async () => {
+      const busy = new Date('2026-10-14T09:00:00.000Z');
       const { service } = makeService(
         {},
-        { booked: booked(...Array.from({ length: 4 }, () => [full.toISOString(), 60] as [string, number])) },
+        { booked: booked(...Array.from({ length: 12 }, () => [busy.toISOString(), 60] as [string, number])) },
       );
 
-      const slots = await service.pickupSlots('store-1', { from: new Date('2026-10-14T08:00:00.000Z'), hours: 2 });
-      const fullSlot = slots.find((s) => s.startsAt.getTime() === full.getTime());
+      const slots = await service.pickupSlots('store-1', {
+        from: new Date('2026-10-14T08:00:00.000Z'),
+        hours: 2,
+        workSeconds: 240,
+      });
+      const busySlot = slots.find((s) => s.startsAt.getTime() === busy.getTime());
 
-      expect(fullSlot).toMatchObject({ taken: 4, capacity: 4, available: false });
-      expect(slots.filter((s) => s.available).length).toBeGreaterThan(0);
+      // Twelve orders, 720 s of the 1800 s two hands do in 15 minutes: room for a 240 s cart.
+      expect(busySlot).toEqual({
+        startsAt: busy,
+        endsAt: new Date(busy.getTime() + SLOT_MS),
+        taken: 12,
+        available: true,
+      });
+      expect(slots.every((s) => s.available)).toBe(true);
     });
 
     it("marks a slot unavailable when the cart's kitchen work would not fit it", async () => {
@@ -365,9 +366,10 @@ describe('KitchenLoadService', () => {
     });
 
     it('rejects an order aimed at a slot that just filled up', async () => {
+      // Two 900 s orders: the 1800 s two hands do in 15 minutes are spoken for.
       const { service, prisma } = makeService(
         {},
-        { booked: booked(...Array.from({ length: 4 }, () => ['2026-10-14T08:22:41Z', 60] as [string, number])) },
+        { booked: booked(['2026-10-14T08:22:41Z', 900], ['2026-10-14T08:20:00Z', 900]) },
       );
 
       const attempt = service.assertScheduledSlot('store-1', new Date('2026-10-14T08:22:41.000Z'), 60, now);
@@ -382,11 +384,12 @@ describe('KitchenLoadService', () => {
   });
 
   describe('slot arithmetic', () => {
-    const store = { slotCapacity: 4, kitchenParallelism: 2 };
+    const store = { kitchenParallelism: 2 };
 
-    it('is full by count or by kitchen work', () => {
+    it('is full by kitchen work only, never by the number of orders', () => {
       expect(slotFits(undefined, store, 300)).toBe(true);
-      expect(slotFits({ count: 4, workSeconds: 0 }, store, 0)).toBe(false);
+      expect(slotFits({ count: 40, workSeconds: 0 }, store, 0)).toBe(true);
+      expect(slotFits({ count: 40, workSeconds: 1200 }, store, 600)).toBe(true);
       expect(slotFits({ count: 1, workSeconds: 1700 }, store, 100)).toBe(true);
       expect(slotFits({ count: 1, workSeconds: 1700 }, store, 101)).toBe(false);
     });
@@ -435,7 +438,7 @@ describe('KitchenLoadService (owner decisions 2026-10-20)', () => {
       productId,
       product: { prepTimeSeconds },
     });
-    const facts = (id: string) => ({ id, kitchenParallelism: 2, status: 'OPEN', baseEtaSeconds: 60, slotCapacity: 8 });
+    const facts = (id: string) => ({ id, kitchenParallelism: 2, status: 'OPEN', baseEtaSeconds: 60 });
 
     it('is the median preparation time of what can be ordered in the store, the stop-list left out', async () => {
       const { service, prisma } = makeService(

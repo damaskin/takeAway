@@ -143,6 +143,11 @@ describe('store DTOs', () => {
     expect(await errors(CreateStoreDto, { ...newStore, baseEtaSeconds: 30 })).toHaveLength(2);
   });
 
+  it('lets an admin tab from before 2026-11-06 still send «Заказов на 15 минут» (list 5.0, item 6)', async () => {
+    expect(await errors(UpdateStoreDto, { slotCapacity: 8, kitchenParallelism: 2 })).toEqual([]);
+    expect(await errors(CreateStoreDto, { ...newStore, slotCapacity: 8 })).toEqual([]);
+  });
+
   it('takes status on update only — a new store cannot be created open', async () => {
     expect(await errors(CreateStoreDto, { ...newStore, status: 'OPEN' })).toEqual(['property status should not exist']);
     expect(await errors(UpdateStoreDto, { status: 'OPEN' })).toEqual([]);
@@ -245,6 +250,18 @@ describe('AdminCatalogService — creating a store', () => {
     );
     const body = await conflictBody(svc.createStore({ ...newStore, slug: 'tsentr' }, ['brand-1']));
     expect(body).toMatchObject({ code: 'STORE_SLUG_TAKEN' });
+  });
+});
+
+describe('AdminCatalogService — «Заказов на 15 минут» is retired (2026-11-06)', () => {
+  it('never writes slotCapacity, on create or on update', async () => {
+    const { svc, prisma } = build();
+    await svc.createStore({ ...newStore, slotCapacity: 3 }, ['brand-1']);
+    expect(written(prisma.store.create)).not.toHaveProperty('slotCapacity');
+
+    await svc.updateStore('store-1', { slotCapacity: 3, kitchenParallelism: 3 }, ['brand-1']);
+    expect(written(prisma.store.update)).toMatchObject({ kitchenParallelism: 3 });
+    expect(written(prisma.store.update)).not.toHaveProperty('slotCapacity');
   });
 });
 

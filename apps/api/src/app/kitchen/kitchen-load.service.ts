@@ -65,10 +65,9 @@ export interface QueueFacts {
   status: string;
 }
 
-/** What an ASAP quote depends on: the queue, the fixed overhead and the slot capacity. */
+/** What an ASAP quote depends on: the queue and the fixed overhead (the slots follow `kitchenParallelism`). */
 export interface AsapFacts extends QueueFacts {
   baseEtaSeconds: number;
-  slotCapacity: number;
 }
 
 export interface EtaQuote {
@@ -96,7 +95,7 @@ export interface PickupSlot {
   endsAt: Date;
   /** Orders already promised in this slot. */
   taken: number;
-  capacity: number;
+  /** Room left for the cart's work: only kitchen work fills a slot. */
   available: boolean;
 }
 
@@ -131,8 +130,8 @@ export interface StoreCapacity extends Omit<AsapFacts, 'id'> {
  * the kitchen's hands, whichever is longer: three five-minute americanos on
  * a one-handed bar take fifteen minutes, not five (2026-10-20, item 10).
  *
- * A store quoted with no order of its own (the storefront's «готово через N
- * мин», `currentEtaSeconds`) counts a typical order's cooking instead: the
+ * A store quoted with no order of its own (the menu header's «готово через
+ * N мин», `currentEtaSeconds`) counts a typical order's cooking instead: the
  * median preparation time of what can be ordered there (item 9).
  *
  * The orders on the board are not all the kitchen is doing: when staff
@@ -141,9 +140,11 @@ export interface StoreCapacity extends Omit<AsapFacts, 'id'> {
  * so while the store is busy its queue part grows by a fixed
  * `BUSY_EXTRA_WAIT_SECONDS` (5 minutes by default).
  *
- * Slots are the other half. A 15-minute window is full once it holds
- * `slotCapacity` handovers or more kitchen work than the kitchen does in
- * 15 minutes (`900 s × kitchenParallelism`). A scheduled order picks a slot
+ * Slots are the other half. A 15-minute window is full once it holds more
+ * kitchen work than the kitchen does in 15 minutes
+ * (`900 s × kitchenParallelism`), however many orders that is: the store's
+ * «Заказов на 15 минут» (`slotCapacity`) is not read since 2026-11-06 (list
+ * 5.0, item 6). A scheduled order picks a slot
  * with room; an ASAP order spills into the first one with room after its
  * ETA, and is not taken at all when that is more than
  * `MAX_ASAP_WAIT_SECONDS` away — a quote nobody can honour is worse than
@@ -222,9 +223,11 @@ export class KitchenLoadService {
   }
 
   /**
-   * The ASAP quote of many stores at once, for a typical order — the store
-   * list's «готово через N мин» and its open-now badge. A typical order's
-   * cooking is the store's {@link typicalPrepByStore}; it costs no slot work.
+   * The ASAP quote of many stores at once, for a typical order — whether a
+   * store in the list takes an order for now, and the menu header's «готово
+   * через N мин» (store cards show no minutes since 2026-11-06). A typical
+   * order's cooking is the store's {@link typicalPrepByStore}; it costs no
+   * slot work.
    */
   async asapByStore(stores: readonly AsapFacts[], now: Date = new Date()): Promise<Map<string, EtaQuote>> {
     const quotes = new Map<string, EtaQuote>();
@@ -309,11 +312,10 @@ export class KitchenLoadService {
    * The pre-order slots a customer may pick over the next 24 hours. Times
    * that cannot be booked at all — outside the hours, during a kitchen pause,
    * too soon, right at an opening nobody is there for yet — are left out;
-   * slots that are full
-   * (by count, or by kitchen work with `workSeconds` of the customer's cart
-   * added) come back marked unavailable, so checkout can strike them out
-   * and the customer understands the store is busy instead of wondering
-   * where the times went.
+   * slots that are full (by kitchen work, with `workSeconds` of the
+   * customer's cart added — never by the number of orders) come back marked
+   * unavailable, so checkout can strike them out and the customer
+   * understands the store is busy instead of wondering where the times went.
    */
   async pickupSlots(
     storeId: string,
@@ -345,7 +347,6 @@ export class KitchenLoadService {
         startsAt,
         endsAt: new Date(t + SLOT_MS),
         taken: load?.count ?? 0,
-        capacity: store.slotCapacity,
         available: slotFits(load, store, workSeconds),
       });
     }
@@ -418,7 +419,6 @@ export class KitchenLoadService {
         status: true,
         baseEtaSeconds: true,
         kitchenParallelism: true,
-        slotCapacity: true,
         timezone: true,
         workingHours: {
           select: { weekday: true, opensAt: true, closesAt: true, isClosed: true },

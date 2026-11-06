@@ -26,7 +26,6 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     busyMeter: 35,
     baseEtaSeconds: 360,
     kitchenParallelism: 2,
-    slotCapacity: 8,
     taxRateBps: 0,
     taxIncludedInPrice: true,
     currency: 'AED',
@@ -355,6 +354,25 @@ describe('CatalogService', () => {
       prisma.cart.findUnique.mockResolvedValue({ storeId: 'store-2', items: [{ quantity: 2, unitPrepSeconds: 150 }] });
       await service.getPickupSlots('store-1', 'cart-1');
       expect(slots).toHaveBeenLastCalledWith('store-1', { workSeconds: 0 });
+    });
+
+    it('still sends capacity, always 0, for the app builds that require it', async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 'store-1' });
+      const kitchen = (service as unknown as { kitchen: KitchenLoadService }).kitchen;
+      const at = new Date('2026-11-06T09:00:00.000Z');
+      jest
+        .spyOn(kitchen, 'pickupSlots')
+        .mockResolvedValue([{ startsAt: at, endsAt: new Date(at.getTime() + 900_000), taken: 12, available: true }]);
+
+      expect(await service.getPickupSlots('store-1')).toEqual([
+        {
+          startsAt: '2026-11-06T09:00:00.000Z',
+          endsAt: '2026-11-06T09:15:00.000Z',
+          taken: 12,
+          capacity: 0,
+          available: true,
+        },
+      ]);
     });
   });
 

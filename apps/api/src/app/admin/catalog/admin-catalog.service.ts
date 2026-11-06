@@ -318,7 +318,7 @@ export class AdminCatalogService {
     });
     if (!brand) throw new NotFoundException('Brand not found');
 
-    const { workingHours, fulfillmentTypes, slug, currency, timezone, ...rest } = dto;
+    const { workingHours, fulfillmentTypes, slug, currency, timezone, slotCapacity: _retired, ...rest } = dto;
     let store: StoreWithHours;
     try {
       store = await this.prisma.store.create({
@@ -351,7 +351,7 @@ export class AdminCatalogService {
     scope: BrandScope = null,
   ): Promise<StoreView & { hasOrders: boolean }> {
     const store = await this.getStore(id, scope);
-    const { workingHours: _ignored, timezone, currency, status, ...rest } = dto;
+    const { workingHours: _ignored, timezone, currency, status, slotCapacity: _retired, ...rest } = dto;
 
     // Every placed order carries the store's currency; switching it under
     // them would mix two currencies in one store's reports and refunds.

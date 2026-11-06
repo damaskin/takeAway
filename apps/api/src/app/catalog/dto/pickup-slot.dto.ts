@@ -15,13 +15,22 @@ export class PickupSlotDto {
   @ApiProperty({ description: 'Handovers already promised in this slot' })
   taken!: number;
 
-  @ApiProperty({ description: "The store's ceiling for one slot" })
+  /**
+   * The store's «Заказов на 15 минут» capped a slot until 2026-11-06. Always
+   * 0 since; still sent because the app builds in the stores require it.
+   */
+  @ApiProperty({
+    deprecated: true,
+    description:
+      'Always 0: a slot is no longer capped by a number of orders (2026-11-06). Kept for app builds that ' +
+      'require the field; read `available`.',
+  })
   capacity!: number;
 
   @ApiProperty({
     description:
-      'False once the slot is full: it holds `capacity` orders, or more kitchen work than 15 minutes of the ' +
-      "kitchen (with the cart's own work when `cartId` was passed)",
+      'False once the slot is full: the kitchen work in it plus the cart work (when `cartId` was passed) would ' +
+      'be more than 15 minutes of the kitchen, however many orders that is',
   })
   available!: boolean;
 }
