@@ -243,7 +243,6 @@ export const TRANSLATIONS_RU = {
         title: 'Точка рядом с вами',
         subtitle: 'Заберите заказ в любой из локаций',
         cta: 'Открыть на карте',
-        readyIn: 'готово через {{min}} мин',
       },
       menu: {
         title: 'Из меню',

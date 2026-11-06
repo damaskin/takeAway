@@ -241,7 +241,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Find a store near you',
         subtitle: 'Pick up your order at any of our locations',
         cta: 'View on map',
-        readyIn: 'ready in {{min}} min',
       },
       menu: {
         title: 'From the menu',
