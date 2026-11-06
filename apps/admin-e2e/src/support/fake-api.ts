@@ -251,6 +251,9 @@ export const CHURN = {
       avgCheckCents: 4_500,
       lastOrderAt: '2026-09-12T08:30:00.000Z',
       daysSinceLastOrder: 22,
+      visits: 6,
+      visitIntervalDays: 11,
+      lostRevenueCents: 9_000,
     },
   ],
 };

@@ -3180,7 +3180,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       definition: 'An inactive customer has ordered from you at least {{min}} times but not in the last {{days}} days.',
       lost: 'became inactive',
       lostRevenue: 'revenue missed',
-      lostRevenueHint: 'the sum of their average checks — what one more visit from each would bring',
+      lostRevenueHint:
+        'What a customer would have brought coming at their usual pace: days without a visit ÷ usual interval × average check. A forecast, not lost profit.',
+      lostRevenueOneVisit:
+        'A visit is a day with an order. Someone who came only once gets the brand’s average interval; with no repeat visits at the brand yet, 0.',
+      intervalCol: 'Usually every',
+      intervalDays: '{{days}} d',
+      intervalOneVisit: 'one visit',
+      estimateCol: 'Missed',
       vsPrevious: '{{change}} vs the period before ({{count}} then)',
       daysAgo: '{{days}} d ago',
       toRetention: 'Win-back',

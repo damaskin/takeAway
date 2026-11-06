@@ -29,6 +29,22 @@ const CHURN: ChurnStats = {
       avgCheckCents: 12_000,
       lastOrderAt: '2026-09-28T09:00:00.000Z',
       daysSinceLastOrder: 12,
+      visits: 5,
+      visitIntervalDays: 1.4444,
+      lostRevenueCents: 99_692,
+    },
+    {
+      userId: 'u2',
+      name: 'Олег',
+      phone: null,
+      orders: 3,
+      totalCents: 9_000,
+      avgCheckCents: 3_000,
+      lastOrderAt: '2026-09-28T09:00:00.000Z',
+      daysSinceLastOrder: 12,
+      visits: 1,
+      visitIntervalDays: null,
+      lostRevenueCents: 6_000,
     },
   ],
 };
@@ -120,6 +136,30 @@ describe('RetentionTabComponent', () => {
     expect(figures[0]?.classList).toContain('rt-figure-money');
     expect(text(figures[0])).toContain('360 MDL');
     expect(text(figures[1])).toContain('3');
+  });
+
+  it('explains the estimate and what happens to a customer who came once', async () => {
+    const fixture = await render();
+    const money = (fixture.nativeElement as HTMLElement).querySelector('.rt-figure-money');
+    expect(text(money)).toContain(
+      'дни без визитов ÷ обычный интервал × средний чек. Это прогноз, а не потерянная прибыль.',
+    );
+    expect(text(money?.querySelector('[data-testid="retention-one-visit"]'))).toContain(
+      'Кто был всего один раз, тому берём средний интервал по бренду',
+    );
+  });
+
+  it('shows each lost customer’s usual interval and estimate', async () => {
+    const fixture = await render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect([...el.querySelectorAll('.an-table th')].map((th) => text(th))).toEqual(
+      expect.arrayContaining(['Обычно раз в', 'Упущено']),
+    );
+    const rows = [...el.querySelectorAll('.an-table tbody tr')].map((tr) => text(tr));
+    expect(rows[0]).toContain('1,4 дн.');
+    expect(rows[0]).toContain('≈ 996,92 MDL');
+    expect(rows[1]).toContain('один визит');
+    expect(rows[1]).toContain('≈ 60 MDL');
   });
 
   it('offers a campaign, a code and an offer for the same days and store', async () => {
