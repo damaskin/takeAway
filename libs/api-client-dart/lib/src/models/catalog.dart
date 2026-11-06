@@ -564,6 +564,9 @@ class PickupSlot {
   final DateTime startsAt;
   final DateTime endsAt;
   final int taken;
+
+  /// Always 0 since 2026-11-06: a slot is full by kitchen work only. The API
+  /// keeps sending it for the app builds that require it; read [available].
   final int capacity;
   final bool available;
 }
