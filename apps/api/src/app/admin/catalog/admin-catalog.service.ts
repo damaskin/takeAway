@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   BrandModerationStatus,
+  type CategoryKind,
   Prisma,
   Role,
   StoreStatus,
@@ -15,7 +16,7 @@ import {
   type VariationType,
 } from '@prisma/client';
 import { DEFAULT_COMMISSION_BPS } from '@takeaway/shared-types';
-import { inferCategoryKind } from '@takeaway/utils';
+import { inferCategoryKind, showsNutrition } from '@takeaway/utils';
 
 import { onboardingProgressOf } from '../../brand-owner/brand-onboarding';
 import { brandStoreIds, LISTING_INCLUDE, listBrandMenuInStore, withStoreIds } from '../../catalog/product-listing';
@@ -754,11 +755,15 @@ export class AdminCatalogService {
    * The new product starts from its category: the category's option set is
    * copied onto it and, without a time of its own, it takes the category's
    * default preparation time — unless `applyCategoryOptions` is false.
+   *
+   * Calories and nutrition are kept for a meal (FOOD) only; see
+   * {@link withoutNutritionUnlessFood}.
    */
   async createProduct(dto: CreateProductDto, scope: BrandScope = null) {
     assertInScope(scope, dto.brandId);
     const category = await this.assertCategoryOfBrand(dto.categoryId, dto.brandId);
-    const { storeIds: requested, applyCategoryOptions, ...fields } = dto;
+    const { storeIds: requested, applyCategoryOptions, ...given } = dto;
+    const fields = withoutNutritionUnlessFood(given, category.kind);
     const fromCategory = applyCategoryOptions !== false;
     const prepTimeSeconds =
       fields.prepTimeSeconds ?? (fromCategory ? (category.defaultPrepTimeSeconds ?? undefined) : undefined);
@@ -793,12 +798,19 @@ export class AdminCatalogService {
     return withStoreIds(created);
   }
 
+  /**
+   * Saving a product that is not a meal (by its category after the save)
+   * clears its calories and nutrition: the form no longer shows them for
+   * it and the storefronts no longer get them. Products nobody saves keep
+   * whatever they have stored.
+   */
   async updateProduct(id: string, dto: UpdateProductDto, scope: BrandScope = null) {
     const product = await this.getProduct(id, scope);
-    const { storeIds: requested, ...fields } = dto;
-    const data: Prisma.ProductUncheckedUpdateInput = { ...fields };
+    const { storeIds: requested, ...given } = dto;
+    let kind: CategoryKind = product.category?.kind ?? 'OTHER';
+    if (dto.categoryId) kind = (await this.assertCategoryOfBrand(dto.categoryId, product.brandId)).kind;
+    const data: Prisma.ProductUncheckedUpdateInput = withoutNutritionUnlessFood(given, kind);
     if (dto.categoryId) {
-      await this.assertCategoryOfBrand(dto.categoryId, product.brandId);
       // Moved to another category: it goes to the end there instead of
       // keeping a position number that meant something in the old one.
       if (dto.categoryId !== product.categoryId && dto.sortOrder === undefined) {
@@ -845,15 +857,16 @@ export class AdminCatalogService {
   private async assertCategoryOfBrand(
     categoryId: string,
     brandId: string,
-  ): Promise<{ defaultPrepTimeSeconds: number | null }> {
+  ): Promise<{ defaultPrepTimeSeconds: number | null; kind: CategoryKind }> {
     const category = await this.prisma.category.findUnique({
       where: { id: categoryId },
-      select: { brandId: true, defaultPrepTimeSeconds: true },
+      select: { brandId: true, defaultPrepTimeSeconds: true, kind: true },
     });
     if (!category || category.brandId !== brandId) {
       throw new BadRequestException('The category belongs to another brand');
     }
-    return { defaultPrepTimeSeconds: category.defaultPrepTimeSeconds ?? null };
+    // A category row from before kinds (or a test double) reads as OTHER.
+    return { defaultPrepTimeSeconds: category.defaultPrepTimeSeconds ?? null, kind: category.kind ?? 'OTHER' };
   }
 
   /**
@@ -1073,6 +1086,20 @@ function categoryNotEmpty(productCount?: number) {
     'Move or delete the products of this category first',
     productCount === undefined ? {} : { productCount },
   );
+}
+
+const NO_NUTRITION = { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null } as const;
+
+/**
+ * The product fields to write, with calories and nutrition only for a meal
+ * (FOOD) since 2026-11-06: for any other kind they are written as empty,
+ * whatever the request carried, so a drink saved once has none stored.
+ */
+function withoutNutritionUnlessFood<T extends object>(
+  fields: T,
+  kind: CategoryKind,
+): T | (Omit<T, keyof typeof NO_NUTRITION> & typeof NO_NUTRITION) {
+  return showsNutrition(kind) ? fields : { ...fields, ...NO_NUTRITION };
 }
 
 function assertCountRange(minCount: number, maxCount: number): void {

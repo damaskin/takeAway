@@ -474,10 +474,58 @@ describe('CatalogService', () => {
     const detail = await service.getProduct('latte');
 
     for (const product of [listed, detail]) {
-      expect(product).toMatchObject({ calories: 150, proteinsGrams: 5, fatsGrams: 6, carbsGrams: 12 });
       expect(product).not.toHaveProperty('caffeineLevel');
       expect(product).not.toHaveProperty('allergens');
       expect(product).not.toHaveProperty('dietTags');
+    }
+  });
+
+  // Calories and nutrition are a meal's since 2026-11-06: a coffee, a lemonade,
+  // a croissant or an OTHER product sends none, whatever it has stored.
+  it('sends calories and nutrition for a meal only', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'store-1', slug: 'cafe', brandId: 'brand-1' });
+    const row = (id: string, categoryId: string) => ({
+      id,
+      categoryId,
+      brandId: 'brand-1',
+      slug: id,
+      name: id,
+      description: null,
+      basePriceCents: 450,
+      prepTimeSeconds: 180,
+      calories: 150,
+      proteinsGrams: 5,
+      fatsGrams: 6,
+      carbsGrams: 12,
+      imageUrls: [],
+      sortOrder: 0,
+    });
+    const kinds = ['FOOD', 'HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER'] as const;
+    prisma.category.findMany.mockResolvedValue(
+      kinds.map((kind) => ({
+        id: `c-${kind}`,
+        slug: kind,
+        name: kind,
+        kind,
+        products: [row(`p-${kind}`, `c-${kind}`)],
+      })),
+    );
+
+    const menu = await service.getMenu('cafe');
+    const listed = Object.fromEntries(menu.categories.map((c) => [c.kind, c.products[0]]));
+    const full = { calories: 150, proteinsGrams: 5, fatsGrams: 6, carbsGrams: 12 };
+    const none = { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null };
+    expect(listed['FOOD']).toMatchObject(full);
+    for (const kind of kinds.filter((k) => k !== 'FOOD')) expect(listed[kind]).toMatchObject(none);
+
+    for (const kind of kinds) {
+      prisma.product.findFirst.mockResolvedValueOnce({
+        ...row(`p-${kind}`, `c-${kind}`),
+        variations: [],
+        modifiers: [],
+        category: { kind },
+      });
+      expect(await service.getProduct(`p-${kind}`)).toMatchObject(kind === 'FOOD' ? full : none);
     }
   });
 

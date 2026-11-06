@@ -346,11 +346,20 @@ describe('AdminCatalogService — categories', () => {
 });
 
 describe('AdminCatalogService — products', () => {
-  const product = { id: 'p1', brandId: 'b1', categoryId: 'cat-a', variations: [], modifiers: [], stores: [] };
+  // A meal, so calories and nutrition are kept (see the tests on them below).
+  const product = {
+    id: 'p1',
+    brandId: 'b1',
+    categoryId: 'cat-a',
+    category: { name: 'Шаурма', kind: 'FOOD' },
+    variations: [],
+    modifiers: [],
+    stores: [],
+  };
 
   function withProduct() {
     const built = build();
-    built.prisma.category.findUnique.mockResolvedValue({ brandId: 'b1' });
+    built.prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'FOOD' });
     built.prisma.product.findUnique.mockResolvedValue(product);
     return built;
   }
@@ -382,7 +391,7 @@ describe('AdminCatalogService — products', () => {
   // A shawarma added to «Шаурма» starts at 15 minutes with the sauces of the category.
   it("starts a new product from its category's prep time and option set", async () => {
     const { svc, prisma } = withProduct();
-    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900 });
+    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
     prisma.categoryOption.findMany.mockResolvedValue([
       {
         kind: 'MODIFIER',
@@ -425,7 +434,7 @@ describe('AdminCatalogService — products', () => {
 
   it('keeps a typed prep time, and can leave the category set off', async () => {
     const { svc, prisma } = withProduct();
-    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900 });
+    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
 
     await svc.createProduct(
       { brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000, prepTimeSeconds: 600 },
@@ -480,6 +489,57 @@ describe('AdminCatalogService — products', () => {
       where: { id: 'p1' },
       data: { categoryId: 'cat-a', name: 'Латте' },
       include: { stores: { select: { storeId: true } } },
+    });
+  });
+
+  // Calories and nutrition are a meal's since 2026-11-06.
+  describe('calories and nutrition', () => {
+    const nutrition = { calories: 450, proteinsGrams: 20, fatsGrams: 18.5, carbsGrams: 40 };
+    const none = { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null };
+    const written = (mock: jest.Mock) => (mock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+
+    it('stores them for a new meal and leaves them out for a new drink', async () => {
+      const { svc, prisma } = withProduct();
+      await svc.createProduct(
+        { brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000, ...nutrition },
+        ['b1'],
+      );
+      expect(written(prisma.product.create)).toMatchObject(nutrition);
+
+      prisma.product.create.mockClear();
+      prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'HOT_DRINKS' });
+      await svc.createProduct(
+        { brandId: 'b1', categoryId: 'cat-coffee', name: 'Латте', basePriceCents: 3500, ...nutrition },
+        ['b1'],
+      );
+      expect(written(prisma.product.create)).toMatchObject(none);
+    });
+
+    it('keeps them when a meal is saved', async () => {
+      const { svc, prisma } = withProduct();
+      await svc.updateProduct('p1', { name: 'Шаурма XL', calories: 600 }, ['b1']);
+      expect(written(prisma.product.update)).toEqual({ name: 'Шаурма XL', calories: 600 });
+    });
+
+    it('clears them when a product that is not a meal is saved, whatever was sent', async () => {
+      for (const kind of ['HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER']) {
+        const { svc, prisma } = withProduct();
+        prisma.product.findUnique.mockResolvedValue({ ...product, category: { name: 'Напитки', kind } });
+        await svc.updateProduct('p1', { name: 'Латте', calories: 120 }, ['b1']);
+        expect(written(prisma.product.update)).toEqual({ name: 'Латте', ...none });
+      }
+    });
+
+    it('goes by the category the product is moved to', async () => {
+      const { svc, prisma } = withProduct();
+      prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'BAKERY' });
+      await svc.updateProduct('p1', { categoryId: 'cat-bakery' }, ['b1']);
+      expect(written(prisma.product.update)).toMatchObject({ categoryId: 'cat-bakery', ...none });
+
+      const back = withProduct();
+      back.prisma.product.findUnique.mockResolvedValue({ ...product, category: { name: 'Выпечка', kind: 'BAKERY' } });
+      await back.svc.updateProduct('p1', { categoryId: 'cat-a', ...nutrition }, ['b1']);
+      expect(written(back.prisma.product.update)).toMatchObject({ categoryId: 'cat-a', ...nutrition });
     });
   });
 
