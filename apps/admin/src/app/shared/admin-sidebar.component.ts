@@ -391,6 +391,7 @@ export class AdminSidebarComponent {
       roles: ADMIN_ROLES.feedback,
       badge: 'newFeedback',
     },
+    { icon: '⭐', label: 'admin.nav.reviews', link: '/reviews', roles: ADMIN_ROLES.reviews },
     { icon: '⚙', label: 'admin.nav.settings', link: '/settings', roles: ADMIN_ROLES.settings },
     { icon: '🔌', label: 'admin.nav.integrations', link: '/integrations', roles: ADMIN_ROLES.integrations },
     {

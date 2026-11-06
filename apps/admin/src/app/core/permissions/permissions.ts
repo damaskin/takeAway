@@ -35,6 +35,7 @@ export type NavKey =
   | 'customers'
   | 'brands'
   | 'feedback'
+  | 'reviews'
   | 'settings'
   | 'integrations'
   | 'telegramLink';
@@ -86,6 +87,9 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   brands: [SA],
   // What customers write from their profile — read by the platform team.
   feedback: [SA],
+  // Customers' reviews of their orders (Maxim, 2026-11-06: «Видит только
+  // takeAway») — the platform team only; brands never see them.
+  reviews: [SA],
   settings: [SA, BA],
   integrations: [SA, BA],
   // Where work notifications go in Telegram (orders for the team, alerts
@@ -144,6 +148,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   customers: '/customers',
   brands: '/brands',
   feedback: '/feedback',
+  reviews: '/reviews',
   settings: '/settings',
   integrations: '/integrations',
   telegramLink: '/telegram-link',
