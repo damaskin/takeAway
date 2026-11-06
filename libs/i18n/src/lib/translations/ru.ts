@@ -94,6 +94,23 @@ export const TRANSLATIONS_RU = {
         holdPending: 'Блокировка на карте будет снята автоматически.',
       },
     },
+    /**
+     * «Как вам заказ?» on the order page once the order is handed over —
+     * the web and the Mini App. Only the takeAway team reads reviews.
+     */
+    orderReview: {
+      title: 'Как вам заказ?',
+      hint: 'Отзыв увидит только команда takeAway',
+      stars: 'Оценка заказа',
+      star: 'Оценка {{n}} из 5',
+      commentLabel: 'Комментарий',
+      commentPlaceholder: 'Комментарий (необязательно)',
+      send: 'Отправить',
+      sending: 'Отправляем…',
+      thanks: 'Спасибо за отзыв!',
+      given: 'Ваша оценка: {{n}} из 5',
+      failed: 'Не удалось отправить отзыв. Попробуйте ещё раз.',
+    },
     brand: 'takeAway',
     signIn: 'Войти',
     signOut: 'Выйти',

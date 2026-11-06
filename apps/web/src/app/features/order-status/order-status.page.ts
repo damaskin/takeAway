@@ -32,6 +32,7 @@ import {
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
+import { OrderReviewCardComponent } from './order-review-card.component';
 
 interface StatusStep {
   key: OrderStatusString;
@@ -92,7 +93,14 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
 @Component({
   selector: 'app-order-status',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, LeafletMapComponent, ProductImageComponent, ConfirmDialogComponent],
+  imports: [
+    RouterLink,
+    TranslatePipe,
+    LeafletMapComponent,
+    ProductImageComponent,
+    ConfirmDialogComponent,
+    OrderReviewCardComponent,
+  ],
   host: { '(window:pageshow)': 'onPageShow($event)' },
   template: `
     @if (order(); as o) {
@@ -170,6 +178,11 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               >
             }
           </article>
+        }
+
+        <!-- «Как вам заказ?» once the order is in the customer's hands; the thanks after. -->
+        @if (o.review || o.canReview) {
+          <app-order-review-card class="w-full" [order]="o" (reviewed)="order.set($event)" />
         }
 
         <!-- Where the money stands. The first thing a customer wants after
