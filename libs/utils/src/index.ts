@@ -16,3 +16,4 @@ export * from './lib/category-kind';
 export * from './lib/contact';
 export * from './lib/brand-launch';
 export * from './lib/temp-password';
+export * from './lib/queue-policy';
