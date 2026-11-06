@@ -115,23 +115,6 @@ describe('ProductFormComponent', () => {
     expect(component.showError('price')).toBe(true);
   });
 
-  it('clears an emptied nutrition value on edit instead of leaving the old one', () => {
-    const updateProduct = jest.fn().mockReturnValue(of(LATTE));
-    const component = form({ ...LATTE, calories: 120, carbsGrams: 12.5 }, { updateProduct });
-
-    expect(component.form.getRawValue()).toMatchObject({
-      price: '35',
-      prepMinutes: '3',
-      calories: '120',
-      carbs: '12,5',
-    });
-    component.form.patchValue({ calories: '' });
-    component.submit();
-
-    expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ calories: null, carbsGrams: 12.5 }));
-    expect(updateProduct.mock.calls[0][1]).not.toHaveProperty('categoryId');
-  });
-
   // A burger bar and a pizzeria of one brand: the burger is sold only in one.
   it('offers the stores of a brand with several, and sends only the ones left ticked', () => {
     const createProduct = jest.fn().mockReturnValue(of(LATTE));
@@ -202,19 +185,25 @@ describe('ProductFormComponent', () => {
     const text = (fixture: { nativeElement: unknown }) => (fixture.nativeElement as HTMLElement).textContent ?? '';
 
     // Caffeine, «Особенности» and allergens left the menu on 2026-11-05;
-    // energy and nutrition stay in «Для покупателя» for every kind.
-    it('asks a coffee and a shawarma alike for energy and nutrition only', () => {
+    // since 2026-11-06 «Для покупателя» (energy and nutrition) is a meal's only.
+    it('asks a shawarma for energy and nutrition, and a coffee for neither', () => {
       for (const categoryId of ['coffee', 'shawarma']) {
         TestBed.resetTestingModule();
         const el = kindForm(null, categoryId).nativeElement as HTMLElement;
-        const details = el.querySelector('fieldset')?.textContent ?? '';
-        expect(details).toContain('Для покупателя');
-        expect(details).toContain('Калорийность, ккал');
-        expect(details).toContain('Углеводы, г');
-        expect(el.querySelector('[data-testid="product-details-hint"]')).not.toBeNull();
-        expect(details).not.toContain('Кофеин');
-        expect(details).not.toContain('Особенности');
-        expect(details).not.toContain('Аллергены');
+        const details = el.querySelector('[data-testid="product-details"]')?.textContent ?? '';
+        if (categoryId === 'shawarma') {
+          expect(details).toContain('Для покупателя');
+          expect(details).toContain('Калорийность, ккал');
+          expect(details).toContain('Углеводы, г');
+          expect(el.querySelector('[data-testid="product-details-hint"]')).not.toBeNull();
+        } else {
+          expect(el.querySelector('[data-testid="product-details"]')).toBeNull();
+          expect(el.textContent).not.toContain('Для покупателя');
+          expect(el.textContent).not.toContain('Калорийность');
+        }
+        expect(el.textContent).not.toContain('Кофеин');
+        expect(el.textContent).not.toContain('Особенности');
+        expect(el.textContent).not.toContain('Аллергены');
         expect(el.querySelector('[data-testid="product-caffeine"]')).toBeNull();
         expect(el.querySelector('[data-testid="product-diet-tags"]')).toBeNull();
         expect(el.querySelector('[data-testid="product-allergens"]')).toBeNull();
@@ -247,6 +236,71 @@ describe('ProductFormComponent', () => {
       component.form.controls.applyCategoryOptions.setValue(false);
       component.submit();
       expect(createProduct.mock.calls[1][0]).toMatchObject({ applyCategoryOptions: false });
+    });
+
+    it('clears an emptied nutrition value of a meal on edit instead of leaving the old one', () => {
+      const updateProduct = jest.fn().mockReturnValue(of(LATTE));
+      const shawarma = { ...LATTE, categoryId: 'shawarma', calories: 120, carbsGrams: 12.5 };
+      const component = kindForm(shawarma, 'shawarma', { updateProduct }).componentInstance;
+
+      expect(component.form.getRawValue()).toMatchObject({
+        price: '35',
+        prepMinutes: '3',
+        calories: '120',
+        carbs: '12,5',
+      });
+      component.form.patchValue({ calories: '' });
+      component.submit();
+
+      expect(updateProduct).toHaveBeenCalledWith('p1', expect.objectContaining({ calories: null, carbsGrams: 12.5 }));
+      expect(updateProduct.mock.calls[0][1]).not.toHaveProperty('categoryId');
+    });
+
+    // The block follows the category picked in the form, and a product that
+    // is not a meal is saved without figures — even ones it had, or a typo
+    // nobody can see any more.
+    it('hides energy and nutrition as soon as the product moves out of a meal category, and saves them empty', () => {
+      const updateProduct = jest.fn().mockReturnValue(of(LATTE));
+      const shawarma = { ...LATTE, categoryId: 'shawarma', calories: 540, proteinsGrams: 20 };
+      const fixture = kindForm(shawarma, 'shawarma', { updateProduct });
+      const component = fixture.componentInstance;
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('[data-testid="product-details"]')).not.toBeNull();
+
+      component.form.patchValue({ fats: 'много' });
+      component.form.controls.categoryId.setValue('coffee');
+      fixture.detectChanges();
+      expect(component.hasNutrition()).toBe(false);
+      expect(el.querySelector('[data-testid="product-details"]')).toBeNull();
+
+      component.submit();
+      expect(updateProduct).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({
+          categoryId: 'coffee',
+          calories: null,
+          proteinsGrams: null,
+          fatsGrams: null,
+          carbsGrams: null,
+        }),
+      );
+
+      component.form.controls.categoryId.setValue('shawarma');
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="product-details"]')).not.toBeNull();
+      expect(component.form.controls.calories.value).toBe('540');
+    });
+
+    it('creates a coffee without energy or nutrition', () => {
+      const createProduct = jest.fn().mockReturnValue(of(LATTE));
+      const component = kindForm(null, 'coffee', { createProduct }).componentInstance;
+
+      component.form.patchValue({ name: 'Латте', price: '35', calories: '120' });
+      component.submit();
+
+      const sent = createProduct.mock.calls[0][0];
+      for (const field of ['calories', 'proteinsGrams', 'fatsGrams', 'carbsGrams'])
+        expect(sent).not.toHaveProperty(field);
     });
 
     // What a product had in the retired fields stays in the database: the
