@@ -73,7 +73,6 @@ export interface StoreAdminDto {
   kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
-  slotCapacity?: number;
   taxRateBps?: number;
   taxIncludedInPrice?: boolean;
   heroImageUrl?: string | null;
@@ -108,7 +107,6 @@ export interface UpdateStoreInput {
   kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
-  slotCapacity?: number;
   taxRateBps?: number;
   taxIncludedInPrice?: boolean;
   deliveryFeeBaseCents?: number | null;
