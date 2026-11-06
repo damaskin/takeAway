@@ -37,9 +37,7 @@ import { AuthSessionDto, AuthTokensDto, AuthUserDto } from './dto/auth-response.
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { KdsPinLoginDto } from './dto/kds-pin-login.dto';
 import { PasswordChangeSelfDto } from './dto/password-change-self.dto';
-import { PasswordForgotDto } from './dto/password-forgot.dto';
 import { PasswordLoginDto } from './dto/password-login.dto';
-import { PasswordResetDto } from './dto/password-reset.dto';
 import { NotificationPrefsDto, UpdateNotificationPrefsDto } from './dto/notification-prefs.dto';
 import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -57,8 +55,6 @@ const IS_DEV = process.env['NODE_ENV'] !== 'production';
 const DEV_MULTIPLIER = IS_DEV ? 10 : 1;
 const limits = {
   passwordLogin: 10 * DEV_MULTIPLIER,
-  passwordForgot: 3 * DEV_MULTIPLIER,
-  passwordReset: 10 * DEV_MULTIPLIER,
   telegram: 20 * DEV_MULTIPLIER,
   refresh: 20 * DEV_MULTIPLIER,
   // PIN auth on a shared tablet — generous enough for a clumsy barista, tight
@@ -112,23 +108,8 @@ export class AuthController {
     return this.auth.loginWithKdsPin({ pin: dto.pin, deviceToken: dto.deviceToken, storeId: dto.storeId });
   }
 
-  @Public()
-  @Post('password/forgot')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Throttle({ default: { limit: limits.passwordForgot, ttl: 60_000 } })
-  @ApiNoContentResponse()
-  async passwordForgot(@Body() dto: PasswordForgotDto): Promise<void> {
-    await this.auth.requestPasswordReset(dto.email);
-  }
-
-  @Public()
-  @Post('password/reset')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Throttle({ default: { limit: limits.passwordReset, ttl: 60_000 } })
-  @ApiNoContentResponse()
-  async passwordReset(@Body() dto: PasswordResetDto): Promise<void> {
-    await this.auth.resetPassword(dto.token, dto.newPassword);
-  }
+  // «Забыли пароль?» — `password/forgot` and `password/reset` — lives in
+  // PasswordResetController.
 
   /**
    * Self-service password change. Used by the admin / KDS 'change your

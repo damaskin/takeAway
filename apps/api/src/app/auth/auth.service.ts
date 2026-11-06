@@ -4,14 +4,10 @@ import {
   HttpStatus,
   Injectable,
   Logger,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Locale, OAuthProvider, Prisma, Role, type User } from '@prisma/client';
 
-import { adminAppUrl } from '../common/config/admin-app-url';
-import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
@@ -23,23 +19,9 @@ import {
   type OAuthProviderKey,
   type TelegramIdentity,
 } from './services/oauth-identity.service';
-import { PasswordService } from './services/password.service';
+import { PASSWORD_LOGIN_ROLES, PasswordService } from './services/password.service';
 import { TelegramService, type TelegramLoginWidgetPayload, type TelegramUser } from './services/telegram.service';
 import { TokensService } from './services/tokens.service';
-
-const PASSWORD_RESET_TTL_SECONDS = 60 * 60; // 1 hour
-
-// Roles that can authenticate with email+password. Customers never set a
-// password — they sign in with Telegram, Google or Apple — so we refuse the
-// login flow for them outright even if a hash somehow existed.
-const PASSWORD_LOGIN_ROLES: ReadonlySet<Role> = new Set([
-  Role.SUPER_ADMIN,
-  Role.BRAND_ADMIN,
-  Role.STORE_MANAGER,
-  Role.MENU_EDITOR,
-  Role.STAFF,
-  Role.RIDER,
-]);
 
 @Injectable()
 export class AuthService {
@@ -53,8 +35,6 @@ export class AuthService {
     private readonly oauth: OAuthIdentityService,
     private readonly passwords: PasswordService,
     private readonly kdsPins: KdsPinService,
-    private readonly mail: MailService,
-    private readonly config: ConfigService,
     private readonly kitchenDevices: KitchenDeviceService,
   ) {}
 
@@ -290,76 +270,6 @@ export class AuthService {
       data: { passwordHash: hash, passwordMustChange: false },
     });
     await this.tokens.revokeAll(user.id, keepRefreshToken);
-  }
-
-  /**
-   * Issues a reset token for the given email. Always returns the same shape
-   * even if the email is unknown — clients show a generic "if the address
-   * exists we emailed a link" so attackers can't enumerate accounts.
-   *
-   * Except when no email can leave this server at all: without SMTP, or in
-   * production without ADMIN_APP_URL for the link, the request used to
-   * answer 204 and the page said "check your inbox" for a letter that was
-   * never sent. Now it answers 503 `PASSWORD_RESET_UNAVAILABLE` up front —
-   * the same for every address, so it tells nothing about accounts.
-   */
-  async requestPasswordReset(email: string): Promise<void> {
-    const base = adminAppUrl(this.config);
-    const mailReady = this.mail.isConfigured();
-    if (!mailReady || !base) {
-      const missing = [mailReady ? null : 'SMTP_HOST', base ? null : 'ADMIN_APP_URL'].filter(Boolean).join(', ');
-      this.logger.error(`Password reset requested, but no reset email can be sent: ${missing} not set`);
-      throw new ServiceUnavailableException({
-        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-        error: 'Service Unavailable',
-        code: 'PASSWORD_RESET_UNAVAILABLE',
-        message: 'Password reset by email is not available on this server',
-      });
-    }
-
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (!user || !PASSWORD_LOGIN_ROLES.has(user.role)) {
-      this.logger.debug(`Password reset requested for unknown/non-staff email: ${email}`);
-      return;
-    }
-
-    const { raw, hash } = this.passwords.issueResetToken();
-    await this.prisma.passwordResetToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: hash,
-        expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_SECONDS * 1000),
-      },
-    });
-
-    const resetUrl = `${base}/reset-password?token=${raw}`;
-    await this.mail.sendPasswordReset(user.email ?? email, resetUrl);
-  }
-
-  /**
-   * Sets a new password from an emailed link and signs the account out
-   * everywhere: a reset is what someone does when they think the old
-   * password, or a device, is in the wrong hands.
-   */
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    const hash = this.passwords.hashResetToken(token);
-    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: hash } });
-    if (!record || record.consumedAt || record.expiresAt < new Date()) {
-      throw new BadRequestException('Reset link is invalid or has expired');
-    }
-
-    const newHash = await this.passwords.hash(newPassword);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: record.userId },
-        data: { passwordHash: newHash, passwordMustChange: false },
-      }),
-      this.prisma.passwordResetToken.update({
-        where: { id: record.id },
-        data: { consumedAt: new Date() },
-      }),
-    ]);
-    await this.tokens.revokeAll(record.userId);
   }
 
   /**

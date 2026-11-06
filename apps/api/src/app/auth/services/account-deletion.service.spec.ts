@@ -1,8 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
-import type { MailService } from '../../mail/mail.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { RealtimeGateway } from '../../realtime/realtime.gateway';
 import type { StorageService } from '../../storage/storage.service';
@@ -668,8 +666,6 @@ describe('AccountDeletionService', () => {
         oauth as unknown as OAuthIdentityService,
         {} as PasswordService,
         {} as KdsPinService,
-        {} as MailService,
-        {} as ConfigService,
         {} as KitchenDeviceService,
       );
     }

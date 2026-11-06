@@ -1,8 +1,24 @@
 import { Injectable } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'node:crypto';
 
 const BCRYPT_ROUNDS = 12;
+
+/**
+ * Roles that sign in with an email or login and a password. Customers never
+ * set a password — they sign in with Telegram, Google, Apple or an emailed
+ * code — so the password flows refuse them outright, even if a hash somehow
+ * existed.
+ */
+export const PASSWORD_LOGIN_ROLES: ReadonlySet<Role> = new Set([
+  Role.SUPER_ADMIN,
+  Role.BRAND_ADMIN,
+  Role.STORE_MANAGER,
+  Role.MENU_EDITOR,
+  Role.STAFF,
+  Role.RIDER,
+]);
 
 @Injectable()
 export class PasswordService {
@@ -27,8 +43,8 @@ export class PasswordService {
   }
 
   /**
-   * Generate a random password-reset token. Returns the raw token (mail this
-   * to the user) and its SHA-256 hash (what we store — the raw value is not
+   * Generate a random password-reset token. Returns the raw token (sent to
+   * the user by email and Telegram) and its SHA-256 hash (what we store — the raw value is not
    * recoverable server-side, matching how we store bcrypt passwords).
    */
   issueResetToken(): { raw: string; hash: string } {

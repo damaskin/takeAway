@@ -12,8 +12,33 @@ export interface PasswordLoginRequest {
   password: string;
 }
 
+/**
+ * `POST /auth/password/forgot`. `identifier` is what the person signs in
+ * with: an email, or a staff login (no '@'). Older clients send `email`
+ * instead; the API still takes it.
+ */
 export interface PasswordForgotRequest {
-  email: string;
+  identifier: string;
+}
+
+/**
+ * Where a reset link can go: the account's email, and the Telegram chat it
+ * linked for work notifications.
+ */
+export type PasswordResetChannel = 'email' | 'telegram';
+
+/**
+ * The answer to `POST /auth/password/forgot` — the same for every
+ * identifier, known or not, so it never tells whether an account exists.
+ * `channels` are the ways this server can deliver a reset link at all; an
+ * account gets the link through those of them it has (an email, a linked
+ * Telegram). When the server has none the request fails with 503
+ * `PASSWORD_RESET_UNAVAILABLE` instead.
+ */
+export interface PasswordForgotResponse {
+  channels: PasswordResetChannel[];
+  /** How long the link works, in minutes. */
+  linkTtlMinutes: number;
 }
 
 export interface PasswordResetRequest {
