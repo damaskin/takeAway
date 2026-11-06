@@ -9,6 +9,7 @@ import 'package:takeaway_mobile/features/menu/menu_screen.dart';
 import 'package:takeaway_mobile/features/menu/menu_widgets.dart';
 import 'package:takeaway_mobile/features/stores/store_widgets.dart';
 import 'package:takeaway_mobile/features/stores/stores_screen.dart';
+import 'package:takeaway_mobile/shared/widgets/chips.dart';
 
 import '../helpers/fake_api.dart';
 import '../helpers/harness.dart';
@@ -73,6 +74,47 @@ void main() {
     expect(find.byType(BusinessPlate), findsOneWidget);
     expect(find.text('Латте'), findsOneWidget);
     expect(h.container.read(activeStoreIdProvider), 'st_1');
+
+    await h.unmount(tester);
+  });
+
+  testWidgets('store cards show no wait in minutes, the menu header keeps it', (tester) async {
+    final api = FakeApi()
+      ..moreStores = [
+        {...FakeApi.storeJson, 'id': 'st_2', 'name': 'NoName — Балка', 'status': 'OVERLOADED', 'busyMeter': 100},
+      ];
+    final h = await pumpApp(tester, api: api, activeStoreId: null);
+    tester.widget<DraggableScrollableSheet>(find.byType(DraggableScrollableSheet)).controller!.jumpTo(0.88);
+    await settle(tester);
+
+    Finder inTiles(Finder matching) => find.descendant(of: find.byType(StoreTile), matching: matching);
+    expect(find.byType(StoreTile), findsNWidgets(2));
+    expect(inTiles(find.byType(EtaChip)), findsNothing);
+    expect(inTiles(find.textContaining('мин')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.ancestor(of: find.text('NoName — Балка'), matching: find.byType(StoreTile)),
+        matching: find.text('Загружено'),
+      ),
+      findsOneWidget,
+      reason: 'the status stays',
+    );
+
+    await tester.tap(find.text('NoName — центр'));
+    await settle(tester);
+    await tester.tap(find.text('Заказать здесь'));
+    await settle(tester);
+    expect(
+      find.descendant(of: find.byType(BusinessPlate), matching: find.byType(EtaChip)),
+      findsOneWidget,
+      reason: 'the menu tells the wait',
+    );
+
+    // The picker behind the header lists the same cards, without minutes too.
+    await tester.tap(find.byType(BusinessPlate));
+    await settle(tester);
+    expect(find.byType(StorePickerList), findsOneWidget);
+    expect(inTiles(find.byType(EtaChip)), findsNothing);
 
     await h.unmount(tester);
   });
