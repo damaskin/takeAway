@@ -490,6 +490,20 @@ describe('spec 8: check scenarios', () => {
     );
     expect(s.orders.map(cooking)).toEqual(['12:05–12:08']);
   });
+
+  it('3.5: an order of parallel positions only follows the general formula, O = max(R, t, S_пред)', () => {
+    // The short C = 1 form says O = max(R, O₋₁) = 12:05 here (G 12:06); S_пред is the start of
+    // №1's last position, 12:07, so the general form — and the reference model — give O 12:07, G 12:08.
+    const s = scheduleQueue(
+      {
+        settings: settings(),
+        orders: [order('12:00', [{ ...americano, quantity: 3 }]), order('12:00', [cola])],
+      },
+      at('12:00'),
+    );
+    expect(s.orders.map((o) => clock(o.startAt))).toEqual(['12:05', '12:07']);
+    expect(ready(s)).toEqual(['12:08', '12:08']);
+  });
 });
 
 describe('spec 9: limits', () => {
