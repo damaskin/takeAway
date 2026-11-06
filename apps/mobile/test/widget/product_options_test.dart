@@ -208,9 +208,7 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('food: calories and nutrition, a required sauce opens marked, no caffeine or allergens, an order comment', (
-    tester,
-  ) async {
+  testWidgets('food: calories and macros, a required sauce opens marked, an order comment', (tester) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());
     await _openProduct(tester, h, 'p_sandwich');
