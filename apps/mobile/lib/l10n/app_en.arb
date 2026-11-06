@@ -664,6 +664,39 @@
   "cancelMoneyReleased": "You were not charged and the card hold is released.",
   "cancelMoneyRefunded": "The money is on its way back to your card.",
   "cancelMoneyHoldPending": "The card hold will be released automatically.",
+  "orderReviewTitle": "How was your order?",
+  "@orderReviewTitle": {
+    "description": "Order screen, once the order is picked up or delivered: the card that asks for a review."
+  },
+  "orderReviewHint": "Only the takeAway team will see it",
+  "@orderReviewHint": {
+    "description": "Under the review card's title: the brand never sees the review."
+  },
+  "orderReviewStar": "Rate {n} out of 5",
+  "@orderReviewStar": {
+    "description": "What a screen reader says for one star of the review card.",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "orderReviewCommentHint": "Comment (optional)",
+  "orderReviewSend": "Send",
+  "orderReviewThanks": "Thanks for your review!",
+  "@orderReviewThanks": {
+    "description": "The review card once the review is sent, above the stars given."
+  },
+  "orderReviewGiven": "Your rating: {n} out of 5",
+  "@orderReviewGiven": {
+    "description": "What a screen reader says for the stars of a review already sent.",
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "orderReviewFailed": "Couldn't send your review. Please try again.",
   "statusUnknown": "Updating…",
   "stepReceived": "Received",
   "stepPreparing": "Preparing",

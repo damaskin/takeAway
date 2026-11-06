@@ -1580,6 +1580,54 @@ abstract class AppLocalizations {
   /// **'The card hold will be released automatically.'**
   String get cancelMoneyHoldPending;
 
+  /// Order screen, once the order is picked up or delivered: the card that asks for a review.
+  ///
+  /// In en, this message translates to:
+  /// **'How was your order?'**
+  String get orderReviewTitle;
+
+  /// Under the review card's title: the brand never sees the review.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the takeAway team will see it'**
+  String get orderReviewHint;
+
+  /// What a screen reader says for one star of the review card.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate {n} out of 5'**
+  String orderReviewStar(int n);
+
+  /// No description provided for @orderReviewCommentHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Comment (optional)'**
+  String get orderReviewCommentHint;
+
+  /// No description provided for @orderReviewSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get orderReviewSend;
+
+  /// The review card once the review is sent, above the stars given.
+  ///
+  /// In en, this message translates to:
+  /// **'Thanks for your review!'**
+  String get orderReviewThanks;
+
+  /// What a screen reader says for the stars of a review already sent.
+  ///
+  /// In en, this message translates to:
+  /// **'Your rating: {n} out of 5'**
+  String orderReviewGiven(int n);
+
+  /// No description provided for @orderReviewFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send your review. Please try again.'**
+  String get orderReviewFailed;
+
   /// No description provided for @statusUnknown.
   ///
   /// In en, this message translates to:
