@@ -134,6 +134,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     'distanceMeters': null,
   };
 
+  /// Every product carries 180 kcal, as an API from before 2026-11-06 sends
+  /// them for drinks too: the app shows them for a meal (FOOD) only.
   static Map<String, dynamic> productJson(String id, String name, int price, {String category = 'cat_coffee'}) => {
     'id': id,
     'categoryId': category,

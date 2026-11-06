@@ -103,6 +103,9 @@ FakeApi _api({bool photos = false}) {
     // longer shows caffeine or allergens.
     'caffeineLevel': 2,
     'allergens': ['GLUTEN', 'EGGS', 'кунжут'],
+    'proteinsGrams': 21,
+    'fatsGrams': 14.5,
+    'carbsGrams': 48,
     'variations': <Object>[],
     'modifiers': [
       _addon('m_ketchup', 'Кетчуп', 0, group: 'Соус', min: 1),
@@ -157,7 +160,7 @@ void main() {
     expect(find.text('+3\u00a0MDL'), findsOneWidget, reason: 'each choice shows what it adds');
     expect(find.text('+8\u00a0MDL'), findsOneWidget);
     expect(find.text('Малый · Коровье'), findsNWidgets(2), reason: 'under the title and by the button');
-    expect(find.text('180 ккал'), findsOneWidget);
+    expect(find.text('180 ккал'), findsNothing, reason: 'calories are shown for meals only since 2026-11-06');
     expect(find.byTooltip('Кофеин'), findsNothing, reason: 'caffeine left the menu on 2026-11-05');
 
     // Add-ons are closed rows, one per group.
@@ -205,11 +208,15 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('food: a required sauce opens marked, no caffeine or allergens, an order comment', (tester) async {
+  testWidgets('food: calories and nutrition, a required sauce opens marked, no caffeine or allergens, an order comment', (
+    tester,
+  ) async {
     _phone(tester);
     final h = await pumpApp(tester, api: _api());
     await _openProduct(tester, h, 'p_sandwich');
 
+    expect(find.text('180 ккал'), findsOneWidget, reason: 'a meal shows its calories');
+    expect(find.text('Белки 21 г · Жиры 14.5 г · Углеводы 48 г'), findsOneWidget);
     expect(find.byTooltip('Кофеин'), findsNothing);
     expect(find.textContaining('Содержит'), findsNothing);
     expect(find.textContaining('глютен'), findsNothing);
