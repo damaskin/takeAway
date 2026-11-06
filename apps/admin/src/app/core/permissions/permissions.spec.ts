@@ -66,6 +66,14 @@ describe('permissions map', () => {
       expect(navLink('feedback')).toBe('/feedback');
     });
 
+    it('keeps order reviews SUPER_ADMIN-only: brands never see them', () => {
+      expect(ADMIN_ROLES.reviews).toEqual(['SUPER_ADMIN']);
+      expect(navLink('reviews')).toBe('/reviews');
+      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'reviews')).toBe(false);
+      }
+    });
+
     it('hides financial sections from kitchen STAFF', () => {
       expect(canAccess('STAFF', 'dashboard')).toBe(false);
       expect(canAccess('STAFF', 'analytics')).toBe(false);

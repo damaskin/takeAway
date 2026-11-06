@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 import 'package:takeaway_mobile/app/router.dart';
 import 'package:takeaway_mobile/core/format/time.dart';
+import 'package:takeaway_mobile/shared/widgets/app_button.dart';
 
 import '../helpers/fake_api.dart';
 import '../helpers/harness.dart';
@@ -298,6 +299,162 @@ void main() {
       expect(find.text('Карта отклонена'), findsOneWidget);
       expect(find.byKey(const ValueKey('history-cancel-reason')), findsOneWidget);
       expect(find.text('Отменён'), findsWidgets, reason: 'an order that does not say keeps the plain status');
+      await h.unmount(tester);
+    });
+  });
+
+  group('a review of the order', () {
+    final card = find.byKey(const ValueKey('order-review'), skipOffstage: false);
+    final thanks = find.byKey(const ValueKey('order-review-thanks'));
+    final send = find.byKey(const ValueKey('order-review-send'));
+    Finder star(int n) => find.byKey(ValueKey('order-review-star-$n'));
+    Map<String, dynamic> reviewJson(int rating, [String? comment]) => {
+      'rating': rating,
+      'comment': comment,
+      'createdAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    const failed = 'Не удалось отправить отзыв. Попробуйте ещё раз.';
+
+    Future<void> expectNoCard(WidgetTester tester, Order order) async {
+      final api = FakeApi()..currentOrder = order;
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+      expect(find.text('Заказ #4821'), findsOneWidget);
+      expect(card, findsNothing);
+      expect(find.text('Как вам заказ?', skipOffstage: false), findsNothing);
+      await h.unmount(tester);
+    }
+
+    testWidgets('is not asked for before the handover', (tester) async {
+      await expectNoCard(tester, FakeApi.sampleOrder(status: 'IN_PROGRESS', canReview: false));
+    });
+
+    testWidgets('is not asked for on a cancelled order', (tester) async {
+      await expectNoCard(tester, FakeApi.sampleOrder(status: 'CANCELLED', cancelledBy: 'CUSTOMER', canReview: false));
+    });
+
+    testWidgets('is not asked for by an API from before reviews', (tester) async {
+      await expectNoCard(tester, FakeApi.sampleOrder(status: 'PICKED_UP'));
+    });
+
+    testWidgets('a picked-up order asks for stars and a comment, sends them and thanks', (tester) async {
+      final api = FakeApi()..currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP', canReview: true);
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+      expect(card, findsOneWidget, reason: 'built right where the cases without it look');
+
+      await reveal(tester, card);
+      expect(find.descendant(of: card, matching: find.text('Как вам заказ?')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('Отзыв увидит только команда takeAway')), findsOneWidget);
+      for (var n = 1; n <= 5; n++) {
+        expect(find.byTooltip('Оценка $n из 5'), findsOneWidget, reason: 'every star says what it gives');
+      }
+      expect(tester.widget<PrimaryButton>(send).onPressed, isNull, reason: 'nothing to send without a star');
+
+      await tester.tap(star(4));
+      await settle(tester, const Duration(milliseconds: 300));
+      expect(find.descendant(of: card, matching: find.byIcon(Icons.star_rounded)), findsNWidgets(4));
+      expect(tester.widget<PrimaryButton>(send).onPressed, isNotNull);
+
+      await tester.enterText(find.byKey(const ValueKey('order-review-comment')), '  Горячий и вовремя ');
+      await reveal(tester, send);
+      await tester.tap(send);
+      await settle(tester);
+
+      expect(api.reviews.single.rating, 4);
+      expect(api.reviews.single.toJson(), {'rating': 4, 'comment': 'Горячий и вовремя'});
+      expect(find.descendant(of: thanks, matching: find.text('Спасибо за отзыв!')), findsOneWidget);
+      expect(find.descendant(of: thanks, matching: find.byIcon(Icons.star_rounded)), findsNWidgets(4));
+      expect(find.descendant(of: thanks, matching: find.byIcon(Icons.star_outline_rounded)), findsOneWidget);
+      expect(find.bySemanticsLabel('Ваша оценка: 4 из 5'), findsOneWidget);
+      expect(find.descendant(of: thanks, matching: find.text('Горячий и вовремя')), findsOneWidget);
+      expect(send, findsNothing, reason: 'one review per order, no edits');
+      await h.unmount(tester);
+    });
+
+    testWidgets('an order reviewed before shows the thanks with its stars', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP', canReview: false, review: reviewJson(5));
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, thanks);
+      expect(find.descendant(of: thanks, matching: find.text('Спасибо за отзыв!')), findsOneWidget);
+      expect(find.descendant(of: thanks, matching: find.byIcon(Icons.star_rounded)), findsNWidgets(5));
+      expect(find.descendant(of: thanks, matching: find.byIcon(Icons.star_outline_rounded)), findsNothing);
+      expect(find.bySemanticsLabel('Ваша оценка: 5 из 5'), findsOneWidget);
+      expect(find.text('Как вам заказ?'), findsNothing);
+      expect(send, findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('a review sent from another device a moment ago: the order is read again and thanks', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP', canReview: true)
+        ..reviewRefusal = (
+          'ORDER_ALREADY_REVIEWED',
+          FakeApi.sampleOrder(status: 'PICKED_UP', canReview: false, review: reviewJson(2, 'Остыл')),
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, card);
+      await tester.tap(star(5));
+      await settle(tester, const Duration(milliseconds: 300));
+      await reveal(tester, send);
+      await tester.tap(send);
+      await settle(tester);
+
+      expect(api.reviews, isEmpty);
+      expect(find.descendant(of: thanks, matching: find.byIcon(Icons.star_rounded)), findsNWidgets(2));
+      expect(find.descendant(of: thanks, matching: find.text('Остыл')), findsOneWidget);
+      expect(find.text(failed), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('an order that can no longer be reviewed loses the card', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP', canReview: true)
+        ..reviewRefusal = ('ORDER_NOT_REVIEWABLE', FakeApi.sampleOrder(status: 'PICKED_UP', canReview: false));
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, card);
+      await tester.tap(star(3));
+      await settle(tester, const Duration(milliseconds: 300));
+      await reveal(tester, send);
+      await tester.tap(send);
+      await settle(tester);
+
+      expect(card, findsNothing);
+      expect(find.text(failed), findsNothing);
+      await h.unmount(tester);
+    });
+
+    testWidgets('a failed send keeps the stars and the comment for a retry', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(status: 'PICKED_UP', canReview: true)
+        ..reviewFailureStatus = 500;
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      await reveal(tester, card);
+      await tester.tap(star(3));
+      await settle(tester, const Duration(milliseconds: 300));
+      await tester.enterText(find.byKey(const ValueKey('order-review-comment')), 'Долго ждал');
+      await reveal(tester, send);
+      await tester.tap(send);
+      await settle(tester);
+
+      expect(api.reviews, isEmpty);
+      expect(find.text(failed), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.text('Долго ждал')), findsOneWidget);
+      expect(find.descendant(of: card, matching: find.byIcon(Icons.star_rounded)), findsNWidgets(3));
+
+      await tester.tap(send);
+      await settle(tester);
+      expect(api.reviews.single.toJson(), {'rating': 3, 'comment': 'Долго ждал'});
+      expect(find.descendant(of: thanks, matching: find.text('Долго ждал')), findsOneWidget);
       await h.unmount(tester);
     });
   });

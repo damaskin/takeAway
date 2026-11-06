@@ -1,6 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { OrderCancelReason, OrderCancelledBy, OrderItemSnapshot } from '@takeaway/shared-types';
+import type {
+  CreateOrderReviewRequest,
+  OrderCancelReason,
+  OrderCancelledBy,
+  OrderItemSnapshot,
+  OrderReview,
+} from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -67,6 +73,13 @@ export interface OrderView {
   cancelReason?: OrderCancelReason | null;
   cancelComment?: string | null;
   /**
+   * The customer may review the order now: handed over and not reviewed
+   * yet. Absent from an API older than this build — then no review is asked.
+   */
+  canReview?: boolean;
+  /** The customer's review, once left; absent from an API older than this build. */
+  review?: OrderReview | null;
+  /**
    * When the kitchen now expects it ready, set when it accepted or started
    * the order too late for `pickupAt`; the countdown runs to it
    * (`orderDueAt`). Absent from an API older than this build.
@@ -127,6 +140,9 @@ export interface OrderSummary {
   /** Who cancelled a cancelled order and the store's reason; absent from an API older than this build. */
   cancelledBy?: OrderCancelledBy | null;
   cancelReason?: OrderCancelReason | null;
+  /** Whether the order can be reviewed now, and the stars it got; absent from an API older than this build. */
+  canReview?: boolean;
+  reviewRating?: number | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -148,6 +164,15 @@ export class OrdersApi {
    */
   cancel(id: string): Observable<OrderView> {
     return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/cancel`, {});
+  }
+
+  /**
+   * «Как вам заказ?» — once per handed-over order; answers with the order,
+   * `review` set. 409 `ORDER_ALREADY_REVIEWED` or `ORDER_NOT_REVIEWABLE`
+   * otherwise.
+   */
+  review(id: string, body: CreateOrderReviewRequest): Observable<OrderView> {
+    return this.http.post<OrderView>(`${this.api.baseUrl}/orders/${id}/review`, body);
   }
 
   validateGiftCard(body: {

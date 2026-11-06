@@ -870,6 +870,34 @@ class AppLocalizationsRu extends AppLocalizations {
   String get cancelMoneyHoldPending => 'Блокировка на карте будет снята автоматически.';
 
   @override
+  String get orderReviewTitle => 'Как вам заказ?';
+
+  @override
+  String get orderReviewHint => 'Отзыв увидит только команда takeAway';
+
+  @override
+  String orderReviewStar(int n) {
+    return 'Оценка $n из 5';
+  }
+
+  @override
+  String get orderReviewCommentHint => 'Комментарий (необязательно)';
+
+  @override
+  String get orderReviewSend => 'Отправить';
+
+  @override
+  String get orderReviewThanks => 'Спасибо за отзыв!';
+
+  @override
+  String orderReviewGiven(int n) {
+    return 'Ваша оценка: $n из 5';
+  }
+
+  @override
+  String get orderReviewFailed => 'Не удалось отправить отзыв. Попробуйте ещё раз.';
+
+  @override
   String get statusUnknown => 'Обновляем…';
 
   @override

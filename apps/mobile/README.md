@@ -26,7 +26,9 @@ NestJS API as the web app and the Telegram Mini App.
 - **Live order** — Socket.IO with polling as a fallback, ETA ring (to the
   kitchen's new estimate when it took the order late), steps, the pickup code
   the counter hands the order over by, "I'm here", cancel until the kitchen
-  accepts (then a call to the store), order again, receipt by email.
+  accepts (then a call to the store), order again, receipt by email, and
+  once the order is handed over a review («Как вам заказ?»: stars and a
+  comment, one per order, read only by the takeAway team).
 - **Notifications («Уведомления»)** — brand campaigns and takeAway's own
   announcements, behind a bell with the unread count on the stores and menu
   headers and in the profile; a message opens the store's menu it links to,

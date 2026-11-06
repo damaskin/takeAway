@@ -33,6 +33,7 @@ import '../catalog/product_visual.dart';
 import '../checkout/web_payment.dart';
 import '../product/product_options.dart';
 import 'order_progress.dart';
+import 'order_review_card.dart';
 import 'order_wait.dart';
 import 'orders_providers.dart';
 
@@ -460,6 +461,7 @@ class _OrderBody extends ConsumerWidget {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
         _Entrance(
           enabled: justPlaced,
@@ -495,6 +497,11 @@ class _OrderBody extends ConsumerWidget {
             ],
           ),
         ),
+        // Offered once the order is handed over; a review left stays as thanks.
+        if (order.review != null || order.customerCanReview) ...[
+          const SizedBox(height: 16),
+          OrderReviewCard(key: const ValueKey('order-review'), order: order),
+        ],
         if (orderCancellation(order) case final cancellation?) ...[
           const SizedBox(height: 16),
           _CancellationCard(cancellation: cancellation),

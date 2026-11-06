@@ -121,4 +121,35 @@ test.describe('order page', () => {
     await expect(page.getByRole('button', { name: 'Cancel order' })).toHaveCount(0);
     expect(api.cancels).toEqual(['order-1']);
   });
+  test('after pickup the customer rates the order and sees the thanks, also after a reload', async ({ page }) => {
+    const api = await installFakeApi(page);
+    api.seedOrder({ status: 'PICKED_UP', canCancel: false, pickupAt: minutesFromNow(-15), canReview: true });
+
+    await page.goto('/orders/order-1');
+    const card = page.getByTestId('order-review');
+    await expect(card).toContainText('How was your order?');
+    await expect(card).toContainText('Only the takeAway team will see it');
+    await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+    await page.getByRole('button', { name: 'Rate 4 out of 5' }).click();
+    await page.getByPlaceholder('Comment (optional)').fill('  Great flat white, a bit slow  ');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    await expect(page.getByTestId('order-review-thanks')).toHaveText('Thanks for your review!');
+    await expect(page.getByRole('img', { name: 'Your rating: 4 out of 5' })).toBeVisible();
+    expect(api.reviews).toEqual([{ orderId: 'order-1', body: { rating: 4, comment: 'Great flat white, a bit slow' } }]);
+
+    await page.reload();
+    await expect(page.getByTestId('order-review-thanks')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0);
+  });
+
+  test('no review is asked while the order is still being made', async ({ page }) => {
+    const api = await installFakeApi(page);
+    api.seedOrder({ status: 'IN_PROGRESS', canCancel: false, canReview: false });
+
+    await page.goto('/orders/order-1');
+    await expect(page.getByTestId('order-countdown')).toBeVisible();
+    await expect(page.getByTestId('order-review')).toHaveCount(0);
+  });
 });

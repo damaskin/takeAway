@@ -145,6 +145,8 @@ export interface FakeApi {
   seedOrder(patch?: Record<string, unknown>): Record<string, unknown>;
   /** Cancels the app asked for, by order id. */
   readonly cancels: string[];
+  /** Reviews the app sent (`POST /orders/:id/review`), by order id, as sent. */
+  readonly reviews: Array<{ orderId: string; body: Record<string, unknown> }>;
   /** What the app sent to add to the cart, in order. */
   readonly cartAdds: Array<Record<string, unknown>>;
   /** Card payments the app asked for, as sent. */
@@ -214,6 +216,7 @@ export async function installFakeApi(
   const cartAdds: Array<Record<string, unknown>> = [];
   const orders: Array<Record<string, unknown>> = [];
   const payments: Array<Record<string, unknown>> = [];
+  const reviews: Array<{ orderId: string; body: Record<string, unknown> }> = [];
   const cancels: string[] = [];
   let nextId = 1;
 
@@ -471,6 +474,27 @@ export async function installFakeApi(
       });
       return json(route, order);
     }
+    const reviewPath = path.match(/^\/orders\/([^/]+)\/review$/);
+    if (reviewPath && method === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      reviews.push({ orderId: reviewPath[1] ?? '', body });
+      const order = orders[orders.length - 1];
+      if (!order) return json(route, { statusCode: 404 }, 404);
+      // As the API: only a handed-over order, and only once.
+      if (order['review']) return json(route, { statusCode: 409, code: 'ORDER_ALREADY_REVIEWED' }, 409);
+      if (order['status'] !== 'PICKED_UP' && order['status'] !== 'DELIVERED') {
+        return json(route, { statusCode: 409, code: 'ORDER_NOT_REVIEWABLE' }, 409);
+      }
+      Object.assign(order, {
+        canReview: false,
+        review: {
+          rating: body['rating'],
+          comment: typeof body['comment'] === 'string' ? body['comment'].trim() || null : null,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      return json(route, order, 201);
+    }
     if (path.match(/^\/orders\/[^/]+$/) && method === 'GET') {
       return json(route, orders[orders.length - 1] ?? {}, orders.length > 0 ? 200 : 404);
     }
@@ -486,5 +510,5 @@ export async function installFakeApi(
     return order;
   };
 
-  return { orders, payments, cartAdds, cancels, seedOrder };
+  return { orders, payments, cartAdds, cancels, reviews, seedOrder };
 }

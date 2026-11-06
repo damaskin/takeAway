@@ -317,6 +317,105 @@ export async function signIn(context: BrowserContext, role: FakeRole = 'SUPER_AD
   );
 }
 
+/** Customers' reviews of their orders — «Отзывы», the platform admin's page. */
+export const ORDER_REVIEWS = [
+  {
+    id: 'rev-1',
+    rating: 2,
+    comment: 'Латте был холодный',
+    createdAt: '2026-11-06T09:30:00.000Z',
+    orderId: 'order-1',
+    orderCode: '1234',
+    brand: { id: BRAND.id, name: BRAND.name },
+    store: { id: STORE.id, name: STORE.name },
+    customer: {
+      id: 'user-9',
+      name: 'Иван',
+      email: 'ivan@example.com',
+      phone: null,
+      telegramUserId: '777',
+      deleted: false,
+    },
+  },
+  {
+    id: 'rev-2',
+    rating: 5,
+    comment: null,
+    createdAt: '2026-11-05T08:00:00.000Z',
+    orderId: 'order-2',
+    orderCode: '5678',
+    brand: { id: BRAND.id, name: BRAND.name },
+    store: { id: STORE.id, name: STORE.name },
+    customer: { id: 'user-8', name: null, email: null, phone: null, telegramUserId: null, deleted: true },
+  },
+];
+
+/** `GET /admin/order-reviews` over {@link ORDER_REVIEWS}, with its brand and rating filters. */
+function orderReviewsPage(params: URLSearchParams) {
+  const brandId = params.get('brandId');
+  const rating = params.get('rating');
+  const inScope = ORDER_REVIEWS.filter((r) => !brandId || r.brand.id === brandId);
+  const items = inScope.filter((r) => !rating || r.rating === Number(rating));
+  const ratingCounts = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 } as Record<string, number>;
+  for (const r of inScope) ratingCounts[String(r.rating)] = (ratingCounts[String(r.rating)] ?? 0) + 1;
+  const stars = inScope.reduce((sum, r) => sum + r.rating, 0);
+  return {
+    items,
+    total: items.length,
+    page: Number(params.get('page') ?? 1),
+    pageSize: Number(params.get('pageSize') ?? 25),
+    count: inScope.length,
+    averageRating: inScope.length ? Math.round((stars / inScope.length) * 10) / 10 : null,
+    ratingCounts,
+  };
+}
+
+/** What the order detail panel reads for a reviewed order. */
+function adminOrderDetail(id: string) {
+  const review = ORDER_REVIEWS.find((r) => r.orderId === id);
+  return {
+    id,
+    orderCode: review?.orderCode ?? '0000',
+    status: 'PICKED_UP',
+    fulfillmentType: 'PICKUP',
+    pickupMode: 'ASAP',
+    pickupAt: '2026-11-06T09:15:00.000Z',
+    createdAt: '2026-11-06T09:00:00.000Z',
+    storeId: STORE.id,
+    storeName: STORE.name,
+    storeTimezone: STORE.timezone,
+    customerName: 'Иван',
+    customerPhone: null,
+    customerEmail: null,
+    notes: null,
+    currency: 'MDL',
+    subtotalCents: 2500,
+    discountCents: 0,
+    taxCents: 0,
+    deliveryFeeCents: 0,
+    giftCardCents: 0,
+    totalCents: 2500,
+    couponCode: null,
+    giftCardCode: null,
+    refundedCents: 0,
+    refundableCents: 2500,
+    items: [
+      {
+        id: 'item-1',
+        name: PRODUCT.name,
+        variations: [],
+        modifierLines: [],
+        notes: null,
+        quantity: 1,
+        unitPriceCents: 2500,
+        totalCents: 2500,
+      },
+    ],
+    payments: [],
+    events: [],
+  };
+}
+
 function json(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
@@ -381,6 +480,10 @@ export async function installFakeApi(context: BrowserContext, role: FakeRole = '
       });
     }
     if (path === '/admin/orders') return json(route, []);
+    if (/^\/admin\/orders\/[^/]+$/.test(path)) return json(route, adminOrderDetail(path.split('/').pop() ?? ''));
+    if (path === '/admin/order-reviews') {
+      return json(route, orderReviewsPage(new URL(route.request().url()).searchParams));
+    }
     if (path.startsWith('/admin/pos/status')) return json(route, { connections: [] });
 
     // Every remaining list endpoint answers empty rather than hanging.
