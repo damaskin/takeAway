@@ -6,6 +6,7 @@ import type {
   AuthUser,
   KdsPinLoginRequest,
   PasswordForgotRequest,
+  PasswordForgotResponse,
   PasswordLoginRequest,
   PasswordResetRequest,
 } from '@takeaway/shared-types';
@@ -48,8 +49,14 @@ export class AuthService {
       .pipe(tap((session) => this.store.set(session)));
   }
 
-  forgotPassword(body: PasswordForgotRequest): Observable<void> {
-    return this.http.post<void>(`${this.api.baseUrl}/auth/password/forgot`, body);
+  /**
+   * «Забыли пароль?»: the link goes to the account's email and linked
+   * Telegram. The answer is the same for any identifier and says only which
+   * of the two this server can send through. An API from before 2026-11-06
+   * answers 204 without a body — null here.
+   */
+  forgotPassword(body: PasswordForgotRequest): Observable<PasswordForgotResponse | null> {
+    return this.http.post<PasswordForgotResponse | null>(`${this.api.baseUrl}/auth/password/forgot`, body);
   }
 
   resetPassword(body: PasswordResetRequest): Observable<void> {

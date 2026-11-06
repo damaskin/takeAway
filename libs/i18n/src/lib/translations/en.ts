@@ -889,15 +889,25 @@ export const TRANSLATIONS_EN: TranslationTree = {
     },
     forgot: {
       title: 'Forgot password',
-      subtitle: "Enter your email — we'll send you a reset link.",
-      loginHint:
-        'Sign in with a login and no email? There is nowhere to send a link — ask your business owner to reset your password under «Staff».',
+      subtitle:
+        "Enter the email or login you sign in with. We'll send a link to set a new password by email and to Telegram, if it is linked to the account.",
+      identifierLabel: 'Email or login',
+      identifierPlaceholder: 'you@example.com or login',
+      identifierInvalid: 'Enter an email (with «@») or a login — Latin letters, digits, dot, hyphen.',
+      noChannelHint:
+        'No email and no linked Telegram? There is nowhere to send a link: your business owner resets a staff password under «Staff», and takeAway support helps the owner.',
       sendLink: 'Send reset link',
       sending: 'Sending…',
-      sent: 'If the address exists, an email with a reset link is on its way. The link works for 1 hour — check your spam folder too.',
+      sent: {
+        both: 'If the account exists, we sent a link by email and to Telegram, if it is linked. The link works for {{minutes}} min — check your spam folder too.',
+        email:
+          'If the account exists and has an email, we sent the link there. The link works for {{minutes}} min — check your spam folder too.',
+        telegram:
+          'If the account exists and has Telegram linked, we sent the link to the chat with the takeAway bot. The link works for {{minutes}} min. This server does not send email yet.',
+      },
       backToLogin: '← Back to sign in',
       unavailable:
-        'Password reset by email is not available right now: this server cannot send email. Ask your business owner or takeAway support.',
+        'Password reset is not available right now: this server has neither email nor the Telegram bot set up. Ask your business owner or takeAway support.',
       tooMany: 'Too many requests. Wait a minute and try again.',
     },
     reset: {
@@ -913,7 +923,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
       signIn: 'Sign in',
       missingToken: 'This reset link is missing a token. Request a new one.',
       requestNewLink: 'Request a new link',
-      linkInvalid: 'This link no longer works: it was already used or has expired.',
+      linkInvalid:
+        'This link no longer works: it was already used or has expired. The email and the Telegram message carry the same link — once the password is reset, neither works.',
       invalidField: 'Check the «{{field}}» field.',
     },
     layout: {

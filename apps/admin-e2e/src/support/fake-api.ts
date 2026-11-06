@@ -324,6 +324,9 @@ export async function installFakeApi(context: BrowserContext): Promise<void> {
       });
     }
     if (path === '/auth/me') return json(route, USER);
+    // «Забыли пароль?»: a server with the Telegram bot and no SMTP yet — production today.
+    if (path === '/auth/password/forgot') return json(route, { channels: ['telegram'], linkTtlMinutes: 60 });
+    if (path === '/auth/password/reset') return route.fulfill({ status: 204 });
 
     if (path === '/admin/brands' || path === '/admin/brands/mine') return json(route, [BRAND]);
     if (path === '/my-brand') return json(route, BRAND);

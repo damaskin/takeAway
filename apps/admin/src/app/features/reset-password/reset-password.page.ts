@@ -8,8 +8,10 @@ import { AuthService } from '../../core/auth/auth.service';
 import { apiErrorMessage } from '../../core/http/api-error';
 
 /**
- * Sets a new password from an emailed one-time link: "forgot password", or
- * the invite of a new employee (`&invite=1`, worded as "set your password").
+ * Sets a new password from a one-time link: "forgot password" — the same
+ * link by email and in the Telegram bot's message, opened in a browser or in
+ * Telegram's own — or the invite of a new employee (`&invite=1`, worded as
+ * "set your password").
  */
 @Component({
   selector: 'app-reset-password',
