@@ -998,9 +998,11 @@ model Store {
   /// outstanding work divided by this, so it is the one knob that decides
   /// how fast a morning rush drains.
   kitchenParallelism    Int                @default(2)
-  /// Most orders this store will hand over inside one 15-minute slot. Once
-  /// a slot is full it stops being offered at checkout, which is what keeps
-  /// the ETA promise honest instead of just optimistic.
+  /// Deprecated since 2026-11-06, unread: «Заказов на 15 минут», the most
+  /// orders one 15-minute pickup slot took. Removed from the admin (manager's
+  /// list 5.0, item 6): a slot is full by kitchen work only
+  /// (`kitchenParallelism`) until the queue policy replaces the slots with
+  /// free windows. The column stays (data kept) until then.
   slotCapacity          Int                @default(8)
   minOrderCents         Int                @default(0)
   /// Sales tax in basis points: 500 = 5% (UAE), 2000 = 20% (UK). 0 disables

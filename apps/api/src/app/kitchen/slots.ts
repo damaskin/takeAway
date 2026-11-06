@@ -1,6 +1,8 @@
 /**
  * The 15-minute pickup grid. A slot is a window of handovers, and capacity
- * is counted per slot: how many orders and how much kitchen work it holds.
+ * is counted per slot in kitchen work. The number of orders in it no longer
+ * caps it (2026-11-06, manager's list 5.0, item 6: «Заказов на 15 минут» is
+ * gone until the queue policy replaces the slots with free windows).
  */
 
 /** Granularity of a pickup slot. */
@@ -18,14 +20,13 @@ export function ceilToSlot(date: Date): Date {
 
 /** What one slot already holds: orders handed over in it and the kitchen work they cost. */
 export interface SlotLoad {
+  /** Orders handed over in the slot — shown, never a limit. */
   count: number;
   workSeconds: number;
 }
 
-/** The two capacity knobs of a store. */
+/** What a slot's capacity depends on. */
 export interface SlotCapacity {
-  /** Most handovers in one slot. */
-  slotCapacity: number;
   /** How many items the kitchen makes at once: one slot holds `SLOT_SECONDS × this` seconds of work. */
   kitchenParallelism: number;
 }
@@ -38,15 +39,13 @@ export function slotWorkCapacity(store: SlotCapacity): number {
 /**
  * Whether an order costing `workSeconds` of kitchen time still fits a slot.
  *
- * Full when the slot already holds `slotCapacity` orders, or when its work
- * plus this order's would be more than the kitchen does in 15 minutes. An
- * order bigger than a whole slot on its own (a catering run) still fits an
- * empty one — otherwise it could never be placed at all.
+ * Full when its work plus this order's would be more than the kitchen does
+ * in 15 minutes — however many orders that is. An order bigger than a whole
+ * slot on its own (a catering run) still fits an empty one — otherwise it
+ * could never be placed at all.
  */
 export function slotFits(load: SlotLoad | undefined, store: SlotCapacity, workSeconds: number): boolean {
-  const count = load?.count ?? 0;
   const work = load?.workSeconds ?? 0;
-  if (count >= Math.max(1, store.slotCapacity)) return false;
   if (work === 0) return true;
   return work + Math.max(0, workSeconds) <= slotWorkCapacity(store);
 }

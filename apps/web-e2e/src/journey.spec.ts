@@ -249,6 +249,25 @@ test.describe('customer journey', () => {
     await expect(slotPicker(page)).toHaveValue(await slotValue(page, 1));
   });
 
+  test('store cards show no wait in minutes, the menu header still does', async ({ page }) => {
+    // Open now with a 7-minute wait: the cards name the place, the menu tells the wait.
+    await installFakeApi(page);
+    await signIn(page);
+
+    await page.goto('/');
+    const homeCard = page.locator('a[href="/stores/dubai-marina"]').first();
+    await expect(homeCard).toContainText('takeAway Marina');
+    await expect(homeCard).not.toContainText(/\d+\s*min/i);
+
+    await page.goto('/stores');
+    const listCard = page.locator('[data-store-id="store-1"]');
+    await expect(listCard).toContainText('Open');
+    await expect(listCard).not.toContainText(/\d+\s*min/i);
+
+    await page.goto('/stores/dubai-marina');
+    await expect(page.getByText(/Ready in 7 min/)).toBeVisible();
+  });
+
   test('a closed store shows its hours and a way out instead of the menu', async ({ page }) => {
     // No shift running: the store takes no orders at all.
     await installFakeApi(page, { storeAcceptingOrders: false });

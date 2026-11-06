@@ -147,7 +147,8 @@ export class CatalogService {
       startsAt: slot.startsAt.toISOString(),
       endsAt: slot.endsAt.toISOString(),
       taken: slot.taken,
-      capacity: slot.capacity,
+      // No count cap since 2026-11-06; the field stays for the app builds that require it.
+      capacity: 0,
       available: slot.available,
     }));
   }

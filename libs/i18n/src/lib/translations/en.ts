@@ -241,7 +241,6 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Find a store near you',
         subtitle: 'Pick up your order at any of our locations',
         cta: 'View on map',
-        readyIn: 'ready in {{min}} min',
       },
       menu: {
         title: 'From the menu',
@@ -2360,15 +2359,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         },
         baseEta: 'Time to accept an order, min',
         baseEtaHint:
-          'Whole minutes, 1 to 60. Half of it gone and the order not accepted — the kitchen is reminded to accept it; all of it gone — the order is cancelled automatically and the customer gets the money back. It is part of the ready time too: the «N min» badge a customer sees is this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).',
+          'Whole minutes, 1 to 60. Half of it gone and the order not accepted — the kitchen is reminded to accept it; all of it gone — the order is cancelled automatically and the customer gets the money back. It is part of the ready time a customer sees on the menu and at checkout too: this time + the typical cooking time of an item on your menu (of those that can be ordered now) + the queue. Cooking time is set on each item (and by default on its category in Menu).',
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
-        slotCapacity: 'Orders per 15 minutes',
-        slotCapacityHint:
-          'How many orders the store hands over in 15 minutes. One window never promises more — for later or for now.',
         capacitySummary:
-          'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks) and hands over up to {{orders}} orders. A window short of either shows as taken.',
+          'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks). A window without that much time left for a new order shows as taken — however many orders it holds.',
       },
       delivery: {
         title: 'Delivery',
