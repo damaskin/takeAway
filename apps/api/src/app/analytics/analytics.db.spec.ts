@@ -358,13 +358,48 @@ suite('analytics money on Postgres', () => {
     const counted = detail.recentOrders.filter((o) => o.status !== 'CANCELLED');
     expect(counted.reduce((sum, o) => sum + o.totalCents, 0)).toBe(detail.totalCents);
   });
+
+  it('estimates lost revenue as days away ÷ usual interval × average check, on visit days', async () => {
+    // At test2 the regular came on 5, 8 and 12 August (T = 3.5 days) and the
+    // one-timer three times on the 11th — one visit, so the brand's T applies.
+    await prisma.user.create({ data: { id: 'it-once', name: 'Один раз' } });
+    for (const [i, hour] of ['07', '08', '09'].entries()) {
+      const at = new Date(`2026-08-11T${hour}:00:00Z`);
+      await prisma.order.create({
+        data: {
+          id: `it-once-${i}`,
+          userId: 'it-once',
+          storeId: TEST2,
+          status: 'PICKED_UP',
+          pickupAt: at,
+          createdAt: at,
+          subtotalCents: AMERICANO,
+          totalCents: AMERICANO,
+          currency: 'RUP',
+          orderCode: `it-once-${i}`,
+          qrToken: `it-once-${i}`,
+        },
+      });
+    }
+    const august = resolveDateRange({ from: '2026-08-24', to: '2026-08-30' }, 'Europe/Chisinau', 7);
+    const test2: AnalyticsScope = { brandIds: [BRAND], storeIds: [TEST2] };
+    const churn = await analytics.churn(test2, august, 14, true, 20, new Date('2026-10-10T00:00:00Z'));
+    const byUser = new Map((churn.customers ?? []).map((c) => [c.userId, c]));
+    expect(byUser.get('it-regular')).toMatchObject({ visits: 3, visitIntervalDays: 3.5 });
+    expect(byUser.get('it-once')).toMatchObject({ visits: 1 });
+    const regular = byUser.get('it-regular');
+    const once = byUser.get('it-once');
+    expect(regular?.lostRevenueCents).toBe(Math.round((regular!.daysSinceLastOrder / 3.5) * AMERICANO));
+    expect(once?.lostRevenueCents).toBe(Math.round((once!.daysSinceLastOrder / 3.5) * AMERICANO));
+    expect(churn.lostRevenueCents).toBe(regular!.lostRevenueCents + once!.lostRevenueCents);
+  });
 });
 
 async function cleanUp(prisma: PrismaClient): Promise<void> {
-  const orders = SEEDS.map((s) => s.id);
+  const orders = [...SEEDS.map((s) => s.id), 'it-once-0', 'it-once-1', 'it-once-2'];
   await prisma.orderItem.deleteMany({ where: { orderId: { in: orders } } });
   await prisma.order.deleteMany({ where: { id: { in: orders } } });
   await prisma.store.deleteMany({ where: { id: { in: [CENTER, TEST2, LEI] } } });
-  await prisma.user.deleteMany({ where: { id: { in: ['it-tester', 'it-regular'] } } });
+  await prisma.user.deleteMany({ where: { id: { in: ['it-tester', 'it-regular', 'it-once'] } } });
   await prisma.brand.deleteMany({ where: { id: BRAND } });
 }
