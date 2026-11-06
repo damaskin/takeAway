@@ -348,35 +348,39 @@ describe('ProductFormComponent', () => {
 describe('ProductOptionsPanelComponent', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
-  // «Добавки» is the platform team's page since 2026-11-05: a brand gets a
-  // hint it can act on here, with no link to a page it cannot open.
-  it('links the add-ons library for the platform team only', () => {
-    for (const [role, linked] of [
-      ['BRAND_ADMIN', false],
-      ['MENU_EDITOR', false],
-      ['SUPER_ADMIN', true],
-    ] as const) {
+  /** Who is signed in: the platform team types new add-ins, a brand picks from its library. */
+  const as = (role: string): Provider[] => [{ provide: AuthStore, useValue: { user: signal({ role }) } }];
+  const PLATFORM = as('SUPER_ADMIN');
+
+  // «Добавки» is open to whoever edits the menu again (2026-11-06); a brand
+  // reads that new add-ins come from the takeAway team.
+  it('links the add-ons library for every menu role, and tells a brand who adds new add-ins', () => {
+    for (const role of ['BRAND_ADMIN', 'MENU_EDITOR', 'SUPER_ADMIN']) {
       TestBed.resetTestingModule();
       const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
-      const fixture = setup(ProductOptionsPanelComponent, { getProduct }, [
-        { provide: AuthStore, useValue: { user: signal({ role }) } },
-      ]);
+      const fixture = setup(ProductOptionsPanelComponent, { getProduct }, as(role));
       fixture.componentRef.setInput('productId', 'p1');
       fixture.componentRef.setInput('currency', 'MDL');
       fixture.detectChanges();
       fixture.detectChanges();
 
       const el = fixture.nativeElement as HTMLElement;
-      expect(el.querySelector('a[href="/ingredients"]') !== null).toBe(linked);
-      expect(el.textContent).toContain('общие для всех товаров бренда');
-      expect(el.textContent).not.toContain('справочнике «Добавки»');
+      const hint = el.querySelector('[data-testid="option-library-hint"]')?.textContent ?? '';
+      expect(el.querySelector('a[href="/ingredients"]')).not.toBeNull();
+      if (role === 'SUPER_ADMIN') {
+        expect(hint).toContain('общие для всех товаров бренда');
+        expect(hint).toContain('введите новую');
+      } else {
+        expect(hint).toContain('Новую добавку заводит команда takeAway');
+        expect(hint).not.toContain('введите новую');
+      }
     }
   });
 
   it('creates «Ванильный сироп» without inventing a slug in the browser', () => {
     const createModifier = jest.fn().mockReturnValue(of({}));
     const getProduct = jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [] }));
-    const fixture = setup(ProductOptionsPanelComponent, { createModifier, getProduct });
+    const fixture = setup(ProductOptionsPanelComponent, { createModifier, getProduct }, PLATFORM);
     fixture.componentRef.setInput('productId', 'p1');
     fixture.componentRef.setInput('currency', 'MDL');
     fixture.detectChanges();
@@ -416,7 +420,7 @@ describe('ProductOptionsPanelComponent', () => {
     );
     const listOptionGroups = jest.fn().mockReturnValue(of(['Соусы', 'Топпинги']));
     const createModifier = jest.fn().mockReturnValue(of({}));
-    const fixture = setup(ProductOptionsPanelComponent, { getProduct, listOptionGroups, createModifier });
+    const fixture = setup(ProductOptionsPanelComponent, { getProduct, listOptionGroups, createModifier }, PLATFORM);
     fixture.componentRef.setInput('productId', 'p1');
     fixture.detectChanges();
     const panel = fixture.componentInstance;
@@ -507,7 +511,7 @@ describe('ProductOptionsPanelComponent', () => {
       .fn()
       .mockReturnValue(of([{ id: 'i1', brandId: 'b1', name: 'Ванильный сироп', isAvailable: false, products: [] }]));
     const updateModifier = jest.fn().mockReturnValue(of({}));
-    const fixture = setup(ProductOptionsPanelComponent, { getProduct, listIngredients, updateModifier });
+    const fixture = setup(ProductOptionsPanelComponent, { getProduct, listIngredients, updateModifier }, PLATFORM);
     fixture.componentRef.setInput('productId', 'p1');
     fixture.detectChanges();
 
@@ -542,15 +546,19 @@ describe('ProductOptionsPanelComponent', () => {
       ingredient: { id: 'i-vanilla', name: 'Ванильный сироп', isAvailable: true },
     };
 
-    function panel(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}) {
-      const fixture = setup(ProductOptionsPanelComponent, {
-        getProduct: jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [vanillaOnLatte] })),
-        listIngredients: jest.fn().mockReturnValue(of(library)),
-        createModifier: jest.fn().mockReturnValue(of({})),
-        createVariation: jest.fn().mockReturnValue(of({})),
-        deleteModifier: jest.fn().mockReturnValue(of(undefined)),
-        ...api,
-      });
+    function panel(api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {}, role = 'SUPER_ADMIN') {
+      const fixture = setup(
+        ProductOptionsPanelComponent,
+        {
+          getProduct: jest.fn().mockReturnValue(of({ ...LATTE, variations: [], modifiers: [vanillaOnLatte] })),
+          listIngredients: jest.fn().mockReturnValue(of(library)),
+          createModifier: jest.fn().mockReturnValue(of({})),
+          createVariation: jest.fn().mockReturnValue(of({})),
+          deleteModifier: jest.fn().mockReturnValue(of(undefined)),
+          ...api,
+        },
+        as(role),
+      );
       fixture.componentRef.setInput('productId', 'p1');
       fixture.componentRef.setInput('currency', 'MDL');
       fixture.detectChanges();
@@ -598,6 +606,104 @@ describe('ProductOptionsPanelComponent', () => {
       component.addModifier();
 
       expect(createModifier).toHaveBeenCalledWith('p1', { name: 'Корица', maxCount: 1 });
+    });
+
+    // Maxim, 2026-11-06: a brand does not add add-ins — it picks the ones its
+    // library has, and asks the takeAway team for a new one.
+    describe('for a brand', () => {
+      it('offers the library pick and no form to type a new extra', () => {
+        const fixture = panel({}, 'BRAND_ADMIN');
+        const el = fixture.nativeElement as HTMLElement;
+
+        expect(el.querySelector('[data-testid="option-library-pick"]')).not.toBeNull();
+        expect(el.querySelector('[data-testid="modifier-group-input"]')).toBeNull();
+        expect(el.querySelector('input[formcontrolname="name"][list="ingredient-names"]')).toBeNull();
+        expect(el.textContent).not.toContain('+ Добавка');
+
+        TestBed.resetTestingModule();
+        const createModifier = jest.fn();
+        const component = panel({ createModifier }, 'MENU_EDITOR').componentInstance;
+        component.modifierAdd.setValue({ name: 'Кокосовый сироп', price: '5', maxCount: '1', group: '' });
+        component.addModifier();
+        expect(createModifier).not.toHaveBeenCalled();
+      });
+
+      it('says to ask the takeAway team when the library has nothing more for the product', () => {
+        const fixture = panel({ listIngredients: jest.fn().mockReturnValue(of([library[0]])) }, 'BRAND_ADMIN');
+        const el = fixture.nativeElement as HTMLElement;
+
+        expect(el.querySelector('[data-testid="option-library-pick"]')).toBeNull();
+        expect(el.querySelector('[data-testid="option-library-empty"]')?.textContent).toContain(
+          'попросите команду takeAway',
+        );
+
+        TestBed.resetTestingModule();
+        const empty = panel({ listIngredients: jest.fn().mockReturnValue(of([])) }, 'BRAND_ADMIN');
+        expect(
+          (empty.nativeElement as HTMLElement).querySelector('[data-testid="option-library-empty"]')?.textContent,
+        ).toContain('В справочнике бренда пока нет добавок');
+      });
+
+      it('adds a milk by picking it from the library, sizes by name as before', () => {
+        const createVariation = jest.fn().mockReturnValue(of({}));
+        const milk: IngredientDto = {
+          id: 'i-oat',
+          brandId: 'b1',
+          name: 'Овсяное молоко',
+          priceCents: 800,
+          isAvailable: true,
+          products: [],
+        };
+        const fixture = panel(
+          { createVariation, listIngredients: jest.fn().mockReturnValue(of([milk])) },
+          'BRAND_ADMIN',
+        );
+        const component = fixture.componentInstance;
+        const el = fixture.nativeElement as HTMLElement;
+
+        component.variationAdd.patchValue({ type: 'MILK' });
+        fixture.detectChanges();
+        expect(component.milkFromLibrary()).toBe(true);
+        const pick = el.querySelector('[data-testid="variation-library-pick"]');
+        expect([...(pick?.querySelectorAll('option') ?? [])].map((o) => o.textContent?.trim())).toEqual([
+          'Выберите добавку',
+          'Овсяное молоко · +8 MDL',
+        ]);
+
+        component.addVariation();
+        fixture.detectChanges();
+        expect(createVariation).not.toHaveBeenCalled();
+        expect(el.textContent).toContain('Выберите молоко из справочника.');
+
+        component.variationAdd.patchValue({ ingredientId: 'i-oat' });
+        component.addVariation();
+        expect(createVariation).toHaveBeenCalledWith('p1', { type: 'MILK', ingredientId: 'i-oat', isDefault: false });
+
+        component.variationAdd.patchValue({ type: 'SIZE', name: 'Большой', price: '5' });
+        fixture.detectChanges();
+        expect(el.querySelector('[data-testid="variation-library-pick"]')).toBeNull();
+        component.addVariation();
+        expect(createVariation).toHaveBeenLastCalledWith('p1', {
+          type: 'SIZE',
+          name: 'Большой',
+          priceDeltaCents: 500,
+          isDefault: false,
+        });
+      });
+
+      it('cannot stop tracking an extra made of a library add-in', () => {
+        const fixture = panel({}, 'BRAND_ADMIN');
+        const component = fixture.componentInstance;
+        const el = fixture.nativeElement as HTMLElement;
+
+        component.editModifier(vanillaOnLatte);
+        fixture.detectChanges();
+        const options = [...el.querySelectorAll('select[formcontrolname="ingredientId"] option')].map((o) =>
+          o.textContent?.trim(),
+        );
+        expect(options).not.toContain('Не отслеживать — показывать всегда');
+        expect(options).toContain('Ванильный сироп');
+      });
     });
 
     it('says that taking a library add-on off the product keeps it on the other products', () => {
