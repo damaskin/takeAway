@@ -28,7 +28,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { StoreAvailabilityNotifier } from '../../realtime/store-availability.notifier';
 import { menuBadRequest, menuConflict, prismaCode, rethrowSlugTaken } from './admin-menu.errors';
 import { copyCategoryOptions } from './category-option-copy';
-import { linkedIngredient, linkId, optionDefaults, optionGroup } from './ingredient-link';
+import { linkedIngredient, linkId, mayEditLibrary, notInLibrary, optionDefaults, optionGroup } from './ingredient-link';
 import { missingChecks, storeReadiness, type StoreReadiness } from './store-readiness';
 import type { CreateBrandDto, UpdateBrandDto } from './dto/admin-brand.dto';
 
@@ -919,18 +919,20 @@ export class AdminCatalogService {
   }
 
   // ── Variations ────────────────────────────────────────────────────────────
+  /**
+   * A milk is an add-in of the brand library: a brand picks one its library
+   * has (by id, or by its name); only the platform team adds a new one by
+   * typing it here. Sizes, temperatures and cups are the brand's own.
+   */
   async createVariation(productId: string, dto: CreateVariationDto, scope: BrandScope = null) {
     const product = await this.getProduct(productId, scope);
     return this.prisma.$transaction(async (tx) => {
       // Milk is an add-on that runs out; sizes and cups are not.
-      const linked = await linkedIngredient(
-        tx,
-        product.brandId,
-        dto.ingredientId,
-        dto.name,
-        dto.type === 'MILK',
-        dto.priceDeltaCents,
-      );
+      const linked = await linkedIngredient(tx, product.brandId, dto.ingredientId, dto.name, {
+        autoLink: dto.type === 'MILK',
+        mayAdd: mayEditLibrary(scope),
+        priceForNew: dto.priceDeltaCents,
+      });
       const { name, priceDeltaCents } = optionDefaults(dto, linked);
       // One default per type, so the size a customer finds pre-selected is
       // never a coin toss between two "default" sizes.
@@ -947,8 +949,10 @@ export class AdminCatalogService {
     });
   }
 
+  /** A brand cannot take a choice made of a library add-in out of the library's reach (see {@link assertKeepsLink}). */
   async updateVariation(id: string, dto: UpdateVariationDto, scope: BrandScope = null) {
     const existing = await this.findVariation(id, scope);
+    assertKeepsLink(scope, existing.ingredientId, dto.ingredientId);
     return this.prisma
       .$transaction(async (tx) => {
         if (dto.isDefault) {
@@ -957,7 +961,7 @@ export class AdminCatalogService {
             data: { isDefault: false },
           });
         }
-        const linked = await linkedIngredient(tx, existing.product.brandId, dto.ingredientId, undefined, false);
+        const linked = await linkedIngredient(tx, existing.product.brandId, dto.ingredientId, undefined, KEEP_LINK);
         return tx.variation.update({ where: { id }, data: { ...dto, ingredientId: linkId(linked) } });
       })
       .catch((err: unknown) => {
@@ -987,7 +991,7 @@ export class AdminCatalogService {
   private async findVariation(id: string, scope: BrandScope) {
     const variation = await this.prisma.variation.findUnique({
       where: { id },
-      select: { productId: true, type: true, product: { select: { brandId: true } } },
+      select: { productId: true, type: true, ingredientId: true, product: { select: { brandId: true } } },
     });
     if (!variation) throw new NotFoundException('Variation not found');
     assertInScope(scope, variation.product.brandId);
@@ -1002,20 +1006,19 @@ export class AdminCatalogService {
    *
    * Every extra is an add-on of the brand library: picked from it by
    * `ingredientId` (name, price and group default to the library's), or
-   * typed by name and filed under the entry of that name, made if missing.
+   * typed by name and filed under the entry of that name. Only the platform
+   * team's editor makes a missing entry (or an untracked extra); a brand's
+   * is refused with INGREDIENT_NOT_IN_LIBRARY (2026-11-06).
    */
   async createModifier(productId: string, dto: CreateModifierDto, scope: BrandScope = null) {
     const product = await this.getProduct(productId, scope);
     assertCountRange(dto.minCount ?? 0, dto.maxCount ?? 1);
-    const linked = await linkedIngredient(
-      this.prisma,
-      product.brandId,
-      dto.ingredientId,
-      dto.name,
-      true,
-      dto.priceDeltaCents,
-      dto.group ?? null,
-    );
+    const linked = await linkedIngredient(this.prisma, product.brandId, dto.ingredientId, dto.name, {
+      autoLink: true,
+      mayAdd: mayEditLibrary(scope),
+      priceForNew: dto.priceDeltaCents,
+      groupForNew: dto.group ?? null,
+    });
     const { name, priceDeltaCents } = optionDefaults(dto, linked);
     const group = optionGroup(dto.group, linked);
     const slug =
@@ -1033,10 +1036,18 @@ export class AdminCatalogService {
       .catch((err: unknown) => rethrowSlugTaken(err, slug));
   }
 
+  /** A brand cannot take an extra out of the library's reach (see {@link assertKeepsLink}). */
   async updateModifier(id: string, dto: UpdateModifierDto, scope: BrandScope = null) {
     const existing = await this.findModifier(id, scope);
     assertCountRange(dto.minCount ?? existing.minCount, dto.maxCount ?? existing.maxCount);
-    const linked = await linkedIngredient(this.prisma, existing.product.brandId, dto.ingredientId, undefined, false);
+    assertKeepsLink(scope, existing.ingredientId, dto.ingredientId);
+    const linked = await linkedIngredient(
+      this.prisma,
+      existing.product.brandId,
+      dto.ingredientId,
+      undefined,
+      KEEP_LINK,
+    );
     const ingredientId = linkId(linked);
     return this.prisma.modifier.update({ where: { id }, data: { ...dto, ingredientId } }).catch((err: unknown) => {
       if (prismaCode(err) === 'P2025') throw new NotFoundException('Modifier not found');
@@ -1072,12 +1083,31 @@ export class AdminCatalogService {
   private async findModifier(id: string, scope: BrandScope) {
     const modifier = await this.prisma.modifier.findUnique({
       where: { id },
-      select: { productId: true, minCount: true, maxCount: true, product: { select: { brandId: true } } },
+      select: {
+        productId: true,
+        minCount: true,
+        maxCount: true,
+        ingredientId: true,
+        product: { select: { brandId: true } },
+      },
     });
     if (!modifier) throw new NotFoundException('Modifier not found');
     assertInScope(scope, modifier.product.brandId);
     return modifier;
   }
+}
+
+/** An edit names the link outright or leaves it: it never files an option by name. */
+const KEEP_LINK = { autoLink: false, mayAdd: false } as const;
+
+/**
+ * Unlinking an option from its library add-in would leave an add-in the
+ * library does not control — the platform team's call, like a new one. A
+ * brand may move the option to another add-in of its library; an option
+ * that was never linked (from before the library) stays as it is.
+ */
+function assertKeepsLink(scope: BrandScope, current: string | null, requested: string | null | undefined): void {
+  if (requested === null && current !== null && !mayEditLibrary(scope)) notInLibrary();
 }
 
 function categoryNotEmpty(productCount?: number) {

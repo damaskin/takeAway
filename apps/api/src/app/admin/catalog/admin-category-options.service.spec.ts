@@ -78,7 +78,11 @@ function build(initial: Array<Partial<Row>> = []) {
       delete: jest.fn().mockResolvedValue({}),
     },
     ingredient: {
-      findFirst: jest.fn(({ where }: { where: { id: string } }) => Promise.resolve(library.get(where.id) ?? null)),
+      findFirst: jest.fn(({ where }: { where: { id?: string; name?: { equals: string } } }) => {
+        if (where.id !== undefined) return Promise.resolve(library.get(where.id) ?? null);
+        const wanted = where.name?.equals.toLocaleLowerCase();
+        return Promise.resolve([...library.values()].find((i) => i.name.toLocaleLowerCase() === wanted) ?? null);
+      }),
       upsert: jest.fn(({ create }: { create: { name: string; priceCents: number; group: string | null } }) => {
         const found = [...library.values()].find((i) => i.name === create.name);
         if (found) return Promise.resolve(found);
@@ -136,7 +140,8 @@ describe('AdminCategoryOptionsService', () => {
   it('stores a preset: sizes untracked, milk and add-ons in the library at the price and group given', async () => {
     const { svc, prisma, library } = build();
 
-    const set = await svc.add('cat-hot', PRESET, ['b1']);
+    // The platform team's editor: missing add-ons join the library.
+    const set = await svc.add('cat-hot', PRESET, null);
 
     expect(set.map((o) => [o.kind, o.variationType, o.name, o.priceDeltaCents, o.group, o.isDefault])).toEqual([
       ['VARIATION', 'SIZE', 'Маленький', 0, null, true],
@@ -154,11 +159,45 @@ describe('AdminCategoryOptionsService', () => {
 
   it('adds nothing when the same preset comes again', async () => {
     const { svc } = build();
-    const first = await svc.add('cat-hot', PRESET, ['b1']);
+    const first = await svc.add('cat-hot', PRESET, null);
 
-    const second = await svc.add('cat-hot', PRESET, ['b1']);
+    const second = await svc.add('cat-hot', PRESET, null);
 
     expect(second.map((o) => o.id)).toEqual(first.map((o) => o.id));
+  });
+
+  // Maxim, 2026-11-06: a brand puts only the add-ins its library has in a set.
+  it('lets a brand build a set from its library only, refusing an add-in the library lacks', async () => {
+    const { svc, prisma, library } = build();
+    library.set('ing-oat', { id: 'ing-oat', name: 'Овсяное молоко', priceCents: 900, group: null });
+
+    const set = await svc.add(
+      'cat-hot',
+      {
+        options: [
+          { kind: 'VARIATION', variationType: 'SIZE', name: 'Маленький', isDefault: true },
+          { kind: 'VARIATION', variationType: 'MILK', name: 'овсяное молоко' },
+          { kind: 'MODIFIER', ingredientId: 'ing-vanilla' },
+        ],
+      },
+      ['b1'],
+    );
+    expect(set.map((o) => [o.name, o.ingredientId, o.priceDeltaCents])).toEqual([
+      ['Маленький', null, 0],
+      ['овсяное молоко', 'ing-oat', 900],
+      ['Ваниль', 'ing-vanilla', 500],
+    ]);
+
+    let refused: unknown;
+    try {
+      await svc.add('cat-hot', { options: [{ kind: 'MODIFIER', name: 'Корица', priceDeltaCents: 200 }] }, ['b1']);
+    } catch (err) {
+      refused = err;
+    }
+    expect(refused).toBeInstanceOf(ForbiddenException);
+    expect((refused as ForbiddenException).getResponse()).toMatchObject({ code: 'INGREDIENT_NOT_IN_LIBRARY' });
+    expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+    expect(library.has('ing-Корица')).toBe(false);
   });
 
   it('keeps one default choice per group', async () => {

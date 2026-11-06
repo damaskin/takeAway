@@ -9,6 +9,12 @@ import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { AdminIngredientsService } from './admin-ingredients.service';
 import { CreateIngredientDto, type IngredientAdminDto, UpdateIngredientDto } from './dto/admin-ingredient.dto';
 
+/**
+ * The add-ons library. Every role that edits the menu reads it and picks
+ * from it; a brand's roles switch an add-in on or off and set its price,
+ * and only SUPER_ADMIN adds, renames, regroups or deletes one (the service
+ * answers anything else with 403 INGREDIENT_LIBRARY_LOCKED).
+ */
 @ApiTags('admin: ingredients')
 @ApiBearerAuth()
 @Roles(Role.SUPER_ADMIN, Role.BRAND_ADMIN, Role.STORE_MANAGER, Role.MENU_EDITOR)
@@ -34,6 +40,7 @@ export class AdminIngredientsController {
     return this.ingredients.groups(scope, brandId);
   }
 
+  /** SUPER_ADMIN only (403 INGREDIENT_LIBRARY_LOCKED for a brand). */
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIngredientDto): Promise<IngredientAdminDto> {
@@ -43,7 +50,8 @@ export class AdminIngredientsController {
 
   /**
    * `{ isAvailable: false }` is "ran out": its options disappear from the menu until it is back.
-   * A new name or price reaches every option that still carries the old one.
+   * A new name or price reaches every option that still carries the old one. A brand may
+   * change `isAvailable` and `priceCents` only (403 INGREDIENT_LIBRARY_LOCKED otherwise).
    */
   @Patch(':id')
   async update(
@@ -55,7 +63,7 @@ export class AdminIngredientsController {
     return this.ingredients.update(id, dto, scope);
   }
 
-  /** Takes the add-on off every product that offers it, then out of the library. */
+  /** Takes the add-on off every product that offers it, then out of the library. SUPER_ADMIN only. */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<void> {
