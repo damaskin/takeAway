@@ -150,6 +150,12 @@ abstract class TakeAwayApi {
   @POST('/orders/{id}/cancel')
   Future<Order> cancelOrder(@Path('id') String id);
 
+  /// «Как вам заказ?» on a handed-over order; answers the order with its
+  /// review. 409 `ORDER_ALREADY_REVIEWED` when it has one already, 409
+  /// `ORDER_NOT_REVIEWABLE` when it is not handed over (or ended otherwise).
+  @POST('/orders/{id}/review')
+  Future<Order> reviewOrder(@Path('id') String id, @Body() CreateOrderReviewRequest body);
+
   @POST('/orders/{id}/location')
   Future<CustomerLocationResult> reportLocation(@Path('id') String id, @Body() Map<String, dynamic> body);
 

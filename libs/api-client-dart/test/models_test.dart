@@ -489,6 +489,87 @@ void main() {
       expect(summary.withStatus(OrderStatus.cancelled).cancelReason, OrderCancelReason.closing);
     });
 
+    test('reads whether the order can be reviewed and the review left on it', () {
+      final open = Order.fromJson({...orderJson(), 'status': 'PICKED_UP', 'canReview': true, 'review': null});
+      expect(open.canReview, isTrue);
+      expect(open.customerCanReview, isTrue);
+      expect(open.review, isNull);
+
+      final reviewed = Order.fromJson({
+        ...orderJson(),
+        'status': 'DELIVERED',
+        'canReview': false,
+        'review': {'rating': 4, 'comment': 'Горячий и вовремя', 'createdAt': '2026-11-06T10:15:00.000Z'},
+      });
+      expect(reviewed.customerCanReview, isFalse);
+      expect(reviewed.review?.rating, 4);
+      expect(reviewed.review?.comment, 'Горячий и вовремя');
+      expect(reviewed.review?.createdAt, DateTime.utc(2026, 11, 6, 10, 15));
+      expect(reviewed.copyWithStatus(OrderStatus.delivered).review?.rating, 4);
+
+      final bare = Order.fromJson({
+        ...orderJson(),
+        'status': 'PICKED_UP',
+        'canReview': false,
+        'review': {'rating': 5, 'comment': null, 'createdAt': '2026-11-06T10:15:00.000Z'},
+      });
+      expect(bare.review?.comment, isNull);
+
+      // An API from before reviews says nothing: no review is asked for.
+      final older = Order.fromJson({...orderJson(), 'status': 'PICKED_UP'});
+      expect(older.canReview, isNull);
+      expect(older.customerCanReview, isFalse);
+      expect(older.review, isNull);
+    });
+
+    test('a live status that leaves the handover takes the review away until the re-read', () {
+      final open = Order.fromJson({...orderJson(), 'status': 'PICKED_UP', 'canReview': true});
+      expect(open.copyWithStatus(OrderStatus.pickedUp).customerCanReview, isTrue);
+      expect(open.copyWithStatus(OrderStatus.cancelled).customerCanReview, isFalse);
+      expect(OrderStatus.pickedUp.isHandedOver, isTrue);
+      expect(OrderStatus.delivered.isHandedOver, isTrue);
+      expect(OrderStatus.ready.isHandedOver, isFalse);
+      expect(OrderStatus.cancelled.isHandedOver, isFalse);
+    });
+
+    test('reads the review state of an order in the history list', () {
+      Map<String, dynamic> summaryJson() => {
+        'id': 'ord_1',
+        'orderCode': '4821',
+        'status': 'PICKED_UP',
+        'pickupMode': 'ASAP',
+        'pickupAt': '2026-09-22T19:40:00.000Z',
+        'totalCents': 4050,
+        'currency': 'MDL',
+        'storeId': 'st_1',
+        'storeName': 'NoName',
+        'itemCount': 2,
+        'createdAt': '2026-09-22T19:30:00.000Z',
+      };
+      final open = OrderSummary.fromJson({...summaryJson(), 'canReview': true, 'reviewRating': null});
+      expect(open.canReview, isTrue);
+      expect(open.reviewRating, isNull);
+      expect(open.withStatus(OrderStatus.pickedUp).canReview, isTrue);
+
+      final reviewed = OrderSummary.fromJson({...summaryJson(), 'canReview': false, 'reviewRating': 5});
+      expect(reviewed.canReview, isFalse);
+      expect(reviewed.reviewRating, 5);
+      expect(reviewed.withStatus(OrderStatus.pickedUp).reviewRating, 5);
+
+      final older = OrderSummary.fromJson(summaryJson());
+      expect(older.canReview, isFalse);
+      expect(older.reviewRating, isNull);
+    });
+
+    test('serialises a review, leaving a blank comment out and trimming the rest', () {
+      expect(const CreateOrderReviewRequest(rating: 4, comment: '  Горячий и вовремя \n').toJson(), {
+        'rating': 4,
+        'comment': 'Горячий и вовремя',
+      });
+      expect(const CreateOrderReviewRequest(rating: 5, comment: '   ').toJson(), {'rating': 5});
+      expect(const CreateOrderReviewRequest(rating: 1).toJson(), {'rating': 1});
+    });
+
     test('parses socket status events, tolerating unknown statuses', () {
       final event = OrderStatusEvent.fromJson({
         'orderId': 'ord_1',
