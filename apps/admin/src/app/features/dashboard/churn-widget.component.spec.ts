@@ -30,6 +30,9 @@ const STATS: ChurnStats = {
       avgCheckCents: 13_000,
       lastOrderAt: '2026-09-20T09:00:00.000Z',
       daysSinceLastOrder: 20,
+      visits: 9,
+      visitIntervalDays: 5,
+      lostRevenueCents: 52_000,
     },
   ],
 };
@@ -81,6 +84,23 @@ describe('ChurnWidgetComponent', () => {
     expect(text(tiles[0])).toContain('упущенная выручка');
     expect(text(tiles[0])).toContain('520 MDL');
     expect(text(tiles[1])).toContain('4');
+  });
+
+  it('explains the estimate: days away ÷ usual interval × average check, a forecast', async () => {
+    const fixture = await render();
+    const money = (fixture.nativeElement as HTMLElement).querySelector('.churn-money');
+    expect(text(money)).toContain(
+      'Сколько клиент принёс бы, если бы заходил в своём обычном темпе: дни без визитов ÷ обычный интервал × средний чек. Это прогноз, а не потерянная прибыль.',
+    );
+    expect(money?.getAttribute('title')).toContain('средний интервал по бренду');
+  });
+
+  it('lists each customer with their own estimate, not their average check', async () => {
+    const fixture = await render();
+    const item = text((fixture.nativeElement as HTMLElement).querySelector('.churn-list li'));
+    expect(item).toContain('≈ 520 MDL');
+    expect(item).toContain('20 дн. назад');
+    expect(item).not.toContain('130 MDL');
   });
 
   it('offers 3, 7 and 14 days and asks again for the one picked', async () => {

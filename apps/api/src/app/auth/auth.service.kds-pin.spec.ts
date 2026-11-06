@@ -2,7 +2,6 @@ import { HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Role, type User } from '@prisma/client';
 
-import type { MailService } from '../mail/mail.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { RedisService } from '../redis/redis.service';
 import type { UsersService } from '../users/users.service';
@@ -129,8 +128,6 @@ describe('AuthService.loginWithKdsPin', () => {
       {} as OAuthIdentityService,
       {} as PasswordService,
       pins,
-      {} as MailService,
-      cfg,
       devices as unknown as KitchenDeviceService,
     );
     return { auth, findFirst, findMany, tokens, devices, values };

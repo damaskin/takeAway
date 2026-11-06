@@ -54,19 +54,26 @@ export class MailService implements OnModuleInit {
     return this.transporter !== null;
   }
 
-  async sendPasswordReset(email: string, resetUrl: string): Promise<void> {
+  /**
+   * «Забыли пароль?»: the one-time link, also sent to the account's
+   * Telegram when it has one. True when the SMTP server accepted it.
+   */
+  sendPasswordReset(email: string, resetUrl: string, ttlMinutes = 60): Promise<boolean> {
     const subject = 'Сброс пароля / Reset your takeAway password';
     const text =
       `Чтобы задать новый пароль, откройте ссылку: ${resetUrl}\n\n` +
-      `If you did not request a reset, ignore this email.\n\n` +
-      `Open this link to set a new password: ${resetUrl}`;
+      `Ссылка действует ${ttlMinutes} минут и сработает один раз. ` +
+      `Если это были не вы — просто проигнорируйте письмо, пароль останется прежним.\n\n` +
+      `Open this link within ${ttlMinutes} minutes to set a new password: ${resetUrl}\n\n` +
+      `If you did not request a reset, ignore this email.`;
     const html = `
       <p>Чтобы задать новый пароль, откройте ссылку:</p>
       <p><a href="${resetUrl}">${resetUrl}</a></p>
+      <p>Ссылка действует ${ttlMinutes} минут и сработает один раз. Если это были не вы — просто проигнорируйте письмо, пароль останется прежним.</p>
       <hr />
-      <p>If you did not request a reset, ignore this email. Otherwise, open the link above to set a new password.</p>
+      <p>Open the link above within ${ttlMinutes} minutes to set a new password. If you did not request a reset, ignore this email.</p>
     `;
-    await this.deliver('password-reset', email, subject, text, html);
+    return this.deliver('password-reset', email, subject, text, html);
   }
 
   /**

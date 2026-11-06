@@ -19,10 +19,11 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 /**
  * «Неактивные клиенты» on the business home, right under the KPIs: regulars
  * (3+ orders) who stopped ordering for 3, 7 or 14 days during the period.
- * The money comes first — the revenue missed, the sum of their average
- * checks — then how many they are. Every plan sees both; PRO also sees who
- * they are and the «Возврат» button, which opens the win-back tab of the
- * analytics on the same period, store and window.
+ * The money comes first — the revenue missed: what each would have brought
+ * coming at their usual pace, days away ÷ usual interval × average check —
+ * then how many they are. Every plan sees both; PRO also sees who they are,
+ * biggest estimate first, and the «Возврат» button, which opens the
+ * win-back tab of the analytics on the same period, store and window.
  */
 @Component({
   selector: 'app-churn-widget',
@@ -49,7 +50,12 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
 
       <div class="churn-body">
         <div class="churn-figures">
-          <div class="churn-money">
+          <div
+            class="churn-money"
+            [attr.title]="
+              ('admin.churn.lostRevenueHint' | translate) + ' ' + ('admin.churn.lostRevenueOneVisit' | translate)
+            "
+          >
             <span class="churn-label">{{ 'admin.churn.lostRevenue' | translate }}</span>
             <span class="churn-value">{{ stats() ? money(stats()!.lostRevenueCents) : '—' }}</span>
             <span class="churn-note">{{ 'admin.churn.lostRevenueHint' | translate }}</span>
@@ -77,7 +83,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
                       <span class="churn-name">{{ c.name || c.phone || ('admin.customers.noName' | translate) }}</span>
                     }
                     <span
-                      >{{ money(c.avgCheckCents) }} ·
+                      >≈ {{ money(c.lostRevenueCents) }} ·
                       {{ 'admin.churn.daysAgo' | translate: { days: c.daysSinceLastOrder } }}</span
                     >
                   </li>

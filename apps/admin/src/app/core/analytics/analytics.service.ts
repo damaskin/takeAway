@@ -125,7 +125,14 @@ export interface RetentionCustomer {
   totalCents: number;
   avgCheckCents: number;
   lastOrderAt: string;
+  /** D: days without a visit, up to the period's last day (today while it runs). */
   daysSinceLastOrder: number;
+  /** Calendar days with an order. */
+  visits: number;
+  /** T: the usual interval between visits in days; null after a single visit. */
+  visitIntervalDays: number | null;
+  /** R = D ÷ T × A: what this customer would have brought at their usual pace. */
+  lostRevenueCents: number;
 }
 
 /**

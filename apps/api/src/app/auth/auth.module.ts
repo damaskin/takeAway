@@ -7,10 +7,12 @@ import { ThrottlerModule } from '@nestjs/throttler';
 
 import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { TelegramBotModule } from '../telegram-bot/telegram-bot.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { EmailLoginController } from './email-login.controller';
 import { KitchenDeviceController } from './kitchen-device.controller';
+import { PasswordResetController } from './password-reset.controller';
 import { KdsSessionGuard } from './guards/kds-session.guard';
 import { KitchenDeviceService } from './services/kitchen-device.service';
 import { AuthService } from './auth.service';
@@ -25,6 +27,7 @@ import { EmailLoginService } from './services/email-login.service';
 import { KdsPinService } from './services/kds-pin.service';
 import { KitchenPinsService } from './services/kitchen-pins.service';
 import { OAuthIdentityService } from './services/oauth-identity.service';
+import { PasswordResetService } from './services/password-reset.service';
 import { PasswordService } from './services/password.service';
 import { SignInMethodsService } from './services/sign-in-methods.service';
 import { TelegramService } from './services/telegram.service';
@@ -39,6 +42,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     MailModule,
     // Account deletion drops the user's open sockets.
     RealtimeModule,
+    // «Забыли пароль?» sends the link to the Telegram chat staff linked too.
+    TelegramBotModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -60,7 +65,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       },
     }),
   ],
-  controllers: [AuthController, EmailLoginController, KitchenDeviceController],
+  controllers: [AuthController, EmailLoginController, KitchenDeviceController, PasswordResetController],
   providers: [
     AuthService,
     AccountDeletionService,
@@ -68,6 +73,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     EmailCodeService,
     EmailLoginService,
     PasswordService,
+    PasswordResetService,
     KdsPinService,
     KitchenPinsService,
     KitchenDeviceService,

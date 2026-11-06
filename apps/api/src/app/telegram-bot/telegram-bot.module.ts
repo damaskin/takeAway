@@ -10,10 +10,12 @@ import { TelegramWebhookService } from './telegram-webhook.service';
 /**
  * The bot as a conversation: the webhook Telegram posts to, and linking a
  * staff account's notification chat through it. Sending order messages to
- * a chat stays with NotificationsModule (TelegramPushProvider).
+ * a chat stays with NotificationsModule (TelegramPushProvider). The bot API
+ * is exported for plain messages with a button — the password-reset link.
  */
 @Module({
   controllers: [TelegramWebhookController, TelegramNotifyLinkController],
   providers: [TelegramBotApi, TelegramNotifyLinkService, TelegramWebhookService, TelegramWebhookRegistrar],
+  exports: [TelegramBotApi],
 })
 export class TelegramBotModule {}

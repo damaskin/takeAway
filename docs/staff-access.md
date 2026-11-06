@@ -193,8 +193,19 @@ notification chat too.
   `/change-password` with a way back; the other sessions are signed out. The
   first sign-in with a temporary password still lands there with no way
   around it.
-- «Забыли пароль?» mails a link and needs SMTP; production has none, so
-  until it does the resets above are the way back in.
+- **«Забыли пароль?»** (`/forgot-password`) — the email or login the
+  person signs in with. One one-time link (60 minutes, works once, voids
+  the account's other unused links) goes to every channel the account has:
+  its email when SMTP is configured, and the chat linked under «Telegram»
+  (`telegramNotifyChatId`) when `TELEGRAM_BOT_TOKEN` is set — the bot
+  writes «Сброс пароля takeAway…» with a «Задать новый пароль» button.
+  The answer is the same for every identifier, known or not
+  (`{ channels, linkTtlMinutes }` lists what the server can send through),
+  and the page words it as «если аккаунт найден…». At most one link per
+  account a minute, on top of 3 requests a minute per client. With neither
+  SMTP nor the bot (or, in production, no `ADMIN_APP_URL`) it answers 503
+  `PASSWORD_RESET_UNAVAILABLE`. An account with neither an email nor a
+  linked Telegram gets nothing: the resets above are its way back in.
 
 ## Endpoints
 
@@ -206,6 +217,8 @@ notification chat too.
 | `PUT /admin/staff/:userId/sign-in`                 | owner, platform admin                  | add an email or login to a PIN-only account |
 | `POST /admin/staff`                                | owner, platform admin, store manager   | invite; PIN-only for kitchen staff          |
 | `POST /admin/brands/:brandId/owner/reset-password` | platform admin                         | reset the owner's password                  |
+| `POST /auth/password/forgot`                       | anyone (public)                        | reset link by email and Telegram            |
+| `POST /auth/password/reset`                        | anyone with the link                   | set the new password                        |
 | `GET/POST/DELETE /auth/telegram/notify-link`       | staff, owners, riders, platform admins | status / one-time bot link / unlink         |
 | `POST /api/telegram/webhook`                       | Telegram (secret header)               | the bot's messages                          |
 
@@ -214,7 +227,7 @@ notification chat too.
 | Variable                  | Where            | Meaning                                                            |
 | ------------------------- | ---------------- | ------------------------------------------------------------------ |
 | `KDS_PIN_SECRET`          | already required | HMAC key of every PIN; rotating it invalidates all PINs            |
-| `TELEGRAM_BOT_TOKEN`      | already set      | the bot that sends notifications and answers the webhook           |
+| `TELEGRAM_BOT_TOKEN`      | already set      | the bot that sends notifications, reset links, answers the webhook |
 | `TELEGRAM_BOT_USERNAME`   | already set      | the `t.me/<bot>` of the link                                       |
 | `TELEGRAM_WEBHOOK_URL`    | new              | `https://api.takeaway.md/api/telegram/webhook`; empty — no webhook |
 | `TELEGRAM_WEBHOOK_SECRET` | new              | 16–256 of `[A-Za-z0-9_-]`, `openssl rand -hex 32`                  |
