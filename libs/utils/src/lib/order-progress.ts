@@ -3,6 +3,8 @@
  * status. Pure, so the web, the Mini App and their tests agree.
  */
 
+import { readCancelMoney } from './order-cancel-money';
+
 /** The parts of an order (`GET /orders/:id`) these helpers read. */
 export interface OrderProgressInput {
   status: string;
@@ -17,6 +19,12 @@ export interface OrderProgressInput {
   totalCents?: number;
   /** Where the money stands; absent from an API that predates it. */
   payment?: { state: string } | null;
+  /**
+   * Where the money of a CANCELLED or EXPIRED order went, as the API
+   * recorded it (`NOT_CHARGED`, `RELEASED`, `REFUNDED`, `PENDING`); absent
+   * or null on older orders and from older APIs.
+   */
+  cancelMoney?: string | null;
 }
 
 /** The parts of the store (`GET /stores/:id`) that tell whether it is open now. */
@@ -85,15 +93,27 @@ export type ExpiredOutcome = 'notAccepted' | 'notAcceptedRefunded' | 'paymentNot
 /**
  * Why an EXPIRED order ended, as far as the order itself tells:
  * - `notAccepted` — the store never accepted it and nothing was taken (the
- *   hold was released, or there was nothing to pay);
+ *   hold was released or is coming off, or there was nothing to pay);
  * - `notAcceptedRefunded` — the store never accepted it and the money taken
  *   is on its way back;
  * - `paymentNotCompleted` — the card payment never went through.
  *
- * The order carries no expiry reason: a released hold shows as no payment,
- * a payment that timed out as a pending or failed one.
+ * The money the API recorded when it let the order go (`cancelMoney`) says
+ * which of the first two it is. Without it (older orders, older APIs) the
+ * payment as it is now decides: a payment that timed out shows as a pending
+ * or failed one, and a released hold reads like a refund.
  */
-export function expiredOutcome(order: Pick<OrderProgressInput, 'payment'>): ExpiredOutcome {
+export function expiredOutcome(order: Pick<OrderProgressInput, 'payment' | 'cancelMoney'>): ExpiredOutcome {
+  switch (readCancelMoney(order.cancelMoney)) {
+    case 'REFUNDED':
+      return 'notAcceptedRefunded';
+    case 'NOT_CHARGED':
+    case 'RELEASED':
+    case 'PENDING':
+      return 'notAccepted';
+    default:
+      break;
+  }
   switch (order.payment?.state ?? 'NONE') {
     case 'PENDING':
     case 'FAILED':
@@ -115,6 +135,8 @@ export interface OrderCancellationInput {
   cancelledBy?: string | null;
   cancelReason?: string | null;
   cancelComment?: string | null;
+  /** See {@link OrderProgressInput.cancelMoney}. */
+  cancelMoney?: string | null;
 }
 
 /**
@@ -128,14 +150,22 @@ export type OrderCancelledParty = 'customer' | 'store' | 'cardDeclined';
 export type StoreCancelReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER';
 
 /**
- * Where the money of a cancelled order is, in the push's words:
- * - `notCharged` — nothing was taken from the card;
- * - `released` — the card hold is lifted (the customer's own cancel never
- *   follows a capture, so a give-back there is always a hold);
- * - `refunded` — the money is on its way back to the card;
- * - `holdPending` — the hold is still on the card and comes off by itself.
+ * Where the money of a cancelled or expired order is, in the push's words
+ * (`ORDER_CANCEL_MONEY_TEXT`) — the API's `cancelMoney`, as a translation key:
+ * - `notCharged` — nothing was taken from the card (`NOT_CHARGED`);
+ * - `released` — the card hold is lifted (`RELEASED`);
+ * - `refunded` — the money is on its way back to the card (`REFUNDED`);
+ * - `holdPending` — the hold is still on the card and comes off by itself
+ *   (`PENDING`).
  */
 export type OrderCancelledMoney = 'notCharged' | 'released' | 'refunded' | 'holdPending';
+
+const CANCEL_MONEY_KEYS = {
+  NOT_CHARGED: 'notCharged',
+  RELEASED: 'released',
+  REFUNDED: 'refunded',
+  PENDING: 'holdPending',
+} as const satisfies Record<string, OrderCancelledMoney>;
 
 /** What the order screen says about a CANCELLED order — see {@link orderCancellation}. */
 export interface OrderCancellation {
@@ -153,12 +183,8 @@ const STORE_CANCEL_REASONS: readonly string[] = ['OUT_OF_STOCK', 'TOO_BUSY', 'CL
 
 /**
  * Who called a CANCELLED order off, why, and where the money is — the same
- * story the push told. Null for any other status.
- *
- * The money comes from the order's payment as it is now, like
- * {@link expiredOutcome}: a deferred charge called off shows as no payment,
- * a released hold or a refund as REFUNDED, a hold the bank has not let go
- * of yet as HELD.
+ * story the push told. Null for any other status. The money is
+ * {@link endedOrderMoney}.
  */
 export function orderCancellation(order: OrderCancellationInput): OrderCancellation | null {
   if (order.status !== 'CANCELLED') return null;
@@ -168,16 +194,25 @@ export function orderCancellation(order: OrderCancellationInput): OrderCancellat
       ? (order.cancelReason as StoreCancelReason)
       : null;
   const comment = by === 'store' ? order.cancelComment?.trim() || null : null;
-  return { by, reason, comment, money: cancelledMoney(order, by) };
+  return { by, reason, comment, money: endedOrderMoney(order) };
 }
 
-function cancelledParty(order: OrderCancellationInput): OrderCancelledParty | null {
-  if (order.cancelledBy === 'CUSTOMER') return 'customer';
-  if (order.cancelledBy !== 'STORE') return null;
-  return order.cancelReason === 'CARD_DECLINED' ? 'cardDeclined' : 'store';
-}
-
-function cancelledMoney(order: OrderCancellationInput, by: OrderCancelledParty | null): OrderCancelledMoney | null {
+/**
+ * Where the money of a CANCELLED or EXPIRED order went, in the push's
+ * words; null for any other status, and when there is nothing to say (a
+ * zero total, a payment the bank has not confirmed either way).
+ *
+ * The money the API recorded when it called the order off (`cancelMoney`)
+ * is the push's own outcome and wins. Without it (older orders, older APIs)
+ * it is read off the payment as it is now: a deferred charge called off
+ * shows as no payment, a released hold and a refund both as REFUNDED — told
+ * apart only by who cancelled, as the customer's own cancel never follows a
+ * capture — and a hold the bank has not let go of yet as HELD.
+ */
+export function endedOrderMoney(order: OrderCancellationInput): OrderCancelledMoney | null {
+  if (order.status !== 'CANCELLED' && order.status !== 'EXPIRED') return null;
+  const recorded = readCancelMoney(order.cancelMoney);
+  if (recorded) return CANCEL_MONEY_KEYS[recorded];
   switch (order.payment?.state ?? 'NONE') {
     case 'NONE':
     case 'FAILED':
@@ -185,13 +220,19 @@ function cancelledMoney(order: OrderCancellationInput, by: OrderCancelledParty |
     case 'HELD':
       return 'holdPending';
     case 'REFUNDED':
-      return by === 'customer' ? 'released' : 'refunded';
+      return order.cancelledBy === 'CUSTOMER' ? 'released' : 'refunded';
     case 'PAID':
       return 'refunded';
     default:
       // PENDING: the bank has not said yet whether anything was taken.
       return null;
   }
+}
+
+function cancelledParty(order: OrderCancellationInput): OrderCancelledParty | null {
+  if (order.cancelledBy === 'CUSTOMER') return 'customer';
+  if (order.cancelledBy !== 'STORE') return null;
+  return order.cancelReason === 'CARD_DECLINED' ? 'cardDeclined' : 'store';
 }
 
 /**

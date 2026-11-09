@@ -1,3 +1,5 @@
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
+
 import type { TranslationTree } from './ru';
 
 /**
@@ -89,10 +91,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       cardDeclinedHint: 'Please order again with another card.',
       comment: 'Note from the store: “{{comment}}”',
       money: {
-        notCharged: 'Your card was not charged.',
-        released: 'You were not charged and the card hold is released.',
-        refunded: 'The money is on its way back to your card.',
-        holdPending: 'The card hold will be released automatically.',
+        notCharged: ORDER_CANCEL_MONEY_TEXT.NOT_CHARGED.en,
+        released: ORDER_CANCEL_MONEY_TEXT.RELEASED.en,
+        refunded: ORDER_CANCEL_MONEY_TEXT.REFUNDED.en,
+        holdPending: ORDER_CANCEL_MONEY_TEXT.PENDING.en,
       },
     },
     orderReview: {
@@ -447,6 +449,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         awaiting: 'Awaiting payment',
         /** A cancelled or expired order that never had its card charged. */
         notCharged: 'You were not charged',
+        outcome: {
+          notCharged: 'You were not charged',
+          released: 'Card hold released',
+          refunded: 'Refunded to your card',
+          holdPending: 'Refund in progress',
+        },
         heldHint: 'If the store does not accept the order, your card is not charged.',
         retry: 'Pay by card',
         retryHint: 'You can try paying again.',
@@ -1836,6 +1844,35 @@ export const TRANSLATIONS_EN: TranslationTree = {
         requested_by_customer: "at the customer's request",
         duplicate: 'duplicate order',
         fraudulent: 'fraud',
+        OUT_OF_STOCK: 'out of stock',
+        TOO_BUSY: 'too many orders',
+        CLOSING: 'closing',
+        OTHER: 'other',
+        CARD_DECLINED: 'card declined',
+      },
+      cancel: {
+        title: 'Cancellation',
+        expiredTitle: 'The order did not happen',
+        by: 'Cancelled by',
+        byCustomer: 'The customer',
+        byStore: 'The store',
+        byCardDeclined: 'The bank declined the card on accept',
+        reason: 'Reason',
+        reasons: {
+          OUT_OF_STOCK: 'Out of stock',
+          TOO_BUSY: 'Too many orders',
+          CLOSING: 'Closing',
+          OTHER: 'Other',
+        },
+        comment: "Kitchen's comment",
+        money: 'Money',
+        moneyOutcome: {
+          NOT_CHARGED: 'Never charged',
+          RELEASED: 'Card hold released',
+          REFUNDED: 'Refunded to the card',
+          PENDING: 'Not back yet: the bank has not confirmed the hold release or the refund',
+        },
+        bankMessage: "The bank's answer",
       },
     },
     orders: {

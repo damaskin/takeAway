@@ -1,3 +1,5 @@
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
+
 /**
  * Russian translations — source of truth for the default UI language.
  * Keys are flat with dot-namespaces, grouped by feature. Keep keys stable;
@@ -87,11 +89,12 @@ export const TRANSLATIONS_RU = {
       },
       cardDeclinedHint: 'Оформите заказ ещё раз с другой картой.',
       comment: 'Комментарий заведения: «{{comment}}»',
+      /** The push's own sentences (ORDER_CANCEL_MONEY_TEXT in @takeaway/utils) — see endedOrderMoney. */
       money: {
-        notCharged: 'Деньги с карты не списывались.',
-        released: 'Деньги не списаны, блокировка на карте снята.',
-        refunded: 'Деньги вернутся на карту.',
-        holdPending: 'Блокировка на карте будет снята автоматически.',
+        notCharged: ORDER_CANCEL_MONEY_TEXT.NOT_CHARGED.ru,
+        released: ORDER_CANCEL_MONEY_TEXT.RELEASED.ru,
+        refunded: ORDER_CANCEL_MONEY_TEXT.REFUNDED.ru,
+        holdPending: ORDER_CANCEL_MONEY_TEXT.PENDING.ru,
       },
     },
     /**
@@ -453,6 +456,16 @@ export const TRANSLATIONS_RU = {
         awaiting: 'Ждём оплату',
         /** A cancelled or expired order that never had its card charged. */
         notCharged: 'Деньги не списаны',
+        /**
+         * The payment line of a cancelled or expired order: where the money
+         * went, never «Спишем при принятии заказа» — see endedOrderMoney.
+         */
+        outcome: {
+          notCharged: 'Деньги не списаны',
+          released: 'Блокировка снята',
+          refunded: 'Возвращено на карту',
+          holdPending: 'Возврат в обработке',
+        },
         heldHint: 'Если точка не примет заказ, деньги с карты не спишутся.',
         retry: 'Оплатить картой',
         retryHint: 'Можно попробовать оплатить ещё раз.',
@@ -1838,6 +1851,36 @@ export const TRANSLATIONS_RU = {
         requested_by_customer: 'по просьбе клиента',
         duplicate: 'дубль заказа',
         fraudulent: 'мошенничество',
+        OUT_OF_STOCK: 'нет в наличии',
+        TOO_BUSY: 'слишком много заказов',
+        CLOSING: 'закрываемся',
+        OTHER: 'другое',
+        CARD_DECLINED: 'банк отклонил карту',
+      },
+      /** Who called a cancelled order off, why, and where the money went. */
+      cancel: {
+        title: 'Отмена',
+        expiredTitle: 'Заказ не состоялся',
+        by: 'Кто отменил',
+        byCustomer: 'Клиент',
+        byStore: 'Заведение',
+        byCardDeclined: 'Банк отклонил карту при принятии',
+        reason: 'Причина',
+        reasons: {
+          OUT_OF_STOCK: 'Нет в наличии',
+          TOO_BUSY: 'Слишком много заказов',
+          CLOSING: 'Закрываемся',
+          OTHER: 'Другое',
+        },
+        comment: 'Комментарий кухни',
+        money: 'Деньги',
+        moneyOutcome: {
+          NOT_CHARGED: 'Не списывались',
+          RELEASED: 'Блокировка на карте снята',
+          REFUNDED: 'Возвращены на карту',
+          PENDING: 'Ещё не вернулись: банк не подтвердил снятие блокировки или возврат',
+        },
+        bankMessage: 'Ответ банка',
       },
     },
     orders: {

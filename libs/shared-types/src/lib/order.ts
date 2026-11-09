@@ -29,6 +29,18 @@ export type OrderCancelledBy = 'CUSTOMER' | 'STORE';
  */
 export type OrderCancelReason = 'OUT_OF_STOCK' | 'TOO_BUSY' | 'CLOSING' | 'OTHER' | 'CARD_DECLINED';
 
+/**
+ * Where the money of a cancelled or expired order went, recorded by the API
+ * when it called the order off — the outcome the push states:
+ * - `NOT_CHARGED` — nothing was taken: a charge waiting for the accept was
+ *   called off, or the card was declined;
+ * - `RELEASED` — the card hold came off;
+ * - `REFUNDED` — a captured charge is on its way back;
+ * - `PENDING` — the bank has not let go of the hold (or taken the refund)
+ *   yet; it comes off by itself.
+ */
+export type OrderCancelMoney = 'NOT_CHARGED' | 'RELEASED' | 'REFUNDED' | 'PENDING';
+
 export type OrderEventTypeEnum =
   | 'STATUS_CHANGED'
   | 'ETA_UPDATED'
@@ -239,6 +251,12 @@ export interface Order extends OrderSummary {
    * card. Optional for older API builds.
    */
   cancelComment?: string | null;
+  /**
+   * Where the money of a CANCELLED or EXPIRED order went, as the push said.
+   * Null while the order is live, when there was no card money to speak of,
+   * and on older orders the API could not tell; absent from older API builds.
+   */
+  cancelMoney?: OrderCancelMoney | null;
   expiredAt: string | null;
   /**
    * ISO UTC: when the kitchen expects the order to be ready, set when it
