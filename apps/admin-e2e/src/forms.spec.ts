@@ -26,6 +26,7 @@ const LIST_ROUTES = [
   'dashboard',
   'menu',
   'ingredients',
+  'option-catalog',
   'stores',
   'orders',
   'dispatch',

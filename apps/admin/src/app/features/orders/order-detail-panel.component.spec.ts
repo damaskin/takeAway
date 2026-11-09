@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
+import type { OptionLine } from '@takeaway/shared-types';
 import { of } from 'rxjs';
 
 import { AdminOrdersApi, type AdminOrderDetail } from '../../core/orders/orders.service';
@@ -102,5 +103,75 @@ describe('OrderDetailPanelComponent — a cancelled order', () => {
   it('has no cancellation block for an order still in work', async () => {
     const byTestId = await render({ ...ORDER, status: 'READY', refundedCents: 0 });
     expect(byTestId('order-cancel')).toBeNull();
+  });
+});
+
+/** A line of a product on the options catalog (2026-11-09): the picks read as the kitchen and the receipt read them. */
+describe('OrderDetailPanelComponent — catalog options', () => {
+  beforeEach(() => TestBed.resetTestingModule());
+
+  it('shows the variants and add-ons of a line under its name', async () => {
+    const line = (groupId: string, name: string, extra: Partial<OptionLine> = {}): OptionLine => ({
+      groupId,
+      groupName: groupId,
+      kind: 'ADDON',
+      type: 'A',
+      optionId: `${groupId}-${name}`,
+      name,
+      qty: 1,
+      unitPriceCents: 0,
+      freeQty: 0,
+      totalCents: 0,
+      ...extra,
+    });
+    TestBed.configureTestingModule({
+      imports: [OrderDetailPanelComponent],
+      providers: [
+        provideTranslateService(),
+        {
+          provide: AdminOrdersApi,
+          useValue: {
+            get: jest.fn().mockReturnValue(
+              of({
+                ...ORDER,
+                status: 'READY',
+                refundedCents: 0,
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Капучино',
+                    variations: [],
+                    modifierLines: [],
+                    optionLines: [
+                      line('size', 'M', { kind: 'VARIANT' }),
+                      line('serve', 'Горячий', { kind: 'VARIANT' }),
+                      line('milk', 'Овсяное'),
+                      line('syrups', 'Ваниль'),
+                      line('syrups', 'Солёная карамель'),
+                      line('sugar', 'Сахар', { type: 'C', qty: 2 }),
+                    ],
+                    notes: null,
+                    quantity: 1,
+                    unitPriceCents: 7100,
+                    totalCents: 7100,
+                  },
+                ],
+              } satisfies AdminOrderDetail),
+            ),
+          },
+        },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+    const fixture = TestBed.createComponent(OrderDetailPanelComponent);
+    fixture.componentRef.setInput('orderId', 'order-1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(text(fixture.nativeElement as HTMLElement)).toContain(
+      'M, Горячий · Овсяное · Ваниль + Солёная карамель · Сахар ×2',
+    );
   });
 });

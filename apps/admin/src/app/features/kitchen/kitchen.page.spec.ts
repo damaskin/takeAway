@@ -25,10 +25,10 @@ describe('KitchenPage — which store the board shows', () => {
   let pending: ReturnType<typeof signal<ReadonlyMap<string, number>>>;
   let fixture: ComponentFixture<KitchenPage>;
 
-  async function open(remembered: string | null): Promise<HTMLElement> {
+  async function open(remembered: string | null, orders: unknown[] = []): Promise<HTMLElement> {
     if (remembered) localStorage.setItem(KITCHEN_STORE_KEY, remembered);
     else localStorage.removeItem(KITCHEN_STORE_KEY);
-    list = jest.fn().mockReturnValue(of([]));
+    list = jest.fn().mockReturnValue(of(orders));
     pending = signal<ReadonlyMap<string, number>>(new Map());
     TestBed.configureTestingModule({
       imports: [KitchenPage],
@@ -123,5 +123,54 @@ describe('KitchenPage — which store the board shows', () => {
     expect(localStorage.getItem(KITCHEN_STORE_KEY)).toBe('s1');
     expect(shown(el)).toBe('Качели - Балка · ждут: 1');
     expect(el.querySelector('[data-testid="kitchen-elsewhere"]')).toBeNull();
+  });
+
+  it('shows the picks of a product on the options catalog on its ticket', async () => {
+    const pick = (groupId: string, name: string, extra: Record<string, unknown> = {}) => ({
+      groupId,
+      groupName: groupId,
+      kind: 'ADDON',
+      type: 'A',
+      optionId: `${groupId}-${name}`,
+      name,
+      qty: 1,
+      unitPriceCents: 0,
+      freeQty: 0,
+      totalCents: 0,
+      ...extra,
+    });
+    const el = await open('s1', [
+      {
+        id: 'o1',
+        orderCode: '0042',
+        status: 'PAID',
+        pickupMode: 'ASAP',
+        pickupAt: new Date(Date.now() + 600_000).toISOString(),
+        createdAt: new Date().toISOString(),
+        customerName: 'Ира',
+        notes: null,
+        items: [
+          {
+            quantity: 1,
+            productSnapshot: {
+              id: 'p1',
+              name: 'Капучино',
+              optionLines: [
+                pick('size', 'M', { kind: 'VARIANT' }),
+                pick('serve', 'Горячий', { kind: 'VARIANT' }),
+                pick('syrups', 'Ваниль'),
+                pick('syrups', 'Солёная карамель'),
+                pick('sugar', 'Сахар', { type: 'C', qty: 2 }),
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const chips = [...el.querySelectorAll('[data-testid="ticket-variant"]')].map((c) => c.textContent?.trim());
+    const addons = [...el.querySelectorAll('[data-testid="ticket-addon"]')].map((a) => a.textContent?.trim());
+    expect(chips).toEqual(['M', 'Горячий']);
+    expect(addons).toEqual(['+ Ваниль + Солёная карамель', '+ Сахар ×2']);
   });
 });

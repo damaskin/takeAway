@@ -47,6 +47,15 @@ describe('permissions map', () => {
       expect(navLink('campaignModeration')).toBe('/campaign-moderation');
     });
 
+    it('keeps the options catalog SUPER_ADMIN-only; a brand prices and switches options in «Добавки»', () => {
+      expect(ADMIN_ROLES.optionCatalog).toEqual(['SUPER_ADMIN']);
+      expect(navLink('optionCatalog')).toBe('/option-catalog');
+      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'optionCatalog')).toBe(false);
+      }
+      expect(ADMIN_ROLES.ingredients).toEqual(['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR']);
+    });
+
     it('keeps platform announcements SUPER_ADMIN-only', () => {
       expect(ADMIN_ROLES.announcements).toEqual(['SUPER_ADMIN']);
       expect(canAccess('BRAND_ADMIN', 'announcements')).toBe(false);

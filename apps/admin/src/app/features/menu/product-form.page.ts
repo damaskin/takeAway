@@ -3,13 +3,20 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
-import { AdminCatalogApi, type CategoryAdminDto, type ProductAdminDto } from '../../core/catalog/admin-catalog.service';
+import {
+  AdminCatalogApi,
+  type CategoryAdminDto,
+  type ProductDetailDto,
+} from '../../core/catalog/admin-catalog.service';
 import { OnboardingFlowService } from '../../core/onboarding/onboarding-flow.service';
 import { describeMenuError } from './menu-errors';
 import { ProductFormComponent, type ProductSavedEvent } from './product-form.component';
+import { ProductOptionGroupsComponent } from './product-option-groups.component';
 
 /**
- * Create or edit a product, on its own route.
+ * Create or edit a product, on its own route. An existing product also
+ * gets «Варианты и добавки» — its groups from the options catalog — and,
+ * while it has none, the link to its older options editor.
  *
  * The form used to open above the product table, inside the right-hand
  * column of the menu page. It owns the page now, and `?categoryId=` carries
@@ -18,7 +25,7 @@ import { ProductFormComponent, type ProductSavedEvent } from './product-form.com
 @Component({
   selector: 'app-product-form-page',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, ProductFormComponent],
+  imports: [RouterLink, TranslatePipe, ProductFormComponent, ProductOptionGroupsComponent],
   template: `
     <section style="padding: clamp(16px, 3vw, 28px); max-width: 960px; margin: 0 auto">
       <a
@@ -52,13 +59,32 @@ import { ProductFormComponent, type ProductSavedEvent } from './product-form.com
         />
 
         @if (productId(); as id) {
-          <a
-            [routerLink]="['/menu/products', id, 'options']"
-            class="flex items-center"
-            style="width: fit-content; margin-top: 16px; height: 40px; padding: 0 18px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; text-decoration: none"
-          >
-            {{ 'admin.menu.product.options' | translate }}
-          </a>
+          <app-product-option-groups
+            style="display: block; margin-top: 16px"
+            [productId]="id"
+            [brandId]="brand"
+            [basePriceCents]="product()?.basePriceCents ?? 0"
+            [currency]="currency()"
+            [hasLegacyOptions]="hasLegacyOptions()"
+            (attachedCount)="catalogGroups.set($event)"
+          />
+          @if (catalogGroups() > 0) {
+            <p
+              role="note"
+              style="margin: 16px 0 0; padding: 10px 12px; background: var(--color-foam); border-left: 3px solid var(--color-mint); border-radius: 8px; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-primary)"
+              data-testid="legacy-options-note"
+            >
+              {{ 'admin.optionsCatalog.product.legacyNote' | translate }}
+            </p>
+          } @else {
+            <a
+              [routerLink]="['/menu/products', id, 'options']"
+              class="flex items-center"
+              style="width: fit-content; margin-top: 16px; height: 40px; padding: 0 18px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600; text-decoration: none"
+            >
+              {{ 'admin.menu.product.options' | translate }}
+            </a>
+          }
         }
       }
     </section>
@@ -76,7 +102,12 @@ export class ProductFormPage {
   private readonly onboarding = inject(OnboardingFlowService);
 
   readonly categories = signal<CategoryAdminDto[]>([]);
-  readonly product = signal<ProductAdminDto | null>(null);
+  readonly product = signal<ProductDetailDto | null>(null);
+  /** Catalog groups the product is saved with: then its older options do not apply. */
+  readonly catalogGroups = signal(0);
+  readonly hasLegacyOptions = computed(
+    () => (this.product()?.variations?.length ?? 0) + (this.product()?.modifiers?.length ?? 0) > 0,
+  );
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 

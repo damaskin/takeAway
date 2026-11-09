@@ -339,6 +339,7 @@ export class AdminSidebarComponent {
     },
     { icon: '🍽', label: 'admin.nav.menu', link: '/menu', roles: ADMIN_ROLES.menu },
     { icon: '🥛', label: 'admin.nav.ingredients', link: '/ingredients', roles: ADMIN_ROLES.ingredients },
+    { icon: '🧩', label: 'admin.nav.optionCatalog', link: '/option-catalog', roles: ADMIN_ROLES.optionCatalog },
     { icon: '⛔', label: 'admin.nav.stopList', link: '/stop-list', roles: ADMIN_ROLES.stopList },
     { icon: '🧾', label: 'admin.nav.orders', link: '/orders', roles: ADMIN_ROLES.orders },
     {
