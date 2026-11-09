@@ -23,6 +23,11 @@ export interface PresetPreviewRow {
   ingredientId: string | null;
   /** Already in the category's set: shown, never sent again. */
   inSet: boolean;
+  /**
+   * A milk or add-on the brand library lacks, while only the platform team
+   * may add one there (2026-11-06): shown, cannot be ticked.
+   */
+  notInLibrary: boolean;
   include: boolean;
   isDefault: boolean;
   maxCount: number;
@@ -40,7 +45,8 @@ function namesOf(item: OptionPresetItem): string[] {
  * The preset of a kind as the preview lists it, in the cabinet's language.
  * An add-on or milk the brand library already has (by name or alias) is
  * reused with its name and usual price; one already in the category's set
- * is shown as such and left unticked.
+ * is shown as such and left unticked. Without `canAddToLibrary` (a brand's
+ * editor) one the library lacks is shown as such and cannot be ticked.
  */
 export function buildPresetPreview(
   kind: CategoryKind,
@@ -48,6 +54,7 @@ export function buildPresetPreview(
   library: readonly IngredientDto[],
   set: readonly CategoryOptionDto[],
   separator: string,
+  canAddToLibrary = true,
 ): PresetPreviewRow[] {
   const rows: PresetPreviewRow[] = [];
   for (const group of optionPresetFor(kind)) {
@@ -63,6 +70,7 @@ export function buildPresetPreview(
           o.variationType === variationType &&
           ((entry && o.ingredientId === entry.id) || names.includes(norm(o.name))),
       );
+      const notInLibrary = stocked && !entry && !canAddToLibrary;
       rows.push({
         key: item.key,
         groupKey: group.key,
@@ -72,7 +80,8 @@ export function buildPresetPreview(
         name: entry?.name ?? item.name[lang],
         ingredientId: entry?.id ?? null,
         inSet,
-        include: !inSet,
+        notInLibrary,
+        include: !inSet && !notInLibrary,
         isDefault: item.isDefault ?? false,
         maxCount: item.maxCount ?? group.maxCount ?? 1,
         price: formatMoneyInput(entry ? entry.priceCents : item.priceCents, separator),
@@ -89,7 +98,7 @@ export function buildPresetPreview(
 export function presetPreviewOptions(rows: readonly PresetPreviewRow[]): CategoryOptionInput[] | null {
   const options: CategoryOptionInput[] = [];
   for (const row of rows) {
-    if (!row.include || row.inSet) continue;
+    if (!row.include || row.inSet || row.notInLibrary) continue;
     const priceDeltaCents = row.price.trim() ? parseMoney(row.price) : 0;
     if (priceDeltaCents === null) return null;
     const source = row.ingredientId ? { ingredientId: row.ingredientId } : { name: row.name };

@@ -195,7 +195,16 @@ describe('AnalyticsService.storePerformance', () => {
 
 describe('AnalyticsService.churn', () => {
   const NOW = new Date('2026-10-10T00:00:00Z');
-  const lost = { userId: 'u1', lastOrderAt: new Date('2026-09-15T08:00:00Z'), orders: 4, totalCents: 20_000n };
+  /** Four visits from 20 August to 15 September — every 26/3 days — 5 000 a check. */
+  const lost = {
+    userId: 'u1',
+    lastOrderAt: new Date('2026-09-15T08:00:00Z'),
+    orders: 4,
+    totalCents: 20_000n,
+    visits: 4,
+    firstVisitDay: '2026-08-20',
+    lastVisitDay: '2026-09-15',
+  };
 
   /** Lost at one store, still ordering at another: u2 left both Центр and Балка, u3 only Центр. */
   const elsewhere = [
@@ -218,9 +227,73 @@ describe('AnalyticsService.churn', () => {
   it('gives the count and the money without naming anyone on BASIC', async () => {
     const { svc, prisma } = service();
     const churn = await svc.churn({ brandIds: ['b1'], storeIds: null }, WEEK, 14, false, 20, NOW);
-    expect(churn).toMatchObject({ window: 14, count: 1, lostRevenueCents: 5_000, previous: { count: 0 } });
+    // 19 days away (15.09 → 04.10, the week's last day) ÷ 26/3 × 5 000 = 10 961.5… → 10 962
+    expect(churn).toMatchObject({
+      window: 14,
+      count: 1,
+      lostRevenueCents: 10_962,
+      previous: { count: 0, lostRevenueCents: 0 },
+    });
     expect(churn.customers).toBeNull();
     expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it('counts visits as calendar days in the range’s time zone', async () => {
+    const { svc, prisma } = service();
+    await svc.churn({ brandIds: ['b1'], storeIds: null }, WEEK, 14, false, 20, NOW);
+    const sql = sqlOf((prisma.$queryRaw as jest.Mock).mock.calls[0]);
+    expect(sql.sql).toContain(`COUNT(DISTINCT ((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE`);
+    expect(sql.values).toContain('Europe/Chisinau');
+  });
+
+  it('gives a customer who came once the brand’s usual interval, looked up only then', async () => {
+    const once = { ...lost, visits: 1, firstVisitDay: '2026-09-15' };
+    const $queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([once])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ intervalDays: 9.5 }]);
+    const svc = new AnalyticsService({ $queryRaw } as unknown as PrismaService);
+
+    const churn = await svc.churn({ brandIds: ['b1'], storeIds: ['s1'] }, WEEK, 14, false, 20, NOW);
+
+    // 19 ÷ 9.5 × 5 000
+    expect(churn.lostRevenueCents).toBe(10_000);
+    const brandAverage = sqlOf($queryRaw.mock.calls[2]);
+    expect(brandAverage.sql).toContain('AVG(');
+    expect(brandAverage.sql).toContain('"visits" >= 2');
+    expect($queryRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it('adds nothing for a customer who came once when nobody came twice', async () => {
+    const once = { ...lost, visits: 1, firstVisitDay: '2026-09-15' };
+    const $queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([once])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ intervalDays: null }]);
+    const svc = new AnalyticsService({ $queryRaw } as unknown as PrismaService);
+
+    const churn = await svc.churn({ brandIds: ['b1'], storeIds: ['s1'] }, WEEK, 14, false, 20, NOW);
+
+    expect(churn).toMatchObject({ count: 1, lostRevenueCents: 0 });
+  });
+
+  it('estimates the period before the same way, as of its own last day', async () => {
+    const before = {
+      ...lost,
+      userId: 'u9',
+      lastOrderAt: new Date('2026-09-08T08:00:00Z'),
+      firstVisitDay: '2026-08-13',
+      lastVisitDay: '2026-09-08',
+    };
+    const $queryRaw = jest.fn().mockResolvedValueOnce([lost]).mockResolvedValueOnce([before]);
+    const svc = new AnalyticsService({ $queryRaw } as unknown as PrismaService);
+
+    const churn = await svc.churn({ brandIds: ['b1'], storeIds: ['s1'] }, WEEK, 14, false, 20, NOW);
+
+    // The week before ends on 27.09: 19 days after 08.09, the same interval and check.
+    expect(churn.previous).toEqual({ count: 1, lostRevenueCents: 10_962 });
   });
 
   it('says how many regulars left one store but still order at another, and where', async () => {
@@ -253,8 +326,17 @@ describe('AnalyticsService.churn', () => {
     const { svc } = service();
     const churn = await svc.churn({ brandIds: ['b1'], storeIds: null }, WEEK, 14, true, 20, NOW);
     expect(churn.customers).toEqual([
-      expect.objectContaining({ userId: 'u1', name: 'Ира', phone: '+37377', avgCheckCents: 5_000 }),
+      expect.objectContaining({
+        userId: 'u1',
+        name: 'Ира',
+        phone: '+37377',
+        avgCheckCents: 5_000,
+        daysSinceLastOrder: 19,
+        visits: 4,
+        lostRevenueCents: 10_962,
+      }),
     ]);
+    expect(churn.customers?.[0]?.visitIntervalDays).toBeCloseTo(26 / 3, 10);
   });
 });
 

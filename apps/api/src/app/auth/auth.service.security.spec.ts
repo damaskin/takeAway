@@ -1,8 +1,6 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
-import type { MailService } from '../mail/mail.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
@@ -97,10 +95,6 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
   const prisma = {
     ...tx,
     device: { create: jest.fn(async () => ({ id: 'device-1' })) },
-    passwordResetToken: {
-      findUnique: jest.fn(),
-      update: jest.fn(async () => ({})),
-    },
     $transaction: jest.fn(async (arg: unknown) =>
       typeof arg === 'function' ? (arg as (t: typeof tx) => unknown)(tx) : Promise.all(arg as Promise<unknown>[]),
     ),
@@ -112,7 +106,6 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
   const passwords = {
     compare: jest.fn(async (plain: string) => plain === 'old-password'),
     hash: jest.fn(async () => 'new-hash'),
-    hashResetToken: jest.fn((raw: string) => `hash-of-${raw}`),
   };
   const oauth = { verify: jest.fn<Promise<OAuthIdentity>, [string, string]>() };
   const auth = new AuthService(
@@ -123,8 +116,6 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
     oauth as unknown as OAuthIdentityService,
     passwords as unknown as PasswordService,
     {} as KdsPinService,
-    {} as MailService,
-    { get: () => undefined } as unknown as ConfigService,
     {} as KitchenDeviceService,
   );
   return { auth, users, accounts, prisma, tokens, oauth };
@@ -237,19 +228,5 @@ describe('AuthService password changes end other sessions', () => {
     expect(users.get('barista')?.passwordHash).toBe('old-hash');
     expect(users.get('barista')?.passwordMustChange).toBe(true);
     expect(tokens.revokeAll).not.toHaveBeenCalled();
-  });
-
-  it('a reset from the emailed link signs the account out everywhere', async () => {
-    const { auth, tokens, prisma } = harness([row('barista', { role: Role.STAFF, passwordHash: 'old-hash' })]);
-    prisma.passwordResetToken.findUnique.mockResolvedValue({
-      id: 'reset-1',
-      userId: 'barista',
-      consumedAt: null,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
-
-    await auth.resetPassword('raw-token', 'new-password-1');
-
-    expect(tokens.revokeAll).toHaveBeenCalledWith('barista');
   });
 });

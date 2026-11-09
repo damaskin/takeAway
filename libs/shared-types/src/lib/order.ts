@@ -3,6 +3,7 @@
  */
 
 import type { AsapBlockedReason, VariationType } from './catalog';
+import type { OrderReview } from './order-review';
 import type { Currency } from './shared-types';
 
 export type FulfillmentTypeEnum = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
@@ -154,6 +155,14 @@ export interface OrderSummary {
   cancelledBy?: OrderCancelledBy | null;
   /** Why the store cancelled it; null for the customer's own cancel. Optional for older API builds. */
   cancelReason?: OrderCancelReason | null;
+  /**
+   * The customer may review the order now: it was handed over (PICKED_UP or
+   * DELIVERED) and not reviewed yet. The customer's own orders only;
+   * optional for older API builds.
+   */
+  canReview?: boolean;
+  /** The stars the customer gave it; null before a review. `GET /me/orders` only. */
+  reviewRating?: number | null;
 }
 
 // The snapshot shapes below are type aliases rather than interfaces so they
@@ -246,6 +255,11 @@ export interface Order extends OrderSummary {
    * by the customer — they call the store. Optional for older API builds.
    */
   canCancel?: boolean;
+  /**
+   * The customer's review of the order — shown back as «Спасибо за отзыв!»
+   * with the stars. Null before one. Optional for older API builds.
+   */
+  review?: OrderReview | null;
 }
 
 export interface CreateOrderInput {

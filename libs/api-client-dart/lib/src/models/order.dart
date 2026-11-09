@@ -40,6 +40,10 @@ enum OrderStatus {
   /// see [Order.customerCanCancel].
   bool get isCancellable => this == OrderStatus.created || this == OrderStatus.paid;
 
+  /// The customer has the order: picked up at the counter or delivered. Only
+  /// then may they review it — see [Order.canReview].
+  bool get isHandedOver => this == OrderStatus.pickedUp || this == OrderStatus.delivered;
+
   static OrderStatus parse(String? raw) => _$OrderStatusEnumMap.entries
       .firstWhere((e) => e.value == raw, orElse: () => const MapEntry(OrderStatus.unknown, 'UNKNOWN'))
       .key;
@@ -212,6 +216,8 @@ class Order {
     this.cancelledBy,
     this.cancelReason,
     this.cancelComment,
+    this.canReview,
+    this.review,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
@@ -290,6 +296,14 @@ class Order {
   /// The kitchen's comment when it turned the order down, shown as is.
   final String? cancelComment;
 
+  /// The API's verdict on whether the customer may review the order now:
+  /// handed over and no review yet. Null from API versions that predate
+  /// reviews — see [customerCanReview].
+  final bool? canReview;
+
+  /// The customer's review, once they left one.
+  final OrderReview? review;
+
   /// What the countdown runs to: the kitchen's new estimate once it accepted
   /// or started the order too late, else the promise. The same rule as the
   /// web (`orderDueAt` in `@takeaway/utils`).
@@ -298,6 +312,10 @@ class Order {
   /// Whether to offer «Отменить заказ»: the API's [canCancel], or, from an
   /// API that predates it, a status before the kitchen's accept.
   bool get customerCanCancel => canCancel ?? status.isCancellable;
+
+  /// Whether to ask «Как вам заказ?»: only on the API's word, so never from
+  /// an API without reviews.
+  bool get customerCanReview => canReview ?? false;
 
   bool get isDelivery => fulfillmentType == FulfillmentType.delivery;
   bool get hasStoreLocation => storeLatitude != 0 || storeLongitude != 0;
@@ -352,7 +370,47 @@ class Order {
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
     cancelComment: cancelComment,
+    // Handing over is what opens the review, and the re-read that follows
+    // every status change tells; leaving that status closes it at once.
+    canReview: next.isHandedOver ? canReview : false,
+    review: review,
   );
+}
+
+/// Longest review comment the API accepts, after trimming.
+const orderReviewCommentMaxLength = 1000;
+
+/// The customer's review of a handed-over order: one per order, never edited,
+/// read by the takeAway team only — the brand does not see it.
+@JsonSerializable(createToJson: false)
+class OrderReview {
+  const OrderReview({required this.rating, required this.createdAt, this.comment});
+
+  factory OrderReview.fromJson(Map<String, dynamic> json) => _$OrderReviewFromJson(json);
+
+  /// 1..5 stars.
+  final int rating;
+  final String? comment;
+  final DateTime createdAt;
+}
+
+/// Body of `POST /orders/{id}/review`. A blank [comment] is left out; the
+/// API trims it too and takes up to [orderReviewCommentMaxLength] characters.
+@JsonSerializable(createFactory: false, includeIfNull: false)
+class CreateOrderReviewRequest {
+  const CreateOrderReviewRequest({required this.rating, this.comment});
+
+  /// 1..5 stars.
+  final int rating;
+  @JsonKey(toJson: _trimmedOrNull)
+  final String? comment;
+
+  Map<String, dynamic> toJson() => _$CreateOrderReviewRequestToJson(this);
+}
+
+String? _trimmedOrNull(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
 OrderPayment _paymentFromJson(Object? raw) =>
@@ -374,6 +432,8 @@ class OrderSummary {
     required this.createdAt,
     this.cancelledBy,
     this.cancelReason,
+    this.canReview = false,
+    this.reviewRating,
   });
 
   factory OrderSummary.fromJson(Map<String, dynamic> json) => _$OrderSummaryFromJson(json);
@@ -399,6 +459,13 @@ class OrderSummary {
   @JsonKey(unknownEnumValue: OrderCancelReason.unknown)
   final OrderCancelReason? cancelReason;
 
+  /// See [Order.canReview]; false from APIs that predate reviews.
+  @JsonKey(defaultValue: false)
+  final bool canReview;
+
+  /// The stars of the customer's review, once they left one.
+  final int? reviewRating;
+
   OrderSummary withStatus(OrderStatus next) => OrderSummary(
     id: id,
     orderCode: orderCode,
@@ -413,6 +480,8 @@ class OrderSummary {
     createdAt: createdAt,
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
+    canReview: next.isHandedOver && canReview,
+    reviewRating: reviewRating,
   );
 }
 

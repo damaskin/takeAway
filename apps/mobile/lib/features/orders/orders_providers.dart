@@ -133,6 +133,29 @@ class OrderController extends AutoDisposeFamilyAsyncNotifier<Order, String> {
     }
   }
 
+  /// Sends the customer's review of a handed-over order: [rating] 1..5 and
+  /// an optional [comment]. When the API says the order has a review already
+  /// (`ORDER_ALREADY_REVIEWED`, sent from another device) or cannot have one
+  /// (`ORDER_NOT_REVIEWABLE`), the re-read order is the answer — the thanks,
+  /// or no card at all. Only when that re-read fails too is the error thrown,
+  /// so the form stays with what the customer typed.
+  Future<void> review(int rating, {String? comment}) async {
+    try {
+      state = AsyncData(await _api.reviewOrder(arg, CreateOrderReviewRequest(rating: rating, comment: comment)));
+      ref.invalidate(ordersProvider);
+    } on Object catch (error) {
+      final apiError = ApiError.from(error);
+      if (apiError.code == 'ORDER_ALREADY_REVIEWED' || apiError.code == 'ORDER_NOT_REVIEWABLE') {
+        await refresh();
+        if (state.valueOrNull?.customerCanReview != true) {
+          ref.invalidate(ordersProvider);
+          return;
+        }
+      }
+      throw apiError;
+    }
+  }
+
   /// Geofencing ping; `iAmHere` forces the "customer at the counter" signal.
   Future<CustomerLocationResult?> reportLocation({double? lat, double? lng, bool iAmHere = false}) async {
     try {

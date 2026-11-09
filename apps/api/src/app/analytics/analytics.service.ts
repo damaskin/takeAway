@@ -37,13 +37,17 @@ import {
 } from './dto/analytics.dto';
 import { sumMoney } from './money';
 import {
+  type ChurnBounds,
+  type ChurnSummary,
   type ChurnWindow,
   type CustomerTotals,
   INACTIVE_MIN_ORDERS,
   type ReturnedCustomer,
   type WinBackSummary,
+  churnAsOfDay,
   churnBounds,
   lapsedBefore,
+  lostInPeriod,
   percentChange,
   summarizeChurn,
   summarizeWinBack,
@@ -612,7 +616,9 @@ export class AnalyticsService {
 
   /**
    * Customers lost during the range — see `retention.ts` for the rule — with
-   * the same for the period before. `withList` names them (PRO).
+   * the same for the period before. `withList` names them (PRO). The money is
+   * R = D ÷ T × A per customer, with visits as calendar days in the range's
+   * time zone; the period before is estimated the same way, as of its end.
    *
    * Across several stores a customer is lost only when they stopped ordering
    * at all of them. `activeElsewhere` counts the regulars lost at one store
@@ -631,12 +637,14 @@ export class AnalyticsService {
     const previousBounds = churnBounds(range.previous.start, range.previous.end, window, now);
     const acrossStores = scope.storeIds === null || scope.storeIds.length > 1;
     const [currentRows, previousRows, activeElsewhere] = await Promise.all([
-      this.lastOrders(scope, currentBounds),
-      this.lastOrders(scope, previousBounds),
+      this.lastOrders(scope, currentBounds, range.timeZone),
+      this.lastOrders(scope, previousBounds, range.timeZone),
       acrossStores ? inactiveAtOneStoreOnly(this.prisma, scope, currentBounds) : Promise.resolve(null),
     ]);
-    const current = summarizeChurn(currentRows, currentBounds);
-    const previous = summarizeChurn(previousRows, previousBounds);
+    const [current, previous] = await Promise.all([
+      this.estimateChurn(scope, currentRows, currentBounds, range.timeZone),
+      this.estimateChurn(scope, previousRows, previousBounds, range.timeZone),
+    ]);
 
     let customers: ChurnDto['customers'] = null;
     if (withList) {
@@ -655,6 +663,9 @@ export class AnalyticsService {
         avgCheckCents: c.avgCheckCents,
         lastOrderAt: c.lastOrderAt.toISOString(),
         daysSinceLastOrder: c.daysSinceLastOrder,
+        visits: c.visits,
+        visitIntervalDays: c.visitIntervalDays,
+        lostRevenueCents: c.lostRevenueCents,
       }));
     }
 
@@ -722,22 +733,48 @@ export class AnalyticsService {
   // ── helpers ────────────────────────────────────────────────────────────
 
   /**
-   * Each customer's last order before `asOf`, with their order count and
-   * spend, for the regulars (enough orders to count as inactive) whose last
-   * order falls in the churn bounds. Deleted accounts are left out: they
-   * cannot come back.
+   * The lost customers of one period with their estimate. A customer with a
+   * single visit has no interval of their own and takes the average of the
+   * same stores' customers with two visits or more — looked up only when
+   * somebody needs it.
    */
-  private async lastOrders(
+  private async estimateChurn(
     scope: AnalyticsScope,
-    bounds: { asOf: Date; lastOrderFrom: Date; lastOrderBefore: Date },
-  ): Promise<CustomerTotals[]> {
+    rows: CustomerTotals[],
+    bounds: ChurnBounds,
+    timeZone: string,
+  ): Promise<ChurnSummary> {
+    const needsFallback = lostInPeriod(rows, bounds).some((r) => r.visits < 2);
+    const fallbackIntervalDays = needsFallback ? await this.averageVisitInterval(scope, bounds.asOf, timeZone) : null;
+    return summarizeChurn(rows, bounds, { asOfDay: churnAsOfDay(bounds.asOf, timeZone), fallbackIntervalDays });
+  }
+
+  /**
+   * Each customer's last order before `asOf`, with their order count, spend
+   * and visits — calendar days in `timeZone` with a counted order — for the
+   * regulars (enough orders to count as inactive) whose last order falls in
+   * the churn bounds. Deleted accounts are left out: they cannot come back.
+   */
+  private async lastOrders(scope: AnalyticsScope, bounds: ChurnBounds, timeZone: string): Promise<CustomerTotals[]> {
+    const day = localDate(timeZone);
     const rows = await this.prisma.$queryRaw<
-      Array<{ userId: string; lastOrderAt: Date; orders: number; totalCents: bigint }>
+      Array<{
+        userId: string;
+        lastOrderAt: Date;
+        orders: number;
+        totalCents: bigint;
+        visits: number;
+        firstVisitDay: string;
+        lastVisitDay: string;
+      }>
     >`
       SELECT o."userId" AS "userId",
              MAX(o."createdAt") AS "lastOrderAt",
              COUNT(*)::int AS "orders",
-             COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents"
+             COALESCE(SUM(${REVENUE}), 0)::bigint AS "totalCents",
+             COUNT(DISTINCT ${day})::int AS "visits",
+             to_char(MIN(${day}), 'YYYY-MM-DD') AS "firstVisitDay",
+             to_char(MAX(${day}), 'YYYY-MM-DD') AS "lastVisitDay"
       FROM "Order" o
       JOIN "Store" s ON s.id = o."storeId"
       JOIN "User" u ON u.id = o."userId"
@@ -756,7 +793,40 @@ export class AnalyticsService {
       lastOrderAt: r.lastOrderAt,
       orders: num(r.orders),
       totalCents: num(r.totalCents),
+      visits: num(r.visits),
+      firstVisitDay: r.firstVisitDay,
+      lastVisitDay: r.lastVisitDay,
     }));
+  }
+
+  /**
+   * The usual interval between visits of the scope's customers with two
+   * visits or more before `asOf`, in days — the T of a customer who came
+   * once. Null when nobody has come twice.
+   */
+  private async averageVisitInterval(scope: AnalyticsScope, asOf: Date, timeZone: string): Promise<number | null> {
+    const day = localDate(timeZone);
+    const rows = await this.prisma.$queryRaw<Array<{ intervalDays: number | null }>>`
+      SELECT AVG(("lastVisit" - "firstVisit")::float8 / ("visits" - 1)) AS "intervalDays"
+      FROM (
+        SELECT MIN(${day}) AS "firstVisit",
+               MAX(${day}) AS "lastVisit",
+               COUNT(DISTINCT ${day})::int AS "visits"
+        FROM "Order" o
+        JOIN "Store" s ON s.id = o."storeId"
+        JOIN "User" u ON u.id = o."userId"
+        ${whereAll([
+          ...scopeConditions(scope),
+          COUNTED,
+          Prisma.sql`o."createdAt" < ${utc(asOf)}`,
+          Prisma.sql`u."blockedAt" IS NULL`,
+        ])}
+        GROUP BY o."userId"
+      ) c
+      WHERE c."visits" >= 2
+    `;
+    const value = rows[0]?.intervalDays;
+    return value === null || value === undefined ? null : Number(value);
   }
 
   private async winBackPeriod(
@@ -809,6 +879,11 @@ export class AnalyticsService {
     }));
     return summarizeWinBack(num(pool[0]?.lapsed), rows);
   }
+}
+
+/** The calendar day an order was placed on, in `timeZone` — one visit, however many orders it had. */
+function localDate(timeZone: string): Prisma.Sql {
+  return Prisma.sql`((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone})::date`;
 }
 
 /** Statuses of an order that is still somebody's job. */

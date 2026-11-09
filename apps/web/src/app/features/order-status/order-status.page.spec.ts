@@ -433,3 +433,150 @@ describe('OrderStatusPage — waiting for the store', () => {
     });
   });
 });
+
+describe('OrderStatusPage — «Как вам заказ?»', () => {
+  const PICKED_UP: OrderView = {
+    ...ORDER,
+    status: 'PICKED_UP',
+    pickupMode: 'ASAP',
+    pickupAt: minutesFromNow(-20),
+    payment: { state: 'PAID', amountCents: 4500, cardMask: '•• 1234', paidAt: minutesFromNow(-25) },
+    canReview: true,
+    review: null,
+  };
+  const REVIEWED: OrderView = {
+    ...PICKED_UP,
+    canReview: false,
+    review: { rating: 4, comment: 'Вкусно, но долго', createdAt: minutesFromNow(0) },
+  };
+
+  async function open(order: OrderView, review: () => Observable<OrderView> = () => of(REVIEWED)) {
+    const orders = { get: jest.fn(() => of(order)), cancel: jest.fn(), review: jest.fn(review) };
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: 'orders/:id', component: OrderStatusPage }]),
+        provideTranslateService({ fallbackLang: 'ru' }),
+        { provide: OrdersApi, useValue: orders },
+        {
+          provide: CatalogService,
+          useValue: {
+            getStore: jest.fn(() => of(STORE)),
+            getMenu: jest.fn(() => of({ storeId: STORE.id, storeSlug: 'centre', categories: [] })),
+          },
+        },
+        {
+          provide: RealtimeService,
+          useValue: { subscribeToOrder: () => () => undefined, onStoreAvailabilityChanged: () => () => undefined },
+        },
+        { provide: AuthStore, useValue: { user: signal(null) } },
+        { provide: FeatureFlagsStore, useValue: { load: jest.fn(), webPaymentsEnabled: signal(false) } },
+        { provide: WebPaymentApi, useValue: {} },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(`/orders/${order.id}`, OrderStatusPage);
+    harness.detectChanges();
+    const root = harness.routeNativeElement as HTMLElement;
+    const byTestId = <T extends HTMLElement = HTMLElement>(id: string) =>
+      root.querySelector<T>(`[data-testid="${id}"]`);
+    return { orders, root, byTestId, detect: () => harness.detectChanges() };
+  }
+
+  it('asks nothing before the handover, nor for a cancelled order or from an API without reviews', async () => {
+    for (const order of [
+      { ...ORDER, status: 'READY' as const, canReview: false, review: null },
+      { ...ORDER, status: 'CANCELLED' as const, canReview: false, review: null },
+      { ...PICKED_UP, canReview: undefined, review: undefined },
+    ]) {
+      TestBed.resetTestingModule();
+      const { byTestId } = await open(order);
+      expect(byTestId('order-review')).toBeNull();
+    }
+  });
+
+  it('asks for stars and a comment once the order is picked up, with labelled star buttons', async () => {
+    const { byTestId, root } = await open(PICKED_UP);
+
+    const card = byTestId('order-review');
+    expect(card?.textContent).toContain('Как вам заказ?');
+    expect(card?.textContent).toContain('Отзыв увидит только команда takeAway');
+    const stars = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-testid^="order-review-star-"]'));
+    expect(stars.map((s) => s.getAttribute('aria-label'))).toEqual([
+      'Оценка 1 из 5',
+      'Оценка 2 из 5',
+      'Оценка 3 из 5',
+      'Оценка 4 из 5',
+      'Оценка 5 из 5',
+    ]);
+    expect(byTestId<HTMLButtonElement>('order-review-send')?.disabled).toBe(true);
+  });
+
+  it('sends the stars and the trimmed comment, then thanks with the stars given', async () => {
+    const { orders, byTestId, detect } = await open(PICKED_UP);
+
+    byTestId('order-review-star-4')?.click();
+    detect();
+    expect(byTestId('order-review-star-4')?.getAttribute('aria-pressed')).toBe('true');
+    const comment = byTestId<HTMLTextAreaElement>('order-review-comment');
+    if (!comment) throw new Error('no comment field');
+    comment.value = '  Вкусно, но долго  ';
+    comment.dispatchEvent(new Event('input'));
+    detect();
+    byTestId<HTMLButtonElement>('order-review-send')?.click();
+    detect();
+
+    expect(orders.review).toHaveBeenCalledWith('order-1', { rating: 4, comment: 'Вкусно, но долго' });
+    expect(byTestId('order-review-thanks')?.textContent).toContain('Спасибо за отзыв!');
+    expect(byTestId('order-review-given')?.getAttribute('aria-label')).toBe('Ваша оценка: 4 из 5');
+    expect(byTestId('order-review-comment-given')?.textContent).toContain('Вкусно, но долго');
+    expect(byTestId('order-review-send')).toBeNull();
+  });
+
+  it('leaves a blank comment out', async () => {
+    const { orders, byTestId, detect } = await open(PICKED_UP);
+    byTestId('order-review-star-5')?.click();
+    detect();
+    byTestId<HTMLButtonElement>('order-review-send')?.click();
+    expect(orders.review).toHaveBeenCalledWith('order-1', { rating: 5 });
+  });
+
+  it('shows the thanks on an order reviewed before', async () => {
+    const { byTestId } = await open(REVIEWED);
+    expect(byTestId('order-review-thanks')).not.toBeNull();
+    expect(byTestId('order-review-star-1')).toBeNull();
+  });
+
+  it('reads the order again when it was already reviewed from another device', async () => {
+    const { orders, byTestId, detect } = await open(PICKED_UP, () =>
+      throwError(
+        () => new HttpErrorResponse({ status: 409, error: { statusCode: 409, code: 'ORDER_ALREADY_REVIEWED' } }),
+      ),
+    );
+    orders.get.mockReturnValue(of(REVIEWED));
+    byTestId('order-review-star-2')?.click();
+    detect();
+    byTestId<HTMLButtonElement>('order-review-send')?.click();
+    detect();
+
+    expect(byTestId('order-review-thanks')).not.toBeNull();
+    expect(byTestId('order-review-error')).toBeNull();
+  });
+
+  it('keeps the stars and the text for another try after a failure of another kind', async () => {
+    const { byTestId, detect } = await open(PICKED_UP, () =>
+      throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })),
+    );
+    byTestId('order-review-star-3')?.click();
+    detect();
+    byTestId<HTMLButtonElement>('order-review-send')?.click();
+    detect();
+
+    expect(byTestId('order-review-error')?.textContent).toContain('Не удалось отправить отзыв. Попробуйте ещё раз.');
+    expect(byTestId('order-review-star-3')?.getAttribute('aria-pressed')).toBe('true');
+    expect(byTestId<HTMLButtonElement>('order-review-send')?.disabled).toBe(false);
+  });
+});

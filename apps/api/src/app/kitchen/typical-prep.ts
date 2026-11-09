@@ -3,10 +3,11 @@
  * of what a customer can order there right now — visible, listed in that
  * store, in a category sold on its own, not on the store's stop-list.
  *
- * It is the cooking part of the «готово через N мин» every storefront shows
- * (`currentEtaSeconds`), so a customer who looks at a store sees base time +
- * queue + how long a usual order takes to make, not the base time alone
- * (manager's list 2026-10-20, item 9).
+ * It is the cooking part of the store's «готово через N мин»
+ * (`currentEtaSeconds`, in the menu header; no store card shows it since
+ * 2026-11-06), so a customer sees base time + queue + how long a usual
+ * order takes to make, not the base time alone (manager's list 2026-10-20,
+ * item 9).
  *
  * The figure changes only when the menu or the stop-list does, so it is
  * kept in memory for a few minutes per store rather than read on every

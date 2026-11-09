@@ -26,7 +26,6 @@ function storeFixture(overrides: Partial<Record<string, unknown>> = {}): Record<
     busyMeter: 35,
     baseEtaSeconds: 360,
     kitchenParallelism: 2,
-    slotCapacity: 8,
     taxRateBps: 0,
     taxIncludedInPrice: true,
     currency: 'AED',
@@ -356,6 +355,25 @@ describe('CatalogService', () => {
       await service.getPickupSlots('store-1', 'cart-1');
       expect(slots).toHaveBeenLastCalledWith('store-1', { workSeconds: 0 });
     });
+
+    it('still sends capacity, always 0, for the app builds that require it', async () => {
+      prisma.store.findFirst.mockResolvedValue({ id: 'store-1' });
+      const kitchen = (service as unknown as { kitchen: KitchenLoadService }).kitchen;
+      const at = new Date('2026-11-06T09:00:00.000Z');
+      jest
+        .spyOn(kitchen, 'pickupSlots')
+        .mockResolvedValue([{ startsAt: at, endsAt: new Date(at.getTime() + 900_000), taken: 12, available: true }]);
+
+      expect(await service.getPickupSlots('store-1')).toEqual([
+        {
+          startsAt: '2026-11-06T09:00:00.000Z',
+          endsAt: '2026-11-06T09:15:00.000Z',
+          taken: 12,
+          capacity: 0,
+          available: true,
+        },
+      ]);
+    });
   });
 
   it('throws 404 when store not found', async () => {
@@ -474,10 +492,58 @@ describe('CatalogService', () => {
     const detail = await service.getProduct('latte');
 
     for (const product of [listed, detail]) {
-      expect(product).toMatchObject({ calories: 150, proteinsGrams: 5, fatsGrams: 6, carbsGrams: 12 });
       expect(product).not.toHaveProperty('caffeineLevel');
       expect(product).not.toHaveProperty('allergens');
       expect(product).not.toHaveProperty('dietTags');
+    }
+  });
+
+  // Calories and nutrition are a meal's since 2026-11-06: a coffee, a lemonade,
+  // a croissant or an OTHER product sends none, whatever it has stored.
+  it('sends calories and nutrition for a meal only', async () => {
+    prisma.store.findFirst.mockResolvedValue({ id: 'store-1', slug: 'cafe', brandId: 'brand-1' });
+    const row = (id: string, categoryId: string) => ({
+      id,
+      categoryId,
+      brandId: 'brand-1',
+      slug: id,
+      name: id,
+      description: null,
+      basePriceCents: 450,
+      prepTimeSeconds: 180,
+      calories: 150,
+      proteinsGrams: 5,
+      fatsGrams: 6,
+      carbsGrams: 12,
+      imageUrls: [],
+      sortOrder: 0,
+    });
+    const kinds = ['FOOD', 'HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER'] as const;
+    prisma.category.findMany.mockResolvedValue(
+      kinds.map((kind) => ({
+        id: `c-${kind}`,
+        slug: kind,
+        name: kind,
+        kind,
+        products: [row(`p-${kind}`, `c-${kind}`)],
+      })),
+    );
+
+    const menu = await service.getMenu('cafe');
+    const listed = Object.fromEntries(menu.categories.map((c) => [c.kind, c.products[0]]));
+    const full = { calories: 150, proteinsGrams: 5, fatsGrams: 6, carbsGrams: 12 };
+    const none = { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null };
+    expect(listed['FOOD']).toMatchObject(full);
+    for (const kind of kinds.filter((k) => k !== 'FOOD')) expect(listed[kind]).toMatchObject(none);
+
+    for (const kind of kinds) {
+      prisma.product.findFirst.mockResolvedValueOnce({
+        ...row(`p-${kind}`, `c-${kind}`),
+        variations: [],
+        modifiers: [],
+        category: { kind },
+      });
+      expect(await service.getProduct(`p-${kind}`)).toMatchObject(kind === 'FOOD' ? full : none);
     }
   });
 

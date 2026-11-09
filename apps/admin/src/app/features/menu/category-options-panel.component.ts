@@ -5,7 +5,9 @@ import { LocaleFormatService } from '@takeaway/i18n';
 import { CATEGORY_KINDS, type CategoryKind, MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
 import type { Observable } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { AdminCatalogApi, type CategoryOptionDto, type IngredientDto } from '../../core/catalog/admin-catalog.service';
+import { type AdminRole, canEditAddInLibrary } from '../../core/permissions/permissions';
 import {
   buildPresetPreview,
   groupOptions,
@@ -24,7 +26,9 @@ const PRESET_KINDS = CATEGORY_KINDS.filter((k) => k !== 'OTHER');
  * set up once instead of on every product. It usually starts from the
  * platform preset of the category's kind — previewed, unticked where the
  * business does not sell something, priced, then saved; add-ons the brand
- * library has are reused at their price, missing ones join the library.
+ * library has are reused at their price. Missing ones join the library when
+ * the platform team saves the set; a brand cannot tick them (2026-11-06:
+ * only the takeAway team adds add-ins).
  *
  * Saving the set changes no product. A new product of the category gets a
  * copy when it is created; «Применить к товарам категории» copies what each
@@ -180,17 +184,26 @@ const PRESET_KINDS = CATEGORY_KINDS.filter((k) => k !== 'OTHER');
             <strong style="font: 700 14px var(--font-sans); color: var(--color-espresso)">
               {{ 'admin.menu.categoryOptions.previewTitle' | translate: { kind: kindName(previewKind()) } }}
             </strong>
-            <span class="hint">{{ 'admin.menu.categoryOptions.previewHint' | translate }}</span>
+            <span class="hint">{{
+              (canAddToLibrary()
+                ? 'admin.menu.categoryOptions.previewHint'
+                : 'admin.menu.categoryOptions.previewHintBrand'
+              ) | translate
+            }}</span>
           </div>
           @for (group of previewGroups(); track group.key) {
             <div class="flex flex-col" style="gap: 6px">
               <span class="group-label">{{ previewGroupLabel(group.items[0]) }}</span>
               @for (row of group.items; track row.key) {
-                <label class="row" [style.opacity]="row.inSet ? 0.6 : 1">
+                <label
+                  class="row"
+                  [style.opacity]="row.inSet || row.notInLibrary ? 0.6 : 1"
+                  [attr.data-testid]="row.notInLibrary ? 'preset-row-not-in-library' : 'preset-row'"
+                >
                   <input
                     type="checkbox"
                     [checked]="row.include"
-                    [disabled]="row.inSet"
+                    [disabled]="row.inSet || row.notInLibrary"
                     (change)="toggleRow(row.key, $event)"
                     [attr.aria-label]="row.name"
                   />
@@ -200,6 +213,8 @@ const PRESET_KINDS = CATEGORY_KINDS.filter((k) => k !== 'OTHER');
                   }
                   @if (row.inSet) {
                     <span class="badge muted">{{ 'admin.menu.categoryOptions.inSet' | translate }}</span>
+                  } @else if (row.notInLibrary) {
+                    <span class="badge muted">{{ 'admin.menu.categoryOptions.notInLibrary' | translate }}</span>
                   } @else {
                     @if (row.ingredientId) {
                       <span class="badge muted">{{ 'admin.menu.categoryOptions.fromLibrary' | translate }}</span>
@@ -298,6 +313,10 @@ export class CategoryOptionsPanelComponent {
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly auth = inject(AuthStore);
+
+  /** The platform team's saved set adds missing add-ons to the library; a brand's cannot. */
+  readonly canAddToLibrary = computed(() => canEditAddInLibrary(this.auth.user()?.role as AdminRole | undefined));
 
   readonly categoryId = input.required<string>();
   readonly categoryName = input.required<string>();
@@ -377,12 +396,14 @@ export class CategoryOptionsPanelComponent {
     this.previewError.set(false);
     this.previewKind.set(kind);
     const lang = this.translate.getCurrentLang() === 'en' ? 'en' : 'ru';
-    this.preview.set(buildPresetPreview(kind, lang, this.library(), this.options(), this.separator()));
+    this.preview.set(
+      buildPresetPreview(kind, lang, this.library(), this.options(), this.separator(), this.canAddToLibrary()),
+    );
   }
 
   toggleRow(key: string, event: Event): void {
     const include = (event.target as HTMLInputElement).checked;
-    this.preview.update((rows) => rows?.map((r) => (r.key === key ? { ...r, include } : r)) ?? null);
+    this.preview.update((rows) => rows?.map((r) => (r.key === key && !r.notInLibrary ? { ...r, include } : r)) ?? null);
   }
 
   priceRow(key: string, event: Event): void {
@@ -390,7 +411,7 @@ export class CategoryOptionsPanelComponent {
     this.preview.update((rows) => rows?.map((r) => (r.key === key ? { ...r, price } : r)) ?? null);
   }
 
-  /** Stores the ticked options as the set (missing add-ons join the library at the price typed). */
+  /** Stores the ticked options as the set (for the platform team, missing add-ons join the library at the price typed). */
   savePreview(): void {
     const options = presetPreviewOptions(this.preview() ?? []);
     this.previewError.set(options === null);

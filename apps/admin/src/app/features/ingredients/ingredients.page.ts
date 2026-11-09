@@ -6,8 +6,10 @@ import { LocaleFormatService } from '@takeaway/i18n';
 import { MODIFIER_GROUP_MAX_LENGTH } from '@takeaway/shared-types';
 import type { Observable } from 'rxjs';
 
+import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi, type IngredientDto } from '../../core/catalog/admin-catalog.service';
+import { type AdminRole, canEditAddInLibrary } from '../../core/permissions/permissions';
 import { describeMenuError } from '../menu/menu-errors';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
 import { formatMoneyInput, moneyValidator, parseMoney } from '../menu/menu-input';
@@ -25,9 +27,12 @@ type Filter = 'all' | 'out' | 'unused';
  * Each add-on can carry the group an extra made of it starts in on a
  * product («Ваниль» → «Сиропы»); the customer apps show add-ons by group.
  *
- * Since 2026-11-05 only the platform team opens this page
- * (`ADMIN_ROLES.ingredients`); a brand adds add-ons from a product's options
- * and stops them per store in the stop-list.
+ * Who does what (Maxim, 2026-11-06): the platform team (SUPER_ADMIN, any
+ * brand from the header's selector) adds, renames, regroups and deletes
+ * add-ons; a brand's menu roles see their own library with the brand-wide
+ * in-stock switch and the price only — no «Добавить», no rename, no delete.
+ * The API refuses the rest (INGREDIENT_LIBRARY_LOCKED). Per-store stops
+ * stay in the stop-list.
  *
  * The add and edit forms are bound to form groups: the plain
  * `<form (ngSubmit)>` they used to be never fired without one, so "Add"
@@ -140,50 +145,56 @@ type Filter = 'all' | 'out' | 'unused';
       style="padding: clamp(16px, 3vw, 24px); gap: 16px; max-width: 880px"
       data-testid="ingredients"
     >
-      <p class="hint" style="margin: 0; font-size: 13px; color: var(--color-text-secondary)">
-        {{ 'admin.ingredients.hint' | translate }}
+      <p
+        class="hint"
+        style="margin: 0; font-size: 13px; color: var(--color-text-secondary)"
+        data-testid="ingredients-hint"
+      >
+        {{ (fullControl() ? 'admin.ingredients.hint' : 'admin.ingredients.hintBrand') | translate }}
         <a routerLink="/menu" class="link">{{ 'admin.ingredients.menuLink' | translate }}</a>
       </p>
 
-      <form
-        [formGroup]="addForm"
-        (ngSubmit)="add()"
-        class="flex items-end flex-wrap"
-        style="gap: 8px 12px; padding: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px"
-        data-testid="ingredient-add"
-      >
-        <label class="field" style="flex: 1 1 220px">
-          <span class="label">{{ 'admin.ingredients.newLabel' | translate }}</span>
-          <input
-            class="control"
-            formControlName="name"
-            maxlength="80"
-            enterkeyhint="done"
-            [placeholder]="'admin.ingredients.newPlaceholder' | translate"
-          />
-        </label>
-        <label class="field price-field">
-          <span class="label">{{ 'admin.ingredients.price' | translate: { currency: currencyLabel() } }}</span>
-          <input class="control" formControlName="price" inputmode="decimal" autocomplete="off" placeholder="0" />
-        </label>
-        <label class="field" style="flex: 0 1 180px" [title]="'admin.ingredients.groupHint' | translate">
-          <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
-          <input
-            class="control"
-            formControlName="group"
-            list="ingredient-groups"
-            [attr.maxlength]="groupMaxLength"
-            [placeholder]="'admin.ingredients.groupPlaceholder' | translate"
-            data-testid="ingredient-group"
-          />
-        </label>
-        <button type="submit" class="primary disabled:opacity-50" [disabled]="busy() || !brand()">
-          {{ 'admin.ingredients.add' | translate }}
-        </button>
-        @if (addSubmitted() && formError(addForm); as key) {
-          <span class="error" style="flex-basis: 100%">{{ key | translate }}</span>
-        }
-      </form>
+      @if (fullControl()) {
+        <form
+          [formGroup]="addForm"
+          (ngSubmit)="add()"
+          class="flex items-end flex-wrap"
+          style="gap: 8px 12px; padding: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: 14px"
+          data-testid="ingredient-add"
+        >
+          <label class="field" style="flex: 1 1 220px">
+            <span class="label">{{ 'admin.ingredients.newLabel' | translate }}</span>
+            <input
+              class="control"
+              formControlName="name"
+              maxlength="80"
+              enterkeyhint="done"
+              [placeholder]="'admin.ingredients.newPlaceholder' | translate"
+            />
+          </label>
+          <label class="field price-field">
+            <span class="label">{{ 'admin.ingredients.price' | translate: { currency: currencyLabel() } }}</span>
+            <input class="control" formControlName="price" inputmode="decimal" autocomplete="off" placeholder="0" />
+          </label>
+          <label class="field" style="flex: 0 1 180px" [title]="'admin.ingredients.groupHint' | translate">
+            <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
+            <input
+              class="control"
+              formControlName="group"
+              list="ingredient-groups"
+              [attr.maxlength]="groupMaxLength"
+              [placeholder]="'admin.ingredients.groupPlaceholder' | translate"
+              data-testid="ingredient-group"
+            />
+          </label>
+          <button type="submit" class="primary disabled:opacity-50" [disabled]="busy() || !brand()">
+            {{ 'admin.ingredients.add' | translate }}
+          </button>
+          @if (addSubmitted() && formError(addForm); as key) {
+            <span class="error" style="flex-basis: 100%">{{ key | translate }}</span>
+          }
+        </form>
+      }
 
       <div class="flex items-center flex-wrap" style="gap: 8px">
         <button type="button" class="tab" [class.active]="filter() === 'all'" (click)="filter.set('all')">
@@ -238,26 +249,32 @@ type Filter = 'all' | 'out' | 'unused';
                 data-testid="ingredient-edit"
               >
                 <div class="flex items-end flex-wrap" style="gap: 8px">
-                  <label class="field" style="flex: 1 1 160px">
-                    <span class="label">{{ 'admin.ingredients.name' | translate }}</span>
-                    <input class="control small" formControlName="name" maxlength="80" enterkeyhint="done" />
-                  </label>
+                  @if (fullControl()) {
+                    <label class="field" style="flex: 1 1 160px">
+                      <span class="label">{{ 'admin.ingredients.name' | translate }}</span>
+                      <input class="control small" formControlName="name" maxlength="80" enterkeyhint="done" />
+                    </label>
+                  } @else {
+                    <span class="name" style="flex: 1 1 160px; align-self: center">{{ item.name }}</span>
+                  }
                   <label class="field price-field">
                     <span class="label">{{
                       'admin.ingredients.price' | translate: { currency: currencyLabel() }
                     }}</span>
                     <input class="control small" formControlName="price" inputmode="decimal" autocomplete="off" />
                   </label>
-                  <label class="field" style="flex: 0 1 160px">
-                    <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
-                    <input
-                      class="control small"
-                      formControlName="group"
-                      list="ingredient-groups"
-                      [attr.maxlength]="groupMaxLength"
-                      [placeholder]="'admin.menu.options.defaultGroup' | translate"
-                    />
-                  </label>
+                  @if (fullControl()) {
+                    <label class="field" style="flex: 0 1 160px">
+                      <span class="label">{{ 'admin.ingredients.group' | translate }}</span>
+                      <input
+                        class="control small"
+                        formControlName="group"
+                        list="ingredient-groups"
+                        [attr.maxlength]="groupMaxLength"
+                        [placeholder]="'admin.menu.options.defaultGroup' | translate"
+                      />
+                    </label>
+                  }
                   <button type="submit" class="primary small" [disabled]="busy()">
                     {{ 'common.save' | translate }}
                   </button>
@@ -268,7 +285,9 @@ type Filter = 'all' | 'out' | 'unused';
                 @if (editSubmitted() && formError(editForm); as key) {
                   <span class="error">{{ key | translate }}</span>
                 } @else if (item.products.length > 0) {
-                  <span class="hint">{{ 'admin.ingredients.editHint' | translate }}</span>
+                  <span class="hint">{{
+                    (fullControl() ? 'admin.ingredients.editHint' : 'admin.ingredients.editPriceHint') | translate
+                  }}</span>
                 }
               </form>
             } @else {
@@ -309,25 +328,33 @@ type Filter = 'all' | 'out' | 'unused';
             </button>
             @if (editingId() !== item.id) {
               <span class="flex items-center" style="gap: 12px">
-                <button type="button" class="link" [disabled]="busy()" (click)="startEdit(item)">
-                  {{ 'admin.ingredients.edit' | translate }}
-                </button>
                 <button
                   type="button"
-                  class="link danger"
+                  class="link"
                   [disabled]="busy()"
-                  (click)="remove(item)"
-                  data-testid="ingredient-delete"
+                  (click)="startEdit(item)"
+                  data-testid="ingredient-edit-start"
                 >
-                  {{ 'admin.menu.options.delete' | translate }}
+                  {{ (fullControl() ? 'admin.ingredients.edit' : 'admin.ingredients.editPrice') | translate }}
                 </button>
+                @if (fullControl()) {
+                  <button
+                    type="button"
+                    class="link danger"
+                    [disabled]="busy()"
+                    (click)="remove(item)"
+                    data-testid="ingredient-delete"
+                  >
+                    {{ 'admin.menu.options.delete' | translate }}
+                  </button>
+                }
               </span>
             }
           </div>
         } @empty {
           @if (!loading()) {
-            <p class="hint" style="margin: 0">
-              {{ (items().length === 0 ? 'admin.ingredients.empty' : 'admin.ingredients.nothingFound') | translate }}
+            <p class="hint" style="margin: 0" data-testid="ingredients-empty">
+              {{ emptyText() | translate }}
             </p>
           }
         }
@@ -340,7 +367,10 @@ export class IngredientsPage {
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly fmt = inject(LocaleFormatService);
+  private readonly auth = inject(AuthStore);
 
+  /** The platform team: adds, renames, regroups and deletes. A brand switches and prices only. */
+  readonly fullControl = computed(() => canEditAddInLibrary(this.auth.user()?.role as AdminRole | undefined));
   readonly brand = this.activeBrand.active;
   readonly currencyLabel = computed(() => this.brand()?.currency ?? '—');
   readonly items = signal<IngredientDto[]>([]);
@@ -372,6 +402,11 @@ export class IngredientsPage {
       if (item.group && !seen.has(item.group.toLocaleLowerCase())) seen.set(item.group.toLocaleLowerCase(), item.group);
     }
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  });
+
+  readonly emptyText = computed(() => {
+    if (this.items().length > 0) return 'admin.ingredients.nothingFound';
+    return this.fullControl() ? 'admin.ingredients.empty' : 'admin.ingredients.emptyBrand';
   });
 
   readonly outCount = computed(() => this.items().filter((i) => !i.isAvailable).length);
@@ -417,6 +452,7 @@ export class IngredientsPage {
   }
 
   add(): void {
+    if (!this.fullControl()) return;
     this.addSubmitted.set(true);
     const brand = this.brand();
     const { name, price, group } = this.addForm.getRawValue();
@@ -453,16 +489,20 @@ export class IngredientsPage {
     });
   }
 
-  /** Only what changed is sent: the server carries a new name, price or group to the products. */
+  /**
+   * Only what changed is sent: the server carries a new name, price or group
+   * to the products. A brand edits the price alone.
+   */
   saveEdit(item: IngredientDto): void {
     this.editSubmitted.set(true);
     const { name, price, group } = this.editForm.getRawValue();
     const priceCents = price.trim() ? parseMoney(price) : 0;
     if (this.editForm.invalid || !name.trim() || priceCents === null) return;
+    const full = this.fullControl();
     const change: { name?: string; priceCents?: number; group?: string | null } = {};
-    if (name.trim() !== item.name) change.name = name.trim();
+    if (full && name.trim() !== item.name) change.name = name.trim();
     if (priceCents !== item.priceCents) change.priceCents = priceCents;
-    if ((group.trim() || null) !== (item.group ?? null)) change.group = group.trim() || null;
+    if (full && (group.trim() || null) !== (item.group ?? null)) change.group = group.trim() || null;
     if (Object.keys(change).length === 0) {
       this.editingId.set(null);
       return;
@@ -475,6 +515,7 @@ export class IngredientsPage {
 
   /** Deleting here takes the add-on off every product, so the question names them. */
   remove(item: IngredientDto): void {
+    if (!this.fullControl()) return;
     const used = item.products.length > 0;
     const message = this.translate.instant(
       used ? 'admin.ingredients.deleteUsedConfirm' : 'admin.ingredients.deleteConfirm',

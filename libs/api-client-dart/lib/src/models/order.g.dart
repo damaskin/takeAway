@@ -86,6 +86,8 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
     unknownValue: OrderCancelReason.unknown,
   ),
   cancelComment: json['cancelComment'] as String?,
+  canReview: json['canReview'] as bool?,
+  review: json['review'] == null ? null : OrderReview.fromJson(json['review'] as Map<String, dynamic>),
 );
 
 const _$OrderStatusEnumMap = {
@@ -121,6 +123,17 @@ const _$OrderCancelReasonEnumMap = {
   OrderCancelReason.unknown: 'unknown',
 };
 
+OrderReview _$OrderReviewFromJson(Map<String, dynamic> json) => OrderReview(
+  rating: (json['rating'] as num).toInt(),
+  createdAt: DateTime.parse(json['createdAt'] as String),
+  comment: json['comment'] as String?,
+);
+
+Map<String, dynamic> _$CreateOrderReviewRequestToJson(CreateOrderReviewRequest instance) => <String, dynamic>{
+  'rating': instance.rating,
+  'comment': ?_trimmedOrNull(instance.comment),
+};
+
 OrderSummary _$OrderSummaryFromJson(Map<String, dynamic> json) => OrderSummary(
   id: json['id'] as String,
   orderCode: json['orderCode'] as String,
@@ -143,6 +156,8 @@ OrderSummary _$OrderSummaryFromJson(Map<String, dynamic> json) => OrderSummary(
     json['cancelReason'],
     unknownValue: OrderCancelReason.unknown,
   ),
+  canReview: json['canReview'] as bool? ?? false,
+  reviewRating: (json['reviewRating'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$CreateOrderRequestToJson(CreateOrderRequest instance) => <String, dynamic>{

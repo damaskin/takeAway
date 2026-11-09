@@ -29,6 +29,16 @@ export function isFoodKind(kind: CategoryKind): boolean {
   return FOOD_KINDS.includes(kind);
 }
 
+/**
+ * Whether a product of this kind shows calories and nutrition (protein,
+ * fat, carbs): only meals — the FOOD kind — since 2026-11-06. Drinks,
+ * bakery and OTHER have none; the API sends null for them and the admin
+ * does not ask for them.
+ */
+export function showsNutrition(kind: CategoryKind): boolean {
+  return kind === 'FOOD';
+}
+
 /** Each product of a menu with its kind, by product id. */
 export function menuProductKinds(menu: Pick<StoreMenu, 'categories'>): Map<string, CategoryKind> {
   const kinds = new Map<string, CategoryKind>();

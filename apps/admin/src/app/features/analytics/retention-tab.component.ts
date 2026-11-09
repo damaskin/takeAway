@@ -26,7 +26,8 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
  * The «Возврат» (win-back) tab, PRO. Says who counts as inactive, then:
  *
  *   the money first — revenue missed on the customers who became inactive
- *   in the period, then how many they are, against the period before;
+ *   in the period (days away ÷ usual interval × average check, per
+ *   customer), then how many they are, against the period before;
  *   what to do about it — a campaign to the inactive, a code only they can
  *   use, or both at once («акция»), each opening prefilled for the chosen
  *   days and store;
@@ -66,6 +67,7 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
           <span class="rt-label">{{ 'admin.churn.lostRevenue' | translate }}</span>
           <strong>{{ churn() ? price(churn()!.lostRevenueCents) : '—' }}</strong>
           <em>{{ 'admin.churn.lostRevenueHint' | translate }}</em>
+          <em data-testid="retention-one-visit">{{ 'admin.churn.lostRevenueOneVisit' | translate }}</em>
         </div>
         <div class="rt-figure">
           <span class="rt-label">{{ 'admin.churn.lost' | translate }}</span>
@@ -215,6 +217,8 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
                   <th>{{ 'admin.customers.cols.customer' | translate }}</th>
                   <th class="num">{{ 'admin.customers.cols.orders' | translate }}</th>
                   <th class="num">{{ 'admin.customers.cols.avgCheck' | translate }}</th>
+                  <th class="num">{{ 'admin.churn.intervalCol' | translate }}</th>
+                  <th class="num">{{ 'admin.churn.estimateCol' | translate }}</th>
                   <th class="num">{{ 'admin.customers.cols.total' | translate }}</th>
                   <th class="num">{{ 'admin.customers.cols.lastOrder' | translate }}</th>
                 </tr>
@@ -229,6 +233,14 @@ import { DASH_CARD_STYLES } from '../../shared/dash-card.styles';
                     </td>
                     <td class="num">{{ c.orders }}</td>
                     <td class="num">{{ price(c.avgCheckCents) }}</td>
+                    <td class="num">
+                      {{
+                        c.visitIntervalDays === null
+                          ? ('admin.churn.intervalOneVisit' | translate)
+                          : ('admin.churn.intervalDays' | translate: { days: days(c.visitIntervalDays) })
+                      }}
+                    </td>
+                    <td class="num">≈ {{ price(c.lostRevenueCents) }}</td>
                     <td class="num">{{ price(c.totalCents) }}</td>
                     <td class="num">{{ 'admin.churn.daysAgo' | translate: { days: c.daysSinceLastOrder } }}</td>
                   </tr>
@@ -498,6 +510,13 @@ export class RetentionTabComponent {
 
   price(cents: number): string {
     return this.fmt.money(cents, this.currency());
+  }
+
+  /** A usual interval between visits, one decimal: «1,4», «4». */
+  days(value: number): string {
+    return new Intl.NumberFormat(this.fmt.lang() === 'ru' ? 'ru-RU' : 'en-GB', { maximumFractionDigits: 1 }).format(
+      value,
+    );
   }
 
   deltaColor(value: number | null): string {

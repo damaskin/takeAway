@@ -1,8 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
-import type { MailService } from '../mail/mail.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
@@ -68,8 +66,6 @@ function harness(seed: Row[]) {
     {} as OAuthIdentityService,
     passwords as unknown as PasswordService,
     {} as KdsPinService,
-    {} as MailService,
-    { get: () => undefined } as unknown as ConfigService,
     {} as KitchenDeviceService,
   );
   return { auth, findUnique, tokens, passwords };

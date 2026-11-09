@@ -129,4 +129,25 @@ describe('StoresListPage — the map', () => {
       ['closed', 'Закрыта'],
     ]);
   });
+
+  describe('store cards', () => {
+    it('show no wait in minutes: an open store says until when it works, the badges stay', async () => {
+      const { root } = await open([
+        { ...store('open', 'Центр'), closesAt: '2026-11-06T21:00:00.000Z' },
+        { ...store('busy', 'Балка'), status: 'OVERLOADED', busyMeter: 100, currentEtaSeconds: 1500 },
+        { ...store('night', 'Вокзал'), openNow: false, asapBlockedReason: 'OUTSIDE_HOURS' },
+        { ...store('off', 'Ботаника'), status: 'CLOSED', acceptingOrders: false },
+      ]);
+      const card = (id: string): string => root.querySelector(`[data-store-id="${id}"]`)?.textContent ?? '';
+
+      for (const id of ['open', 'busy', 'night', 'off']) {
+        expect(card(id)).not.toMatch(/\d+\s*мин/);
+        expect(card(id)).not.toContain('Готово через');
+      }
+      expect(card('open')).toContain('🕘 до 21:00');
+      expect(card('busy')).toContain('Загружен');
+      expect(card('night')).toContain('Заказ ко времени');
+      expect(card('off')).toContain('Закрыто');
+    });
+  });
 });

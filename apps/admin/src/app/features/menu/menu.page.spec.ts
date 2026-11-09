@@ -116,11 +116,12 @@ describe('MenuPage — products without a photo', () => {
     expect([...el.querySelectorAll('[data-testid="category-no-photo"]')].map(text)).toEqual(['без фото: 1']);
   });
 
-  // «Добавки» is the platform team's page since 2026-11-05: the note on an
-  // add-ons-only category tells a brand where to add one instead of linking it.
-  it('links the add-ons library from an add-ons-only category for the platform team only', async () => {
+  // «Добавки» is open to whoever edits the menu again since 2026-11-06 (a
+  // brand switches add-ins and sets prices there); a kitchen account has no menu.
+  it('links the add-ons library from an add-ons-only category for whoever may open it', async () => {
     for (const [role, linked] of [
-      ['BRAND_ADMIN', false],
+      ['BRAND_ADMIN', true],
+      ['MENU_EDITOR', true],
       ['SUPER_ADMIN', true],
     ] as const) {
       TestBed.resetTestingModule();

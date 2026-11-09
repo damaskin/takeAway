@@ -862,6 +862,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelMoneyHoldPending => 'The card hold will be released automatically.';
 
   @override
+  String get orderReviewTitle => 'How was your order?';
+
+  @override
+  String get orderReviewHint => 'Only the takeAway team will see it';
+
+  @override
+  String orderReviewStar(int n) {
+    return 'Rate $n out of 5';
+  }
+
+  @override
+  String get orderReviewCommentHint => 'Comment (optional)';
+
+  @override
+  String get orderReviewSend => 'Send';
+
+  @override
+  String get orderReviewThanks => 'Thanks for your review!';
+
+  @override
+  String orderReviewGiven(int n) {
+    return 'Your rating: $n out of 5';
+  }
+
+  @override
+  String get orderReviewFailed => 'Couldn\'t send your review. Please try again.';
+
+  @override
   String get statusUnknown => 'Updating…';
 
   @override

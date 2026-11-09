@@ -388,19 +388,6 @@ function toCents(units: number | null): number | null {
                     />
                     <span class="hint">{{ 'admin.stores.ops.parallelismHint' | translate }}</span>
                   </label>
-                  <label class="field">
-                    <span class="label">{{ 'admin.stores.ops.slotCapacity' | translate }}</span>
-                    <input
-                      formControlName="slotCapacity"
-                      type="number"
-                      min="1"
-                      max="100"
-                      step="1"
-                      class="input mono"
-                      [class.invalid]="shows('slotCapacity')"
-                    />
-                    <span class="hint">{{ 'admin.stores.ops.slotCapacityHint' | translate }}</span>
-                  </label>
                 </div>
                 @if (capacity(); as cap) {
                   <p class="hint" data-testid="store-capacity-summary">
@@ -808,9 +795,6 @@ export class StoreEditorComponent implements OnInit {
     kitchenParallelism: new FormControl<number | null>(2, {
       validators: [Validators.required, Validators.min(1), Validators.max(20)],
     }),
-    slotCapacity: new FormControl<number | null>(8, {
-      validators: [Validators.required, Validators.min(1), Validators.max(100)],
-    }),
     delivery: new FormGroup({
       baseFee: new FormControl<number | null>(null, { validators: [Validators.min(0)] }),
       perKm: new FormControl<number | null>(null, { validators: [Validators.min(0)] }),
@@ -844,17 +828,16 @@ export class StoreEditorComponent implements OnInit {
   readonly currency = signal('MDL');
   readonly zoneName = signal('');
   readonly parallelism = signal<number | null>(2);
-  readonly slotCapacity = signal<number | null>(8);
   /**
-   * What the two capacity knobs mean for one 15-minute slot: minutes of
-   * kitchen work (15 per item made at once), how many three-minute drinks
-   * that is, and the handover ceiling.
+   * What «Позиций готовится одновременно» means for one 15-minute slot:
+   * minutes of kitchen work (15 per item made at once) and how many
+   * three-minute drinks that is. Only kitchen work fills a slot since
+   * «Заказов на 15 минут» went (2026-11-06, list 5.0, item 6).
    */
   readonly capacity = computed(() => {
     const hands = this.parallelism();
-    const orders = this.slotCapacity();
-    if (!hands || hands < 1 || !orders || orders < 1) return null;
-    return { minutes: 15 * hands, drinks: 5 * hands, orders };
+    if (!hands || hands < 1) return null;
+    return { minutes: 15 * hands, drinks: 5 * hands };
   });
 
   readonly acceptMinutes = { min: ACCEPT_WINDOW_MIN_MINUTES, max: ACCEPT_WINDOW_MAX_MINUTES };
@@ -879,7 +862,6 @@ export class StoreEditorComponent implements OnInit {
     c.kitchenParallelism.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((v) => this.parallelism.set(v));
-    c.slotCapacity.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((v) => this.slotCapacity.set(v));
     merge(c.city.valueChanges, c.country.valueChanges, c.latitude.valueChanges, c.longitude.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.refreshSuggestedZone());
@@ -1116,7 +1098,6 @@ export class StoreEditorComponent implements OnInit {
       kinds: STORE_KINDS.filter((k) => v.kinds[k]),
       baseEtaSeconds: Math.round(v.baseEtaMinutes ?? DEFAULT_ACCEPT_WINDOW_MINUTES) * 60,
       kitchenParallelism: v.kitchenParallelism ?? 1,
-      slotCapacity: v.slotCapacity ?? 1,
     };
     // Sent only when changed here, so an open/close from the card isn't undone by a later save.
     if (this.detailsForm.controls.status.dirty) payload.status = v.status;
@@ -1167,7 +1148,6 @@ export class StoreEditorComponent implements OnInit {
       pickupPointType: s.pickupPointType ?? 'COUNTER',
       baseEtaMinutes: acceptWindowMinutes(s.baseEtaSeconds),
       kitchenParallelism: s.kitchenParallelism ?? 2,
-      slotCapacity: s.slotCapacity ?? 8,
       delivery: {
         baseFee: toUnits(s.deliveryFeeBaseCents),
         perKm: toUnits(s.deliveryFeePerKmCents),

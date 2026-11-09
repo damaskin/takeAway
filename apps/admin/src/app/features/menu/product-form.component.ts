@@ -4,6 +4,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import type { CategoryKind } from '@takeaway/shared-types';
 import { productPlaceholderSrc } from '@takeaway/ui-kit';
+import { showsNutrition } from '@takeaway/utils';
 
 import {
   AdminCatalogApi,
@@ -42,14 +43,17 @@ type ProductControls = ProductFormComponent['form']['controls'];
 /**
  * Create / edit one product: the price in the brand's currency, the
  * preparation time in minutes, what the customer's product page shows
- * (description, energy and nutrition) and, once the product exists, its
- * photos. Labels stay visible — placeholders used to be the only labels and
- * vanished as soon as someone started typing.
+ * (description and, for a meal, energy and nutrition) and, once the product
+ * exists, its photos. Labels stay visible — placeholders used to be the only
+ * labels and vanished as soon as someone started typing.
  *
  * Caffeine, diet tags («Особенности») and allergens were dropped from the
  * menu on 2026-11-05; the form neither shows nor sends them, and what a
- * product had stays in the database untouched. The kind of the category
- * still picks the placeholder; a new product starts at the category's
+ * product had stays in the database untouched. Since 2026-11-06 «Для
+ * покупателя» (calories and nutrition) is asked of a meal only — a FOOD
+ * category — and follows the category picked in the form; saving anything
+ * else sends them empty (the API clears them too). The kind of the category
+ * also picks the placeholder; a new product starts at the category's
  * default preparation time and with its option set (which can be left off).
  */
 @Component({
@@ -137,34 +141,36 @@ type ProductControls = ProductFormComponent['form']['controls'];
           <span class="hint">{{ 'admin.menu.product.descriptionHint' | translate }}</span>
         </label>
 
-        <fieldset class="box">
-          <legend>{{ 'admin.menu.product.details' | translate }}</legend>
-          <div class="form-row-tight">
-            <label class="field">
-              <span class="label">{{ 'admin.menu.product.calories' | translate }}</span>
-              <input class="control" formControlName="calories" inputmode="numeric" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span class="label">{{ 'admin.menu.product.proteins' | translate }}</span>
-              <input class="control" formControlName="proteins" inputmode="decimal" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span class="label">{{ 'admin.menu.product.fats' | translate }}</span>
-              <input class="control" formControlName="fats" inputmode="decimal" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span class="label">{{ 'admin.menu.product.carbs' | translate }}</span>
-              <input class="control" formControlName="carbs" inputmode="decimal" autocomplete="off" />
-            </label>
-          </div>
-          @if (showNutritionError()) {
-            <span class="error">{{ 'admin.menu.errors.number' | translate }}</span>
-          } @else {
-            <span class="hint" data-testid="product-details-hint">{{
-              'admin.menu.product.detailsHint' | translate
-            }}</span>
-          }
-        </fieldset>
+        @if (hasNutrition()) {
+          <fieldset class="box" data-testid="product-details">
+            <legend>{{ 'admin.menu.product.details' | translate }}</legend>
+            <div class="form-row-tight">
+              <label class="field">
+                <span class="label">{{ 'admin.menu.product.calories' | translate }}</span>
+                <input class="control" formControlName="calories" inputmode="numeric" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="label">{{ 'admin.menu.product.proteins' | translate }}</span>
+                <input class="control" formControlName="proteins" inputmode="decimal" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="label">{{ 'admin.menu.product.fats' | translate }}</span>
+                <input class="control" formControlName="fats" inputmode="decimal" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="label">{{ 'admin.menu.product.carbs' | translate }}</span>
+                <input class="control" formControlName="carbs" inputmode="decimal" autocomplete="off" />
+              </label>
+            </div>
+            @if (showNutritionError()) {
+              <span class="error">{{ 'admin.menu.errors.number' | translate }}</span>
+            } @else {
+              <span class="hint" data-testid="product-details-hint">{{
+                'admin.menu.product.detailsHint' | translate
+              }}</span>
+            }
+          </fieldset>
+        }
 
         <label class="check">
           <input type="checkbox" formControlName="visible" />
@@ -328,6 +334,8 @@ export class ProductFormComponent {
   /** The kind of the category picked in the form: the placeholder follows it as soon as it changes. */
   readonly kind = computed<CategoryKind>(() => this.category()?.kind ?? 'OTHER');
   readonly placeholder = computed(() => productPlaceholderSrc(this.kind()));
+  /** Calories and nutrition are asked of a meal only. */
+  readonly hasNutrition = computed(() => showsNutrition(this.kind()));
   readonly categoryOptionCount = computed(() => this.category()?._count?.options ?? 0);
   /** A new product's time was filled in from its category. */
   readonly prepFromCategory = signal(false);
@@ -337,6 +345,19 @@ export class ProductFormComponent {
       this.productId();
       const categoryId = this.categoryId();
       untracked(() => this.fill(this.product(), categoryId));
+    });
+
+    // Calories and nutrition hidden for a drink must not hold the form back
+    // with a typo nobody can see any more.
+    effect(() => {
+      const on = this.hasNutrition();
+      untracked(() => {
+        for (const name of NUTRITION) {
+          const control = this.form.controls[name];
+          if (on) control.enable({ emitEvent: false });
+          else control.disable({ emitEvent: false });
+        }
+      });
     });
 
     // A new product starts at its category's time (the categories may load
@@ -394,16 +415,19 @@ export class ProductFormComponent {
     const basePriceCents = parseMoney(v.price);
     if (this.form.invalid || basePriceCents === null) return;
 
+    // Not a meal: sent empty, so an edited drink keeps no figures (a create
+    // leaves the nulls out).
+    const nutrition = this.hasNutrition();
     const fields: ProductFieldsInput = {
       name: v.name.trim(),
       description: v.description.trim() || null,
       basePriceCents,
       prepTimeSeconds: parseMinutes(v.prepMinutes) ?? undefined,
       visible: v.visible,
-      calories: parseCount(v.calories),
-      proteinsGrams: parseAmount(v.proteins),
-      fatsGrams: parseAmount(v.fats),
-      carbsGrams: parseAmount(v.carbs),
+      calories: nutrition ? parseCount(v.calories) : null,
+      proteinsGrams: nutrition ? parseAmount(v.proteins) : null,
+      fatsGrams: nutrition ? parseAmount(v.fats) : null,
+      carbsGrams: nutrition ? parseAmount(v.carbs) : null,
     };
 
     const existing = this.product();

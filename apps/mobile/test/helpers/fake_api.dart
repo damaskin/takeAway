@@ -71,6 +71,17 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// the cancel goes through.
   Order? acceptedBeforeCancel;
 
+  /// Every order review the app sent, with its body.
+  final reviews = <CreateOrderReviewRequest>[];
+
+  /// What the next review is refused with: the 409 code and the order as it
+  /// reads afterwards — `ORDER_ALREADY_REVIEWED` (reviewed from another
+  /// device) or `ORDER_NOT_REVIEWABLE`. Null = the review goes through.
+  (String, Order)? reviewRefusal;
+
+  /// Status the next review fails with outright, e.g. 500; null = none.
+  int? reviewFailureStatus;
+
   /// What `GET /me/orders` answers, whatever the group.
   List<OrderSummary> myOrdersAnswer = const [];
 
@@ -134,6 +145,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     'distanceMeters': null,
   };
 
+  /// Every product carries 180 kcal, as an API from before 2026-11-06 sends
+  /// them for drinks too: the app shows them for a meal (FOOD) only.
   static Map<String, dynamic> productJson(String id, String name, int price, {String category = 'cat_coffee'}) => {
     'id': id,
     'categoryId': category,
@@ -270,6 +283,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     String? cancelledBy,
     String? cancelReason,
     String? cancelComment,
+    bool? canReview,
+    Map<String, dynamic>? review,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
@@ -309,6 +324,8 @@ class FakeApi extends Fake implements TakeAwayApi {
     'cancelledBy': ?cancelledBy,
     'cancelReason': ?cancelReason,
     'cancelComment': ?cancelComment,
+    'canReview': ?canReview,
+    'review': ?review,
   });
 
   // ── Catalog ────────────────────────────────────────────────────────────
@@ -599,6 +616,31 @@ class FakeApi extends Fake implements TakeAwayApi {
     }
     cancelled.add(id);
     return currentOrder = sampleOrder(status: 'CANCELLED', cancelledBy: 'CUSTOMER');
+  }
+
+  @override
+  Future<Order> reviewOrder(String id, CreateOrderReviewRequest body) async {
+    final failure = reviewFailureStatus;
+    if (failure != null) {
+      reviewFailureStatus = null;
+      throw _apiError('/orders/$id/review', failure, {'message': 'Internal server error'});
+    }
+    final refusal = reviewRefusal;
+    if (refusal != null) {
+      reviewRefusal = null;
+      currentOrder = refusal.$2;
+      throw _apiError('/orders/$id/review', 409, {'code': refusal.$1, 'message': 'The order cannot be reviewed'});
+    }
+    reviews.add(body);
+    return currentOrder = sampleOrder(
+      status: 'PICKED_UP',
+      canReview: false,
+      review: {
+        'rating': body.rating,
+        'comment': body.toJson()['comment'],
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      },
+    );
   }
 
   @override

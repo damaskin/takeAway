@@ -128,6 +128,18 @@ export class OrderPaymentDto {
   paidAt!: string | null;
 }
 
+/** The customer's review of the order, as their order screen shows it back. */
+export class OrderReviewDto {
+  @ApiProperty({ minimum: 1, maximum: 5 })
+  rating!: number;
+
+  @ApiProperty({ nullable: true, type: String, description: 'Null when the customer wrote nothing.' })
+  comment!: string | null;
+
+  @ApiProperty()
+  createdAt!: string;
+}
+
 export class OrderDto {
   @ApiProperty()
   id!: string;
@@ -271,6 +283,20 @@ export class OrderDto {
   })
   canCancel!: boolean;
 
+  @ApiProperty({
+    description:
+      'The customer may review the order now: handed over (PICKED_UP or DELIVERED) and not reviewed yet. ' +
+      'Otherwise POST /orders/:id/review answers 409.',
+  })
+  canReview!: boolean;
+
+  @ApiProperty({
+    type: () => OrderReviewDto,
+    nullable: true,
+    description: "The customer's review; null before one. Only the platform team reads reviews.",
+  })
+  review!: OrderReviewDto | null;
+
   // ── Delivery fields (null for PICKUP / DINE_IN orders) ──────────────────
 
   @ApiProperty({ nullable: true, type: String })
@@ -349,4 +375,17 @@ export class OrderSummaryDto {
 
   @ApiProperty({ enum: OrderCancelReason, nullable: true, description: 'See OrderDto.cancelReason.' })
   cancelReason!: OrderCancelReason | null;
+}
+
+/** A row of the customer's own order history (`GET /me/orders`). */
+export class CustomerOrderSummaryDto extends OrderSummaryDto {
+  @ApiProperty({ description: 'See OrderDto.canReview.' })
+  canReview!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'The stars the customer gave the order; null before a review.',
+  })
+  reviewRating!: number | null;
 }

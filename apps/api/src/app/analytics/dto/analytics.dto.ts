@@ -132,7 +132,14 @@ export class RetentionCustomerDto {
   @ApiProperty() totalCents!: number;
   @ApiProperty() avgCheckCents!: number;
   @ApiProperty() lastOrderAt!: string;
+  /** D: days without a visit, from the last one to the last day of the period (today while it runs). */
   @ApiProperty() daysSinceLastOrder!: number;
+  /** Calendar days with an order. */
+  @ApiProperty() visits!: number;
+  /** T: the usual interval between visits in days, not rounded; null after a single visit. */
+  @ApiProperty({ nullable: true, type: Number }) visitIntervalDays!: number | null;
+  /** R = D ÷ T × A for this customer. */
+  @ApiProperty() lostRevenueCents!: number;
 }
 
 export class ChurnPeriodDto {
@@ -142,9 +149,11 @@ export class ChurnPeriodDto {
 
 /**
  * Customers who became inactive in the period: at least 3 orders, then
- * `window` days went by after the last one without another. Money is the
- * sum of their average checks, roughly what one more visit from each would
- * have brought.
+ * `window` days went by after the last one without another. Money is what
+ * they would have brought coming at their usual pace: per customer
+ * R = D ÷ T × A — days without a visit, usual interval between visits
+ * (the stores' average for someone who came once), average check — summed.
+ * A forecast, not lost profit.
  */
 /** Of the regulars counted by `LapsedAtStoreDto`, those of one store. */
 export class LapsedStoreCountDto {
@@ -168,7 +177,7 @@ export class ChurnDto extends AnalyticsPeriodDto {
   @ApiProperty() lostRevenueCents!: number;
   @ApiProperty({ type: () => ChurnPeriodDto }) previous!: ChurnPeriodDto;
   @ApiProperty({ nullable: true, type: Number }) countDeltaPercent!: number | null;
-  /** The lost customers, highest average check first. Null on a plan without the list. */
+  /** The lost customers, biggest estimate first. Null on a plan without the list. */
   @ApiProperty({ type: () => RetentionCustomerDto, isArray: true, nullable: true })
   customers!: RetentionCustomerDto[] | null;
   /** Lost at one store, still ordering at another; null when the figures are for one store. */

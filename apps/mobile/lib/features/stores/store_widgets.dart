@@ -105,7 +105,7 @@ class StoreLogo extends StatelessWidget {
   }
 }
 
-/// One store row: logo, name, address, distance, live ETA and status.
+/// One store row: logo, name, address, distance, status and hours — no wait in minutes.
 class StoreTile extends StatelessWidget {
   const StoreTile({
     required this.item,
@@ -167,8 +167,8 @@ class StoreTile extends StatelessWidget {
                     runSpacing: 6,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      if (store.isOpen)
-                        EtaChip(etaSeconds: store.currentEtaSeconds, busyMeter: store.busyMeter, dense: true),
+                      // No wait in minutes on a store card (list 5.0, item 8):
+                      // the menu and the cart tell the wait.
                       // Closed for an order now but taking pre-orders: when
                       // it opens, in place of «Закрыто».
                       if (store.preorderOnly)

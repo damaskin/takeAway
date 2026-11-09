@@ -3,8 +3,9 @@ import { CategoryOptionKind, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertInScope, type BrandScope, dropCartLines, modifierCount } from './admin-catalog.service';
-import { menuConflict, prismaCode } from './admin-menu.errors';
+import { menuConflict, menuForbidden, prismaCode } from './admin-menu.errors';
 import type { CreateIngredientDto, IngredientAdminDto, UpdateIngredientDto } from './dto/admin-ingredient.dto';
+import { mayEditLibrary } from './ingredient-link';
 
 const WITH_USAGE = {
   modifiers: { select: { product: { select: { id: true, name: true } } } },
@@ -23,6 +24,11 @@ type IngredientWithUsage = Prisma.IngredientGetPayload<{ include: typeof WITH_US
  *
  * Taking an add-on off one product deletes that product's option and keeps
  * the entry; deleting the entry here takes it off every product.
+ *
+ * Who does what (Maxim's decision, 2026-11-06): the platform team
+ * (SUPER_ADMIN, for any brand) adds, renames, regroups and deletes entries;
+ * a brand's menu editors switch their own entries on and off and set their
+ * prices — anything else is refused with INGREDIENT_LIBRARY_LOCKED (403).
  */
 @Injectable()
 export class AdminIngredientsService {
@@ -71,6 +77,7 @@ export class AdminIngredientsService {
 
   async create(dto: CreateIngredientDto, scope: BrandScope): Promise<IngredientAdminDto> {
     assertInScope(scope, dto.brandId);
+    assertMayEditLibrary(scope, 'add');
     const row = await this.prisma.ingredient
       .create({
         data: {
@@ -92,9 +99,15 @@ export class AdminIngredientsService {
    * set — that still carries the old one. An option given a name, price or
    * group of its own on one product («Сироп (двойной)», a dearer shot in the
    * large size) keeps it.
+   *
+   * A brand may change `isAvailable` and `priceCents` only; a name or group
+   * it sends unchanged is let through, a different one is refused.
    */
   async update(id: string, dto: UpdateIngredientDto, scope: BrandScope): Promise<IngredientAdminDto> {
     const before = await this.find(id, scope);
+    const renamed = dto.name !== undefined && dto.name !== before.name;
+    const regrouped = dto.group !== undefined && (dto.group ?? null) !== (before.group ?? null);
+    if (renamed || regrouped) assertMayEditLibrary(scope, 'rename');
     const row = await this.prisma
       .$transaction(async (tx) => {
         const updated = await tx.ingredient.update({ where: { id }, data: dto, include: WITH_USAGE });
@@ -139,6 +152,7 @@ export class AdminIngredientsService {
    */
   async delete(id: string, scope: BrandScope): Promise<void> {
     await this.find(id, scope);
+    assertMayEditLibrary(scope, 'delete');
     await this.prisma
       .$transaction(async (tx) => {
         const [modifiers, variations] = await Promise.all([
@@ -197,6 +211,16 @@ function toDto(row: IngredientWithUsage): IngredientAdminDto {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/** Adding, renaming, regrouping and deleting add-ins is the platform team's (see {@link mayEditLibrary}). */
+function assertMayEditLibrary(scope: BrandScope, action: 'add' | 'rename' | 'delete'): void {
+  if (mayEditLibrary(scope)) return;
+  const what = { add: 'add add-ins to', rename: 'rename or regroup add-ins of', delete: 'delete add-ins from' }[action];
+  throw menuForbidden(
+    'INGREDIENT_LIBRARY_LOCKED',
+    `Only the takeAway team can ${what} a brand library; a brand switches its add-ins on and off and sets their prices`,
+  );
 }
 
 function rethrowNameTaken(err: unknown, name: string | undefined): never {

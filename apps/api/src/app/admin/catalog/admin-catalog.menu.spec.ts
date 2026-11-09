@@ -346,11 +346,20 @@ describe('AdminCatalogService — categories', () => {
 });
 
 describe('AdminCatalogService — products', () => {
-  const product = { id: 'p1', brandId: 'b1', categoryId: 'cat-a', variations: [], modifiers: [], stores: [] };
+  // A meal, so calories and nutrition are kept (see the tests on them below).
+  const product = {
+    id: 'p1',
+    brandId: 'b1',
+    categoryId: 'cat-a',
+    category: { name: 'Шаурма', kind: 'FOOD' },
+    variations: [],
+    modifiers: [],
+    stores: [],
+  };
 
   function withProduct() {
     const built = build();
-    built.prisma.category.findUnique.mockResolvedValue({ brandId: 'b1' });
+    built.prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'FOOD' });
     built.prisma.product.findUnique.mockResolvedValue(product);
     return built;
   }
@@ -382,7 +391,7 @@ describe('AdminCatalogService — products', () => {
   // A shawarma added to «Шаурма» starts at 15 minutes with the sauces of the category.
   it("starts a new product from its category's prep time and option set", async () => {
     const { svc, prisma } = withProduct();
-    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900 });
+    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
     prisma.categoryOption.findMany.mockResolvedValue([
       {
         kind: 'MODIFIER',
@@ -425,7 +434,7 @@ describe('AdminCatalogService — products', () => {
 
   it('keeps a typed prep time, and can leave the category set off', async () => {
     const { svc, prisma } = withProduct();
-    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900 });
+    prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', defaultPrepTimeSeconds: 900, kind: 'FOOD' });
 
     await svc.createProduct(
       { brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000, prepTimeSeconds: 600 },
@@ -480,6 +489,57 @@ describe('AdminCatalogService — products', () => {
       where: { id: 'p1' },
       data: { categoryId: 'cat-a', name: 'Латте' },
       include: { stores: { select: { storeId: true } } },
+    });
+  });
+
+  // Calories and nutrition are a meal's since 2026-11-06.
+  describe('calories and nutrition', () => {
+    const nutrition = { calories: 450, proteinsGrams: 20, fatsGrams: 18.5, carbsGrams: 40 };
+    const none = { calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null };
+    const written = (mock: jest.Mock) => (mock.mock.calls[0]?.[0] as { data: Record<string, unknown> }).data;
+
+    it('stores them for a new meal and leaves them out for a new drink', async () => {
+      const { svc, prisma } = withProduct();
+      await svc.createProduct(
+        { brandId: 'b1', categoryId: 'cat-a', name: 'Шаурма', basePriceCents: 9000, ...nutrition },
+        ['b1'],
+      );
+      expect(written(prisma.product.create)).toMatchObject(nutrition);
+
+      prisma.product.create.mockClear();
+      prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'HOT_DRINKS' });
+      await svc.createProduct(
+        { brandId: 'b1', categoryId: 'cat-coffee', name: 'Латте', basePriceCents: 3500, ...nutrition },
+        ['b1'],
+      );
+      expect(written(prisma.product.create)).toMatchObject(none);
+    });
+
+    it('keeps them when a meal is saved', async () => {
+      const { svc, prisma } = withProduct();
+      await svc.updateProduct('p1', { name: 'Шаурма XL', calories: 600 }, ['b1']);
+      expect(written(prisma.product.update)).toEqual({ name: 'Шаурма XL', calories: 600 });
+    });
+
+    it('clears them when a product that is not a meal is saved, whatever was sent', async () => {
+      for (const kind of ['HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER']) {
+        const { svc, prisma } = withProduct();
+        prisma.product.findUnique.mockResolvedValue({ ...product, category: { name: 'Напитки', kind } });
+        await svc.updateProduct('p1', { name: 'Латте', calories: 120 }, ['b1']);
+        expect(written(prisma.product.update)).toEqual({ name: 'Латте', ...none });
+      }
+    });
+
+    it('goes by the category the product is moved to', async () => {
+      const { svc, prisma } = withProduct();
+      prisma.category.findUnique.mockResolvedValue({ brandId: 'b1', kind: 'BAKERY' });
+      await svc.updateProduct('p1', { categoryId: 'cat-bakery' }, ['b1']);
+      expect(written(prisma.product.update)).toMatchObject({ categoryId: 'cat-bakery', ...none });
+
+      const back = withProduct();
+      back.prisma.product.findUnique.mockResolvedValue({ ...product, category: { name: 'Выпечка', kind: 'BAKERY' } });
+      await back.svc.updateProduct('p1', { categoryId: 'cat-a', ...nutrition }, ['b1']);
+      expect(written(back.prisma.product.update)).toMatchObject({ categoryId: 'cat-a', ...nutrition });
     });
   });
 
@@ -542,6 +602,9 @@ describe('AdminCatalogService — products', () => {
 });
 
 describe('AdminCatalogService — options', () => {
+  /** The platform team: may add to a brand library by typing a new add-in. */
+  const PLATFORM = null;
+
   function withOptions() {
     const built = build();
     built.prisma.product.findUnique.mockResolvedValue({
@@ -582,7 +645,7 @@ describe('AdminCatalogService — options', () => {
   it('does not touch other defaults for an ordinary variation', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное', priceDeltaCents: 500 }, ['b1']);
+    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное', priceDeltaCents: 500 }, PLATFORM);
 
     expect(prisma.variation.updateMany).not.toHaveBeenCalled();
     expect(prisma.variation.create).toHaveBeenCalledWith({
@@ -600,8 +663,8 @@ describe('AdminCatalogService — options', () => {
   it('puts a new milk in the ingredient library, but not a new size', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createVariation('p1', { type: 'MILK', name: ' Овсяное ' }, ['b1']);
-    await svc.createVariation('p1', { type: 'SIZE', name: 'Большой' }, ['b1']);
+    await svc.createVariation('p1', { type: 'MILK', name: ' Овсяное ' }, PLATFORM);
+    await svc.createVariation('p1', { type: 'SIZE', name: 'Большой' }, PLATFORM);
 
     expect(prisma.ingredient.upsert).toHaveBeenCalledTimes(1);
     expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
@@ -618,7 +681,7 @@ describe('AdminCatalogService — options', () => {
   it('links a new extra to the library entry of the same name', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createModifier('p1', { name: 'Ванильный сироп' }, ['b1']);
+    await svc.createModifier('p1', { name: 'Ванильный сироп' }, PLATFORM);
 
     expect(prisma.modifier.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Ванильный сироп', ingredientId: 'ing-Ванильный сироп' }),
@@ -658,7 +721,7 @@ describe('AdminCatalogService — options', () => {
   it('files a new typed extra in the library at the price it was given', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createModifier('p1', { name: 'Карамельный сироп', priceDeltaCents: 700 }, ['b1']);
+    await svc.createModifier('p1', { name: 'Карамельный сироп', priceDeltaCents: 700 }, PLATFORM);
 
     expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: { brandId: 'b1', name: 'Карамельный сироп', priceCents: 700, group: null } }),
@@ -672,7 +735,7 @@ describe('AdminCatalogService — options', () => {
     const { svc, prisma } = withOptions();
     prisma.ingredient.upsert.mockResolvedValueOnce({ id: 'ing-oat', name: 'Овсяное', priceCents: 600 });
 
-    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное' }, ['b1']);
+    await svc.createVariation('p1', { type: 'MILK', name: 'Овсяное' }, PLATFORM);
 
     expect(prisma.variation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Овсяное', priceDeltaCents: 600, ingredientId: 'ing-oat' }),
@@ -701,7 +764,7 @@ describe('AdminCatalogService — options', () => {
   it('files a new typed extra in the library together with its group', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createModifier('p1', { name: 'Без лука', group: 'Убрать' }, ['b1']);
+    await svc.createModifier('p1', { name: 'Без лука', group: 'Убрать' }, PLATFORM);
 
     expect(prisma.ingredient.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ create: { brandId: 'b1', name: 'Без лука', priceCents: 0, group: 'Убрать' } }),
@@ -714,11 +777,137 @@ describe('AdminCatalogService — options', () => {
   it('leaves an extra untracked when asked to', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createModifier('p1', { name: 'Корица', ingredientId: null }, ['b1']);
+    await svc.createModifier('p1', { name: 'Корица', ingredientId: null }, PLATFORM);
 
     expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
     expect(prisma.modifier.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ ingredientId: null }),
+    });
+  });
+
+  // Maxim, 2026-11-06: a brand does not add add-ins; it puts the ones its
+  // library has on its products. Sizes, temperatures and cups stay its own.
+  describe('a brand editing its options', () => {
+    const BRAND = ['b1'];
+    const notInLibrary = { code: 'INGREDIENT_NOT_IN_LIBRARY', statusCode: 403 };
+
+    it('files a typed extra or milk under the library entry of that name, whatever the case', async () => {
+      const { svc, prisma } = withOptions();
+      prisma.ingredient.findFirst.mockResolvedValue({ id: 'ing-oat', name: 'Овсяное', priceCents: 600, group: null });
+
+      await svc.createModifier('p1', { name: 'овсяное' }, BRAND);
+      await svc.createVariation('p1', { type: 'MILK', name: ' ОВСЯНОЕ ' }, BRAND);
+
+      expect(prisma.ingredient.findFirst).toHaveBeenCalledWith({
+        where: { brandId: 'b1', name: { equals: 'овсяное', mode: 'insensitive' } },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, name: true, priceCents: true, group: true },
+      });
+      expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+      expect(prisma.modifier.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ ingredientId: 'ing-oat', priceDeltaCents: 600 }),
+      });
+      expect(prisma.variation.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ ingredientId: 'ing-oat', priceDeltaCents: 600 }),
+      });
+    });
+
+    it('refuses an extra or a milk the library does not have, and adds nothing to it', async () => {
+      const { svc, prisma } = withOptions();
+      prisma.ingredient.findFirst.mockResolvedValue(null);
+
+      for (const attempt of [
+        svc.createModifier('p1', { name: 'Кокосовый сироп', priceDeltaCents: 500 }, BRAND),
+        svc.createVariation('p1', { type: 'MILK', name: 'Кокосовое' }, BRAND),
+      ]) {
+        const err = await rejection(attempt);
+        expect(err).toBeInstanceOf(ForbiddenException);
+        expect(body(err)).toMatchObject(notInLibrary);
+      }
+      expect(prisma.ingredient.upsert).not.toHaveBeenCalled();
+      expect(prisma.modifier.create).not.toHaveBeenCalled();
+      expect(prisma.variation.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an untracked extra or milk, the add-in outside the library', async () => {
+      const { svc, prisma } = withOptions();
+
+      expect(
+        body(await rejection(svc.createModifier('p1', { name: 'Корица', ingredientId: null }, BRAND))),
+      ).toMatchObject(notInLibrary);
+      expect(
+        body(await rejection(svc.createVariation('p1', { type: 'MILK', name: 'Своё', ingredientId: null }, BRAND))),
+      ).toMatchObject(notInLibrary);
+      expect(prisma.modifier.create).not.toHaveBeenCalled();
+    });
+
+    it('still adds sizes, temperatures and cups of its own', async () => {
+      const { svc, prisma } = withOptions();
+
+      await svc.createVariation('p1', { type: 'SIZE', name: 'Большой', priceDeltaCents: 500 }, BRAND);
+      await svc.createVariation('p1', { type: 'CUP', name: 'Своя кружка' }, BRAND);
+
+      expect(prisma.ingredient.findFirst).not.toHaveBeenCalled();
+      expect(prisma.variation.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('cannot unlink an option from its add-in, but may move it to another one of the library', async () => {
+      const { svc, prisma } = withOptions();
+      prisma.modifier.findUnique.mockResolvedValue({
+        productId: 'p1',
+        minCount: 0,
+        maxCount: 3,
+        ingredientId: 'ing-vanilla',
+        product: { brandId: 'b1' },
+      });
+      prisma.variation.findUnique.mockResolvedValue({
+        productId: 'p1',
+        type: 'MILK',
+        ingredientId: 'ing-oat',
+        product: { brandId: 'b1' },
+      });
+
+      expect(body(await rejection(svc.updateModifier('m1', { ingredientId: null }, BRAND)))).toMatchObject(
+        notInLibrary,
+      );
+      expect(body(await rejection(svc.updateVariation('v1', { ingredientId: null }, BRAND)))).toMatchObject(
+        notInLibrary,
+      );
+      expect(prisma.modifier.update).not.toHaveBeenCalled();
+
+      prisma.ingredient.findFirst.mockResolvedValue({
+        id: 'ing-caramel',
+        name: 'Карамель',
+        priceCents: 500,
+        group: null,
+      });
+      await svc.updateModifier('m1', { ingredientId: 'ing-caramel', priceDeltaCents: 700 }, BRAND);
+      expect(prisma.modifier.update).toHaveBeenCalledWith({
+        where: { id: 'm1' },
+        data: { ingredientId: 'ing-caramel', priceDeltaCents: 700 },
+      });
+
+      // The platform team may.
+      await svc.updateModifier('m1', { ingredientId: null }, PLATFORM);
+      expect(prisma.modifier.update).toHaveBeenLastCalledWith({ where: { id: 'm1' }, data: { ingredientId: null } });
+    });
+
+    it('edits an option that was never linked as before', async () => {
+      const { svc, prisma } = withOptions();
+      prisma.modifier.findUnique.mockResolvedValue({
+        productId: 'p1',
+        minCount: 0,
+        maxCount: 3,
+        ingredientId: null,
+        product: { brandId: 'b1' },
+      });
+
+      await svc.updateModifier('m1', { name: 'Корица', priceDeltaCents: 300, ingredientId: null }, BRAND);
+
+      expect(prisma.modifier.update).toHaveBeenCalledWith({
+        where: { id: 'm1' },
+        data: { name: 'Корица', priceDeltaCents: 300, ingredientId: null },
+      });
     });
   });
 
@@ -773,7 +962,7 @@ describe('AdminCatalogService — options', () => {
   it('creates «Ванильный сироп» — a name the old Latin-only slug could not', async () => {
     const { svc, prisma } = withOptions();
 
-    await svc.createModifier('p1', { name: 'Ванильный сироп', priceDeltaCents: 500, maxCount: 3 }, ['b1']);
+    await svc.createModifier('p1', { name: 'Ванильный сироп', priceDeltaCents: 500, maxCount: 3 }, PLATFORM);
 
     expect(prisma.modifier.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ productId: 'p1', slug: 'vanilnyy-sirop', maxCount: 3, sortOrder: 0 }),

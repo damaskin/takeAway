@@ -1,8 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
-import type { MailService } from '../../mail/mail.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { RealtimeGateway } from '../../realtime/realtime.gateway';
 import type { StorageService } from '../../storage/storage.service';
@@ -66,6 +64,7 @@ interface Tables {
   promoRedemptions: Row[];
   giftCards: Row[];
   feedback: Row[];
+  orderReviews: Row[];
 }
 
 function user(id: string, extra: Partial<FakeUser> = {}): FakeUser {
@@ -228,6 +227,7 @@ function seed(): Tables {
       { id: 'fb-1', userId: 'ana', kind: 'SUGGESTION', message: 'Add oat milk', contact: '@ana_tg' },
       { id: 'fb-2', userId: 'bob', kind: 'REVIEW', message: 'Great coffee', contact: 'bob@example.com' },
     ],
+    orderReviews: [{ id: 'rev-1', orderId: 'order-1', userId: 'ana', rating: 2, comment: 'Cold latte' }],
   };
 }
 
@@ -526,6 +526,16 @@ describe('AccountDeletionService', () => {
     expect(t.feedback).toEqual([{ ...before.feedback[0], contact: null }, before.feedback[1]]);
   });
 
+  it('keeps the customer’s order reviews as they are, tied to the anonymised account', async () => {
+    const { svc, t } = setup();
+    const before = snapshot(t);
+    await svc.deleteOwnAccount('ana');
+
+    // The fake has no orderReview table to write to: deletion never touches one.
+    expect(t.orderReviews).toEqual(before.orderReviews);
+    expect(t.users.find((u) => u.id === 'ana')).toMatchObject({ name: null, email: null, phone: null });
+  });
+
   it('keeps the loyalty ledger and forfeits the balance with a matching ledger row', async () => {
     const { svc, t } = setup();
     await svc.deleteOwnAccount('ana');
@@ -668,8 +678,6 @@ describe('AccountDeletionService', () => {
         oauth as unknown as OAuthIdentityService,
         {} as PasswordService,
         {} as KdsPinService,
-        {} as MailService,
-        {} as ConfigService,
         {} as KitchenDeviceService,
       );
     }

@@ -392,6 +392,12 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/feedback/feedback.page').then((m) => m.CustomerFeedbackPage),
       },
       {
+        path: 'reviews',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'reviews' satisfies NavKey },
+        loadComponent: () => import('./features/reviews/reviews.page').then((m) => m.OrderReviewsPage),
+      },
+      {
         path: 'settings',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'settings' satisfies NavKey },

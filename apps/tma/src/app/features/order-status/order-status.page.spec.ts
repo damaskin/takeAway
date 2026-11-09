@@ -42,13 +42,20 @@ function order(over: Partial<OrderView> = {}): OrderView {
 }
 
 describe('TmaOrderStatusPage', () => {
-  let orders: { get: jest.Mock; cancel: jest.Mock; reportLocation: jest.Mock };
+  let orders: { get: jest.Mock; cancel: jest.Mock; reportLocation: jest.Mock; review: jest.Mock };
+  let haptic: jest.Mock;
   let confirm: jest.Mock;
   /** The page's `order.statusChanged` handler, as it subscribed. */
   let pushStatus: (event: { status: OrderView['status'] }) => void;
 
   async function open(first: OrderView, opts: { phone?: string } = {}) {
-    orders = { get: jest.fn(() => of(first)), cancel: jest.fn(), reportLocation: jest.fn(() => of({})) };
+    orders = {
+      get: jest.fn(() => of(first)),
+      cancel: jest.fn(),
+      reportLocation: jest.fn(() => of({})),
+      review: jest.fn(),
+    };
+    haptic = jest.fn();
     confirm = jest.fn(() => Promise.resolve(true));
     TestBed.configureTestingModule({
       providers: [
@@ -76,7 +83,7 @@ describe('TmaOrderStatusPage', () => {
         { provide: WebPaymentApi, useValue: { issuedPageUrl: () => null, forget: jest.fn(), start: jest.fn() } },
         {
           provide: TelegramBridgeService,
-          useValue: { haptic: jest.fn(), confirm, setBackButton: () => () => undefined, openLink: jest.fn() },
+          useValue: { haptic, confirm, setBackButton: () => () => undefined, openLink: jest.fn() },
         },
       ],
     });
@@ -236,5 +243,90 @@ describe('TmaOrderStatusPage', () => {
     expect(byTestId('order-ready-at')?.textContent?.trim()).toBe('к 09:15 завтра');
     expect(byTestId('order-countdown')).toBeNull();
     destroy();
+  });
+  describe('«Как вам заказ?» (item 11)', () => {
+    const pickedUp = (over: Partial<OrderView> = {}) =>
+      order({
+        status: 'PICKED_UP',
+        canCancel: false,
+        payment: { state: 'PAID', amountCents: 4500, cardMask: null, paidAt: inMinutes(-20) },
+        canReview: true,
+        review: null,
+        ...over,
+      });
+    const reviewed = pickedUp({
+      canReview: false,
+      review: { rating: 5, comment: null, createdAt: inMinutes(0) },
+    });
+
+    it('asks nothing before the handover, nor from an API without reviews', async () => {
+      for (const first of [order(), pickedUp({ canReview: undefined, review: undefined })]) {
+        TestBed.resetTestingModule();
+        const { byTestId, destroy } = await open(first);
+        expect(byTestId('order-review')).toBeNull();
+        destroy();
+      }
+    });
+
+    it('sends the stars and the comment, then thanks with the stars given', async () => {
+      const { byTestId, root, settle, destroy } = await open(pickedUp());
+      orders.review.mockReturnValue(of({ ...reviewed, review: { rating: 5, comment: 'Лучший раф', createdAt: '' } }));
+
+      expect(byTestId('order-review')?.textContent).toContain('Как вам заказ?');
+      expect(byTestId('order-review-star-5')?.getAttribute('aria-label')).toBe('Оценка 5 из 5');
+      expect((byTestId('order-review-send') as HTMLButtonElement).disabled).toBe(true);
+      byTestId('order-review-star-5')?.click();
+      await settle();
+      expect(haptic).toHaveBeenCalledWith('light');
+      const comment = root.querySelector<HTMLTextAreaElement>('[data-testid="order-review-comment"]');
+      if (!comment) throw new Error('no comment field');
+      comment.value = 'Лучший раф ';
+      comment.dispatchEvent(new Event('input'));
+      byTestId('order-review-send')?.click();
+      await settle();
+
+      expect(orders.review).toHaveBeenCalledWith('ord-1', { rating: 5, comment: 'Лучший раф' });
+      expect(byTestId('order-review-thanks')?.textContent).toContain('Спасибо за отзыв!');
+      expect(byTestId('order-review-given')?.getAttribute('aria-label')).toBe('Ваша оценка: 5 из 5');
+      expect(byTestId('order-review-comment-given')?.textContent).toContain('Лучший раф');
+      destroy();
+    });
+
+    it('shows the thanks on an order reviewed before', async () => {
+      const { byTestId, destroy } = await open(reviewed);
+      expect(byTestId('order-review-thanks')).not.toBeNull();
+      expect(byTestId('order-review-send')).toBeNull();
+      destroy();
+    });
+
+    it('drops the card when the order turns out not to be reviewable', async () => {
+      const { byTestId, settle, destroy } = await open(pickedUp());
+      orders.review.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'ORDER_NOT_REVIEWABLE' } })),
+      );
+      orders.get.mockReturnValue(of(pickedUp({ status: 'CANCELLED', canReview: false })));
+
+      byTestId('order-review-star-1')?.click();
+      await settle();
+      byTestId('order-review-send')?.click();
+      await settle();
+
+      expect(byTestId('order-review')).toBeNull();
+      destroy();
+    });
+
+    it('says so and keeps the form after a failure of another kind', async () => {
+      const { byTestId, settle, destroy } = await open(pickedUp());
+      orders.review.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+
+      byTestId('order-review-star-2')?.click();
+      await settle();
+      byTestId('order-review-send')?.click();
+      await settle();
+
+      expect(byTestId('order-review-error')).not.toBeNull();
+      expect(byTestId('order-review-star-2')?.getAttribute('aria-pressed')).toBe('true');
+      destroy();
+    });
   });
 });

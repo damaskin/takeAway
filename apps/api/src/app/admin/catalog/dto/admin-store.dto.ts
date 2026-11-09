@@ -3,6 +3,7 @@ import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } f
 import { ACCEPT_WINDOW_MAX_MINUTES, ACCEPT_WINDOW_MIN_MINUTES } from '@takeaway/shared-types';
 import { Type } from 'class-transformer';
 import {
+  Allow,
   ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
@@ -194,16 +195,19 @@ export class CreateStoreDto {
   @Max(20)
   kitchenParallelism?: number;
 
+  /**
+   * «Заказов на 15 минут» is gone since 2026-11-06 (manager's list 5.0,
+   * item 6): a pickup slot is full by kitchen work only. An admin tab opened
+   * before the release still sends the field with every save, so it is
+   * accepted and dropped — `forbidNonWhitelisted` would turn each of those
+   * saves into a 400. The service never writes it; the column stays unread.
+   */
   @ApiPropertyOptional({
-    minimum: 1,
-    maximum: 100,
-    description: 'Most handovers this store will promise inside one 15-minute slot, ASAP orders included.',
+    deprecated: true,
+    description: 'Ignored since 2026-11-06: pickup slots are no longer capped by a number of orders.',
   })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  slotCapacity?: number;
+  @Allow()
+  slotCapacity?: unknown;
 
   @ApiPropertyOptional({
     minimum: 0,

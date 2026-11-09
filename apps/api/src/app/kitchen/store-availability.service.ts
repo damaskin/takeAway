@@ -14,7 +14,6 @@ export const AVAILABILITY_SELECT = {
   timezone: true,
   baseEtaSeconds: true,
   kitchenParallelism: true,
-  slotCapacity: true,
   pausedUntil: true,
   pauseReason: true,
   workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
@@ -28,7 +27,6 @@ export interface AvailabilityInput {
   timezone: string;
   baseEtaSeconds: number;
   kitchenParallelism: number;
-  slotCapacity: number;
   workingHours: readonly WorkingHour[];
   /** The open shift, if any (`closedAt = null`, at most one row). */
   shifts: ReadonlyArray<{ extendedUntil: Date | null }>;

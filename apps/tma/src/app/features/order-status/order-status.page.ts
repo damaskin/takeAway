@@ -30,6 +30,7 @@ import { cancelNeedsCall, customerCanCancel, freshEstimateMinutes, pickupClock }
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
+import { TmaOrderReviewCardComponent } from './order-review-card.component';
 
 /** What the bank said when it sent the customer back (`?payment=…`). */
 type PaymentReturn = 'success' | 'pending' | 'fail';
@@ -67,7 +68,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
 @Component({
   selector: 'app-tma-order-status',
   standalone: true,
-  imports: [TranslatePipe, LeafletMapComponent, ProductImageComponent],
+  imports: [TranslatePipe, LeafletMapComponent, ProductImageComponent, TmaOrderReviewCardComponent],
   host: {
     '(document:visibilitychange)': 'onAppVisible()',
     '(window:focus)': 'onAppVisible()',
@@ -119,6 +120,11 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               >
             }
           </div>
+        }
+
+        <!-- «Как вам заказ?» once the order is in the customer's hands; the thanks after. -->
+        @if (o.review || o.canReview) {
+          <app-tma-order-review-card class="w-full" [order]="o" (reviewed)="order.set($event)" />
         }
 
         <!-- Where the money stands: the first thing a customer looks for

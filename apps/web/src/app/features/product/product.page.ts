@@ -14,6 +14,7 @@ import {
   isStoreInactive,
   priceWithOptions,
   productKind,
+  showsNutrition,
   suggestionRow,
   type SuggestionRow,
   type VariationSelection,
@@ -36,7 +37,7 @@ import { ProductOptionsComponent } from './product-options.component';
  *     pdpDetailCol (fill) —
  *       breadcrumb
  *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
- *       meta: calories
+ *       meta: calories (a meal only)
  *       options: choice chips per size / temperature / milk / cup, add-on
  *         groups opening in place (see ProductOptionsComponent)
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
@@ -109,8 +110,8 @@ import { ProductOptionsComponent } from './product-options.component';
                 {{ p.description }}
               </p>
             }
-            <!-- Meta: calories -->
-            @if (p.calories !== null) {
+            <!-- Meta: calories, for a meal -->
+            @if (hasNutrition() && p.calories !== null) {
               <div class="pdp-meta" data-testid="product-meta">
                 <span>🔥 {{ 'web.product.labels.kcal' | translate: { calories: p.calories } }}</span>
               </div>
@@ -412,6 +413,9 @@ export class ProductPage implements OnInit {
   });
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
+
+  /** Calories are a meal's: a drink or a pastry shows none, whatever an older API sends. */
+  readonly hasNutrition = computed(() => showsNutrition(this.kind()));
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {

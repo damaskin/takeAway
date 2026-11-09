@@ -7,6 +7,7 @@ import {
   NAV_PLAN_FEATURE,
   type NavKey,
   canAccess,
+  canEditAddInLibrary,
   canOnStores,
   defaultLandingFor,
   navLink,
@@ -65,6 +66,14 @@ describe('permissions map', () => {
       expect(navLink('feedback')).toBe('/feedback');
     });
 
+    it('keeps order reviews SUPER_ADMIN-only: brands never see them', () => {
+      expect(ADMIN_ROLES.reviews).toEqual(['SUPER_ADMIN']);
+      expect(navLink('reviews')).toBe('/reviews');
+      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'reviews')).toBe(false);
+      }
+    });
+
     it('hides financial sections from kitchen STAFF', () => {
       expect(canAccess('STAFF', 'dashboard')).toBe(false);
       expect(canAccess('STAFF', 'analytics')).toBe(false);
@@ -86,13 +95,16 @@ describe('permissions map', () => {
       expect(navLink('stopList')).toBe('/stop-list');
     });
 
-    // «Добавки» left the brand's sidebar on 2026-11-05: only the platform team opens the library page.
-    it('opens the add-ons library («Добавки») to SUPER_ADMIN only', () => {
-      expect(canAccess('SUPER_ADMIN', 'ingredients')).toBe(true);
-      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
-        expect(canAccess(role, 'ingredients')).toBe(false);
-        expect(canAccess(role, 'menu')).toBe(role !== 'STAFF' && role !== 'RIDER');
+    // «Добавки» is back for whoever edits the menu (2026-11-06): a brand switches
+    // add-ins on and off and sets prices; only the platform team adds, renames
+    // or deletes them.
+    it('opens the add-ons library («Добавки») to whoever edits the menu, full control to SUPER_ADMIN only', () => {
+      for (const role of ['SUPER_ADMIN', 'BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'ingredients')).toBe(canAccess(role, 'menu'));
+        expect(canEditAddInLibrary(role)).toBe(role === 'SUPER_ADMIN');
       }
+      expect(canAccess('STAFF', 'ingredients')).toBe(false);
+      expect(canEditAddInLibrary(null)).toBe(false);
     });
 
     it('limits MENU_EDITOR to menu (+ telegram link is excluded)', () => {

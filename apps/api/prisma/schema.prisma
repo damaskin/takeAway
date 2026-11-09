@@ -421,6 +421,9 @@ model User {
   referralsAsReferee  Referral[]         @relation("ReferralsAsReferee")
   campaignDeliveries  CampaignDelivery[]
   feedback            Feedback[]
+  /// Reviews of their own orders. Account deletion keeps them: the row
+  /// they point at is the anonymised tombstone.
+  orderReviews        OrderReview[]
   campaignsCreated    Campaign[]         @relation("CampaignCreatedBy")
   campaignsReviewed   Campaign[]         @relation("CampaignReviewedBy")
 
@@ -634,6 +637,8 @@ model Brand {
   giftCards       GiftCard[]
   campaigns       Campaign[]
   feedback        Feedback[]
+  /// Customers' reviews of its orders — read by the platform team only.
+  orderReviews    OrderReview[]
   commissionRates BrandCommissionRate[]
   payouts         BrandPayout[]
   kitchenDevices  KitchenDevice[]
@@ -998,9 +1003,11 @@ model Store {
   /// outstanding work divided by this, so it is the one knob that decides
   /// how fast a morning rush drains.
   kitchenParallelism    Int                @default(2)
-  /// Most orders this store will hand over inside one 15-minute slot. Once
-  /// a slot is full it stops being offered at checkout, which is what keeps
-  /// the ETA promise honest instead of just optimistic.
+  /// Deprecated since 2026-11-06, unread: «Заказов на 15 минут», the most
+  /// orders one 15-minute pickup slot took. Removed from the admin (manager's
+  /// list 5.0, item 6): a slot is full by kitchen work only
+  /// (`kitchenParallelism`) until the queue policy replaces the slots with
+  /// free windows. The column stays (data kept) until then.
   slotCapacity          Int                @default(8)
   minOrderCents         Int                @default(0)
   /// Sales tax in basis points: 500 = 5% (UAE), 2000 = 20% (UK). 0 disables
@@ -1046,6 +1053,7 @@ model Store {
   ingredientStops StoreIngredientStop[]
   carts           Cart[]
   orders          Order[]
+  orderReviews    OrderReview[]
   userStores      UserStore[]
   kdsPinUsers     User[]                @relation("KdsPinStore")
   shifts          StoreShift[]
@@ -1615,6 +1623,7 @@ model Order {
   pointsEntries      PointsLedger[]
   promoRedemption    PromoRedemption?
   giftCardRedemption GiftCardRedemption?
+  review             OrderReview?
 
   @@index([userId, createdAt])
   @@index([storeId, status])
@@ -1653,6 +1662,37 @@ model OrderEvent {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId, createdAt])
+}
+
+/// The customer's review of an order once it was handed over («Как вам
+/// заказ?» on the order screen): 1–5 stars and an optional comment. One per
+/// order and never edited. Only the platform team reads them (SUPER_ADMIN,
+/// «Отзывы» in the admin) — the brand does not see its reviews.
+///
+/// `brandId` and `storeId` are copied from the order so the admin list
+/// filters and averages without joining through it. Account deletion keeps
+/// the review, rating and comment: `userId` points at the anonymised
+/// tombstone, as the order does.
+model OrderReview {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  userId    String
+  brandId   String
+  storeId   String
+  /// 1–5, checked by the database too.
+  rating    Int
+  /// Trimmed, 1–1000 characters; null when the customer wrote nothing.
+  comment   String?
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([brandId, createdAt])
+  @@index([userId])
 }
 
 model Payment {

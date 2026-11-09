@@ -151,17 +151,30 @@ describe('ProductPage', () => {
 
   const text = (node: Element | null | undefined) => node?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-  // Caffeine and allergens left the product page on 2026-11-05, even when an
-  // older API build still sends them; calories stay.
-  it('asks a drink for a note to the barista and shows its calories, not caffeine or allergens', async () => {
+  // Caffeine and allergens left the product page on 2026-11-05, and calories
+  // are a meal's since 2026-11-06 — even when an older API build still sends
+  // them for a drink.
+  it('asks a drink for a note to the barista, with no calories, caffeine or allergens', async () => {
     const harness = await open('latte', { ...LATTE, caffeineLevel: 2, allergens: ['MILK'] } as ProductDetail);
     const el = harness.routeNativeElement as HTMLElement;
 
     expect(text(el.querySelector('label[for="pdp-notes"]'))).toBe('Пожелание бариста');
-    expect(text(el.querySelector('[data-testid="product-meta"]'))).toContain('150 ккал');
+    expect(el.querySelector('[data-testid="product-meta"]')).toBeNull();
+    expect(text(el)).not.toContain('ккал');
     expect(text(el)).not.toContain('Кофеин');
     expect(text(el)).not.toContain('Аллергены');
     expect(el.querySelector('[data-testid="allergens"]')).toBeNull();
+  });
+
+  it('shows the calories of a meal', async () => {
+    const harness = await open(
+      'shawarma',
+      product('shawarma', { name: 'Шаурма', categoryId: 'food', categoryKind: 'FOOD', calories: 540 }),
+    );
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('[data-testid="product-meta"]'))).toContain('540 ккал');
+    expect(text(el.querySelector('label[for="pdp-notes"]'))).toBe('Комментарий к заказу');
   });
 
   it('prices the choice live and sums it up next to the button', async () => {

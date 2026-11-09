@@ -136,6 +136,10 @@ export interface PickupSlot {
   startsAt: string;
   endsAt: string;
   taken: number;
+  /**
+   * @deprecated Always 0 since 2026-11-06: a slot is full by kitchen work
+   * only. Read `available`.
+   */
   capacity: number;
   available: boolean;
 }
