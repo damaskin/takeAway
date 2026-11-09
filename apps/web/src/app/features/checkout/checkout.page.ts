@@ -13,6 +13,7 @@ import type {
 import {
   calendarDaysFrom,
   computeTax,
+  describeOptionLines,
   groupSlotsByDay,
   isCartChangedError,
   isStoreInactive,
@@ -28,7 +29,7 @@ import { ProductImageComponent } from '@takeaway/ui-kit';
 import { type Observable, map } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
-import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
+import { CartService, lineSelections, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { storeSuggestions } from '../../core/catalog/store-suggestions';
@@ -364,60 +365,69 @@ interface Step {
             >
               @for (item of c.items; track item.id) {
                 @let look = lineLooks().get(item.productId);
-                <div class="flex items-center justify-between" style="gap: 12px">
-                  <lib-product-image
-                    [src]="look?.src"
-                    [kind]="look?.kind"
-                    alt=""
-                    style="flex: none; width: 40px; height: 40px; border-radius: 10px"
-                  />
-                  <span
-                    class="flex-1"
-                    style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
-                  >
-                    {{ item.productName }}
-                  </span>
-                  @if (!placedOrder()) {
-                    <div
-                      class="flex items-center"
-                      style="border: 1px solid var(--color-border); border-radius: 999px; height: 32px"
-                      [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
+                <div class="flex flex-col" style="gap: 4px">
+                  <div class="flex items-center justify-between" style="gap: 12px">
+                    <lib-product-image
+                      [src]="look?.src"
+                      [kind]="look?.kind"
+                      alt=""
+                      style="flex: none; width: 40px; height: 40px; border-radius: 10px"
+                    />
+                    <span
+                      class="flex-1"
+                      style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
                     >
-                      <button
-                        type="button"
-                        (click)="changeQuantity(item, -1)"
-                        [disabled]="changingItemId() !== null"
-                        [attr.aria-label]="
-                          (item.quantity === 1 ? 'web.checkout.remove' : 'web.checkout.decrease') | translate
-                        "
-                        style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
+                      {{ item.productName }}
+                    </span>
+                    @if (!placedOrder()) {
+                      <div
+                        class="flex items-center"
+                        style="border: 1px solid var(--color-border); border-radius: 999px; height: 32px"
+                        [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
                       >
-                        {{ item.quantity === 1 ? '🗑' : '−' }}
-                      </button>
-                      <span
-                        style="min-width: 20px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
-                        >{{ item.quantity }}</span
+                        <button
+                          type="button"
+                          (click)="changeQuantity(item, -1)"
+                          [disabled]="changingItemId() !== null"
+                          [attr.aria-label]="
+                            (item.quantity === 1 ? 'web.checkout.remove' : 'web.checkout.decrease') | translate
+                          "
+                          style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
+                        >
+                          {{ item.quantity === 1 ? '🗑' : '−' }}
+                        </button>
+                        <span
+                          style="min-width: 20px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                          >{{ item.quantity }}</span
+                        >
+                        <button
+                          type="button"
+                          (click)="changeQuantity(item, 1)"
+                          [disabled]="changingItemId() !== null || item.quantity >= 99"
+                          [attr.aria-label]="'web.checkout.increase' | translate"
+                          style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
+                        >
+                          +
+                        </button>
+                      </div>
+                    } @else {
+                      <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                        >× {{ item.quantity }}</span
                       >
-                      <button
-                        type="button"
-                        (click)="changeQuantity(item, 1)"
-                        [disabled]="changingItemId() !== null || item.quantity >= 99"
-                        [attr.aria-label]="'web.checkout.increase' | translate"
-                        style="width: 32px; height: 32px; font-size: 16px; color: var(--color-espresso)"
-                      >
-                        +
-                      </button>
-                    </div>
-                  } @else {
-                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
-                      >× {{ item.quantity }}</span
+                    }
+                    <span
+                      style="min-width: 72px; text-align: right; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                    >
+                      {{ price(item.unitPriceCents * item.quantity) }}
+                    </span>
+                  </div>
+                  @if (lineOptions(item); as options) {
+                    <span
+                      data-testid="cart-line-options"
+                      style="padding-left: 52px; font-family: var(--font-sans); font-size: 12px; line-height: 1.4; color: var(--color-text-secondary)"
+                      >{{ options }}</span
                     >
                   }
-                  <span
-                    style="min-width: 72px; text-align: right; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
-                  >
-                    {{ price(item.unitPriceCents * item.quantity) }}
-                  </span>
                 </div>
               }
               <div style="height: 1px; background: var(--color-border-light)"></div>
@@ -1718,7 +1728,10 @@ export class CheckoutPage implements OnInit {
     const next = item.quantity + delta;
     if (next > 99) return;
     this.changingItemId.set(item.id);
-    const request = next < 1 ? this.cartService.remove(item.id) : this.cartService.updateQuantity(item.id, next);
+    const request =
+      next < 1
+        ? this.cartService.remove(item.id)
+        : this.cartService.updateQuantity(item.id, next, lineSelections(item));
     request.subscribe({
       next: (cart) => {
         this.cart.set(cart);
@@ -1748,6 +1761,11 @@ export class CheckoutPage implements OnInit {
 
   price(cents: number): string {
     return this.fmt.money(cents, this.currency());
+  }
+
+  /** A line's choice from the options catalog: «M, Горячий · Овсяное · Ваниль»; empty for other lines. */
+  lineOptions(item: CartItemView): string {
+    return describeOptionLines(item.options ?? []);
   }
 
   private formatTime(date: Date): string {

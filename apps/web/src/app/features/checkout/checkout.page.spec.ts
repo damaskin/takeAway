@@ -7,6 +7,7 @@ import { TranslateService, type Translation, provideTranslateService } from '@ng
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type {
   CategoryKind,
+  OptionLine,
   PickupSlot,
   ProductSummary,
   StoreDetail,
@@ -157,10 +158,16 @@ describe('CheckoutPage — pickup time', () => {
     getSuggestions: jest.Mock;
   };
   let orders: { create: jest.Mock };
+  let cartService: { load: jest.Mock; updateQuantity: jest.Mock };
 
   async function open(
     store: StoreDetail,
-    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions>; deliveryEnabled?: boolean } = {},
+    opts: {
+      menu?: StoreMenu;
+      suggestions?: Observable<StoreSuggestions>;
+      deliveryEnabled?: boolean;
+      cart?: CartView;
+    } = {},
   ): Promise<{ page: CheckoutPage; root: HTMLElement; detect: () => void }> {
     catalog = {
       getStore: jest.fn(() => of(store)),
@@ -171,12 +178,13 @@ describe('CheckoutPage — pickup time', () => {
       getSuggestions: jest.fn(() => opts.suggestions ?? throwError(() => new Error('404'))),
     };
     orders = { create: jest.fn() };
+    cartService = { load: jest.fn(() => of(opts.cart ?? CART)), updateQuantity: jest.fn(() => of(opts.cart ?? CART)) };
     TestBed.configureTestingModule({
       providers: [
         provideRouter([{ path: 'checkout', component: CheckoutPage }]),
         provideTranslateService({ fallbackLang: 'ru' }),
         { provide: AuthStore, useValue: { isAuthenticated: signal(true), user: signal(null) } },
-        { provide: CartService, useValue: { load: jest.fn(() => of(CART)) } },
+        { provide: CartService, useValue: cartService },
         { provide: CatalogService, useValue: catalog },
         { provide: OrdersApi, useValue: orders },
         { provide: LoyaltyService, useValue: { me: () => of({ pointsBalance: 0 }) } },
@@ -428,6 +436,47 @@ describe('CheckoutPage — pickup time', () => {
         'Точка закрывается в 23:59 — заказ «сейчас» уже не успеем приготовить. Выберите время.',
       ]);
     });
+  });
+
+  it('spells out a line chosen from the options catalog, and keeps the choice when the count changes', async () => {
+    const line = (
+      groupId: string,
+      kind: OptionLine['kind'],
+      type: OptionLine['type'],
+      optionId: string,
+      name: string,
+      qty = 1,
+    ): OptionLine => ({
+      groupId,
+      groupName: groupId,
+      kind,
+      type,
+      optionId,
+      name,
+      qty,
+      unitPriceCents: 0,
+      freeQty: 0,
+      totalCents: 0,
+    });
+    const options = [
+      line('size', 'VARIANT', 'A', 'm', 'M'),
+      line('serving', 'VARIANT', 'A', 'hot', 'Горячий'),
+      line('milk', 'ADDON', 'A', 'oat', 'Овсяное'),
+      line('sugar', 'ADDON', 'C', 'sugar', 'Сахар', 2),
+    ];
+    const cart: CartView = { ...CART, items: CART.items.map((item) => ({ ...item, options })) };
+    const { root, detect } = await open(STORE, { cart });
+
+    expect(text(root, 'cart-line-options')).toEqual(['M, Горячий · Овсяное · Сахар ×2']);
+
+    root.querySelector<HTMLButtonElement>('button[aria-label="Больше"]')?.click();
+    detect();
+    expect(cartService.updateQuantity).toHaveBeenCalledWith('line-1', 2, [
+      { optionId: 'm', qty: 1 },
+      { optionId: 'hot', qty: 1 },
+      { optionId: 'oat', qty: 1 },
+      { optionId: 'sugar', qty: 2 },
+    ]);
   });
 
   it('refuses checkout only when the store takes no orders at all', async () => {
