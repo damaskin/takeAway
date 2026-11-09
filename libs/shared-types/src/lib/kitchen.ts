@@ -30,6 +30,13 @@ export interface KitchenOrderTimeline {
    * `awaitingSince` for an order for now. Null once accepted.
    */
   acceptDeadlineAt: string | null;
+  /**
+   * ISO UTC, queue policy only (`QUEUE_POLICY_ENABLED`): when the queue has
+   * the order ready (G), shown as «готов к 12:11». `startBy` is then when the
+   * queue has the kitchen take it (O). Absent with the flag off and for
+   * orders out of the queue (READY, not paid yet).
+   */
+  plannedReadyAt?: string;
 }
 
 /**
@@ -44,6 +51,15 @@ export const ACCEPT_WINDOW_MIN_MINUTES = 1;
 export const ACCEPT_WINDOW_MAX_MINUTES = 60;
 /** A new store's accept time, and what a store with none set (an older 0) counts with. */
 export const DEFAULT_ACCEPT_WINDOW_MINUTES = 10;
+
+/**
+ * «Загрузка: +N мин» of the queue policy (`loadExtraSeconds` on the store,
+ * in seconds), set in whole minutes from 0 to 60: while the kitchen has
+ * «Загружены» on, an order placed then may start this much later than its
+ * accept time. Read only with `QUEUE_POLICY_ENABLED` (docs/queue-policy.md).
+ */
+export const LOAD_EXTRA_MAX_MINUTES = 60;
+export const DEFAULT_LOAD_EXTRA_MINUTES = 10;
 
 /**
  * `PUT /kds/shift/extend` body: take ASAP orders this much longer past the
