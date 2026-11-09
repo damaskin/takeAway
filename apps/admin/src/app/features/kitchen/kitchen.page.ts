@@ -52,13 +52,14 @@ import type { KitchenStore } from '../../core/kitchen/order-alerts.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
 import { StoreScheduleStatusComponent } from '../../shared/store-schedule-status.component';
 import { KitchenPauseDialogComponent } from './kitchen-pause-dialog.component';
+import { type TicketOptions, ticketOptions } from '../../core/kitchen/ticket-options';
 import { KitchenShiftBannerComponent } from './kitchen-shift-banner.component';
 
 /** How long the "order rejected" notice stays on screen. */
 const TOAST_MS = 5000;
 
 /** One line of a ticket: how many, and exactly what goes in the cup. */
-type TicketLine = OrderItemSnapshot & { quantity: number };
+type TicketLine = OrderItemSnapshot & { quantity: number; catalog: TicketOptions };
 
 const COLUMN_META: Record<KitchenColumn, { label: string; tint: string; text: string }> = {
   NEW: { label: 'kds.cols.new', tint: 'var(--color-caramel-light)', text: 'var(--color-caramel)' },
@@ -376,12 +377,18 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
                 <span class="kitchen-qty">{{ line.quantity }}×</span>
                 <span class="kitchen-item">{{ line.name }}</span>
               </div>
-              @if (line.variations.length > 0) {
+              @if (line.variations.length > 0 || line.catalog.variants.length > 0) {
                 <div class="flex flex-wrap kitchen-indent" style="gap: 6px">
                   @for (v of line.variations; track v.id) {
                     <span class="kitchen-chip">{{ v.name }}</span>
                   }
+                  @for (v of line.catalog.variants; track $index) {
+                    <span class="kitchen-chip" data-testid="ticket-variant">{{ v }}</span>
+                  }
                 </div>
+              }
+              @for (a of line.catalog.addons; track $index) {
+                <span class="kitchen-indent kitchen-modifier" data-testid="ticket-addon">+ {{ a }}</span>
               }
               @for (m of line.modifierLines; track m.id) {
                 <span class="kitchen-indent kitchen-modifier">
@@ -1048,7 +1055,10 @@ export class KitchenPage {
       new Map(
         this.orders().map((o) => [
           o.id,
-          o.items.map<TicketLine>((i) => ({ ...readOrderItemSnapshot(i.productSnapshot), quantity: i.quantity })),
+          o.items.map<TicketLine>((i) => {
+            const snapshot = readOrderItemSnapshot(i.productSnapshot);
+            return { ...snapshot, quantity: i.quantity, catalog: ticketOptions(snapshot.optionLines) };
+          }),
         ]),
       ),
   );

@@ -13,6 +13,7 @@ import {
   SetBrandModerationRequest,
 } from '../../core/brands/brands.service';
 import { ConfirmDialogComponent } from '../../shared/confirm-dialog.component';
+import { LegacyOptionsComponent } from './legacy-options.component';
 
 /**
  * The moderation states, plus two call lists: self-registered brands that
@@ -30,7 +31,7 @@ interface PendingDecision {
 @Component({
   selector: 'app-admin-brands',
   standalone: true,
-  imports: [LocalDatePipe, RouterLink, TranslatePipe, ConfirmDialogComponent],
+  imports: [LocalDatePipe, RouterLink, TranslatePipe, ConfirmDialogComponent, LegacyOptionsComponent],
   template: `
     <section style="padding: 32px; max-width: 1100px">
       <header class="flex items-center justify-between" style="gap: 16px; margin-bottom: 24px">
@@ -298,6 +299,8 @@ interface PendingDecision {
                   </button>
                 </div>
               }
+
+              <app-legacy-options [brandId]="b.id" [brandName]="b.name" />
             </article>
           }
         </div>

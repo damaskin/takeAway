@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -17,7 +17,9 @@ import { formatMoneyInput, moneyValidator, parseMoney } from '../menu/menu-input
 type Filter = 'all' | 'out' | 'unused';
 
 /**
- * The brand's add-ons library («Добавки»): oat milk, syrups, an extra shot.
+ * The brand's old add-ons library — since 2026-11-09 the «Старые добавки»
+ * tab of «Добавки», shown while the brand still has entries (the options
+ * catalog replaces it; see `BrandOptionsPage`): oat milk, syrups, an extra shot.
  * It is the one place an add-on is defined — its name, its usual price and
  * one in-stock switch. A product offers an add-on by picking it in «Меню →
  * Опции»; taking it off a product leaves it here, deleting it here takes it
@@ -122,23 +124,25 @@ type Filter = 'all' | 'out' | 'unused';
     `,
   ],
   template: `
-    <div
-      class="flex items-center flex-wrap"
-      style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px 16px"
-    >
-      <h1
-        style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
+    @if (!embedded()) {
+      <div
+        class="flex items-center flex-wrap"
+        style="min-height: 64px; padding: 12px clamp(12px, 3vw, 24px); background: var(--color-foam); border-bottom: 1px solid var(--color-border-light); gap: 12px 16px"
       >
-        {{ 'admin.ingredients.title' | translate }}
-      </h1>
-      @if (brand()) {
-        <span
-          class="flex items-center"
-          style="height: 26px; padding: 0 10px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
-          >{{ brand()?.name }}</span
+        <h1
+          style="font-family: var(--font-display); font-size: 22px; font-weight: 700; color: var(--color-espresso); margin: 0"
         >
-      }
-    </div>
+          {{ 'admin.ingredients.title' | translate }}
+        </h1>
+        @if (brand()) {
+          <span
+            class="flex items-center"
+            style="height: 26px; padding: 0 10px; background: var(--color-caramel-light); color: var(--color-caramel); border-radius: 9999px; font-family: var(--font-sans); font-size: 12px; font-weight: 600"
+            >{{ brand()?.name }}</span
+          >
+        }
+      </div>
+    }
 
     <section
       class="flex flex-col"
@@ -363,6 +367,9 @@ type Filter = 'all' | 'out' | 'unused';
   `,
 })
 export class IngredientsPage {
+  /** Shown as the «Старые добавки» tab of «Добавки», under that page's own header. */
+  readonly embedded = input(false);
+
   private readonly api = inject(AdminCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);

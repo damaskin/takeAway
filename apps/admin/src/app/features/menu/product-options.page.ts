@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
+import { OptionCatalogApi } from '../../core/catalog/option-catalog.service';
 import { describeMenuError } from './menu-errors';
 import { ProductOptionsPanelComponent } from './product-options-panel.component';
 
@@ -12,6 +13,10 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
  *
  * These used to expand inside a row of the product table, which put a form
  * with four controls into whatever width the table column had left.
+ *
+ * Since 2026-11-09 a product with groups from the options catalog is sold
+ * through them only; for such a product this page says so instead of
+ * offering the older options.
  */
 @Component({
   selector: 'app-product-options',
@@ -43,7 +48,23 @@ import { ProductOptionsPanelComponent } from './product-options-panel.component'
         }
       </header>
 
-      <app-product-options-panel [productId]="productId()" [currency]="currency()" />
+      @if (catalogGroups() > 0) {
+        <div
+          class="flex flex-col"
+          style="gap: 10px; padding: 14px 16px; background: var(--color-foam); border-left: 3px solid var(--color-mint); border-radius: 8px; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+          role="note"
+          data-testid="legacy-options-note"
+        >
+          <span>{{ 'admin.optionsCatalog.product.legacyNote' | translate }}</span>
+          <a
+            [routerLink]="['/menu/products', productId()]"
+            style="width: fit-content; font-weight: 600; color: var(--color-caramel); text-decoration: none"
+            >{{ 'admin.optionsCatalog.product.toCatalog' | translate }}</a
+          >
+        </div>
+      } @else if (catalogChecked()) {
+        <app-product-options-panel [productId]="productId()" [currency]="currency()" />
+      }
 
       @if (error(); as message) {
         <p role="alert" style="font-family: var(--font-sans); font-size: 13px; color: var(--color-berry)">
@@ -57,18 +78,35 @@ export class ProductOptionsPage {
   readonly productId = input.required<string>();
 
   private readonly api = inject(AdminCatalogApi);
+  private readonly options = inject(OptionCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
 
   readonly productName = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly currency = computed(() => this.activeBrand.active()?.currency ?? null);
+  /** Catalog groups on the product: then these older options do not apply and are not offered. */
+  readonly catalogGroups = signal(0);
+  readonly catalogChecked = signal(false);
 
   constructor() {
     effect(() => {
-      this.api.getProduct(this.productId()).subscribe({
+      const id = this.productId();
+      this.api.getProduct(id).subscribe({
         next: (p) => this.productName.set(p.name),
         error: (err: unknown) => this.error.set(describeMenuError(err, this.translate)),
+      });
+      this.catalogChecked.set(false);
+      // An API without the catalog answers an error: the older editor stays.
+      this.options.productGroups(id).subscribe({
+        next: (config) => {
+          this.catalogGroups.set(config.groups?.length ?? 0);
+          this.catalogChecked.set(true);
+        },
+        error: () => {
+          this.catalogGroups.set(0);
+          this.catalogChecked.set(true);
+        },
       });
     });
   }
