@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'options.dart';
+
 part 'cart.g.dart';
 
 @JsonSerializable(createToJson: false)
@@ -14,6 +16,7 @@ class CartItem {
     required this.unitPriceCents,
     required this.unitPrepSeconds,
     this.notes,
+    this.options = const [],
   });
 
   factory CartItem.fromJson(Map<String, dynamic> json) => _$CartItemFromJson(json);
@@ -26,6 +29,12 @@ class CartItem {
   final List<String> variationIds;
   @JsonKey(fromJson: _modifierCounts)
   final Map<String, int> modifiers;
+
+  /// Picks from the options catalog, for a product with catalog groups (then
+  /// [variationIds] and [modifiers] are empty), with names and prices. Empty
+  /// otherwise and from API versions that predate the catalog.
+  @JsonKey(fromJson: OptionLine.listFrom)
+  final List<OptionLine> options;
   final int unitPriceCents;
   @JsonKey(defaultValue: 0)
   final int unitPrepSeconds;
@@ -62,7 +71,7 @@ class Cart {
   int get itemCount => items.fold(0, (sum, i) => sum + i.quantity);
 }
 
-@JsonSerializable(createFactory: false, includeIfNull: false)
+@JsonSerializable(createFactory: false, includeIfNull: false, explicitToJson: true)
 class AddCartItemRequest {
   const AddCartItemRequest({
     required this.storeId,
@@ -70,6 +79,7 @@ class AddCartItemRequest {
     required this.quantity,
     this.variationIds,
     this.modifiers,
+    this.options,
     this.notes,
   });
 
@@ -78,9 +88,29 @@ class AddCartItemRequest {
   final int quantity;
   final List<String>? variationIds;
   final Map<String, int>? modifiers;
+
+  /// Picks from the options catalog, for a product with catalog groups; the
+  /// API then ignores [variationIds] and [modifiers].
+  final List<OptionSelection>? options;
   final String? notes;
 
   Map<String, dynamic> toJson() => _$AddCartItemRequestToJson(this);
+}
+
+/// Body of `PATCH /cart/items/{itemId}`: what to change, the rest left out.
+@JsonSerializable(createFactory: false, includeIfNull: false, explicitToJson: true)
+class UpdateCartItemRequest {
+  const UpdateCartItemRequest({this.quantity, this.variationIds, this.modifiers, this.options, this.notes});
+
+  final int? quantity;
+  final List<String>? variationIds;
+  final Map<String, int>? modifiers;
+
+  /// See [AddCartItemRequest.options].
+  final List<OptionSelection>? options;
+  final String? notes;
+
+  Map<String, dynamic> toJson() => _$UpdateCartItemRequestToJson(this);
 }
 
 /// Modifier counts arrive as `{ modifierId: count }` where count is a JSON

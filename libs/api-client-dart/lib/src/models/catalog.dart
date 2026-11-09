@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'options.dart';
+
 part 'catalog.g.dart';
 
 @JsonEnum(alwaysCreate: true)
@@ -397,6 +399,7 @@ class Product {
     this.carbsGrams,
     this.onStopList = false,
     this.categoryKind,
+    this.hasRequiredOptions = false,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);
@@ -428,6 +431,13 @@ class Product {
   @JsonKey(fromJson: _labelFromJson)
   final String? categoryKind;
 
+  /// Has catalog option groups the customer has to look at before it goes
+  /// in the cart (a variant to pick, an add-on with a minimum): a menu tile
+  /// opens the product instead of adding it in one tap. False from API
+  /// versions that predate the options catalog.
+  @JsonKey(defaultValue: false)
+  final bool hasRequiredOptions;
+
   String? get imageUrl => imageUrls.isEmpty ? null : imageUrls.first;
   bool get hasNutrition => proteinsGrams != null || fatsGrams != null || carbsGrams != null;
 }
@@ -453,6 +463,8 @@ class ProductDetail extends Product {
     super.carbsGrams,
     super.onStopList,
     super.categoryKind,
+    super.hasRequiredOptions,
+    this.optionGroups = const [],
   });
 
   factory ProductDetail.fromJson(Map<String, dynamic> json) => _$ProductDetailFromJson(json);
@@ -465,6 +477,16 @@ class ProductDetail extends Product {
   final List<Variation> variations;
   @JsonKey(defaultValue: <Modifier>[])
   final List<Modifier> modifiers;
+
+  /// Groups from the options catalog attached to the product, variants
+  /// first. When non-empty the product is ordered through them alone and
+  /// [variations] / [modifiers] are empty. Missing (an API that predates the
+  /// catalog) reads as none; groups this build cannot show are left out.
+  @JsonKey(fromJson: ProductOptionGroup.listFrom)
+  final List<ProductOptionGroup> optionGroups;
+
+  /// Ordered through the options catalog rather than the older options.
+  bool get hasOptionGroups => optionGroups.isNotEmpty;
 }
 
 @JsonSerializable(explicitToJson: true)

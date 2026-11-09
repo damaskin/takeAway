@@ -286,6 +286,7 @@ Product _$ProductFromJson(Map<String, dynamic> json) => Product(
   carbsGrams: (json['carbsGrams'] as num?)?.toDouble(),
   onStopList: json['onStopList'] as bool? ?? false,
   categoryKind: _labelFromJson(json['categoryKind']),
+  hasRequiredOptions: json['hasRequiredOptions'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$ProductToJson(Product instance) => <String, dynamic>{
@@ -304,6 +305,7 @@ Map<String, dynamic> _$ProductToJson(Product instance) => <String, dynamic>{
   'sortOrder': instance.sortOrder,
   'onStopList': instance.onStopList,
   'categoryKind': instance.categoryKind,
+  'hasRequiredOptions': instance.hasRequiredOptions,
 };
 
 ProductDetail _$ProductDetailFromJson(Map<String, dynamic> json) => ProductDetail(
@@ -327,6 +329,8 @@ ProductDetail _$ProductDetailFromJson(Map<String, dynamic> json) => ProductDetai
   carbsGrams: (json['carbsGrams'] as num?)?.toDouble(),
   onStopList: json['onStopList'] as bool? ?? false,
   categoryKind: _labelFromJson(json['categoryKind']),
+  hasRequiredOptions: json['hasRequiredOptions'] as bool? ?? false,
+  optionGroups: json['optionGroups'] == null ? const [] : ProductOptionGroup.listFrom(json['optionGroups']),
 );
 
 Map<String, dynamic> _$ProductDetailToJson(ProductDetail instance) => <String, dynamic>{
@@ -345,9 +349,11 @@ Map<String, dynamic> _$ProductDetailToJson(ProductDetail instance) => <String, d
   'sortOrder': instance.sortOrder,
   'onStopList': instance.onStopList,
   'categoryKind': instance.categoryKind,
+  'hasRequiredOptions': instance.hasRequiredOptions,
   'brandId': instance.brandId,
   'variations': instance.variations.map((e) => e.toJson()).toList(),
   'modifiers': instance.modifiers.map((e) => e.toJson()).toList(),
+  'optionGroups': instance.optionGroups.map((e) => e.toJson()).toList(),
 };
 
 MenuCategory _$MenuCategoryFromJson(Map<String, dynamic> json) => MenuCategory(
