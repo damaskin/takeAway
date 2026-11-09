@@ -1,7 +1,25 @@
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CartItem, Modifier, Prisma, Product, Variation, VariationType } from '@prisma/client';
-import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
-import { sortVariationsForDisplay } from '@takeaway/utils';
+import type {
+  CartChangeReason,
+  CartChangedItem,
+  OptionLine,
+  OptionSelection,
+  OrderItemModifier,
+  OrderItemVariation,
+  ProductOptionGroup,
+} from '@takeaway/shared-types';
+import {
+  type OptionPicks,
+  defaultOptionPicks,
+  fromOptionSelections,
+  optionLinesFor,
+  optionSelectionKey,
+  priceWithOptionPicks,
+  sortVariationsForDisplay,
+  toOptionSelections,
+  validateOptionPicks,
+} from '@takeaway/utils';
 
 import { checkoutError } from '../common/http/checkout-error';
 import { activeStopWhere, availableOptionsIncludeAt } from '../catalog/option-availability';
@@ -9,6 +27,8 @@ import { soldOnItsOwn } from '../catalog/product-listing';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { QueuePolicyService, asapVerdict } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
+import { optionsError } from '../option-groups/options-error';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
@@ -36,6 +56,11 @@ export function storeProductInclude(storeId: string, now: Date = new Date()) {
   } satisfies Prisma.ProductInclude;
 }
 
+/** A cart's lines as the cart screen shows them: the product's name, and its brand for catalog picks. */
+const CART_ITEMS_INCLUDE = {
+  items: { include: { product: { select: { name: true, brandId: true } } } },
+} satisfies Prisma.CartInclude;
+
 /**
  * On the menu as a thing to order: the product is shown and its category is
  * too, and the category is not one of add-ons (an extra ingredient imported
@@ -55,6 +80,13 @@ export interface PricedLine {
   variations: OrderItemVariation[];
   /** Extras with a positive count, in menu order. */
   modifierLines: OrderItemModifier[];
+  /**
+   * Picks from the options catalog, as the cart row keeps them (sorted by
+   * option id); empty for a product without catalog groups.
+   */
+  options: OptionSelection[];
+  /** The same picks with names and prices, in page order — the order snapshot's `optionLines`. */
+  optionLines: OptionLine[];
 }
 
 /** A cart line that passed the checkout price check, ready to become an order line. */
@@ -75,6 +107,7 @@ export class CartService {
     private readonly prisma: PrismaService,
     private readonly kitchen: KitchenLoadService,
     private readonly availability: StoreAvailabilityService,
+    private readonly optionGroups: ProductOptionGroupsService,
     /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
     @Optional() private readonly queue?: QueuePolicyService,
   ) {}
@@ -82,20 +115,21 @@ export class CartService {
   async getForUserAndStore(userId: string, storeId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { userId_storeId: { userId, storeId } },
-      include: { items: { include: { product: { select: { name: true } } } } },
+      include: CART_ITEMS_INCLUDE,
     });
     if (!cart) {
       return this.emptyCartShape(userId, storeId);
     }
+    const optionLines = await this.cartOptionLines(cart.storeId, cart.items);
     // Re-quote on read: the stored value was right when the cart last
     // changed, but the queue moves on without us. A customer who opened the
     // app ten minutes ago should not be shown a wait from ten minutes ago.
     if (this.queue?.enabled) {
       const queued = await this.quoteQueued(cart.storeId, cart.items);
-      return this.toDto({ ...cart, etaSeconds: queued.etaSeconds }, queued.fields);
+      return this.toDto({ ...cart, etaSeconds: queued.etaSeconds }, optionLines, queued.fields);
     }
     const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
-    return this.toDto({ ...cart, etaSeconds });
+    return this.toDto({ ...cart, etaSeconds }, optionLines);
   }
 
   async addItem(userId: string, dto: AddCartItemDto): Promise<CartDto> {
@@ -115,9 +149,17 @@ export class CartService {
 
     assertSoldHere(product);
     await this.assertNotOnStopList(dto.storeId, [product.id]);
-    await this.assertOptionsInStock(product, dto.variationIds ?? [], dto.modifiers ?? {});
 
-    const priced = this.priceOrReject(product, dto.variationIds ?? [], dto.modifiers ?? {});
+    // A product with catalog groups is ordered through them alone; the
+    // older variations and extras of the request are ignored.
+    const groups = await this.optionGroups.forProduct(product.id, { brandId: product.brandId, storeId: dto.storeId });
+    let priced: PricedLine;
+    if (groups.length > 0) {
+      priced = priceCatalogChoice(product, groups, dto.options, null);
+    } else {
+      await this.assertOptionsInStock(product, dto.variationIds ?? [], dto.modifiers ?? {});
+      priced = this.priceOrReject(product, dto.variationIds ?? [], dto.modifiers ?? {});
+    }
 
     const cart = await this.prisma.cart.upsert({
       where: { userId_storeId: { userId, storeId: dto.storeId } },
@@ -128,13 +170,15 @@ export class CartService {
     // The same latte added twice is one line of two, not two lines of one:
     // otherwise the cart shows "×1" twice and its steppers each count only
     // their own half. A line only matches when the kitchen would make it the
-    // same way — same size, same extras, same note.
+    // same way — same size, same extras, same catalog picks, same note.
     const notes = normalizeNotes(dto.notes);
+    const pickKey = optionSelectionKey(priced.options);
     const existing = await this.prisma.cartItem.findMany({ where: { cartId: cart.id, productId: product.id } });
     const same = existing.find(
       (item) =>
         sameIds(item.variationIds, priced.variationIds) &&
         sameCounts(storedModifiers(item.modifiersJson), priced.modifiers) &&
+        optionSelectionKey(storedOptions(item.optionsJson)) === pickKey &&
         normalizeNotes(item.notes) === notes,
     );
 
@@ -155,6 +199,7 @@ export class CartService {
           quantity: dto.quantity,
           variationIds: priced.variationIds,
           modifiersJson: priced.modifiers,
+          optionsJson: optionsJsonOf(priced.options),
           unitPriceCents: priced.unitPriceCents,
           unitPrepSeconds: priced.unitPrepSeconds,
           notes,
@@ -177,10 +222,20 @@ export class CartService {
     assertSoldHere(product);
     await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
-    const variationIds = dto.variationIds ?? item.variationIds;
-    const modifiers = dto.modifiers ?? storedModifiers(item.modifiersJson);
-    await this.assertOptionsInStock(product, variationIds, modifiers);
-    const priced = this.priceOrReject(product, variationIds, modifiers);
+    // A quantity change sends no choice: the line keeps the picks it has.
+    const groups = await this.optionGroups.forProduct(product.id, {
+      brandId: product.brandId,
+      storeId: item.cart.storeId,
+    });
+    let priced: PricedLine;
+    if (groups.length > 0) {
+      priced = priceCatalogChoice(product, groups, dto.options, storedOptions(item.optionsJson));
+    } else {
+      const variationIds = dto.variationIds ?? item.variationIds;
+      const modifiers = dto.modifiers ?? storedModifiers(item.modifiersJson);
+      await this.assertOptionsInStock(product, variationIds, modifiers);
+      priced = this.priceOrReject(product, variationIds, modifiers);
+    }
 
     await this.prisma.cartItem.update({
       where: { id: itemId },
@@ -188,6 +243,7 @@ export class CartService {
         quantity: dto.quantity ?? item.quantity,
         variationIds: priced.variationIds,
         modifiersJson: priced.modifiers,
+        optionsJson: optionsJsonOf(priced.options),
         unitPriceCents: priced.unitPriceCents,
         unitPrepSeconds: priced.unitPrepSeconds,
         notes: dto.notes ?? item.notes,
@@ -234,12 +290,21 @@ export class CartService {
    */
   async repriceForCheckout(cart: {
     id: string;
+    storeId: string;
     items: ReadonlyArray<CartItem & { product: StoreProduct }>;
   }): Promise<CheckoutLine[]> {
     const lines: CheckoutLine[] = [];
     const changes: CartChangedItem[] = [];
     const removed: string[] = [];
     const rewritten: Array<{ id: string; line: PricedLine }> = [];
+
+    const brandId = cart.items[0]?.product.brandId;
+    const catalog = brandId
+      ? await this.optionGroups.forProducts(
+          cart.items.map((i) => i.productId),
+          { brandId, storeId: cart.storeId },
+        )
+      : new Map<string, ProductOptionGroup[]>();
 
     for (const item of cart.items) {
       const change = (reason: CartChangeReason, unitPriceCents: number | null): CartChangedItem => ({
@@ -256,6 +321,33 @@ export class CartService {
       if (!onTheMenu(item.product) || item.product.stores.length === 0) {
         changes.push(change('PRODUCT_UNAVAILABLE', null));
         removed.push(item.id);
+        continue;
+      }
+
+      // A product on the options catalog, or a line made with its picks:
+      // the picks are checked against the groups as they are now. One gone
+      // — switched off, stopped, deleted, its group detached — or a rule
+      // the line no longer meets takes the line out, like a deleted milk.
+      const groups = catalog.get(item.productId) ?? [];
+      const picked = storedOptions(item.optionsJson);
+      if (groups.length > 0 || picked.length > 0) {
+        const line = repriceCatalogLine(item, groups, picked);
+        if (!line) {
+          changes.push(change('OPTION_UNAVAILABLE', null));
+          removed.push(item.id);
+        } else if (line.unitPriceCents !== item.unitPriceCents) {
+          changes.push(change('PRICE_CHANGED', line.unitPriceCents));
+          rewritten.push({ id: item.id, line });
+        } else {
+          lines.push({
+            ...line,
+            productId: item.product.id,
+            productSlug: item.product.slug,
+            productName: item.product.name,
+            quantity: item.quantity,
+            notes: item.notes,
+          });
+        }
         continue;
       }
 
@@ -296,6 +388,7 @@ export class CartService {
           data: {
             variationIds: line.variationIds,
             modifiersJson: line.modifiers,
+            optionsJson: optionsJsonOf(line.options),
             unitPriceCents: line.unitPriceCents,
             unitPrepSeconds: line.unitPrepSeconds,
           },
@@ -397,6 +490,8 @@ export class CartService {
           priceDeltaCents: v.priceDeltaCents,
         })),
         modifierLines,
+        options: [],
+        optionLines: [],
       },
       problems,
     };
@@ -405,7 +500,7 @@ export class CartService {
   private async recalculate(cartId: string): Promise<CartDto> {
     const cart = await this.prisma.cart.findUnique({
       where: { id: cartId },
-      include: { items: { include: { product: { select: { name: true } } } } },
+      include: CART_ITEMS_INCLUDE,
     });
     if (!cart) throw new NotFoundException('Cart not found');
 
@@ -418,7 +513,33 @@ export class CartService {
       data: { subtotalCents, etaSeconds },
     });
 
-    return this.toDto({ ...cart, subtotalCents, etaSeconds }, queued?.fields);
+    const optionLines = await this.cartOptionLines(cart.storeId, cart.items);
+    return this.toDto({ ...cart, subtotalCents, etaSeconds }, optionLines, queued?.fields);
+  }
+
+  /**
+   * The catalog picks of every line with names and prices, as the cart
+   * shows them (`CartItem.options`), read from the groups as they are now.
+   * No query for a cart without catalog picks.
+   */
+  private async cartOptionLines(
+    storeId: string,
+    items: ReadonlyArray<{ id: string; productId: string; optionsJson?: unknown; product: { brandId?: string } }>,
+  ): Promise<Map<string, OptionLine[]>> {
+    const lines = new Map<string, OptionLine[]>();
+    const picked = items
+      .map((item) => ({ item, picks: storedOptions(item.optionsJson) }))
+      .filter(({ picks }) => picks.length > 0);
+    const brandId = picked[0]?.item.product.brandId;
+    if (!brandId) return lines;
+    const catalog = await this.optionGroups.forProducts(
+      picked.map(({ item }) => item.productId),
+      { brandId, storeId },
+    );
+    for (const { item, picks } of picked) {
+      lines.set(item.id, optionLinesFor(catalog.get(item.productId) ?? [], fromOptionSelections(picks)));
+    }
+    return lines;
   }
 
   /**
@@ -588,6 +709,7 @@ export class CartService {
         notes: string | null;
       }>;
     },
+    optionLines: ReadonlyMap<string, OptionLine[]>,
     queued?: CartQueueFields,
   ): CartDto {
     return {
@@ -603,6 +725,7 @@ export class CartService {
         quantity: i.quantity,
         variationIds: i.variationIds,
         modifiers: (i.modifiersJson ?? {}) as Record<string, number>,
+        options: optionLines.get(i.id) ?? [],
         unitPriceCents: i.unitPriceCents,
         unitPrepSeconds: i.unitPrepSeconds,
         notes: i.notes,
@@ -666,4 +789,88 @@ function normalizeNotes(notes: string | null | undefined): string | null {
 function sameCounts(stored: Record<string, unknown>, current: Record<string, number>): boolean {
   const taken = Object.entries(stored).filter(([, count]) => toCount(count) > 0);
   return taken.length === Object.keys(current).length && taken.every(([id, count]) => current[id] === toCount(count));
+}
+
+/** The `[{ optionId, qty }]` a cart row keeps, read without trusting the JSON. */
+function storedOptions(json: unknown): OptionSelection[] {
+  if (!Array.isArray(json)) return [];
+  const out: OptionSelection[] = [];
+  for (const entry of json) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { optionId, qty } = entry as { optionId?: unknown; qty?: unknown };
+    if (typeof optionId === 'string' && typeof qty === 'number' && Number.isFinite(qty)) out.push({ optionId, qty });
+  }
+  return out;
+}
+
+/** Catalog picks as the cart row's JSON column takes them. */
+function optionsJsonOf(options: readonly OptionSelection[]): Prisma.InputJsonArray {
+  return options.map(({ optionId, qty }) => ({ optionId, qty }));
+}
+
+/** One line of a product on the options catalog, priced by the shared rules. */
+function catalogLine(
+  product: Pick<Product, 'basePriceCents' | 'prepTimeSeconds'>,
+  groups: readonly ProductOptionGroup[],
+  picks: OptionPicks,
+): PricedLine {
+  return {
+    // A variant priced below the base can outweigh it; a line never pays the customer.
+    unitPriceCents: Math.max(0, priceWithOptionPicks(product.basePriceCents, groups, picks)),
+    // Options add no kitchen time (docs/option-groups.md): the product's own.
+    unitPrepSeconds: product.prepTimeSeconds,
+    variationIds: [],
+    modifiers: {},
+    variations: [],
+    modifierLines: [],
+    options: toOptionSelections(picks),
+    optionLines: optionLinesFor(groups, picks),
+  };
+}
+
+/**
+ * Prices the customer's choice of a product with catalog groups, or answers
+ * 400 (`OptionsErrorBody`). No `options` in the request: the line's own
+ * picks when it has some (a quantity change), else the defaults — and
+ * `OPTIONS_REQUIRED` when they are not a valid choice (a client that
+ * predates the catalog cannot pick a size).
+ */
+function priceCatalogChoice(
+  product: Pick<Product, 'basePriceCents' | 'prepTimeSeconds'>,
+  groups: readonly ProductOptionGroup[],
+  requested: readonly OptionSelection[] | undefined,
+  stored: readonly OptionSelection[] | null,
+): PricedLine {
+  const fromClient = requested !== undefined;
+  const kept = !fromClient && stored !== null && stored.length > 0;
+  const picks = fromClient
+    ? fromOptionSelections(requested)
+    : kept
+      ? fromOptionSelections(stored)
+      : defaultOptionPicks(groups);
+  const errors = validateOptionPicks(groups, picks);
+  if (errors.length > 0) throw optionsError(fromClient || kept ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED', errors);
+  return catalogLine(product, groups, picks);
+}
+
+/**
+ * A cart line of catalog picks against the groups as they are now, or null
+ * when it can no longer be made as it went in: the product lost its groups,
+ * the line still carries older options, or the picks break a rule (one is
+ * gone, stopped or hidden, or a group it lacks became required).
+ */
+function repriceCatalogLine(
+  item: Pick<CartItem, 'variationIds' | 'modifiersJson'> & {
+    product: Pick<Product, 'basePriceCents' | 'prepTimeSeconds'>;
+  },
+  groups: readonly ProductOptionGroup[],
+  picked: readonly OptionSelection[],
+): PricedLine | null {
+  if (groups.length === 0) return null;
+  const olderOptions =
+    item.variationIds.length > 0 || Object.values(storedModifiers(item.modifiersJson)).some((c) => toCount(c) > 0);
+  if (olderOptions) return null;
+  const picks = fromOptionSelections(picked);
+  if (validateOptionPicks(groups, picks).length > 0) return null;
+  return catalogLine(item.product, groups, picks);
 }

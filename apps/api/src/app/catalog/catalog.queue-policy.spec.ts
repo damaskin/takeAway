@@ -3,6 +3,7 @@ import type { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import type { QueuePolicyService } from '../kitchen/queue-policy.service';
 import type { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import type { PrismaService } from '../prisma/prisma.service';
+import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { CatalogService } from './catalog.service';
 
 const at = (iso: string) => new Date(iso);
@@ -42,6 +43,7 @@ function harness(enabled: boolean) {
     {} as FeatureFlagsService,
     kitchen as unknown as KitchenLoadService,
     {} as StoreAvailabilityService,
+    optionGroupsStub(),
     queue as unknown as QueuePolicyService,
   );
   return { service, kitchen, queue, basket };

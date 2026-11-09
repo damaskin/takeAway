@@ -1,6 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+import { OptionSelectionDto } from '../../option-groups/dto/option-groups.dto';
 
 const VARIATION_IDS_DOC =
   'At most one per variation type (SIZE, MILK, ...). A type left out gets its default — the one ' +
@@ -9,6 +21,11 @@ const VARIATION_IDS_DOC =
 const MODIFIERS_DOC =
   "Map { modifierId: count }. Omitted modifiers count as 0; counts are clamped to the modifier's " +
   'min/max. An id the product does not have, with a positive count, is a 400.';
+
+const OPTIONS_DOC =
+  'Picks from the options catalog, for a product with catalog groups (then variationIds and modifiers are ' +
+  'ignored). Omitted: on add, every default — 400 OPTIONS_REQUIRED when that is not a valid choice; on update, ' +
+  'the picks the line has. A choice that breaks a rule is 400 OPTIONS_INVALID with `errors`.';
 
 export class AddCartItemDto {
   @ApiProperty()
@@ -37,6 +54,14 @@ export class AddCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: OPTIONS_DOC })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OptionSelectionDto)
+  options?: OptionSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -63,11 +88,16 @@ export class UpdateCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: OPTIONS_DOC })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OptionSelectionDto)
+  options?: OptionSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;
 }
-
-// Keep the decorators referenced so tree-shakers don't drop them
-void ValidateNested;

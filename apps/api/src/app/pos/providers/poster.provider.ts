@@ -274,10 +274,21 @@ export class PosterProvider implements IPosProvider {
     }
   }
 
+  /**
+   * The incoming order's comment: our order code, each line's comment (the
+   * options catalog picks and the customer's note — Poster gets no
+   * modifiers for those) as «Латте ×2: M, Холодный · Овсяное», then the
+   * order's note.
+   */
   private buildPosterComment(order: OrderForPush): string {
     const lines = [`takeAway #${order.orderCode}`];
+    for (const item of order.items) {
+      if (!item.notes) continue;
+      const name = item.name ? `${item.name}${item.quantity > 1 ? ` ×${item.quantity}` : ''}` : null;
+      lines.push(name ? `${name}: ${item.notes}` : item.notes);
+    }
     if (order.notes) lines.push(order.notes);
-    return lines.join(' · ');
+    return lines.join('; ');
   }
 
   async subscribeWebhooks(_integration: PosIntegrationCtx, _callbackUrl: string): Promise<void> {

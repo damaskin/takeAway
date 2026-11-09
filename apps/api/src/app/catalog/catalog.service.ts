@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CategoryKind, StoreFulfillment } from '@prisma/client';
-import { showsNutrition } from '@takeaway/utils';
+import { needsOptionChoice, showsNutrition } from '@takeaway/utils';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService, type PickupSlot } from '../kitchen/kitchen-load.service';
 import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
 import { SOLD_ON_ITS_OWN } from './product-listing';
@@ -54,6 +55,7 @@ export class CatalogService {
     private readonly flags: FeatureFlagsService,
     private readonly kitchen: KitchenLoadService,
     private readonly availability: StoreAvailabilityService,
+    private readonly optionGroups: ProductOptionGroupsService,
     /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
     @Optional() private readonly queue?: QueuePolicyService,
   ) {}
@@ -307,6 +309,13 @@ export class CatalogService {
       },
     });
 
+    // A tile adds in one tap unless the product's catalog groups need a
+    // look first (a size to pick). One batch for the whole menu.
+    const optionGroups = await this.optionGroups.forProducts(
+      categories.flatMap((c) => c.products.map((p) => p.id)),
+      { brandId: store.brandId, storeId: store.id },
+    );
+
     return {
       storeId: store.id,
       storeSlug: store.slug,
@@ -334,6 +343,7 @@ export class CatalogService {
             imageUrls: p.imageUrls,
             sortOrder: p.sortOrder,
             onStopList: stopList.has(p.id),
+            hasRequiredOptions: needsOptionChoice(optionGroups.get(p.id) ?? []),
             categoryKind: c.kind,
           })),
         })),
@@ -392,6 +402,15 @@ export class CatalogService {
       },
     });
     if (!product) throw new NotFoundException('Product not found');
+
+    // On the options catalog the product is ordered through its groups
+    // alone: the older variations and extras are not offered.
+    const optionGroups = await this.optionGroups.forProduct(product.id, {
+      brandId: product.brandId,
+      storeId: store?.id ?? null,
+      now,
+    });
+    const onCatalog = optionGroups.length > 0;
     const variations = product.variations.filter(
       (v) => !v.ingredient || (v.ingredient.isAvailable && !(v.ingredient.storeStops?.length ?? 0)),
     );
@@ -410,7 +429,9 @@ export class CatalogService {
       imageUrls: product.imageUrls,
       sortOrder: product.sortOrder,
       categoryKind: product.category.kind,
-      variations: variations.map((v) => ({
+      hasRequiredOptions: needsOptionChoice(optionGroups),
+      optionGroups,
+      variations: (onCatalog ? [] : variations).map((v) => ({
         id: v.id,
         type: v.type,
         name: v.name,
@@ -419,7 +440,7 @@ export class CatalogService {
         sortOrder: v.sortOrder,
         isDefault: defaults.has(v.id),
       })),
-      modifiers: product.modifiers.map((m) => ({
+      modifiers: (onCatalog ? [] : product.modifiers).map((m) => ({
         id: m.id,
         slug: m.slug,
         name: m.name,

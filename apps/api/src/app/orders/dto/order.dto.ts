@@ -11,6 +11,8 @@ import {
 } from '@prisma/client';
 import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation, OptionLine } from '@takeaway/shared-types';
 
+import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
+
 export class OrderItemVariationDto implements OrderItemVariation {
   @ApiProperty()
   id!: string;
@@ -84,10 +86,9 @@ export class OrderItemSnapshotDto implements OrderItemSnapshot {
   modifierLines!: OrderItemModifierDto[];
 
   @ApiProperty({
-    type: 'array',
-    items: { type: 'object' },
+    type: () => [OptionLineDto],
     description:
-      'Picks from the options catalog (OptionLine), variants first, in page order. Empty for products without catalog groups.',
+      'Picks from the options catalog, variants first, in page order. Empty for products without catalog groups.',
   })
   optionLines!: OptionLine[];
 }

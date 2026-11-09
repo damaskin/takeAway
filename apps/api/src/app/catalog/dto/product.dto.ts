@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CategoryKind, VariationType } from '@prisma/client';
 
+import { ProductOptionGroupDto } from '../../option-groups/dto/option-groups.dto';
+
 /** Calories and nutrition are a meal's: the storefronts get them for FOOD products only. */
 const NUTRITION_NOTE = 'Null unless the kind of the product category is FOOD (meals only, since 2026-11-06)';
 
@@ -107,6 +109,14 @@ export class ProductDto {
   onStopList?: boolean;
 
   @ApiProperty({
+    required: false,
+    description:
+      'Catalog option groups ask for a look before it goes in the cart (a variant to pick, or the defaults are ' +
+      'not a valid choice): a menu tile opens the product instead of adding it in one tap',
+  })
+  hasRequiredOptions?: boolean;
+
+  @ApiProperty({
     enum: CategoryKind,
     description: "Kind of the product's category: picks the placeholder of a product without a photo",
   })
@@ -128,6 +138,14 @@ export class ProductDetailDto extends ProductDto {
 
   @ApiProperty({ type: [ModifierDto] })
   modifiers!: ModifierDto[];
+
+  @ApiProperty({
+    type: [ProductOptionGroupDto],
+    description:
+      'Groups from the options catalog, variants first, as this store has them. When non-empty the product is ' +
+      'ordered through them alone and `variations` / `modifiers` are empty.',
+  })
+  optionGroups!: ProductOptionGroupDto[];
 }
 
 export class CategoryWithProductsDto {
