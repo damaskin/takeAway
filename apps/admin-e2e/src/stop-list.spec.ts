@@ -27,7 +27,7 @@ test('puts a dish and an add-in in the stop from the kitchen', async ({ page }) 
   expect((await stopped).postDataJSON()).toEqual({ productId: 'product-1' });
   await expect(dish.getByRole('switch')).toHaveText(/В стопе/);
 
-  await page.getByRole('button', { name: /Добавки · 1/ }).click();
+  await page.getByRole('button', { name: /Добавки · 2/ }).click();
   const addin = page.getByTestId('stop-row').filter({ hasText: 'Овсяное молоко' });
   const addinStopped = page.waitForRequest(
     (req) =>
