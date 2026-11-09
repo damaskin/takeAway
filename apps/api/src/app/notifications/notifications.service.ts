@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { OrderStatus, Prisma } from '@prisma/client';
+import type { OrderCancelMoney, OrderStatus, Prisma } from '@prisma/client';
 import type { PushTransport } from '@takeaway/shared-types';
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { type ApnsDelivery, ApnsPushProvider, apnsTargets, hasApnsToken } from './providers/apns.provider';
@@ -26,12 +27,13 @@ interface OrderLike {
 /** Why an order expired, so the push can say what happened to the money. */
 export interface OrderExpiryInfo {
   reason: 'payment_timeout' | 'not_accepted';
-  /** A card hold was reversed — the customer paid and the store never accepted. */
-  holdReleased: boolean;
-  /** The charge was waiting for the accept and was called off — the card was never touched. */
-  notCharged?: boolean;
-  /** A captured payment was refunded before the order was let go. */
-  refunded?: boolean;
+  /**
+   * Where the money went (`Order.cancelMoney`): a charge waiting for the
+   * accept called off, a hold released or still coming off, a captured
+   * payment refunded before the order was let go. Null when there was no
+   * card money to speak of.
+   */
+  money: OrderCancelMoney | null;
 }
 
 /** Who on a store's side hears about a kitchen event. */
@@ -57,12 +59,8 @@ export interface StoreRejectionInfo {
   reason: StoreRejectReason;
   /** Free text from the kitchen, shown as is. */
   comment?: string | null;
-  /**
-   * not_charged — the charge was waiting for the accept and never happened;
-   * released — the hold came off; refunded — a captured charge went back;
-   * pending — the bank still owes the release.
-   */
-  money: 'not_charged' | 'released' | 'refunded' | 'pending' | 'none';
+  /** Where the money went (`Order.cancelMoney`); null when there was no card money to speak of. */
+  money: OrderCancelMoney | null;
 }
 
 export interface OrderStatusPushOptions {
@@ -636,20 +634,9 @@ export class NotificationsService {
       CLOSING: ['Заведение закрывается.', 'The store is closing.'],
       OTHER: ['Заведение не может принять заказ.', 'The store cannot take the order.'],
     };
-    const money: Record<StoreRejectionInfo['money'], [string, string]> = {
-      not_charged: ['Деньги с карты не списывались.', 'Your card was not charged.'],
-      released: [
-        'Деньги не списаны, блокировка на карте снята.',
-        'You were not charged and the card hold is released.',
-      ],
-      refunded: ['Деньги вернутся на карту.', 'The money is on its way back to your card.'],
-      pending: ['Блокировка на карте будет снята автоматически.', 'The card hold will be released automatically.'],
-      none: ['', ''],
-    };
     const comment = rejection.comment?.trim();
     const [reasonRu, reasonEn] = reasons[rejection.reason];
-    const [moneyRu, moneyEn] = money[rejection.money];
-    const body = [ru ? reasonRu : reasonEn, comment, ru ? moneyRu : moneyEn].filter(Boolean).join(' ');
+    const body = [ru ? reasonRu : reasonEn, comment, moneySentence(rejection.money, ru)].filter(Boolean).join(' ');
     return ru
       ? message('order_status', `Заказ ${code} отклонён`, body)
       : message('order_status', `Order ${code} was declined`, body);
@@ -661,52 +648,20 @@ export class NotificationsService {
     expiry: OrderExpiryInfo | undefined,
     message: (kind: PushMessage['kind'], title: string, body: string) => PushMessage,
   ): PushMessage {
-    // A released card hold (or a called-off deferred charge) means the customer
-    // paid and the store never took the order; without one, the payment itself
-    // was never completed.
-    if (expiry?.refunded) {
+    // Money given back (or never taken) means the customer paid and the store
+    // never took the order; without any, the payment itself was never
+    // completed — unless nothing had to be paid by card at all.
+    const money = expiry?.money ?? null;
+    if (money || expiry?.reason === 'not_accepted') {
+      const body = [
+        ru ? 'Заведение не подтвердило заказ вовремя.' : 'The store did not confirm it in time.',
+        moneySentence(money, ru),
+      ]
+        .filter(Boolean)
+        .join(' ');
       return ru
-        ? message(
-            'order_status',
-            `Заказ ${code} не принят`,
-            'Заведение не подтвердило заказ вовремя. Деньги вернутся на карту.',
-          )
-        : message(
-            'order_status',
-            `Order ${code} was not accepted`,
-            'The store did not confirm it in time. The money is on its way back to your card.',
-          );
-    }
-    if (expiry?.notCharged) {
-      return ru
-        ? message(
-            'order_status',
-            `Заказ ${code} не принят`,
-            'Заведение не подтвердило заказ вовремя. Деньги с карты не списывались.',
-          )
-        : message(
-            'order_status',
-            `Order ${code} was not accepted`,
-            'The store did not confirm it in time. Your card was not charged.',
-          );
-    }
-    if (expiry?.holdReleased) {
-      return ru
-        ? message(
-            'order_status',
-            `Заказ ${code} не принят`,
-            'Заведение не подтвердило заказ вовремя. Деньги не списаны, бронь на карте снята.',
-          )
-        : message(
-            'order_status',
-            `Order ${code} was not accepted`,
-            'The store did not confirm it in time. You were not charged and the card hold is released.',
-          );
-    }
-    if (expiry?.reason === 'not_accepted') {
-      return ru
-        ? message('order_status', `Заказ ${code} не принят`, 'Заведение не подтвердило заказ вовремя.')
-        : message('order_status', `Order ${code} was not accepted`, 'The store did not confirm it in time.');
+        ? message('order_status', `Заказ ${code} не принят`, body)
+        : message('order_status', `Order ${code} was not accepted`, body);
     }
     return ru
       ? message(
@@ -720,4 +675,11 @@ export class NotificationsService {
           'The payment was not completed. Your promo code, points and gift card balance are back.',
         );
   }
+}
+
+/** The push's sentence about the money — the same words the customer's order screen shows. */
+function moneySentence(money: OrderCancelMoney | null, ru: boolean): string | null {
+  if (!money) return null;
+  const text = ORDER_CANCEL_MONEY_TEXT[money];
+  return ru ? text.ru : text.en;
 }

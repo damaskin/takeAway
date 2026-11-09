@@ -67,6 +67,7 @@ function cancelledRow(base: ReturnType<typeof orderRow>) {
     cancelledBy: 'CUSTOMER',
     cancelReason: null,
     cancelComment: null,
+    cancelMoney: null,
     expiredAt: null,
     readyEstimateAt: null,
     deliveryAddressLine: null,
@@ -93,7 +94,15 @@ function harness(found: ReturnType<typeof orderRow>) {
     },
   };
   const prisma = {
-    order: { findUnique: jest.fn().mockResolvedValue(found), findMany: jest.fn().mockResolvedValue([]) },
+    order: {
+      findUnique: jest.fn().mockResolvedValue(found),
+      findMany: jest.fn().mockResolvedValue([]),
+      // The re-read once the money is settled: the cancelled row, with the money written.
+      update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        ...(await tx.order.update.mock.results[0]?.value),
+        ...data,
+      })),
+    },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const release = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
@@ -315,6 +324,107 @@ describe('OrdersService.cancelOrder — who and why', () => {
 
     expect(summary).toMatchObject({ status: 'CANCELLED', cancelledBy: 'STORE', cancelReason: 'CLOSING', itemCount: 2 });
     expect(summary).not.toHaveProperty('cancelComment');
+  });
+});
+
+/**
+ * Where the money went is recorded on the order when it is cancelled — the
+ * outcome the push states — so the customer's order screen says the same
+ * (2026-11-09): before, a released hold read there as «Деньги вернутся на
+ * карту» while the push said «блокировка на карте снята».
+ */
+describe('OrdersService.cancelOrder — the money', () => {
+  const STORE_REJECT = { actorId: 'staff-1', by: 'store' as const, allowedStatuses: new Set(['CREATED', 'PAID']) };
+  const card = (status: PaymentStatus, patch: Record<string, unknown> = {}) => ({
+    id: 'pay-1',
+    provider: 'AGROPROMBANK',
+    status,
+    amountCents: 4500,
+    refundedCents: 0,
+    rawJson: {},
+    updatedAt: at('2026-10-20T09:00:00Z'),
+    ...patch,
+  });
+
+  /** The claimed order carries `payments` as they were before the hold was dealt with. */
+  function withPayments(payments: ReturnType<typeof card>[]) {
+    const found = orderRow();
+    const h = harness(found);
+    h.tx.order.update.mockResolvedValue({ ...cancelledRow(found), payments });
+    return h;
+  }
+
+  it('records a released hold before telling the customer, and answers with the payment as it is now', async () => {
+    const { service, prisma, holds, realtime } = withPayments([card('REQUIRES_ACTION')]);
+
+    const dto = await service.cancel('user-1', 'order-1');
+
+    expect(prisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'order-1' }, data: { cancelMoney: 'RELEASED' } }),
+    );
+    expect(dto.cancelMoney).toBe('RELEASED');
+    expect(prisma.order.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+      holds.releaseForOrder.mock.invocationCallOrder[0] ?? Infinity,
+    );
+    expect(prisma.order.update.mock.invocationCallOrder[0]).toBeLessThan(
+      realtime.emitOrderStatusChanged.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('says a charge put off until the accept was never taken', async () => {
+    const { service, holds } = withPayments([card('REQUIRES_ACTION', { rawJson: { deferred: true } })]);
+    holds.releaseForOrder.mockResolvedValue({ id: 'pay-1', rawJson: { deferred: true, voided: true } });
+
+    const { money } = await service.cancelOrder({ id: 'order-1', status: 'CREATED' }, STORE_REJECT);
+
+    expect(money).toBe('NOT_CHARGED');
+  });
+
+  it('says the hold comes off by itself when the bank did not release it', async () => {
+    const { service, holds } = withPayments([card('REQUIRES_ACTION')]);
+    holds.releaseForOrder.mockResolvedValue(null);
+
+    const { money } = await service.cancelOrder({ id: 'order-1', status: 'CREATED' }, STORE_REJECT);
+
+    expect(money).toBe('PENDING');
+  });
+
+  it("gives a captured charge back through the caller's refund and records how it went", async () => {
+    const captured = card('SUCCEEDED');
+    const { service, prisma, holds } = withPayments([captured]);
+    holds.releaseForOrder.mockResolvedValue(null);
+    const refundCaptured = jest.fn().mockResolvedValue('REFUNDED');
+
+    const { money, order } = await service.cancelOrder(
+      { id: 'order-1', status: 'PAID' },
+      { ...STORE_REJECT, refundCaptured },
+    );
+
+    expect(refundCaptured).toHaveBeenCalledWith(captured);
+    expect(money).toBe('REFUNDED');
+    expect(order.cancelMoney).toBe('REFUNDED');
+    expect(prisma.order.update.mock.calls[0]?.[0].data).toEqual({ cancelMoney: 'REFUNDED' });
+  });
+
+  it('says nothing was taken from a card declined on the accept', async () => {
+    const { service, holds } = withPayments([card('FAILED')]);
+    holds.releaseForOrder.mockResolvedValue(null);
+
+    const { money } = await service.cancelOrder(
+      { id: 'order-1', status: 'CREATED' },
+      { ...STORE_REJECT, reason: 'CARD_DECLINED', bankMessage: 'Insufficient funds' },
+    );
+
+    expect(money).toBe('NOT_CHARGED');
+  });
+
+  it('records nothing when there was no card money', async () => {
+    const { service, holds } = withPayments([]);
+    holds.releaseForOrder.mockResolvedValue(null);
+
+    const { money } = await service.cancelOrder({ id: 'order-1', status: 'CREATED' }, STORE_REJECT);
+
+    expect(money).toBeNull();
   });
 });
 

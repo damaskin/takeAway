@@ -172,6 +172,22 @@ enum OrderCancelReason {
   CARD_DECLINED
 }
 
+/// Where the money of a CANCELLED or EXPIRED order went when the API called
+/// it off — the same outcome the customer's push states, so their order
+/// screen can repeat it word for word.
+enum OrderCancelMoney {
+  /// A charge waiting for the accept was called off, or the card was
+  /// declined: nothing was ever taken.
+  NOT_CHARGED
+  /// The card hold came off.
+  RELEASED
+  /// A captured charge was given back.
+  REFUNDED
+  /// The hold (or the refund) did not go through at once; the bank still
+  /// owes it and the reconciliation cron retries the release.
+  PENDING
+}
+
 enum OrderEventType {
   STATUS_CHANGED
   ETA_UPDATED
@@ -1593,6 +1609,10 @@ model Order {
   cancelledBy         OrderCanceller?
   cancelReason        OrderCancelReason?
   cancelComment       String?
+  /// Where the money went when the order was cancelled or expired, as the
+  /// push said. Null while the order is live, when there was no card money
+  /// to speak of, and on older orders the backfill could not tell.
+  cancelMoney         OrderCancelMoney?
   expiredAt           DateTime?
   /// When the order became the kitchen's to accept — shown on the board:
   /// at creation when nothing has to be paid by card, else when the card

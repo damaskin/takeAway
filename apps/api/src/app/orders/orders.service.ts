@@ -16,7 +16,15 @@ import {
   type OrderNotCancellableBody,
 } from '@takeaway/shared-types';
 import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
-import type { Order, OrderCancelReason, OrderCanceller, PaymentStatus, Prisma } from '@prisma/client';
+import type {
+  Order,
+  OrderCancelMoney,
+  OrderCancelReason,
+  OrderCanceller,
+  Payment,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 
 import { checkoutError } from '../common/http/checkout-error';
 import { codedConflict } from '../common/http/coded-conflict';
@@ -35,7 +43,7 @@ import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { customerCancelledMessage } from '../notifications/store-team-messages';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
-import { isDeferredCharge } from '../payments/card-providers';
+import { isCardProvider, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -599,6 +607,12 @@ export class OrdersService {
       totalCents: order.totalCents,
       couponCode: order.couponCode,
       giftCardCode: order.giftCardCode,
+      cancelledAt: order.cancelledAt?.toISOString() ?? null,
+      expiredAt: order.expiredAt?.toISOString() ?? null,
+      cancelledBy: order.cancelledBy,
+      cancelReason: order.cancelReason,
+      cancelComment: order.cancelComment,
+      cancelMoney: order.cancelMoney,
       refundedCents,
       refundableCents: Math.max(0, paidCents - refundedCents),
       items: order.items.map((i) => {
@@ -852,8 +866,10 @@ export class OrdersService {
    * PaymentHoldsService.
    *
    * Who cancelled, the reason and the comment are written on the order with
-   * the status, so the customer's re-read after `order.statusChanged`
-   * already says why.
+   * the status; where the money went (`cancelMoney`) once the hold is dealt
+   * with — the outcome the push states — and before anyone is told, so the
+   * customer's re-read after `order.statusChanged` already says it all. The
+   * order returned is read after that, with its payments as they are now.
    */
   async cancelOrder(
     order: Pick<Order, 'id' | 'status'>,
@@ -868,8 +884,15 @@ export class OrdersService {
       comment?: string;
       /** What the bank said on a declined card: kept on the event, not shown to the customer. */
       bankMessage?: string;
+      /**
+       * Gives back a card charge already captured (the store turning down an
+       * order paid at checkout) and says how it went: `REFUNDED`, or
+       * `PENDING` when the bank refused. Without it a captured charge is left
+       * as it is.
+       */
+      refundCaptured?: (payment: Payment) => Promise<'REFUNDED' | 'PENDING'>;
     },
-  ): Promise<{ order: CancelledOrder; holdReleased: boolean; chargeVoided: boolean }> {
+  ): Promise<{ order: CancelledOrder; money: OrderCancelMoney | null }> {
     if (!options.allowedStatuses.has(order.status)) {
       throw new BadRequestException(`Cannot cancel an order in status ${order.status}`);
     }
@@ -917,19 +940,8 @@ export class OrdersService {
       });
     });
 
-    // Money the customer authorized for an order that will never happen.
-    const released = await this.holds.releaseForOrder(order.id, `order-cancelled-by-${options.by}`);
-
-    this.realtime.emitOrderStatusChanged(
-      {
-        orderId: updated.id,
-        status: updated.status,
-        etaSeconds: 0,
-        occurredAt: (updated.cancelledAt ?? new Date()).toISOString(),
-      },
-      updated.userId,
-    );
-    // Off the kitchen board, whoever cancelled it; the board says so when the customer did.
+    // Off the kitchen board at once, whoever cancelled it; the board says so
+    // when the customer did. The money below is no business of the board's.
     const removed: KitchenOrderRemovedReason = options.by === 'customer' ? 'CANCELLED_BY_CUSTOMER' : 'REJECTED';
     this.realtime.emitKdsOrderChanged({
       storeId: updated.storeId,
@@ -940,9 +952,32 @@ export class OrdersService {
       orderCode: updated.orderCode,
     });
 
-    // A charge that was waiting for the accept never touched the card.
-    const voided = released !== null && isDeferredCharge(released);
-    return { order: updated, holdReleased: released !== null && !voided, chargeVoided: voided };
+    // Money the customer authorized for an order that will never happen.
+    const released = await this.holds.releaseForOrder(order.id, `order-cancelled-by-${options.by}`);
+    const cards = updated.payments.filter((p) => isCardProvider(p.provider));
+    const hadHold = cards.some((p) => p.status === 'REQUIRES_ACTION');
+    const captured = cards.find((p) => p.status === 'SUCCEEDED');
+    const money: OrderCancelMoney | null =
+      releaseOutcome(released, hadHold) ??
+      (captured && options.refundCaptured ? await options.refundCaptured(captured) : null) ??
+      // A card declined on the accept took nothing.
+      (options.reason === 'CARD_DECLINED' ? 'NOT_CHARGED' : null);
+    const settled = await this.prisma.order.update({
+      where: { id: order.id },
+      data: { cancelMoney: money },
+      include: CANCELLED_ORDER_INCLUDE,
+    });
+
+    this.realtime.emitOrderStatusChanged(
+      {
+        orderId: settled.id,
+        status: settled.status,
+        etaSeconds: 0,
+        occurredAt: (settled.cancelledAt ?? new Date()).toISOString(),
+      },
+      settled.userId,
+    );
+    return { order: settled, money };
   }
 
   /**
@@ -1195,6 +1230,7 @@ export class OrdersService {
       cancelledBy: order.cancelledBy,
       cancelReason: order.cancelReason,
       cancelComment: order.cancelComment,
+      cancelMoney: order.cancelMoney,
       expiredAt: order.expiredAt?.toISOString() ?? null,
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),

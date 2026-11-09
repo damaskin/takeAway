@@ -54,8 +54,7 @@ describe('KdsService.accept', () => {
     orders = {
       cancelOrder: jest.fn().mockResolvedValue({
         order: { ...order, status: 'CANCELLED', payments: [] },
-        holdReleased: false,
-        chargeVoided: false,
+        money: 'NOT_CHARGED',
       }),
     };
     holds = {
@@ -325,7 +324,7 @@ describe('KdsService.reject', () => {
   let service: KdsService;
 
   async function build(found: Record<string, unknown> | null = order): Promise<void> {
-    orders = { cancelOrder: jest.fn().mockResolvedValue({ order: cancelled, holdReleased: true }) };
+    orders = { cancelOrder: jest.fn().mockResolvedValue({ order: cancelled, money: 'RELEASED' }) };
     cards = { refund: jest.fn().mockResolvedValue('rrn-1') };
     notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
     const module = await Test.createTestingModule({
@@ -358,47 +357,69 @@ describe('KdsService.reject', () => {
       expect.objectContaining({ id: order.id }),
       'CANCELLED',
       {
-        rejection: { reason: 'OUT_OF_STOCK', comment: 'Нет молока', money: 'released' },
+        rejection: { reason: 'OUT_OF_STOCK', comment: 'Нет молока', money: 'RELEASED' },
       },
     );
     expect(cards.refund).not.toHaveBeenCalled();
   });
 
-  it('refunds a charge that was already captured', async () => {
+  const captured = {
+    id: 'pay-1',
+    provider: 'AGROPROMBANK_WEB',
+    status: 'SUCCEEDED',
+    amountCents: 3300,
+    refundedCents: 300,
+  };
+
+  /** cancelOrder settles a captured charge through the refund it is handed, as the real one does. */
+  function settleCaptured(): void {
+    orders.cancelOrder.mockImplementation(
+      async (_order: unknown, options: { refundCaptured: (p: typeof captured) => Promise<string> }) => ({
+        order: { ...cancelled, payments: [captured] },
+        money: await options.refundCaptured(captured),
+      }),
+    );
+  }
+
+  it('refunds what is left of a charge that was already captured', async () => {
     await build();
-    const captured = {
-      id: 'pay-1',
-      provider: 'AGROPROMBANK_WEB',
-      status: 'SUCCEEDED',
-      amountCents: 3300,
-      refundedCents: 0,
-    };
-    orders.cancelOrder.mockResolvedValue({ order: { ...cancelled, payments: [captured] }, holdReleased: false });
+    settleCaptured();
 
     const result = await service.reject('store-1', order.id, 'staff-1', { reason: 'CLOSING' });
 
     expect(cards.refund).toHaveBeenCalledWith(
       captured,
-      3300,
-      expect.objectContaining({ actorId: 'staff-1', source: 'kds' }),
+      3000,
+      expect.objectContaining({ actorId: 'staff-1', reason: 'store-rejected', source: 'kds' }),
     );
     expect(result.money).toBe('refunded');
+    expect(notifications.notifyOrderStatus.mock.calls[0][2]).toEqual({
+      rejection: { reason: 'CLOSING', comment: undefined, money: 'REFUNDED' },
+    });
   });
 
-  it('reports the money as pending when the bank did not release the hold yet', async () => {
+  it('reports the money as pending when the refund of a captured charge failed', async () => {
     await build();
-    const held = {
-      id: 'pay-1',
-      provider: 'AGROPROMBANK',
-      status: 'REQUIRES_ACTION',
-      amountCents: 3300,
-      refundedCents: 0,
-    };
-    orders.cancelOrder.mockResolvedValue({ order: { ...cancelled, payments: [held] }, holdReleased: false });
+    settleCaptured();
+    cards.refund.mockRejectedValue(new Error('bank is down'));
+
+    const result = await service.reject('store-1', order.id, 'staff-1', { reason: 'OTHER' });
+
+    expect(result.money).toBe('pending');
+  });
+
+  it.each([
+    ['NOT_CHARGED', 'not_charged'],
+    ['PENDING', 'pending'],
+    [null, 'none'],
+  ] as const)('answers the board with %s money as %s', async (money, answer) => {
+    await build();
+    orders.cancelOrder.mockResolvedValue({ order: cancelled, money });
 
     const result = await service.reject('store-1', order.id, 'staff-1', { reason: 'TOO_BUSY' });
 
-    expect(result.money).toBe('pending');
+    expect(result.money).toBe(answer);
+    expect(notifications.notifyOrderStatus.mock.calls[0][2].rejection.money).toBe(money);
     expect(cards.refund).not.toHaveBeenCalled();
   });
 

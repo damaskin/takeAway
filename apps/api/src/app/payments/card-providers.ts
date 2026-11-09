@@ -1,4 +1,4 @@
-import type { Payment, PaymentProvider } from '@prisma/client';
+import type { OrderCancelMoney, Payment, PaymentProvider } from '@prisma/client';
 
 /**
  * Providers that take a card through Agroprombank: the tokenized
@@ -28,4 +28,20 @@ export function isDeferredCharge(payment: Pick<Payment, 'rawJson'>): boolean {
   return (
     !!raw && typeof raw === 'object' && !Array.isArray(raw) && (raw as Record<string, unknown>)['deferred'] === true
   );
+}
+
+/**
+ * Where releasing an order's hold (PaymentHoldsService.releaseForOrder) left
+ * the customer's money, for `Order.cancelMoney` and the push: a charge put
+ * off until the accept and called off never touched the card
+ * (`NOT_CHARGED`); a hold that came off is `RELEASED`; one the bank did not
+ * let go of yet is `PENDING` — the reconciliation cron keeps trying. Null
+ * when the order had no hold to release.
+ */
+export function releaseOutcome(
+  released: Pick<Payment, 'rawJson'> | null,
+  hadHold: boolean,
+): Extract<OrderCancelMoney, 'NOT_CHARGED' | 'RELEASED' | 'PENDING'> | null {
+  if (released) return isDeferredCharge(released) ? 'NOT_CHARGED' : 'RELEASED';
+  return hadHold ? 'PENDING' : null;
 }

@@ -24,7 +24,7 @@ function orderRow(overrides: Record<string, unknown> = {}): Record<string, unkno
 interface Harness {
   service: OrderExpiryService;
   tx: { order: { findUnique: jest.Mock; updateMany: jest.Mock; update: jest.Mock } };
-  prisma: { order: { findMany: jest.Mock }; store: { findMany: jest.Mock } };
+  prisma: { order: { findMany: jest.Mock; update: jest.Mock }; store: { findMany: jest.Mock } };
   promo: { releaseForOrder: jest.Mock };
   giftCards: { releaseForOrder: jest.Mock };
   loyalty: { releaseForOrder: jest.Mock };
@@ -48,14 +48,15 @@ function harness(
       findUnique: jest.fn().mockResolvedValue(current ? { status: current['status'] } : null),
       // The claim matches the status read just before it.
       updateMany: jest.fn().mockResolvedValue({ count: current ? 1 : 0 }),
-      update: jest.fn().mockResolvedValue(orderRow({ status: 'EXPIRED' })),
+      // `payments`: the card hold still on the order when it was claimed, if any.
+      update: jest.fn().mockResolvedValue(orderRow({ status: 'EXPIRED', payments: [] })),
     },
     promoRedemption: { deleteMany: jest.fn() },
     giftCardRedemption: { findUnique: jest.fn() },
   };
 
   const prisma = {
-    order: { findMany: jest.fn().mockResolvedValue([]) },
+    order: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}) },
     store: { findMany: jest.fn().mockResolvedValue(opts.heldStores ?? []) },
     $transaction: jest.fn((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx))),
   };
@@ -197,8 +198,35 @@ describe('OrderExpiryService', () => {
       expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'order-1' }),
         'EXPIRED',
-        { expiry: { reason: 'payment_timeout', holdReleased: false, notCharged: false, refunded: false } },
+        { expiry: { reason: 'payment_timeout', money: null } },
       );
+      // Nothing to say about the money: the order keeps no outcome.
+      expect(h.prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Where the money went is written on the order before anyone is told —
+     * the outcome the push states, so the order screen can repeat it
+     * (2026-11-09).
+     */
+    it.each([
+      ['a released hold', { id: 'pay-1', rawJson: {} }, 'RELEASED'],
+      ['a deferred charge called off', { id: 'pay-1', rawJson: { deferred: true, voided: true } }, 'NOT_CHARGED'],
+      ['a hold the bank did not let go of', null, 'PENDING'],
+    ] as const)('records %s on the order and says so in the push', async (_, released, money) => {
+      const h = harness();
+      h.tx.order.update.mockResolvedValue(orderRow({ status: 'EXPIRED', payments: [{ id: 'pay-1' }] }));
+      h.holds.releaseForOrder.mockResolvedValue(released);
+
+      await h.service.expire('order-1', 'not_accepted');
+
+      expect(h.prisma.order.update).toHaveBeenCalledWith({ where: { id: 'order-1' }, data: { cancelMoney: money } });
+      expect(h.prisma.order.update.mock.invocationCallOrder[0]).toBeLessThan(
+        h.realtime.emitOrderStatusChanged.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(expect.anything(), 'EXPIRED', {
+        expiry: { reason: 'not_accepted', money },
+      });
     });
 
     // The acceptance SLA lets a paid order go once its payment was refunded.
@@ -221,8 +249,12 @@ describe('OrderExpiryService', () => {
         rule: 'accept_timeout',
       });
       expect(h.promo.releaseForOrder).toHaveBeenCalled();
+      expect(h.prisma.order.update).toHaveBeenCalledWith({
+        where: { id: 'order-1' },
+        data: { cancelMoney: 'REFUNDED' },
+      });
       expect(h.notifications.notifyOrderStatus).toHaveBeenCalledWith(expect.anything(), 'EXPIRED', {
-        expiry: expect.objectContaining({ reason: 'not_accepted', refunded: true }),
+        expiry: { reason: 'not_accepted', money: 'REFUNDED' },
       });
     });
   });
