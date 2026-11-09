@@ -326,7 +326,11 @@ describe('AdminProductOptionGroupsService', () => {
       { groups, overrides: [{ optionId: 'oi_oat', priceCents: 500, isDefault: null }] },
       'OPTION_GROUP_INVALID',
     ],
-    ['a group listed twice', { groups: [...groups, groups[0]!], overrides: [] }, 'OPTION_GROUP_INVALID'],
+    [
+      'a group listed twice',
+      { groups: [...groups, { groupId: 'og_coffee_size', sortOrder: 2 }], overrides: [] },
+      'OPTION_GROUP_INVALID',
+    ],
     ['an unknown group', { groups: [{ groupId: 'og_ghost', sortOrder: 0 }], overrides: [] }, 'OPTION_GROUP_INVALID'],
   ])('refuses %s', async (_what, dto, code) => {
     const { prisma, service } = build();
@@ -521,7 +525,9 @@ describe('options catalog roles', () => {
       expect(rolesOf(AdminStoreOptionStopsController, method)).toEqual(
         rolesOf(AdminStoresController, 'stopIngredient'),
       );
-      const handler = (AdminStoreOptionStopsController.prototype as unknown as Record<string, object>)[method]!;
+      const handler = (AdminStoreOptionStopsController.prototype as unknown as Record<string, object>)[
+        method
+      ] as object;
       expect(Reflect.getMetadata(KDS_SESSION_KEY, handler)).toEqual({ from: 'param', key: 'storeId' });
     }
     for (const method of ['get', 'replace']) {

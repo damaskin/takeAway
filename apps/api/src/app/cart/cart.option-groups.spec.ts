@@ -508,7 +508,7 @@ describe('CartService with the options catalog — checkout', () => {
   it.each([
     [
       'switched off by the brand',
-      { 'p-cappuccino': cappuccinoGroups(group({ ...milk(), options: [milk().options[0]!] })) },
+      { 'p-cappuccino': cappuccinoGroups(group({ ...milk(), options: milk().options.slice(0, 1) })) },
     ],
     ['stopped in the store', { 'p-cappuccino': cappuccinoGroups(milk(1000, { available: false })) }],
     ['detached with its group', { 'p-cappuccino': cappuccinoGroups().filter((g) => g.id !== 'og_milk') }],
