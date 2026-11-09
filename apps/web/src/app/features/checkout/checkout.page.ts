@@ -17,12 +17,15 @@ import {
   isCartChangedError,
   isStoreInactive,
   productKind,
+  readyTimeShown,
+  readyWindowTimes,
   suggestionRow,
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
 import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
+import { type Observable, map } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
@@ -154,8 +157,8 @@ interface Step {
                 <button
                   type="button"
                   (click)="selectMode('ASAP')"
-                  [disabled]="!storeOpen()"
-                  [style.opacity]="storeOpen() ? 1 : 0.45"
+                  [disabled]="!asapOpen()"
+                  [style.opacity]="asapOpen() ? 1 : 0.45"
                   class="flex items-center justify-center w-full"
                   [style.background]="mode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-cream)'"
                   [style.color]="mode() === 'ASAP' ? 'var(--color-foam)' : 'var(--color-espresso)'"
@@ -181,6 +184,12 @@ interface Step {
                   data-testid="asap-blocked"
                   style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
                   >{{ asapBlockedLine() ?? ('web.checkout.closedNow' | translate) }}</span
+                >
+              } @else if (cartAsapBlocked() && !storeInactive()) {
+                <span
+                  data-testid="asap-blocked"
+                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                  >{{ queueBlockedKey() | translate }}</span
                 >
               }
 
@@ -322,20 +331,30 @@ interface Step {
               }
 
               <div>
-                <p
-                  style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
-                >
-                  {{
-                    (fulfillmentType() === 'DELIVERY' ? 'web.checkout.deliveryBy' : 'common.readyBy')
-                      | translate: { time: readyTimeLabel() }
-                  }}
-                </p>
-                <p
-                  class="mt-1"
-                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
-                >
-                  {{ 'web.checkout.prepStartHint' | translate: { time: prepStartLabel() } }}
-                </p>
+                @if (queueReady(); as ready) {
+                  <!-- The order queue policy: «Если закажете сейчас — будет готово в 12:11 · ≈ 11 мин». -->
+                  <p
+                    data-testid="queue-ready"
+                    style="font-family: var(--font-sans); font-size: 18px; font-weight: 700; color: var(--color-caramel)"
+                  >
+                    {{ 'common.queue.readyIfNow' | translate: ready }}
+                  </p>
+                } @else {
+                  <p
+                    style="font-family: var(--font-sans); font-size: 24px; font-weight: 700; color: var(--color-caramel)"
+                  >
+                    {{
+                      (fulfillmentType() === 'DELIVERY' ? 'web.checkout.deliveryBy' : 'common.readyBy')
+                        | translate: { time: readyTimeLabel() }
+                    }}
+                  </p>
+                  <p
+                    class="mt-1"
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                  >
+                    {{ 'web.checkout.prepStartHint' | translate: { time: prepStartLabel() } }}
+                  </p>
+                }
               </div>
             </section>
 
@@ -951,8 +970,39 @@ export class CheckoutPage implements OnInit {
     suggestionRow(this.menu(), this.basketProductIds(), this.suggestions(), 6),
   );
 
+  /**
+   * The order queue policy said this cart cannot be ordered for now (it
+   * would be ready after the closing, or past the longest wait). Absent with
+   * the policy off, so the store's own `openNow` decides as before.
+   */
+  readonly cartAsapBlocked = computed(() => this.cart()?.asapAvailable === false);
+  /** «Сейчас» can be picked: the store takes orders for now, and so does this cart. */
+  readonly asapOpen = computed(() => this.storeOpen() && !this.cartAsapBlocked());
+
+  /** Why the cart cannot be ordered for now under the queue policy. */
+  readonly queueBlockedKey = computed(() => {
+    switch (this.cart()?.asapBlockedReason) {
+      case 'CLOSING_SOON':
+        return 'common.queue.closingSoon';
+      case 'QUEUE_FULL':
+        return 'common.asapBlocked.queueFull';
+      default:
+        return 'web.checkout.closedNow';
+    }
+  });
+
+  /** «Если закажете сейчас — будет готово в 12:11 · ≈ 11 мин» (queue policy, ordering for now). */
+  readonly queueReady = computed(() => {
+    const c = this.cart();
+    if (this.mode() !== 'ASAP' || !c?.readyAt || c.asapAvailable === false) return null;
+    const shown = readyTimeShown(c.readyAt, Date.now());
+    return { time: this.formatPickupTime(new Date(shown.at)), min: shown.minutes };
+  });
+
   readonly readyAt = computed<Date>(() => {
     if (this.mode() === 'ASAP') {
+      const queued = this.cart()?.readyAt;
+      if (queued) return new Date(readyTimeShown(queued, Date.now()).at);
       return new Date(Date.now() + (this.cart()?.etaSeconds ?? 0) * 1000);
     }
     const iso = this.scheduledAt();
@@ -1002,6 +1052,16 @@ export class CheckoutPage implements OnInit {
   );
 
   constructor() {
+    // Under the queue policy the cart itself may be too late for «Сейчас»
+    // (the closing, the longest wait): a time later is preselected then.
+    effect(() => {
+      if (!this.cartAsapBlocked() || untracked(this.mode) !== 'ASAP') return;
+      untracked(() => {
+        this.mode.set('SCHEDULED');
+        this.loadSlots();
+      });
+    });
+
     // The store opening, closing or filling up while the customer is here
     // turns «Сейчас» on or off without a reload.
     refreshStoresWhileVisible((event) => {
@@ -1341,7 +1401,7 @@ export class CheckoutPage implements OnInit {
   }
 
   selectMode(mode: PickupMode): void {
-    if (mode === 'ASAP' && !this.storeOpen()) return;
+    if (mode === 'ASAP' && !this.asapOpen()) return;
     this.mode.set(mode);
     if (mode === 'SCHEDULED') this.loadSlots();
   }
@@ -1385,7 +1445,7 @@ export class CheckoutPage implements OnInit {
     const storeId = this.activeStoreId();
     if (!storeId) return;
     this.slotsLoading.set(true);
-    this.catalog.getPickupSlots(storeId, this.cart()?.id).subscribe({
+    this.pickupTimes(storeId).subscribe({
       next: (slots) => {
         this.slots.set(slots);
         this.slotsLoading.set(false);
@@ -1401,6 +1461,23 @@ export class CheckoutPage implements OnInit {
         this.slotsLoading.set(false);
       },
     });
+  }
+
+  /**
+   * The times to pick from: the 15-minute slots, or under the order queue
+   * policy — the cart then carries its `readyAt` — every five minutes of the
+   * free windows (and each window's ends), in the same picker.
+   */
+  private pickupTimes(storeId: string): Observable<PickupSlot[]> {
+    const cartId = this.cart()?.id;
+    if (this.cart()?.readyAt === undefined) return this.catalog.getPickupSlots(storeId, cartId);
+    return this.catalog
+      .getReadyWindows(storeId, cartId)
+      .pipe(
+        map((windows) =>
+          readyWindowTimes(windows).map((at) => ({ startsAt: at, endsAt: at, taken: 0, capacity: 0, available: true })),
+        ),
+      );
   }
 
   /**

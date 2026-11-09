@@ -885,6 +885,12 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     const o = this.order();
     const left = this.dueInMs();
     if (!o || left <= 0 || o.status === 'READY' || this.isTerminal(o.status)) return null;
+    if (left < CLOCK_FROM_MS && o.readyFromQueue === true) {
+      // The order queue policy: «Готов в 12:11 · ≈ 11 мин», the time rounded up so it is never early.
+      const due = Date.parse(orderDueAt(o));
+      const time = this.pickupClock(new Date(Math.ceil(due / 60_000) * 60_000));
+      return { key: 'common.queue.readyAt', params: { time, min: minutesIn(left) } };
+    }
     if (left < CLOCK_FROM_MS) return { key: 'web.orderStatus.pickupIn', params: { min: minutesIn(left) } };
     return { key: 'web.orderStatus.pickupAt', params: { time: this.pickupClock(new Date(orderDueAt(o))) } };
   });

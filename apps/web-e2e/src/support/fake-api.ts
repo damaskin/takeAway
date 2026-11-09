@@ -200,6 +200,13 @@ export async function installFakeApi(
     store?: Record<string, unknown>;
     /** `POST /orders/:id/cancel` answers 409 ORDER_NOT_CANCELLABLE with this reason. */
     cancelRefusal?: 'ACCEPTED' | 'CHARGED';
+    /**
+     * The API runs the order queue policy (QUEUE_POLICY_ENABLED): the cart
+     * says when it would be ready (11 minutes from now) and whether it can be
+     * ordered for now (`asapBlockedReason` when not), `ready-windows` answers
+     * one window an hour from now, and orders carry `readyFromQueue`.
+     */
+    queuePolicy?: { asapBlockedReason?: 'CLOSING_SOON' | 'QUEUE_FULL' };
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -230,6 +237,13 @@ export async function installFakeApi(
       subtotalCents,
       // Mirrors the server: store overhead plus the longest single item.
       etaSeconds: items.length === 0 ? 0 : 420 + longestPrep,
+      ...(opts.queuePolicy && items.length > 0
+        ? {
+            readyAt: new Date(Date.now() + 11 * 60_000).toISOString(),
+            asapAvailable: !opts.queuePolicy.asapBlockedReason,
+            asapBlockedReason: opts.queuePolicy.asapBlockedReason ?? null,
+          }
+        : {}),
       items: items.map((i) => ({
         id: i.id,
         productId: i.productId,
@@ -278,6 +292,7 @@ export async function installFakeApi(
       cancelMoney: null,
       readyEstimateAt: null,
       canCancel: true,
+      ...(opts.queuePolicy ? { readyFromQueue: true } : {}),
       ...patch,
     };
   };
@@ -305,6 +320,10 @@ export async function installFakeApi(
     // ── Catalogue ───────────────────────────────────────────────────────
     if (path === '/stores') return json(route, [store]);
     if (path.match(/^\/stores\/[^/]+\/pickup-slots$/)) return json(route, slots());
+    if (path.match(/^\/stores\/[^/]+\/ready-windows$/)) {
+      const from = Math.ceil((Date.now() + 60 * 60_000) / 60_000) * 60_000;
+      return json(route, [{ from: new Date(from).toISOString(), to: new Date(from + 12 * 60_000).toISOString() }]);
+    }
     if (path.match(/^\/stores\/[^/]+\/suggestions$/)) {
       if (!opts.copurchase) return json(route, { statusCode: 404 }, 404);
       const inHand = (url.searchParams.get('productIds') ?? '').split(',');

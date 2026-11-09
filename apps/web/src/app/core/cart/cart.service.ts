@@ -1,5 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
+import type { AsapBlockedReason } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -24,6 +25,14 @@ export interface CartView {
   etaSeconds: number;
   items: CartItemView[];
   updatedAt: string;
+  /**
+   * Under the order queue policy only (absent otherwise): when the cart
+   * would be ready if ordered now, whether it can be ordered for now, and
+   * why not («Не успеем до закрытия» on CLOSING_SOON).
+   */
+  readyAt?: string;
+  asapAvailable?: boolean;
+  asapBlockedReason?: AsapBlockedReason | null;
 }
 
 export interface AddToCartInput {

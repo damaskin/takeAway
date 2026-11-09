@@ -93,6 +93,12 @@ export interface OrderView {
    */
   readyEstimateAt?: string | null;
   /**
+   * True while the API runs the order queue policy: the due time is the
+   * queue's, kept up to date, shown as «Готов в 12:11 · ≈ 11 мин». Absent
+   * otherwise.
+   */
+  readyFromQueue?: boolean;
+  /**
    * The customer may still cancel: not accepted yet and no money taken.
    * Absent from an API older than this build — then CREATED and PAID count.
    */
