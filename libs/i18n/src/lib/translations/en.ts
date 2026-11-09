@@ -40,6 +40,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       closingSoon: 'Closing soon — order ahead only',
       until: 'until {{time}}',
     },
+    /** The ready time under the order queue policy (QUEUE_POLICY_ENABLED): cart, checkout, order screen. */
+    queue: {
+      readyIfNow: 'Order now and it will be ready at {{time}} · ≈ {{min}} min',
+      readyAt: 'Ready at {{time}} · ≈ {{min}} min',
+      closingSoon: "We won't make it before closing — order for a later time",
+    },
     /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
     asapBlocked: {
       opensAt: 'The store opens at {{time}} — pick a time for your order.',
@@ -1561,6 +1567,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         hint: 'move to «New» once accepted, or 15 minutes before cooking starts',
         dueStart: 'for {{time}} · start at {{start}}',
       },
+      queue: {
+        ready: 'ready at {{ready}}',
+        readyStart: 'ready at {{ready}} · start at {{start}}',
+      },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
         awaitingPreorder: 'Waiting to be accepted',
@@ -2055,6 +2065,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         price: 'Price, {{currency}}',
         pricePlaceholder: 'e.g. 35.50',
         prep: 'Preparation time, min',
+        prepParallel: 'Made alongside',
+        prepParallelHint:
+          'Takes no place in the kitchen and is made at the same time as the rest of the order — a bottle of water, a pastry from an oven of its own. An order of it and a coffee is ready when the coffee is.',
         description: 'Description',
         descriptionHint: 'What is in it and why it is good: customers read this on the product page.',
         category: 'Category',
@@ -2444,6 +2457,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
+        loadExtra: 'Busy: +N min',
+        loadExtraHint:
+          'Whole minutes, 0 to 60. While the kitchen has «Busy» on, this many minutes are added to the time to accept an order: an order placed then may be started later, and the customer sees the later ready time straight away. Used by the new order queue.',
         capacitySummary:
           'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks). A window without that much time left for a new order shows as taken — however many orders it holds.',
       },

@@ -3,6 +3,7 @@ import {
   ACCEPT_WINDOW_MAX_MINUTES,
   ACCEPT_WINDOW_MIN_MINUTES,
   DEFAULT_ACCEPT_WINDOW_MINUTES,
+  LOAD_EXTRA_MAX_MINUTES,
 } from '@takeaway/shared-types';
 import type { LatLng } from '@takeaway/ui-kit';
 import { isUnsetTimeZone } from '@takeaway/utils';
@@ -35,6 +36,14 @@ export const ACCEPT_MINUTES_VALIDATORS: ValidatorFn[] = [
   Validators.required,
   Validators.min(ACCEPT_WINDOW_MIN_MINUTES),
   Validators.max(ACCEPT_WINDOW_MAX_MINUTES),
+  Validators.pattern(/^\d+$/),
+];
+
+/** «Загрузка: +N мин» (`loadExtraSeconds`) of the queue policy: whole minutes from 0 to 60. */
+export const LOAD_EXTRA_MINUTES_VALIDATORS: ValidatorFn[] = [
+  Validators.required,
+  Validators.min(0),
+  Validators.max(LOAD_EXTRA_MAX_MINUTES),
   Validators.pattern(/^\d+$/),
 ];
 

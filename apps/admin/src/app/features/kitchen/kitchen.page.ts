@@ -356,6 +356,14 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
                 'admin.kitchen.preorders.dueStart'
                   | translate: { time: pickupTime(order), start: shiftTime(order.startBy) }
               }}
+            } @else if (plannedReady(order); as ready) {
+              <span data-testid="ticket-planned">
+                @if (order.status === 'IN_PROGRESS' || !order.startBy) {
+                  {{ 'admin.kitchen.queue.ready' | translate: { ready } }}
+                } @else {
+                  {{ 'admin.kitchen.queue.readyStart' | translate: { ready, start: shiftTime(order.startBy) } }}
+                }
+              </span>
             } @else {
               {{ 'kds.card.due' | translate: { time: pickupTime(order) } }}
             }
@@ -1438,6 +1446,17 @@ export class KitchenPage {
 
   pickupTime(order: KitchenOrder): string {
     return this.fmt.time(order.pickupAt, this.store()?.timezone);
+  }
+
+  /**
+   * «готов к 12:11» under the queue policy: when the queue has the order
+   * ready (`plannedReadyAt`, G), rounded up to the minute so it is never
+   * early. Null with the policy off (older API builds, the flag off).
+   */
+  plannedReady(order: KitchenOrder): string | null {
+    if (!order.plannedReadyAt || order.status === 'READY') return null;
+    const minute = Math.ceil(Date.parse(order.plannedReadyAt) / 60_000) * 60_000;
+    return this.fmt.time(new Date(minute).toISOString(), this.store()?.timezone);
   }
 
   dueColor(order: KitchenOrder): string {

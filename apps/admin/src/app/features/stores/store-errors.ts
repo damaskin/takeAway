@@ -55,6 +55,7 @@ const STORE_ERRORS: ApiErrorWording = {
     pickupPointType: 'admin.stores.ops.pickupPoint',
     baseEtaSeconds: 'admin.stores.ops.baseEta',
     kitchenParallelism: 'admin.stores.ops.parallelism',
+    loadExtraSeconds: 'admin.stores.ops.loadExtra',
     minOrderCents: 'admin.stores.ops.minOrderShort',
     deliveryFeeBaseCents: 'admin.stores.delivery.baseFeeShort',
     deliveryFeePerKmCents: 'admin.stores.delivery.perKmShort',

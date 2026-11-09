@@ -14,6 +14,8 @@ import {
   ACCEPT_WINDOW_MAX_MINUTES,
   ACCEPT_WINDOW_MIN_MINUTES,
   DEFAULT_ACCEPT_WINDOW_MINUTES,
+  DEFAULT_LOAD_EXTRA_MINUTES,
+  LOAD_EXTRA_MAX_MINUTES,
   STORE_KINDS,
 } from '@takeaway/shared-types';
 import { LeafletMapComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
@@ -36,7 +38,13 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { type AdminRole, canOnStores } from '../../core/permissions/permissions';
 import { AddressLocator } from './address-locator';
 import { LocatorStatusComponent } from './locator-status.component';
-import { ACCEPT_MINUTES_VALIDATORS, STORE_CURRENCIES, STORE_SLUG_PATTERN, acceptWindowMinutes } from './store-options';
+import {
+  ACCEPT_MINUTES_VALIDATORS,
+  LOAD_EXTRA_MINUTES_VALIDATORS,
+  STORE_CURRENCIES,
+  STORE_SLUG_PATTERN,
+  acceptWindowMinutes,
+} from './store-options';
 import { storeErrorMessage } from './store-errors';
 import { StoreKitchenAccessComponent } from './store-kitchen-access.component';
 import { StorePhotosComponent } from './store-photos.component';
@@ -387,6 +395,20 @@ function toCents(units: number | null): number | null {
                       [class.invalid]="shows('kitchenParallelism')"
                     />
                     <span class="hint">{{ 'admin.stores.ops.parallelismHint' | translate }}</span>
+                  </label>
+                  <label class="field">
+                    <span class="label">{{ 'admin.stores.ops.loadExtra' | translate }}</span>
+                    <input
+                      formControlName="loadExtraMinutes"
+                      type="number"
+                      min="0"
+                      [max]="loadExtraMax"
+                      step="1"
+                      class="input mono"
+                      data-testid="store-load-extra-minutes"
+                      [class.invalid]="shows('loadExtraMinutes')"
+                    />
+                    <span class="hint">{{ 'admin.stores.ops.loadExtraHint' | translate }}</span>
                   </label>
                 </div>
                 @if (capacity(); as cap) {
@@ -795,6 +817,10 @@ export class StoreEditorComponent implements OnInit {
     kitchenParallelism: new FormControl<number | null>(2, {
       validators: [Validators.required, Validators.min(1), Validators.max(20)],
     }),
+    /** «Загрузка: +N мин» (`loadExtraSeconds`) of the queue policy: whole minutes 0–60. */
+    loadExtraMinutes: new FormControl<number | null>(DEFAULT_LOAD_EXTRA_MINUTES, {
+      validators: LOAD_EXTRA_MINUTES_VALIDATORS,
+    }),
     delivery: new FormGroup({
       baseFee: new FormControl<number | null>(null, { validators: [Validators.min(0)] }),
       perKm: new FormControl<number | null>(null, { validators: [Validators.min(0)] }),
@@ -841,6 +867,7 @@ export class StoreEditorComponent implements OnInit {
   });
 
   readonly acceptMinutes = { min: ACCEPT_WINDOW_MIN_MINUTES, max: ACCEPT_WINDOW_MAX_MINUTES };
+  readonly loadExtraMax = LOAD_EXTRA_MAX_MINUTES;
 
   readonly timezoneUnset = computed(() => isUnsetTimeZone(this.zoneName()));
   /** What the address and the map pin imply, for the one-click fix of an unset zone. */
@@ -1098,6 +1125,7 @@ export class StoreEditorComponent implements OnInit {
       kinds: STORE_KINDS.filter((k) => v.kinds[k]),
       baseEtaSeconds: Math.round(v.baseEtaMinutes ?? DEFAULT_ACCEPT_WINDOW_MINUTES) * 60,
       kitchenParallelism: v.kitchenParallelism ?? 1,
+      loadExtraSeconds: Math.round(v.loadExtraMinutes ?? DEFAULT_LOAD_EXTRA_MINUTES) * 60,
     };
     // Sent only when changed here, so an open/close from the card isn't undone by a later save.
     if (this.detailsForm.controls.status.dirty) payload.status = v.status;
@@ -1148,6 +1176,7 @@ export class StoreEditorComponent implements OnInit {
       pickupPointType: s.pickupPointType ?? 'COUNTER',
       baseEtaMinutes: acceptWindowMinutes(s.baseEtaSeconds),
       kitchenParallelism: s.kitchenParallelism ?? 2,
+      loadExtraMinutes: Math.round((s.loadExtraSeconds ?? DEFAULT_LOAD_EXTRA_MINUTES * 60) / 60),
       delivery: {
         baseFee: toUnits(s.deliveryFeeBaseCents),
         perKm: toUnits(s.deliveryFeePerKmCents),
