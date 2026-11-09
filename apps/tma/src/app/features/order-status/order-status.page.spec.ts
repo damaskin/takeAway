@@ -196,6 +196,47 @@ describe('TmaOrderStatusPage', () => {
       expect(lines(root)).toEqual(['Заведение сейчас перегружено заказами.', 'Деньги вернутся на карту.']);
       destroy();
     });
+
+    /**
+     * The store turned down an order paid with a card hold: the push said
+     * «Деньги не списаны, блокировка на карте снята» — and so does the page,
+     * once the API recorded it; the payment reads REFUNDED either way.
+     */
+    it('says the hold came off, in the words of the push, and never «Спишем при принятии заказа»', async () => {
+      const { root, byTestId, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'STORE',
+          cancelReason: 'TOO_BUSY',
+          cancelMoney: 'RELEASED',
+          payment: { state: 'REFUNDED', amountCents: 4500, cardMask: null, paidAt: null },
+        }),
+      );
+      expect(lines(root)).toEqual([
+        'Заведение сейчас перегружено заказами.',
+        'Деньги не списаны, блокировка на карте снята.',
+      ]);
+      expect(byTestId('payment-line')?.textContent).toContain('Блокировка снята');
+      destroy();
+    });
+
+    it('says the money is still coming back on a cancelled order whose hold the bank kept', async () => {
+      const { root, byTestId, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'CUSTOMER',
+          cancelMoney: 'PENDING',
+          payment: { state: 'HELD', amountCents: 4500, cardMask: null, paidAt: null },
+        }),
+      );
+      expect(lines(root)).toEqual(['Блокировка на карте будет снята автоматически.']);
+      expect(byTestId('payment-line')?.textContent).toContain('Возврат в обработке');
+      expect(root.textContent).not.toContain('Спишем при принятии заказа');
+      expect(root.textContent).not.toContain('Если точка не примет заказ');
+      destroy();
+    });
   });
 
   it('keeps the order when the customer says no', async () => {

@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
   CreateOrderReviewRequest,
+  OrderCancelMoney,
   OrderCancelReason,
   OrderCancelledBy,
   OrderItemSnapshot,
@@ -73,6 +74,12 @@ export interface OrderView {
   cancelledBy?: OrderCancelledBy | null;
   cancelReason?: OrderCancelReason | null;
   cancelComment?: string | null;
+  /**
+   * Where the money of a cancelled or expired order went, as the push said —
+   * read it with `endedOrderMoney`. Null when the API could not tell; absent
+   * from an older API.
+   */
+  cancelMoney?: OrderCancelMoney | null;
   /**
    * The customer may review the order now: handed over and not reviewed
    * yet. Absent from an older API — then no review is asked.
