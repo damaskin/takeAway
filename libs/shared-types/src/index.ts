@@ -1,6 +1,7 @@
 export * from './lib/shared-types';
 export * from './lib/auth';
 export * from './lib/catalog';
+export * from './lib/option-groups';
 export * from './lib/order';
 export * from './lib/order-review';
 export * from './lib/loyalty';

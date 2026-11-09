@@ -2,6 +2,7 @@
  * Catalog transport types shared between apps/api, web, tma, admin.
  */
 
+import type { ProductOptionGroup } from './option-groups';
 import type { PickupPointType } from './shared-types';
 
 export type StoreStatus = 'OPEN' | 'CLOSED' | 'OVERLOADED';
@@ -218,6 +219,13 @@ export interface ProductSummary {
   sortOrder: number;
   onStopList?: boolean;
   /**
+   * Has catalog option groups the customer has to look at before it goes in
+   * the cart (a variant to pick, or an add-on with a minimum): a menu tile
+   * opens the product instead of adding it in one tap. Optional for older
+   * API builds.
+   */
+  hasRequiredOptions?: boolean;
+  /**
    * The kind of the product's category, so a product fetched on its own
    * (deep link, favourites) still picks the right placeholder and labels.
    * Missing from older API builds: treat as OTHER.
@@ -230,6 +238,13 @@ export interface ProductDetail extends ProductSummary {
   brandId: string;
   variations: Variation[];
   modifiers: Modifier[];
+  /**
+   * Groups from the options catalog attached to the product, variants first,
+   * in the product's order. When non-empty the product is ordered through
+   * them alone and `variations` / `modifiers` are empty. Optional for older
+   * API builds: treat missing as empty.
+   */
+  optionGroups?: ProductOptionGroup[];
 }
 
 export interface CategoryWithProducts {

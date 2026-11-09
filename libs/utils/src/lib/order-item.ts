@@ -1,10 +1,15 @@
 import type {
   CartChangedError,
+  OptionGroupKind,
+  OptionGroupType,
+  OptionLine,
   OrderItemModifier,
   OrderItemSnapshot,
   OrderItemVariation,
   VariationType,
 } from '@takeaway/shared-types';
+
+import { describeOptionLines } from './option-groups';
 
 /**
  * The order a barista reads a drink in: the size picks the cup and the milk
@@ -41,19 +46,27 @@ export function readOrderItemSnapshot(raw: unknown): OrderItemSnapshot {
     unitPrepSeconds: isFiniteNumber(snap['unitPrepSeconds']) ? snap['unitPrepSeconds'] : 0,
     variations: sortVariationsForDisplay(readList(snap['variations'], readVariation)),
     modifierLines: readList(snap['modifierLines'], readModifier),
+    optionLines: readList(snap['optionLines'], readOptionLine),
   };
 }
 
 /**
  * The line's options as one run of text for a receipt or an order list:
- * "L · Oat · +Vanilla syrup ×2". Empty when there are none. The customer's
- * notes are left out — they are their own words and get a line of their own.
+ * "L · Oat · +Vanilla syrup ×2", or for a product on the options catalog
+ * "M, Горячий · Овсяное · Ваниль + Солёная карамель · Сахар ×2". Empty when
+ * there are none. The customer's notes are left out — they are their own
+ * words and get a line of their own.
  */
-export function describeOrderItemOptions(snapshot: Pick<OrderItemSnapshot, 'variations' | 'modifierLines'>): string {
+export function describeOrderItemOptions(
+  snapshot: Pick<OrderItemSnapshot, 'variations' | 'modifierLines'> & { optionLines?: readonly OptionLine[] },
+): string {
   return [
     ...snapshot.variations.map((v) => v.name),
     ...snapshot.modifierLines.map((m) => (m.count > 1 ? `+${m.name} ×${m.count}` : `+${m.name}`)),
-  ].join(' · ');
+    describeOptionLines(snapshot.optionLines ?? []),
+  ]
+    .filter((part) => part !== '')
+    .join(' · ');
 }
 
 /** Recognises the 409 body `POST /orders` answers with when the cart no longer matches the menu. */
@@ -89,6 +102,31 @@ function readModifier(entry: unknown): OrderItemModifier | null {
   if (typeof id !== 'string' || typeof name !== 'string') return null;
   if (!isFiniteNumber(count) || count <= 0) return null;
   return { id, name, count, priceCents: isFiniteNumber(priceCents) ? priceCents : 0 };
+}
+
+const OPTION_KINDS: readonly OptionGroupKind[] = ['VARIANT', 'ADDON'];
+const OPTION_TYPES: readonly OptionGroupType[] = ['A', 'B', 'C', 'D'];
+
+function readOptionLine(entry: unknown): OptionLine | null {
+  if (!isRecord(entry)) return null;
+  const { groupId, groupName, kind, type, optionId, name, qty, unitPriceCents, freeQty, totalCents } = entry;
+  if (typeof optionId !== 'string' || typeof name !== 'string') return null;
+  if (!isFiniteNumber(qty) || qty <= 0) return null;
+  const knownKind = OPTION_KINDS.find((k) => k === kind);
+  const knownType = OPTION_TYPES.find((t) => t === type);
+  if (!knownKind || !knownType) return null;
+  return {
+    groupId: typeof groupId === 'string' ? groupId : '',
+    groupName: typeof groupName === 'string' ? groupName : '',
+    kind: knownKind,
+    type: knownType,
+    optionId,
+    name,
+    qty,
+    unitPriceCents: isFiniteNumber(unitPriceCents) ? unitPriceCents : 0,
+    freeQty: isFiniteNumber(freeQty) ? freeQty : 0,
+    totalCents: isFiniteNumber(totalCents) ? totalCents : 0,
+  };
 }
 
 function readCounts(value: unknown): Record<string, number> {

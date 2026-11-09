@@ -1246,6 +1246,8 @@ export class OrdersService {
       unitPrepSeconds: line.unitPrepSeconds,
       variations: line.variations,
       modifierLines: line.modifierLines,
+      // Filled from the cart line's catalog picks (docs/option-groups.md).
+      optionLines: [],
     };
   }
 

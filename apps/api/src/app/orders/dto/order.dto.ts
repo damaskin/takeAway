@@ -9,7 +9,7 @@ import {
   PickupMode,
   VariationType,
 } from '@prisma/client';
-import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation } from '@takeaway/shared-types';
+import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation, OptionLine } from '@takeaway/shared-types';
 
 export class OrderItemVariationDto implements OrderItemVariation {
   @ApiProperty()
@@ -82,6 +82,14 @@ export class OrderItemSnapshotDto implements OrderItemSnapshot {
 
   @ApiProperty({ type: [OrderItemModifierDto], description: 'Extras with a positive count, in menu order.' })
   modifierLines!: OrderItemModifierDto[];
+
+  @ApiProperty({
+    type: 'array',
+    items: { type: 'object' },
+    description:
+      'Picks from the options catalog (OptionLine), variants first, in page order. Empty for products without catalog groups.',
+  })
+  optionLines!: OptionLine[];
 }
 
 export class OrderItemDto {
