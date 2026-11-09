@@ -7,6 +7,7 @@ import { TranslateService, type Translation, provideTranslateService } from '@ng
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type {
   CategoryKind,
+  OptionLine,
   PickupSlot,
   ProductSummary,
   StoreListItem,
@@ -141,7 +142,7 @@ describe('TmaCheckoutPage — pickup time', () => {
 
   async function open(
     store: StoreListItem,
-    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions> } = {},
+    opts: { menu?: StoreMenu; suggestions?: Observable<StoreSuggestions>; cart?: CartView } = {},
   ) {
     mainButton = null;
     catalog = {
@@ -158,7 +159,7 @@ describe('TmaCheckoutPage — pickup time', () => {
         provideRouter([{ path: 'checkout', component: TmaCheckoutPage }]),
         provideTranslateService({ fallbackLang: 'ru' }),
         { provide: TmaAuthStore, useValue: { isAuthenticated: signal(true) } },
-        { provide: CartService, useValue: { load: jest.fn(() => of(CART)) } },
+        { provide: CartService, useValue: { load: jest.fn(() => of(opts.cart ?? CART)) } },
         { provide: ActiveStoreService, useValue: { current: signal(STORE.id) } },
         { provide: CatalogService, useValue: catalog },
         { provide: OrdersApi, useValue: orders },
@@ -204,6 +205,25 @@ describe('TmaCheckoutPage — pickup time', () => {
       Array.from(root.querySelectorAll('[data-testid="slot-day"]')).map((el) => el.getAttribute('label') ?? '');
     return { page, root, texts, days, detect: () => harness.detectChanges() };
   }
+
+  it('spells out a line chosen from the options catalog under its name', async () => {
+    const line = (over: Pick<OptionLine, 'groupId' | 'kind' | 'type' | 'optionId' | 'name'>, qty = 1): OptionLine => ({
+      groupName: over.groupId,
+      qty,
+      unitPriceCents: 0,
+      freeQty: 0,
+      totalCents: 0,
+      ...over,
+    });
+    const options = [
+      line({ groupId: 'size', kind: 'VARIANT', type: 'A', optionId: 'm', name: 'M' }),
+      line({ groupId: 'milk', kind: 'ADDON', type: 'A', optionId: 'oat', name: 'Овсяное' }),
+      line({ groupId: 'sugar', kind: 'ADDON', type: 'C', optionId: 'sugar', name: 'Сахар' }, 2),
+    ];
+    const { texts } = await open(STORE, { cart: { ...CART, items: CART.items.map((item) => ({ ...item, options })) } });
+
+    expect(texts('cart-line-options')).toEqual(['M · Овсяное · Сахар ×2']);
+  });
 
   it('takes a pre-order for tomorrow morning while the store is closed for the night', async () => {
     const { page, root, texts, days } = await open(NIGHT);

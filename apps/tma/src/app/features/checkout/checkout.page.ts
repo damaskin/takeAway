@@ -13,6 +13,7 @@ import type {
 import {
   calendarDaysFrom,
   computeTax,
+  describeOptionLines,
   groupSlotsByDay,
   isCartChangedError,
   isStoreInactive,
@@ -28,7 +29,7 @@ import { ProductImageComponent } from '@takeaway/ui-kit';
 import { type Observable, map } from 'rxjs';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
-import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
+import { CartService, lineSelections, type CartItemView, type CartView } from '../../core/cart/cart.service';
 import { ActiveStoreService } from '../../core/catalog/active-store.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
@@ -340,58 +341,67 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             >
               @for (item of c.items; track item.id) {
                 @let look = lineLooks().get(item.productId);
-                <div class="flex items-center justify-between" style="gap: 12px">
-                  <lib-product-image
-                    [src]="look?.src"
-                    [kind]="look?.kind"
-                    alt=""
-                    style="flex: none; width: 36px; height: 36px; border-radius: 9px"
-                  />
-                  <span
-                    class="flex-1"
-                    style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-                    >{{ item.productName }}</span
-                  >
-                  @if (!placedOrder()) {
-                    <div
-                      class="flex items-center"
-                      style="border: 1px solid var(--color-border-light); border-radius: 999px; height: 30px"
-                      [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
+                <div class="flex flex-col" style="gap: 4px">
+                  <div class="flex items-center justify-between" style="gap: 12px">
+                    <lib-product-image
+                      [src]="look?.src"
+                      [kind]="look?.kind"
+                      alt=""
+                      style="flex: none; width: 36px; height: 36px; border-radius: 9px"
+                    />
+                    <span
+                      class="flex-1"
+                      style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                      >{{ item.productName }}</span
                     >
-                      <button
-                        type="button"
-                        (click)="changeQuantity(item, -1)"
-                        [disabled]="changingItemId() !== null"
-                        [attr.aria-label]="
-                          (item.quantity === 1 ? 'tma.checkout.remove' : 'tma.checkout.decrease') | translate
-                        "
-                        style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
+                    @if (!placedOrder()) {
+                      <div
+                        class="flex items-center"
+                        style="border: 1px solid var(--color-border-light); border-radius: 999px; height: 30px"
+                        [style.opacity]="changingItemId() === item.id ? 0.5 : 1"
                       >
-                        {{ item.quantity === 1 ? '🗑' : '−' }}
-                      </button>
-                      <span
-                        style="min-width: 18px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                        >{{ item.quantity }}</span
+                        <button
+                          type="button"
+                          (click)="changeQuantity(item, -1)"
+                          [disabled]="changingItemId() !== null"
+                          [attr.aria-label]="
+                            (item.quantity === 1 ? 'tma.checkout.remove' : 'tma.checkout.decrease') | translate
+                          "
+                          style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
+                        >
+                          {{ item.quantity === 1 ? '🗑' : '−' }}
+                        </button>
+                        <span
+                          style="min-width: 18px; text-align: center; font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                          >{{ item.quantity }}</span
+                        >
+                        <button
+                          type="button"
+                          (click)="changeQuantity(item, 1)"
+                          [disabled]="changingItemId() !== null || item.quantity >= 99"
+                          [attr.aria-label]="'tma.checkout.increase' | translate"
+                          style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
+                        >
+                          +
+                        </button>
+                      </div>
+                    } @else {
+                      <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+                        >× {{ item.quantity }}</span
                       >
-                      <button
-                        type="button"
-                        (click)="changeQuantity(item, 1)"
-                        [disabled]="changingItemId() !== null || item.quantity >= 99"
-                        [attr.aria-label]="'tma.checkout.increase' | translate"
-                        style="width: 30px; height: 30px; font-size: 15px; color: var(--color-text-primary)"
-                      >
-                        +
-                      </button>
-                    </div>
-                  } @else {
-                    <span style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-                      >× {{ item.quantity }}</span
+                    }
+                    <span
+                      style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
+                      >{{ price(item.unitPriceCents * item.quantity) }}</span
+                    >
+                  </div>
+                  @if (lineOptions(item); as options) {
+                    <span
+                      data-testid="cart-line-options"
+                      style="padding-left: 48px; font-family: var(--font-sans); font-size: 12px; line-height: 1.4; color: var(--color-text-secondary)"
+                      >{{ options }}</span
                     >
                   }
-                  <span
-                    style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
-                    >{{ price(item.unitPriceCents * item.quantity) }}</span
-                  >
                 </div>
               }
               <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
@@ -1014,6 +1024,11 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     return this.fmt.money(cents, this.currency());
   }
 
+  /** A line's choice from the options catalog: «M, Горячий · Овсяное · Ваниль»; empty for other lines. */
+  lineOptions(item: CartItemView): string {
+    return describeOptionLines(item.options ?? []);
+  }
+
   /**
    * One step of a line's quantity. Steppers are off while a change is in
    * flight, so each tap builds on the count the server confirmed and a quick
@@ -1025,7 +1040,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     if (next > 99) return;
     this.tg.haptic('light');
     this.changingItemId.set(item.id);
-    const request = next < 1 ? this.cartService.remove(item.id) : this.cartService.updateQuantity(item.id, next);
+    const request =
+      next < 1
+        ? this.cartService.remove(item.id)
+        : this.cartService.updateQuantity(item.id, next, lineSelections(item));
     request.subscribe({
       next: (cart) => {
         this.cart.set(cart);
