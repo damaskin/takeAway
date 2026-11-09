@@ -41,8 +41,19 @@ export function customerArrival(events: readonly { type: string; createdAt: Date
   return { customerArrival: null, customerArrivedAt: null };
 }
 
-/** The row, its acceptance times by its store's accept time. */
-export function toBoardRow(o: BoardOrder) {
+/** O and G of the order in its store's queue (QueuePolicyService.plans), epoch ms. */
+export interface BoardPlan {
+  startAt: number;
+  readyAt: number;
+}
+
+/**
+ * The row, its acceptance times by its store's accept time. Under the queue
+ * policy the caller passes the order's plan: `startBy` is then when the
+ * queue has the kitchen take it (O), and `plannedReadyAt` when it will be
+ * ready (G, «готов к 12:11»).
+ */
+export function toBoardRow(o: BoardOrder, plan?: BoardPlan | null) {
   return {
     id: o.id,
     orderCode: o.orderCode,
@@ -54,6 +65,9 @@ export function toBoardRow(o: BoardOrder) {
     notes: o.notes,
     ...customerArrival(o.events),
     ...kitchenTimeline(o, o.store.kitchenParallelism, acceptancePolicy(o.store)),
+    ...(plan
+      ? { startBy: new Date(plan.startAt).toISOString(), plannedReadyAt: new Date(plan.readyAt).toISOString() }
+      : {}),
     items: o.items.map((i) => ({
       productSnapshot: i.productSnapshot,
       quantity: i.quantity,

@@ -6,6 +6,7 @@ import { CatalogService } from './catalog.service';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import { PickupSlotDto } from './dto/pickup-slot.dto';
 import { MenuDto, ProductDetailDto } from './dto/product.dto';
+import { ReadyWindowDto } from './dto/ready-window.dto';
 import { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
 import { StoreSuggestionsDto, SuggestionsQueryDto } from './dto/suggestions.dto';
 import { SuggestionsService } from './suggestions.service';
@@ -45,6 +46,22 @@ export class CatalogController {
   })
   getPickupSlots(@Param('idOrSlug') idOrSlug: string, @Query('cartId') cartId?: string): Promise<PickupSlotDto[]> {
     return this.catalog.getPickupSlots(idOrSlug, cartId || undefined);
+  }
+
+  /**
+   * Pre-order times under the queue policy (docs/queue-policy.md 2.4): runs
+   * of whole minutes over the next 24 hours the cart's basket can be ready
+   * at. `pickup-slots` stays for the app builds that predate it.
+   */
+  @Get('stores/:idOrSlug/ready-windows')
+  @ApiOkResponse({ type: ReadyWindowDto, isArray: true })
+  @ApiQuery({
+    name: 'cartId',
+    required: false,
+    description: "The customer's cart at this store; without it, one position of the store's typical time",
+  })
+  getReadyWindows(@Param('idOrSlug') idOrSlug: string, @Query('cartId') cartId?: string): Promise<ReadyWindowDto[]> {
+    return this.catalog.getReadyWindows(idOrSlug, cartId || undefined);
   }
 
   @Get('stores/:idOrSlug/menu')

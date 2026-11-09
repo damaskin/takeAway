@@ -1,3 +1,5 @@
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
+
 /**
  * Russian translations — source of truth for the default UI language.
  * Keys are flat with dot-namespaces, grouped by feature. Keep keys stable;
@@ -36,6 +38,12 @@ export const TRANSLATIONS_RU = {
       paused: 'Технический перерыв до {{time}} · можно заказать ко времени',
       closingSoon: 'Скоро закрытие — только ко времени',
       until: 'до {{time}}',
+    },
+    /** The ready time under the order queue policy (QUEUE_POLICY_ENABLED): cart, checkout, order screen. */
+    queue: {
+      readyIfNow: 'Если закажете сейчас — будет готово в {{time}} · ≈ {{min}} мин',
+      readyAt: 'Готов в {{time}} · ≈ {{min}} мин',
+      closingSoon: 'Не успеем до закрытия — выберите заказ ко времени',
     },
     /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
     asapBlocked: {
@@ -87,11 +95,12 @@ export const TRANSLATIONS_RU = {
       },
       cardDeclinedHint: 'Оформите заказ ещё раз с другой картой.',
       comment: 'Комментарий заведения: «{{comment}}»',
+      /** The push's own sentences (ORDER_CANCEL_MONEY_TEXT in @takeaway/utils) — see endedOrderMoney. */
       money: {
-        notCharged: 'Деньги с карты не списывались.',
-        released: 'Деньги не списаны, блокировка на карте снята.',
-        refunded: 'Деньги вернутся на карту.',
-        holdPending: 'Блокировка на карте будет снята автоматически.',
+        notCharged: ORDER_CANCEL_MONEY_TEXT.NOT_CHARGED.ru,
+        released: ORDER_CANCEL_MONEY_TEXT.RELEASED.ru,
+        refunded: ORDER_CANCEL_MONEY_TEXT.REFUNDED.ru,
+        holdPending: ORDER_CANCEL_MONEY_TEXT.PENDING.ru,
       },
     },
     /**
@@ -453,6 +462,16 @@ export const TRANSLATIONS_RU = {
         awaiting: 'Ждём оплату',
         /** A cancelled or expired order that never had its card charged. */
         notCharged: 'Деньги не списаны',
+        /**
+         * The payment line of a cancelled or expired order: where the money
+         * went, never «Спишем при принятии заказа» — see endedOrderMoney.
+         */
+        outcome: {
+          notCharged: 'Деньги не списаны',
+          released: 'Блокировка снята',
+          refunded: 'Возвращено на карту',
+          holdPending: 'Возврат в обработке',
+        },
         heldHint: 'Если точка не примет заказ, деньги с карты не спишутся.',
         retry: 'Оплатить картой',
         retryHint: 'Можно попробовать оплатить ещё раз.',
@@ -1555,6 +1574,10 @@ export const TRANSLATIONS_RU = {
         hint: 'перейдут в «Новые» после принятия или за 15 минут до начала готовки',
         dueStart: 'к {{time}} · начать в {{start}}',
       },
+      queue: {
+        ready: 'готов к {{ready}}',
+        readyStart: 'готов к {{ready}} · начать в {{start}}',
+      },
       card: {
         awaiting: 'Ждёт принятия {{minutes}} мин',
         awaitingPreorder: 'Ждёт принятия',
@@ -1838,6 +1861,36 @@ export const TRANSLATIONS_RU = {
         requested_by_customer: 'по просьбе клиента',
         duplicate: 'дубль заказа',
         fraudulent: 'мошенничество',
+        OUT_OF_STOCK: 'нет в наличии',
+        TOO_BUSY: 'слишком много заказов',
+        CLOSING: 'закрываемся',
+        OTHER: 'другое',
+        CARD_DECLINED: 'банк отклонил карту',
+      },
+      /** Who called a cancelled order off, why, and where the money went. */
+      cancel: {
+        title: 'Отмена',
+        expiredTitle: 'Заказ не состоялся',
+        by: 'Кто отменил',
+        byCustomer: 'Клиент',
+        byStore: 'Заведение',
+        byCardDeclined: 'Банк отклонил карту при принятии',
+        reason: 'Причина',
+        reasons: {
+          OUT_OF_STOCK: 'Нет в наличии',
+          TOO_BUSY: 'Слишком много заказов',
+          CLOSING: 'Закрываемся',
+          OTHER: 'Другое',
+        },
+        comment: 'Комментарий кухни',
+        money: 'Деньги',
+        moneyOutcome: {
+          NOT_CHARGED: 'Не списывались',
+          RELEASED: 'Блокировка на карте снята',
+          REFUNDED: 'Возвращены на карту',
+          PENDING: 'Ещё не вернулись: банк не подтвердил снятие блокировки или возврат',
+        },
+        bankMessage: 'Ответ банка',
       },
     },
     orders: {
@@ -2021,6 +2074,9 @@ export const TRANSLATIONS_RU = {
         price: 'Цена, {{currency}}',
         pricePlaceholder: 'например, 35,50',
         prep: 'Время приготовления, мин',
+        prepParallel: 'Готовится параллельно',
+        prepParallelHint:
+          'Не занимает место на кухне и готовится одновременно с остальным заказом — например, бутылка воды или выпечка из отдельной печи. Заказ из такой позиции и кофе будет готов, когда готов кофе.',
         description: 'Описание',
         descriptionHint: 'Состав и чем хорош — покупатель видит это на странице товара.',
         category: 'Категория',
@@ -2411,6 +2467,9 @@ export const TRANSLATIONS_RU = {
         parallelism: 'Позиций готовится одновременно',
         parallelismHint:
           'Сколько позиций кухня готовит одновременно: два бариста у двух кофемашин — 2. От этого зависит, как быстро расходится очередь.',
+        loadExtra: 'Загрузка: +N мин',
+        loadExtraHint:
+          'Целые минуты, от 0 до 60. Пока на кухне включено «Загружены», к времени для принятия заказа прибавляется столько минут: заказ, сделанный в это время, кухня может начать позже, и клиент сразу видит более позднее время готовности. Работает в новой очереди заказов.',
         capacitySummary:
           'За 15 минут кухня успевает {{minutes}} мин работы (например, {{drinks}} напитков по 3 мин). Окно, где на новый заказ не хватает этого времени, клиент видит занятым — сколько бы заказов в нём ни было.',
       },

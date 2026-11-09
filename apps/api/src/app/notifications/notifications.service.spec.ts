@@ -1,3 +1,5 @@
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
+
 import type { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService, toPushRecipient } from './notifications.service';
 import type { ApnsDelivery, ApnsPushProvider } from './providers/apns.provider';
@@ -384,18 +386,27 @@ describe('NotificationsService.notifyOrderStatus', () => {
   it('says the card hold was released when the store never accepted a paid order', async () => {
     const h = setup();
     await h.service.notifyOrderStatus(order, 'EXPIRED', {
-      expiry: { reason: 'payment_timeout', holdReleased: true },
+      expiry: { reason: 'not_accepted', money: 'RELEASED' },
     });
     expect(h.sent()?.message).toMatchObject({
       title: 'Заказ #A42 не принят',
-      body: 'Заведение не подтвердило заказ вовремя. Деньги не списаны, бронь на карте снята.',
+      body: 'Заведение не подтвердило заказ вовремя. Деньги не списаны, блокировка на карте снята.',
     });
+  });
+
+  it.each([
+    ['NOT_CHARGED', 'Заведение не подтвердило заказ вовремя. Деньги с карты не списывались.'],
+    ['PENDING', 'Заведение не подтвердило заказ вовремя. Блокировка на карте будет снята автоматически.'],
+  ] as const)('says where the money went (%s) when the store never accepted the order', async (money, body) => {
+    const h = setup();
+    await h.service.notifyOrderStatus(order, 'EXPIRED', { expiry: { reason: 'not_accepted', money } });
+    expect(h.sent()?.message.body).toBe(body);
   });
 
   it('says the payment did not go through when nothing was held', async () => {
     const h = setup({ locale: 'EN' });
     await h.service.notifyOrderStatus(order, 'EXPIRED', {
-      expiry: { reason: 'payment_timeout', holdReleased: false },
+      expiry: { reason: 'payment_timeout', money: null },
     });
     expect(h.sent()?.message.body).toBe(
       'The payment was not completed. Your promo code, points and gift card balance are back.',
@@ -405,9 +416,30 @@ describe('NotificationsService.notifyOrderStatus', () => {
   it('tells a pay-on-pickup customer the store did not take the order', async () => {
     const h = setup();
     await h.service.notifyOrderStatus(order, 'EXPIRED', {
-      expiry: { reason: 'not_accepted', holdReleased: false },
+      expiry: { reason: 'not_accepted', money: null },
     });
     expect(h.sent()?.message.body).toBe('Заведение не подтвердило заказ вовремя.');
+  });
+
+  it("ends the store's rejection with the sentence the customer's order screen repeats", async () => {
+    const ru = setup();
+    await ru.service.notifyOrderStatus(order, 'CANCELLED', {
+      rejection: { reason: 'OUT_OF_STOCK', comment: ' Нет молока ', money: 'RELEASED' },
+    });
+    expect(ru.sent()?.message).toMatchObject({
+      title: 'Заказ #A42 отклонён',
+      body: `Части позиций сейчас нет в наличии. Нет молока ${ORDER_CANCEL_MONEY_TEXT.RELEASED.ru}`,
+    });
+
+    const en = setup({ locale: 'EN' });
+    await en.service.notifyOrderStatus(order, 'CANCELLED', {
+      rejection: { reason: 'TOO_BUSY', money: 'REFUNDED' },
+    });
+    expect(en.sent()?.message.body).toBe('The store is too busy right now. The money is on its way back to your card.');
+
+    const none = setup();
+    await none.service.notifyOrderStatus(order, 'CANCELLED', { rejection: { reason: 'CLOSING', money: null } });
+    expect(none.sent()?.message.body).toBe('Заведение закрывается.');
   });
 });
 
@@ -415,7 +447,7 @@ describe('NotificationsService — kitchen policy messages', () => {
   it('tells a customer whose paid order was refunded that the money is on its way back', async () => {
     const h = setup();
     await h.service.notifyOrderStatus(order, 'EXPIRED', {
-      expiry: { reason: 'not_accepted', holdReleased: false, refunded: true },
+      expiry: { reason: 'not_accepted', money: 'REFUNDED' },
     });
     expect(h.sent()?.message.body).toBe('Заведение не подтвердило заказ вовремя. Деньги вернутся на карту.');
   });

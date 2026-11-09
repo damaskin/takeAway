@@ -1,17 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { type OrderCancelMoney, OrderStatus, Prisma } from '@prisma/client';
 
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { acceptWindowSeconds } from '../kitchen/kitchen-timeline';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
-import { isDeferredCharge } from '../payments/card-providers';
+import { CARD_PROVIDERS, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { QueueRecomputeService } from './queue-recompute.service';
 
 /** How long an order may sit unpaid before we let it go. */
 const DEFAULT_TTL_MINUTES = 15;
@@ -67,6 +68,8 @@ export class OrderExpiryService {
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
     private readonly holds: PaymentHoldsService,
+    /** Always provided by OrdersModule; unit tests written before the queue policy leave it out. */
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
   get ttlMinutes(): number {
@@ -203,6 +206,9 @@ export class OrderExpiryService {
    * both read CREATED and both hand back the promo, the gift-card balance
    * and the points — twice the money back. Now exactly one claim wins and
    * the others match nothing.
+   *
+   * Where the money went (`cancelMoney`) is written once the hold is dealt
+   * with and before anyone is told — the outcome the push states.
    */
   async expire(
     orderId: string,
@@ -246,7 +252,19 @@ export class OrderExpiryService {
             },
           },
         },
-        select: { id: true, userId: true, storeId: true, status: true, orderCode: true, fulfillmentType: true },
+        select: {
+          id: true,
+          userId: true,
+          storeId: true,
+          status: true,
+          orderCode: true,
+          fulfillmentType: true,
+          payments: {
+            where: { provider: { in: [...CARD_PROVIDERS] }, status: 'REQUIRES_ACTION' },
+            select: { id: true },
+            take: 1,
+          },
+        },
       });
     });
 
@@ -256,6 +274,10 @@ export class OrderExpiryService {
     // frozen. The bank call cannot join the transaction above, so it runs here
     // and reports rather than throws — see PaymentHoldsService.
     const released = await this.holds.releaseForOrder(orderId, 'order-expired');
+    const money: OrderCancelMoney | null = options.refunded
+      ? 'REFUNDED'
+      : releaseOutcome(released, expired.payments.length > 0);
+    if (money) await this.prisma.order.update({ where: { id: orderId }, data: { cancelMoney: money } });
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -276,14 +298,9 @@ export class OrderExpiryService {
       reason: options.details?.['rule'] === 'accept_timeout' ? 'NOT_ACCEPTED' : 'EXPIRED',
       orderCode: expired.orderCode,
     });
-    void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, {
-      expiry: {
-        reason,
-        holdReleased: released !== null && !isDeferredCharge(released),
-        notCharged: released !== null && isDeferredCharge(released),
-        refunded: options.refunded === true,
-      },
-    });
+    // Its station time is free again: the orders behind it move up.
+    this.recompute?.touch(expired.storeId);
+    void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, { expiry: { reason, money } });
 
     return true;
   }

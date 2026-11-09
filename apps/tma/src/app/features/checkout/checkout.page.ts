@@ -17,12 +17,15 @@ import {
   isCartChangedError,
   isStoreInactive,
   productKind,
+  readyTimeShown,
+  readyWindowTimes,
   suggestionRow,
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
 import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
+import { type Observable, map } from 'rxjs';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { CartService, type CartItemView, type CartView } from '../../core/cart/cart.service';
@@ -115,8 +118,8 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           <button
             type="button"
             (click)="setPickup('ASAP')"
-            [disabled]="!storeOpen()"
-            [style.opacity]="storeOpen() ? 1 : 0.45"
+            [disabled]="!asapOpen()"
+            [style.opacity]="asapOpen() ? 1 : 0.45"
             class="flex-1"
             [style.background]="pickupMode() === 'ASAP' ? 'var(--color-caramel)' : 'var(--color-foam)'"
             [style.color]="pickupMode() === 'ASAP' ? 'white' : 'var(--color-text-primary)'"
@@ -161,6 +164,18 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
             data-testid="asap-blocked"
             style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
             >{{ asapBlockedLine() ?? ('tma.checkout.closedNow' | translate) }}</span
+          >
+        } @else if (cartAsapBlocked()) {
+          <span
+            data-testid="asap-blocked"
+            style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+            >{{ queueBlockedKey() | translate }}</span
+          >
+        } @else if (queueReady(); as ready) {
+          <span
+            data-testid="queue-ready"
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-caramel)"
+            >{{ 'common.queue.readyIfNow' | translate: ready }}</span
           >
         }
         @if (pickupMode() === 'SCHEDULED') {
@@ -300,6 +315,8 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
           <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
             @if (pickupMode() === 'SCHEDULED' && scheduledAt()) {
               {{ 'common.readyBy' | translate: { time: pickupTimeLabel(scheduledAt()) } }}
+            } @else if (queueReady(); as ready) {
+              {{ 'common.queue.readyIfNow' | translate: ready }}
             } @else {
               {{ 'tma.checkout.readyIn' | translate: { min: etaMinutes() } }}
             }
@@ -583,6 +600,35 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly storeInactive = signal(false);
   readonly etaMinutes = computed(() => Math.max(1, Math.round((this.cart()?.etaSeconds ?? 0) / 60)));
 
+  /**
+   * The order queue policy said this cart cannot be ordered for now (it
+   * would be ready after the closing, or past the longest wait). Absent with
+   * the policy off, so the store's own `openNow` decides as before.
+   */
+  readonly cartAsapBlocked = computed(() => this.cart()?.asapAvailable === false);
+  /** «Сейчас» can be picked: the store takes orders for now, and so does this cart. */
+  readonly asapOpen = computed(() => this.storeOpen() && !this.cartAsapBlocked());
+
+  /** Why the cart cannot be ordered for now under the queue policy. */
+  readonly queueBlockedKey = computed(() => {
+    switch (this.cart()?.asapBlockedReason) {
+      case 'CLOSING_SOON':
+        return 'common.queue.closingSoon';
+      case 'QUEUE_FULL':
+        return 'common.asapBlocked.queueFull';
+      default:
+        return 'tma.checkout.closedNow';
+    }
+  });
+
+  /** «Если закажете сейчас — будет готово в 12:11 · ≈ 11 мин» (queue policy, ordering for now). */
+  readonly queueReady = computed(() => {
+    const c = this.cart();
+    if (this.pickupMode() !== 'ASAP' || !c?.readyAt || c.asapAvailable === false) return null;
+    const shown = readyTimeShown(c.readyAt, Date.now());
+    return { time: this.pickupTimeLabel(shown.at), min: shown.minutes };
+  });
+
   readonly fulfillmentType = signal<FulfillmentType>('PICKUP');
   /** True iff the active store advertises DELIVERY in `fulfillmentTypes`. */
   readonly deliveryAvailable = signal(false);
@@ -677,6 +723,17 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private detachBack: (() => void) | null = null;
 
   constructor() {
+    // Under the queue policy the cart itself may be too late for «Сейчас»
+    // (the closing, the longest wait): a time later is preselected then.
+    effect(() => {
+      if (!this.cartAsapBlocked() || untracked(this.pickupMode) !== 'ASAP') return;
+      untracked(() => {
+        this.pickupMode.set('SCHEDULED');
+        this.loadSlots();
+        this.refreshMainButton();
+      });
+    });
+
     // The store opening, closing or filling up while the customer is here
     // turns «Сейчас» on or off without reopening checkout.
     refreshStoresWhileVisible((event) => {
@@ -801,7 +858,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   }
 
   setPickup(mode: 'ASAP' | 'SCHEDULED'): void {
-    if (mode === 'ASAP' && !this.storeOpen()) return;
+    if (mode === 'ASAP' && !this.asapOpen()) return;
     this.pickupMode.set(mode);
     this.tg.haptic('light');
     if (mode === 'SCHEDULED') this.loadSlots();
@@ -913,11 +970,28 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
    * after the chosen window filled up at payment, so the customer picks the
    * new time themselves.
    */
+  /**
+   * The times to pick from: the 15-minute slots, or under the order queue
+   * policy — the cart then carries its `readyAt` — every five minutes of the
+   * free windows (and each window's ends), in the same picker.
+   */
+  private pickupTimes(storeId: string): Observable<PickupSlot[]> {
+    const cartId = this.cart()?.id;
+    if (this.cart()?.readyAt === undefined) return this.catalog.getPickupSlots(storeId, cartId);
+    return this.catalog
+      .getReadyWindows(storeId, cartId)
+      .pipe(
+        map((windows) =>
+          readyWindowTimes(windows).map((at) => ({ startsAt: at, endsAt: at, taken: 0, capacity: 0, available: true })),
+        ),
+      );
+  }
+
   private loadSlots(preselect = true): void {
     const storeId = this.activeStoreId;
     if (!storeId) return;
     this.slotsLoading.set(true);
-    this.catalog.getPickupSlots(storeId, this.cart()?.id).subscribe({
+    this.pickupTimes(storeId).subscribe({
       next: (slots) => {
         this.slots.set(slots);
         this.slotsLoading.set(false);

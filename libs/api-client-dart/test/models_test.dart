@@ -468,6 +468,22 @@ void main() {
       expect(newer.cancelReason, OrderCancelReason.unknown);
     });
 
+    test('reads where the money of a cancelled or expired order went', () {
+      for (final (raw, money) in [
+        ('NOT_CHARGED', OrderCancelMoney.notCharged),
+        ('RELEASED', OrderCancelMoney.released),
+        ('REFUNDED', OrderCancelMoney.refunded),
+        ('PENDING', OrderCancelMoney.pending),
+      ]) {
+        final order = Order.fromJson({...orderJson(), 'status': 'CANCELLED', 'cancelMoney': raw});
+        expect(order.cancelMoney, money);
+        expect(order.copyWithStatus(OrderStatus.cancelled).cancelMoney, money);
+      }
+      // From an older API, and a value this build does not know yet.
+      expect(Order.fromJson({...orderJson(), 'status': 'EXPIRED'}).cancelMoney, isNull);
+      expect(Order.fromJson({...orderJson(), 'status': 'EXPIRED', 'cancelMoney': 'IN_ESCROW'}).cancelMoney, isNull);
+    });
+
     test('reads who cancelled an order in the history list', () {
       final summary = OrderSummary.fromJson({
         'id': 'ord_1',

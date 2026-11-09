@@ -86,6 +86,11 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
     unknownValue: OrderCancelReason.unknown,
   ),
   cancelComment: json['cancelComment'] as String?,
+  cancelMoney: $enumDecodeNullable(
+    _$OrderCancelMoneyEnumMap,
+    json['cancelMoney'],
+    unknownValue: JsonKey.nullForUndefinedEnumValue,
+  ),
   canReview: json['canReview'] as bool?,
   review: json['review'] == null ? null : OrderReview.fromJson(json['review'] as Map<String, dynamic>),
 );
@@ -121,6 +126,13 @@ const _$OrderCancelReasonEnumMap = {
   OrderCancelReason.other: 'OTHER',
   OrderCancelReason.cardDeclined: 'CARD_DECLINED',
   OrderCancelReason.unknown: 'unknown',
+};
+
+const _$OrderCancelMoneyEnumMap = {
+  OrderCancelMoney.notCharged: 'NOT_CHARGED',
+  OrderCancelMoney.released: 'RELEASED',
+  OrderCancelMoney.refunded: 'REFUNDED',
+  OrderCancelMoney.pending: 'PENDING',
 };
 
 OrderReview _$OrderReviewFromJson(Map<String, dynamic> json) => OrderReview(

@@ -6,6 +6,7 @@ import {
   buildDirectionsUrl,
   calendarDaysFrom,
   describeOrderItemOptions,
+  endedOrderMoney,
   expiredOutcome,
   formatCountdown,
   orderCancellation,
@@ -189,6 +190,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
              tapping pay is confirmation that it worked; the order's own
              progress comes after that. -->
         <article
+          data-testid="payment-line"
           class="w-full flex items-center"
           [style.background]="paymentBackground()"
           style="border-radius: 16px; padding: 14px 18px; gap: 12px"
@@ -724,6 +726,16 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
   /**
+   * Where the money of a cancelled or expired order went (`endedOrderMoney`):
+   * its payment line says that, never «Спишем при принятии заказа» — the
+   * same outcome the cancellation block words in full.
+   */
+  readonly endedMoney = computed(() => {
+    const o = this.order();
+    return o ? endedOrderMoney(o) : null;
+  });
+
+  /**
    * The bank said the payment failed, but our record may still read "waiting":
    * believe the bank until the order shows otherwise.
    */
@@ -732,6 +744,8 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   );
 
   readonly paymentTitle = computed(() => {
+    const ended = this.endedMoney();
+    if (ended) return `web.orderStatus.payment.outcome.${ended}`;
     if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     switch (this.paymentState()) {
       case 'PAID':
@@ -767,6 +781,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
 
   /** A line under the numbers saying what happens next, as a translation key. */
   readonly paymentHint = computed(() => {
+    if (this.endedMoney()) return '';
     if (this.paymentState() === 'HELD') return 'web.orderStatus.payment.heldHint';
     if (this.canRetryPayment() && (this.bankSaidFail() || this.paymentState() === 'FAILED')) {
       return 'web.orderStatus.payment.retryHint';
@@ -787,6 +802,18 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentIcon = computed(() => {
+    switch (this.endedMoney()) {
+      case 'released':
+        return '🔓';
+      case 'refunded':
+        return '↩️';
+      case 'holdPending':
+        return '⏳';
+      case 'notCharged':
+        return '💳';
+      default:
+        break;
+    }
     if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
@@ -803,6 +830,7 @@ export class OrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentBackground = computed(() => {
+    if (this.endedMoney()) return 'var(--color-cream)';
     if (this.bankSaidFail()) return 'var(--color-berry-light, var(--color-cream))';
     switch (this.paymentState()) {
       case 'PAID':
@@ -857,6 +885,12 @@ export class OrderStatusPage implements OnInit, OnDestroy {
     const o = this.order();
     const left = this.dueInMs();
     if (!o || left <= 0 || o.status === 'READY' || this.isTerminal(o.status)) return null;
+    if (left < CLOCK_FROM_MS && o.readyFromQueue === true) {
+      // The order queue policy: «Готов в 12:11 · ≈ 11 мин», the time rounded up so it is never early.
+      const due = Date.parse(orderDueAt(o));
+      const time = this.pickupClock(new Date(Math.ceil(due / 60_000) * 60_000));
+      return { key: 'common.queue.readyAt', params: { time, min: minutesIn(left) } };
+    }
     if (left < CLOCK_FROM_MS) return { key: 'web.orderStatus.pickupIn', params: { min: minutesIn(left) } };
     return { key: 'web.orderStatus.pickupAt', params: { time: this.pickupClock(new Date(orderDueAt(o))) } };
   });

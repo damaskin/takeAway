@@ -35,6 +35,7 @@ describe('PaymentHoldsService', () => {
         })),
       },
       orderEvent: { create: jest.fn().mockResolvedValue({}) },
+      order: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const client = { invoke: jest.fn().mockResolvedValue({}) };
     const webClient = { cancel: jest.fn().mockResolvedValue({ state: 2 }) };
@@ -130,6 +131,21 @@ describe('PaymentHoldsService', () => {
     ]);
     expect(result).toEqual({ checked: 1, released: 0 });
     expect(webClient.cancel).not.toHaveBeenCalled();
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  // The order screen said «Блокировка на карте будет снята автоматически»; now it has been.
+  it('marks a cancelled order whose money was still on its way as released once the retry lands', async () => {
+    const { service, prisma } = build();
+    prisma.payment.findMany.mockResolvedValue([hold('AGROPROMBANK_WEB')]);
+
+    const result = await service.retryPendingReleases();
+
+    expect(result).toEqual({ checked: 1, released: 1 });
+    expect(prisma.order.updateMany).toHaveBeenCalledWith({
+      where: { id: 'order-1', cancelMoney: 'PENDING' },
+      data: { cancelMoney: 'RELEASED' },
+    });
   });
 
   it('requires a card for a paid order whichever flow is on, and none when both are off', () => {

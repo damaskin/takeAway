@@ -172,6 +172,14 @@ type ProductControls = ProductFormComponent['form']['controls'];
           </fieldset>
         }
 
+        <div class="flex flex-col" style="gap: 4px">
+          <label class="check">
+            <input type="checkbox" formControlName="prepParallel" data-testid="product-prep-parallel" />
+            <span>{{ 'admin.menu.product.prepParallel' | translate }}</span>
+          </label>
+          <span class="hint" style="padding-left: 22px">{{ 'admin.menu.product.prepParallelHint' | translate }}</span>
+        </div>
+
         <label class="check">
           <input type="checkbox" formControlName="visible" />
           <span>{{ 'admin.menu.product.visible' | translate }}</span>
@@ -313,6 +321,8 @@ export class ProductFormComponent {
     categoryId: new FormControl('', { nonNullable: true }),
     price: new FormControl('', { nonNullable: true, validators: [Validators.required, moneyValidator()] }),
     prepMinutes: new FormControl('3', { nonNullable: true, validators: [minutesValidator] }),
+    /** «Готовится параллельно»: takes no station in the order queue. */
+    prepParallel: new FormControl(false, { nonNullable: true }),
     description: new FormControl('', { nonNullable: true }),
     calories: new FormControl('', { nonNullable: true, validators: [countValidator(0, 100_000)] }),
     proteins: new FormControl('', { nonNullable: true, validators: [amountValidator] }),
@@ -423,6 +433,8 @@ export class ProductFormComponent {
       description: v.description.trim() || null,
       basePriceCents,
       prepTimeSeconds: parseMinutes(v.prepMinutes) ?? undefined,
+      // Only when ticked or unticked here: the API keeps (or defaults) it otherwise.
+      ...(this.form.controls.prepParallel.dirty ? { prepParallel: v.prepParallel } : {}),
       visible: v.visible,
       calories: nutrition ? parseCount(v.calories) : null,
       proteinsGrams: nutrition ? parseAmount(v.proteins) : null,
@@ -481,6 +493,7 @@ export class ProductFormComponent {
       categoryId: product?.categoryId ?? categoryId,
       price: product ? formatMoneyInput(product.basePriceCents, separator) : '',
       prepMinutes: formatMinutesInput(product?.prepTimeSeconds ?? categoryPrep ?? 180, separator),
+      prepParallel: product?.prepParallel ?? false,
       description: product?.description ?? '',
       calories: product?.calories == null ? '' : String(product.calories),
       proteins: formatAmountInput(product?.proteinsGrams ?? null, separator),

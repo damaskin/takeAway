@@ -6,6 +6,18 @@ shift follows the working hours. In force since 2026-10-20 (it first came in on
 2026-10-14), with the 2026-11-05 and 2026-11-06 changes below; it describes what is
 implemented.
 
+**The order queue policy (since 2026-11-09, `QUEUE_POLICY_ENABLED`, on in staging
+only)** replaces parts of this document while it is on — docs/queue-policy.md,
+section 2: the waits of section A (`currentEtaSeconds`, `CLOSING_SOON`,
+`QUEUE_FULL` come from the queue's ready time G), the pre-order rules of B and
+the slots of C (free windows; `pickup-slots` is read off them), the busy wait
+(the store's «Загрузка: +N мин» instead of `BUSY_EXTRA_WAIT_SECONDS`), the
+board's `startBy` (D, plus `plannedReadyAt`), the start reminder and the new
+estimate of E (`readyEstimateAt` follows the queue). The acceptance reminder and
+timeout (E), the shift (F), the pause (G — pre-orders after it, as here) and the
+customer's cancel (H) are the same in both modes. With it off, everything below
+holds as written.
+
 ## Owner decisions
 
 ### 2026-11-06 (manager's answers on list 5.0)
@@ -385,21 +397,25 @@ button only while `canCancel`, with «Заказ уже готовят — дл�
 
 ## Configuration
 
-| Variable                        | Default |                                                                  |
-| ------------------------------- | ------- | ---------------------------------------------------------------- |
-| `MAX_ASAP_WAIT_SECONDS`         | 2700    | longest ASAP handover; past it `QUEUE_FULL`                      |
-| `PREORDER_OPENING_LEAD_MINUTES` | 15      | first pre-order slot after an opening nobody is on shift for     |
-| `AUTO_CLOSE_GRACE_MINUTES`      | **0**   | the shift closes this long after the hours (was 10)              |
-| `BUSY_EXTRA_WAIT_SECONDS`       | 300     | unchanged: «Загружены» extra wait                                |
-| `ORDER_ACCEPT_TTL_MINUTES`      | 30      | backstop for a held order nobody accepted; never below A + grace |
-| `ORDER_ACCEPT_GRACE_MINUTES`    | 15      | the backstop's grace past the pickup time (and on top of A)      |
+| Variable                        | Default |                                                                     |
+| ------------------------------- | ------- | ------------------------------------------------------------------- |
+| `MAX_ASAP_WAIT_SECONDS`         | 2700    | longest ASAP handover; past it `QUEUE_FULL`                         |
+| `PREORDER_OPENING_LEAD_MINUTES` | 15      | first pre-order slot after an opening nobody is on shift for        |
+| `AUTO_CLOSE_GRACE_MINUTES`      | **0**   | the shift closes this long after the hours (was 10)                 |
+| `BUSY_EXTRA_WAIT_SECONDS`       | 300     | unchanged: «Загружены» extra wait (not read under the queue policy) |
+| `QUEUE_POLICY_ENABLED`          | false   | the order queue policy (docs/queue-policy.md); staging: on          |
+| `ORDER_ACCEPT_TTL_MINUTES`      | 30      | backstop for a held order nobody accepted; never below A + grace    |
+| `ORDER_ACCEPT_GRACE_MINUTES`    | 15      | the backstop's grace past the pickup time (and on top of A)         |
 
 `ORDER_ACCEPT_ALERT_SECONDS` and `ORDER_ACCEPT_TIMEOUT_SECONDS` were removed on
 2026-11-05: the store setting «Время для принятия заказа» (A) replaced them, and
 the API ignores them if they are still set.
 
 Per store (the store editor): «Время для принятия заказа» A (`baseEtaSeconds`,
-1–60 min, default 10), «Позиций готовится одновременно» (`kitchenParallelism`).
+1–60 min, default 10), «Позиций готовится одновременно» (`kitchenParallelism`;
+C of the queue policy), «Загрузка: +N мин» (`loadExtraSeconds`, 0–60 min,
+default 10; read only by the queue policy). Per product: «Готовится
+параллельно» (`prepParallel`, queue policy only).
 «Заказов на 15 минут» (`slotCapacity`) was removed on 2026-11-06.
 
 Fixed in code: slot 15 min, pre-order lead 10 min, horizon 24 h, "due soon" 30 min,

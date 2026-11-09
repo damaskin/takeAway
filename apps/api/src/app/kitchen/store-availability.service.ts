@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Prisma, StorePauseReason } from '@prisma/client';
 
 import { type StoreAvailability, storeAvailability } from '../catalog/store-availability';
 import { PrismaService } from '../prisma/prisma.service';
 import { KitchenLoadService } from './kitchen-load.service';
 import { hoursAround, type WorkingHour } from './opening-hours';
+import { QueuePolicyService } from './queue-policy.service';
 
 /** The store columns {@link StoreAvailabilityService.evaluate} reads; spread into a Prisma `select`. */
 export const AVAILABILITY_SELECT = {
@@ -14,6 +15,7 @@ export const AVAILABILITY_SELECT = {
   timezone: true,
   baseEtaSeconds: true,
   kitchenParallelism: true,
+  loadExtraSeconds: true,
   pausedUntil: true,
   pauseReason: true,
   workingHours: { select: { weekday: true, opensAt: true, closesAt: true, isClosed: true } },
@@ -27,6 +29,8 @@ export interface AvailabilityInput {
   timezone: string;
   baseEtaSeconds: number;
   kitchenParallelism: number;
+  /** N of the queue policy; absent reads as its default. */
+  loadExtraSeconds?: number | null;
   workingHours: readonly WorkingHour[];
   /** The open shift, if any (`closedAt = null`, at most one row). */
   shifts: ReadonlyArray<{ extendedUntil: Date | null }>;
@@ -57,6 +61,8 @@ export class StoreAvailabilityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchen: KitchenLoadService,
+    /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
+    @Optional() private readonly queue?: QueuePolicyService,
   ) {}
 
   async evaluate(
@@ -65,6 +71,7 @@ export class StoreAvailabilityService {
   ): Promise<Map<string, StoreAvailabilityView>> {
     const result = new Map<string, StoreAvailabilityView>();
     if (stores.length === 0) return result;
+    if (this.queue?.enabled) return this.evaluateQueued(stores, now);
     const policy = this.kitchen.policy;
     const quotes = await this.kitchen.asapByStore(stores, now);
     for (const store of stores) {
@@ -84,6 +91,42 @@ export class StoreAvailabilityService {
       result.set(store.id, {
         ...availability,
         currentEtaSeconds: quote?.etaSeconds ?? store.baseEtaSeconds,
+        pauseReason: availability.pausedUntil ? (store.pauseReason ?? null) : null,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * The same rules under the queue policy (`QUEUE_POLICY_ENABLED`): the wait
+   * is G of one typical position placed now at the end of the store's queue
+   * (docs/queue-policy.md 2.3) — the store's «N мин», and what decides
+   * `CLOSING_SOON` and `QUEUE_FULL` for an order for now.
+   */
+  private async evaluateQueued(
+    stores: readonly AvailabilityInput[],
+    now: Date,
+  ): Promise<Map<string, StoreAvailabilityView>> {
+    const result = new Map<string, StoreAvailabilityView>();
+    const policy = this.kitchen.policy;
+    const quotes = (await this.queue?.typicalQuotes(stores, now)) ?? new Map();
+    for (const store of stores) {
+      const quote = quotes.get(store.id);
+      const wait = quote ? Math.max(0, Math.ceil((quote.readyAt - now.getTime()) / 1000)) : null;
+      const availability = storeAvailability(
+        {
+          status: store.status,
+          openShift: store.shifts[0] ?? null,
+          asapWaitSeconds: wait,
+          pausedUntil: store.pausedUntil ?? null,
+        },
+        now,
+        policy,
+        hoursAround(store.workingHours, store.timezone, now, { backDays: 1 }),
+      );
+      result.set(store.id, {
+        ...availability,
+        currentEtaSeconds: wait ?? store.baseEtaSeconds,
         pauseReason: availability.pausedUntil ? (store.pauseReason ?? null) : null,
       });
     }

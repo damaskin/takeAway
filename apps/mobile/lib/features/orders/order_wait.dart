@@ -47,9 +47,10 @@ OrderWaitNote? orderWaitNote(Order order, Store? store, DateTime now) {
       : OrderWaitNote.awaitingAcceptance;
 }
 
-/// Why an EXPIRED order ended, as far as the order itself tells. It carries
-/// no expiry reason: a released hold shows as no payment, a payment that
-/// timed out as a pending or failed one.
+/// Why an EXPIRED order ended, as far as the order itself tells. The money
+/// the API recorded when it let the order go ([Order.cancelMoney]) says
+/// which of the first two it is; without it (older orders, older APIs) the
+/// payment as it is now decides, and a released hold reads like a refund.
 enum ExpiredOutcome {
   /// The store never accepted it and nothing was taken.
   notAccepted,
@@ -61,10 +62,14 @@ enum ExpiredOutcome {
   paymentNotCompleted,
 }
 
-ExpiredOutcome expiredOutcome(Order order) => switch (order.payment.state) {
-  PaymentState.pending || PaymentState.failed => ExpiredOutcome.paymentNotCompleted,
-  PaymentState.refunded || PaymentState.paid => ExpiredOutcome.notAcceptedRefunded,
-  PaymentState.none || PaymentState.held => ExpiredOutcome.notAccepted,
+ExpiredOutcome expiredOutcome(Order order) => switch (order.cancelMoney) {
+  OrderCancelMoney.refunded => ExpiredOutcome.notAcceptedRefunded,
+  OrderCancelMoney.notCharged || OrderCancelMoney.released || OrderCancelMoney.pending => ExpiredOutcome.notAccepted,
+  null => switch (order.payment.state) {
+    PaymentState.pending || PaymentState.failed => ExpiredOutcome.paymentNotCompleted,
+    PaymentState.refunded || PaymentState.paid => ExpiredOutcome.notAcceptedRefunded,
+    PaymentState.none || PaymentState.held => ExpiredOutcome.notAccepted,
+  },
 };
 
 /// Who called a cancelled order off, as the customer reads it. The same
@@ -80,13 +85,13 @@ enum CancelledParty {
   cardDeclined,
 }
 
-/// Where the money of a cancelled order is, in the push's words.
+/// Where the money of a cancelled or expired order is, in the push's words
+/// ([Order.cancelMoney]).
 enum CancelledMoney {
   /// Nothing was taken from the card.
   notCharged,
 
-  /// The card hold is lifted. The customer cancels only while nothing is
-  /// captured, so money given back on their own cancel is always a hold.
+  /// The card hold is lifted.
   released,
 
   /// The money is on its way back to the card.
@@ -114,8 +119,8 @@ class OrderCancellation {
 }
 
 /// Who called a cancelled order off, why, and where the money is — the
-/// story the push told. Null for any other status. The money comes from the
-/// order's payment as it is now, like [expiredOutcome].
+/// story the push told. Null for any other status. The money is
+/// [endedOrderMoney].
 OrderCancellation? orderCancellation(Order order) {
   if (order.status != OrderStatus.cancelled) return null;
   final by = switch (order.cancelledBy) {
@@ -130,15 +135,36 @@ OrderCancellation? orderCancellation(Order order) {
     by: by,
     reason: reason == OrderCancelReason.unknown ? null : reason,
     comment: comment == null || comment.isEmpty ? null : comment,
-    money: switch (order.payment.state) {
+    money: endedOrderMoney(order),
+  );
+}
+
+/// Where the money of a cancelled or expired order went, in the push's
+/// words; null for any other status and when there is nothing to say. The
+/// same rules as the web (`endedOrderMoney` in `@takeaway/utils`).
+///
+/// The money the API recorded when it called the order off
+/// ([Order.cancelMoney]) is the push's own outcome and wins. Without it
+/// (older orders, older APIs) it is read off the payment as it is now: a
+/// released hold and a refund both read as refunded — told apart only by
+/// who cancelled, as the customer's own cancel never follows a capture.
+CancelledMoney? endedOrderMoney(Order order) {
+  if (!order.status.isCancelled) return null;
+  return switch (order.cancelMoney) {
+    OrderCancelMoney.notCharged => CancelledMoney.notCharged,
+    OrderCancelMoney.released => CancelledMoney.released,
+    OrderCancelMoney.refunded => CancelledMoney.refunded,
+    OrderCancelMoney.pending => CancelledMoney.holdPending,
+    null => switch (order.payment.state) {
       PaymentState.none || PaymentState.failed => order.totalCents == 0 ? null : CancelledMoney.notCharged,
       PaymentState.held => CancelledMoney.holdPending,
-      PaymentState.refunded => by == CancelledParty.customer ? CancelledMoney.released : CancelledMoney.refunded,
+      PaymentState.refunded =>
+        order.cancelledBy == OrderCanceller.customer ? CancelledMoney.released : CancelledMoney.refunded,
       PaymentState.paid => CancelledMoney.refunded,
       // The bank has not said yet whether anything was taken.
       PaymentState.pending => null,
     },
-  );
+  };
 }
 
 /// Who cancelled an order in the history list: [OrderSummary] has no

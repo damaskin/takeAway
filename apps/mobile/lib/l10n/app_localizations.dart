@@ -1712,6 +1712,24 @@ abstract class AppLocalizations {
   /// **'You were not charged'**
   String get paymentStateNotCharged;
 
+  /// The payment line of a cancelled or expired order whose card hold came off.
+  ///
+  /// In en, this message translates to:
+  /// **'Card hold released'**
+  String get paymentStateReleased;
+
+  /// The payment line of a cancelled or expired order whose captured charge is going back.
+  ///
+  /// In en, this message translates to:
+  /// **'Refunded to your card'**
+  String get paymentStateRefundedToCard;
+
+  /// The payment line of a cancelled or expired order whose hold or refund the bank has not done yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Refund in progress'**
+  String get paymentStateReturnPending;
+
   /// No description provided for @paymentStateAtCounter.
   ///
   /// In en, this message translates to:

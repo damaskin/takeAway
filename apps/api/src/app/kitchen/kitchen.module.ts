@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { KitchenLoadService } from './kitchen-load.service';
+import { QueuePolicyService } from './queue-policy.service';
+import { QueueStateService } from './queue-state.service';
 import { StoreAvailabilityService } from './store-availability.service';
 
 /**
@@ -12,7 +14,7 @@ import { StoreAvailabilityService } from './store-availability.service';
  */
 @Module({
   imports: [PrismaModule],
-  providers: [KitchenLoadService, StoreAvailabilityService],
-  exports: [KitchenLoadService, StoreAvailabilityService],
+  providers: [KitchenLoadService, StoreAvailabilityService, QueueStateService, QueuePolicyService],
+  exports: [KitchenLoadService, StoreAvailabilityService, QueueStateService, QueuePolicyService],
 })
 export class KitchenModule {}

@@ -1,4 +1,5 @@
 import {
+  endedOrderMoney,
   expiredOutcome,
   formatCountdown,
   isAwaitingAcceptance,
@@ -83,6 +84,17 @@ describe('expiredOutcome', () => {
     expect(expiredOutcome({ payment: { state: 'FAILED' } })).toBe('paymentNotCompleted');
     expect(expiredOutcome({ payment: { state: 'PENDING' } })).toBe('paymentNotCompleted');
   });
+
+  // A released hold is a REFUNDED payment too: only the money the API recorded tells it from a refund.
+  it('goes by the money the API recorded when it let the order go', () => {
+    const refundedPayment = { payment: { state: 'REFUNDED' } };
+    expect(expiredOutcome({ ...refundedPayment, cancelMoney: 'RELEASED' })).toBe('notAccepted');
+    expect(expiredOutcome({ ...refundedPayment, cancelMoney: 'REFUNDED' })).toBe('notAcceptedRefunded');
+    expect(expiredOutcome({ payment: { state: 'NONE' }, cancelMoney: 'NOT_CHARGED' })).toBe('notAccepted');
+    expect(expiredOutcome({ payment: { state: 'HELD' }, cancelMoney: 'PENDING' })).toBe('notAccepted');
+    // A value this build does not know: the payment decides, as before.
+    expect(expiredOutcome({ ...refundedPayment, cancelMoney: 'SOMETHING_NEW' })).toBe('notAcceptedRefunded');
+  });
 });
 
 describe('formatCountdown', () => {
@@ -155,5 +167,32 @@ describe('orderCancellation', () => {
     expect(money('PENDING')).toBeNull();
     // Points or a gift card paid for it all: no card money to speak of.
     expect(money('NONE', 'STORE', 0)).toBeNull();
+  });
+
+  /**
+   * The store turned down an order whose card hold came off: the push said
+   * «Деньги не списаны, блокировка на карте снята», the screen used to say
+   * «Деньги вернутся на карту» — the payment reads REFUNDED either way.
+   */
+  it('says what the push said once the API recorded where the money went', () => {
+    const money = (cancelMoney: string, state = 'REFUNDED') =>
+      orderCancellation({ ...cancelled, cancelledBy: 'STORE', cancelMoney, payment: { state } })?.money;
+    expect(money('RELEASED')).toBe('released');
+    expect(money('REFUNDED')).toBe('refunded');
+    expect(money('NOT_CHARGED', 'NONE')).toBe('notCharged');
+    expect(money('PENDING', 'HELD')).toBe('holdPending');
+    // Even when the payment has moved on since: the order keeps the push's word.
+    expect(money('PENDING', 'REFUNDED')).toBe('holdPending');
+  });
+});
+
+describe('endedOrderMoney', () => {
+  it('speaks of the money of cancelled and expired orders only', () => {
+    expect(endedOrderMoney({ status: 'EXPIRED', cancelMoney: 'RELEASED', payment: { state: 'REFUNDED' } })).toBe(
+      'released',
+    );
+    expect(endedOrderMoney({ status: 'EXPIRED', totalCents: 4500, payment: { state: 'HELD' } })).toBe('holdPending');
+    expect(endedOrderMoney({ status: 'CREATED', cancelMoney: 'RELEASED', payment: { state: 'HELD' } })).toBeNull();
+    expect(endedOrderMoney({ status: 'PICKED_UP', payment: { state: 'PAID' } })).toBeNull();
   });
 });

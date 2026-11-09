@@ -3,9 +3,10 @@
 The calculator behind the manager's spec «Очередь и время готовности» (list 5.0,
 2026-11-05; plain-text copy and the reference model `queue_model (…).py` in
 `_materials/takeAway/2026-11-05_maxim-list-5.0/`). Since 2026-11-06 the calculator
-exists as a pure module with tests; **nothing calls it yet** — what runs in
-production is still described in `docs/kitchen-policy.md`. Section 2 is the plan
-for wiring it in.
+exists as a pure module with tests; since 2026-11-09 it is wired into the API,
+the admin, the web and the Mini App **behind `QUEUE_POLICY_ENABLED`** (section 2):
+on in staging, off in production, where `docs/kitchen-policy.md` still describes
+what runs.
 
 ## 1. The calculator
 
@@ -108,116 +109,151 @@ C stations × the station's busy list — milliseconds for a store's day.
   station than at booking. Stations are interchangeable, so the queue then takes
   the other one; only fragmented multi-station days could shift an ASAP forecast.
 
-## 2. Wiring plan (next round)
+## 2. Wiring (since 2026-11-09, behind `QUEUE_POLICY_ENABLED`)
 
-### 2.1 Data model — migration `queue_policy`
+The plan of 2026-11-06 is wired. Everything runs behind the env flag
+`QUEUE_POLICY_ENABLED` (`FeatureFlagsService.queuePolicyEnabled`, default
+off): with it off the API answers exactly as before (docs/kitchen-policy.md);
+with it on the calculator drives the quotes, the pre-order times, the booking
+and the kitchen board. Section 2.8 says how to switch it on. Where the build
+departs from the plan, the subsection says so and why.
 
-| Model       | Field                                     | Default   | Notes                                                                                                        |
-| ----------- | ----------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------ |
-| `Store`     | `prepStations Int`                        | 1         | C, «Позиций готовится одновременно», 1–10. `kitchenParallelism` (default 2) and `slotCapacity` are not read. |
-| `Store`     | `loadExtraSeconds Int`                    | 600       | N, «Загрузка: +N мин», whole minutes 0–60. Replaces the global `BUSY_EXTRA_WAIT_SECONDS`.                    |
-| `Product`   | `prepParallel Boolean`                    | false     | «Готовится параллельно». B stays `prepTimeSeconds` (default 180 s).                                          |
-| `CartItem`  | `prepParallel Boolean`                    | false     | Set with `unitPrepSeconds` when the line is priced.                                                          |
-| `Order`     | `placedUnderLoad Boolean`                 | false     | L: `Store.status = OVERLOADED` when the order was created.                                                   |
-| `OrderItem` | `prepSeconds Int`, `prepParallel Boolean` | 0 / false | B and the flag per line, snapshotted at creation so a menu edit does not move orders in the queue.           |
+### 2.1 Data model — migration `20261109110000_queue_policy`
 
-A is `Store.baseEtaSeconds` as today; «Загрузка» is the existing «Загружены»
-toggle (`Store.status = OVERLOADED`, label renamed); «Перерыв» is the existing
-«Пауза» (`pausedUntil`). Data part of the migration: `OrderItem.prepSeconds` of
-orders not finished yet from their product's `prepTimeSeconds` (snapshot
-`productId`); everything else starts at the defaults. Variation and modifier
-`prepTimeDeltaSeconds` stop counting (spec: B does not depend on variants), the
-columns stay.
+| Model       | Field                                       | Default | Notes                                                                                                                                                                                                         |
+| ----------- | ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Store`     | `kitchenParallelism` (existing)             | 2       | **C**, «Позиций готовится одновременно», 1–20. Reused instead of a new `prepStations`: the same setting under the same label, so every store keeps the value its owner set and nobody's quotes jump to C = 1. |
+| `Store`     | `loadExtraSeconds Int`                      | 600     | **N**, «Загрузка: +N мин», whole minutes 0–60. Replaces `BUSY_EXTRA_WAIT_SECONDS` with the flag on.                                                                                                           |
+| `Product`   | `prepParallel Boolean`                      | false   | «Готовится параллельно». B stays `prepTimeSeconds`.                                                                                                                                                           |
+| `Order`     | `placedUnderLoad Boolean`                   | false   | **L**: the store was OVERLOADED when the order was created. Written for every order, flag on or off.                                                                                                          |
+| `OrderItem` | `prepSeconds Int?`, `prepParallel Boolean?` | null    | B and the flag per line, written while the flag is on. Null on orders placed with it off: the queue reads their product as it is now (by the snapshot's product id), else the line's `unitPrepSeconds`.       |
+
+- **No `CartItem.prepParallel`**: the cart quote reads B and the flag from the
+  products as they are now (one query) — a cart is not an order, and a menu
+  edit should show in it at once.
+- **No backfill**: the nullable line columns and the read-through to the
+  product cover orders in flight whenever the flag is switched on, which a
+  one-time backfill at deploy could not.
+- Variation and modifier `prepTimeDeltaSeconds` do not count with the flag on
+  (B is the product's own time); they still count in the old ETA, so they stay
+  in the editor.
 
 ### 2.2 Building the state — `QueueStateService` (kitchen module)
 
-One query per store (or a batch for the store list):
+`kitchen/queue-state.ts` (pure, tested) and `queue-state.service.ts` (reads).
+One query for the orders of any number of stores, one for the products of
+lines without a snapshot:
 
-- orders with status CREATED and `kitchenVisibleAt` set, PAID, ACCEPTED (queued or
-  reserved) and IN_PROGRESS (started); READY and later, CANCELLED, EXPIRED and
-  orders whose card has not gone through are left out;
-- T = `kitchenVisibleAt` (when the order became the kitchen's; equals `createdAt`
-  when nothing is paid by card), `seq` from `createdAt` then id;
-  `acceptedAt`, `startedAt` as stored; `readyBy = pickupAt` for SCHEDULED;
-- items from `OrderItem.prepSeconds × quantity` and `prepParallel`;
-- `hours` from `hoursAround()` (DST-safe) with the current window stretched to
-  `StoreShift.extendedUntil`; `loadOn` = OVERLOADED; `paused` = `pausedUntil > now`.
+- orders CREATED with `kitchenVisibleAt` set, PAID, ACCEPTED and IN_PROGRESS;
+  **unpaid pre-orders too** (CREATED, SCHEDULED, no `kitchenVisibleAt`) — a
+  pre-order holds the time its customer picked while they pay, as a 15-minute
+  slot did; an unpaid ASAP order joins the queue once its payment lands.
+  Orders due more than 2 hours ago (`pickupAt` and `readyEstimateAt`) are left
+  out: a ticket nobody pressed «Готово» for must not hold a station all day;
+- T = `kitchenVisibleAt` (`createdAt` for older orders), `seq` by `createdAt`
+  then id; `acceptedAt`, `startedAt` (an IN_PROGRESS order without one counts
+  as started when accepted); `readyBy = pickupAt` for SCHEDULED;
+- A = `acceptWindowSeconds(baseEtaSeconds)` (as the accept reminder), N, C;
+  `hours` from `hoursAround()` with the window open now (or the one that closed
+  last) stretched to `StoreShift.extendedUntil`; `loadOn` = OVERLOADED;
+  `paused` = `pausedUntil > now`;
+- for pre-orders (`preorderState`): «Перерыв» is a **gap in the hours** (the
+  owner's rule of 2026-10-20 — pre-orders after the pause are taken; cooking
+  starts after it ends), and a window nobody is on shift for yet starts
+  `PREORDER_OPENING_LEAD_MINUTES` later.
 
-### 2.3 Code paths replaced
+### 2.3 Code paths (flag on)
 
-| Today                                                                                                                                 | With the calculator                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `KitchenLoadService.quote` / `asapPlan` / `queueWaitByStore` (work ÷ parallelism, half of IN_PROGRESS, 30-min «due soon», slot spill) | `quoteAsap` — cart `etaSeconds`, `POST /orders` ASAP `pickupAt = readyAt`, `CLOSING_SOON`                  |
-| `asapByStore` + `typicalPrepByStore` (store card «N мин»)                                                                             | `quoteAsap` with one typical position (the median B, `typical-prep.ts` stays)                              |
-| `slots.ts`, `slotCapacity`, `pickupSlots`, `assertScheduledSlot`                                                                      | `preorderWindows` / `isPreorderTimeAvailable`; the 15-minute grid and its capacity go                      |
-| `MIN_SCHEDULED_LEAD_MINUTES` (10 min)                                                                                                 | t + A + N·L + D                                                                                            |
-| `PREORDER_OPENING_LEAD_MINUTES` (15 min after an opening nobody is on shift for)                                                      | kept: that window is passed in `hours` starting 15 minutes later (pre-opening orders are outside the spec) |
-| `BUSY_EXTRA_WAIT_SECONDS`                                                                                                             | per-store N                                                                                                |
-| `kitchen-timeline.ts` `cookingSeconds` / `startBy` / `readyEstimate`                                                                  | the schedule's `startAt` / `readyAt`; the A-based accept reminder and timeout stay as they are             |
-| `Order.readyEstimateAt` set only on a late accept or start                                                                            | set to G by the recompute below whenever G ≠ `pickupAt` (clients already count down to it)                 |
+| Before                                                             | With the flag on                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KitchenLoadService.quote` for the cart                            | `QueuePolicyService.quoteBasket` → cart `etaSeconds`, `readyAt`, `asapAvailable`, `asapBlockedReason`                                                                                                                                                                                    |
+| `asapByStore` + `typicalPrepByStore` (store «N мин», availability) | `typicalQuotes`: one position of the median B at the end of the queue; `StoreAvailabilityService` feeds its wait to the same `storeAvailability()` rules (reason order unchanged)                                                                                                        |
+| ASAP `POST /orders` (quote, spill, `QUEUE_FULL` past 45 min)       | `pickupAt` = G of the basket, quoted again under the store lock; `CLOSING_SOON` when G is after the closing (extension included), `QUEUE_FULL` past `MAX_ASAP_WAIT_SECONDS` (kept — owner decision)                                                                                      |
+| `slots.ts`, `pickupSlots`, `assertScheduledSlot`, 10-minute lead   | `preorderWindows` / `isPreorderTimeAvailable` (t + A + N·L + D); `pickup-slots` is read off the windows                                                                                                                                                                                  |
+| `BUSY_EXTRA_WAIT_SECONDS`                                          | the store's N                                                                                                                                                                                                                                                                            |
+| `kitchen-timeline.ts` `startBy` on the board, the start reminder   | the plan's O (`startBy`) and G (`plannedReadyAt`); «Пора готовить предзаказ» at O; `acceptAlertAt` / `acceptDeadlineAt` stay A-based (kitchen-timeline)                                                                                                                                  |
+| `readyEstimate()` on a late accept or start                        | `QueueRecomputeService` (orders module): after a new order, a payment landing, accept, start, «Готово», «Выдан», cancel, expiry and once a minute (`kitchen-order-sla`) — `readyEstimateAt` = G when it moved a minute or more (null when G is the promise again), `order.statusChanged` |
 
-Recompute (spec 5): on every new order, accept, start, ready, cancel and expiry,
-and once a minute for stores with active orders (fold into the `kitchen-order-sla`
-cron): `scheduleQueue`, write `readyEstimateAt` of orders whose G moved by a
-minute or more, emit `order.statusChanged` with the new `etaSeconds` (or a new
-`order.etaChanged`), and `store.loadChanged` with the store's new «N мин».
-`Order.prepSeconds` / `workSeconds` stay for analytics only.
+The recompute leaves alone an order already past its own plan (G within a
+minute of now): moving its estimate with the clock would hide the delay —
+«Немного задерживаемся» runs off the estimate — and ping its customer every
+minute. It announces `store.loadChanged` when the store's «N мин» changed.
 
 ### 2.4 API and DTOs
 
-- Admin store DTO: `prepStations` (1–10), `loadExtraSeconds` (whole minutes 0–60);
-  the editor shows «Позиций готовится одновременно» and «Загрузка: +N мин».
-- Admin product DTO: `prepParallel`; the editor shows «Время приготовления, мин»
-  (B, edited in minutes, stored in seconds) and the «Готовится параллельно» box;
-  variation/modifier prep deltas leave the editor.
-- `GET /stores/:id/ready-windows?cartId=` → `{ from, to }[]` (ISO, whole minutes,
-  both ends included) for the cart's basket. `GET /stores/:id/pickup-slots` stays
-  for published app builds: a 15-minute slot start is `available` when it lies in a
-  window; drop it once the minimum supported build uses windows.
-- Cart DTO: `etaSeconds` stays; add `readyAt`, `asapAvailable`,
-  `asapBlockedReason`.
-- `POST /orders`: ASAP → `ASAP_UNAVAILABLE` with the quote's reason; SCHEDULED →
-  `isPreorderTimeAvailable` under a per-store lock (`pg_advisory_xact_lock` in the
-  order transaction), else `PICKUP_SLOT_FULL` (code kept) — two customers cannot
-  book the same window.
-- Store DTO: `currentEtaSeconds` and `asapBlockedReason` from the typical quote.
-- KDS row: `startBy` = planned O, new `plannedReadyAt` = G (board «готов к 12:11»).
-  «Начать» / «Готово» stay whole-order buttons.
+- Admin store DTO: `loadExtraSeconds` (seconds, whole minutes 0–60); C is the
+  existing `kitchenParallelism`. Admin product DTO: `prepParallel`.
+- `GET /stores/:idOrSlug/ready-windows?cartId=` → `{ from, to }[]` (ISO, whole
+  minutes, both ends included) for the cart's basket, else one position of the
+  store's typical B. With the flag off it answers the free 15-minute slot
+  starts as one-minute windows (what the order path books then).
+- `GET /stores/:idOrSlug/pickup-slots` (published app builds): with the flag
+  on, the slot starts of the next 24 hours; those the time rules close (too
+  soon, outside the hours, «Перерыв», the opening lead) are left out, the
+  others `available` when they lie in a window; `taken` as before.
+- Cart DTO: `etaSeconds` stays; `readyAt`, `asapAvailable`,
+  `asapBlockedReason` only with the flag on (absent otherwise).
+- `POST /orders`: checks before the transaction and again inside it under
+  `pg_advisory_xact_lock(hashtext('queue-policy:<storeId>'))`; SCHEDULED →
+  `PICKUP_TIME_OUT_OF_RANGE` (`minMinutes` = the soonest minute the basket can
+  be ready), `STORE_CLOSED_AT_TIME` (outside the hours, «Перерыв», opening
+  lead) or `PICKUP_SLOT_FULL` (codes kept). An opt-in Postgres test
+  (`queue-booking.db.spec.ts`, `QUEUE_IT_DATABASE_URL`) books the same ten
+  minutes from two transactions at once: one wins.
+- Order DTO: `readyFromQueue: true` while the flag is on (absent otherwise).
+- KDS row: `startBy` = O, `plannedReadyAt` = G («готов к 12:11 · начать в
+  12:05»). «Начать» / «Готово» stay whole-order buttons.
+- `/config/features`: `queuePolicyEnabled: true` only while on.
 
-### 2.5 What the customer sees
+### 2.5 What the customer sees (web, Mini App)
 
-- Cart and checkout: «Если закажете сейчас — будет готово в 12:11 · ≈ 11 мин»
-  (`readyAt` rounded up to the minute in the store's zone, `readyWaitMinutes`);
-  «Не успеем до закрытия — выберите заказ ко времени» on `CLOSING_SOON`;
-  «Заведение на перерыве» on `PAUSED` (today «Технический перерыв»).
-- «Ко времени»: the free windows («12:56–13:00», «13:16–20:00», tomorrow's
-  separately) and a time picker inside them.
-- Order screen: «Готов в 12:11 · ≈ 11 мин», updated on every recompute; the
-  countdown runs to `orderDueAt` (`readyEstimateAt ?? pickupAt`).
-- Shared strings in `libs/i18n`, the same on web, TMA and the Flutter app.
+- Cart and checkout, ordering for now: «Если закажете сейчас — будет готово в
+  12:11 · ≈ 11 мин» (`readyAt` rounded up to the minute in the store's zone);
+  on `CLOSING_SOON` «Сейчас» is off and «Не успеем до закрытия — выберите
+  заказ ко времени» shows (a time later is preselected).
+- «Ко времени»: the free windows as times in the existing picker — each
+  window's ends and every five minutes inside it, grouped by day.
+- Order screen: «Готов в 12:11 · ≈ 11 мин» while it counts down (web: beside
+  the address; Mini App: under the countdown), to `orderDueAt`.
+- Strings: `common.queue.*` in libs/i18n. «Заведение на перерыве» (PAUSED) was
+  not changed: the existing «Технический перерыв» texts serve both modes.
+- The Flutter app needs no change: every new field is optional, it keeps
+  `pickup-slots` (read off the windows) and counts down to
+  `readyEstimateAt ?? pickupAt`, which the recompute keeps current.
 
-### 2.6 Risks and data migration
+### 2.6 Risks
 
-- **C = 1 for every store** (the agreed start value) where `kitchenParallelism` is
-  2 today: quotes get longer until owners set C. Tell the owners at release.
 - **B quality.** Every Poster-imported product has the default 180 s and no
-  product has the parallel flag yet; the quotes are only as good as these. Owners
-  review B and the flag before switching on.
+  product has «Готовится параллельно» yet; the quotes are only as good as
+  these. Owners review B, the flag, C and N before switching on.
 - **Pre-orders booked on 15-minute slots** become reserves at their `pickupAt`;
-  where slot capacity allowed several in one slot on one station, the later-booked
-  ones are laid earlier (their «начать в» on the board moves earlier, the
+  where slot capacity allowed several in one slot on one station, the later
+  booked ones are laid earlier (their «начать в» moves earlier, the
   customer's time does not change).
-- **Orders in flight at deploy** get `OrderItem.prepSeconds` from the current menu
-  (backfill) and no parallel flag.
-- **Feature flag** `QUEUE_POLICY_ENABLED`: old path vs calculator for quotes, slots
-  and the board, switched on test.takeaway.md first.
-- **Load.** Windows are computed per checkout render: cache per (store, basket
-  shape) for a few seconds and recompute on `store.loadChanged`.
+- **Load.** A windows answer evaluates up to 1 441 minutes per request; not
+  cached yet (milliseconds for a store's day).
+- **The board** refreshes its O and G on its 30-second poll and on every
+  ticket event; the recompute does not push board rows.
+- The 45-minute cap and the store-level `CLOSING_SOON` still use a typical
+  order (docs/kitchen-policy.md, known limits); the cart and the order path use
+  the basket itself.
 
-### 2.7 Open questions for the manager
+### 2.7 Open questions — answered for now (2026-11-09)
 
-1. «Перерыв»: the spec takes no pre-orders at all while it is on; today (owner,
-   2026-10-20) pre-orders for a time after the pause end are taken. Which one?
-   (The calculator can do both: `paused`, or the pause as a gap in `hours`.)
-2. The spec has no longest ASAP wait; today an ASAP order is refused past
-   45 minutes (`QUEUE_FULL`). Keep the cap?
+1. «Перерыв»: today's owner rule — pre-orders are taken for times whose
+   cooking starts after the pause ends (the pause is a gap in the hours).
+2. The 45-minute cap on an ASAP order stays (`QUEUE_FULL`,
+   `MAX_ASAP_WAIT_SECONDS`).
+
+Both until the manager says otherwise.
+
+### 2.8 Switching it on
+
+- **Staging** (test.takeaway.md): on — `deploy/docker-compose.staging.yml`
+  sets `QUEUE_POLICY_ENABLED: 'true'` for the api (docs/environments.md).
+- **Production**: off. To switch on, after the owners checked C, N, B and the
+  parallel flags in the admin: `QUEUE_POLICY_ENABLED=true` in production's
+  `deploy/.env.production`, then redeploy (or recreate the api). To switch off
+  again, remove the line: orders placed meanwhile keep their snapshots and the
+  old rules simply ignore them.
+- `/api/config/features` shows `queuePolicyEnabled: true` while it is on.

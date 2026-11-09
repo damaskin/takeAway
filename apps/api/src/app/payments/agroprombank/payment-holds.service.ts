@@ -4,7 +4,7 @@ import type { Payment, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgroprombankWebClient, AgroprombankWebError } from '../agroprombank-web/agroprombank-web.client';
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
-import { CARD_PROVIDERS, isDeferredCharge } from '../card-providers';
+import { CARD_PROVIDERS, isDeferredCharge, releaseOutcome } from '../card-providers';
 import { AgroprombankClient } from './agroprombank.client';
 import { AgroprombankConfig } from './agroprombank.config';
 
@@ -161,6 +161,10 @@ export class PaymentHoldsService {
    * payment for an order already paid for, an amount the bank changed). The
    * release after a cancel is best-effort, so without this pass a bank hiccup
    * at that moment left the customer's money frozen for good.
+   *
+   * An order that recorded its money as still on its way (`cancelMoney`
+   * PENDING) reads as released once the hold is, so the customer's order
+   * screen stops promising what already happened.
    */
   async retryPendingReleases(limit = 50): Promise<{ checked: number; released: number }> {
     const cutoff = new Date(Date.now() - RETRY_RELEASE_AFTER_MS);
@@ -183,7 +187,13 @@ export class PaymentHoldsService {
     for (const hold of holds) {
       if (releaseAttempts(hold) >= MAX_RELEASE_ATTEMPTS) continue;
       checked += 1;
-      if (await this.release(hold, 'retry')) released += 1;
+      const done = await this.release(hold, 'retry');
+      if (!done) continue;
+      released += 1;
+      await this.prisma.order.updateMany({
+        where: { id: hold.orderId, cancelMoney: 'PENDING' },
+        data: { cancelMoney: releaseOutcome(done, true) },
+      });
     }
     return { checked, released };
   }

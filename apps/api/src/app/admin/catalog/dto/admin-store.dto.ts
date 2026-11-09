@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { Currency, PickupPointType, StoreFulfillment, StoreKind, StoreStatus } from '@prisma/client';
-import { ACCEPT_WINDOW_MAX_MINUTES, ACCEPT_WINDOW_MIN_MINUTES } from '@takeaway/shared-types';
+import { ACCEPT_WINDOW_MAX_MINUTES, ACCEPT_WINDOW_MIN_MINUTES, LOAD_EXTRA_MAX_MINUTES } from '@takeaway/shared-types';
 import { Type } from 'class-transformer';
 import {
   Allow,
@@ -194,6 +194,22 @@ export class CreateStoreDto {
   @Min(1)
   @Max(20)
   kitchenParallelism?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: LOAD_EXTRA_MAX_MINUTES * 60,
+    multipleOf: 60,
+    default: 600,
+    description:
+      '«Загрузка: +N мин» of the queue policy, in seconds, whole minutes 0–60: while the kitchen has «Загружены» on, ' +
+      'an order placed then may start this much later than its accept time. Read only with QUEUE_POLICY_ENABLED.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(LOAD_EXTRA_MAX_MINUTES * 60)
+  @IsDivisibleBy(60, { message: 'loadExtraSeconds must be whole minutes' })
+  loadExtraSeconds?: number;
 
   /**
    * «Заказов на 15 минут» is gone since 2026-11-06 (manager's list 5.0,

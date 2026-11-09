@@ -714,6 +714,18 @@
   "@paymentStateNotCharged": {
     "description": "A cancelled or expired order whose card was never charged."
   },
+  "paymentStateReleased": "Card hold released",
+  "@paymentStateReleased": {
+    "description": "The payment line of a cancelled or expired order whose card hold came off."
+  },
+  "paymentStateRefundedToCard": "Refunded to your card",
+  "@paymentStateRefundedToCard": {
+    "description": "The payment line of a cancelled or expired order whose captured charge is going back."
+  },
+  "paymentStateReturnPending": "Refund in progress",
+  "@paymentStateReturnPending": {
+    "description": "The payment line of a cancelled or expired order whose hold or refund the bank has not done yet."
+  },
   "paymentStateAtCounter": "Paying at the counter",
   "paymentStateAwaiting": "Awaiting payment",
   "pickupCode": "Your code",

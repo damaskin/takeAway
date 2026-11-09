@@ -1,16 +1,14 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Order, OrderStatus, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import type { Order, OrderCancelMoney, OrderStatus, Payment, Prisma } from '@prisma/client';
 
-import {
-  NotificationsService,
-  type StoreRejectionInfo,
-  type StoreRejectReason,
-} from '../notifications/notifications.service';
+import { NotificationsService, type StoreRejectReason } from '../notifications/notifications.service';
 import { readyEstimate } from '../kitchen/kitchen-timeline';
 import { wallClock } from '../kitchen/opening-hours';
+import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { OrdersService } from '../orders/orders.service';
+import { QueueRecomputeService } from '../orders/queue-recompute.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
-import { CARD_PROVIDERS, isCardProvider, isDeferredCharge } from '../payments/card-providers';
+import { CARD_PROVIDERS, isDeferredCharge } from '../payments/card-providers';
 import { CardPaymentsService } from '../payments/card-payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -20,6 +18,13 @@ const OPEN_STATUSES: OrderStatus[] = ['CREATED', 'PAID', 'ACCEPTED', 'IN_PROGRES
 
 /** The kitchen can turn an order down until it has accepted it. */
 const REJECTABLE_STATUSES: ReadonlySet<string> = new Set<OrderStatus>(['CREATED', 'PAID']);
+
+/**
+ * What the board's reject answer says about the money (`POST
+ * /kds/orders/:id/reject`): `Order.cancelMoney` in the lower case the
+ * kitchen board was built on, `none` when there was no card money.
+ */
+export type KitchenRejectMoney = 'not_charged' | 'released' | 'refunded' | 'pending' | 'none';
 
 const ALLOWED_TRANSITIONS: Record<string, OrderStatus[]> = {
   accept: ['CREATED', 'PAID'],
@@ -39,7 +44,16 @@ export class KdsService {
     private readonly cards: CardPaymentsService,
     private readonly holds: PaymentHoldsService,
     private readonly orders: OrdersService,
+    // Always provided by KitchenModule and OrdersModule; unit tests written
+    // before the queue policy leave them out, which reads as the flag off.
+    @Optional() private readonly queue?: QueuePolicyService,
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
+
+  /** O and G of the store's orders under the queue policy; null with it off. */
+  private async plans(storeId: string) {
+    return this.queue?.enabled ? this.queue.plans([storeId]) : null;
+  }
 
   async listOpen(storeId: string): Promise<BoardRow[]> {
     const orders = await this.prisma.order.findMany({
@@ -59,7 +73,8 @@ export class KdsService {
     const payable = orders.filter(
       (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
     );
-    return payable.map((o) => toBoardRow(o));
+    const plans = await this.plans(storeId);
+    return payable.map((o) => toBoardRow(o, plans?.get(o.id)));
   }
 
   /**
@@ -154,57 +169,28 @@ export class KdsService {
    * swamped, closing. The order is cancelled with everything it held handed
    * back — promo, gift-card balance, points — and the money with it: a charge
    * waiting for the accept is called off without touching the card, a hold is
-   * released, and a charge already taken is refunded in full. The customer
-   * gets a push saying why.
+   * released, and a charge already taken is refunded in full. The order
+   * records where the money went (`cancelMoney`) and the customer gets a push
+   * saying why, in the same words their order screen then shows.
    */
   async reject(
     storeId: string,
     orderId: string,
     staffUserId: string,
     input: { reason: StoreRejectReason; comment?: string },
-  ): Promise<{ id: string; status: OrderStatus; orderCode: string; money: StoreRejectionInfo['money'] }> {
+  ): Promise<{ id: string; status: OrderStatus; orderCode: string; money: KitchenRejectMoney }> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId } });
     if (!order || order.storeId !== storeId) throw new NotFoundException('Order not found for this store');
 
     const comment = input.comment?.trim() || undefined;
-    const {
-      order: cancelled,
-      holdReleased,
-      chargeVoided,
-    } = await this.orders.cancelOrder(order, {
+    const { order: cancelled, money } = await this.orders.cancelOrder(order, {
       actorId: staffUserId,
       by: 'store',
       allowedStatuses: REJECTABLE_STATUSES,
       reason: input.reason,
       comment,
+      refundCaptured: (captured) => this.refundRejected(orderId, captured, staffUserId, comment),
     });
-
-    let money: StoreRejectionInfo['money'] = chargeVoided ? 'not_charged' : holdReleased ? 'released' : 'none';
-    if (!holdReleased && !chargeVoided) {
-      const held = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'REQUIRES_ACTION');
-      const captured = cancelled.payments.find((p) => isCardProvider(p.provider) && p.status === 'SUCCEEDED');
-      if (held) {
-        // The bank did not answer; the reconciliation cron keeps trying.
-        money = 'pending';
-      } else if (captured) {
-        try {
-          await this.cards.refund(captured, captured.amountCents - captured.refundedCents, {
-            actorId: staffUserId,
-            reason: 'store-rejected',
-            note: comment ?? null,
-            source: 'kds',
-          });
-          money = 'refunded';
-        } catch (err) {
-          this.logger.error(
-            `REFUND NEEDED: order=${orderId} was rejected by the store but the refund failed: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-          money = 'pending';
-        }
-      }
-    }
 
     void this.notifications.notifyOrderStatus(
       {
@@ -218,7 +204,32 @@ export class KdsService {
       { rejection: { reason: input.reason, comment, money } },
     );
 
-    return { id: cancelled.id, status: cancelled.status, orderCode: cancelled.orderCode, money };
+    return { id: cancelled.id, status: cancelled.status, orderCode: cancelled.orderCode, money: rejectMoney(money) };
+  }
+
+  /** A charge already taken on an order the store turned down goes back in full; a refusal is left for ops. */
+  private async refundRejected(
+    orderId: string,
+    captured: Payment,
+    staffUserId: string,
+    comment: string | undefined,
+  ): Promise<'REFUNDED' | 'PENDING'> {
+    try {
+      await this.cards.refund(captured, captured.amountCents - captured.refundedCents, {
+        actorId: staffUserId,
+        reason: 'store-rejected',
+        note: comment ?? null,
+        source: 'kds',
+      });
+      return 'REFUNDED';
+    } catch (err) {
+      this.logger.error(
+        `REFUND NEEDED: order=${orderId} was rejected by the store but the refund failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return 'PENDING';
+    }
   }
 
   /** Started too late to make `pickupAt`, the order gets (or moves) the kitchen's new estimate. */
@@ -268,10 +279,15 @@ export class KdsService {
 
     // Accepted or started too late for the promise: the customer counts down
     // to the kitchen's new estimate instead (pickupAt stays the promise).
+    // Under the queue policy the queue's own G is the estimate, written by
+    // the recompute below.
+    const queued = this.queue?.enabled === true;
     const estimate =
-      key === 'accept' || key === 'start' ? readyEstimate(order, order.store.kitchenParallelism, new Date()) : null;
+      !queued && (key === 'accept' || key === 'start')
+        ? readyEstimate(order, order.store.kitchenParallelism, new Date())
+        : null;
 
-    const updated = await this.prisma.order.update({
+    let updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         ...patch,
@@ -285,6 +301,19 @@ export class KdsService {
         },
       },
     });
+
+    // The queue moved (an accept is R, a start lays the order out from now,
+    // «Готово» frees its stations): every estimate of the store follows,
+    // this order's too — read back for the accept push and the answer.
+    let queueEstimate: Date | null = null;
+    if (queued && this.recompute) {
+      await this.recompute.run(storeId);
+      const fresh = await this.prisma.order.findUnique({ where: { id: orderId } });
+      if (fresh) updated = fresh;
+      if (updated.readyEstimateAt && updated.readyEstimateAt > updated.pickupAt)
+        queueEstimate = updated.readyEstimateAt;
+    }
+    const pushEstimate = estimate ?? queueEstimate;
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -308,7 +337,9 @@ export class KdsService {
         fulfillmentType: updated.fulfillmentType,
       },
       updated.status,
-      estimate && updated.status === 'ACCEPTED' ? { readyEstimate: wallClock(estimate, order.store.timezone) } : {},
+      pushEstimate && updated.status === 'ACCEPTED'
+        ? { readyEstimate: wallClock(pushEstimate, order.store.timezone) }
+        : {},
     );
 
     // Push to the kitchen board too. PICKED_UP orders leave the open list,
@@ -359,6 +390,18 @@ export class KdsService {
       where: { storeId, id: { in: ids } },
       include: BOARD_INCLUDE,
     });
-    return orders.map((o) => toBoardRow(o));
+    const plans = await this.plans(storeId);
+    return orders.map((o) => toBoardRow(o, plans?.get(o.id)));
   }
+}
+
+const REJECT_MONEY: Record<OrderCancelMoney, KitchenRejectMoney> = {
+  NOT_CHARGED: 'not_charged',
+  RELEASED: 'released',
+  REFUNDED: 'refunded',
+  PENDING: 'pending',
+};
+
+function rejectMoney(money: OrderCancelMoney | null): KitchenRejectMoney {
+  return money ? REJECT_MONEY[money] : 'none';
 }

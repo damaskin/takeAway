@@ -695,32 +695,22 @@ class _PaymentCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final p = order.payment;
-    final (String title, IconData icon, Color color) = switch (p.state) {
-      PaymentState.paid => (l10n.paymentStatePaid, Icons.verified_rounded, brand.mint),
-      PaymentState.held => (l10n.paymentStateHeld, Icons.lock_clock_rounded, brand.amber),
-      PaymentState.pending => (l10n.paymentStatePending, Icons.hourglass_top_rounded, brand.amber),
-      PaymentState.failed => (l10n.paymentStateFailed, Icons.error_outline_rounded, brand.berry),
-      PaymentState.refunded => (l10n.paymentStateRefunded, Icons.undo_rounded, brand.textSecondary),
-      // A new order with nothing on it yet is waiting for its card; only old
-      // orders from before card-only checkout were paid at the counter.
-      PaymentState.none when order.status == OrderStatus.created => (
-        l10n.paymentStateAwaiting,
-        Icons.hourglass_top_rounded,
-        brand.amber,
-      ),
-      // Ended without being made: a released hold is no payment at all.
-      PaymentState.none when order.status.isCancelled => (
-        l10n.paymentStateNotCharged,
-        Icons.money_off_rounded,
-        brand.textSecondary,
-      ),
-      PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
+    // An order that is over says where its money went, never «Спишем при
+    // принятии заказа» — the outcome the cancellation card words in full.
+    final ended = endedOrderMoney(order);
+    final (String title, IconData icon, Color color) = switch (ended) {
+      CancelledMoney.notCharged => (l10n.paymentStateNotCharged, Icons.money_off_rounded, brand.textSecondary),
+      CancelledMoney.released => (l10n.paymentStateReleased, Icons.lock_open_rounded, brand.textSecondary),
+      CancelledMoney.refunded => (l10n.paymentStateRefundedToCard, Icons.undo_rounded, brand.textSecondary),
+      CancelledMoney.holdPending => (l10n.paymentStateReturnPending, Icons.hourglass_top_rounded, brand.amber),
+      null => _liveState(order, l10n, brand),
     };
     final detail = p.state == PaymentState.none
         ? context.money(order.totalCents, order.currency)
         : [context.money(p.amountCents, order.currency), ?p.cardMask].join(' · ');
 
     return AnimatedContainer(
+      key: const ValueKey('payment-line'),
       duration: Motion.medium,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(Radii.card)),
@@ -734,7 +724,8 @@ class _PaymentCard extends StatelessWidget {
               children: [
                 Text(title, style: context.text.titleSmall),
                 Text(detail, style: context.text.bodySmall),
-                if (p.state == PaymentState.held) Text(l10n.paymentStateHeldHint, style: context.text.bodySmall),
+                if (p.state == PaymentState.held && ended == null)
+                  Text(l10n.paymentStateHeldHint, style: context.text.bodySmall),
               ],
             ),
           ),
@@ -742,6 +733,30 @@ class _PaymentCard extends StatelessWidget {
       ),
     );
   }
+
+  /// The payment as it stands on an order still going (or one that ended with nothing to say about the money).
+  static (String, IconData, Color) _liveState(Order order, AppLocalizations l10n, BrandColors brand) =>
+      switch (order.payment.state) {
+        PaymentState.paid => (l10n.paymentStatePaid, Icons.verified_rounded, brand.mint),
+        PaymentState.held => (l10n.paymentStateHeld, Icons.lock_clock_rounded, brand.amber),
+        PaymentState.pending => (l10n.paymentStatePending, Icons.hourglass_top_rounded, brand.amber),
+        PaymentState.failed => (l10n.paymentStateFailed, Icons.error_outline_rounded, brand.berry),
+        PaymentState.refunded => (l10n.paymentStateRefunded, Icons.undo_rounded, brand.textSecondary),
+        // A new order with nothing on it yet is waiting for its card; only old
+        // orders from before card-only checkout were paid at the counter.
+        PaymentState.none when order.status == OrderStatus.created => (
+          l10n.paymentStateAwaiting,
+          Icons.hourglass_top_rounded,
+          brand.amber,
+        ),
+        // Ended without being made: a released hold is no payment at all.
+        PaymentState.none when order.status.isCancelled => (
+          l10n.paymentStateNotCharged,
+          Icons.money_off_rounded,
+          brand.textSecondary,
+        ),
+        PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
+      };
 }
 
 /// Not cancellable by the customer any more, but not over either: the

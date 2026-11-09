@@ -1,7 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   Currency,
   FulfillmentType,
+  OrderCancelMoney,
   OrderCancelReason,
   OrderCanceller,
   OrderStatus,
@@ -263,6 +264,19 @@ export class OrderDto {
   })
   cancelComment!: string | null;
 
+  @ApiProperty({
+    enum: OrderCancelMoney,
+    nullable: true,
+    description:
+      'Where the money of a CANCELLED or EXPIRED order went, recorded when the API called it off — the ' +
+      'outcome the push states: NOT_CHARGED (a charge waiting for the accept called off, or a declined card), ' +
+      'RELEASED (the card hold came off), REFUNDED (a captured charge is on its way back), PENDING (the bank ' +
+      'has not released the hold or taken the refund yet; it comes off by itself). Null while the order is ' +
+      'live, when there was no card money to speak of, and on older orders the API could not tell — clients ' +
+      'then read `payment` as before.',
+  })
+  cancelMoney!: OrderCancelMoney | null;
+
   @ApiProperty({ nullable: true, type: String })
   expiredAt!: string | null;
 
@@ -275,6 +289,13 @@ export class OrderDto {
       'original promise.',
   })
   readyEstimateAt!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Present (true) only while the order queue policy runs (QUEUE_POLICY_ENABLED): readyEstimateAt is then the ' +
+      "queue's ready time, kept in step as the queue moves, and the clients show «Готов в 12:11 · ≈ 11 мин».",
+  })
+  readyFromQueue?: true;
 
   @ApiProperty({
     description:

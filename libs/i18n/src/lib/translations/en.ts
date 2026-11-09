@@ -1,3 +1,5 @@
+import { ORDER_CANCEL_MONEY_TEXT } from '@takeaway/utils';
+
 import type { TranslationTree } from './ru';
 
 /**
@@ -37,6 +39,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
       paused: 'Short break until {{time}} · order ahead',
       closingSoon: 'Closing soon — order ahead only',
       until: 'until {{time}}',
+    },
+    /** The ready time under the order queue policy (QUEUE_POLICY_ENABLED): cart, checkout, order screen. */
+    queue: {
+      readyIfNow: 'Order now and it will be ready at {{time}} · ≈ {{min}} min',
+      readyAt: 'Ready at {{time}} · ≈ {{min}} min',
+      closingSoon: "We won't make it before closing — order for a later time",
     },
     /** Why «Сейчас» is off at checkout, by the store's asapBlockedReason. */
     asapBlocked: {
@@ -89,10 +97,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       cardDeclinedHint: 'Please order again with another card.',
       comment: 'Note from the store: “{{comment}}”',
       money: {
-        notCharged: 'Your card was not charged.',
-        released: 'You were not charged and the card hold is released.',
-        refunded: 'The money is on its way back to your card.',
-        holdPending: 'The card hold will be released automatically.',
+        notCharged: ORDER_CANCEL_MONEY_TEXT.NOT_CHARGED.en,
+        released: ORDER_CANCEL_MONEY_TEXT.RELEASED.en,
+        refunded: ORDER_CANCEL_MONEY_TEXT.REFUNDED.en,
+        holdPending: ORDER_CANCEL_MONEY_TEXT.PENDING.en,
       },
     },
     orderReview: {
@@ -447,6 +455,12 @@ export const TRANSLATIONS_EN: TranslationTree = {
         awaiting: 'Awaiting payment',
         /** A cancelled or expired order that never had its card charged. */
         notCharged: 'You were not charged',
+        outcome: {
+          notCharged: 'You were not charged',
+          released: 'Card hold released',
+          refunded: 'Refunded to your card',
+          holdPending: 'Refund in progress',
+        },
         heldHint: 'If the store does not accept the order, your card is not charged.',
         retry: 'Pay by card',
         retryHint: 'You can try paying again.',
@@ -1553,6 +1567,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
         hint: 'move to «New» once accepted, or 15 minutes before cooking starts',
         dueStart: 'for {{time}} · start at {{start}}',
       },
+      queue: {
+        ready: 'ready at {{ready}}',
+        readyStart: 'ready at {{ready}} · start at {{start}}',
+      },
       card: {
         awaiting: 'Waiting to be accepted for {{minutes}} min',
         awaitingPreorder: 'Waiting to be accepted',
@@ -1836,6 +1854,35 @@ export const TRANSLATIONS_EN: TranslationTree = {
         requested_by_customer: "at the customer's request",
         duplicate: 'duplicate order',
         fraudulent: 'fraud',
+        OUT_OF_STOCK: 'out of stock',
+        TOO_BUSY: 'too many orders',
+        CLOSING: 'closing',
+        OTHER: 'other',
+        CARD_DECLINED: 'card declined',
+      },
+      cancel: {
+        title: 'Cancellation',
+        expiredTitle: 'The order did not happen',
+        by: 'Cancelled by',
+        byCustomer: 'The customer',
+        byStore: 'The store',
+        byCardDeclined: 'The bank declined the card on accept',
+        reason: 'Reason',
+        reasons: {
+          OUT_OF_STOCK: 'Out of stock',
+          TOO_BUSY: 'Too many orders',
+          CLOSING: 'Closing',
+          OTHER: 'Other',
+        },
+        comment: "Kitchen's comment",
+        money: 'Money',
+        moneyOutcome: {
+          NOT_CHARGED: 'Never charged',
+          RELEASED: 'Card hold released',
+          REFUNDED: 'Refunded to the card',
+          PENDING: 'Not back yet: the bank has not confirmed the hold release or the refund',
+        },
+        bankMessage: "The bank's answer",
       },
     },
     orders: {
@@ -2018,6 +2065,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         price: 'Price, {{currency}}',
         pricePlaceholder: 'e.g. 35.50',
         prep: 'Preparation time, min',
+        prepParallel: 'Made alongside',
+        prepParallelHint:
+          'Takes no place in the kitchen and is made at the same time as the rest of the order — a bottle of water, a pastry from an oven of its own. An order of it and a coffee is ready when the coffee is.',
         description: 'Description',
         descriptionHint: 'What is in it and why it is good: customers read this on the product page.',
         category: 'Category',
@@ -2407,6 +2457,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         parallelism: 'Items made at once',
         parallelismHint:
           'How many items the kitchen makes at the same time: two baristas at two machines — 2. It sets how fast a rush drains.',
+        loadExtra: 'Busy: +N min',
+        loadExtraHint:
+          'Whole minutes, 0 to 60. While the kitchen has «Busy» on, this many minutes are added to the time to accept an order: an order placed then may be started later, and the customer sees the later ready time straight away. Used by the new order queue.',
         capacitySummary:
           'In 15 minutes the kitchen does {{minutes}} min of work (say, {{drinks}} three-minute drinks). A window without that much time left for a new order shows as taken — however many orders it holds.',
       },

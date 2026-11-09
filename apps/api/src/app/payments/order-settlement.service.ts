@@ -1,9 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Order, OrderEventType, Prisma } from '@prisma/client';
 
 import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
+import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OrdersService } from '../orders/orders.service';
+import { QueueRecomputeService } from '../orders/queue-recompute.service';
 import { PosService } from '../pos/pos.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -42,6 +44,10 @@ export class OrderSettlementService {
     private readonly orders: OrdersService,
     private readonly notifications: NotificationsService,
     private readonly pos: PosService,
+    // Always provided by KitchenModule and OrdersModule; unit tests written
+    // before the queue policy leave them out, which reads as the flag off.
+    @Optional() private readonly queue?: QueuePolicyService,
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
   /**
@@ -136,11 +142,17 @@ export class OrderSettlementService {
   private async pushToKds(order: Order): Promise<void> {
     const kdsRow = await this.prisma.order.findUnique({ where: { id: order.id }, include: BOARD_INCLUDE });
     if (!kdsRow) return;
+    // Under the queue policy the order joins the queue now (T is when it
+    // reached the kitchen): the estimates behind it move, and its row
+    // carries its place.
+    const queue = this.queue?.enabled ? this.queue : null;
+    if (queue) await this.recompute?.run(order.storeId);
+    const plans = queue ? await queue.plans([order.storeId]) : null;
     this.realtime.emitKdsOrderChanged({
       storeId: order.storeId,
       kind: 'created',
       orderId: order.id,
-      order: toBoardRow(kdsRow),
+      order: toBoardRow(kdsRow, plans?.get(order.id)),
     });
   }
 

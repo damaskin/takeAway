@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OrderCancelMoney, OrderCancelReason, OrderCanceller } from '@prisma/client';
 
 import { OrderItemModifierDto, OrderItemVariationDto } from './order.dto';
 
@@ -72,6 +73,26 @@ export class AdminOrderDetailDto {
   @ApiProperty() totalCents!: number;
   @ApiPropertyOptional({ type: String, nullable: true }) couponCode!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) giftCardCode!: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true }) cancelledAt!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) expiredAt!: string | null;
+  @ApiPropertyOptional({ enum: OrderCanceller, nullable: true, description: 'See OrderDto.cancelledBy.' })
+  cancelledBy!: OrderCanceller | null;
+  @ApiPropertyOptional({ enum: OrderCancelReason, nullable: true, description: 'See OrderDto.cancelReason.' })
+  cancelReason!: OrderCancelReason | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "The kitchen's comment when it turned the order down, as the customer saw it.",
+  })
+  cancelComment!: string | null;
+  @ApiPropertyOptional({
+    enum: OrderCancelMoney,
+    nullable: true,
+    description:
+      "See OrderDto.cancelMoney. The bank's message on a declined card is on the CANCELLED event (`bankMessage`).",
+  })
+  cancelMoney!: OrderCancelMoney | null;
 
   @ApiProperty({ description: 'Already refunded across all payments, in cents.' })
   refundedCents!: number;

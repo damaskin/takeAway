@@ -73,6 +73,8 @@ export interface StoreAdminDto {
   kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
+  /** «Загрузка: +N мин» of the queue policy, seconds (whole minutes 0–60). */
+  loadExtraSeconds?: number;
   taxRateBps?: number;
   taxIncludedInPrice?: boolean;
   heroImageUrl?: string | null;
@@ -107,6 +109,7 @@ export interface UpdateStoreInput {
   kinds?: StoreKind[];
   baseEtaSeconds?: number;
   kitchenParallelism?: number;
+  loadExtraSeconds?: number;
   taxRateBps?: number;
   taxIncludedInPrice?: boolean;
   deliveryFeeBaseCents?: number | null;
@@ -264,6 +267,8 @@ export interface ProductAdminDto {
   description: string | null;
   basePriceCents: number;
   prepTimeSeconds: number;
+  /** «Готовится параллельно» (queue policy). Absent from an API older than it. */
+  prepParallel?: boolean;
   visible: boolean;
   sortOrder: number;
   /** In display order; the first one is the menu picture. */
@@ -364,6 +369,7 @@ export interface ProductFieldsInput {
   description: string | null;
   basePriceCents: number;
   prepTimeSeconds?: number;
+  prepParallel?: boolean;
   visible: boolean;
   calories: number | null;
   proteinsGrams: number | null;

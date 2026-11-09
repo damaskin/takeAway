@@ -1,9 +1,10 @@
-import { Component, EventEmitter, Input, Output, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, Output, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { describeOrderItemOptions } from '@takeaway/utils';
 import { LocaleFormatService } from '@takeaway/i18n';
 
+import { orderCancelSummary } from '../../core/orders/order-cancel-summary';
 import {
   AdminOrdersApi,
   type AdminOrderDetail,
@@ -69,6 +70,75 @@ import {
             ✕
           </button>
         </header>
+
+        <!-- Why it ended: who cancelled, the kitchen's reason and words, the money. -->
+        @if (cancelSummary(); as c) {
+          <section
+            data-testid="order-cancel"
+            class="flex flex-col"
+            style="padding: 16px 24px; gap: 6px; background: var(--color-cream); border-bottom: 1px solid var(--color-border-light)"
+          >
+            <h3
+              style="font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 1px; margin: 0"
+            >
+              {{ c.title | translate }}
+            </h3>
+            @if (c.by) {
+              <div class="flex items-baseline justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.cancel.by' | translate
+                }}</span>
+                <span data-testid="order-cancel-by" style="font-size: 13px; color: var(--color-text-primary)">{{
+                  c.by | translate
+                }}</span>
+              </div>
+            }
+            @if (c.reason) {
+              <div class="flex items-baseline justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.cancel.reason' | translate
+                }}</span>
+                <span data-testid="order-cancel-reason" style="font-size: 13px; color: var(--color-text-primary)">{{
+                  c.reason | translate
+                }}</span>
+              </div>
+            }
+            @if (c.comment) {
+              <div class="flex flex-col" style="gap: 2px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.cancel.comment' | translate
+                }}</span>
+                <span
+                  data-testid="order-cancel-comment"
+                  style="font-size: 13px; color: var(--color-text-primary); font-style: italic"
+                  >“{{ c.comment }}”</span
+                >
+              </div>
+            }
+            @if (c.money) {
+              <div class="flex items-baseline justify-between" style="gap: 12px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.cancel.money' | translate
+                }}</span>
+                <span
+                  data-testid="order-cancel-money"
+                  style="font-size: 13px; color: var(--color-text-primary); text-align: right"
+                  >{{ c.money | translate }}</span
+                >
+              </div>
+            }
+            @if (c.bankMessage) {
+              <div class="flex flex-col" style="gap: 2px">
+                <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                  'admin.orderDetail.cancel.bankMessage' | translate
+                }}</span>
+                <span data-testid="order-cancel-bank" style="font-size: 13px; color: var(--color-text-primary)">{{
+                  c.bankMessage
+                }}</span>
+              </div>
+            }
+          </section>
+        }
 
         <!-- Customer -->
         <section class="flex flex-col" style="padding: 16px 24px; gap: 6px">
@@ -332,6 +402,11 @@ export class OrderDetailPanelComponent {
   @Output() readonly closed = new EventEmitter<void>();
 
   readonly order = signal<AdminOrderDetail | null>(null);
+  /** Who cancelled the order, why and where the money went — see `orderCancelSummary`. */
+  readonly cancelSummary = computed(() => {
+    const o = this.order();
+    return o ? orderCancelSummary(o) : null;
+  });
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 

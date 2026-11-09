@@ -223,6 +223,17 @@ What the fake bank did: `docker logs takeaway-staging-agro-mock-1` on the
 server — every call, decision and code. Invoices it sees start with `9`
 (production's start with `1`).
 
+### The order queue on staging
+
+The order queue policy (`QUEUE_POLICY_ENABLED`, docs/queue-policy.md) is on
+in staging only: `deploy/docker-compose.staging.yml` sets it for the api, so
+it comes with the same `EXTRA_COMPOSE_FILES` line as the fake bank, from the
+first deploy after it is merged. Production's `deploy/.env.production` does
+not set it, so production keeps the old rules until the owner adds
+`QUEUE_POLICY_ENABLED=true` there and redeploys. To try the old rules on
+staging again, set the line to `'false'` in the overlay (not in staging's
+`.env.production`: the overlay wins).
+
 ## Production's clean start (October 2026)
 
 **Done 2026-10-22, 08:03 UTC** (owner's go after App Review approved iOS 1.6.0).

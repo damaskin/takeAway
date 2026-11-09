@@ -5,9 +5,11 @@ import { LeafletMapComponent, ProductImageComponent, type LatLng, type MapMarker
 import {
   buildDirectionsUrl,
   describeOrderItemOptions,
+  endedOrderMoney,
   expiredOutcome,
   formatCountdown,
   orderCancellation,
+  orderDueAt,
   orderWaitNote,
   phoneHref,
   productKind,
@@ -130,6 +132,7 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
         <!-- Where the money stands: the first thing a customer looks for
              after paying, before any of the order's own progress. -->
         <div
+          data-testid="payment-line"
           class="flex items-center"
           [style.background]="paymentBackground()"
           style="border-radius: 14px; padding: 10px 14px; gap: 8px"
@@ -202,6 +205,13 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
                 style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
                 >{{ countdown() }}</span
               >
+              @if (queueReadyAt(); as ready) {
+                <span
+                  data-testid="queue-ready-at"
+                  style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                  >{{ 'common.queue.readyAt' | translate: ready }}</span
+                >
+              }
             }
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
               'web.orderStatus.codeLabel' | translate: { code: o.orderCode }
@@ -463,6 +473,16 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
   /**
+   * Where the money of a cancelled or expired order went (`endedOrderMoney`):
+   * its payment chip says that, never «Спишем при принятии заказа» — the
+   * same outcome the cancellation block words in full.
+   */
+  readonly endedMoney = computed(() => {
+    const o = this.order();
+    return o ? endedOrderMoney(o) : null;
+  });
+
+  /**
    * The bank said the payment failed, but our record may still read "waiting":
    * believe the bank until the order shows otherwise.
    */
@@ -474,6 +494,8 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private readonly paymentFailed = computed(() => this.bankSaidFail() || this.paymentState() === 'FAILED');
 
   readonly paymentTitle = computed(() => {
+    const ended = this.endedMoney();
+    if (ended) return `web.orderStatus.payment.outcome.${ended}`;
     if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
     switch (this.paymentState()) {
       case 'PAID':
@@ -508,6 +530,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   /** A line under the payment chip saying what happens next, as a translation key. */
   readonly paymentHint = computed(() => {
+    if (this.endedMoney()) return '';
     if (this.paymentState() === 'HELD') return 'web.orderStatus.payment.heldHint';
     if (this.canRetryPayment() && this.paymentFailed()) return 'web.orderStatus.payment.retryHint';
     return '';
@@ -524,6 +547,18 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentIcon = computed(() => {
+    switch (this.endedMoney()) {
+      case 'released':
+        return '🔓';
+      case 'refunded':
+        return '↩️';
+      case 'holdPending':
+        return '⏳';
+      case 'notCharged':
+        return '💳';
+      default:
+        break;
+    }
     if (this.bankSaidFail()) return '⚠️';
     switch (this.paymentState()) {
       case 'PAID':
@@ -540,7 +575,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   });
 
   readonly paymentBackground = computed(() =>
-    this.paymentState() === 'PAID' ? 'var(--color-mint-light, var(--color-foam))' : 'var(--color-foam)',
+    this.paymentState() === 'PAID' && !this.endedMoney()
+      ? 'var(--color-mint-light, var(--color-foam))'
+      : 'var(--color-foam)',
   );
 
   /**
@@ -557,6 +594,23 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly countdown = computed(() => {
     const clock = this.clock();
     return clock?.kind === 'countdown' ? formatCountdown(clock.remainingMs) : '0:00';
+  });
+
+  /**
+   * Under the order queue policy, beside the countdown: «Готов в 12:11 · ≈ 11
+   * мин» — the due time rounded up to the minute, never early. Null with the
+   * policy off, and once the order is ready or over.
+   */
+  readonly queueReadyAt = computed(() => {
+    const o = this.order();
+    const clock = this.clock();
+    if (!o?.readyFromQueue || clock?.kind !== 'countdown' || clock.remainingMs <= 0) return null;
+    if (o.status === 'READY' || this.isTerminal(o.status)) return null;
+    const due = Math.ceil(Date.parse(orderDueAt(o)) / 60_000) * 60_000;
+    return {
+      time: this.fmt.time(new Date(due), o.storeTimezone),
+      min: Math.ceil(clock.remainingMs / 60_000),
+    };
   });
 
   /** «к 09:15», «к 09:15 завтра», «к 09:15, 23 окт.» — null while counting down. */

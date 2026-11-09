@@ -10,6 +10,7 @@ import type {
   StoreSuggestions,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
+import type { ReadyWindowRange } from '@takeaway/utils';
 
 import { API_CONFIG } from '../api/api.config';
 
@@ -40,6 +41,15 @@ export class CatalogService {
   getPickupSlots(storeIdOrSlug: string, cartId?: string | null): Observable<PickupSlot[]> {
     const params = cartId ? { cartId } : undefined;
     return this.http.get<PickupSlot[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/pickup-slots`, { params });
+  }
+
+  /**
+   * Under the order queue policy: the runs of whole minutes the cart can be
+   * pre-ordered for over the next 24 hours (both ends included).
+   */
+  getReadyWindows(storeIdOrSlug: string, cartId?: string | null): Observable<ReadyWindowRange[]> {
+    const params = cartId ? { cartId } : undefined;
+    return this.http.get<ReadyWindowRange[]>(`${this.api.baseUrl}/stores/${storeIdOrSlug}/ready-windows`, { params });
   }
 
   getMenu(slug: string): Observable<StoreMenu> {

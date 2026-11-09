@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
   CreateOrderReviewRequest,
+  OrderCancelMoney,
   OrderCancelReason,
   OrderCancelledBy,
   OrderItemSnapshot,
@@ -73,6 +74,12 @@ export interface OrderView {
   cancelReason?: OrderCancelReason | null;
   cancelComment?: string | null;
   /**
+   * Where the money of a cancelled or expired order went, as the push said —
+   * read it with `endedOrderMoney`. Null when the API could not tell; absent
+   * from an older API.
+   */
+  cancelMoney?: OrderCancelMoney | null;
+  /**
    * The customer may review the order now: handed over and not reviewed
    * yet. Absent from an API older than this build — then no review is asked.
    */
@@ -85,6 +92,12 @@ export interface OrderView {
    * (`orderDueAt`). Absent from an API older than this build.
    */
   readyEstimateAt?: string | null;
+  /**
+   * True while the API runs the order queue policy: the due time is the
+   * queue's, kept up to date, shown as «Готов в 12:11 · ≈ 11 мин». Absent
+   * otherwise.
+   */
+  readyFromQueue?: boolean;
   /**
    * The customer may still cancel: not accepted yet and no money taken.
    * Absent from an API older than this build — then CREATED and PAID count.

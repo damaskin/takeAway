@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -15,8 +16,16 @@ import {
   type OrderItemSnapshot,
   type OrderNotCancellableBody,
 } from '@takeaway/shared-types';
-import { computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
-import type { Order, OrderCancelReason, OrderCanceller, PaymentStatus, Prisma } from '@prisma/client';
+import { type QueueItem, computeTax, describeOrderItemOptions, readOrderItemSnapshot } from '@takeaway/utils';
+import type {
+  Order,
+  OrderCancelMoney,
+  OrderCancelReason,
+  OrderCanceller,
+  Payment,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 
 import { checkoutError } from '../common/http/checkout-error';
 import { codedConflict } from '../common/http/coded-conflict';
@@ -27,6 +36,7 @@ import { closingBoundary } from '../catalog/store-availability';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { BOARD_INCLUDE, toBoardRow } from '../kds/kds-row';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { QueuePolicyService, asapVerdict, basketOf } from '../kitchen/queue-policy.service';
 import type { StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { MailService } from '../mail/mail.service';
@@ -35,7 +45,7 @@ import { ReferralsService } from '../referrals/referrals.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { customerCancelledMessage } from '../notifications/store-team-messages';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
-import { isDeferredCharge } from '../payments/card-providers';
+import { isCardProvider, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -51,6 +61,30 @@ import type {
   OrderSummaryDto,
 } from './dto/order.dto';
 import { withoutCoordinates } from './order-event-payload';
+import { QueueRecomputeService } from './queue-recompute.service';
+
+/**
+ * 400 `ASAP_UNAVAILABLE`: the store takes no order for now. The times name
+ * what the client says: «перерыв до 12:30», «закрывается в 21:00».
+ */
+function asapUnavailable(availability: StoreAvailabilityView, reason: AsapBlockedReason | null) {
+  const boundary = closingBoundary(availability);
+  return checkoutError(
+    'ASAP_UNAVAILABLE',
+    'The store takes no orders for right now; a pre-order for later still works',
+    {
+      reason,
+      opensAt: availability.opensAt?.toISOString() ?? null,
+      pausedUntil: reason === 'PAUSED' ? (availability.pausedUntil?.toISOString() ?? null) : null,
+      closesAt: reason === 'CLOSING_SOON' ? (boundary?.toISOString() ?? null) : null,
+    },
+  );
+}
+
+/** B and «Готовится параллельно» of a line under the queue policy, for the order line. */
+function queueSnapshot(item: QueueItem | undefined): { prepSeconds: number; prepParallel: boolean } {
+  return { prepSeconds: item?.prepSeconds ?? 0, prepParallel: item?.parallel ?? false };
+}
 
 const ORDER_CODE_MAX_ATTEMPTS = 8;
 /** Orders one customer may have waiting for payment at once (`ORDER_MAX_UNPAID_PER_USER`). */
@@ -123,6 +157,10 @@ export class OrdersService {
     private readonly kitchen: KitchenLoadService,
     private readonly cart: CartService,
     private readonly holds: PaymentHoldsService,
+    // Always provided by KitchenModule and this module; unit tests written
+    // before the queue policy leave them out, which reads as the flag off.
+    @Optional() private readonly queue?: QueuePolicyService,
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto): Promise<OrderDto> {
@@ -182,7 +220,15 @@ export class OrdersService {
     const lines = await this.cart.repriceForCheckout(cart);
 
     const { prepSeconds, workSeconds } = this.kitchen.timings(lines);
-    const pickupAt = await this.resolvePickupAt(cart.storeId, availability, { prepSeconds, workSeconds }, dto);
+    // Under the queue policy the order's positions are its products' own B
+    // and «Готовится параллельно» (docs/queue-policy.md), snapshotted on
+    // the lines below.
+    const queue = this.queue?.enabled ? this.queue : null;
+    const products = new Map(cart.items.map((item) => [item.productId, item.product]));
+    const basket = queue ? basketOf(lines, products) : [];
+    const pickupAt = queue
+      ? await this.resolveQueuedPickupAt(queue, cart.storeId, availability, basket, dto)
+      : await this.resolvePickupAt(cart.storeId, availability, { prepSeconds, workSeconds }, dto);
 
     const subtotalCents = lines.reduce((sum, l) => sum + l.unitPriceCents * l.quantity, 0);
     if (subtotalCents < cart.store.minOrderCents) {
@@ -281,6 +327,12 @@ export class OrdersService {
 
     const order = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
+        // The queue policy books under the store's lock: the check above may
+        // be stale by now, and two customers must not both take the last
+        // free stretch (or the same place in the queue).
+        const promisedAt = queue
+          ? await this.bookQueued(tx, queue, cart.storeId, availability, basket, dto, pickupAt)
+          : pickupAt;
         const created = await tx.order.create({
           data: {
             userId,
@@ -288,9 +340,11 @@ export class OrdersService {
             status: 'CREATED',
             fulfillmentType,
             pickupMode: dto.pickupMode,
-            pickupAt,
+            pickupAt: promisedAt,
             prepSeconds,
             workSeconds,
+            // L of the queue policy: «Загружены» when the order was placed.
+            placedUnderLoad: cart.store.status === 'OVERLOADED',
             // Nothing to pay by card: the order is the kitchen's to accept
             // right away. Otherwise the clock starts when the payment lands.
             kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents }) ? null : new Date(),
@@ -318,11 +372,12 @@ export class OrdersService {
             deliveryFeeCents,
             deliveryDistanceM,
             items: {
-              create: lines.map((l) => ({
+              create: lines.map((l, i) => ({
                 productSnapshot: this.snapshotItem(l),
                 quantity: l.quantity,
                 unitPriceCents: l.unitPriceCents,
                 totalCents: l.unitPriceCents * l.quantity,
+                ...(queue ? queueSnapshot(basket[i]) : {}),
               })),
             },
             events: {
@@ -393,6 +448,10 @@ export class OrdersService {
       }),
     );
 
+    // A new pre-order takes station time, a new order joins the queue: the
+    // estimates of the orders behind it may move.
+    this.recompute?.touch(order.storeId);
+
     // An order that has to be paid by card reaches the kitchen once its hold
     // is in place — the payment service announces it then. Until that moment
     // it is a basket nobody has paid for, and there is no paying at the
@@ -402,11 +461,12 @@ export class OrdersService {
 
     const row = await this.prisma.order.findUnique({ where: { id: order.id }, include: BOARD_INCLUDE });
     if (row) {
+      const plans = queue ? await queue.plans([order.storeId]) : null;
       this.realtime.emitKdsOrderChanged({
         storeId: order.storeId,
         kind: 'created',
         orderId: order.id,
-        order: toBoardRow(row),
+        order: toBoardRow(row, plans?.get(order.id)),
       });
     }
 
@@ -599,6 +659,12 @@ export class OrdersService {
       totalCents: order.totalCents,
       couponCode: order.couponCode,
       giftCardCode: order.giftCardCode,
+      cancelledAt: order.cancelledAt?.toISOString() ?? null,
+      expiredAt: order.expiredAt?.toISOString() ?? null,
+      cancelledBy: order.cancelledBy,
+      cancelReason: order.cancelReason,
+      cancelComment: order.cancelComment,
+      cancelMoney: order.cancelMoney,
       refundedCents,
       refundableCents: Math.max(0, paidCents - refundedCents),
       items: order.items.map((i) => {
@@ -852,8 +918,10 @@ export class OrdersService {
    * PaymentHoldsService.
    *
    * Who cancelled, the reason and the comment are written on the order with
-   * the status, so the customer's re-read after `order.statusChanged`
-   * already says why.
+   * the status; where the money went (`cancelMoney`) once the hold is dealt
+   * with — the outcome the push states — and before anyone is told, so the
+   * customer's re-read after `order.statusChanged` already says it all. The
+   * order returned is read after that, with its payments as they are now.
    */
   async cancelOrder(
     order: Pick<Order, 'id' | 'status'>,
@@ -868,8 +936,15 @@ export class OrdersService {
       comment?: string;
       /** What the bank said on a declined card: kept on the event, not shown to the customer. */
       bankMessage?: string;
+      /**
+       * Gives back a card charge already captured (the store turning down an
+       * order paid at checkout) and says how it went: `REFUNDED`, or
+       * `PENDING` when the bank refused. Without it a captured charge is left
+       * as it is.
+       */
+      refundCaptured?: (payment: Payment) => Promise<'REFUNDED' | 'PENDING'>;
     },
-  ): Promise<{ order: CancelledOrder; holdReleased: boolean; chargeVoided: boolean }> {
+  ): Promise<{ order: CancelledOrder; money: OrderCancelMoney | null }> {
     if (!options.allowedStatuses.has(order.status)) {
       throw new BadRequestException(`Cannot cancel an order in status ${order.status}`);
     }
@@ -917,19 +992,8 @@ export class OrdersService {
       });
     });
 
-    // Money the customer authorized for an order that will never happen.
-    const released = await this.holds.releaseForOrder(order.id, `order-cancelled-by-${options.by}`);
-
-    this.realtime.emitOrderStatusChanged(
-      {
-        orderId: updated.id,
-        status: updated.status,
-        etaSeconds: 0,
-        occurredAt: (updated.cancelledAt ?? new Date()).toISOString(),
-      },
-      updated.userId,
-    );
-    // Off the kitchen board, whoever cancelled it; the board says so when the customer did.
+    // Off the kitchen board at once, whoever cancelled it; the board says so
+    // when the customer did. The money below is no business of the board's.
     const removed: KitchenOrderRemovedReason = options.by === 'customer' ? 'CANCELLED_BY_CUSTOMER' : 'REJECTED';
     this.realtime.emitKdsOrderChanged({
       storeId: updated.storeId,
@@ -940,9 +1004,35 @@ export class OrdersService {
       orderCode: updated.orderCode,
     });
 
-    // A charge that was waiting for the accept never touched the card.
-    const voided = released !== null && isDeferredCharge(released);
-    return { order: updated, holdReleased: released !== null && !voided, chargeVoided: voided };
+    // Money the customer authorized for an order that will never happen.
+    const released = await this.holds.releaseForOrder(order.id, `order-cancelled-by-${options.by}`);
+    const cards = updated.payments.filter((p) => isCardProvider(p.provider));
+    const hadHold = cards.some((p) => p.status === 'REQUIRES_ACTION');
+    const captured = cards.find((p) => p.status === 'SUCCEEDED');
+    const money: OrderCancelMoney | null =
+      releaseOutcome(released, hadHold) ??
+      (captured && options.refundCaptured ? await options.refundCaptured(captured) : null) ??
+      // A card declined on the accept took nothing.
+      (options.reason === 'CARD_DECLINED' ? 'NOT_CHARGED' : null);
+    const settled = await this.prisma.order.update({
+      where: { id: order.id },
+      data: { cancelMoney: money },
+      include: CANCELLED_ORDER_INCLUDE,
+    });
+
+    // Its station time is free again: the orders behind it move up.
+    this.recompute?.touch(settled.storeId);
+
+    this.realtime.emitOrderStatusChanged(
+      {
+        orderId: settled.id,
+        status: settled.status,
+        etaSeconds: 0,
+        occurredAt: (settled.cancelledAt ?? new Date()).toISOString(),
+      },
+      settled.userId,
+    );
+    return { order: settled, money };
   }
 
   /**
@@ -1059,18 +1149,7 @@ export class OrdersService {
   ): Promise<Date> {
     if (dto.pickupMode === 'ASAP') {
       const boundary = closingBoundary(availability);
-      // The times name what the client says: «перерыв до 12:30», «закрывается в 21:00».
-      const unavailable = (reason: AsapBlockedReason | null) =>
-        checkoutError(
-          'ASAP_UNAVAILABLE',
-          'The store takes no orders for right now; a pre-order for later still works',
-          {
-            reason,
-            opensAt: availability.opensAt?.toISOString() ?? null,
-            pausedUntil: reason === 'PAUSED' ? (availability.pausedUntil?.toISOString() ?? null) : null,
-            closesAt: reason === 'CLOSING_SOON' ? (boundary?.toISOString() ?? null) : null,
-          },
-        );
+      const unavailable = (reason: AsapBlockedReason | null) => asapUnavailable(availability, reason);
       if (!availability.openNow) throw unavailable(availability.asapBlockedReason);
       const now = new Date();
       const quote = await this.kitchen.quote(storeId, timings.prepSeconds, timings.workSeconds, now);
@@ -1088,6 +1167,65 @@ export class OrdersService {
     }
     await this.kitchen.assertScheduledSlot(storeId, dto.pickupAt, timings.workSeconds);
     return dto.pickupAt;
+  }
+
+  /**
+   * {@link resolvePickupAt} under the queue policy (docs/queue-policy.md
+   * 2.4), before the order's transaction: an order for now is ready at G of
+   * its basket placed at the end of the queue — refused with the store's
+   * reason, `CLOSING_SOON` when G is after the closing, `QUEUE_FULL` past
+   * the longest wait; a pre-order needs station time free for its basket
+   * ending at the picked time ({@link QueuePolicyService.assertPreorderTime}).
+   * {@link bookQueued} asks again under the store's lock.
+   */
+  private async resolveQueuedPickupAt(
+    queue: QueuePolicyService,
+    storeId: string,
+    availability: StoreAvailabilityView,
+    basket: readonly QueueItem[],
+    dto: CreateOrderDto,
+  ): Promise<Date> {
+    if (dto.pickupMode === 'ASAP') {
+      if (!availability.openNow) throw asapUnavailable(availability, availability.asapBlockedReason);
+      const now = new Date();
+      const quote = await queue.quoteBasket(storeId, basket, now);
+      const verdict = asapVerdict(availability, quote.readyAt.getTime(), now.getTime(), queue.maxAsapWaitSeconds);
+      if (!verdict.available) throw asapUnavailable(availability, verdict.reason);
+      return quote.readyAt;
+    }
+    if (!dto.pickupAt) {
+      throw new BadRequestException('pickupAt is required for SCHEDULED pickup mode');
+    }
+    await queue.assertPreorderTime(storeId, basket, dto.pickupAt);
+    return dto.pickupAt;
+  }
+
+  /**
+   * The queue policy's booking, inside the order's transaction under the
+   * store's advisory lock: the pre-order's time is checked again against
+   * the queue as it is now, and an order for now is quoted again — an order
+   * placed a moment earlier is in the queue by now — so its promised time
+   * is G behind it.
+   */
+  private async bookQueued(
+    tx: Prisma.TransactionClient,
+    queue: QueuePolicyService,
+    storeId: string,
+    availability: StoreAvailabilityView,
+    basket: readonly QueueItem[],
+    dto: CreateOrderDto,
+    pickupAt: Date,
+  ): Promise<Date> {
+    await queue.lockStore(tx, storeId);
+    const now = new Date();
+    if (dto.pickupMode !== 'ASAP') {
+      await queue.assertPreorderTime(storeId, basket, pickupAt, now, tx);
+      return pickupAt;
+    }
+    const quote = await queue.quoteBasket(storeId, basket, now, tx);
+    const verdict = asapVerdict(availability, quote.readyAt.getTime(), now.getTime(), queue.maxAsapWaitSeconds);
+    if (!verdict.available) throw asapUnavailable(availability, verdict.reason);
+    return quote.readyAt;
   }
 
   /**
@@ -1195,8 +1333,10 @@ export class OrdersService {
       cancelledBy: order.cancelledBy,
       cancelReason: order.cancelReason,
       cancelComment: order.cancelComment,
+      cancelMoney: order.cancelMoney,
       expiredAt: order.expiredAt?.toISOString() ?? null,
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
+      ...(this.queue?.enabled ? { readyFromQueue: true as const } : {}),
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),
       canReview: canCustomerReview({ status: order.status, review }),
       review: review
