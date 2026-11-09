@@ -9,6 +9,7 @@ import {
   expiredOutcome,
   formatCountdown,
   orderCancellation,
+  orderDueAt,
   orderWaitNote,
   phoneHref,
   productKind,
@@ -204,6 +205,13 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
                 style="font-family: var(--font-mono); font-size: 40px; font-weight: 700; color: var(--color-caramel)"
                 >{{ countdown() }}</span
               >
+              @if (queueReadyAt(); as ready) {
+                <span
+                  data-testid="queue-ready-at"
+                  style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-espresso)"
+                  >{{ 'common.queue.readyAt' | translate: ready }}</span
+                >
+              }
             }
             <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">{{
               'web.orderStatus.codeLabel' | translate: { code: o.orderCode }
@@ -586,6 +594,23 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   readonly countdown = computed(() => {
     const clock = this.clock();
     return clock?.kind === 'countdown' ? formatCountdown(clock.remainingMs) : '0:00';
+  });
+
+  /**
+   * Under the order queue policy, beside the countdown: «Готов в 12:11 · ≈ 11
+   * мин» — the due time rounded up to the minute, never early. Null with the
+   * policy off, and once the order is ready or over.
+   */
+  readonly queueReadyAt = computed(() => {
+    const o = this.order();
+    const clock = this.clock();
+    if (!o?.readyFromQueue || clock?.kind !== 'countdown' || clock.remainingMs <= 0) return null;
+    if (o.status === 'READY' || this.isTerminal(o.status)) return null;
+    const due = Math.ceil(Date.parse(orderDueAt(o)) / 60_000) * 60_000;
+    return {
+      time: this.fmt.time(new Date(due), o.storeTimezone),
+      min: Math.ceil(clock.remainingMs / 60_000),
+    };
   });
 
   /** «к 09:15», «к 09:15 завтра», «к 09:15, 23 окт.» — null while counting down. */
