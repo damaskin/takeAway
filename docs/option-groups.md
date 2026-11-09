@@ -51,7 +51,7 @@ Validation of catalog writes (400 `OPTION_GROUP_INVALID`): type D; VARIANT of ty
 3. `priceCents`: VARIANT → the product's override `priceCents ?? 0`; ADDON → the brand's `priceCents ?? 0`.
 4. `isDefault`: the product's override `isDefault ?? option.isDefault`.
 5. `available`: no active `StoreOptionStop` for the store (without a store — a product fetched on its own — true).
-6. Groups left with no options are left out.
+6. Groups left with no options are left out, and so is a group whose condition is an option the brand switched off while that option's group is on the product (otherwise «Лёд» would show on every hot drink once «Холодный» is off).
 
 ## API
 
@@ -60,6 +60,7 @@ Public:
 - `GET /stores/:idOrSlug/menu` — `ProductSummary.hasRequiredOptions` = `needsOptionChoice(groups)`.
 - Product detail — `ProductDetail.optionGroups` (built as above); when non-empty, `variations` and `modifiers` are `[]`.
 - Cart add/update — `options?: OptionSelection[]`. For a product with groups: `options` omitted → `defaultOptionPicks`, and 400 `OPTIONS_REQUIRED` when that is not valid; invalid → 400 `OPTIONS_INVALID` (`OptionsErrorBody`); legacy `variationIds`/`modifiers` ignored. Unit price = `priceWithOptionPicks`; prep = the product's. Cart line `options: OptionLine[]`. Same product + same `optionSelectionKey` + same notes → one line.
+- `PATCH /cart/items/:id`: `options` re-chooses (checked and priced as on add, no merge with an identical line); **omitted, the line keeps its choice**, re-priced against the menu as it is now, never reset or refused (a choice that can no longer be made is caught at checkout).
 - Cart recheck and `POST /orders` (409 `CART_CHANGED`): an option gone (switched off, stopped, deleted, its group detached) → `OPTION_UNAVAILABLE`, the line leaves the cart; a new price → `PRICE_CHANGED`.
 - Order snapshot `optionLines`; KDS, receipts, pushes and the admin order detail read `describeOrderItemOptions`.
 - POS push: catalog options are not sent as Poster modifiers; the line's comment carries `describeOptionLines`.
@@ -73,6 +74,7 @@ Admin (SUPER_ADMIN):
 Admin (brand — the roles that edit the add-on library today: SUPER_ADMIN, BRAND_ADMIN, MENU_EDITOR, STORE_MANAGER, brand-scoped):
 
 - `GET /admin/brands/:brandId/options` → `BrandOptionCatalog`; `PATCH /admin/brands/:brandId/options/:optionId` `{ priceCents?, enabled? }`.
+- `GET /admin/stores/:id/availability` also lists `options`: the catalog options the store uses (their group is on a product sold there) and the brand has, with their stop — the stop-list of kitchen STAFF and PIN sessions, who cannot read the brand catalog.
 - `PUT /admin/stores/:storeId/option-stops/:optionId` `{ expiresAt?: string | null }`, `DELETE` the same — the roles that stop ingredients in a store today.
 - `GET`/`PUT /admin/products/:id/option-groups` → `ProductOptionGroupsConfig` — the roles that edit products. 400 `OPTION_NOT_ON_PRODUCT` for an override of an option outside the attached groups; `priceCents` on an ADDON option is refused (400 `OPTION_GROUP_INVALID`).
 
