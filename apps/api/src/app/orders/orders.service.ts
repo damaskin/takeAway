@@ -1336,6 +1336,7 @@ export class OrdersService {
       cancelMoney: order.cancelMoney,
       expiredAt: order.expiredAt?.toISOString() ?? null,
       readyEstimateAt: order.readyEstimateAt?.toISOString() ?? null,
+      ...(this.queue?.enabled ? { readyFromQueue: true as const } : {}),
       canCancel: canCustomerCancel({ status: order.status, payments: order.payments ?? [] }),
       canReview: canCustomerReview({ status: order.status, review }),
       review: review

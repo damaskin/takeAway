@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   Currency,
   FulfillmentType,
@@ -289,6 +289,13 @@ export class OrderDto {
       'original promise.',
   })
   readyEstimateAt!: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Present (true) only while the order queue policy runs (QUEUE_POLICY_ENABLED): readyEstimateAt is then the ' +
+      "queue's ready time, kept in step as the queue moves, and the clients show «Готов в 12:11 · ≈ 11 мин».",
+  })
+  readyFromQueue?: true;
 
   @ApiProperty({
     description:

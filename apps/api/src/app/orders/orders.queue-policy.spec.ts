@@ -319,3 +319,16 @@ describe('OrdersService.create under the queue policy', () => {
     );
   });
 });
+
+describe('the order DTO under the queue policy', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: at('2026-11-09T12:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('says its ready time comes from the queue, so the clients show «Готов в 12:11 · ≈ 11 мин»', async () => {
+    const { service } = harness();
+    const order = await service.create('user-1', { cartId: 'cart-1', pickupMode: 'ASAP' });
+    expect(order.readyFromQueue).toBe(true);
+  });
+});
