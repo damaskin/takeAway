@@ -59,6 +59,7 @@ function latte(overrides: Partial<StoreProduct> = {}): StoreProduct {
     description: null,
     basePriceCents: 450,
     prepTimeSeconds: 180,
+    prepParallel: false,
     caffeineLevel: null,
     calories: null,
     proteinsGrams: null,

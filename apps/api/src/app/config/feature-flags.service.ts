@@ -15,6 +15,12 @@ export interface FeatureFlagsSnapshot {
   agroprombankEnabled: boolean;
   cardPaymentFlow: CardPaymentFlow;
   support: SupportContact;
+  /**
+   * Present (and true) only while `QUEUE_POLICY_ENABLED` is on, so a
+   * deployment with it off answers exactly as before. The clients show the
+   * queue policy's ready time («Готов в 12:11 · ≈ 11 мин») when it is set.
+   */
+  queuePolicyEnabled?: true;
 }
 
 /**
@@ -68,6 +74,16 @@ export class FeatureFlagsService {
   }
 
   /**
+   * The order-queue policy (docs/queue-policy.md): the queue calculator in
+   * `@takeaway/utils` drives the ETA, «как можно скорее», the pre-order
+   * windows, the booking check and the kitchen board's times. Off: the
+   * kitchen-load rules of docs/kitchen-policy.md, exactly as before.
+   */
+  get queuePolicyEnabled(): boolean {
+    return this.parseBool(this.config.get<string>('QUEUE_POLICY_ENABLED'));
+  }
+
+  /**
    * The platform's support contact (`SUPPORT_EMAIL`, `SUPPORT_TELEGRAM`).
    * Not a flag, but it rides the same public snapshot: the admin shows it
    * next to a moderation verdict before anyone has signed in anywhere else.
@@ -86,6 +102,7 @@ export class FeatureFlagsService {
       agroprombankEnabled: this.agroprombankEnabled,
       cardPaymentFlow: this.cardPaymentFlow,
       support: this.support,
+      ...(this.queuePolicyEnabled ? { queuePolicyEnabled: true as const } : {}),
     };
   }
 

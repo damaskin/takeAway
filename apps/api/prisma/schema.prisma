@@ -1017,8 +1017,15 @@ model Store {
   baseEtaSeconds        Int                @default(600)
   /// How many orders this kitchen genuinely works at once. Queue wait is
   /// outstanding work divided by this, so it is the one knob that decides
-  /// how fast a morning rush drains.
+  /// how fast a morning rush drains. Under the queue policy
+  /// (`QUEUE_POLICY_ENABLED`, docs/queue-policy.md) it is C, the positions
+  /// made at once («Позиций готовится одновременно»).
   kitchenParallelism    Int                @default(2)
+  /// N of the queue policy («Загрузка: +N мин»), seconds, whole minutes 0–60:
+  /// what «Загружены» adds to the accept time A of an order placed while it
+  /// is on. Read only with `QUEUE_POLICY_ENABLED`; the old ETA keeps the
+  /// global `BUSY_EXTRA_WAIT_SECONDS`.
+  loadExtraSeconds      Int                @default(600)
   /// Deprecated since 2026-11-06, unread: «Заказов на 15 минут», the most
   /// orders one 15-minute pickup slot took. Removed from the admin (manager's
   /// list 5.0, item 6): a slot is full by kitchen work only
@@ -1222,8 +1229,13 @@ model Product {
   name             String
   description      String?
   basePriceCents   Int
-  // Base preparation time in seconds; variations/modifiers add deltas.
+  // Base preparation time in seconds; variations/modifiers add deltas (the
+  // queue policy reads this alone: B does not depend on the options).
   prepTimeSeconds  Int          @default(180)
+  /// «Готовится параллельно» (queue policy): takes no station and is made
+  /// alongside the rest of the order — a bottled drink, a pastry warmed in
+  /// an oven of its own.
+  prepParallel     Boolean      @default(false)
   // Deprecated since 2026-11-05, unused: no longer edited in the admin or sent
   // to the apps. Kept (with allergens and dietTags) so the data survives.
   caffeineLevel    Int? // 0..4 cups
@@ -1633,6 +1645,10 @@ model Order {
   /// time). pickupAt stays the original promise; the customer's countdown
   /// and «Немного задерживаемся» run to this instead. Null otherwise.
   readyEstimateAt     DateTime?
+  /// L of the queue policy: the store was «Загружены» (OVERLOADED) when the
+  /// order was placed, so its accept time grows by the store's N. Switching
+  /// the load off later does not move the order.
+  placedUnderLoad     Boolean         @default(false)
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -1665,6 +1681,13 @@ model OrderItem {
   quantity        Int
   unitPriceCents  Int
   totalCents      Int
+  /// B of the queue policy per unit — the product's own preparation time,
+  /// the options left out — and its «Готовится параллельно», snapshotted at
+  /// creation so a menu edit does not move orders in the queue. Null on
+  /// orders placed while `QUEUE_POLICY_ENABLED` was off: the queue reads the
+  /// product as it is now for those.
+  prepSeconds     Int?
+  prepParallel    Boolean?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
