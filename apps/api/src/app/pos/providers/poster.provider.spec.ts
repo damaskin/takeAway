@@ -251,6 +251,43 @@ describe('PosterProvider', () => {
     expect(body.comment).toContain('no sugar');
   });
 
+  it('pushOrder writes each line comment (the catalog picks, the note) into the order comment', async () => {
+    const bodies: unknown[] = [];
+    const fake = {
+      post: jest.fn(async (_path: string, body: unknown) => {
+        bodies.push(body);
+        return { data: { response: { incoming_order_id: 'inc-43' } } };
+      }),
+    } as unknown as AxiosInstance;
+    const provider = new TestablePosterProvider(fake);
+    await provider.pushOrder(ctxFor(), {
+      id: 'order-2',
+      orderCode: '4321',
+      storeExternalId: '7',
+      customerName: null,
+      customerPhone: null,
+      notes: 'к 9:00',
+      currency: 'MDL',
+      totalCents: 14200,
+      items: [
+        {
+          productExternalId: '100',
+          name: 'Капучино',
+          quantity: 2,
+          unitPriceCents: 7100,
+          modifiers: [],
+          notes: 'M, Холодный · Овсяное · Лёд ×2',
+        },
+        { productExternalId: '101', name: 'Круассан', quantity: 1, unitPriceCents: 3000, modifiers: [] },
+      ],
+    });
+
+    const body = bodies[0] as { comment?: string; products: Array<{ modifications?: unknown }> };
+    expect(body.comment).toBe('takeAway #4321; Капучино ×2: M, Холодный · Овсяное · Лёд ×2; к 9:00');
+    // The picks are not Poster modifiers.
+    expect(body.products[0]?.modifications).toBeUndefined();
+  });
+
   it('pushOrder rejects when no items map to Poster', async () => {
     const fake = { post: jest.fn() } as unknown as AxiosInstance;
     const provider = new TestablePosterProvider(fake);
