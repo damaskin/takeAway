@@ -28,7 +28,7 @@ class CartLine extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final brand = context.brand;
     final detail = ref.watch(productDetailProvider(item.productId)).valueOrNull;
-    final options = optionsSummary(detail, item.variationIds, item.modifiers);
+    final options = optionsSummary(detail, item.variationIds, item.modifiers, optionLines: item.options);
     final photo = productPhotoFor(ref, storeId, item.productId, detail: detail);
 
     return Container(

@@ -1190,5 +1190,81 @@
         "type": "String"
       }
     }
+  },
+  "optionUnavailable": "Out of stock",
+  "@optionUnavailable": {
+    "description": "Under an option of the options catalog the store has run out of; the option is greyed out and cannot be picked."
+  },
+  "optionPickRange": "{min} to {max}",
+  "@optionPickRange": {
+    "description": "Beside a list of options where at least {min} and at most {max} may be picked. When only a maximum applies, productAddonLimit («up to {max}») is shown.",
+    "placeholders": {
+      "min": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "optionIncluded": "{count} included",
+  "@optionIncluded": {
+    "description": "Under a counted option: how many units the base price already includes (one meat portion in a shawarma).",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "optionPerUnit": "{price} each",
+  "@optionPerUnit": {
+    "description": "Under a counted option: the price of every unit above what is included, e.g. «+25 MDL each».",
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "optionsChoose": "Choose: {groups}",
+  "@optionsChoose": {
+    "description": "By the disabled add-to-cart button: the option groups that still need a pick, e.g. «Choose: Size».",
+    "placeholders": {
+      "groups": {
+        "type": "String"
+      }
+    }
+  },
+  "optionsOutOfStock": "Out of stock: {options}",
+  "@optionsOutOfStock": {
+    "description": "By the disabled add-to-cart button: a required option has run out, so the item cannot be made.",
+    "placeholders": {
+      "options": {
+        "type": "String"
+      }
+    }
+  },
+  "optionsCheck": "Check your choice",
+  "@optionsCheck": {
+    "description": "By the disabled add-to-cart button when the choice breaks some other rule."
+  },
+  "errOptionsRequired": "Choose the options of this item on its page",
+  "@errOptionsRequired": {
+    "description": "Adding to the cart refused: the item has options to pick and none were sent (OPTIONS_REQUIRED)."
+  },
+  "errOptionsUnavailable": "Something you picked has just run out — choose something else",
+  "@errOptionsUnavailable": {
+    "description": "Adding to the cart refused: a picked option is out of stock (OPTIONS_INVALID, OPTION_UNAVAILABLE)."
+  },
+  "errOptionsTooFew": "Choose everything this item needs",
+  "@errOptionsTooFew": {
+    "description": "Adding to the cart refused: a required option group has no pick (OPTIONS_INVALID, TOO_FEW)."
+  },
+  "errOptionsTooMany": "Too many add-ons — take some off",
+  "@errOptionsTooMany": {
+    "description": "Adding to the cart refused: more picks than a group allows (OPTIONS_INVALID, TOO_MANY)."
+  },
+  "errOptionsChanged": "The menu has changed — open the item and choose again",
+  "@errOptionsChanged": {
+    "description": "Adding to the cart refused: the choice no longer matches the menu (OPTIONS_INVALID, other reasons)."
   }
 }

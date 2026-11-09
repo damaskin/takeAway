@@ -198,6 +198,9 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
           quantity: item.quantity,
           variationIds: item.variationIds,
           modifiers: item.modifiers,
+          options: item.optionLines.isEmpty
+              ? null
+              : toOptionSelections({for (final line in item.optionLines) line.optionId: line.qty}),
           notes: item.notes,
         );
       } on Object {
@@ -1018,12 +1021,14 @@ class _ItemOptions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (item.variationIds.isEmpty && item.modifiers.isEmpty && (item.notes ?? '').isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final detail = ref.watch(productDetailProvider(productId)).valueOrNull;
+    final optionLines = item.optionLines;
+    final older = item.variationIds.isNotEmpty || item.modifiers.isNotEmpty;
+    if (!older && optionLines.isEmpty && (item.notes ?? '').isEmpty) return const SizedBox.shrink();
+    // Only the older options need the product to name them; catalog lines
+    // carry their names.
+    final detail = older ? ref.watch(productDetailProvider(productId)).valueOrNull : null;
     final parts = <String>[
-      optionsSummary(detail, item.variationIds, item.modifiers),
+      optionsSummary(detail, item.variationIds, item.modifiers, optionLines: optionLines),
       if ((item.notes ?? '').isNotEmpty) '“${item.notes}”',
     ].where((part) => part.isNotEmpty);
     if (parts.isEmpty) return const SizedBox.shrink();

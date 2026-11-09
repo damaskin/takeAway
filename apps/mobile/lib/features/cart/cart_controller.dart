@@ -76,11 +76,15 @@ class CartController extends FamilyAsyncNotifier<Cart?, String> {
     }
   }
 
+  /// Puts a product into the cart. A product on the options catalog goes in
+  /// with its [options] (the API then ignores [variationIds] and
+  /// [modifiers], so they are left out); one on the older options with those.
   Future<Cart> add({
     required String productId,
     int quantity = 1,
     List<String> variationIds = const [],
     Map<String, int> modifiers = const {},
+    List<OptionSelection>? options,
     String? notes,
   }) {
     return _enqueue(() async {
@@ -90,11 +94,14 @@ class CartController extends FamilyAsyncNotifier<Cart?, String> {
             storeId: arg,
             productId: productId,
             quantity: quantity,
-            variationIds: variationIds,
-            modifiers: {
-              for (final entry in modifiers.entries)
-                if (entry.value > 0) entry.key: entry.value,
-            },
+            variationIds: options == null ? variationIds : null,
+            modifiers: options == null
+                ? {
+                    for (final entry in modifiers.entries)
+                      if (entry.value > 0) entry.key: entry.value,
+                  }
+                : null,
+            options: options,
             notes: notes == null || notes.trim().isEmpty ? null : notes.trim(),
           ),
         );
@@ -158,6 +165,7 @@ class CartController extends FamilyAsyncNotifier<Cart?, String> {
                 quantity: quantity,
                 variationIds: item.variationIds,
                 modifiers: item.modifiers,
+                options: item.options,
                 unitPriceCents: item.unitPriceCents,
                 unitPrepSeconds: item.unitPrepSeconds,
                 notes: item.notes,

@@ -12,6 +12,8 @@ export 'src/models/feedback.dart';
 export 'src/models/inbox.dart';
 export 'src/models/loyalty.dart';
 export 'src/models/misc.dart';
+export 'src/models/options.dart';
 export 'src/models/order.dart';
 export 'src/models/payments.dart';
+export 'src/option_groups.dart';
 export 'src/takeaway_api.dart';
