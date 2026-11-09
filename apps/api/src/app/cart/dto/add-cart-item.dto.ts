@@ -22,10 +22,16 @@ const MODIFIERS_DOC =
   "Map { modifierId: count }. Omitted modifiers count as 0; counts are clamped to the modifier's " +
   'min/max. An id the product does not have, with a positive count, is a 400.';
 
-const OPTIONS_DOC =
+const ADD_OPTIONS_DOC =
   'Picks from the options catalog, for a product with catalog groups (then variationIds and modifiers are ' +
-  'ignored). Omitted: on add, every default — 400 OPTIONS_REQUIRED when that is not a valid choice; on update, ' +
-  'the picks the line has. A choice that breaks a rule is 400 OPTIONS_INVALID with `errors`.';
+  'ignored). Omitted (a client that predates the catalog): every default, and 400 OPTIONS_REQUIRED when that ' +
+  'is not a valid choice. A choice that breaks a rule is 400 OPTIONS_INVALID with `errors`. The same product ' +
+  'with the same picks and note goes on the existing line.';
+
+const UPDATE_OPTIONS_DOC =
+  'A new choice from the options catalog, checked and priced as on add (400 OPTIONS_INVALID); the line is not ' +
+  'merged with another. Omitted (a quantity change): the line keeps its picks, re-priced against the menu as it ' +
+  'is now; never reset or refused here, and one that can no longer be made leaves the cart at checkout.';
 
 export class AddCartItemDto {
   @ApiProperty()
@@ -54,7 +60,7 @@ export class AddCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
-  @ApiPropertyOptional({ type: [OptionSelectionDto], description: OPTIONS_DOC })
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: ADD_OPTIONS_DOC })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(200)
@@ -88,7 +94,7 @@ export class UpdateCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
-  @ApiPropertyOptional({ type: [OptionSelectionDto], description: OPTIONS_DOC })
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: UPDATE_OPTIONS_DOC })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(200)

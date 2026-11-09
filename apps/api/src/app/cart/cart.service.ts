@@ -155,7 +155,7 @@ export class CartService {
     const groups = await this.optionGroups.forProduct(product.id, { brandId: product.brandId, storeId: dto.storeId });
     let priced: PricedLine;
     if (groups.length > 0) {
-      priced = priceCatalogChoice(product, groups, dto.options, null);
+      priced = priceCatalogChoice(product, groups, dto.options);
     } else {
       await this.assertOptionsInStock(product, dto.variationIds ?? [], dto.modifiers ?? {});
       priced = this.priceOrReject(product, dto.variationIds ?? [], dto.modifiers ?? {});
@@ -222,14 +222,26 @@ export class CartService {
     assertSoldHere(product);
     await this.assertNotOnStopList(item.cart.storeId, [item.productId]);
 
-    // A quantity change sends no choice: the line keeps the picks it has.
     const groups = await this.optionGroups.forProduct(product.id, {
       brandId: product.brandId,
       storeId: item.cart.storeId,
     });
-    let priced: PricedLine;
+    const picked = storedOptions(item.optionsJson);
+    // Null: the line stays as it is, only its quantity and note change.
+    let priced: PricedLine | null;
     if (groups.length > 0) {
-      priced = priceCatalogChoice(product, groups, dto.options, storedOptions(item.optionsJson));
+      // A new choice is checked like one being added (400 OPTIONS_INVALID).
+      // No choice (a quantity change) keeps the line's own, re-priced
+      // against the menu as it is now; one that can no longer be made is
+      // not refused here (checkout takes it out with CART_CHANGED).
+      priced =
+        dto.options !== undefined
+          ? priceCatalogChoice(product, groups, dto.options)
+          : repriceCatalogLine({ ...item, product }, groups, picked);
+    } else if (picked.length > 0 && dto.variationIds === undefined && dto.modifiers === undefined) {
+      // A line of catalog picks whose groups are gone: left as it is, never
+      // quietly turned into the plain product.
+      priced = null;
     } else {
       const variationIds = dto.variationIds ?? item.variationIds;
       const modifiers = dto.modifiers ?? storedModifiers(item.modifiersJson);
@@ -241,11 +253,15 @@ export class CartService {
       where: { id: itemId },
       data: {
         quantity: dto.quantity ?? item.quantity,
-        variationIds: priced.variationIds,
-        modifiersJson: priced.modifiers,
-        optionsJson: optionsJsonOf(priced.options),
-        unitPriceCents: priced.unitPriceCents,
-        unitPrepSeconds: priced.unitPrepSeconds,
+        ...(priced
+          ? {
+              variationIds: priced.variationIds,
+              modifiersJson: priced.modifiers,
+              optionsJson: optionsJsonOf(priced.options),
+              unitPriceCents: priced.unitPriceCents,
+              unitPrepSeconds: priced.unitPrepSeconds,
+            }
+          : {}),
         notes: dto.notes ?? item.notes,
       },
     });
@@ -830,26 +846,18 @@ function catalogLine(
 
 /**
  * Prices the customer's choice of a product with catalog groups, or answers
- * 400 (`OptionsErrorBody`). No `options` in the request: the line's own
- * picks when it has some (a quantity change), else the defaults — and
- * `OPTIONS_REQUIRED` when they are not a valid choice (a client that
- * predates the catalog cannot pick a size).
+ * 400 (`OptionsErrorBody`, `OPTIONS_INVALID`). No `options` in the request
+ * (adding a line from a client that predates the catalog): every default,
+ * and `OPTIONS_REQUIRED` when they are not a valid choice (a size to pick).
  */
 function priceCatalogChoice(
   product: Pick<Product, 'basePriceCents' | 'prepTimeSeconds'>,
   groups: readonly ProductOptionGroup[],
   requested: readonly OptionSelection[] | undefined,
-  stored: readonly OptionSelection[] | null,
 ): PricedLine {
-  const fromClient = requested !== undefined;
-  const kept = !fromClient && stored !== null && stored.length > 0;
-  const picks = fromClient
-    ? fromOptionSelections(requested)
-    : kept
-      ? fromOptionSelections(stored)
-      : defaultOptionPicks(groups);
+  const picks = requested !== undefined ? fromOptionSelections(requested) : defaultOptionPicks(groups);
   const errors = validateOptionPicks(groups, picks);
-  if (errors.length > 0) throw optionsError(fromClient || kept ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED', errors);
+  if (errors.length > 0) throw optionsError(requested !== undefined ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED', errors);
   return catalogLine(product, groups, picks);
 }
 
