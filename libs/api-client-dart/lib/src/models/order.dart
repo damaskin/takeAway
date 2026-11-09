@@ -94,6 +94,29 @@ enum OrderCancelReason {
   unknown,
 }
 
+/// Where the money of a cancelled or expired order went, recorded by the API
+/// when it called the order off — the outcome the push states.
+@JsonEnum(alwaysCreate: true)
+enum OrderCancelMoney {
+  /// Nothing was taken: a charge waiting for the accept was called off, or
+  /// the card was declined.
+  @JsonValue('NOT_CHARGED')
+  notCharged,
+
+  /// The card hold came off.
+  @JsonValue('RELEASED')
+  released,
+
+  /// A captured charge is on its way back to the card.
+  @JsonValue('REFUNDED')
+  refunded,
+
+  /// The bank has not let go of the hold (or taken the refund) yet; it
+  /// comes off by itself.
+  @JsonValue('PENDING')
+  pending,
+}
+
 @JsonEnum(alwaysCreate: true)
 enum PaymentState {
   @JsonValue('NONE')
@@ -216,6 +239,7 @@ class Order {
     this.cancelledBy,
     this.cancelReason,
     this.cancelComment,
+    this.cancelMoney,
     this.canReview,
     this.review,
   });
@@ -296,6 +320,13 @@ class Order {
   /// The kitchen's comment when it turned the order down, shown as is.
   final String? cancelComment;
 
+  /// Where the money of a cancelled or expired order went, as the push said.
+  /// Null while the order is live, when there was no card money to speak
+  /// of, on older orders the API could not tell, from older APIs, and for a
+  /// value this build does not know.
+  @JsonKey(unknownEnumValue: JsonKey.nullForUndefinedEnumValue)
+  final OrderCancelMoney? cancelMoney;
+
   /// The API's verdict on whether the customer may review the order now:
   /// handed over and no review yet. Null from API versions that predate
   /// reviews — see [customerCanReview].
@@ -370,6 +401,7 @@ class Order {
     cancelledBy: cancelledBy,
     cancelReason: cancelReason,
     cancelComment: cancelComment,
+    cancelMoney: cancelMoney,
     // Handing over is what opens the review, and the re-read that follows
     // every status change tells; leaving that status closes it at once.
     canReview: next.isHandedOver ? canReview : false,
