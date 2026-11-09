@@ -940,6 +940,15 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentStateNotCharged => 'Деньги не списаны';
 
   @override
+  String get paymentStateReleased => 'Блокировка снята';
+
+  @override
+  String get paymentStateRefundedToCard => 'Возвращено на карту';
+
+  @override
+  String get paymentStateReturnPending => 'Возврат в обработке';
+
+  @override
   String get paymentStateAtCounter => 'Оплата на месте';
 
   @override

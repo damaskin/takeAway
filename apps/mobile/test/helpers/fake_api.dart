@@ -283,6 +283,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     String? cancelledBy,
     String? cancelReason,
     String? cancelComment,
+    String? cancelMoney,
     bool? canReview,
     Map<String, dynamic>? review,
   }) => Order.fromJson({
@@ -324,6 +325,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'cancelledBy': ?cancelledBy,
     'cancelReason': ?cancelReason,
     'cancelComment': ?cancelComment,
+    'cancelMoney': ?cancelMoney,
     'canReview': ?canReview,
     'review': ?review,
   });

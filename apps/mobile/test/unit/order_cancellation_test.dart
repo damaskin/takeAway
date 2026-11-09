@@ -6,13 +6,15 @@ import '../helpers/fake_api.dart';
 
 /// The same rules as `orderCancellation` in `@takeaway/utils`.
 void main() {
-  Order cancelled({String? by, String? reason, String? comment, String state = 'NONE'}) => FakeApi.sampleOrder(
-    status: 'CANCELLED',
-    cancelledBy: by,
-    cancelReason: reason,
-    cancelComment: comment,
-    payment: {'state': state, 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
-  );
+  Order cancelled({String? by, String? reason, String? comment, String state = 'NONE', String? money}) =>
+      FakeApi.sampleOrder(
+        status: 'CANCELLED',
+        cancelledBy: by,
+        cancelReason: reason,
+        cancelComment: comment,
+        cancelMoney: money,
+        payment: {'state': state, 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+      );
 
   test('says nothing about an order that is not cancelled', () {
     expect(orderCancellation(FakeApi.sampleOrder(status: 'EXPIRED')), isNull);
@@ -53,5 +55,46 @@ void main() {
     expect(money('PAID'), CancelledMoney.refunded);
     expect(money('REFUNDED', by: 'CUSTOMER'), CancelledMoney.released);
     expect(money('PENDING'), isNull);
+  });
+
+  // The store turned down an order paid with a card hold: the push said the
+  // hold came off, and a released hold reads as a refunded payment.
+  test('says what the push said once the API recorded where the money went', () {
+    CancelledMoney? money(String recorded, String state) =>
+        orderCancellation(cancelled(by: 'STORE', state: state, money: recorded))!.money;
+    expect(money('RELEASED', 'REFUNDED'), CancelledMoney.released);
+    expect(money('REFUNDED', 'REFUNDED'), CancelledMoney.refunded);
+    expect(money('NOT_CHARGED', 'NONE'), CancelledMoney.notCharged);
+    expect(money('PENDING', 'HELD'), CancelledMoney.holdPending);
+  });
+
+  test('speaks of the money of expired orders too, and of no live one', () {
+    final expired = FakeApi.sampleOrder(
+      status: 'EXPIRED',
+      cancelMoney: 'RELEASED',
+      payment: {'state': 'REFUNDED', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+    );
+    expect(endedOrderMoney(expired), CancelledMoney.released);
+    expect(expiredOutcome(expired), ExpiredOutcome.notAccepted);
+    expect(
+      expiredOutcome(
+        FakeApi.sampleOrder(
+          status: 'EXPIRED',
+          cancelMoney: 'REFUNDED',
+          payment: {'state': 'REFUNDED', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        ),
+      ),
+      ExpiredOutcome.notAcceptedRefunded,
+    );
+    expect(
+      endedOrderMoney(
+        FakeApi.sampleOrder(
+          status: 'ACCEPTED',
+          cancelMoney: 'RELEASED',
+          payment: {'state': 'HELD', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        ),
+      ),
+      isNull,
+    );
   });
 }

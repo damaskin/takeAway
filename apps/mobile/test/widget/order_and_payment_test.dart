@@ -226,6 +226,53 @@ void main() {
       await h.unmount(tester);
     });
 
+    // The push said «Деньги не списаны, блокировка на карте снята»; the screen
+    // used to say the money is on its way back, and «Спишем при принятии
+    // заказа» on the payment line of a cancelled order whose hold was kept.
+    testWidgets('says the hold came off, as the push did, and the payment line agrees', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          status: 'CANCELLED',
+          cancelledBy: 'STORE',
+          cancelReason: 'TOO_BUSY',
+          cancelMoney: 'RELEASED',
+          payment: {'state': 'REFUNDED', 'amountCents': 2000, 'cardMask': '•• 1234', 'paidAt': null},
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      final card = find.byKey(const ValueKey('cancel-reason'));
+      await reveal(tester, card);
+      expect(
+        find.descendant(of: card, matching: find.text('Деньги не списаны, блокировка на карте снята.')),
+        findsOneWidget,
+      );
+      expect(find.text('Деньги вернутся на карту.'), findsNothing);
+      final line = find.byKey(const ValueKey('payment-line'));
+      await reveal(tester, line);
+      expect(find.descendant(of: line, matching: find.text('Блокировка снята')), findsOneWidget);
+      await h.unmount(tester);
+    });
+
+    testWidgets('never says the card is charged on accept once the order is cancelled', (tester) async {
+      final api = FakeApi()
+        ..currentOrder = FakeApi.sampleOrder(
+          status: 'CANCELLED',
+          cancelledBy: 'CUSTOMER',
+          cancelMoney: 'PENDING',
+          payment: {'state': 'HELD', 'amountCents': 2000, 'cardMask': null, 'paidAt': null},
+        );
+      final h = await pumpApp(tester, api: api);
+      await openOrder(tester, h);
+
+      final line = find.byKey(const ValueKey('payment-line'));
+      await reveal(tester, line);
+      expect(find.descendant(of: line, matching: find.text('Возврат в обработке')), findsOneWidget);
+      expect(find.text('Спишем при принятии заказа'), findsNothing);
+      expect(find.text('Если точка не примет заказ, деньги с карты не спишутся.'), findsNothing);
+      await h.unmount(tester);
+    });
+
     testWidgets('a declined card says to order again with another card', (tester) async {
       final api = FakeApi()
         ..currentOrder = FakeApi.sampleOrder(status: 'CANCELLED', cancelledBy: 'STORE', cancelReason: 'CARD_DECLINED');

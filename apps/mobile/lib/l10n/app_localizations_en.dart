@@ -932,6 +932,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateNotCharged => 'You were not charged';
 
   @override
+  String get paymentStateReleased => 'Card hold released';
+
+  @override
+  String get paymentStateRefundedToCard => 'Refunded to your card';
+
+  @override
+  String get paymentStateReturnPending => 'Refund in progress';
+
+  @override
   String get paymentStateAtCounter => 'Paying at the counter';
 
   @override
