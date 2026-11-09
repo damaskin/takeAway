@@ -235,6 +235,18 @@ describe('OrderStatusPage — waiting for the store', () => {
     expect(text()).toContain('Оплата не завершилась — заказ отменён');
   });
 
+  // A released hold reads as a REFUNDED payment: only the API's record tells it from a refund.
+  it('says nothing was taken from an expired order whose hold came off, as the push did', async () => {
+    const { testText } = await open({
+      ...ORDER,
+      status: 'EXPIRED',
+      cancelMoney: 'RELEASED',
+      payment: { state: 'REFUNDED', amountCents: 4500, cardMask: '•• 1234', paidAt: null },
+    });
+    expect(testText('order-subtitle')).toBe('Точка не подтвердила заказ — деньги не списаны');
+    expect(testText('payment-line')).toBe('🔓 Блокировка снята 45 руб. · •• 1234');
+  });
+
   describe('keeping the page open (item 14)', () => {
     it('asks to keep the page open while the order is in work', async () => {
       for (const status of ['CREATED', 'ACCEPTED', 'IN_PROGRESS', 'READY'] as const) {
@@ -304,6 +316,53 @@ describe('OrderStatusPage — waiting for the store', () => {
       });
       expect(testText('order-subtitle')).toBe('Вы отменили заказ');
       expect(testText('cancel-reason')).toBe('Деньги не списаны, блокировка на карте снята.');
+    });
+
+    /**
+     * The store turned down an order paid with a card hold: the push said
+     * «Деньги не списаны, блокировка на карте снята», and so does the page
+     * now — the payment reads REFUNDED for a released hold and a refund alike.
+     */
+    it('says the hold came off, in the words of the push, once the API recorded it', async () => {
+      const { testText, text } = await open({
+        ...ORDER,
+        status: 'CANCELLED',
+        cancelledBy: 'STORE',
+        cancelReason: 'TOO_BUSY',
+        cancelMoney: 'RELEASED',
+        payment: { state: 'REFUNDED', amountCents: 4500, cardMask: '•• 1234', paidAt: null },
+      });
+      expect(testText('cancel-reason')).toBe(
+        'Заведение сейчас перегружено заказами. Деньги не списаны, блокировка на карте снята.',
+      );
+      expect(testText('payment-line')).toBe('🔓 Блокировка снята 45 руб. · •• 1234');
+      expect(text()).not.toContain('Деньги вернутся на карту');
+    });
+
+    it('never says the card is charged on accept once the order is cancelled', async () => {
+      const { testText, text } = await open({
+        ...ORDER,
+        status: 'CANCELLED',
+        cancelledBy: 'CUSTOMER',
+        cancelMoney: 'PENDING',
+        payment: { state: 'HELD', amountCents: 4500, cardMask: '•• 1234', paidAt: null },
+      });
+      expect(testText('cancel-reason')).toBe('Блокировка на карте будет снята автоматически.');
+      expect(testText('payment-line')).toBe('⏳ Возврат в обработке 45 руб. · •• 1234');
+      expect(text()).not.toContain('Спишем при принятии заказа');
+      expect(text()).not.toContain('Если точка не примет заказ');
+    });
+
+    it('says a refund went back to the card on the payment line too', async () => {
+      const { testText } = await open({
+        ...ORDER,
+        status: 'CANCELLED',
+        cancelledBy: 'STORE',
+        cancelReason: 'CLOSING',
+        cancelMoney: 'REFUNDED',
+        payment: { state: 'REFUNDED', amountCents: 4500, cardMask: '•• 1234', paidAt: null },
+      });
+      expect(testText('payment-line')).toBe('↩️ Возвращено на карту 45 руб. · •• 1234');
     });
 
     it('keeps the plain status for an order that does not say who cancelled it', async () => {

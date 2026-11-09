@@ -97,6 +97,21 @@ test.describe('order page', () => {
     await expect(page.getByRole('button', { name: 'Cancel order' })).toHaveCount(0);
   });
 
+  // The payment line used to keep «Charged when the store accepts» on a cancelled order.
+  test('cancelling a held order says the hold came off, in the words of the push', async ({ page }) => {
+    const api = await installFakeApi(page);
+    api.seedOrder({ payment: { state: 'HELD', amountCents: 2400, cardMask: '•••• 4242', paidAt: null } });
+
+    await page.goto('/orders/order-1');
+    await expect(page.getByTestId('payment-line')).toContainText('Charged when the store accepts');
+    await page.getByRole('button', { name: 'Cancel order' }).click();
+    await page.getByRole('button', { name: 'Yes, cancel' }).click();
+
+    await expect(page.getByTestId('cancel-money')).toHaveText('You were not charged and the card hold is released.');
+    await expect(page.getByTestId('payment-line')).toContainText('Card hold released');
+    await expect(page.getByTestId('payment-line')).not.toContainText('Charged when the store accepts');
+  });
+
   test('once the kitchen accepted, there is no cancel — call the store', async ({ page }) => {
     const api = await installFakeApi(page, { store: { phone: '+971 4 123 4567' } });
     api.seedOrder({ status: 'ACCEPTED', canCancel: false });

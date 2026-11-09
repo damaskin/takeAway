@@ -275,6 +275,7 @@ export async function installFakeApi(
       cancelledBy: null,
       cancelReason: null,
       cancelComment: null,
+      cancelMoney: null,
       readyEstimateAt: null,
       canCancel: true,
       ...patch,
@@ -466,11 +467,15 @@ export async function installFakeApi(
           409,
         );
       }
+      // As the API: a card hold comes off, and the order records it.
+      const payment = order['payment'] as { state?: string } | undefined;
+      const held = payment?.state === 'HELD';
       Object.assign(order, {
         status: 'CANCELLED',
         canCancel: false,
         cancelledAt: new Date().toISOString(),
         cancelledBy: 'CUSTOMER',
+        ...(held ? { cancelMoney: 'RELEASED', payment: { ...payment, state: 'REFUNDED' } } : {}),
       });
       return json(route, order);
     }
