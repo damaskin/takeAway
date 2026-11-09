@@ -382,6 +382,10 @@ export class CustomerOrderSummaryDto extends OrderSummaryDto {
   @ApiProperty({ description: 'See OrderDto.canReview.' })
   canReview!: boolean;
 
-  @ApiProperty({ nullable: true, type: Number, description: 'The stars the customer gave the order; null before a review.' })
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'The stars the customer gave the order; null before a review.',
+  })
   reviewRating!: number | null;
 }

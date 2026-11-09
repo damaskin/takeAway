@@ -39,9 +39,7 @@ import { OrdersApi, type OrderView } from '../../core/orders/orders.service';
           [attr.aria-label]="'common.orderReview.given' | translate: { n: r.rating }"
         >
           @for (star of stars; track star) {
-            <span
-              aria-hidden="true"
-              [style.color]="star <= r.rating ? 'var(--color-caramel)' : 'var(--color-border)'"
+            <span aria-hidden="true" [style.color]="star <= r.rating ? 'var(--color-caramel)' : 'var(--color-border)'"
               >★</span
             >
           }

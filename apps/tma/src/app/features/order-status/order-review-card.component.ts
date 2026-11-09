@@ -62,9 +62,10 @@ import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.servi
         style="gap: 10px; padding: 16px; border-radius: 14px; background: var(--color-foam); border: 1px solid var(--color-border-light)"
         (submit)="$event.preventDefault(); send()"
       >
-        <span style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-text-primary)">{{
-          'common.orderReview.title' | translate
-        }}</span>
+        <span
+          style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-text-primary)"
+          >{{ 'common.orderReview.title' | translate }}</span
+        >
         <span
           style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary); text-align: center"
           >{{ 'common.orderReview.hint' | translate }}</span

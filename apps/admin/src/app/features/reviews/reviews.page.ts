@@ -127,7 +127,9 @@ const RATINGS_DESC = [...ORDER_REVIEW_RATINGS].reverse();
                     <span aria-hidden="true" [class.rv-star-off]="s > r.rating">★</span>
                   }
                 </span>
-                <span class="rv-meta">{{ r.createdAt | localDate: 'dateTime' }} · {{ r.brand.name }} · {{ r.store.name }}</span>
+                <span class="rv-meta"
+                  >{{ r.createdAt | localDate: 'dateTime' }} · {{ r.brand.name }} · {{ r.store.name }}</span
+                >
               </div>
 
               @if (r.comment) {
@@ -448,9 +450,7 @@ export class OrderReviewsPage {
 
   /** «4,6» — one decimal in the UI language. */
   average(value: number): string {
-    return new Intl.NumberFormat(this.fmt.lang(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
-      value,
-    );
+    return new Intl.NumberFormat(this.fmt.lang(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);
   }
 
   countFor(page: AdminOrderReviewPage, rating: number): number {
