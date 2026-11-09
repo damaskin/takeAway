@@ -700,8 +700,19 @@ class _SummarySection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: Text('${item.quantity} × ${item.productName}', style: context.text.bodyMedium)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${item.quantity} × ${item.productName}', style: context.text.bodyMedium),
+                        // What was picked from the options catalog, as the kitchen reads it.
+                        if (describeOptionLines(item.options) case final options when options.isNotEmpty)
+                          Text(options, style: context.text.bodySmall),
+                      ],
+                    ),
+                  ),
                   Text(context.money(item.lineTotalCents, currency), style: context.text.bodyMedium),
                 ],
               ),

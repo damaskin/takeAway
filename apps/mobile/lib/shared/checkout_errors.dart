@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:takeaway_api/takeaway_api.dart';
 
 import '../l10n/app_localizations.dart';
 import 'money_text.dart';
@@ -61,7 +62,23 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     // A cancel that came too late: the kitchen accepted the order, or the
     // money was taken, a moment ago.
     'ORDER_NOT_CANCELLABLE' => l10n.cancelByPhone,
+    OptionsErrorBody.codeRequired || OptionsErrorBody.codeInvalid => optionsErrorText(
+      l10n,
+      OptionsErrorBody.tryParse({...details, 'code': code}) ?? OptionsErrorBody(code: code, errors: const []),
+    ),
     _ => null,
+  };
+}
+
+/// Words for the 400 the cart answers when it refuses a choice from the
+/// options catalog: by the first reason the API gives.
+String optionsErrorText(AppLocalizations l10n, OptionsErrorBody body) {
+  if (body.isRequired) return l10n.errOptionsRequired;
+  return switch (body.firstReason) {
+    OptionPickErrorCode.optionUnavailable => l10n.errOptionsUnavailable,
+    OptionPickErrorCode.tooFew => l10n.errOptionsTooFew,
+    OptionPickErrorCode.tooMany => l10n.errOptionsTooMany,
+    _ => l10n.errOptionsChanged,
   };
 }
 

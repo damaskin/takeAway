@@ -516,5 +516,17 @@
   "standProd": "Прод",
   "standTest": "Тест",
   "standLocal": "Локальный",
-  "standBadge": "Сервер «{stand}» · {host}"
+  "standBadge": "Сервер «{stand}» · {host}",
+  "optionUnavailable": "Нет в наличии",
+  "optionPickRange": "от {min} до {max}",
+  "optionIncluded": "{count} в цене",
+  "optionPerUnit": "{price} за шт.",
+  "optionsChoose": "Выберите: {groups}",
+  "optionsOutOfStock": "Нет в наличии: {options}",
+  "optionsCheck": "Проверьте выбор",
+  "errOptionsRequired": "Выберите варианты на странице позиции",
+  "errOptionsUnavailable": "Что-то из выбранного только что закончилось — выберите другое",
+  "errOptionsTooFew": "Выберите всё, что нужно для этой позиции",
+  "errOptionsTooMany": "Слишком много добавок — уберите лишнее",
+  "errOptionsChanged": "Меню изменилось — откройте позицию и выберите заново"
 }

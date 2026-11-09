@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/format/time.dart';
+import '../../core/network/api_error.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../core/theme/tokens.dart';
 import '../../l10n/app_localizations.dart';
@@ -23,6 +24,7 @@ import '../cart/upsell.dart';
 import '../cart/upsell_row.dart';
 import '../catalog/catalog_providers.dart';
 import '../menu/product_card.dart';
+import 'catalog_options.dart';
 import 'option_widgets.dart';
 import 'product_options.dart';
 
@@ -43,6 +45,14 @@ class ProductScreen extends ConsumerStatefulWidget {
 class _ProductScreenState extends ConsumerState<ProductScreen> {
   final Map<VariationType, String> _variations = {};
   final Map<String, int> _modifiers = {};
+
+  /// The choice from the options catalog, for a product with catalog groups
+  /// (then [_variations] and [_modifiers] stay empty).
+  OptionPicks _picks = const {};
+
+  /// The customer changed [_picks]: a fresher copy of the product keeps
+  /// their choice instead of starting over from the defaults.
+  bool _picksTouched = false;
 
   /// Add-on groups shown open, by [AddonGroup.key].
   final Set<String> _expanded = {};
@@ -81,6 +91,8 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     if (identical(product, _optionsFrom)) return;
     final first = _optionsFrom == null;
     _optionsFrom = product;
+    final groups = orderOptionGroups(product.optionGroups);
+    _picks = first || !_picksTouched ? defaultOptionPicks(groups) : keepOfferedPicks(groups, _picks);
     final types = <VariationType>{};
     for (final type in variationOrder) {
       final group = variationsOf(product, type);
@@ -115,7 +127,20 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     }
   });
 
+  void _togglePick(ProductDetail product, String optionId) => setState(() {
+    _picksTouched = true;
+    _picks = toggleOptionPick(orderOptionGroups(product.optionGroups), _picks, optionId);
+  });
+
+  void _setPickQty(ProductDetail product, String optionId, int qty) => setState(() {
+    _picksTouched = true;
+    _picks = setOptionQty(orderOptionGroups(product.optionGroups), _picks, optionId, qty);
+  });
+
   int _unitPrice(ProductDetail product) {
+    if (product.hasOptionGroups) {
+      return priceWithOptionPicks(product.basePriceCents, orderOptionGroups(product.optionGroups), _picks);
+    }
     var total = product.basePriceCents;
     for (final v in product.variations) {
       if (_variations[v.type] == v.id) total += v.priceDeltaCents;
@@ -144,14 +169,16 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     if (_adding || !store.takesOrders) return;
     if (!await ensureSignedIn(context, ref)) return;
     setState(() => _adding = true);
+    final catalog = product.hasOptionGroups;
     try {
       await ref
           .read(cartProvider(store.id).notifier)
           .add(
             productId: product.id,
             quantity: _quantity,
-            variationIds: _variations.values.toList(),
-            modifiers: _modifiers,
+            variationIds: catalog ? const [] : _variations.values.toList(),
+            modifiers: catalog ? const {} : _modifiers,
+            options: catalog ? toOptionSelections(_picks) : null,
             notes: _notes.text,
           );
       unawaited(HapticFeedback.mediumImpact());
@@ -161,6 +188,11 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
       if (mounted) {
         setState(() => _adding = false);
         Snack.error(context, error);
+        // The cart refused the choice — most likely something ran out a
+        // moment ago: fetch the product again so the screen shows it.
+        if (ApiError.from(error).code == OptionsErrorBody.codeInvalid) {
+          ref.invalidate(storeProductProvider((productId: widget.productId, storeId: ref.read(activeStoreIdProvider))));
+        }
       }
     }
   }
@@ -179,7 +211,13 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
     final menuStoreId = store?.id ?? activeStoreId;
     final menu = menuStoreId == null ? null : ref.watch(menuProvider(menuStoreId)).valueOrNull?.value;
     final kind = preview == null ? null : productKindOf(preview, menu: menu);
-    final summary = optionsSummary(product, _variations.values, _modifiers, onlyChoices: true);
+    final groups = orderOptionGroups(product?.optionGroups ?? const []);
+    final catalog = groups.isNotEmpty;
+    final summary = catalog
+        ? describeOptionLines(optionLinesFor(groups, _picks))
+        : optionsSummary(product, _variations.values, _modifiers, onlyChoices: true);
+    final pickErrors = catalog ? validateOptionPicks(groups, _picks) : const <OptionPickError>[];
+    final hint = optionsHint(AppLocalizations.of(context), groups, pickErrors);
     // No photo, no picture: the screen starts with the name under a plain
     // bar instead of a stand-in image.
     final photo = preview?.imageUrl;
@@ -239,6 +277,11 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
                       onVariation: (type, id) => setState(() => _variations[type] = id),
                       onModifier: (id, count) => setState(() => _modifiers[id] = count),
                       onToggleGroup: _toggleGroup,
+                      optionGroups: groups,
+                      picks: _picks,
+                      missingGroups: missingOptionGroups(pickErrors),
+                      onTogglePick: (id) => _togglePick(product!, id),
+                      onPickQty: (id, qty) => _setPickQty(product!, id, qty),
                       notes: _notes,
                       showNotes: _showNotes,
                       onShowNotes: () => setState(() => _showNotes = true),
@@ -257,9 +300,12 @@ class _ProductScreenState extends ConsumerState<ProductScreen> {
               quantity: _quantity,
               unitPrice: _unitPrice(product),
               summary: summary,
+              hint: hint,
               adding: _adding,
               onQuantity: (q) => setState(() => _quantity = q),
-              onAdd: store == null || product.onStopList || !store.takesOrders ? null : () => _add(product, store),
+              onAdd: store == null || product.onStopList || !store.takesOrders || hint != null
+                  ? null
+                  : () => _add(product, store),
             ),
     );
   }
@@ -302,6 +348,11 @@ class _Details extends StatelessWidget {
     required this.onVariation,
     required this.onModifier,
     required this.onToggleGroup,
+    required this.optionGroups,
+    required this.picks,
+    required this.missingGroups,
+    required this.onTogglePick,
+    required this.onPickQty,
     required this.notes,
     required this.showNotes,
     required this.onShowNotes,
@@ -321,6 +372,16 @@ class _Details extends StatelessWidget {
   final void Function(VariationType type, String id) onVariation;
   final void Function(String id, int count) onModifier;
   final ValueChanged<String> onToggleGroup;
+
+  /// The product's catalog groups, variants first; empty for a product on
+  /// the older options.
+  final List<ProductOptionGroup> optionGroups;
+  final OptionPicks picks;
+
+  /// Groups still to choose from, marked «обязательно».
+  final Set<String> missingGroups;
+  final ValueChanged<String> onTogglePick;
+  final void Function(String optionId, int qty) onPickQty;
   final TextEditingController notes;
   final bool showNotes;
   final VoidCallback onShowNotes;
@@ -408,6 +469,25 @@ class _Details extends StatelessWidget {
             ),
           )
         else ...[
+          // A group shown by a condition (ice for an iced coffee) slides in
+          // and out as the condition changes.
+          for (final group in optionGroups)
+            AnimatedSize(
+              key: ValueKey('group-${group.id}'),
+              duration: Motion.medium,
+              curve: Motion.emphasized,
+              alignment: Alignment.topCenter,
+              child: isGroupVisible(group, optionGroups, picks)
+                  ? OptionGroupSection(
+                      group: group,
+                      picks: picks,
+                      currency: currency,
+                      missing: missingGroups.contains(group.id),
+                      onToggle: onTogglePick,
+                      onQty: onPickQty,
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
           for (final type in variationOrder)
             if (variationsOf(product!, type) case final options when options.isNotEmpty)
               VariationChips(
@@ -511,6 +591,7 @@ class _BottomBar extends StatelessWidget {
     required this.quantity,
     required this.unitPrice,
     required this.summary,
+    required this.hint,
     required this.adding,
     required this.onQuantity,
     required this.onAdd,
@@ -523,6 +604,10 @@ class _BottomBar extends StatelessWidget {
 
   /// The chosen options, so what goes into the cart is in view by the button.
   final String summary;
+
+  /// What is still to choose before the button works (see [optionsHint]);
+  /// shown in place of [summary].
+  final String? hint;
   final bool adding;
   final ValueChanged<int> onQuantity;
   final VoidCallback? onAdd;
@@ -556,7 +641,20 @@ class _BottomBar extends StatelessWidget {
                   duration: Motion.medium,
                   curve: Motion.emphasized,
                   alignment: Alignment.bottomLeft,
-                  child: summary.isEmpty || product.onStopList
+                  child: product.onStopList
+                      ? const SizedBox(width: double.infinity)
+                      : hint != null
+                      ? Padding(
+                          padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),
+                          child: Text(
+                            hint!,
+                            key: const ValueKey('bar-hint'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.text.bodySmall?.copyWith(color: brand.caramel, fontWeight: FontWeight.w600),
+                          ),
+                        )
+                      : summary.isEmpty
                       ? const SizedBox(width: double.infinity)
                       : Padding(
                           padding: const EdgeInsets.only(bottom: 8, left: 4, right: 4),

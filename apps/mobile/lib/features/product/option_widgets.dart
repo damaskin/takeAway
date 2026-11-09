@@ -206,7 +206,7 @@ class AddonGroupTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (group.isRequired) ...[const SizedBox(width: 8), _RequiredBadge(label: l10n.productRequired)],
+                      if (group.isRequired) ...[const SizedBox(width: 8), RequiredBadge(label: l10n.productRequired)],
                       const SizedBox(width: 4),
                       AnimatedRotation(
                         turns: expanded ? 0.25 : 0,
@@ -246,8 +246,9 @@ class AddonGroupTile extends StatelessWidget {
   }
 }
 
-class _RequiredBadge extends StatelessWidget {
-  const _RequiredBadge({required this.label});
+/// «обязательно» beside something that has to be chosen.
+class RequiredBadge extends StatelessWidget {
+  const RequiredBadge({required this.label, super.key});
 
   final String label;
 
