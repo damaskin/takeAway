@@ -1,6 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
+import type {
+  OrderCancelMoney,
+  OrderCancelReason,
+  OrderCancelledBy,
+  OrderItemModifier,
+  OrderItemVariation,
+} from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -88,6 +94,17 @@ export interface AdminOrderDetail {
   totalCents: number;
   couponCode: string | null;
   giftCardCode: string | null;
+  /**
+   * Who cancelled the order, the kitchen's reason and comment, and where the
+   * money went (as the customer's push said) — see `orderCancelSummary`.
+   * Absent from an API older than this build.
+   */
+  cancelledAt?: string | null;
+  expiredAt?: string | null;
+  cancelledBy?: OrderCancelledBy | null;
+  cancelReason?: OrderCancelReason | null;
+  cancelComment?: string | null;
+  cancelMoney?: OrderCancelMoney | null;
   refundedCents: number;
   /** 0 hides the refund control — nothing left to give back. */
   refundableCents: number;
