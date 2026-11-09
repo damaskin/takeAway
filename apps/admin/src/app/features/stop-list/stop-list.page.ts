@@ -1,23 +1,20 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import type { BrandOptionCatalog } from '@takeaway/shared-types';
 import { map, type Observable } from 'rxjs';
 
-import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import {
   AdminCatalogApi,
   type AvailabilityIngredientDto,
+  type AvailabilityOptionDto,
   type AvailabilityProductDto,
   type AvailabilityStopDto,
   type StoreAdminDto,
   type StoreAvailabilityDto,
 } from '../../core/catalog/admin-catalog.service';
-import { groupsOfKind, settingFor, settingsById, sortCatalog } from '../../core/catalog/option-catalog';
 import { OptionCatalogApi } from '../../core/catalog/option-catalog.service';
 import { KITCHEN_STORE_KEY, read } from '../../core/kitchen/kitchen-mode.service';
-import { type AdminRole, canAccess } from '../../core/permissions/permissions';
 import { describeMenuError } from '../menu/menu-errors';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
 import { formatStoreTime, isStopActive, nextMidnightIn } from '../menu/stock';
@@ -51,10 +48,9 @@ interface Row {
  * Laid out as one column of big rows so it works on the kitchen tablet and
  * on a phone.
  *
- * «Добавки» lists the old add-ins and, since 2026-11-09, the options of the
- * catalog the brand has, under their groups. The catalog comes from the
- * brand's option settings, which kitchen STAFF and a PIN session may not
- * read (`docs/option-groups.md`): they see the old add-ins only.
+ * «Добавки» lists the old add-ins and, since 2026-11-09, the catalog options
+ * the store uses and the brand has, under their groups — from the store's
+ * availability, so kitchen STAFF and a PIN session see them too.
  */
 @Component({
   selector: 'app-stop-list',
@@ -273,7 +269,6 @@ interface Row {
 export class StopListPage {
   private readonly api = inject(AdminCatalogApi);
   private readonly options = inject(OptionCatalogApi);
-  private readonly auth = inject(AuthStore);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly route = inject(ActivatedRoute);
@@ -290,11 +285,6 @@ export class StopListPage {
   readonly until = signal<Until>('manual');
   readonly query = signal('');
   readonly onlyStopped = signal(false);
-  /** The options catalog with the brand's settings; null when this account may not read it. */
-  readonly optionCatalog = signal<BrandOptionCatalog | null>(null);
-  private catalogBrandId: string | null = null;
-  /** When the option stops made here lift, by option and store (the catalog answer does not say). */
-  private readonly optionEnds = signal<ReadonlyMap<string, string>>(new Map());
 
   readonly productRows = computed<Row[]>(() =>
     (this.view()?.products ?? []).map((p: AvailabilityProductDto) => ({
@@ -319,30 +309,18 @@ export class StopListPage {
     })),
     ...this.optionRows(),
   ]);
-  /** The catalog options the brand has, variants then add-ons, each under its group. */
-  readonly optionRows = computed<Row[]>(() => {
-    const catalog = this.optionCatalog();
-    const storeId = this.view()?.storeId;
-    if (!catalog || !storeId) return [];
-    const settings = settingsById(catalog.settings);
-    const groups = sortCatalog(catalog.groups);
-    const ends = this.optionEnds();
-    return [...groupsOfKind(groups, 'VARIANT'), ...groupsOfKind(groups, 'ADDON')].flatMap((g) =>
-      g.options
-        .filter((o) => settingFor(settings, o.id).enabled)
-        .map<Row>((o) => ({
-          id: o.id,
-          source: 'option',
-          name: o.name,
-          detail: o.note ?? '',
-          heading: g.name,
-          stop: settingFor(settings, o.id).stoppedStoreIds.includes(storeId)
-            ? { expiresAt: ends.get(`${o.id}@${storeId}`) ?? null }
-            : null,
-          brandOff: false,
-        })),
-    );
-  });
+  /** The catalog options the store uses and the brand has, each under its group. */
+  readonly optionRows = computed<Row[]>(() =>
+    (this.view()?.options ?? []).map<Row>((o: AvailabilityOptionDto) => ({
+      id: o.id,
+      source: 'option',
+      name: o.name,
+      detail: o.note ?? '',
+      heading: o.groupName,
+      stop: o.stop,
+      brandOff: false,
+    })),
+  );
   readonly rows = computed(() => (this.tab() === 'products' ? this.productRows() : this.addonRows()));
   readonly stoppedCount = computed(() => this.rows().filter((r) => this.stopped(r)).length);
   readonly shown = computed(() => {
@@ -364,10 +342,7 @@ export class StopListPage {
     });
     effect(() => {
       const storeId = this.storeId();
-      untracked(() => {
-        this.load(storeId);
-        this.loadOptions(this.stores().find((s) => s.id === storeId)?.brandId ?? null);
-      });
+      untracked(() => this.load(storeId));
     });
   }
 
@@ -440,56 +415,14 @@ export class StopListPage {
   }
 
   private patch(kind: Source, id: string, stop: AvailabilityStopDto | null): void {
-    if (kind === 'option') {
-      this.patchOption(id, stop);
-      return;
-    }
     this.view.update((view) => {
       if (!view) return view;
+      if (kind === 'option') {
+        return { ...view, options: (view.options ?? []).map((o) => (o.id === id ? { ...o, stop } : o)) };
+      }
       return kind === 'product'
         ? { ...view, products: view.products.map((p) => (p.id === id ? { ...p, stop } : p)) }
         : { ...view, ingredients: view.ingredients.map((i) => (i.id === id ? { ...i, stop } : i)) };
-    });
-  }
-
-  private patchOption(optionId: string, stop: AvailabilityStopDto | null): void {
-    const storeId = this.view()?.storeId;
-    const catalog = this.optionCatalog();
-    if (!storeId || !catalog) return;
-    const current = settingFor(settingsById(catalog.settings), optionId);
-    const others = current.stoppedStoreIds.filter((id) => id !== storeId);
-    const next = { ...current, stoppedStoreIds: stop ? [...others, storeId] : others };
-    this.optionCatalog.set({
-      ...catalog,
-      settings: [...catalog.settings.filter((s) => s.optionId !== optionId), next],
-    });
-    this.optionEnds.update((ends) => {
-      const copy = new Map(ends);
-      const key = `${optionId}@${storeId}`;
-      if (stop?.expiresAt) copy.set(key, stop.expiresAt);
-      else copy.delete(key);
-      return copy;
-    });
-  }
-
-  /**
-   * Once per brand. The brand's option settings are read by the roles of
-   * «Добавки»; kitchen STAFF and a PIN session are refused them, so they are
-   * not asked and see the old add-ins only.
-   */
-  private loadOptions(brandId: string | null): void {
-    if (brandId === this.catalogBrandId) return;
-    this.catalogBrandId = brandId;
-    this.optionCatalog.set(null);
-    const role = this.auth.user()?.role as AdminRole | undefined;
-    if (!brandId || this.auth.kitchenSession() || !canAccess(role, 'ingredients')) return;
-    this.options.brandCatalog(brandId).subscribe({
-      next: (catalog) => {
-        if (this.catalogBrandId === brandId) this.optionCatalog.set(catalog);
-      },
-      error: () => {
-        if (this.catalogBrandId === brandId) this.optionCatalog.set(null);
-      },
     });
   }
 

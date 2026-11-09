@@ -147,6 +147,18 @@ export const AVAILABILITY = {
     },
   ],
   ingredients: [{ id: OAT_MILK.id, name: OAT_MILK.name, isAvailable: true, stop: null, productNames: [PRODUCT.name] }],
+  // Catalog options the store uses (their group is on a product sold here) and the brand has.
+  options: [
+    {
+      id: 'opt-vanilla',
+      name: 'Ваниль',
+      note: null,
+      groupId: 'g-syrup',
+      groupName: 'Сиропы',
+      stop: null,
+      productNames: [PRODUCT.name],
+    },
+  ],
 };
 
 const PERIOD = {

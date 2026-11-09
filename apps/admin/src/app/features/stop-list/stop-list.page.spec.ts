@@ -3,8 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
-import type { BrandOptionCatalog } from '@takeaway/shared-types';
-import { of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 
 import { AuthStore } from '../../core/auth/auth.store';
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
@@ -31,49 +30,17 @@ const VIEW: StoreAvailabilityDto = {
     { id: 'ing-cheddar', name: 'Чеддер', isAvailable: true, stop: null, productNames: ['Чизбургер'] },
     { id: 'ing-oat', name: 'Овсяное молоко', isAvailable: false, stop: null, productNames: ['Латте'] },
   ],
-};
-
-/** The brand's catalog: oat milk it has (stopped in the pizzeria), cream it does not. */
-const CATALOG: BrandOptionCatalog = {
-  groups: [
+  // The catalog options the store uses and the brand has (switched-off ones are not sent).
+  options: [
     {
-      id: 'g-milk',
-      kind: 'ADDON',
-      type: 'A',
-      name: 'Молоко',
-      minSelect: 1,
-      maxSelect: 1,
-      showIfOptionId: null,
-      sortOrder: 0,
-      options: [
-        {
-          id: 'opt-oat',
-          groupId: 'g-milk',
-          name: 'Овсяное',
-          note: null,
-          isDefault: false,
-          minQty: null,
-          maxQty: null,
-          defaultQty: null,
-          sortOrder: 0,
-        },
-        {
-          id: 'opt-cream',
-          groupId: 'g-milk',
-          name: 'Сливки',
-          note: null,
-          isDefault: false,
-          minQty: null,
-          maxQty: null,
-          defaultQty: null,
-          sortOrder: 1,
-        },
-      ],
+      id: 'opt-oat',
+      name: 'Овсяное',
+      note: null,
+      groupId: 'g-milk',
+      groupName: 'Молоко',
+      stop: null,
+      productNames: ['Латте'],
     },
-  ],
-  settings: [
-    { optionId: 'opt-oat', priceCents: 500, enabled: true, stoppedStoreIds: ['s2'] },
-    { optionId: 'opt-cream', priceCents: 0, enabled: false, stoppedStoreIds: [] },
   ],
 };
 
@@ -86,11 +53,9 @@ function at<T>(rows: readonly T[], index: number): T {
 
 function setup(
   api: Partial<Record<keyof AdminCatalogApi, jest.Mock>> = {},
-  catalog: jest.Mock = jest.fn().mockReturnValue(of(CATALOG)),
   session: { role: string; kitchen?: boolean } = { role: 'STORE_MANAGER' },
 ) {
   const options = {
-    brandCatalog: catalog,
     stopInStore: jest.fn((_store: string, _option: string, expiresAt: string | null) => of({ expiresAt })),
     resumeInStore: jest.fn().mockReturnValue(of(undefined)),
   };
@@ -205,17 +170,15 @@ describe('StopListPage', () => {
     expect(page.shown().map((r) => r.id)).toEqual(['p-burger']);
   });
 
-  it('lists the catalog options the brand has under their groups, after the old add-ins', () => {
-    const { page, options } = setup();
+  it('lists the catalog options the store uses under their groups, after the old add-ins', () => {
+    const { page } = setup();
     page.tab.set('addons');
 
-    expect(options.brandCatalog).toHaveBeenCalledWith('b1');
     expect(page.addonRows().map((r) => [r.source, r.name, r.heading])).toEqual([
       ['ingredient', 'Чеддер', null],
       ['ingredient', 'Овсяное молоко', null],
       ['option', 'Овсяное', 'Молоко'],
     ]);
-    // Stopped in the pizzeria only, not in this store.
     expect(page.stopped(at(page.addonRows(), 2))).toBe(false);
   });
 
@@ -238,18 +201,18 @@ describe('StopListPage', () => {
     expect(page.stopped(at(page.addonRows(), 2))).toBe(false);
   });
 
-  it('does not ask for the catalog from kitchen staff or a PIN session', () => {
+  it('shows the catalog options to kitchen staff and a PIN session too', () => {
     for (const session of [{ role: 'STAFF' }, { role: 'STORE_MANAGER', kitchen: true }]) {
       TestBed.resetTestingModule();
-      const { page, options } = setup({}, jest.fn().mockReturnValue(of(CATALOG)), session);
-      expect(options.brandCatalog).not.toHaveBeenCalled();
+      const { page } = setup({}, session);
       page.tab.set('addons');
-      expect(page.addonRows().map((r) => r.source)).toEqual(['ingredient', 'ingredient']);
+      expect(page.addonRows().map((r) => r.source)).toEqual(['ingredient', 'ingredient', 'option']);
     }
   });
 
-  it('keeps the old add-ins when the account may not read the catalog', () => {
-    const { page } = setup({}, jest.fn().mockReturnValue(throwError(() => ({ status: 403 }))));
+  it('shows the old add-ins only when the API sends no catalog options', () => {
+    const older: StoreAvailabilityDto = { ...VIEW, options: undefined };
+    const { page } = setup({ getStoreAvailability: jest.fn().mockReturnValue(of(older)) });
     page.tab.set('addons');
     expect(page.addonRows().map((r) => r.source)).toEqual(['ingredient', 'ingredient']);
     expect(page.error()).toBeNull();
