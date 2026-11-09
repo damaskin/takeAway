@@ -1,6 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+import { OptionSelectionDto } from '../../option-groups/dto/option-groups.dto';
 
 const VARIATION_IDS_DOC =
   'At most one per variation type (SIZE, MILK, ...). A type left out gets its default — the one ' +
@@ -9,6 +21,17 @@ const VARIATION_IDS_DOC =
 const MODIFIERS_DOC =
   "Map { modifierId: count }. Omitted modifiers count as 0; counts are clamped to the modifier's " +
   'min/max. An id the product does not have, with a positive count, is a 400.';
+
+const ADD_OPTIONS_DOC =
+  'Picks from the options catalog, for a product with catalog groups (then variationIds and modifiers are ' +
+  'ignored). Omitted (a client that predates the catalog): every default, and 400 OPTIONS_REQUIRED when that ' +
+  'is not a valid choice. A choice that breaks a rule is 400 OPTIONS_INVALID with `errors`. The same product ' +
+  'with the same picks and note goes on the existing line.';
+
+const UPDATE_OPTIONS_DOC =
+  'A new choice from the options catalog, checked and priced as on add (400 OPTIONS_INVALID); the line is not ' +
+  'merged with another. Omitted (a quantity change): the line keeps its picks, re-priced against the menu as it ' +
+  'is now; never reset or refused here, and one that can no longer be made leaves the cart at checkout.';
 
 export class AddCartItemDto {
   @ApiProperty()
@@ -37,6 +60,14 @@ export class AddCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: ADD_OPTIONS_DOC })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OptionSelectionDto)
+  options?: OptionSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -63,11 +94,16 @@ export class UpdateCartItemDto {
   @IsObject()
   modifiers?: Record<string, number>;
 
+  @ApiPropertyOptional({ type: [OptionSelectionDto], description: UPDATE_OPTIONS_DOC })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => OptionSelectionDto)
+  options?: OptionSelectionDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;
 }
-
-// Keep the decorators referenced so tree-shakers don't drop them
-void ValidateNested;

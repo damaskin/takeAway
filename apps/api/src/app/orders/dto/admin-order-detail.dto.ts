@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderCancelMoney, OrderCancelReason, OrderCanceller } from '@prisma/client';
 
+import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
 import { OrderItemModifierDto, OrderItemVariationDto } from './order.dto';
 
 export class AdminOrderEventDto {
@@ -31,6 +32,8 @@ export class AdminOrderItemDto {
   /** Empty on orders placed before options were snapshotted. */
   @ApiProperty({ type: [OrderItemVariationDto] }) variations!: OrderItemVariationDto[];
   @ApiProperty({ type: [OrderItemModifierDto] }) modifierLines!: OrderItemModifierDto[];
+  /** Picks from the options catalog, variants first; empty for products without catalog groups. */
+  @ApiProperty({ type: [OptionLineDto] }) optionLines!: OptionLineDto[];
   @ApiPropertyOptional({ type: String, nullable: true }) notes!: string | null;
   @ApiProperty() quantity!: number;
   @ApiProperty() unitPriceCents!: number;

@@ -2,6 +2,8 @@ import { Test } from '@nestjs/testing';
 import type { CartItem, Modifier, Variation } from '@prisma/client';
 
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
+import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
@@ -20,6 +22,7 @@ describe('CartService pricing', () => {
         // kitchen — the providers are here to satisfy the constructor.
         { provide: KitchenLoadService, useValue: {} },
         { provide: StoreAvailabilityService, useValue: {} },
+        { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
       ],
     }).compile();
 
@@ -224,6 +227,7 @@ async function buildService(
         },
       },
       { provide: StoreAvailabilityService, useValue: rules },
+      { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
     ],
   }).compile();
   return moduleRef.get(CartService);
@@ -483,6 +487,7 @@ describe('CartService.repriceForCheckout', () => {
       quantity: 2,
       variationIds: ['v-l', 'v-oat'],
       modifiersJson: { 'm-vanilla': 2 },
+      optionsJson: [],
       // 450 + 140 + 60 + 2 × 50
       unitPriceCents: 750,
       unitPrepSeconds: 180,
@@ -495,7 +500,7 @@ describe('CartService.repriceForCheckout', () => {
   }
 
   const reprice = (...items: Array<CartItem & { product: StoreProduct }>) =>
-    service.repriceForCheckout({ id: 'cart-1', items });
+    service.repriceForCheckout({ id: 'cart-1', storeId: 'store-1', items });
 
   async function conflictOf(pending: Promise<unknown>): Promise<CartChangedException> {
     const err = await pending.then(
@@ -624,6 +629,7 @@ describe('CartService.addItem guards', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: KitchenLoadService, useValue: {} },
         { provide: StoreAvailabilityService, useValue: rules },
+        { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
       ],
     }).compile();
     return moduleRef.get(CartService);

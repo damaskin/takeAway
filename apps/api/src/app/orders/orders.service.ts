@@ -674,6 +674,7 @@ export class OrdersService {
           name: snap.name || 'Item',
           variations: snap.variations,
           modifierLines: snap.modifierLines,
+          optionLines: snap.optionLines,
           notes: snap.notes,
           quantity: i.quantity,
           unitPriceCents: i.unitPriceCents,
@@ -1246,8 +1247,8 @@ export class OrdersService {
       unitPrepSeconds: line.unitPrepSeconds,
       variations: line.variations,
       modifierLines: line.modifierLines,
-      // Filled from the cart line's catalog picks (docs/option-groups.md).
-      optionLines: [],
+      // Catalog picks with names and prices as bought (docs/option-groups.md).
+      optionLines: line.optionLines,
     };
   }
 

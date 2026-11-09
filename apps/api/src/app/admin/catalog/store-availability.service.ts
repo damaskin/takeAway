@@ -20,7 +20,7 @@ export class StoreAvailabilityService {
     const now = new Date();
     const soldHere = { stores: { some: { storeId } } };
 
-    const [products, ingredients] = await Promise.all([
+    const [products, ingredients, options] = await Promise.all([
       this.prisma.product.findMany({
         where: { brandId: store.brandId, visible: true, ...soldHere },
         orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -50,6 +50,28 @@ export class StoreAvailabilityService {
           variations: { where: { product: soldHere }, select: { product: { select: { name: true } } } },
         },
       }),
+      // Options of the catalog groups the products sold here have, without
+      // those the brand switched off (docs/option-groups.md).
+      this.prisma.optionItem.findMany({
+        where: {
+          group: { products: { some: { product: soldHere } } },
+          brandSettings: { none: { brandId: store.brandId, enabled: false } },
+        },
+        orderBy: [{ group: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+        select: {
+          id: true,
+          name: true,
+          note: true,
+          group: {
+            select: {
+              id: true,
+              name: true,
+              products: { where: { product: soldHere }, select: { product: { select: { name: true } } } },
+            },
+          },
+          storeStops: { where: { storeId, ...activeStopWhere(now) }, select: { expiresAt: true } },
+        },
+      }),
     ]);
 
     return {
@@ -72,6 +94,15 @@ export class StoreAvailabilityService {
         productNames: [...new Set([...i.modifiers, ...i.variations].map((o) => o.product.name))].sort((a, b) =>
           a.localeCompare(b),
         ),
+      })),
+      options: options.map((o) => ({
+        id: o.id,
+        name: o.name,
+        note: o.note,
+        groupId: o.group.id,
+        groupName: o.group.name,
+        stop: toStop(o.storeStops[0]),
+        productNames: [...new Set(o.group.products.map((p) => p.product.name))].sort((a, b) => a.localeCompare(b)),
       })),
     };
   }
