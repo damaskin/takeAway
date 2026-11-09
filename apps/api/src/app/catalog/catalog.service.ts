@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CategoryKind, StoreFulfillment } from '@prisma/client';
 import { showsNutrition } from '@takeaway/utils';
 
 import { FeatureFlagsService } from '../config/feature-flags.service';
-import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { KitchenLoadService, type PickupSlot } from '../kitchen/kitchen-load.service';
+import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { activeStopWhere, AVAILABLE_OPTION, availableOptionAt } from './option-availability';
@@ -12,6 +13,7 @@ import { busyMeterOf } from './store-availability';
 import { storeKinds, storeKindWhere } from './store-kinds';
 import { ListStoresQueryDto } from './dto/list-stores-query.dto';
 import type { PickupSlotDto } from './dto/pickup-slot.dto';
+import type { ReadyWindowDto } from './dto/ready-window.dto';
 import type { MenuDto } from './dto/product.dto';
 import type { ProductDetailDto } from './dto/product.dto';
 import type { StoreDetailDto, StoreListItemDto } from './dto/store.dto';
@@ -34,6 +36,17 @@ function availabilityFields(view: StoreAvailabilityView | undefined) {
   };
 }
 
+/** A slot on the wire. No count cap since 2026-11-06; `capacity` stays for the app builds that require it. */
+function toPickupSlotDto(slot: PickupSlot): PickupSlotDto {
+  return {
+    startsAt: slot.startsAt.toISOString(),
+    endsAt: slot.endsAt.toISOString(),
+    taken: slot.taken,
+    capacity: 0,
+    available: slot.available,
+  };
+}
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -41,6 +54,8 @@ export class CatalogService {
     private readonly flags: FeatureFlagsService,
     private readonly kitchen: KitchenLoadService,
     private readonly availability: StoreAvailabilityService,
+    /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
+    @Optional() private readonly queue?: QueuePolicyService,
   ) {}
 
   /**
@@ -124,15 +139,14 @@ export class CatalogService {
    * work would not fit it any more; a cart of another store is ignored.
    */
   async getPickupSlots(idOrSlug: string, cartId?: string): Promise<PickupSlotDto[]> {
-    const store = await this.prisma.store.findFirst({
-      where: {
-        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
-        status: { not: 'CLOSED' },
-        brand: { moderationStatus: 'APPROVED' },
-      },
-      select: { id: true },
-    });
-    if (!store) throw new NotFoundException('Store not found');
+    const store = await this.findOrderableStore(idOrSlug);
+
+    // Under the queue policy the slots are read off the free windows, for
+    // the app builds that predate them (docs/queue-policy.md 2.4).
+    if (this.queue?.enabled) {
+      const basket = await this.queueBasket(store.id, cartId);
+      return (await this.queue.pickupSlots(store.id, basket)).map(toPickupSlotDto);
+    }
 
     let workSeconds = 0;
     if (cartId) {
@@ -144,14 +158,55 @@ export class CatalogService {
     }
 
     const slots = await this.kitchen.pickupSlots(store.id, { workSeconds });
-    return slots.map((slot) => ({
-      startsAt: slot.startsAt.toISOString(),
-      endsAt: slot.endsAt.toISOString(),
-      taken: slot.taken,
-      // No count cap since 2026-11-06; the field stays for the app builds that require it.
-      capacity: 0,
-      available: slot.available,
-    }));
+    return slots.map(toPickupSlotDto);
+  }
+
+  /**
+   * The times a basket can be pre-ordered for over the next 24 hours, as
+   * runs of whole minutes (`GET /stores/:id/ready-windows`, queue policy):
+   * the cart's basket with `cartId` (a cart of another store is ignored),
+   * else one position of the store's typical preparation time. With
+   * `QUEUE_POLICY_ENABLED` off the free 15-minute slot starts come back as
+   * one-minute windows — what the order path books then.
+   */
+  async getReadyWindows(idOrSlug: string, cartId?: string): Promise<ReadyWindowDto[]> {
+    const store = await this.findOrderableStore(idOrSlug);
+    if (!this.queue?.enabled) {
+      const slots = await this.getPickupSlots(store.id, cartId);
+      return slots.filter((s) => s.available).map((s) => ({ from: s.startsAt, to: s.startsAt }));
+    }
+    const basket = await this.queueBasket(store.id, cartId);
+    const windows = await this.queue.readyWindows(store.id, basket);
+    return windows.map((w) => ({ from: new Date(w.from).toISOString(), to: new Date(w.to).toISOString() }));
+  }
+
+  /** A store a customer may order from (not switched off, its brand approved), by id or slug. */
+  private async findOrderableStore(idOrSlug: string): Promise<{ id: string }> {
+    const store = await this.prisma.store.findFirst({
+      where: {
+        OR: [{ id: idOrSlug }, { slug: idOrSlug }],
+        status: { not: 'CLOSED' },
+        brand: { moderationStatus: 'APPROVED' },
+      },
+      select: { id: true },
+    });
+    if (!store) throw new NotFoundException('Store not found');
+    return store;
+  }
+
+  /** The queue positions of the customer's cart at this store, else one typical position. */
+  private async queueBasket(storeId: string, cartId: string | undefined) {
+    const queue = this.queue;
+    if (!queue) return [];
+    if (cartId) {
+      const cart = await this.prisma.cart.findUnique({
+        where: { id: cartId },
+        select: { storeId: true, items: { select: { productId: true, quantity: true } } },
+      });
+      if (cart?.storeId === storeId && cart.items.length > 0) return queue.basket(cart.items);
+    }
+    const typical = await this.kitchen.typicalPrepByStore([storeId]);
+    return [{ prepSeconds: typical.get(storeId) ?? 0 }];
   }
 
   async getStore(idOrSlug: string): Promise<StoreDetailDto> {

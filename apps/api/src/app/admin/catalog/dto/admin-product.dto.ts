@@ -92,6 +92,16 @@ export class CreateProductDto {
   @Max(MAX_PREP_SECONDS)
   prepTimeSeconds?: number;
 
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      '«Готовится параллельно» (queue policy): the product takes no station and is made alongside the rest of the ' +
+      'order — a bottled drink, a pastry warmed in an oven of its own.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  prepParallel?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()

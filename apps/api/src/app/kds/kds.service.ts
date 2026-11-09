@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { Order, OrderCancelMoney, OrderStatus, Payment, Prisma } from '@prisma/client';
 
 import { NotificationsService, type StoreRejectReason } from '../notifications/notifications.service';
 import { readyEstimate } from '../kitchen/kitchen-timeline';
 import { wallClock } from '../kitchen/opening-hours';
+import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { OrdersService } from '../orders/orders.service';
+import { QueueRecomputeService } from '../orders/queue-recompute.service';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { CARD_PROVIDERS, isDeferredCharge } from '../payments/card-providers';
 import { CardPaymentsService } from '../payments/card-payments.service';
@@ -42,7 +44,16 @@ export class KdsService {
     private readonly cards: CardPaymentsService,
     private readonly holds: PaymentHoldsService,
     private readonly orders: OrdersService,
+    // Always provided by KitchenModule and OrdersModule; unit tests written
+    // before the queue policy leave them out, which reads as the flag off.
+    @Optional() private readonly queue?: QueuePolicyService,
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
+
+  /** O and G of the store's orders under the queue policy; null with it off. */
+  private async plans(storeId: string) {
+    return this.queue?.enabled ? this.queue.plans([storeId]) : null;
+  }
 
   async listOpen(storeId: string): Promise<BoardRow[]> {
     const orders = await this.prisma.order.findMany({
@@ -62,7 +73,8 @@ export class KdsService {
     const payable = orders.filter(
       (o) => o.status !== 'CREATED' || !this.holds.cardPaymentRequired(o) || o.payments.length > 0,
     );
-    return payable.map((o) => toBoardRow(o));
+    const plans = await this.plans(storeId);
+    return payable.map((o) => toBoardRow(o, plans?.get(o.id)));
   }
 
   /**
@@ -267,10 +279,15 @@ export class KdsService {
 
     // Accepted or started too late for the promise: the customer counts down
     // to the kitchen's new estimate instead (pickupAt stays the promise).
+    // Under the queue policy the queue's own G is the estimate, written by
+    // the recompute below.
+    const queued = this.queue?.enabled === true;
     const estimate =
-      key === 'accept' || key === 'start' ? readyEstimate(order, order.store.kitchenParallelism, new Date()) : null;
+      !queued && (key === 'accept' || key === 'start')
+        ? readyEstimate(order, order.store.kitchenParallelism, new Date())
+        : null;
 
-    const updated = await this.prisma.order.update({
+    let updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         ...patch,
@@ -284,6 +301,19 @@ export class KdsService {
         },
       },
     });
+
+    // The queue moved (an accept is R, a start lays the order out from now,
+    // «Готово» frees its stations): every estimate of the store follows,
+    // this order's too — read back for the accept push and the answer.
+    let queueEstimate: Date | null = null;
+    if (queued && this.recompute) {
+      await this.recompute.run(storeId);
+      const fresh = await this.prisma.order.findUnique({ where: { id: orderId } });
+      if (fresh) updated = fresh;
+      if (updated.readyEstimateAt && updated.readyEstimateAt > updated.pickupAt)
+        queueEstimate = updated.readyEstimateAt;
+    }
+    const pushEstimate = estimate ?? queueEstimate;
 
     this.realtime.emitOrderStatusChanged(
       {
@@ -307,7 +337,9 @@ export class KdsService {
         fulfillmentType: updated.fulfillmentType,
       },
       updated.status,
-      estimate && updated.status === 'ACCEPTED' ? { readyEstimate: wallClock(estimate, order.store.timezone) } : {},
+      pushEstimate && updated.status === 'ACCEPTED'
+        ? { readyEstimate: wallClock(pushEstimate, order.store.timezone) }
+        : {},
     );
 
     // Push to the kitchen board too. PICKED_UP orders leave the open list,
@@ -358,7 +390,8 @@ export class KdsService {
       where: { storeId, id: { in: ids } },
       include: BOARD_INCLUDE,
     });
-    return orders.map((o) => toBoardRow(o));
+    const plans = await this.plans(storeId);
+    return orders.map((o) => toBoardRow(o, plans?.get(o.id)));
   }
 }
 

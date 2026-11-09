@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { CartItem, Modifier, Prisma, Product, Variation, VariationType } from '@prisma/client';
 import type { CartChangeReason, CartChangedItem, OrderItemModifier, OrderItemVariation } from '@takeaway/shared-types';
 import { sortVariationsForDisplay } from '@takeaway/utils';
@@ -7,11 +7,12 @@ import { checkoutError } from '../common/http/checkout-error';
 import { activeStopWhere, availableOptionsIncludeAt } from '../catalog/option-availability';
 import { soldOnItsOwn } from '../catalog/product-listing';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
+import { QueuePolicyService, asapVerdict } from '../kitchen/queue-policy.service';
 import { StoreAvailabilityService, type StoreAvailabilityView } from '../kitchen/store-availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartChangedException } from './cart-changed.exception';
 import type { AddCartItemDto, UpdateCartItemDto } from './dto/add-cart-item.dto';
-import type { CartDto, CartItemDto } from './dto/cart.dto';
+import type { CartDto, CartItemDto, CartQueueFields } from './dto/cart.dto';
 
 /** A product with everything that goes into its price. */
 export type PricedProduct = Product & { variations: Variation[]; modifiers: Modifier[] };
@@ -74,6 +75,8 @@ export class CartService {
     private readonly prisma: PrismaService,
     private readonly kitchen: KitchenLoadService,
     private readonly availability: StoreAvailabilityService,
+    /** Always provided by KitchenModule; unit tests written before the queue policy leave it out (= off). */
+    @Optional() private readonly queue?: QueuePolicyService,
   ) {}
 
   async getForUserAndStore(userId: string, storeId: string): Promise<CartDto> {
@@ -87,6 +90,10 @@ export class CartService {
     // Re-quote on read: the stored value was right when the cart last
     // changed, but the queue moves on without us. A customer who opened the
     // app ten minutes ago should not be shown a wait from ten minutes ago.
+    if (this.queue?.enabled) {
+      const queued = await this.quoteQueued(cart.storeId, cart.items);
+      return this.toDto({ ...cart, etaSeconds: queued.etaSeconds }, queued.fields);
+    }
     const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
     return this.toDto({ ...cart, etaSeconds });
   }
@@ -403,14 +410,48 @@ export class CartService {
     if (!cart) throw new NotFoundException('Cart not found');
 
     const subtotalCents = cart.items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
-    const etaSeconds = await this.quoteEta(cart.storeId, cart.items);
+    const queued = this.queue?.enabled ? await this.quoteQueued(cart.storeId, cart.items) : null;
+    const etaSeconds = queued ? queued.etaSeconds : await this.quoteEta(cart.storeId, cart.items);
 
     await this.prisma.cart.update({
       where: { id: cart.id },
       data: { subtotalCents, etaSeconds },
     });
 
-    return this.toDto({ ...cart, subtotalCents, etaSeconds });
+    return this.toDto({ ...cart, subtotalCents, etaSeconds }, queued?.fields);
+  }
+
+  /**
+   * The queue policy's quote (`QUEUE_POLICY_ENABLED`, docs/queue-policy.md
+   * 2.5): the cart placed now at the end of the store's queue, B and
+   * «Готовится параллельно» read from the products as they are now — when
+   * it would be ready, and whether it can be ordered for now at all (the
+   * store's hours, «Перерыв» and shift, the closing, the longest wait). An
+   * empty cart answers like the old quote: nothing to wait for, no fields.
+   */
+  private async quoteQueued(
+    storeId: string,
+    items: readonly { productId: string; quantity: number }[],
+  ): Promise<{ etaSeconds: number; fields?: CartQueueFields }> {
+    const queue = this.queue;
+    if (!queue || items.length === 0) return { etaSeconds: 0 };
+    const now = new Date();
+    const basket = await queue.basket(items);
+    const [quote, view] = await Promise.all([
+      queue.quoteBasket(storeId, basket, now),
+      this.availability.forStore(storeId, now),
+    ]);
+    const verdict = view
+      ? asapVerdict(view, quote.readyAt.getTime(), now.getTime(), queue.maxAsapWaitSeconds)
+      : { available: false, reason: null };
+    return {
+      etaSeconds: quote.etaSeconds,
+      fields: {
+        readyAt: quote.readyAt.toISOString(),
+        asapAvailable: verdict.available,
+        asapBlockedReason: verdict.reason,
+      },
+    };
   }
 
   /**
@@ -527,25 +568,28 @@ export class CartService {
     return { brandId: store.brandId, availability };
   }
 
-  private toDto(cart: {
-    id: string;
-    userId: string;
-    storeId: string;
-    subtotalCents: number;
-    etaSeconds: number;
-    updatedAt: Date;
-    items: Array<{
+  private toDto(
+    cart: {
       id: string;
-      productId: string;
-      product: { name: string };
-      quantity: number;
-      variationIds: string[];
-      modifiersJson: unknown;
-      unitPriceCents: number;
-      unitPrepSeconds: number;
-      notes: string | null;
-    }>;
-  }): CartDto {
+      userId: string;
+      storeId: string;
+      subtotalCents: number;
+      etaSeconds: number;
+      updatedAt: Date;
+      items: Array<{
+        id: string;
+        productId: string;
+        product: { name: string };
+        quantity: number;
+        variationIds: string[];
+        modifiersJson: unknown;
+        unitPriceCents: number;
+        unitPrepSeconds: number;
+        notes: string | null;
+      }>;
+    },
+    queued?: CartQueueFields,
+  ): CartDto {
     return {
       id: cart.id,
       userId: cart.userId,
@@ -564,6 +608,7 @@ export class CartService {
         notes: i.notes,
       })),
       updatedAt: cart.updatedAt.toISOString(),
+      ...queued,
     };
   }
 

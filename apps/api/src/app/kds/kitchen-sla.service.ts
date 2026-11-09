@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OrderStatus, type Prisma } from '@prisma/client';
 
@@ -10,10 +10,12 @@ import {
   startBy,
 } from '../kitchen/kitchen-timeline';
 import { wallClock } from '../kitchen/opening-hours';
+import { QueuePolicyService } from '../kitchen/queue-policy.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OpsChatService } from '../notifications/ops-chat.service';
 import { autoCancelledMessage } from '../notifications/store-team-messages';
 import { OrderExpiryService } from '../orders/order-expiry.service';
+import { QueueRecomputeService } from '../orders/queue-recompute.service';
 import { isCardProvider } from '../payments/card-providers';
 import { PaymentsService } from '../payments/payments.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -82,6 +84,10 @@ export class KitchenSlaService {
     private readonly opsChat: OpsChatService,
     private readonly expiry: OrderExpiryService,
     private readonly payments: PaymentsService,
+    // Always provided by KitchenModule and OrdersModule; unit tests written
+    // before the queue policy leave them out, which reads as the flag off.
+    @Optional() private readonly queue?: QueuePolicyService,
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
   @Cron(CronExpression.EVERY_MINUTE, { name: 'kitchen-order-sla' })
@@ -101,6 +107,9 @@ export class KitchenSlaService {
       ['acceptance timeouts', () => this.expireUnaccepted(now)],
       ['start reminders', () => this.remindStarts(now)],
       ['late orders', () => this.flagLate(now)],
+      // Queue policy: the estimates follow the clock too (a reserve's start
+      // coming, a started order running over).
+      ['queue estimates', () => this.recompute?.runActiveStores(now) ?? Promise.resolve(0)],
     ];
     for (const [name, step] of steps) {
       try {
@@ -289,13 +298,25 @@ export class KitchenSlaService {
       take: BATCH,
     });
 
+    // Under the queue policy an accepted pre-order is due when its reserve
+    // starts (O); the acceptance reminder keeps the store's accept time.
+    const plans = this.queue?.enabled
+      ? await this.queue.plans(
+          orders.map((o) => o.storeId),
+          now,
+        )
+      : null;
+
     let sent = 0;
     for (const order of orders) {
       const unaccepted = order.status !== OrderStatus.ACCEPTED;
       const parallelism = order.store.kitchenParallelism;
+      const planned = plans?.get(order.id);
       const due = unaccepted
         ? acceptAlertAt(order, parallelism, acceptancePolicy(order.store))
-        : startBy(order, parallelism);
+        : planned
+          ? new Date(planned.startAt)
+          : startBy(order, parallelism);
       if (!due || due > now) continue;
       if (!(await this.claim(order.id, 'startReminderSentAt', { status: { not: OrderStatus.IN_PROGRESS } }, now))) {
         continue;

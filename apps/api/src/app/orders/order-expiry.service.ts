@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { type OrderCancelMoney, OrderStatus, Prisma } from '@prisma/client';
@@ -12,6 +12,7 @@ import { CARD_PROVIDERS, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { QueueRecomputeService } from './queue-recompute.service';
 
 /** How long an order may sit unpaid before we let it go. */
 const DEFAULT_TTL_MINUTES = 15;
@@ -67,6 +68,8 @@ export class OrderExpiryService {
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
     private readonly holds: PaymentHoldsService,
+    /** Always provided by OrdersModule; unit tests written before the queue policy leave it out. */
+    @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
   get ttlMinutes(): number {
@@ -295,6 +298,8 @@ export class OrderExpiryService {
       reason: options.details?.['rule'] === 'accept_timeout' ? 'NOT_ACCEPTED' : 'EXPIRED',
       orderCode: expired.orderCode,
     });
+    // Its station time is free again: the orders behind it move up.
+    this.recompute?.touch(expired.storeId);
     void this.notifications.notifyOrderStatus(expired, OrderStatus.EXPIRED, { expiry: { reason, money } });
 
     return true;
