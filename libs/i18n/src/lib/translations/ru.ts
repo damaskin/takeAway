@@ -192,6 +192,10 @@ export const TRANSLATIONS_RU = {
       GIFT_CARD_EXPIRED: 'Срок действия карты истёк',
       GIFT_CARD_USED_UP: 'На карте не осталось денег',
       GIFT_CARD_CANCELLED: 'Карта аннулирована',
+      /** The cart refused a choice from the options catalog (an option ran out, the menu changed). */
+      OPTIONS_INVALID: 'Этот выбор сейчас недоступен — проверьте варианты и добавки',
+      /** The cart got no choice for a product that needs one. */
+      OPTIONS_REQUIRED: 'Выберите вариант на странице товара',
     },
     units: {
       min: 'мин',
@@ -238,6 +242,20 @@ export const TRANSLATIONS_RU = {
       noteOtherPlaceholder: 'Например, без лука или разрезать пополам',
       /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
       pairings: 'К этому напитку',
+      /** Options catalog: how many of a list may be picked. */
+      upTo: 'до {{max}}',
+      fromTo: 'от {{min}} до {{max}}',
+      /** An option the store has run out of. */
+      soldOut: 'Нет в наличии',
+      /** The price of one more unit of a counted add-on. */
+      perUnit: '{{price}} за шт.',
+      /** Units of a counted add-on the price already includes (the meat in a shawarma). */
+      includedOne: '{{n}} входит',
+      includedMany: '{{n}} входят',
+      /** Next to the add button while the choice cannot go in the cart. */
+      choose: 'Выберите: {{names}}',
+      soldOutPicked: 'Нет в наличии: {{names}}',
+      checkChoice: 'Проверьте выбор',
     },
     /** Products offered next to those in hand, in the cart and under a product (`suggestionRow`). */
     upsell: {

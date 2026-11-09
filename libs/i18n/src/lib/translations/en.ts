@@ -186,6 +186,10 @@ export const TRANSLATIONS_EN: TranslationTree = {
       GIFT_CARD_EXPIRED: 'This gift card has expired',
       GIFT_CARD_USED_UP: 'There is no money left on this card',
       GIFT_CARD_CANCELLED: 'This gift card has been cancelled',
+      /** The cart refused a choice from the options catalog (an option ran out, the menu changed). */
+      OPTIONS_INVALID: 'This choice is not available right now — check the options',
+      /** The cart got no choice for a product that needs one. */
+      OPTIONS_REQUIRED: 'Choose an option on the product page',
     },
     units: {
       min: 'min',
@@ -231,6 +235,20 @@ export const TRANSLATIONS_EN: TranslationTree = {
       noteOtherPlaceholder: 'For example, no onion or cut in half',
       /** Under a drink: bakery and food from the same menu (`suggestFood`), not co-purchase statistics. */
       pairings: 'Goes well with it',
+      /** Options catalog: how many of a list may be picked. */
+      upTo: 'up to {{max}}',
+      fromTo: '{{min}} to {{max}}',
+      /** An option the store has run out of. */
+      soldOut: 'Out of stock',
+      /** The price of one more unit of a counted add-on. */
+      perUnit: '{{price}} each',
+      /** Units of a counted add-on the price already includes (the meat in a shawarma). */
+      includedOne: '{{n}} included',
+      includedMany: '{{n}} included',
+      /** Next to the add button while the choice cannot go in the cart. */
+      choose: 'Choose: {{names}}',
+      soldOutPicked: 'Out of stock: {{names}}',
+      checkChoice: 'Check your choice',
     },
     /** Products offered next to those in hand, in the cart and under a product (`suggestionRow`). */
     upsell: {
