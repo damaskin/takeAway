@@ -15,5 +15,6 @@ export 'src/models/misc.dart';
 export 'src/models/options.dart';
 export 'src/models/order.dart';
 export 'src/models/payments.dart';
+export 'src/models/takeaway_promo.dart';
 export 'src/option_groups.dart';
 export 'src/takeaway_api.dart';
