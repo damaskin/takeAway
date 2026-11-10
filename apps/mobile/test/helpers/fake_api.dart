@@ -123,6 +123,65 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// Body of the next promo check; null = the code takes 2 MDL off.
   Map<String, dynamic>? promoAnswer;
 
+  /// Promo check answers by code, ahead of [promoAnswer].
+  final promoAnswers = <String, Map<String, dynamic>>{};
+
+  /// Every promo check the app made, with its body.
+  final promoChecks = <Map<String, dynamic>>[];
+
+  /// What `GET /me/bonuses` answers, as API JSON — see [welcomeBonusJson].
+  List<Map<String, dynamic>> bonuses = [];
+
+  /// Status `GET /me/bonuses` fails with, e.g. 404 from an API before
+  /// takeAway promos; null = it answers [bonuses].
+  int? bonusesStatus;
+
+  /// How many times the app read its bonuses.
+  var bonusReads = 0;
+
+  /// The loyalty balance; 0 hides «Оплатить баллами».
+  int pointsBalance = 0;
+
+  /// The welcome bonus as `GET /me/bonuses` lists it.
+  static Map<String, dynamic> welcomeBonusJson({
+    String code = 'WELCOME10',
+    int percent = 10,
+    String currency = 'MDL',
+    DateTime? expiresAt,
+  }) => {
+    'id': 'wb_1',
+    'kind': 'WELCOME',
+    'promoId': 'tp_1',
+    'code': code,
+    'name': 'Приветственный бонус',
+    'percent': percent,
+    'currency': currency,
+    'expiresAt': (expiresAt ?? DateTime.now().add(const Duration(days: 6))).toUtc().toIso8601String(),
+  };
+
+  /// A promo check that found a takeAway promo, as the API answers it.
+  static Map<String, dynamic> takeawayPromoAnswer({
+    String code = 'WELCOME10',
+    int percent = 10,
+    bool isWelcome = true,
+    int discountCents = 200,
+  }) => {
+    'valid': true,
+    'reason': null,
+    'reasonCode': null,
+    'promo': null,
+    'source': 'TAKEAWAY',
+    'takeawayPromo': {
+      'id': 'tp_1',
+      'code': code,
+      'name': isWelcome ? 'Приветственный бонус' : 'Акция',
+      'percent': percent,
+      'isWelcome': isWelcome,
+    },
+    'discountCents': discountCents,
+    'pointsMultiplier': 1,
+  };
+
   /// English message the gift-card check refuses with; null = it pays 5 MDL.
   String? giftCardRefusal;
 
@@ -297,6 +356,10 @@ class FakeApi extends Fake implements TakeAwayApi {
     String? cancelMoney,
     bool? canReview,
     Map<String, dynamic>? review,
+    int discountCents = 0,
+
+    /// The takeAway promo line, as API JSON.
+    Map<String, dynamic>? takeawayPromo,
 
     /// Lines in place of the one croissant, as API JSON.
     List<Map<String, dynamic>>? items,
@@ -309,9 +372,9 @@ class FakeApi extends Fake implements TakeAwayApi {
     'fulfillmentType': 'PICKUP',
     'pickupAt': (pickupAt ?? DateTime.now().add(const Duration(minutes: 8))).toUtc().toIso8601String(),
     'subtotalCents': 2000,
-    'discountCents': 0,
+    'discountCents': discountCents,
     'taxCents': 0,
-    'totalCents': 2000,
+    'totalCents': 2000 - discountCents,
     'currency': 'MDL',
     'storeId': 'st_1',
     'storeName': 'NoName — центр',
@@ -344,6 +407,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'cancelMoney': ?cancelMoney,
     'canReview': ?canReview,
     'review': ?review,
+    'takeawayPromo': ?takeawayPromo,
   });
 
   // ── Catalog ────────────────────────────────────────────────────────────
@@ -730,9 +794,9 @@ class FakeApi extends Fake implements TakeAwayApi {
   Future<List<OrderSummary>> myOrders({String group = 'ALL', int take = 30}) async => myOrdersAnswer;
 
   @override
-  Future<LoyaltyAccount> loyalty() async => const LoyaltyAccount(
+  Future<LoyaltyAccount> loyalty() async => LoyaltyAccount(
     userId: 'u1',
-    pointsBalance: 0,
+    pointsBalance: pointsBalance,
     lifetimePoints: 0,
     tier: LoyaltyTier.silver,
     pointsToNextTier: 500,
@@ -797,9 +861,37 @@ class FakeApi extends Fake implements TakeAwayApi {
   });
 
   @override
-  Future<PromoValidation> validatePromo(Map<String, dynamic> body) async => PromoValidation.fromJson(
-    promoAnswer ?? {'valid': true, 'reason': null, 'reasonCode': null, 'discountCents': 200, 'pointsMultiplier': 1},
-  );
+  Future<PromoValidation> validatePromo(Map<String, dynamic> body) async {
+    promoChecks.add(body);
+    return PromoValidation.fromJson(
+      promoAnswers[body['code']] ??
+          promoAnswer ??
+          {'valid': true, 'reason': null, 'reasonCode': null, 'discountCents': 200, 'pointsMultiplier': 1},
+    );
+  }
+
+  /// A point is worth a bani; at least 10 go, never more than is left to pay.
+  @override
+  Future<RedeemQuote> redeemQuote(Map<String, dynamic> body) async {
+    final payable = (body['payableCents'] as num?)?.toInt() ?? 0;
+    final asked = (body['points'] as num?)?.toInt() ?? 0;
+    final points = [asked, pointsBalance, payable].reduce((a, b) => a < b ? a : b);
+    return RedeemQuote(
+      points: points < 10 ? 0 : points,
+      discountCents: points < 10 ? 0 : points,
+      balance: pointsBalance,
+      pointValueCents: 1,
+      minPoints: 10,
+    );
+  }
+
+  @override
+  Future<List<CustomerBonus>> myBonuses() async {
+    bonusReads++;
+    final status = bonusesStatus;
+    if (status != null) throw _apiError('/me/bonuses', status, {'message': 'Cannot GET /api/me/bonuses'});
+    return bonuses.map(CustomerBonus.fromJson).toList();
+  }
 
   @override
   Future<GiftCardValidation> validateGiftCard(Map<String, dynamic> body) async {
