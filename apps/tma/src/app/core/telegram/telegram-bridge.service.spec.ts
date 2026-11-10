@@ -129,6 +129,22 @@ describe('TelegramBridgeService launch parameter and links', () => {
     service.openLink('https://bank.example/pay');
     expect(openLink).toHaveBeenCalledWith('https://bank.example/pay');
   });
+
+  // A QR code on the phone the customer pays with cannot be scanned by it.
+  it('knows a phone from the Telegram client, else from the browser', () => {
+    const webApp = window.Telegram?.WebApp as { platform?: string };
+    webApp.platform = 'ios';
+    expect(service.onPhone).toBe(true);
+    webApp.platform = 'android';
+    expect(service.onPhone).toBe(true);
+    webApp.platform = 'tdesktop';
+    expect(service.onPhone).toBe(false);
+    webApp.platform = 'unknown';
+    expect(service.onPhone).toBe(false);
+    jest.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 15) Mobile Safari/537.36');
+    expect(service.onPhone).toBe(true);
+    jest.restoreAllMocks();
+  });
 });
 
 /** A BackButton that behaves like Telegram's: onClick adds, offClick removes. */

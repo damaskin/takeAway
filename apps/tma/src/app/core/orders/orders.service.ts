@@ -7,6 +7,7 @@ import type {
   OrderCancelledBy,
   OrderItemSnapshot,
   OrderReview,
+  PaymentProviderEnum,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -30,6 +31,11 @@ export interface OrderPaymentView {
   amountCents: number;
   cardMask: string | null;
   paidAt: string | null;
+  /**
+   * Who took the money — `AGROPROMBANK_QR` words the screen for a QR payment;
+   * null with no payment. Absent from an API older than the QR payment.
+   */
+  provider?: PaymentProviderEnum | null;
 }
 
 export interface OrderView {

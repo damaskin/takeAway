@@ -196,6 +196,11 @@ export const TRANSLATIONS_RU = {
       OPTIONS_INVALID: 'Этот выбор сейчас недоступен — проверьте варианты и добавки',
       /** The cart got no choice for a product that needs one. */
       OPTIONS_REQUIRED: 'Выберите вариант на странице товара',
+      /** Paying by QR (docs/agroprombank-payments.md §12.3). */
+      QR_PAYMENT_DISABLED: 'Оплата по QR сейчас недоступна',
+      QR_CURRENCY_UNSUPPORTED: 'В этом заведении оплата по QR недоступна',
+      ORDER_NOT_PAYABLE: 'Этот заказ уже оплачен или закрыт',
+      QR_BANK_UNAVAILABLE: 'Банк сейчас не отвечает — попробуйте ещё раз через минуту',
     },
     units: {
       min: 'мин',
@@ -264,6 +269,48 @@ export const TRANSLATIONS_RU = {
       /** Only for what the store's orders show customers buying together (`source: copurchase`). */
       together: 'Часто берут вместе',
       add: 'Добавить: {{name}}',
+    },
+    /**
+     * Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12): the
+     * customer pays an invoice by QR in the bank's own app — checkout, the QR
+     * screen and the order page, in the web and the Mini App.
+     */
+    qrPayment: {
+      methodCard: 'Картой',
+      methodQr: 'По QR в приложении банка',
+      checkoutHint: 'После оформления покажем QR-код — оплатите его в приложении Агропромбанка.',
+      title: 'Оплата по QR',
+      orderLine: 'Заказ {{code}} · {{amount}}',
+      loading: 'Готовим QR-код…',
+      codeLabel: 'QR-код для оплаты заказа',
+      scanHint: 'Отсканируйте код в приложении Агропромбанка (раздел «Оплата по QR»)',
+      otherDeviceHint:
+        'Телефоном, на котором открыт этот экран, код не отсканировать — наведите на него приложение банка с другого устройства.',
+      openBankApp: 'Открыть приложение банка',
+      expiresIn: 'Счёт действует ещё {{time}}',
+      waiting: 'Ждём оплату — экран обновится сам',
+      cancel: 'Отменить',
+      cancelling: 'Отменяем…',
+      expiredTitle: 'Счёт истёк',
+      expiredHint: 'Этот код больше не принимается.',
+      newCode: 'Новый QR-код',
+      payByCard: 'Оплатить картой',
+      failedTitle: 'Не получилось выставить счёт',
+      failedHint: 'Банк сейчас не ответил. Попробуйте ещё раз через минуту.',
+      retry: 'Попробовать снова',
+      toOrder: 'К заказу',
+      /** The order page. */
+      order: {
+        payByQr: 'Оплатить по QR',
+        pending: 'Ждём оплату по QR',
+        failed: 'Счёт по QR не оплачен',
+        paid: 'Оплачено по QR',
+        heldHint: 'Если заведение не примет заказ, деньги вернутся.',
+        /** The payment line of a cancelled or expired order paid by QR, once the money went back. */
+        refunded: 'Деньги возвращены',
+        /** The money line of a cancelled order paid by QR (cancelMoney REFUNDED). */
+        refundedLine: 'Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.',
+      },
     },
   },
   nav: {
@@ -1860,6 +1907,16 @@ export const TRANSLATIONS_RU = {
       irreversible: 'Возврат необратим и уйдёт в платёжную систему сразу.',
       confirm: 'Подтвердить возврат',
       refunding: 'Возвращаем…',
+      /** The bank's QR payment gives money back only whole (ReversePayment takes no amount). */
+      fullRefundOnly: 'Оплату по QR можно вернуть только целиком.',
+      paidWith: 'Способ оплаты',
+      /** `Payment.provider`, as the manager reads it. */
+      providers: {
+        STRIPE: 'Карта (Stripe)',
+        AGROPROMBANK: 'Привязанная карта (Агропромбанк)',
+        AGROPROMBANK_WEB: 'Карта на странице банка (Агропромбанк)',
+        AGROPROMBANK_QR: 'QR (Агропромбанк)',
+      },
       timeline: 'История',
       events: {
         STATUS_CHANGED: 'Статус',
