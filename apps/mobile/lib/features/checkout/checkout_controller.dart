@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:takeaway_api/takeaway_api.dart';
 
 import '../../core/format/tax.dart';
@@ -58,6 +59,24 @@ class DeliveryState {
   final bool locating;
 }
 
+/// How an order is paid: by card (a bound card or the bank's page, whichever
+/// [CardPaymentFlow] the server runs) or by QR in Agroprombank's app.
+enum PayMethod {
+  card,
+  qr;
+
+  static PayMethod? tryParse(String? raw) => values.where((m) => m.name == raw).firstOrNull;
+}
+
+/// The way the customer paid last on this phone, offered first next time.
+abstract final class PayMethodPref {
+  static const prefsKey = 'checkout.payMethod';
+
+  static PayMethod read(SharedPreferences prefs) => PayMethod.tryParse(prefs.getString(prefsKey)) ?? PayMethod.card;
+
+  static Future<void> write(SharedPreferences prefs, PayMethod method) => prefs.setString(prefsKey, method.name);
+}
+
 class CheckoutState {
   const CheckoutState({
     this.fulfillment = FulfillmentType.pickup,
@@ -70,10 +89,12 @@ class CheckoutState {
     this.delivery = const DeliveryState(),
     this.cardId,
     this.cardChosen = false,
+    this.payMethod = PayMethod.card,
     this.submitting = false,
     this.error,
     this.placedOrderId,
     this.webLaunch,
+    this.qrPayment,
     this.asapRefused,
   });
 
@@ -93,6 +114,10 @@ class CheckoutState {
   /// Whether the customer picked the method themselves (so a late-loading
   /// card list does not override their choice).
   final bool cardChosen;
+
+  /// The customer's pick between a card and QR, when the store offers both
+  /// (see [CheckoutController.payMethod] for the way actually used).
+  final PayMethod payMethod;
   final bool submitting;
   final Object? error;
 
@@ -102,6 +127,10 @@ class CheckoutState {
 
   /// What became of the bank's page in the web flow (null in the others).
   final WebPaymentLaunch? webLaunch;
+
+  /// The QR invoice issued for the order, to show next (null in the card
+  /// flows).
+  final QrPayment? qrPayment;
 
   /// The API turned an order for now down a moment ago, for this reason
   /// ([AsapBlockedReason.unknown] when it named none). «Как можно скорее»
@@ -124,10 +153,12 @@ class CheckoutState {
     DeliveryState? delivery,
     String? Function()? cardId,
     bool? cardChosen,
+    PayMethod? payMethod,
     bool? submitting,
     Object? Function()? error,
     String? placedOrderId,
     WebPaymentLaunch? webLaunch,
+    QrPayment? Function()? qrPayment,
     AsapBlockedReason? asapRefused,
   }) => CheckoutState(
     fulfillment: fulfillment ?? this.fulfillment,
@@ -140,10 +171,12 @@ class CheckoutState {
     delivery: delivery ?? this.delivery,
     cardId: cardId == null ? this.cardId : cardId(),
     cardChosen: cardChosen ?? this.cardChosen,
+    payMethod: payMethod ?? this.payMethod,
     submitting: submitting ?? this.submitting,
     error: error == null ? this.error : error(),
     placedOrderId: placedOrderId ?? this.placedOrderId,
     webLaunch: webLaunch ?? this.webLaunch,
+    qrPayment: qrPayment == null ? this.qrPayment : qrPayment(),
     asapRefused: asapRefused ?? this.asapRefused,
   );
 }
@@ -211,6 +244,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     final store = ref.read(activeStoreProvider);
     return CheckoutState(
       cardId: _defaultCardId(),
+      payMethod: PayMethodPref.read(ref.read(sharedPreferencesProvider)),
       mode: store != null && !store.isOpen ? PickupMode.scheduled : PickupMode.asap,
     );
   }
@@ -244,6 +278,30 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
   }
 
   void selectCard(String? cardId) => state = state.copyWith(cardId: () => cardId, cardChosen: true);
+
+  // ── Card or QR ─────────────────────────────────────────────────────────
+
+  /// QR in Agroprombank's app is offered for [store]: the server takes it
+  /// for the store's currency (RUP).
+  bool qrOffered(Store store) => _flags.qrPaymentsFor(store.currency);
+
+  /// Both a card and QR can pay for [store]'s order: checkout shows the
+  /// choice.
+  bool choosesPayMethod(Store store) => qrOffered(store) && _flags.cardPaymentsEnabled;
+
+  /// The way the order will be paid: QR when it is the only one the store
+  /// has, a card when QR is not offered, else the customer's pick.
+  PayMethod payMethod(Store store) {
+    if (!qrOffered(store)) return PayMethod.card;
+    if (!_flags.cardPaymentsEnabled) return PayMethod.qr;
+    return state.payMethod;
+  }
+
+  /// Picks a card or QR, and remembers it for the next order.
+  void selectPayMethod(PayMethod method) {
+    state = state.copyWith(payMethod: method, error: () => null);
+    unawaited(PayMethodPref.write(ref.read(sharedPreferencesProvider), method));
+  }
 
   // ── Discounts ──────────────────────────────────────────────────────────
 
@@ -406,18 +464,21 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     return flags.boundCardsEnabled && state.cardId != null;
   }
 
-  /// Every order that costs anything is paid by card — the amount is held at
-  /// checkout and taken when the store accepts. Only an order that points or
-  /// a gift card covered in full goes through without one.
+  /// Every order that costs anything is paid — by card, the amount held at
+  /// checkout and taken when the store accepts, or by QR, given back if the
+  /// store turns it down. Only an order that points or a gift card covered
+  /// in full goes through without paying.
   bool needsCard(Cart cart, Store store) => breakdown(cart, store).totalCents > 0;
 
-  bool canPay(Cart cart, Store store) => !needsCard(cart, store) || payingByCard;
+  /// A QR payment needs nothing picked; a card one, see [payingByCard].
+  bool canPay(Cart cart, Store store) => !needsCard(cart, store) || payMethod(store) == PayMethod.qr || payingByCard;
 
   // ── Place order ────────────────────────────────────────────────────────
 
   /// Creates the order (once) and charges the chosen card, or, in the web
-  /// flow, opens the bank's page for it. Returns the order id when the
-  /// customer can move on to the order screen.
+  /// flow, opens the bank's page for it, or issues its QR invoice
+  /// ([CheckoutState.qrPayment], shown next). Returns the order id when the
+  /// customer can move on.
   Future<String?> placeOrder(CheckoutForm form) async {
     final cart = _cart;
     final store = _store;
@@ -439,9 +500,11 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     }
     if (delivery && s.delivery.outside) throw const CheckoutValidation(CheckoutProblem.outsideDeliveryArea);
     final byCard = needsCard(cart, store);
-    if (byCard && !payingByCard) throw const CheckoutValidation(CheckoutProblem.cardNeeded);
+    // One amount and no tips: the QR invoice is the order's total.
+    final byQr = byCard && payMethod(store) == PayMethod.qr;
+    if (byCard && !byQr && !payingByCard) throw const CheckoutValidation(CheckoutProblem.cardNeeded);
 
-    state = s.copyWith(submitting: true, error: () => null);
+    state = s.copyWith(submitting: true, error: () => null, qrPayment: () => null);
     try {
       var orderId = s.placedOrderId;
       if (orderId == null) {
@@ -469,7 +532,12 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 
-      if (byCard && _flags.webPaymentsEnabled) {
+      if (byQr) {
+        // The invoice to pay in the bank's app, which the QR screen shows. A
+        // retry answers the same invoice while it is still pending.
+        final payment = await _api.startQrPayment(StartQrPaymentRequest(orderId: orderId));
+        state = state.copyWith(qrPayment: () => payment);
+      } else if (byCard && _flags.webPaymentsEnabled) {
         // The amount is held on the bank's page; the order screen picks up
         // the verdict when the customer comes back.
         state = state.copyWith(webLaunch: await ref.read(webPaymentsProvider).launch(orderId));

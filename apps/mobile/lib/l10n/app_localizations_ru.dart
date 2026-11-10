@@ -738,6 +738,77 @@ class AppLocalizationsRu extends AppLocalizations {
   String get webPaymentFailed => 'Оплата не прошла. Можно попробовать ещё раз.';
 
   @override
+  String get payMethodCard => 'Картой';
+
+  @override
+  String get payMethodQr => 'По QR в приложении банка';
+
+  @override
+  String get payMethodQrSubtitle => 'Приложение Агропромбанка';
+
+  @override
+  String get qrPaymentHint =>
+      'Покажем QR-код для оплаты в приложении Агропромбанка. Если заведение не примет заказ, деньги вернутся.';
+
+  @override
+  String get qrPayTitle => 'Оплата по QR';
+
+  @override
+  String get qrPayToPay => 'К оплате';
+
+  @override
+  String get qrPayScanHint => 'Отсканируйте код в приложении Агропромбанка (раздел «Оплата по QR»)';
+
+  @override
+  String get qrPayOtherDevice => 'Код можно отсканировать и с другого устройства.';
+
+  @override
+  String get qrPayOpenBankApp => 'Открыть приложение банка';
+
+  @override
+  String get qrPayBankAppNotOpened => 'Не удалось открыть приложение банка. Отсканируйте код в нём.';
+
+  @override
+  String qrPayValidFor(String time) {
+    return 'Код действует ещё $time';
+  }
+
+  @override
+  String get qrPayWaiting => 'Ждём оплату…';
+
+  @override
+  String get qrPayCancel => 'Отменить';
+
+  @override
+  String get qrPayExpiredTitle => 'Счёт истёк';
+
+  @override
+  String get qrPayExpiredBody => 'Этот QR-код больше не действует. Получите новый, чтобы оплатить заказ.';
+
+  @override
+  String get qrPayNewCode => 'Новый QR-код';
+
+  @override
+  String get qrPayByCard => 'Оплатить картой';
+
+  @override
+  String get qrPayFailedTitle => 'Не удалось получить QR-код';
+
+  @override
+  String get qrPayFailedBody => 'Банк не выставил счёт. Попробуйте ещё раз чуть позже.';
+
+  @override
+  String get qrPayToOrder => 'К заказу';
+
+  @override
+  String get payByQr => 'Оплатить по QR';
+
+  @override
+  String payByQrAmount(String total) {
+    return 'Оплатить $total по QR';
+  }
+
+  @override
   String get summaryTitle => 'Итог';
 
   @override
@@ -955,6 +1026,30 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentStateAwaiting => 'Ждём оплату';
 
   @override
+  String get paymentStatePaidByQr => 'Оплачено по QR';
+
+  @override
+  String get paymentStatePaidByQrHint => 'Если заведение не примет заказ, деньги вернутся.';
+
+  @override
+  String get paymentStateAwaitingQr => 'Ждём оплату по QR';
+
+  @override
+  String get paymentStateQrNotPaid => 'Счёт по QR не оплачен';
+
+  @override
+  String get orderExpiredNotAcceptedRefundedQr => 'Точка не подтвердила заказ — деньги вернули';
+
+  @override
+  String get cancelMoneyRefundedQr => 'Деньги, оплаченные по QR, вернули.';
+
+  @override
+  String get cancelMoneyNotChargedQr => 'Деньги не списывались.';
+
+  @override
+  String get cancelMoneyReturnPendingQr => 'Деньги вернутся автоматически.';
+
+  @override
   String get pickupCode => 'Ваш код';
 
   @override
@@ -975,6 +1070,9 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get cancelOrderBody =>
       'Точка ещё не приняла заказ, деньги не списаны. Если сумма забронирована на карте, бронь снимется.';
+
+  @override
+  String get cancelOrderBodyQr => 'Точка ещё не приняла заказ. Деньги, оплаченные по QR, вернутся.';
 
   @override
   String get cancelByPhone => 'Заказ уже готовят — для отмены позвоните в точку';
@@ -1735,6 +1833,18 @@ class AppLocalizationsRu extends AppLocalizations {
   @override
   String get errTooManyUnpaidOrders =>
       'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый';
+
+  @override
+  String get errQrPaymentDisabled => 'Оплата по QR сейчас недоступна';
+
+  @override
+  String get errQrCurrencyUnsupported => 'В этом заведении нельзя оплатить по QR';
+
+  @override
+  String get errOrderNotPayable => 'Этот заказ уже нельзя оплатить';
+
+  @override
+  String get errQrBankUnavailable => 'Банк не отвечает. Попробуйте ещё раз через минуту.';
 
   @override
   String get standTitle => 'Сервер';
