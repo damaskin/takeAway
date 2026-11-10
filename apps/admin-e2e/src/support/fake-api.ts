@@ -382,8 +382,36 @@ function orderReviewsPage(params: URLSearchParams) {
   };
 }
 
-/** What the order detail panel reads for a reviewed order. */
-function adminOrderDetail(id: string) {
+/** A takeAway promo order: 100 at the menu, −10 % that takeAway pays (docs/takeaway-promos.md). */
+export const TAKEAWAY_PROMO_ORDER = {
+  id: 'order-promo',
+  orderCode: '1048',
+  takeawayPromo: {
+    code: 'HELLO10',
+    name: 'Приветственный бонус',
+    percent: 10,
+    menuTotalCents: 10_000,
+    discountCents: 1_000,
+    paidByGuestCents: 9_000,
+  },
+};
+
+/** What the order detail panel reads for a reviewed order, or for the takeAway promo order. */
+function adminOrderDetail(id: string): Record<string, unknown> {
+  if (id === TAKEAWAY_PROMO_ORDER.id) {
+    return {
+      ...adminOrderDetail('order-plain'),
+      id,
+      orderCode: TAKEAWAY_PROMO_ORDER.orderCode,
+      status: 'ACCEPTED',
+      subtotalCents: 10_000,
+      discountCents: 1_000,
+      totalCents: 9_000,
+      couponCode: 'HELLO10',
+      refundableCents: 9_000,
+      takeawayPromo: TAKEAWAY_PROMO_ORDER.takeawayPromo,
+    };
+  }
   const review = ORDER_REVIEWS.find((r) => r.orderId === id);
   return {
     id,
@@ -700,14 +728,259 @@ function optionsCatalog() {
   };
 }
 
+// ─── «Акции takeAway» and settlements (docs/takeaway-promos.md) ──────────────
+
+/** A week of settlements with one takeAway promo order: 90 by card + 10 from takeAway − 15 % of 100. */
+function settlementTotals() {
+  return {
+    orders: 1,
+    cardOrders: 1,
+    zeroTotalOrders: 0,
+    unpaidOrders: 0,
+    unpaidTotalCents: 0,
+    salesCents: 10_000,
+    promoDiscountCents: 0,
+    pointsDiscountCents: 0,
+    giftCardCents: 0,
+    deliveryFeeCents: 0,
+    capturedCents: 9_000,
+    refundedCents: 0,
+    takeawayCompensationCents: 1_000,
+    commissionBaseCents: 10_000,
+    commissionCents: 1_500,
+    payableCents: 8_500,
+  };
+}
+
+function settlementReport(params: URLSearchParams) {
+  const from = params.get('from') ?? '2026-11-02';
+  const to = params.get('to') ?? '2026-11-08';
+  const totals = settlementTotals();
+  return {
+    brand: { id: BRAND.id, name: BRAND.name, plan: 'PRO', currentBps: 1500, planBps: 1500 },
+    currency: 'RUP',
+    currencies: ['RUP'],
+    period: { from, to, days: 7, timeZone: STORE.timezone },
+    totals,
+    days: [{ date: from, ...totals }],
+    rates: [{ bps: 1500, source: 'PLAN', from, to }],
+    balance: {
+      openingCents: 0,
+      payableCents: 8_500,
+      paidCents: 0,
+      pendingCents: 0,
+      closingCents: 8_500,
+      closingPendingCents: 0,
+    },
+    nextPayout: {
+      periodFrom: from,
+      periodTo: to,
+      amountCents: 8_500,
+      cardNetCents: 9_000,
+      commissionCents: 1_500,
+      compensationCents: 1_000,
+      blocked: null,
+      lastSettledDay: null,
+    },
+    payouts: [],
+  };
+}
+
+function brandTakeawayPromos(params: URLSearchParams) {
+  const from = params.get('from') ?? '2026-11-02';
+  return {
+    brandId: BRAND.id,
+    currency: 'RUP',
+    period: { from, to: params.get('to') ?? from, timeZone: STORE.timezone },
+    orders: 1,
+    menuTotalCents: 10_000,
+    paidByGuestCents: 9_000,
+    compensationAccruedCents: 1_000,
+    compensationRepaidCents: 0,
+    currentDebtCents: 1_000,
+    items: [
+      {
+        orderId: TAKEAWAY_PROMO_ORDER.id,
+        orderCode: TAKEAWAY_PROMO_ORDER.orderCode,
+        storeId: STORE.id,
+        storeName: STORE.name,
+        settledAt: `${from}T10:04:00.000Z`,
+        promoName: 'Приветственный',
+        percent: 10,
+        menuTotalCents: 10_000,
+        paidByGuestCents: 9_000,
+        compensationCents: 1_000,
+        status: 'ACCRUED',
+        payoutId: null,
+        repaidAt: null,
+      },
+    ],
+  };
+}
+
+const COMMISSION_HISTORY = {
+  brandId: BRAND.id,
+  plan: 'PRO',
+  planBps: 1500,
+  currentBps: 1500,
+  timeZone: STORE.timezone,
+  rates: [],
+};
+
+interface FakeTakeawayPromo {
+  id: string;
+  name: string;
+  code: string;
+  percent: number;
+  startsAt: string;
+  endsAt: string;
+  currency: string;
+  budgetCents: number;
+  spentCents: number;
+  leftCents: number;
+  status: 'ACTIVE' | 'DISABLED' | 'EXHAUSTED';
+  effectiveStatus: string;
+  isWelcome: boolean;
+  redemptionsCount: number;
+  editable: boolean;
+  createdAt: string;
+}
+
+/**
+ * `/admin/takeaway-promos` over one in-memory list per browser context, with
+ * the API's code rule: a code a brand promo already has (NONAME10 here) is
+ * refused with TAKEAWAY_PROMO_CODE_TAKEN. Answers null for a path it does not own.
+ */
+function takeawayPromos() {
+  const promos: FakeTakeawayPromo[] = [
+    {
+      id: 'tp-autumn',
+      name: 'Осенняя',
+      code: 'AUTUMN15',
+      percent: 15,
+      startsAt: '2026-10-01T00:00:00.000Z',
+      endsAt: '2026-10-31T21:00:00.000Z',
+      currency: 'RUP',
+      budgetCents: 100_000,
+      spentCents: 100_000,
+      leftCents: 0,
+      status: 'EXHAUSTED',
+      effectiveStatus: 'EXHAUSTED',
+      isWelcome: false,
+      redemptionsCount: 64,
+      editable: false,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    },
+  ];
+  const brandCodes = ['NONAME10'];
+  let nextId = 1;
+
+  return async (route: Route, path: string): Promise<void | null> => {
+    const method = route.request().method();
+    const body = () => (route.request().postDataJSON() ?? {}) as Partial<FakeTakeawayPromo>;
+    let m: RegExpExecArray | null;
+
+    if (path === '/admin/takeaway-promos/debt') {
+      return json(route, {
+        rows: [
+          {
+            brandId: BRAND.id,
+            brandName: BRAND.name,
+            currency: 'RUP',
+            accruedCents: 101_000,
+            inPayoutCents: 0,
+            repaidCents: 100_000,
+            debtCents: 1_000,
+          },
+        ],
+        totals: [{ currency: 'RUP', accruedCents: 101_000, repaidCents: 100_000, inPayoutCents: 0, debtCents: 1_000 }],
+      });
+    }
+    if (path === '/admin/takeaway-promos') {
+      if (method === 'POST') {
+        const input = body();
+        const code = String(input.code ?? '').toUpperCase();
+        if (brandCodes.includes(code) || promos.some((p) => p.code === code)) {
+          return json(
+            route,
+            { statusCode: 409, error: 'Conflict', code: 'TAKEAWAY_PROMO_CODE_TAKEN', message: 'The code is taken' },
+            409,
+          );
+        }
+        const budgetCents = Number(input.budgetCents ?? 0);
+        const created: FakeTakeawayPromo = {
+          id: `tp-new-${nextId++}`,
+          name: String(input.name ?? ''),
+          code,
+          percent: Number(input.percent ?? 0),
+          startsAt: String(input.startsAt ?? ''),
+          endsAt: String(input.endsAt ?? ''),
+          currency: String(input.currency ?? 'RUP'),
+          budgetCents,
+          spentCents: 0,
+          leftCents: budgetCents,
+          status: 'ACTIVE',
+          effectiveStatus: 'ACTIVE',
+          isWelcome: Boolean(input.isWelcome),
+          redemptionsCount: 0,
+          editable: true,
+          createdAt: new Date().toISOString(),
+        };
+        promos.unshift(created);
+        return json(route, created, 201);
+      }
+      return json(route, promos);
+    }
+    if ((m = /^\/admin\/takeaway-promos\/([^/]+)\/status$/.exec(path)) && method === 'PATCH') {
+      const promo = promos.find((p) => p.id === m?.[1]);
+      if (!promo) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      const status = (body() as { status?: 'ACTIVE' | 'DISABLED' }).status ?? 'DISABLED';
+      Object.assign(promo, { status, effectiveStatus: status });
+      return json(route, promo);
+    }
+    if ((m = /^\/admin\/takeaway-promos\/([^/]+)\/report$/.exec(path))) {
+      const promo = promos.find((p) => p.id === m?.[1]);
+      if (!promo) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      return json(route, {
+        promo,
+        orders: 0,
+        customers: 0,
+        menuTotalCents: 0,
+        discountCents: 0,
+        byBrand: [],
+        byStore: [],
+        byDay: [],
+      });
+    }
+    if ((m = /^\/admin\/takeaway-promos\/([^/]+)$/.exec(path))) {
+      const promo = promos.find((p) => p.id === m?.[1]);
+      if (!promo) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      if (method === 'PATCH') {
+        Object.assign(promo, body());
+        promo.leftCents = promo.budgetCents - promo.spentCents;
+      }
+      return json(route, promo);
+    }
+    return null;
+  };
+}
+
 /** `role` must match the one {@link signIn} used: `/auth/me` answers with it. */
 export async function installFakeApi(context: BrowserContext, role: FakeRole = 'SUPER_ADMIN'): Promise<void> {
   const options = optionsCatalog();
+  const promos = takeawayPromos();
   await context.route('**/api/**', async (route) => {
-    const path = new URL(route.request().url()).pathname.replace(/^\/api/, '');
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace(/^\/api/, '');
 
     const handled = await options(route, path);
     if (handled !== null) return handled;
+    const promoHandled = await promos(route, path);
+    if (promoHandled !== null) return promoHandled;
+
+    if (path === '/admin/settlements') return json(route, settlementReport(url.searchParams));
+    if (path === '/admin/settlements/rates') return json(route, COMMISSION_HISTORY);
+    if (path === '/admin/settlements/takeaway-promos') return json(route, brandTakeawayPromos(url.searchParams));
 
     if (path === '/config/features') {
       return json(route, {

@@ -15,6 +15,7 @@ const zero: SettlementTotals = {
   deliveryFeeCents: 0,
   capturedCents: 0,
   refundedCents: 0,
+  takeawayCompensationCents: 0,
   commissionBaseCents: 0,
   commissionCents: 0,
   payableCents: 0,
@@ -28,9 +29,11 @@ const day: SettlementTotals = {
   giftCardCents: 5000,
   capturedCents: 7005,
   refundedCents: 5,
-  commissionBaseCents: 7000,
-  commissionCents: 1050,
-  payableCents: 5950,
+  // A takeAway promo order: takeAway owes 10,00 on top of the card money.
+  takeawayCompensationCents: 1000,
+  commissionBaseCents: 8000,
+  commissionCents: 1200,
+  payableCents: 6800,
 };
 
 const report: SettlementReport = {
@@ -58,6 +61,7 @@ const report: SettlementReport = {
     amountCents: 5950,
     cardNetCents: 7000,
     commissionCents: 1050,
+    compensationCents: 0,
     blocked: null,
     lastSettledDay: null,
   },
@@ -73,14 +77,22 @@ describe('settlementCsv', () => {
     expect(lines[4]).toBe('[rate];12,5 % (2026-10-01 – 2026-10-02)');
     expect(lines[5]).toBe('');
     expect(lines[6]).toBe(['[date]', ...SETTLEMENT_CSV_COLUMNS.map((c) => `[${c}]`)].join(';'));
-    expect(lines[7]).toBe('2026-10-01;2;2;120,00;0,00;0,00;50,00;0,00;70,05;0,05;70,00;10,50;59,50');
-    expect(lines[8]).toBe('2026-10-02;0;0;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00');
+    expect(lines[7]).toBe('2026-10-01;2;2;120,00;0,00;0,00;50,00;0,00;70,05;0,05;10,00;80,00;12,00;68,00');
+    expect(lines[8]).toBe('2026-10-02;0;0;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00;0,00');
     expect(lines[9]?.startsWith('[total];2;2;120,00')).toBe(true);
   });
 
   it('writes an English file with commas and decimal points', () => {
     const lines = settlementCsv(report, (key) => key, 'en').split('\r\n');
-    expect(lines[7]).toBe('2026-10-01,2,2,120.00,0.00,0.00,50.00,0.00,70.05,0.05,70.00,10.50,59.50');
+    expect(lines[7]).toBe('2026-10-01,2,2,120.00,0.00,0.00,50.00,0.00,70.05,0.05,10.00,80.00,12.00,68.00');
+  });
+
+  it('writes 0 for the compensation an API older than takeAway promos does not send', () => {
+    const older: Partial<SettlementTotals> = { ...day };
+    delete older.takeawayCompensationCents;
+    const days = [{ date: '2026-10-01', ...(older as SettlementTotals) }];
+    const lines = settlementCsv({ ...report, days }, (key) => key, 'en').split('\r\n');
+    expect(lines[7]).toBe('2026-10-01,2,2,120.00,0.00,0.00,50.00,0.00,70.05,0.05,0.00,80.00,12.00,68.00');
   });
 
   it('keeps the sign of a negative amount', () => {

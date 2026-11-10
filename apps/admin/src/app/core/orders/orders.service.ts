@@ -7,6 +7,7 @@ import type {
   OrderCancelledBy,
   OrderItemModifier,
   OrderItemVariation,
+  TakeawayPromoLine,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -97,6 +98,13 @@ export interface AdminOrderDetail {
   totalCents: number;
   couponCode: string | null;
   giftCardCode: string | null;
+  /**
+   * The takeAway promo on the order: the guest paid `paidByGuestCents`,
+   * takeAway compensates the venue `discountCents` (also in `discountCents`
+   * above), so nothing is left to collect. Absent from an API older than
+   * takeAway promos.
+   */
+  takeawayPromo?: TakeawayPromoLine | null;
   /**
    * Who cancelled the order, the kitchen's reason and comment, and where the
    * money went (as the customer's push said) — see `orderCancelSummary`.

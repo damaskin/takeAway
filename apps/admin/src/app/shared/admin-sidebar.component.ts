@@ -328,6 +328,13 @@ export class AdminSidebarComponent {
     { icon: '🌐', label: 'admin.nav.platform', link: '/platform', roles: ADMIN_ROLES.platform },
     // The same page under two names: the platform's «Расчёты с брендами», the owner's «Расчёты».
     { icon: '💸', label: 'admin.nav.settlements', link: '/settlements', roles: ['SUPER_ADMIN'] },
+    // takeAway's own promos and its debt to the brands for them — next to the settlements that repay it.
+    {
+      icon: '🎁',
+      label: 'admin.nav.takeawayPromos',
+      link: '/takeaway-promos',
+      roles: ADMIN_ROLES.takeawayPromos,
+    },
     { icon: '▦', label: 'admin.nav.dashboard', link: '/dashboard', roles: ADMIN_ROLES.dashboard },
     { icon: '🏬', label: 'admin.nav.stores', link: '/stores', roles: ADMIN_ROLES.stores },
     {
