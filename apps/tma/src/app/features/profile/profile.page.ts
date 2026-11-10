@@ -2,12 +2,13 @@ import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { LanguageSwitcherComponent } from '@takeaway/i18n';
-import type { LoyaltyAccount, LoyaltyTier } from '@takeaway/shared-types';
+import { customerBonusTerms, LanguageSwitcherComponent, LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
+import type { CustomerBonus, LoyaltyAccount, LoyaltyTier } from '@takeaway/shared-types';
 
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { ProfileApi } from '../../core/profile/profile.service';
+import { BonusesApi } from '../../core/promo/promo.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaTabBarComponent } from '../../shared/tab-bar.component';
 
@@ -31,6 +32,8 @@ const TIER_KEYS: Record<LoyaltyTier, string> = {
  *
  * Body (gap 20):
  *   avatarSec   — centered 88px avatar + name + phone
+ *   bonuses     — «Мои бонусы»: the welcome bonus while it is there to use,
+ *                 a tap opens the places to order from
  *   loyaltyCard — caramel card with the level, the points and the way to the
  *                 next level, from `GET /loyalty/me`; hidden until it answers
  *   menuSec     — foam list: personal data / payment / gift cards /
@@ -69,6 +72,40 @@ const TIER_KEYS: Record<LoyaltyTier, string> = {
           }
         </div>
       </div>
+
+      <!-- «Мои бонусы»: the welcome bonus while it is there to use; a tap goes to ordering -->
+      @if (bonuses().length > 0) {
+        <div data-testid="bonus-banner" class="flex flex-col" style="gap: 8px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
+            >{{ 'common.takeawayPromo.myBonuses' | translate }}</span
+          >
+          @for (bonus of bonuses(); track bonus.id) {
+            <button
+              type="button"
+              data-testid="bonus"
+              (click)="orderWithBonus()"
+              class="flex items-center text-left"
+              style="padding: 14px 16px; gap: 14px; border-radius: 16px; background: var(--color-foam); border: 1.5px solid var(--color-mint)"
+            >
+              <span aria-hidden="true" style="font-size: 22px">🎁</span>
+              <span class="flex flex-col flex-1" style="gap: 3px; min-width: 0">
+                <span
+                  data-testid="bonus-title"
+                  style="font-family: var(--font-sans); font-size: 15px; font-weight: 700; color: var(--color-espresso)"
+                  >{{ bonusTitle(bonus) }}</span
+                >
+                <span
+                  data-testid="bonus-terms"
+                  style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                  >{{ bonusTerms(bonus) }}</span
+                >
+              </span>
+              <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+            </button>
+          }
+        </div>
+      }
 
       <!-- Loyalty card: the account's real numbers, or nothing at all -->
       @if (loyalty(); as l) {
@@ -200,9 +237,13 @@ export class TmaProfilePage implements OnInit {
   private readonly flags = inject(FeatureFlagsStore);
   private readonly profileApi = inject(ProfileApi);
   private readonly tg = inject(TelegramBridgeService);
+  private readonly bonusesApi = inject(BonusesApi);
+  private readonly fmt = inject(LocaleFormatService);
 
   /** Null until `GET /loyalty/me` answers, and when it fails: the card is not shown then. */
   readonly loyalty = signal<LoyaltyAccount | null>(null);
+  /** The customer's unused bonuses; the «Мои бонусы» banner shows while there is one. */
+  readonly bonuses = signal<CustomerBonus[]>([]);
 
   // Labels are translation keys — resolved with | translate in the template.
   private readonly allRows: ProfileRow[] = [
@@ -236,7 +277,24 @@ export class TmaProfilePage implements OnInit {
     this.flags.load();
     if (this.authStore.isAuthenticated()) {
       this.profileApi.loyalty().subscribe({ next: (account) => this.loyalty.set(account), error: () => undefined });
+      this.bonusesApi.list().subscribe({ next: (list) => this.bonuses.set(list), error: () => undefined });
     }
+  }
+
+  /** «Приветственный бонус −10%». */
+  bonusTitle(bonus: CustomerBonus): string {
+    return takeawayPromoLabel({ percent: bonus.percent, isWelcome: bonus.kind === 'WELCOME' }, this.translate);
+  }
+
+  /** «На заказ в любом заведении · до 17 ноября». */
+  bonusTerms(bonus: CustomerBonus): string {
+    return customerBonusTerms(bonus, this.translate, this.fmt.lang());
+  }
+
+  /** The bonus works at any venue: the list of places is where an order starts. */
+  orderWithBonus(): void {
+    this.tg.haptic('light');
+    void this.router.navigate(['/stores']);
   }
 
   open(row: ProfileRow): void {

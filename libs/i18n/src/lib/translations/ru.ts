@@ -182,7 +182,11 @@ export const TRANSLATIONS_RU = {
       PROMO_MIN_ORDER: 'Промокод действует при заказе от {{amount}}',
       PROMO_LIMIT_REACHED: 'Промокод закончился',
       PROMO_ALREADY_USED: 'Вы уже воспользовались этим промокодом',
-      PROMO_NOT_ELIGIBLE: 'Этот промокод — для тех, кто давно у нас не был',
+      /** A brand's code for inactive customers, or a welcome code that was not handed to this customer. */
+      PROMO_NOT_ELIGIBLE: 'Этот промокод вам недоступен',
+      /** A takeAway promo in another currency than the store's. */
+      PROMO_NOT_HERE: 'Акция не действует в этом заведении',
+      PROMO_WITH_POINTS: 'Баллы нельзя совместить с промокодом',
       TOO_MANY_UNPAID_ORDERS:
         'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый',
       GIFT_CARD_BALANCE_CHANGED: 'Баланс подарочной карты только что изменился — проверьте карту и попробуйте снова',
@@ -264,6 +268,17 @@ export const TRANSLATIONS_RU = {
       /** Only for what the store's orders show customers buying together (`source: copurchase`). */
       together: 'Часто берут вместе',
       add: 'Добавить: {{name}}',
+    },
+    /** «Акции takeAway» and the welcome bonus on the customer's screens (docs/takeaway-promos.md §5). */
+    takeawayPromo: {
+      myBonuses: 'Мои бонусы',
+      welcome: 'Приветственный бонус −{{percent}}%',
+      promo: 'Акция takeAway −{{percent}}%',
+      /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
+      anyStoreUntil: 'На заказ в любом заведении · до {{date}}',
+      remove: 'Убрать',
+      /** Under «Оплатить баллами» while a takeAway promo is applied. */
+      noPoints: 'Баллы нельзя совместить с промокодом',
     },
   },
   nav: {

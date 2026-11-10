@@ -7,6 +7,7 @@ import type {
   OrderCancelledBy,
   OrderItemSnapshot,
   OrderReview,
+  TakeawayPromoLine,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -87,6 +88,12 @@ export interface OrderView {
   /** The customer's review, once left; absent from an API older than this build. */
   review?: OrderReview | null;
   /**
+   * The takeAway promo on the order («Акция takeAway −10%»): the guest paid
+   * `paidByGuestCents`, takeAway covers `discountCents`. Null without one;
+   * absent from an API older than this build.
+   */
+  takeawayPromo?: TakeawayPromoLine | null;
+  /**
    * When the kitchen now expects it ready, set when it accepted or started
    * the order too late for `pickupAt`; the countdown runs to it
    * (`orderDueAt`). Absent from an API older than this build.
@@ -128,6 +135,8 @@ export interface CreateOrderInput {
   couponCode?: string;
   /** Gift-card code, applied after promo and before delivery fee. */
   giftCardCode?: string;
+  /** Loyalty points to spend; 0 with a takeAway promo, which points do not combine with. */
+  pointsToSpend?: number;
   // Delivery-only. Required when `fulfillmentType === 'DELIVERY'`.
   deliveryAddressLine?: string;
   deliveryCity?: string;
