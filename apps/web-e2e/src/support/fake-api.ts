@@ -288,6 +288,16 @@ export interface FakeApi {
   readonly cartAdds: Array<Record<string, unknown>>;
   /** Card payments the app asked for, as sent. */
   readonly payments: Array<Record<string, unknown>>;
+  /** Orders the app asked to pay by QR (`POST /payments/agroprombank-qr/start`), in order. */
+  readonly qrStarts: string[];
+  /** QR invoices the customer called off, by payment id. */
+  readonly qrCancels: string[];
+  /**
+   * The customer paid the QR invoice in the bank's app: the next status read
+   * says PAID, and the order carries the money as the API parks it — held
+   * until the kitchen accepts it.
+   */
+  payQr(): void;
 }
 
 /** The customer's bound card, as `/payments/agroprombank/cards` lists it. */
@@ -344,6 +354,12 @@ export async function installFakeApi(
      * one window an hour from now, and orders carry `readyFromQueue`.
      */
     queuePolicy?: { asapBlockedReason?: 'CLOSING_SOON' | 'QUEUE_FULL' };
+    /**
+     * Agroprombank «Мобильный платёж» is on (`qrPaymentCurrencies` lists the
+     * store's currency). `appLink`: the link into the bank's app the invoice
+     * carries; none by default.
+     */
+    qrPayment?: { appLink?: string | null };
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -362,6 +378,10 @@ export async function installFakeApi(
   const payments: Array<Record<string, unknown>> = [];
   const reviews: Array<{ orderId: string; body: Record<string, unknown> }> = [];
   const cancels: string[] = [];
+  const qrStarts: string[] = [];
+  const qrCancels: string[] = [];
+  /** The QR invoice of the last order, as `GET /payments/agroprombank-qr/:id` answers it. */
+  let qrInvoice: Record<string, unknown> | null = null;
   let nextId = 1;
 
   const cart = () => {
@@ -552,8 +572,41 @@ export async function installFakeApi(
         deliveryEnabled: opts.delivery ?? false,
         agroprombankEnabled: opts.cardPayments ?? true,
         cardPaymentFlow: (opts.cardPayments ?? true) ? 'token' : 'none',
+        // The real API takes RUP only; the fake takes QR in the store's own currency.
+        qrPaymentCurrencies: opts.qrPayment ? [store.currency] : [],
         support: { email: null, telegram: null },
       });
+    }
+    if (path === '/payments/agroprombank-qr/start' && method === 'POST') {
+      const body = request.postDataJSON() as { orderId: string };
+      qrStarts.push(body.orderId);
+      const order = orders.find((o) => o['id'] === body.orderId);
+      if (!order) return json(route, { statusCode: 409, code: 'ORDER_NOT_PAYABLE' }, 409);
+      // As the API: a start answers the invoice still waiting rather than a second one.
+      if (qrInvoice?.['status'] !== 'PENDING' && qrInvoice?.['status'] !== 'PAID') {
+        qrInvoice = {
+          paymentId: `qr-${nextId++}`,
+          orderId: body.orderId,
+          status: 'PENDING',
+          amountCents: order['totalCents'],
+          currency: order['currency'],
+          qr: {
+            code: `QRT000000000000123:${body.orderId}`,
+            appLink: opts.qrPayment?.appLink ?? null,
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          },
+        };
+      }
+      return json(route, qrInvoice);
+    }
+    const qrCancelPath = path.match(/^\/payments\/agroprombank-qr\/([^/]+)\/cancel$/);
+    if (qrCancelPath && method === 'POST' && qrInvoice) {
+      qrCancels.push(qrCancelPath[1] ?? '');
+      if (qrInvoice['status'] === 'PENDING') qrInvoice = { ...qrInvoice, status: 'EXPIRED', qr: null };
+      return json(route, qrInvoice);
+    }
+    if (path.match(/^\/payments\/agroprombank-qr\/[^/]+$/) && method === 'GET' && qrInvoice) {
+      return json(route, qrInvoice);
     }
     if (path === '/payments/agroprombank/cards' && method === 'GET') return json(route, opts.cards ?? [CARD]);
     if (path === '/payments/agroprombank/pay' && method === 'POST') {
@@ -721,5 +774,20 @@ export async function installFakeApi(
     return order;
   };
 
-  return { orders, payments, cartAdds, cancels, reviews, seedOrder };
+  const payQr = (): void => {
+    if (!qrInvoice) throw new Error('No QR invoice to pay');
+    qrInvoice = { ...qrInvoice, status: 'PAID', qr: null };
+    const order = orders.find((o) => o['id'] === qrInvoice?.['orderId']);
+    if (order) {
+      order['payment'] = {
+        state: 'HELD',
+        amountCents: order['totalCents'],
+        cardMask: null,
+        paidAt: null,
+        provider: 'AGROPROMBANK_QR',
+      };
+    }
+  };
+
+  return { orders, payments, cartAdds, cancels, reviews, qrStarts, qrCancels, payQr, seedOrder };
 }
