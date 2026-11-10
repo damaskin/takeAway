@@ -6,6 +6,7 @@ import {
   OrderCancelReason,
   OrderCanceller,
   OrderStatus,
+  PaymentProvider,
   PickupMode,
   VariationType,
 } from '@prisma/client';
@@ -136,6 +137,16 @@ export class OrderPaymentDto {
 
   @ApiProperty({ nullable: true, type: String, description: 'When the money was captured.' })
   paidAt!: string | null;
+
+  @ApiPropertyOptional({
+    enum: PaymentProvider,
+    nullable: true,
+    description:
+      'Who took the payment the state describes; null with NONE. AGROPROMBANK_QR (paid by QR in the bank app) ' +
+      'reads differently: HELD is money already taken, given back in full if the store turns the order down; ' +
+      'REFUNDED is a reversal. A QR invoice closed unpaid reads NONE.',
+  })
+  provider?: PaymentProvider | null;
 }
 
 /** The customer's review of the order, as their order screen shows it back. */

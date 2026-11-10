@@ -8,16 +8,20 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { BrandScopeService } from '../../auth/services/brand-scope.service';
 import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgroprombankQrService, type QrPaymentAdminView } from '../agroprombank-qr/agroprombank-qr.service';
+import type { QrPaymentRecord } from '../agroprombank-qr/protocol';
 import { AgroprombankWebService, type WebPaymentView } from '../agroprombank-web/agroprombank-web.service';
 import type { OperationState } from '../agroprombank-web/protocol';
 import { AgroprombankService, type ChargeResult } from './agroprombank.service';
 import { ChargeResponseDto, CompletePreauthDto, RefundOperationDto } from './dto/agroprombank.dto';
 
 /**
- * Back-office operations on an Agroprombank payment — taken by either flow,
- * the bound card or the Web-платёж page: refunds, reversals, capturing a
- * hold and reading the bank's own record. Each route goes to the bank service
- * that took the payment.
+ * Back-office operations on an Agroprombank payment — taken by any flow, the
+ * bound card, the Web-платёж page or a QR invoice: refunds, reversals,
+ * capturing a hold and reading the bank's own record. Each route goes to the
+ * bank service that took the payment. A QR payment is all or nothing: its
+ * refund is full only (`QR_PARTIAL_REFUND_UNSUPPORTED`), and `complete`
+ * settles it for exactly the paid amount with no bank call.
  *
  * Every route is brand-scoped through the order's store, so a BRAND_ADMIN can
  * never touch another brand's money. STORE_MANAGER is included because
@@ -31,6 +35,7 @@ export class AgroprombankAdminController {
   constructor(
     private readonly agro: AgroprombankService,
     private readonly web: AgroprombankWebService,
+    private readonly qr: AgroprombankQrService,
     private readonly prisma: PrismaService,
     private readonly brandScope: BrandScopeService,
   ) {}
@@ -40,8 +45,9 @@ export class AgroprombankAdminController {
   async describe(
     @CurrentUser() user: AuthenticatedUser,
     @Param('paymentId') paymentId: string,
-  ): Promise<Record<string, unknown> | OperationState> {
+  ): Promise<Record<string, unknown> | OperationState | QrPaymentRecord | null> {
     const provider = await this.assertScope(user, paymentId);
+    if (provider === 'AGROPROMBANK_QR') return this.qr.describe(paymentId);
     return provider === 'AGROPROMBANK_WEB' ? this.web.describe(paymentId) : this.agro.describeOperation(paymentId);
   }
 
@@ -52,9 +58,10 @@ export class AgroprombankAdminController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('paymentId') paymentId: string,
     @Body() dto: RefundOperationDto,
-  ): Promise<ChargeResult | WebPaymentView> {
+  ): Promise<ChargeResult | WebPaymentView | QrPaymentAdminView> {
     const provider = await this.assertScope(user, paymentId);
     const audit = { actorId: user.id, source: 'admin' };
+    if (provider === 'AGROPROMBANK_QR') return this.qr.refund(paymentId, dto.amountCents, audit);
     return provider === 'AGROPROMBANK_WEB'
       ? this.web.refund(paymentId, dto.amountCents, audit)
       : this.agro.refund(paymentId, dto.amountCents, audit);
@@ -66,8 +73,9 @@ export class AgroprombankAdminController {
   async reverse(
     @CurrentUser() user: AuthenticatedUser,
     @Param('paymentId') paymentId: string,
-  ): Promise<ChargeResult | WebPaymentView> {
+  ): Promise<ChargeResult | WebPaymentView | QrPaymentAdminView> {
     const provider = await this.assertScope(user, paymentId);
+    if (provider === 'AGROPROMBANK_QR') return this.qr.reverse(paymentId, { actorId: user.id, reason: 'admin' });
     return provider === 'AGROPROMBANK_WEB'
       ? this.web.cancel(paymentId, { actorId: user.id, reason: 'admin' })
       : this.agro.reverse(paymentId);
@@ -80,8 +88,9 @@ export class AgroprombankAdminController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('paymentId') paymentId: string,
     @Body() dto: CompletePreauthDto,
-  ): Promise<ChargeResult | WebPaymentView> {
+  ): Promise<ChargeResult | WebPaymentView | QrPaymentAdminView> {
     const provider = await this.assertScope(user, paymentId);
+    if (provider === 'AGROPROMBANK_QR') return this.qr.complete(paymentId, dto.amountCents);
     return provider === 'AGROPROMBANK_WEB'
       ? this.web.complete(paymentId, dto.amountCents)
       : this.agro.completePreauthorization(paymentId, dto.amountCents);

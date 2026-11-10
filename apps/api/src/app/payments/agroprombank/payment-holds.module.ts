@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AgroprombankQrClient } from '../agroprombank-qr/agroprombank-qr.client';
+import { AgroprombankQrConfig } from '../agroprombank-qr/agroprombank-qr.config';
 import { AgroprombankWebClient } from '../agroprombank-web/agroprombank-web.client';
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { AgroprombankClient } from './agroprombank.client';
@@ -8,7 +10,8 @@ import { PaymentHoldsService } from './payment-holds.service';
 
 /**
  * The bank connections on their own, with no order or settlement dependencies
- * — both the bound-card gateway and the Web-платёж admin service.
+ * — the bound-card gateway, the Web-платёж admin service and the QR web
+ * service.
  *
  * `PaymentsModule` and `OrdersModule` both import it: the first to talk to the
  * bank at all, the second only to release a hold on a cancelled order. Keeping
@@ -21,8 +24,18 @@ import { PaymentHoldsService } from './payment-holds.service';
     AgroprombankClient,
     AgroprombankWebConfig,
     AgroprombankWebClient,
+    AgroprombankQrConfig,
+    AgroprombankQrClient,
     PaymentHoldsService,
   ],
-  exports: [AgroprombankConfig, AgroprombankClient, AgroprombankWebConfig, AgroprombankWebClient, PaymentHoldsService],
+  exports: [
+    AgroprombankConfig,
+    AgroprombankClient,
+    AgroprombankWebConfig,
+    AgroprombankWebClient,
+    AgroprombankQrConfig,
+    AgroprombankQrClient,
+    PaymentHoldsService,
+  ],
 })
 export class PaymentHoldsModule {}
