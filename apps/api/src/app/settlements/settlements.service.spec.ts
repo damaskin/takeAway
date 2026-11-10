@@ -17,6 +17,8 @@ function raw(overrides: Record<string, unknown>) {
     subtotalCents: 0,
     discountCents: 0,
     pointsDiscountCents: 0,
+    takeawayDiscountCents: 0,
+    takeawayCompensationCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -69,6 +71,7 @@ function payout(overrides: Partial<BrandPayout> = {}): BrandPayout {
     amountCents: 8500,
     cardNetCents: 10000,
     commissionCents: 1500,
+    compensationCents: 0,
     status: 'PAID',
     paidAt: new Date('2026-10-01T10:00:00Z'),
     reference: 'PP-1',
@@ -123,6 +126,7 @@ function setup(options: { payouts?: BrandPayout[]; rows?: unknown[]; scope?: str
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    takeawayPromoRedemption: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $queryRaw: jest
       .fn()
       .mockImplementation(async (strings: TemplateStringsArray) =>
@@ -202,6 +206,7 @@ describe('SettlementsService.report', () => {
       amountCents: 4250,
       cardNetCents: 5000,
       commissionCents: 750,
+      compensationCents: 0,
       blocked: null,
       lastSettledDay: '2026-09-30',
     });
@@ -238,6 +243,7 @@ describe('SettlementsService.report', () => {
       amountCents: 4250,
       cardNetCents: 5000,
       commissionCents: 750,
+      compensationCents: 0,
       blocked: null,
       lastSettledDay: '2026-09-30',
     });
@@ -285,6 +291,39 @@ describe('SettlementsService.createPayout', () => {
       }),
     });
     expect(created).toMatchObject({ id: 'p-new', status: 'PENDING', periodFrom: '2026-09-28', periodTo: '2026-10-07' });
+  });
+
+  it('carries the takeAway promo compensation and stamps the debts it settles', async () => {
+    const rows = [
+      ...ROWS,
+      raw({
+        id: 'promo',
+        settledAt: new Date('2026-10-06T09:00:00Z'),
+        subtotalCents: 10000,
+        discountCents: 1000,
+        takeawayDiscountCents: 1000,
+        takeawayCompensationCents: 1000,
+        totalCents: 9000,
+        capturedCents: 9000n,
+        hasCapture: true,
+      }),
+    ];
+    const { svc, prisma } = setup({ rows });
+    await svc.createPayout(admin, { brandId: 'b1', currency: 'RUP', to: '2026-10-07' }, NOW);
+
+    expect(prisma.brandPayout.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        // 100 at 15 %: 85 more than without the promo order, as a regular order of 100 would add.
+        amountCents: 8500 + 4250 + 8500,
+        cardNetCents: 15000 + 9000,
+        compensationCents: 1000,
+        commissionCents: 2250 + 1500,
+      }),
+    });
+    expect(prisma.takeawayPromoRedemption.updateMany).toHaveBeenCalledWith({
+      where: { orderId: { in: ['promo'] }, payoutId: null },
+      data: { payoutId: 'p-new' },
+    });
   });
 
   it('refuses a period that has not ended yet', async () => {

@@ -181,7 +181,9 @@ export class SettlementTotalsDto implements SettlementTotals {
   @ApiProperty() deliveryFeeCents!: number;
   @ApiProperty() capturedCents!: number;
   @ApiProperty() refundedCents!: number;
-  @ApiProperty({ description: 'captured − refunded' }) commissionBaseCents!: number;
+  @ApiProperty({ description: '«Компенсация takeAway по акциям»: Σ D of takeAway promos (docs/takeaway-promos.md).' })
+  takeawayCompensationCents!: number;
+  @ApiProperty({ description: 'captured − refunded + takeaway compensation' }) commissionBaseCents!: number;
   @ApiProperty({ description: 'Rounded half up per order.' }) commissionCents!: number;
   @ApiProperty({ description: 'base − commission' }) payableCents!: number;
 }
@@ -212,6 +214,7 @@ export class SettlementPayoutPreviewDto implements SettlementPayoutPreview {
   @ApiProperty() amountCents!: number;
   @ApiProperty() cardNetCents!: number;
   @ApiProperty() commissionCents!: number;
+  @ApiProperty({ description: 'The period’s takeAway promo compensation.' }) compensationCents!: number;
   @ApiProperty({ enum: BLOCK_REASONS, nullable: true }) blocked!: PayoutBlockReason | null;
   @ApiProperty({ type: String, nullable: true }) lastSettledDay!: string | null;
 }
@@ -226,6 +229,8 @@ export class SettlementPayoutDto implements SettlementPayout {
   @ApiProperty() amountCents!: number;
   @ApiProperty() cardNetCents!: number;
   @ApiProperty() commissionCents!: number;
+  @ApiProperty({ description: '«Компенсация takeAway по акциям» settled by the payout; 0 before 2026-11-10.' })
+  compensationCents!: number;
   @ApiProperty({ enum: PAYOUT_STATUSES }) status!: PayoutStatus;
   @ApiProperty({ type: String, nullable: true }) paidAt!: string | null;
   @ApiProperty({ type: String, nullable: true }) reference!: string | null;

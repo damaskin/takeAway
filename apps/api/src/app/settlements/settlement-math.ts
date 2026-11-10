@@ -19,9 +19,13 @@ import { rateAt, type RatePoint } from '../plans/commission-history';
  *   store accepted it. It is **settled at** its acceptance, or at its first
  *   captured payment when it was never accepted; that instant picks both its
  *   day and its commission rate.
- * - **Commission base** = card money captured − refunded. Only money the
- *   platform really received is shared: promo codes, points and gift cards
- *   never reach the platform's account.
+ * - **Commission base** = card money captured − refunded + the takeAway
+ *   promo compensation. Only money the platform really received is shared:
+ *   the brand's promo codes, points and gift cards never reach the
+ *   platform's account. A takeAway promo is the exception — takeAway pays
+ *   the discount D to the brand (docs/takeaway-promos.md), so the order
+ *   settles as if the guest had paid the full menu price: the commission is
+ *   taken on it and the brand gets what a regular order would bring.
  * - **Commission** = base × rate, in whole cents, rounded half up, per order.
  *   Rounding each order (not the day or the period) is what makes days add
  *   up to the period and periods to the year exactly.
@@ -36,9 +40,17 @@ export interface SettlementOrderRow {
   settledAt: Date;
   /** Line items before any discount. */
   subtotalCents: number;
-  /** Promo and points together, as the order stores them. */
+  /** Promo and points together, as the order stores them (a takeAway promo's D included). */
   discountCents: number;
   pointsDiscountCents: number;
+  /** D of a takeAway promo as snapshotted on the order (part of `discountCents`). */
+  takeawayDiscountCents: number;
+  /**
+   * What takeAway owes the brand for the order's takeAway promo: D of its
+   * live redemption, 0 once the order was cancelled or expired (the
+   * redemption is gone then) or without a takeAway promo.
+   */
+  takeawayCompensationCents: number;
   giftCardCents: number;
   deliveryFeeCents: number;
   /** What the customer had to pay. */
@@ -78,6 +90,7 @@ export function emptyTotals(): SettlementTotals {
     deliveryFeeCents: 0,
     capturedCents: 0,
     refundedCents: 0,
+    takeawayCompensationCents: 0,
     commissionBaseCents: 0,
     commissionCents: 0,
     payableCents: 0,
@@ -89,7 +102,8 @@ export function settleOrder(row: SettlementOrderRow, bps: number): SettlementTot
   const captured = row.hasCapture ? Math.max(0, row.capturedCents) : 0;
   // A refund never exceeds what was taken; clamp so base stays captured − refunded.
   const refunded = row.hasCapture ? Math.min(captured, Math.max(0, row.refundedCents)) : 0;
-  const base = captured - refunded;
+  const compensation = Math.max(0, row.takeawayCompensationCents);
+  const base = captured - refunded + compensation;
   const commission = commissionCents(base, bps);
   const unpaid = !row.hasCapture && row.totalCents > 0;
   return {
@@ -99,12 +113,13 @@ export function settleOrder(row: SettlementOrderRow, bps: number): SettlementTot
     unpaidOrders: unpaid ? 1 : 0,
     unpaidTotalCents: unpaid ? row.totalCents : 0,
     salesCents: row.subtotalCents,
-    promoDiscountCents: Math.max(0, row.discountCents - row.pointsDiscountCents),
+    promoDiscountCents: Math.max(0, row.discountCents - row.pointsDiscountCents - row.takeawayDiscountCents),
     pointsDiscountCents: row.pointsDiscountCents,
     giftCardCents: row.giftCardCents,
     deliveryFeeCents: row.deliveryFeeCents,
     capturedCents: captured,
     refundedCents: refunded,
+    takeawayCompensationCents: compensation,
     commissionBaseCents: base,
     commissionCents: commission,
     payableCents: base - commission,
@@ -181,24 +196,30 @@ export function computeSettlement(
   };
 }
 
-/** The card money and commission of the orders settled within [start, end). */
+/**
+ * The card money, takeAway promo compensation and commission of the orders
+ * settled within [start, end). `cardNetCents` is card money only (captured −
+ * refunded), without the compensation.
+ */
 export function periodFigures(
   rows: readonly SettlementOrderRow[],
   timeline: readonly RatePoint[],
   fallbackBps: number,
   start: Date,
   end: Date,
-): { cardNetCents: number; commissionCents: number } {
+): { cardNetCents: number; compensationCents: number; commissionCents: number } {
   let cardNet = 0;
+  let compensation = 0;
   let commission = 0;
   for (const row of rows) {
     const t = row.settledAt.getTime();
     if (t < start.getTime() || t >= end.getTime()) continue;
     const settled = settleOrder(row, rateAt(timeline, row.settledAt, fallbackBps));
-    cardNet += settled.commissionBaseCents;
+    cardNet += settled.commissionBaseCents - settled.takeawayCompensationCents;
+    compensation += settled.takeawayCompensationCents;
     commission += settled.commissionCents;
   }
-  return { cardNetCents: cardNet, commissionCents: commission };
+  return { cardNetCents: cardNet, compensationCents: compensation, commissionCents: commission };
 }
 
 /** What the balance needs to know about a payout. */
