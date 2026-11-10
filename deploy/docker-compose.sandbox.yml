@@ -56,6 +56,9 @@ services:
       AGRO_WEB_MOCK_PORT: 8898
       AGRO_WEB_MOCK_API_BASE: http://api:3000/api
       AGRO_WEB_MOCK_PUBLIC_API_BASE: http://127.0.0.1:${SANDBOX_API_PORT:-3100}/api
+      # QR («Мобильный платёж») sandbox, on the Web-платёж port: it calls the
+      # API back inside the network, like the bank calls the registered URL.
+      AGRO_QR_MOCK_API_BASE: http://api:3000/api
       # The API container runs as a different user; these are throwaway
       # sandbox keys, so relaxing the mode is fine here and only here.
       AGRO_MOCK_KEY_MODE: shared
@@ -118,6 +121,14 @@ services:
       AGROPROMBANK_WEB_SERVICE_URL: http://agro-mock:8898/merchant/APB.SV.WebPayment.AgentService.asmx
       AGROPROMBANK_WEB_BANK_CERT_FILE: /secrets/bank-public-key.pem
       AGROPROMBANK_WEB_IS_TEST: 'true'
+      # «Мобильный платёж», pointed at the fake QR service; the link opens the
+      # fake bank app in the tester's browser.
+      AGROPROMBANK_QR_ENABLED: 'true'
+      AGROPROMBANK_QR_SERVICE_URL: http://agro-mock:8898/mobile/QRMobileService.asmx
+      AGROPROMBANK_QR_LOGIN: sandbox
+      AGROPROMBANK_QR_PASSWORD: sandbox-pass
+      AGROPROMBANK_QR_TERMINAL_ID: QRT000000000000001
+      AGROPROMBANK_QR_APP_LINK: http://127.0.0.1:${SANDBOX_WEB_BANK_PORT:-3101}/__sandbox/qr/app?code={code}
       PUBLIC_WEB_URL: http://127.0.0.1:${SANDBOX_API_PORT:-3100}
       DELIVERY_ENABLED: 'true'
     volumes:
