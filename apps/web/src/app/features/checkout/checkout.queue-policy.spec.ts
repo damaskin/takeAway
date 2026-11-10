@@ -15,6 +15,7 @@ import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { CheckoutPage } from './checkout.page';
@@ -116,11 +117,13 @@ describe('CheckoutPage under the order queue policy', () => {
             cardPaymentsEnabled: signal(true),
             boundCardsEnabled: signal(false),
             webPaymentsEnabled: signal(true),
+            qrPaymentCurrencies: signal([]),
           },
         },
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
         { provide: WebPaymentApi, useValue: { start: jest.fn() } },
+        { provide: QrPaymentApi, useValue: { start: jest.fn() } },
         { provide: RealtimeService, useValue: { onStoreAvailabilityChanged: () => () => undefined } },
       ],
     });

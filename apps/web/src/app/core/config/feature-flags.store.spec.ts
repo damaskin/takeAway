@@ -62,5 +62,21 @@ describe('web FeatureFlagsStore', () => {
 
     expect(store.boundCardsEnabled()).toBe(true);
     expect(store.webPaymentsEnabled()).toBe(false);
+    // No QR on a server from before it.
+    expect(store.qrPaymentCurrencies()).toEqual([]);
+  });
+
+  it('offers QR in the currencies the server names, next to the cards or without them', () => {
+    expect(store.qrPaymentCurrencies()).toEqual([]);
+    store.load();
+    http.expectOne('/api/config/features').flush({
+      deliveryEnabled: false,
+      agroprombankEnabled: false,
+      cardPaymentFlow: 'none',
+      qrPaymentCurrencies: ['RUP'],
+    });
+
+    expect(store.qrPaymentCurrencies()).toEqual(['RUP']);
+    expect(store.cardPaymentsEnabled()).toBe(false);
   });
 });
