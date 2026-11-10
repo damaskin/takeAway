@@ -177,7 +177,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       PROMO_MIN_ORDER: 'This promo code needs an order of {{amount}} or more',
       PROMO_LIMIT_REACHED: 'This promo code has run out',
       PROMO_ALREADY_USED: 'You have already used this promo code',
-      PROMO_NOT_ELIGIBLE: "This code is for customers who haven't ordered in a while",
+      /** A brand's code for inactive customers, or a welcome code that was not handed to this customer. */
+      PROMO_NOT_ELIGIBLE: "This promo code isn't available to you",
+      /** A takeAway promo in another currency than the store's. */
+      PROMO_NOT_HERE: "This promo doesn't work at this venue",
+      PROMO_WITH_POINTS: "Points can't be combined with a promo code",
       TOO_MANY_UNPAID_ORDERS: 'You already have unpaid orders — pay for or cancel one before placing a new one',
       GIFT_CARD_BALANCE_CHANGED: 'The gift card balance has just changed — check the card and try again',
       GIFT_CARD_UNKNOWN: 'There is no gift card with this code',
@@ -257,6 +261,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
       /** Only for what the store's orders show customers buying together (`source: copurchase`). */
       together: 'Often bought together',
       add: 'Add {{name}}',
+    },
+    /** «Акции takeAway» and the welcome bonus on the customer's screens (docs/takeaway-promos.md §5). */
+    takeawayPromo: {
+      myBonuses: 'My bonuses',
+      welcome: 'Welcome bonus −{{percent}}%',
+      promo: 'takeAway promo −{{percent}}%',
+      /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
+      anyStoreUntil: 'On an order at any venue · until {{date}}',
+      remove: 'Remove',
+      /** Under «Pay with points» while a takeAway promo is applied. */
+      noPoints: "Points can't be combined with a promo code",
     },
   },
   nav: {

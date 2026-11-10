@@ -288,7 +288,21 @@ export interface FakeApi {
   readonly cartAdds: Array<Record<string, unknown>>;
   /** Card payments the app asked for, as sent. */
   readonly payments: Array<Record<string, unknown>>;
+  /** Promo checks the app asked for (`POST /promo/validate`), as sent. */
+  readonly promoValidations: Array<Record<string, unknown>>;
 }
+
+/** One of takeAway's own promos as the fake knows it (docs/takeaway-promos.md). */
+export interface FakeTakeawayPromo {
+  percent: number;
+  isWelcome?: boolean;
+  /** The budget's currency; the store's unless said. */
+  currency?: string;
+}
+
+/** D = P × s / 100, half up — `takeawayPromoDiscountCents`. */
+const takeawayDiscount = (subtotalCents: number, percent: number): number =>
+  Math.floor((subtotalCents * percent + 50) / 100);
 
 /** The customer's bound card, as `/payments/agroprombank/cards` lists it. */
 export const CARD = {
@@ -344,6 +358,14 @@ export async function installFakeApi(
      * one window an hour from now, and orders carry `readyFromQueue`.
      */
     queuePolicy?: { asapBlockedReason?: 'CLOSING_SOON' | 'QUEUE_FULL' };
+    /** The customer's bonuses as `GET /me/bonuses` lists them; none unless given. */
+    bonuses?: Array<Record<string, unknown>>;
+    /**
+     * takeAway's own promos by code: `POST /promo/validate` answers them as
+     * `source: TAKEAWAY` (at a store in their currency, else PROMO_NOT_HERE),
+     * and an order with one carries `takeawayPromo`. Any other code is unknown.
+     */
+    takeawayPromos?: Record<string, FakeTakeawayPromo>;
   } = {},
 ): Promise<FakeApi> {
   const acceptingOrders = opts.storeAcceptingOrders ?? STORE.acceptingOrders;
@@ -360,6 +382,7 @@ export async function installFakeApi(
   const cartAdds: Array<Record<string, unknown>> = [];
   const orders: Array<Record<string, unknown>> = [];
   const payments: Array<Record<string, unknown>> = [];
+  const promoValidations: Array<Record<string, unknown>> = [];
   const reviews: Array<{ orderId: string; body: Record<string, unknown> }> = [];
   const cancels: string[] = [];
   let nextId = 1;
@@ -546,6 +569,44 @@ export async function installFakeApi(
       });
     }
 
+    // ── Promos and bonuses ──────────────────────────────────────────────
+    if (path === '/me/bonuses') return json(route, opts.bonuses ?? []);
+    if (path === '/promo/validate' && method === 'POST') {
+      const body = request.postDataJSON() as { code: string; subtotalCents: number; storeId?: string };
+      promoValidations.push(body);
+      const refused = (reasonCode: string) =>
+        json(route, {
+          valid: false,
+          reason: reasonCode,
+          reasonCode,
+          promo: null,
+          source: null,
+          discountCents: 0,
+          pointsMultiplier: 1,
+        });
+      const promo = opts.takeawayPromos?.[body.code];
+      if (!promo) return refused('PROMO_UNKNOWN');
+      if (body.storeId !== store.id || (promo.currency ?? store.currency) !== store.currency) {
+        return refused('PROMO_NOT_HERE');
+      }
+      return json(route, {
+        valid: true,
+        reason: null,
+        reasonCode: null,
+        promo: null,
+        source: 'TAKEAWAY',
+        takeawayPromo: {
+          id: `tp-${body.code}`,
+          code: body.code,
+          name: promo.isWelcome ? 'Welcome bonus' : 'Autumn',
+          percent: promo.percent,
+          isWelcome: promo.isWelcome ?? false,
+        },
+        discountCents: takeawayDiscount(body.subtotalCents, promo.percent),
+        pointsMultiplier: 1,
+      });
+    }
+
     // ── Config & payments ───────────────────────────────────────────────
     if (path === '/config/features') {
       return json(route, {
@@ -643,10 +704,29 @@ export async function installFakeApi(
     // ── Orders ──────────────────────────────────────────────────────────
     if (path === '/orders' && method === 'POST') {
       const body = request.postDataJSON() as Record<string, unknown>;
+      const code = typeof body['couponCode'] === 'string' ? body['couponCode'] : null;
+      const promo = code ? opts.takeawayPromos?.[code] : undefined;
+      const menuTotalCents = cart().subtotalCents;
+      const discountCents = promo ? takeawayDiscount(menuTotalCents, promo.percent) : 0;
       const order = newOrder({
         fulfillmentType: body['fulfillmentType'] ?? 'PICKUP',
         pickupMode: body['pickupMode'] ?? 'ASAP',
         ...(body['pickupAt'] ? { pickupAt: body['pickupAt'] } : {}),
+        ...(promo && code
+          ? {
+              couponCode: code,
+              discountCents,
+              totalCents: menuTotalCents - discountCents,
+              takeawayPromo: {
+                code,
+                name: promo.isWelcome ? 'Welcome bonus' : 'Autumn',
+                percent: promo.percent,
+                menuTotalCents,
+                discountCents,
+                paidByGuestCents: menuTotalCents - discountCents,
+              },
+            }
+          : {}),
         // Echoed so the test can assert what checkout actually sent.
         _request: body,
       });
@@ -721,5 +801,5 @@ export async function installFakeApi(
     return order;
   };
 
-  return { orders, payments, cartAdds, cancels, reviews, seedOrder };
+  return { orders, payments, cartAdds, cancels, reviews, promoValidations, seedOrder };
 }

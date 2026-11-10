@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { LoyaltyAccount, Promo, ValidPromoResult } from '@takeaway/shared-types';
+import type { LoyaltyAccount, Promo, ValidPromoResult, ValidatePromoInput } from '@takeaway/shared-types';
 import type { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -38,12 +38,13 @@ export class PromoService {
   private readonly http = inject(HttpClient);
   private readonly api = inject(API_CONFIG);
 
-  validate(code: string, brandId: string, subtotalCents: number): Observable<ValidPromoResult> {
-    return this.http.post<ValidPromoResult>(`${this.api.baseUrl}/promo/validate`, {
-      code,
-      brandId,
-      subtotalCents,
-    });
+  /**
+   * `storeId` is the cart's store: a takeAway promo works only where the
+   * store sells in the promo's currency (PROMO_NOT_HERE elsewhere).
+   */
+  validate(code: string, brandId: string, subtotalCents: number, storeId?: string): Observable<ValidPromoResult> {
+    const body: ValidatePromoInput = { code, brandId, subtotalCents, ...(storeId ? { storeId } : {}) };
+    return this.http.post<ValidPromoResult>(`${this.api.baseUrl}/promo/validate`, body);
   }
 
   list(brandId?: string): Observable<Promo[]> {
