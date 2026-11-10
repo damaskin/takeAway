@@ -1735,4 +1735,50 @@ class AppLocalizationsEn extends AppLocalizations {
   String standBadge(String stand, String host) {
     return '$stand server · $host';
   }
+
+  @override
+  String get optionUnavailable => 'Out of stock';
+
+  @override
+  String optionPickRange(int min, int max) {
+    return '$min to $max';
+  }
+
+  @override
+  String optionIncluded(int count) {
+    return '$count included';
+  }
+
+  @override
+  String optionPerUnit(String price) {
+    return '$price each';
+  }
+
+  @override
+  String optionsChoose(String groups) {
+    return 'Choose: $groups';
+  }
+
+  @override
+  String optionsOutOfStock(String options) {
+    return 'Out of stock: $options';
+  }
+
+  @override
+  String get optionsCheck => 'Check your choice';
+
+  @override
+  String get errOptionsRequired => 'Choose the options of this item on its page';
+
+  @override
+  String get errOptionsUnavailable => 'Something you picked has just run out — choose something else';
+
+  @override
+  String get errOptionsTooFew => 'Choose everything this item needs';
+
+  @override
+  String get errOptionsTooMany => 'Too many add-ons — take some off';
+
+  @override
+  String get errOptionsChanged => 'The menu has changed — open the item and choose again';
 }

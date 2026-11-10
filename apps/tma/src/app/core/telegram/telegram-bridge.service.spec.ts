@@ -59,6 +59,17 @@ describe('TelegramBridgeService main button', () => {
     expect(latest).toHaveBeenCalledTimes(1);
   });
 
+  // A product with a size still to pick shows the button saying so, inert.
+  it('keeps the button shown but inert when asked, and live again after', () => {
+    service.setMainButton('Выберите: Размер (кофе)', jest.fn(), false);
+    expect(button.show).toHaveBeenCalled();
+    expect(button.disable).toHaveBeenCalledTimes(1);
+    expect(button.enable).not.toHaveBeenCalled();
+
+    service.setMainButton('Добавить · 45 руб.', jest.fn());
+    expect(button.enable).toHaveBeenCalledTimes(1);
+  });
+
   it('forgets the handler when the button is hidden', () => {
     const handler = jest.fn();
     service.setMainButton('Оплатить', handler);

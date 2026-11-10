@@ -7,11 +7,13 @@ import { ActiveBrandService } from '../../core/brand-context/active-brand.servic
 import {
   AdminCatalogApi,
   type AvailabilityIngredientDto,
+  type AvailabilityOptionDto,
   type AvailabilityProductDto,
   type AvailabilityStopDto,
   type StoreAdminDto,
   type StoreAvailabilityDto,
 } from '../../core/catalog/admin-catalog.service';
+import { OptionCatalogApi } from '../../core/catalog/option-catalog.service';
 import { KITCHEN_STORE_KEY, read } from '../../core/kitchen/kitchen-mode.service';
 import { describeMenuError } from '../menu/menu-errors';
 import { MENU_FORM_STYLES } from '../menu/menu-form.styles';
@@ -20,12 +22,17 @@ import { formatStoreTime, isStopActive, nextMidnightIn } from '../menu/stock';
 type Tab = 'products' | 'addons';
 type Until = 'manual' | 'endOfDay';
 
-/** A row the page can switch: a product or an add-in, with its stop in this store. */
+type Source = 'product' | 'ingredient' | 'option';
+
+/** A row the page can switch: a product, an old add-in or a catalog option, with its stop in this store. */
 interface Row {
   id: string;
+  source: Source;
   name: string;
-  /** Category for a product, "used in …" for an add-in. */
+  /** "Used in …" for an old add-in, the note for a catalog option. */
   detail: string;
+  /** The heading the row is listed under: a product's category, a catalog option's group. */
+  heading: string | null;
   stop: AvailabilityStopDto | null;
   /** An add-in switched off for the whole brand — nothing to switch here. */
   brandOff: boolean;
@@ -40,6 +47,10 @@ interface Row {
  * more: creating, editing and deleting stays in the menu editor.
  * Laid out as one column of big rows so it works on the kitchen tablet and
  * on a phone.
+ *
+ * «Добавки» lists the old add-ins and, since 2026-11-09, the catalog options
+ * the store uses and the brand has, under their groups — from the store's
+ * availability, so kitchen STAFF and a PIN session see them too.
  */
 @Component({
   selector: 'app-stop-list',
@@ -214,14 +225,14 @@ interface Row {
       }
 
       <div class="flex flex-col" style="gap: 8px">
-        @for (row of shown(); track row.id; let i = $index) {
-          @if (tab() === 'products' && row.detail !== shown()[i - 1]?.detail) {
-            <h2 class="group">{{ row.detail }}</h2>
+        @for (row of shown(); track row.source + row.id; let i = $index) {
+          @if (row.heading && row.heading !== shown()[i - 1]?.heading) {
+            <h2 class="group">{{ row.heading }}</h2>
           }
           <div class="row" [class.out]="stopped(row)" data-testid="stop-row">
             <div class="flex flex-col" style="gap: 2px; flex: 1 1 200px; min-width: 0">
               <span class="name">{{ row.name }}</span>
-              @if (tab() === 'addons') {
+              @if (row.detail) {
                 <span class="hint">{{ row.detail }}</span>
               }
               @if (row.brandOff) {
@@ -257,6 +268,7 @@ interface Row {
 })
 export class StopListPage {
   private readonly api = inject(AdminCatalogApi);
+  private readonly options = inject(OptionCatalogApi);
   private readonly translate = inject(TranslateService);
   private readonly activeBrand = inject(ActiveBrandService);
   private readonly route = inject(ActivatedRoute);
@@ -277,19 +289,36 @@ export class StopListPage {
   readonly productRows = computed<Row[]>(() =>
     (this.view()?.products ?? []).map((p: AvailabilityProductDto) => ({
       id: p.id,
+      source: 'product',
       name: p.name,
-      detail: p.categoryName,
+      detail: '',
+      heading: p.categoryName,
       stop: p.stop,
       brandOff: false,
     })),
   );
-  readonly addonRows = computed<Row[]>(() =>
-    (this.view()?.ingredients ?? []).map((i: AvailabilityIngredientDto) => ({
+  readonly addonRows = computed<Row[]>(() => [
+    ...(this.view()?.ingredients ?? []).map<Row>((i: AvailabilityIngredientDto) => ({
       id: i.id,
+      source: 'ingredient',
       name: i.name,
       detail: this.translate.instant('admin.stopList.usedIn', { products: i.productNames.join(', ') }),
+      heading: null,
       stop: i.stop,
       brandOff: !i.isAvailable,
+    })),
+    ...this.optionRows(),
+  ]);
+  /** The catalog options the store uses and the brand has, each under its group. */
+  readonly optionRows = computed<Row[]>(() =>
+    (this.view()?.options ?? []).map<Row>((o: AvailabilityOptionDto) => ({
+      id: o.id,
+      source: 'option',
+      name: o.name,
+      detail: o.note ?? '',
+      heading: o.groupName,
+      stop: o.stop,
+      brandOff: false,
     })),
   );
   readonly rows = computed(() => (this.tab() === 'products' ? this.productRows() : this.addonRows()));
@@ -345,10 +374,16 @@ export class StopListPage {
     const storeId = view.storeId;
     const stop = !this.stopped(row);
     const expiresAt = stop && this.until() === 'endOfDay' ? nextMidnightIn(view.timezone).toISOString() : undefined;
-    const kind = this.tab();
+    const kind = row.source;
 
     let request: Observable<AvailabilityStopDto | null>;
-    if (kind === 'products') {
+    if (kind === 'option') {
+      request = stop
+        ? this.options
+            .stopInStore(storeId, row.id, expiresAt ?? null)
+            .pipe(map((s) => ({ expiresAt: s?.expiresAt ?? expiresAt ?? null })))
+        : this.options.resumeInStore(storeId, row.id).pipe(map(() => null));
+    } else if (kind === 'product') {
       request = stop
         ? this.api
             .addStopListEntry(storeId, { productId: row.id, ...(expiresAt ? { expiresAt } : {}) })
@@ -379,10 +414,13 @@ export class StopListPage {
     });
   }
 
-  private patch(kind: Tab, id: string, stop: AvailabilityStopDto | null): void {
+  private patch(kind: Source, id: string, stop: AvailabilityStopDto | null): void {
     this.view.update((view) => {
       if (!view) return view;
-      return kind === 'products'
+      if (kind === 'option') {
+        return { ...view, options: (view.options ?? []).map((o) => (o.id === id ? { ...o, stop } : o)) };
+      }
+      return kind === 'product'
         ? { ...view, products: view.products.map((p) => (p.id === id ? { ...p, stop } : p)) }
         : { ...view, ingredients: view.ingredients.map((i) => (i.id === id ? { ...i, stop } : i)) };
     });

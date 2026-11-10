@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { OptionCatalogErrorCode } from '@takeaway/shared-types';
 
 /**
  * Stable codes on the menu editor's domain errors. The admin translates the
@@ -19,7 +20,9 @@ export type MenuErrorCode =
   | 'INGREDIENT_LIBRARY_LOCKED'
   | 'INGREDIENT_NOT_IN_LIBRARY'
   | 'OPTION_NAME_REQUIRED'
-  | 'STORE_UNKNOWN';
+  | 'STORE_UNKNOWN'
+  // The options catalog (docs/option-groups.md).
+  | OptionCatalogErrorCode;
 
 export function menuConflict(
   code: MenuErrorCode,
@@ -29,8 +32,12 @@ export function menuConflict(
   return new ConflictException({ statusCode: 409, error: 'Conflict', code, message, ...extra });
 }
 
-export function menuBadRequest(code: MenuErrorCode, message: string): BadRequestException {
-  return new BadRequestException({ statusCode: 400, error: 'Bad Request', code, message });
+export function menuBadRequest(
+  code: MenuErrorCode,
+  message: string,
+  extra: Record<string, unknown> = {},
+): BadRequestException {
+  return new BadRequestException({ statusCode: 400, error: 'Bad Request', code, message, ...extra });
 }
 
 export function menuForbidden(code: MenuErrorCode, message: string): ForbiddenException {

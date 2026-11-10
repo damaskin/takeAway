@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
-import type { AsapBlockedReason } from '@takeaway/shared-types';
+import type { AsapBlockedReason, OptionLine, OptionSelection } from '@takeaway/shared-types';
 import { Observable, tap } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -12,6 +12,12 @@ export interface CartItemView {
   quantity: number;
   variationIds: string[];
   modifiers: Record<string, number>;
+  /**
+   * Picks from the options catalog with their names and prices, for a
+   * product with catalog groups; empty or missing otherwise (and from an API
+   * that predates the catalog).
+   */
+  options?: OptionLine[];
   unitPriceCents: number;
   unitPrepSeconds: number;
   notes: string | null;
@@ -41,7 +47,14 @@ export interface AddToCartInput {
   quantity: number;
   variationIds?: string[];
   modifiers?: Record<string, number>;
+  /** The choice from the options catalog (`toOptionSelections`), for a product with catalog groups. */
+  options?: OptionSelection[];
   notes?: string;
+}
+
+/** A cart line's choice from the options catalog in the form the cart takes it; empty for other lines. */
+export function lineSelections(item: Pick<CartItemView, 'options'>): OptionSelection[] {
+  return (item.options ?? []).map((line) => ({ optionId: line.optionId, qty: line.qty }));
 }
 
 @Injectable({ providedIn: 'root' })
@@ -65,9 +78,15 @@ export class CartService {
     return this.http.post<CartView>(`${this.api.baseUrl}/cart/items`, input).pipe(tap((c) => this._cart.set(c)));
   }
 
-  updateQuantity(itemId: string, quantity: number): Observable<CartView> {
+  /**
+   * A line's new count. A line from the options catalog sends its choice
+   * along (`options`), so the count is all that changes whatever the API
+   * does with a line it gets no choice for.
+   */
+  updateQuantity(itemId: string, quantity: number, options?: OptionSelection[]): Observable<CartView> {
+    const body = options && options.length > 0 ? { quantity, options } : { quantity };
     return this.http
-      .patch<CartView>(`${this.api.baseUrl}/cart/items/${itemId}`, { quantity })
+      .patch<CartView>(`${this.api.baseUrl}/cart/items/${itemId}`, body)
       .pipe(tap((c) => this._cart.set(c)));
   }
 

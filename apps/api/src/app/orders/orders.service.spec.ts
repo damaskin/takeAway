@@ -4,6 +4,7 @@ import type { Modifier, Variation } from '@prisma/client';
 
 import { CartChangedException } from '../cart/cart-changed.exception';
 import { CartService, type StoreProduct } from '../cart/cart.service';
+import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import type { GiftCardsService } from '../gift-cards/gift-cards.service';
@@ -116,6 +117,7 @@ function cartWith(product: StoreProduct) {
         quantity: 2,
         variationIds: ['v-l', 'v-oat'],
         modifiersJson: { 'm-vanilla': 2 },
+        optionsJson: [],
         // 450 + 140 + 60 + 2 × 50
         unitPriceCents: 750,
         unitPrepSeconds: 180,
@@ -142,6 +144,7 @@ const LATTE_SNAPSHOT = {
     { id: 'v-oat', type: 'MILK', name: 'Овсяное', priceDeltaCents: 60 },
   ],
   modifierLines: [{ id: 'm-vanilla', name: 'Ваниль', count: 2, priceCents: 50 }],
+  optionLines: [],
 };
 
 /** Written before options were snapshotted: ids only. */
@@ -241,6 +244,7 @@ function harness() {
     prisma as unknown as PrismaService,
     kitchen as unknown as KitchenLoadService,
     availability as unknown as StoreAvailabilityService,
+    optionGroupsStub(),
   );
   // The board row of a new order is read back after it is written.
   prisma.order.findUnique.mockImplementation(async () => {

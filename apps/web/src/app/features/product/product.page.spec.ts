@@ -10,6 +10,7 @@ import type { ProductDetail, StoreListItem, StoreMenu, StoreSuggestions } from '
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { AuthStore } from '../../core/auth/auth.store';
+import { COFFEE_GROUPS } from './option-groups.testing';
 import { ProductPage } from './product.page';
 
 const STORE: StoreListItem = {
@@ -254,5 +255,84 @@ describe('ProductPage', () => {
     const el = harness.routeNativeElement as HTMLElement;
 
     expect(text(el.querySelector('app-food-suggestions h2'))).toBe('К этому напитку');
+  });
+
+  describe('a product on the options catalog', () => {
+    const CATALOG_LATTE = product('catalog-latte', {
+      name: 'Латте',
+      hasRequiredOptions: true,
+      optionGroups: COFFEE_GROUPS,
+    });
+
+    const pick = async (harness: RouterTestingHarness, name: string) => {
+      const el = harness.routeNativeElement as HTMLElement;
+      Array.from(el.querySelectorAll('[data-testid="option-row"]'))
+        .find((r) => text(r.querySelector('.name')) === name)
+        ?.querySelector<HTMLInputElement>('input')
+        ?.click();
+      await harness.fixture.whenStable();
+    };
+    const addButton = (el: HTMLElement) =>
+      Array.from(el.querySelectorAll('button')).find((b) => text(b).includes('Добавить в корзину'));
+
+    it('keeps the button off, saying what to choose, until a size is picked; then sends the choice', async () => {
+      const harness = await open('catalog-latte', CATALOG_LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+
+      expect(el.querySelector('app-product-options')).toBeNull();
+      expect(text(el.querySelector('[data-testid="option-hint"]'))).toBe('Выберите: Размер (кофе)');
+      expect(addButton(el)?.disabled).toBe(true);
+
+      await pick(harness, 'L');
+      expect(el.querySelector('[data-testid="option-hint"]')).toBeNull();
+      expect(text(el.querySelector('[data-testid="choice-summary"]'))).toBe('L, Горячий · Коровье');
+      expect(addButton(el)?.disabled).toBe(false);
+      expect(text(addButton(el))).toMatch(/37\s?руб\./);
+
+      addButton(el)?.click();
+      const add = http.expectOne('/api/cart/items');
+      expect(add.request.body).toEqual({
+        storeId: STORE.id,
+        productId: 'catalog-latte',
+        quantity: 1,
+        options: [
+          { optionId: 'cow', qty: 1 },
+          { optionId: 'hot', qty: 1 },
+          { optionId: 'l', qty: 1 },
+        ],
+      });
+      add.flush({ id: 'cart-1', storeId: STORE.id, items: [], subtotalCents: 3700 });
+    });
+
+    it('says so when the cart refuses the choice, and greys out what ran out after a fresh look', async () => {
+      const harness = await open('catalog-latte', CATALOG_LATTE);
+      const el = harness.routeNativeElement as HTMLElement;
+      await pick(harness, 'M');
+      el.querySelector<HTMLButtonElement>('[aria-label="Молоко"] button.head')?.click();
+      await harness.fixture.whenStable();
+      await pick(harness, 'Овсяное');
+
+      addButton(el)?.click();
+      http.expectOne('/api/cart/items').flush(
+        {
+          statusCode: 400,
+          code: 'OPTIONS_INVALID',
+          message: 'Option unavailable',
+          errors: [{ code: 'OPTION_UNAVAILABLE', groupId: 'milk', optionId: 'oat' }],
+        },
+        { status: 400, statusText: 'Bad Request' },
+      );
+      const soldOut = COFFEE_GROUPS.map((g) =>
+        g.id === 'milk'
+          ? { ...g, options: g.options.map((o) => (o.id === 'oat' ? { ...o, available: false } : o)) }
+          : g,
+      );
+      http.expectOne((r) => r.url === '/api/products/catalog-latte').flush({ ...CATALOG_LATTE, optionGroups: soldOut });
+      await harness.fixture.whenStable();
+
+      expect(text(el)).toContain('Этот выбор сейчас недоступен — проверьте варианты и добавки');
+      expect(text(el.querySelector('[data-testid="option-hint"]'))).toBe('Нет в наличии: Овсяное');
+      expect(addButton(el)?.disabled).toBe(true);
+    });
   });
 });

@@ -19,7 +19,7 @@ import {
   StoreFulfillment,
   StoreStatus,
 } from '@prisma/client';
-import { inferCategoryKind } from '@takeaway/utils';
+import { describeOptionLines, inferCategoryKind, readOrderItemSnapshot } from '@takeaway/utils';
 import { Queue } from 'bullmq';
 
 import { BrandScopeService } from '../auth/services/brand-scope.service';
@@ -462,8 +462,10 @@ export class PosService {
 
   /**
    * Upserts an {@link ImportedMenu} (categories + products) into the brand.
-   * Modifiers are forwarded to a parallel pass once we have a real importer
-   * for them — Poster M2 returns an empty modifiers list.
+   * POS modifiers are not imported (`menu.modifiers` is ignored): a brand's
+   * add-ons and variants come from the options catalog (Maxim's answer 10,
+   * docs/option-groups.md). `Modifier` rows an earlier sync created stay as
+   * they are, untouched by later syncs.
    *
    * Strategy: resolve every external category/product to its takeAway id
    * via `(brandId, externalProvider, externalId)`. New rows pick a stable
@@ -765,12 +767,19 @@ export class PosService {
         const externalId = modifierExternalById.get(id);
         return externalId && count > 0 ? [{ externalId, count }] : [];
       });
+      // Catalog picks are not POS modifiers: the till gets them as text on
+      // the line («M, Холодный · Овсяное · Лёд ×2»), before the customer's note.
+      const snapshot = readOrderItemSnapshot(it.productSnapshot);
+      const notes = [describeOptionLines(snapshot.optionLines), extractSnapshotNotes(it.productSnapshot)]
+        .filter((part): part is string => !!part)
+        .join(' · ');
       items.push({
         productExternalId,
+        name: snapshot.name || undefined,
         quantity: it.quantity,
         unitPriceCents: it.unitPriceCents,
         modifiers: itemModifiers,
-        notes: extractSnapshotNotes(it.productSnapshot),
+        notes: notes || undefined,
       });
     }
 

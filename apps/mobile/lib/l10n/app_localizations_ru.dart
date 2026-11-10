@@ -1756,4 +1756,50 @@ class AppLocalizationsRu extends AppLocalizations {
   String standBadge(String stand, String host) {
     return 'Сервер «$stand» · $host';
   }
+
+  @override
+  String get optionUnavailable => 'Нет в наличии';
+
+  @override
+  String optionPickRange(int min, int max) {
+    return 'от $min до $max';
+  }
+
+  @override
+  String optionIncluded(int count) {
+    return '$count в цене';
+  }
+
+  @override
+  String optionPerUnit(String price) {
+    return '$price за шт.';
+  }
+
+  @override
+  String optionsChoose(String groups) {
+    return 'Выберите: $groups';
+  }
+
+  @override
+  String optionsOutOfStock(String options) {
+    return 'Нет в наличии: $options';
+  }
+
+  @override
+  String get optionsCheck => 'Проверьте выбор';
+
+  @override
+  String get errOptionsRequired => 'Выберите варианты на странице позиции';
+
+  @override
+  String get errOptionsUnavailable => 'Что-то из выбранного только что закончилось — выберите другое';
+
+  @override
+  String get errOptionsTooFew => 'Выберите всё, что нужно для этой позиции';
+
+  @override
+  String get errOptionsTooMany => 'Слишком много добавок — уберите лишнее';
+
+  @override
+  String get errOptionsChanged => 'Меню изменилось — откройте позицию и выберите заново';
 }

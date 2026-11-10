@@ -440,6 +440,20 @@ export interface AvailabilityIngredientDto {
   productNames: string[];
 }
 
+/**
+ * A catalog option the store uses (its group is on a product sold here) and
+ * the brand has, with its stop in this store.
+ */
+export interface AvailabilityOptionDto {
+  id: string;
+  name: string;
+  note: string | null;
+  groupId: string;
+  groupName: string;
+  stop: AvailabilityStopDto | null;
+  productNames: string[];
+}
+
 /** One store's stop-list: what it sells and which add-ins it has run out of. */
 export interface StoreAvailabilityDto {
   storeId: string;
@@ -447,6 +461,8 @@ export interface StoreAvailabilityDto {
   timezone: string;
   products: AvailabilityProductDto[];
   ingredients: AvailabilityIngredientDto[];
+  /** Catalog options, in catalog order. Missing from older API builds. */
+  options?: AvailabilityOptionDto[];
 }
 
 @Injectable({ providedIn: 'root' })

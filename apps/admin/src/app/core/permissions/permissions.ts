@@ -19,6 +19,7 @@ export type NavKey =
   | 'kitchen'
   | 'menu'
   | 'ingredients'
+  | 'optionCatalog'
   | 'stopList'
   | 'stores'
   | 'orders'
@@ -59,12 +60,16 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // takes orders on, kitchen STAFF included.
   kitchen: [SA, BA, SM, ST],
   menu: [SA, BA, SM, ME],
-  // The add-ins library page («Добавки») — whoever edits the menu. Since
-  // 2026-11-06 a brand's roles switch an add-in on and off for the whole
-  // brand and set its price there; adding, renaming and deleting add-ins is
-  // the platform team's (see `canEditAddInLibrary`). Per-store stops stay in
-  // the stop-list.
+  // «Добавки» — whoever edits the menu. Since 2026-11-09 it is the options
+  // catalog as the brand sees it: a brand marks what it has, prices its
+  // add-ons for the whole brand and stops an option in its stores. The old
+  // add-in library stays as a second tab while the brand still has entries
+  // (adding, renaming and deleting those is the platform team's, see
+  // `canEditAddInLibrary`).
   ingredients: [SA, BA, SM, ME],
+  // «Каталог добавок»: the platform's one catalog of option groups — only
+  // the takeAway team creates, edits, orders and deletes groups and options.
+  optionCatalog: [SA],
   // Per-store "ran out" switches for dishes, drinks and add-ins. Kitchen
   // STAFF work it; it only toggles, so the menu editor role is not needed.
   stopList: [SA, BA, SM, ST],
@@ -133,6 +138,7 @@ const NAV_LINKS: Record<NavKey, string> = {
   kitchen: '/kitchen',
   menu: '/menu',
   ingredients: '/ingredients',
+  optionCatalog: '/option-catalog',
   stopList: '/stop-list',
   stores: '/stores',
   orders: '/orders',

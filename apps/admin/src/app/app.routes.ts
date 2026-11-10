@@ -184,7 +184,13 @@ export const appRoutes: Route[] = [
         path: 'ingredients',
         canActivate: [adminPermissionGuard],
         data: { navKey: 'ingredients' satisfies NavKey },
-        loadComponent: () => import('./features/ingredients/ingredients.page').then((m) => m.IngredientsPage),
+        loadComponent: () => import('./features/brand-options/brand-options.page').then((m) => m.BrandOptionsPage),
+      },
+      {
+        path: 'option-catalog',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'optionCatalog' satisfies NavKey },
+        loadComponent: () => import('./features/option-catalog/option-catalog.page').then((m) => m.OptionCatalogPage),
       },
       {
         path: 'stop-list',

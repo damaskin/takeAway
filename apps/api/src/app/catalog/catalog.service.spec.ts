@@ -6,6 +6,8 @@ import { FeatureFlagsService } from '../config/feature-flags.service';
 import { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import { StoreAvailabilityService } from '../kitchen/store-availability.service';
 import { typicalPrepCache } from '../kitchen/typical-prep';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
+import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 import { AVAILABLE_OPTION } from './option-availability';
@@ -81,6 +83,7 @@ describe('CatalogService', () => {
         StoreAvailabilityService,
         // BUSY_EXTRA_WAIT_SECONDS unset: the 5-minute default.
         { provide: ConfigService, useValue: { get: () => undefined } },
+        { provide: ProductOptionGroupsService, useValue: optionGroupsStub() },
       ],
     }).compile();
 

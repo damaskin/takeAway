@@ -287,7 +287,12 @@ export class TelegramBridgeService {
    */
   private mainButtonHandler: (() => void) | null = null;
 
-  setMainButton(text: string, handler: () => void): void {
+  /**
+   * Shows Telegram's main button with this label and action. `enabled: false`
+   * keeps it on screen but inert — the label then says why (a product page
+   * with a size still to pick).
+   */
+  setMainButton(text: string, handler: () => void, enabled = true): void {
     const btn = window.Telegram?.WebApp?.MainButton;
     if (!btn) return;
     this.dropMainButtonHandler();
@@ -295,7 +300,8 @@ export class TelegramBridgeService {
     btn.onClick(handler);
     this.mainButtonHandler = handler;
     btn.show();
-    btn.enable();
+    if (enabled) btn.enable();
+    else btn.disable();
   }
 
   hideMainButton(): void {

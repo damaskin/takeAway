@@ -115,6 +115,22 @@ enum CategoryKind {
   OTHER
 }
 
+/// Options catalog (item 17): a variant changes the product and its price
+/// (size, serving, meat), an add-on goes on top (milk, syrup, «Без лука»).
+enum OptionGroupKind {
+  VARIANT
+  ADDON
+}
+
+/// Options catalog: A — pick from a list (min/max), B — yes/no on every
+/// option, C — a counter on every option. D is reserved and never created.
+enum OptionGroupType {
+  A
+  B
+  C
+  D
+}
+
 /// What an option of a category's option set becomes on a product.
 enum CategoryOptionKind {
   VARIATION
@@ -648,6 +664,7 @@ model Brand {
   categories      Category[]
   products        Product[]
   ingredients     Ingredient[]
+  optionSettings  BrandOptionSetting[]
   promos          Promo[]
   posIntegrations PosIntegration[]
   giftCards       GiftCard[]
@@ -1074,6 +1091,7 @@ model Store {
   stopListEntries StopListEntry[]
   productListings ProductStore[]
   ingredientStops StoreIngredientStop[]
+  optionStops     StoreOptionStop[]
   carts           Cart[]
   orders          Order[]
   orderReviews    OrderReview[]
@@ -1259,13 +1277,15 @@ model Product {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
-  brand           Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  category        Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand           Brand                   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  category        Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variations      Variation[]
   modifiers       Modifier[]
   stopListEntries StopListEntry[]
   stores          ProductStore[]
   cartItems       CartItem[]
+  optionGroups    ProductOptionGroup[]
+  optionOverrides ProductOptionOverride[]
 
   @@unique([brandId, slug])
   @@unique([brandId, externalProvider, externalId])
@@ -1390,6 +1410,132 @@ model CategoryOption {
   @@index([ingredientId])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Options catalog («Добавки и варианты», item 17, docs/option-groups.md)
+//
+// One catalog for the whole platform, kept by SUPER_ADMIN. A brand attaches
+// catalog groups to its products, prices its add-ons once for the brand,
+// switches off what it does not have; a store stops what has run out.
+// A product with groups attached is ordered through them only; the older
+// per-product `Variation` / `Modifier` rows stay for products without.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A catalog group: «Размер (кофе)», «Молоко», «Сахар».
+model OptionGroup {
+  id             String          @id @default(cuid())
+  kind           OptionGroupKind
+  type           OptionGroupType
+  name           String          @unique
+  /// A only: how many options may be picked (a VARIANT group always asks
+  /// for at least one). Null for B and C.
+  minSelect      Int?
+  maxSelect      Int?
+  /// Shown only while this option is picked («Лёд» ← «Холодный»), when the
+  /// option's group is on the product. Clearing the option clears it.
+  showIfOptionId String?
+  sortOrder      Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  showIfOption OptionItem?          @relation("OptionGroupShowIf", fields: [showIfOptionId], references: [id], onDelete: SetNull)
+  options      OptionItem[]
+  products     ProductOptionGroup[]
+
+  @@index([kind, sortOrder])
+}
+
+/// A catalog option: «M», «Овсяное», «Сахар».
+model OptionItem {
+  id         String   @id @default(cuid())
+  groupId    String
+  name       String
+  /// Second line under the name («300–350 мл»).
+  note       String?
+  /// A and B: picked when the product page opens (a product may override).
+  isDefault  Boolean  @default(false)
+  /// C only: the counter's bounds and starting value; `defaultQty` units are
+  /// in the base price.
+  minQty     Int?
+  maxQty     Int?
+  defaultQty Int?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  group            OptionGroup             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  showsGroups      OptionGroup[]           @relation("OptionGroupShowIf")
+  brandSettings    BrandOptionSetting[]
+  storeStops       StoreOptionStop[]
+  productOverrides ProductOptionOverride[]
+
+  @@unique([groupId, name])
+  @@index([groupId, sortOrder])
+}
+
+/// A catalog option as one brand has it. No row = enabled at price 0.
+model BrandOptionSetting {
+  brandId    String
+  optionId   String
+  /// ADDON: its price for the whole brand (C: per unit above `defaultQty`).
+  /// Not read for VARIANT options — those are priced per product.
+  priceCents Int      @default(0)
+  /// False = the brand does not have it: hidden from its customers.
+  enabled    Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+
+  brand  Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  option OptionItem @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([brandId, optionId])
+  @@index([optionId])
+}
+
+/// One store has run out of a catalog option: shown greyed out there,
+/// refused by its cart. `expiresAt` lifts it by itself; null = until
+/// switched back on.
+model StoreOptionStop {
+  storeId   String
+  optionId  String
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  store  Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  option OptionItem @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, optionId])
+  @@index([optionId])
+}
+
+/// A catalog group attached to a product.
+model ProductOptionGroup {
+  productId String
+  groupId   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  group   OptionGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@id([productId, groupId])
+  @@index([groupId])
+}
+
+/// A product's own value for one option: a variant's price, another default.
+model ProductOptionOverride {
+  productId  String
+  optionId   String
+  /// VARIANT options: what picking it adds to the base price (may be < 0).
+  priceCents Int?
+  /// A and B: the product's own default; null = the catalog's.
+  isDefault  Boolean?
+
+  product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  option  OptionItem @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@id([productId, optionId])
+  @@index([optionId])
+}
+
 model StopListEntry {
   id        String    @id @default(cuid())
   storeId   String
@@ -1480,6 +1626,9 @@ model CartItem {
   // Map of { modifierId: count } as a small JSON blob. Avoids a join table
   // for a tiny list and keeps writes atomic.
   modifiersJson   Json     @default("{}")
+  /// Picks from the options catalog, `[{ optionId, qty }]` sorted by option
+  /// id (a product with catalog groups; then the two above are empty).
+  optionsJson     Json     @default("[]")
   unitPriceCents  Int
   unitPrepSeconds Int
   notes           String?
@@ -1548,32 +1697,32 @@ model GiftCardRedemption {
 }
 
 model Order {
-  id                  String          @id @default(cuid())
+  id                  String             @id @default(cuid())
   userId              String
   storeId             String
-  status              OrderStatus     @default(CREATED)
-  fulfillmentType     FulfillmentType @default(PICKUP)
-  pickupMode          PickupMode      @default(ASAP)
+  status              OrderStatus        @default(CREATED)
+  fulfillmentType     FulfillmentType    @default(PICKUP)
+  pickupMode          PickupMode         @default(ASAP)
   // UTC. For ASAP it's the moment we expect to hand it over.
   pickupAt            DateTime
   subtotalCents       Int
-  discountCents       Int             @default(0)
-  taxCents            Int             @default(0)
+  discountCents       Int                @default(0)
+  taxCents            Int                @default(0)
   totalCents          Int
   currency            Currency
   // 4-digit human-readable code shown to the customer and barista.
-  orderCode           String          @unique
+  orderCode           String             @unique
   // Opaque token embedded in the pickup QR; independent of the short code.
-  qrToken             String          @unique
+  qrToken             String             @unique
   paymentIntentId     String?
   /// Seconds the customer waits once the kitchen starts on their order —
   /// the longest single item, because a barista pulls a shot while the milk
   /// steams. Snapshotted at creation so a later menu edit cannot rewrite it.
-  prepSeconds         Int             @default(0)
+  prepSeconds         Int                @default(0)
   /// Seconds of kitchen time this order consumes, summed across items. This
   /// is what loads the queue for everyone behind it, and it is deliberately
   /// a different number from prepSeconds.
-  workSeconds         Int             @default(0)
+  workSeconds         Int                @default(0)
   customerName        String?
   customerPhone       String?
   notes               String?
@@ -1582,12 +1731,12 @@ model Order {
   /// keep the original code alongside the redemption row even if the
   /// gift card is later cancelled.
   giftCardCode        String?
-  giftCardCents       Int             @default(0)
+  giftCardCents       Int                @default(0)
   /// Loyalty points the customer burned on this order, and what they were
   /// worth. Kept separate from `discountCents` so a receipt can say
   /// "you spent 250 points" rather than just showing a smaller number.
-  pointsSpent         Int             @default(0)
-  pointsDiscountCents Int             @default(0)
+  pointsSpent         Int                @default(0)
+  pointsDiscountCents Int                @default(0)
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.
@@ -1596,7 +1745,7 @@ model Order {
   deliveryLatitude    Float?
   deliveryLongitude   Float?
   deliveryNotes       String?
-  deliveryFeeCents    Int             @default(0)
+  deliveryFeeCents    Int                @default(0)
   /// Estimated distance from store to delivery address (metres). Optional —
   /// geocoding/distance estimation is a follow-up, stored here when available.
   deliveryDistanceM   Int?
@@ -1605,7 +1754,7 @@ model Order {
   /// or Poster transactionId), set after a successful ORDER_PUSH job.
   posExternalId       String?
   // Status timeline — denormalized from OrderEvent for quick queries.
-  createdAt           DateTime        @default(now())
+  createdAt           DateTime           @default(now())
   acceptedAt          DateTime?
   startedAt           DateTime?
   readyAt             DateTime?
@@ -1648,7 +1797,7 @@ model Order {
   /// L of the queue policy: the store was «Загружены» (OVERLOADED) when the
   /// order was placed, so its accept time grows by the store's N. Switching
   /// the load off later does not move the order.
-  placedUnderLoad     Boolean         @default(false)
+  placedUnderLoad     Boolean            @default(false)
 
   user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -1673,7 +1822,7 @@ model Order {
 }
 
 model OrderItem {
-  id              String @id @default(cuid())
+  id              String   @id @default(cuid())
   orderId         String
   // Full product/variations/modifiers snapshot at the moment of order
   // creation so price/stock edits do not mutate history.

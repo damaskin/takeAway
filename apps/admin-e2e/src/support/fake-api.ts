@@ -147,6 +147,18 @@ export const AVAILABILITY = {
     },
   ],
   ingredients: [{ id: OAT_MILK.id, name: OAT_MILK.name, isAvailable: true, stop: null, productNames: [PRODUCT.name] }],
+  // Catalog options the store uses (their group is on a product sold here) and the brand has.
+  options: [
+    {
+      id: 'opt-vanilla',
+      name: 'Ваниль',
+      note: null,
+      groupId: 'g-syrup',
+      groupName: 'Сиропы',
+      stop: null,
+      productNames: [PRODUCT.name],
+    },
+  ],
 };
 
 const PERIOD = {
@@ -420,10 +432,282 @@ function json(route: Route, body: unknown, status = 200): Promise<void> {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
+// ─── Options catalog («Добавки и варианты», docs/option-groups.md) ──────────
+
+interface FakeOption {
+  id: string;
+  groupId: string;
+  name: string;
+  note: string | null;
+  isDefault: boolean;
+  minQty: number | null;
+  maxQty: number | null;
+  defaultQty: number | null;
+  sortOrder: number;
+}
+
+interface FakeGroup {
+  id: string;
+  kind: 'VARIANT' | 'ADDON';
+  type: 'A' | 'B' | 'C';
+  name: string;
+  minSelect: number | null;
+  maxSelect: number | null;
+  showIfOptionId: string | null;
+  sortOrder: number;
+  options: FakeOption[];
+}
+
+interface FakeSetting {
+  optionId: string;
+  priceCents: number;
+  enabled: boolean;
+  stoppedStoreIds: string[];
+}
+
+interface FakeProductGroups {
+  groups: Array<{ groupId: string; sortOrder: number }>;
+  overrides: Array<{ optionId: string; priceCents: number | null; isDefault: boolean | null }>;
+}
+
+function fakeOption(
+  groupId: string,
+  id: string,
+  name: string,
+  sortOrder: number,
+  extra: Partial<FakeOption> = {},
+): FakeOption {
+  return {
+    id,
+    groupId,
+    name,
+    note: null,
+    isDefault: false,
+    minQty: null,
+    maxQty: null,
+    defaultQty: null,
+    sortOrder,
+    ...extra,
+  };
+}
+
+/** A slice of the seed (spec §7): coffee sizes and serving, milk, syrups, sugar, ice on iced. */
+function seedOptionGroups(): FakeGroup[] {
+  const group = (g: Omit<FakeGroup, 'minSelect' | 'maxSelect' | 'showIfOptionId'> & Partial<FakeGroup>): FakeGroup => ({
+    minSelect: null,
+    maxSelect: null,
+    showIfOptionId: null,
+    ...g,
+  });
+  return [
+    group({
+      id: 'g-size',
+      kind: 'VARIANT',
+      type: 'A',
+      name: 'Размер (кофе)',
+      minSelect: 1,
+      maxSelect: 1,
+      sortOrder: 0,
+      options: [
+        fakeOption('g-size', 'opt-s', 'S', 0, { note: '150–250 мл' }),
+        fakeOption('g-size', 'opt-m', 'M', 1, { note: '300–350 мл', isDefault: true }),
+        fakeOption('g-size', 'opt-l', 'L', 2, { note: '400–450 мл' }),
+      ],
+    }),
+    group({
+      id: 'g-serve',
+      kind: 'VARIANT',
+      type: 'A',
+      name: 'Подача',
+      minSelect: 1,
+      maxSelect: 1,
+      sortOrder: 1,
+      options: [
+        fakeOption('g-serve', 'opt-hot', 'Горячий', 0, { isDefault: true }),
+        fakeOption('g-serve', 'opt-cold', 'Холодный', 1),
+      ],
+    }),
+    group({
+      id: 'g-milk',
+      kind: 'ADDON',
+      type: 'A',
+      name: 'Молоко',
+      minSelect: 1,
+      maxSelect: 1,
+      sortOrder: 2,
+      options: [
+        fakeOption('g-milk', 'opt-cow', 'Коровье', 0, { isDefault: true }),
+        fakeOption('g-milk', 'opt-oat', 'Овсяное', 1),
+      ],
+    }),
+    group({
+      id: 'g-syrup',
+      kind: 'ADDON',
+      type: 'A',
+      name: 'Сиропы',
+      minSelect: 0,
+      maxSelect: 2,
+      sortOrder: 3,
+      options: [fakeOption('g-syrup', 'opt-vanilla', 'Ваниль', 0), fakeOption('g-syrup', 'opt-caramel', 'Карамель', 1)],
+    }),
+    group({
+      id: 'g-sugar',
+      kind: 'ADDON',
+      type: 'C',
+      name: 'Сахар',
+      sortOrder: 4,
+      options: [fakeOption('g-sugar', 'opt-sugar', 'Сахар', 0, { minQty: 0, maxQty: 3, defaultQty: 0 })],
+    }),
+    group({
+      id: 'g-ice',
+      kind: 'ADDON',
+      type: 'C',
+      name: 'Лёд',
+      showIfOptionId: 'opt-cold',
+      sortOrder: 5,
+      options: [fakeOption('g-ice', 'opt-ice', 'Лёд', 0, { minQty: 0, maxQty: 3, defaultQty: 0 })],
+    }),
+  ];
+}
+
+/**
+ * The catalog endpoints over one in-memory state per browser context, so a
+ * suite sees what it created: SUPER_ADMIN's groups and options, the brand's
+ * prices, switches and store stops, a product's attached groups and the
+ * brand's old options. Answers null for a path it does not own.
+ */
+function optionsCatalog() {
+  const groups = seedOptionGroups();
+  const settings = new Map<string, FakeSetting>([
+    ['opt-oat', { optionId: 'opt-oat', priceCents: 1000, enabled: true, stoppedStoreIds: [] }],
+  ]);
+  const products = new Map<string, FakeProductGroups>();
+  let legacy = { products: 1, variations: 0, modifiers: 1, categoryOptions: 0, ingredients: 1 };
+  let nextId = 1;
+
+  const productCount = (groupId: string) =>
+    [...products.values()].filter((c) => c.groups.some((g) => g.groupId === groupId)).length;
+  const listed = () => groups.map((g) => ({ ...g, productCount: productCount(g.id) }));
+  const findOption = (id: string) => groups.flatMap((g) => g.options).find((o) => o.id === id);
+  const setting = (optionId: string): FakeSetting =>
+    settings.get(optionId) ?? { optionId, priceCents: 0, enabled: true, stoppedStoreIds: [] };
+
+  return async (route: Route, path: string): Promise<void | null> => {
+    const method = route.request().method();
+    const body = () => (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+    let m: RegExpExecArray | null;
+
+    if (path === '/admin/option-groups') {
+      if (method === 'POST') {
+        const created: FakeGroup = {
+          minSelect: null,
+          maxSelect: null,
+          showIfOptionId: null,
+          sortOrder: groups.length,
+          ...(body() as Partial<FakeGroup>),
+          id: `g-new-${nextId++}`,
+          options: [],
+        } as FakeGroup;
+        groups.push(created);
+        return json(route, { ...created, productCount: 0 }, 201);
+      }
+      return json(route, listed());
+    }
+    if ((m = /^\/admin\/option-groups\/([^/]+)\/options$/.exec(path)) && method === 'POST') {
+      const group = groups.find((g) => g.id === m?.[1]);
+      if (!group) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      const created = fakeOption(
+        group.id,
+        `opt-new-${nextId++}`,
+        '',
+        group.options.length,
+        body() as Partial<FakeOption>,
+      );
+      group.options.push(created);
+      return json(route, created, 201);
+    }
+    if ((m = /^\/admin\/option-groups\/([^/]+)$/.exec(path))) {
+      const index = groups.findIndex((g) => g.id === m?.[1]);
+      const group = groups[index];
+      if (!group) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      if (method === 'DELETE') {
+        if (productCount(group.id) > 0) {
+          return json(
+            route,
+            {
+              statusCode: 409,
+              error: 'Conflict',
+              code: 'OPTION_GROUP_IN_USE',
+              message: 'The group is attached to products',
+            },
+            409,
+          );
+        }
+        groups.splice(index, 1);
+        return route.fulfill({ status: 204 });
+      }
+      Object.assign(group, body());
+      return json(route, { ...group, productCount: productCount(group.id) });
+    }
+    if ((m = /^\/admin\/option-items\/([^/]+)$/.exec(path))) {
+      const option = findOption(m[1] ?? '');
+      const group = groups.find((g) => g.id === option?.groupId);
+      if (!option || !group) return json(route, { statusCode: 404, message: 'Not found' }, 404);
+      if (method === 'DELETE') {
+        group.options = group.options.filter((o) => o.id !== option.id);
+        return route.fulfill({ status: 204 });
+      }
+      Object.assign(option, body());
+      return json(route, option);
+    }
+    if (/^\/admin\/brands\/[^/]+\/options$/.test(path)) {
+      return json(route, { groups: listed(), settings: [...settings.values()] });
+    }
+    if ((m = /^\/admin\/brands\/[^/]+\/options\/([^/]+)$/.exec(path)) && method === 'PATCH') {
+      const optionId = m[1] ?? '';
+      const next = { ...setting(optionId), ...(body() as Partial<FakeSetting>) };
+      settings.set(optionId, next);
+      return json(route, next);
+    }
+    if ((m = /^\/admin\/stores\/([^/]+)\/option-stops\/([^/]+)$/.exec(path))) {
+      const storeId = m[1] ?? '';
+      const optionId = m[2] ?? '';
+      const current = setting(optionId);
+      const others = current.stoppedStoreIds.filter((id) => id !== storeId);
+      if (method === 'DELETE') {
+        settings.set(optionId, { ...current, stoppedStoreIds: others });
+        return route.fulfill({ status: 204 });
+      }
+      settings.set(optionId, { ...current, stoppedStoreIds: [...others, storeId] });
+      return json(route, { expiresAt: (body()['expiresAt'] as string | null | undefined) ?? null });
+    }
+    if ((m = /^\/admin\/products\/([^/]+)\/option-groups$/.exec(path))) {
+      const productId = m[1] ?? '';
+      if (method === 'PUT') {
+        const config = body() as unknown as FakeProductGroups;
+        products.set(productId, config);
+        return json(route, config);
+      }
+      return json(route, products.get(productId) ?? { groups: [], overrides: [] });
+    }
+    if (/^\/admin\/brands\/[^/]+\/legacy-options$/.test(path)) return json(route, legacy);
+    if (/^\/admin\/brands\/[^/]+\/legacy-options\/clear$/.test(path) && method === 'POST') {
+      const deleted = legacy;
+      legacy = { products: 0, variations: 0, modifiers: 0, categoryOptions: 0, ingredients: 0 };
+      return json(route, deleted);
+    }
+    return null;
+  };
+}
+
 /** `role` must match the one {@link signIn} used: `/auth/me` answers with it. */
 export async function installFakeApi(context: BrowserContext, role: FakeRole = 'SUPER_ADMIN'): Promise<void> {
+  const options = optionsCatalog();
   await context.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/api/, '');
+
+    const handled = await options(route, path);
+    if (handled !== null) return handled;
 
     if (path === '/config/features') {
       return json(route, {

@@ -54,8 +54,12 @@ String addonGroupSummary(AddonGroup group, Map<String, int> counts) => [
 ].join(', ');
 
 /// Human summary of the chosen options — "Large · Oat milk · 2× Shot", size
-/// first. Names come from the product details (carts and orders store only
-/// ids), so it is empty until they arrive.
+/// first. The older options' names come from the product details (carts and
+/// orders store only their ids), so those are left out until they arrive.
+///
+/// Picks from the options catalog ([optionLines] of a cart or order line)
+/// carry their names and read as the kitchen and the web read them: "M,
+/// Горячий · Овсяное · Ваниль + Солёная карамель · Сахар ×2".
 ///
 /// [onlyChoices] leaves out a variation that is the only one of its type —
 /// the product screen does not repeat what the customer could not choose.
@@ -63,9 +67,11 @@ String optionsSummary(
   ProductDetail? product,
   Iterable<String> variationIds,
   Map<String, int> modifiers, {
+  List<OptionLine> optionLines = const [],
   bool onlyChoices = false,
 }) {
-  if (product == null) return '';
+  final catalog = describeOptionLines(optionLines);
+  if (product == null) return catalog;
   final chosen = variationIds.toSet();
   final parts = <String>[
     for (final type in variationOrder)
@@ -75,8 +81,36 @@ String optionsSummary(
             if (chosen.contains(v.id)) v.name,
     for (final m in [...product.modifiers]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)))
       if ((modifiers[m.id] ?? 0) > 0) _counted(m, modifiers[m.id]!),
+    if (catalog.isNotEmpty) catalog,
   ];
   return parts.join(' · ');
+}
+
+/// The catalog picks to keep when a fresher copy of the product arrives
+/// while the customer is choosing: what is still offered stays as they left
+/// it (a count within its bounds); a group whose every pick ran out starts
+/// over from its defaults; then the picks of hidden groups are dropped.
+OptionPicks keepOfferedPicks(List<ProductOptionGroup> groups, OptionPicks picks) {
+  final defaults = defaultOptionPicks(groups);
+  final next = <String, int>{};
+  for (final group in groups) {
+    final had = [
+      for (final option in group.options)
+        if ((picks[option.id] ?? 0) > 0) option,
+    ];
+    final kept = had.where((option) => option.available).toList();
+    if (had.isNotEmpty && kept.isEmpty) {
+      for (final option in group.options) {
+        if (defaults[option.id] case final qty?) next[option.id] = qty;
+      }
+      continue;
+    }
+    for (final option in kept) {
+      final bounds = qtyBounds(option);
+      next[option.id] = group.type == OptionGroupType.c ? picks[option.id]!.clamp(bounds.min, bounds.max) : 1;
+    }
+  }
+  return normalizeOptionPicks(groups, next);
 }
 
 String _counted(Modifier m, int count) => count > 1 ? '$count× ${m.name}' : m.name;

@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
+  OptionLine,
   OrderCancelMoney,
   OrderCancelReason,
   OrderCancelledBy,
@@ -45,6 +46,8 @@ export interface AdminOrderItem {
   /** Size first. Empty on orders placed before options were snapshotted. */
   variations: OrderItemVariation[];
   modifierLines: OrderItemModifier[];
+  /** Picks from the options catalog, as bought. Missing from an API older than the catalog. */
+  optionLines?: OptionLine[];
   /** The customer's note for this line. */
   notes: string | null;
   quantity: number;

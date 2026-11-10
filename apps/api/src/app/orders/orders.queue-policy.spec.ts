@@ -1,6 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 
 import { CartService, type StoreProduct } from '../cart/cart.service';
+import { optionGroupsStub } from '../option-groups/testing/option-groups.stub';
 import type { FeatureFlagsService } from '../config/feature-flags.service';
 import type { DeliveryFeeService } from '../delivery/delivery-fee.service';
 import type { GiftCardsService } from '../gift-cards/gift-cards.service';
@@ -64,6 +65,7 @@ function line(p: StoreProduct, quantity: number) {
     quantity,
     variationIds: [],
     modifiersJson: {},
+    optionsJson: [],
     unitPriceCents: 300,
     unitPrepSeconds: p.prepTimeSeconds,
     notes: null,
@@ -189,6 +191,7 @@ function harness() {
     prisma as unknown as PrismaService,
     kitchen as unknown as KitchenLoadService,
     availability as unknown as StoreAvailabilityService,
+    optionGroupsStub(),
   );
   const service = new OrdersService(
     prisma as unknown as PrismaService,

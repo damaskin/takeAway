@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test';
 import { installFakeApi, signIn } from './support/fake-api';
 
 /**
- * The add-ons library («Добавки»): each add-on with its usual price and the
- * products it is in. Oat milk marked as run out in one place hides every
- * product's oat-milk option for customers.
+ * The old add-ons library — since 2026-11-09 the «Старые добавки» tab of
+ * «Добавки», there while the brand still has entries (the options catalog
+ * is the first tab, see options-catalog.spec.ts): each add-on with its
+ * usual price and the products it is in. Oat milk marked as run out in one
+ * place hides every product's oat-milk option for customers.
  *
  * The platform team adds, renames and deletes add-ins; since 2026-11-06 a
  * brand's menu roles open the page too, to switch add-ins on and off and set
@@ -24,6 +26,7 @@ test.describe('the platform team', () => {
 
     await expect(page).toHaveURL(/\/ingredients$/);
     await expect(page.getByRole('heading', { name: 'Добавки', level: 1 })).toBeVisible();
+    await page.getByRole('tab', { name: /Старые добавки/ }).click();
     const row = page.getByTestId('ingredient-row').filter({ hasText: 'Овсяное молоко' });
     await expect(row.getByTestId('ingredient-price')).toHaveText('+5 MDL');
     await expect(row.getByTestId('ingredient-usage')).toHaveText('В товарах (1): Flat White');
@@ -39,7 +42,7 @@ test.describe('the platform team', () => {
   });
 
   test('can add and delete add-ins', async ({ page }) => {
-    await page.goto('/ingredients');
+    await page.goto('/ingredients?tab=legacy');
     await expect(page.getByTestId('ingredient-add')).toBeVisible();
     await expect(page.getByTestId('ingredient-delete')).toBeVisible();
   });
@@ -55,6 +58,7 @@ test.describe('a brand', () => {
     await page.goto('/menu');
     await page.getByRole('link', { name: 'Добавки' }).click();
     await expect(page).toHaveURL(/\/ingredients$/);
+    await page.getByRole('tab', { name: /Старые добавки/ }).click();
 
     await expect(page.getByTestId('ingredients-hint')).toContainText('команды takeAway');
     await expect(page.getByTestId('ingredient-add')).toHaveCount(0);

@@ -4,7 +4,8 @@ import { installFakeApi, signIn } from './support/fake-api';
 
 /**
  * The stop-list: from the kitchen board a cook opens the store's stop-list,
- * puts a dish in the stop, and does the same for an add-in.
+ * puts a dish in the stop, and does the same for an add-in and an option of
+ * the catalog.
  */
 
 test.beforeEach(async ({ context }) => {
@@ -26,7 +27,7 @@ test('puts a dish and an add-in in the stop from the kitchen', async ({ page }) 
   expect((await stopped).postDataJSON()).toEqual({ productId: 'product-1' });
   await expect(dish.getByRole('switch')).toHaveText(/В стопе/);
 
-  await page.getByRole('button', { name: /Добавки · 1/ }).click();
+  await page.getByRole('button', { name: /Добавки · 2/ }).click();
   const addin = page.getByTestId('stop-row').filter({ hasText: 'Овсяное молоко' });
   const addinStopped = page.waitForRequest(
     (req) =>
@@ -35,4 +36,15 @@ test('puts a dish and an add-in in the stop from the kitchen', async ({ page }) 
   await addin.getByRole('switch', { name: 'Овсяное молоко' }).click();
   await addinStopped;
   await expect(addin.getByRole('switch')).toHaveText(/В стопе/);
+
+  // The options of the catalog the brand has, under their groups (2026-11-09).
+  await expect(page.getByRole('heading', { name: 'Сиропы' })).toBeVisible();
+  const vanilla = page.getByTestId('stop-row').filter({ hasText: 'Ваниль' });
+  const optionStopped = page.waitForRequest(
+    (req) =>
+      req.method() === 'PUT' && new URL(req.url()).pathname.endsWith('/admin/stores/store-1/option-stops/opt-vanilla'),
+  );
+  await vanilla.getByRole('switch', { name: 'Ваниль' }).click();
+  expect((await optionStopped).postDataJSON()).toEqual({ expiresAt: null });
+  await expect(vanilla.getByRole('switch')).toHaveText(/В стопе/);
 });

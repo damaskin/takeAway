@@ -62,6 +62,11 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// The `cartId` each pickup-slots request was made with.
   final slotCartIds = <String?>[];
 
+  /// Error body the next add to the cart is refused with (400), e.g.
+  /// `{'code': 'OPTIONS_INVALID', 'errors': [...]}`; null = it goes in (a
+  /// catalog product is still checked against its groups, as the API does).
+  Map<String, dynamic>? cartRefusal;
+
   /// Error body the next order is refused with (400), e.g.
   /// `{'code': 'ASAP_UNAVAILABLE', 'reason': 'QUEUE_FULL'}`; null = placed.
   Map<String, dynamic>? orderRefusal;
@@ -256,7 +261,10 @@ class FakeApi extends Fake implements TakeAwayApi {
     'modifiers': <Object>[],
   });
 
-  void seedCart(ProductDetail product, {int quantity = 1}) {
+  /// A line already in the cart; a catalog product with [picks] carries its
+  /// option lines and price, as the API makes them.
+  void seedCart(ProductDetail product, {int quantity = 1, OptionPicks? picks}) {
+    final groups = product.optionGroups;
     _cartItems.add(
       CartItem(
         id: 'ci_${++_itemSeq}',
@@ -265,7 +273,10 @@ class FakeApi extends Fake implements TakeAwayApi {
         quantity: quantity,
         variationIds: const [],
         modifiers: const {},
-        unitPriceCents: product.basePriceCents,
+        options: picks == null ? const [] : optionLinesFor(groups, picks),
+        unitPriceCents: picks == null
+            ? product.basePriceCents
+            : priceWithOptionPicks(product.basePriceCents, groups, picks),
         unitPrepSeconds: product.prepTimeSeconds,
       ),
     );
@@ -286,6 +297,9 @@ class FakeApi extends Fake implements TakeAwayApi {
     String? cancelMoney,
     bool? canReview,
     Map<String, dynamic>? review,
+
+    /// Lines in place of the one croissant, as API JSON.
+    List<Map<String, dynamic>>? items,
   }) => Order.fromJson({
     'id': 'ord_1',
     'orderCode': '4821',
@@ -304,20 +318,22 @@ class FakeApi extends Fake implements TakeAwayApi {
     'storeLatitude': storeLatitude,
     'storeLongitude': storeLongitude,
     'storeAddress': 'ул. 25 Октября, 94',
-    'items': [
-      {
-        'id': 'it_1',
-        'productSnapshot': {
-          'id': 'p_croissant',
-          'name': 'Круассан',
-          'variationIds': <String>[],
-          'modifiers': <String, int>{},
-        },
-        'quantity': 1,
-        'unitPriceCents': 2000,
-        'totalCents': 2000,
-      },
-    ],
+    'items':
+        items ??
+        [
+          {
+            'id': 'it_1',
+            'productSnapshot': {
+              'id': 'p_croissant',
+              'name': 'Круассан',
+              'variationIds': <String>[],
+              'modifiers': <String, int>{},
+            },
+            'quantity': 1,
+            'unitPriceCents': 2000,
+            'totalCents': 2000,
+          },
+        ],
     'createdAt': DateTime.now().toUtc().toIso8601String(),
     'payment': ?payment,
     'readyEstimateAt': ?readyEstimateAt?.toUtc().toIso8601String(),
@@ -473,13 +489,20 @@ class FakeApi extends Fake implements TakeAwayApi {
     final soldOut = {...this.soldOut, ...?soldOutAt[store]};
     if (soldOut.isEmpty) return detail;
     // What the API does for an add-in marked out of stock: the option is
-    // left out, the product stays.
+    // left out, the product stays. An option of the catalog stays on the
+    // product, greyed out (`available: false`).
     final json = jsonDecode(jsonEncode(detail)) as Map<String, dynamic>;
     for (final key in ['variations', 'modifiers']) {
       json[key] = [
         for (final option in json[key] as List<dynamic>)
           if (!soldOut.contains((option as Map<String, dynamic>)['id'])) option,
       ];
+    }
+    for (final group in json['optionGroups'] as List<dynamic>) {
+      for (final option in (group as Map<String, dynamic>)['options'] as List<dynamic>) {
+        final item = option as Map<String, dynamic>;
+        if (soldOut.contains(item['id'])) item['available'] = false;
+      }
     }
     return ProductDetail.fromJson(json);
   }
@@ -528,7 +551,13 @@ class FakeApi extends Fake implements TakeAwayApi {
   @override
   Future<Cart> addCartItem(AddCartItemRequest body) async {
     added.add(body);
+    final refusal = cartRefusal;
+    if (refusal != null) {
+      cartRefusal = null;
+      throw _apiError('/cart/items', 400, refusal);
+    }
     final product = await this.product(body.productId);
+    if (product.hasOptionGroups) return _addWithOptions(product, body);
     var price = product.basePriceCents;
     for (final v in product.variations) {
       if (body.variationIds?.contains(v.id) ?? false) price += v.priceDeltaCents;
@@ -552,6 +581,53 @@ class FakeApi extends Fake implements TakeAwayApi {
     return _cart();
   }
 
+  /// What the API does for a product on the options catalog: the options
+  /// sent (the defaults when none were), checked and priced by the shared
+  /// rules; a refused choice is a 400 `OPTIONS_REQUIRED` / `OPTIONS_INVALID`.
+  Cart _addWithOptions(ProductDetail product, AddCartItemRequest body) {
+    final groups = product.optionGroups;
+    final sent = body.options;
+    final picks = sent == null ? defaultOptionPicks(groups) : fromOptionSelections(sent);
+    final errors = validateOptionPicks(groups, picks);
+    if (errors.isNotEmpty) {
+      throw _apiError('/cart/items', 400, {
+        'error': 'Bad Request',
+        'code': sent == null ? 'OPTIONS_REQUIRED' : 'OPTIONS_INVALID',
+        'message': 'Options do not match the menu',
+        'errors': [
+          for (final error in errors)
+            {
+              'code': switch (error.code) {
+                OptionPickErrorCode.unknownOption => 'UNKNOWN_OPTION',
+                OptionPickErrorCode.optionUnavailable => 'OPTION_UNAVAILABLE',
+                OptionPickErrorCode.hiddenGroup => 'HIDDEN_GROUP',
+                OptionPickErrorCode.badQty => 'BAD_QTY',
+                OptionPickErrorCode.tooFew => 'TOO_FEW',
+                OptionPickErrorCode.tooMany || OptionPickErrorCode.unknown => 'TOO_MANY',
+              },
+              'groupId': error.groupId,
+              'optionId': error.optionId,
+            },
+        ],
+      });
+    }
+    _cartItems.add(
+      CartItem(
+        id: 'ci_${++_itemSeq}',
+        productId: product.id,
+        productName: product.name,
+        quantity: body.quantity,
+        variationIds: const [],
+        modifiers: const {},
+        options: optionLinesFor(groups, picks),
+        unitPriceCents: priceWithOptionPicks(product.basePriceCents, groups, picks),
+        unitPrepSeconds: product.prepTimeSeconds,
+        notes: body.notes,
+      ),
+    );
+    return _cart();
+  }
+
   @override
   Future<Cart> updateCartItem(String itemId, Map<String, dynamic> patch) async {
     if (updateDelays.isNotEmpty) await Future<void>.delayed(updateDelays.removeAt(0));
@@ -564,6 +640,7 @@ class FakeApi extends Fake implements TakeAwayApi {
       quantity: patch['quantity'] as int? ?? item.quantity,
       variationIds: item.variationIds,
       modifiers: item.modifiers,
+      options: item.options,
       unitPriceCents: item.unitPriceCents,
       unitPrepSeconds: item.unitPrepSeconds,
     );

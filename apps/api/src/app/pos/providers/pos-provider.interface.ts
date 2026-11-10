@@ -127,9 +127,12 @@ export interface OrderForPush {
 
 export interface OrderForPushItem {
   productExternalId: string;
+  /** The product's name as ordered, for providers that write the line's notes into the order comment. */
+  name?: string;
   quantity: number;
   unitPriceCents: number;
   modifiers: { externalId: string; count: number }[];
+  /** The line's comment: the options catalog picks as text, then the customer's note. */
   notes?: string;
 }
 

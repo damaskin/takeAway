@@ -3,15 +3,20 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
+import type { ProductDetail } from '@takeaway/shared-types';
 import {
+  defaultOptionPicks,
   defaultVariationSelection,
   hasRequiredOptions,
   initialModifierCounts,
+  needsOptionChoice,
+  orderOptionGroups,
+  toOptionSelections,
   type ProductSuggestion,
 } from '@takeaway/utils';
 import { EMPTY, switchMap } from 'rxjs';
 
-import { CartService, type CartView } from '../core/cart/cart.service';
+import { CartService, type AddToCartInput, type CartView } from '../core/cart/cart.service';
 import { CatalogService } from '../core/catalog/catalog.service';
 
 /**
@@ -21,9 +26,9 @@ import { CatalogService } from '../core/catalog/catalog.service';
  * напитку?», «К этому напитку» (see `suggestionRow`).
  *
  * A card opens the product; its «+» adds one straight to the cart with the
- * default size and milk, unless the product has an add-on that must be taken
- * — then the product page opens, so the customer sees what goes in and what
- * it costs.
+ * default size and milk, unless the product has something to choose — a size
+ * with no default, an add-on that must be taken — then the product page
+ * opens, so the customer sees what goes in and what it costs.
  */
 @Component({
   selector: 'app-food-suggestions',
@@ -166,25 +171,21 @@ export class FoodSuggestionsComponent {
     const store = this.store();
     const { product } = suggestion;
     if (this.busy()) return;
+    if (product.hasRequiredOptions) {
+      void this.router.navigate(['/products', product.slug], { queryParams: { store: store.slug } });
+      return;
+    }
     this.busy.set(product.id);
     this.error.set(null);
     this.catalog
       .getProduct(product.slug, store.slug)
       .pipe(
         switchMap((detail) => {
-          if (hasRequiredOptions(detail)) {
+          if (needsChoice(detail)) {
             void this.router.navigate(['/products', product.slug], { queryParams: { store: store.slug } });
             return EMPTY;
           }
-          return this.cart.add({
-            storeId: store.id,
-            productId: detail.id,
-            quantity: 1,
-            variationIds: Object.values(defaultVariationSelection(detail.variations)).filter((id): id is string =>
-              Boolean(id),
-            ),
-            modifiers: initialModifierCounts(detail.modifiers),
-          });
+          return this.cart.add({ storeId: store.id, ...defaultChoice(detail) });
         }),
       )
       .subscribe({
@@ -205,4 +206,28 @@ export class FoodSuggestionsComponent {
         complete: () => this.busy.set(null),
       });
   }
+}
+
+/**
+ * Whether the «+» has to open the product: a choice from the options catalog
+ * its defaults do not make (a size to pick), or an older add-on that must be
+ * taken.
+ */
+function needsChoice(detail: ProductDetail): boolean {
+  const groups = detail.optionGroups ?? [];
+  return groups.length > 0 ? needsOptionChoice(groups) : hasRequiredOptions(detail);
+}
+
+/** One of the product with what its page would start with. */
+function defaultChoice(detail: ProductDetail): Omit<AddToCartInput, 'storeId'> {
+  const groups = orderOptionGroups(detail.optionGroups ?? []);
+  if (groups.length > 0) {
+    return { productId: detail.id, quantity: 1, options: toOptionSelections(defaultOptionPicks(groups)) };
+  }
+  return {
+    productId: detail.id,
+    quantity: 1,
+    variationIds: Object.values(defaultVariationSelection(detail.variations)).filter((id): id is string => Boolean(id)),
+    modifiers: initialModifierCounts(detail.modifiers),
+  };
 }

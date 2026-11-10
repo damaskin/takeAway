@@ -23,17 +23,24 @@ enum QuickAddResult {
   skipped,
 }
 
-/// Whether [product] needs its screen before it can go into the cart: a size
-/// or milk to pick, or an add-on that has to be taken (so its price is seen).
-bool needsChoosing(ProductDetail product) =>
-    product.variations.isNotEmpty || product.modifiers.any((m) => m.minCount > 0);
+/// Whether [product] needs its screen before it can go into the cart. On the
+/// options catalog: when what its page starts with is not a valid choice (a
+/// size with no default to pick, a required portion that ran out) — the
+/// same rule as the menu's `hasRequiredOptions`. On the older options: a
+/// size or milk to pick, or an add-on that has to be taken (so its price is
+/// seen).
+bool needsChoosing(ProductDetail product) => product.hasOptionGroups
+    ? needsOptionChoice(product.optionGroups)
+    : product.variations.isNotEmpty || product.modifiers.any((m) => m.minCount > 0);
 
 /// The «+» on a product outside its own screen — a menu card, the cart's
-/// suggestions. Puts a product with nothing to choose straight into the cart;
-/// one with sizes, milks or required add-ons opens its screen, so nobody
-/// orders a latte without saying which one. Errors (the cart refusing it)
-/// are the caller's to show. [onBusy] runs once the customer is signed in
-/// and the product is being fetched — time to show a spinner.
+/// suggestions. Puts a product with nothing to choose straight into the cart
+/// (a catalog product with its defaults); one with sizes, milks or required
+/// add-ons opens its screen, so nobody orders a latte without saying which
+/// one. A menu product the API marks `hasRequiredOptions` opens at once,
+/// without fetching it first. Errors (the cart refusing it) are the
+/// caller's to show. [onBusy] runs once the customer is signed in and the
+/// product is being fetched — time to show a spinner.
 Future<QuickAddResult> quickAdd(
   BuildContext context,
   WidgetRef ref,
@@ -43,6 +50,10 @@ Future<QuickAddResult> quickAdd(
 }) async {
   // From the live list: the card may have been built before the store closed.
   if (!(ref.read(liveStoreProvider(store.id)) ?? store).takesOrders) return QuickAddResult.skipped;
+  if (product.hasRequiredOptions) {
+    unawaited(context.push(Routes.product(product.id), extra: product));
+    return QuickAddResult.opened;
+  }
   if (!await ensureSignedIn(context, ref)) return QuickAddResult.skipped;
   if (!context.mounted) return QuickAddResult.skipped;
   onBusy?.call();
@@ -54,7 +65,12 @@ Future<QuickAddResult> quickAdd(
     unawaited(context.push(Routes.product(product.id), extra: product));
     return QuickAddResult.opened;
   }
-  await ref.read(cartProvider(store.id).notifier).add(productId: detail.id);
+  await ref
+      .read(cartProvider(store.id).notifier)
+      .add(
+        productId: detail.id,
+        options: detail.hasOptionGroups ? toOptionSelections(defaultOptionPicks(detail.optionGroups)) : null,
+      );
   unawaited(HapticFeedback.mediumImpact());
   return QuickAddResult.added;
 }

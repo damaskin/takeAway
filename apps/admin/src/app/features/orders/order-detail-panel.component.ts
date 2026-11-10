@@ -477,7 +477,11 @@ export class OrderDetailPanelComponent {
       });
   }
 
-  /** "L · Oat · +Vanilla ×2" — empty for a line without options. */
+  /**
+   * "L · Oat · +Vanilla ×2", or for a product on the options catalog
+   * "M, Горячий · Овсяное · Ваниль + Солёная карамель" — empty for a line
+   * without options.
+   */
   options(item: AdminOrderItem): string {
     return describeOrderItemOptions(item);
   }

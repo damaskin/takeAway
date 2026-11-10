@@ -4,6 +4,7 @@ import { MemoryRedis } from '../auth/services/testing/memory-redis';
 import { FeatureFlagsService } from '../config/feature-flags.service';
 import type { KitchenLoadService } from '../kitchen/kitchen-load.service';
 import type { StoreAvailabilityService } from '../kitchen/store-availability.service';
+import { ProductOptionGroupsService } from '../option-groups/product-option-groups.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CatalogService } from './catalog.service';
 import { SuggestionsService } from './suggestions.service';
@@ -78,6 +79,7 @@ suite('store suggestions on Postgres', () => {
       { deliveryEnabled: true } as FeatureFlagsService,
       {} as KitchenLoadService,
       {} as StoreAvailabilityService,
+      new ProductOptionGroupsService(db),
     );
     suggestions = new SuggestionsService(db, new MemoryRedis().asService(), catalog);
     await cleanUp(prisma);

@@ -56,6 +56,21 @@ function build() {
         },
       ]),
     },
+    optionItem: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: 'oi_ice_ice',
+          name: 'Лёд',
+          note: null,
+          group: {
+            id: 'og_ice',
+            name: 'Лёд',
+            products: [{ product: { name: 'Латте' } }, { product: { name: 'Американо' } }],
+          },
+          storeStops: [{ expiresAt: new Date('2026-10-04T21:00:00Z') }],
+        },
+      ]),
+    },
     storeIngredientStop: {
       upsert: jest.fn(({ create }: { create: Record<string, unknown> }) => Promise.resolve(create)),
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -94,7 +109,27 @@ describe('StoreAvailabilityService', () => {
           productNames: ['Капучино', 'Латте'],
         },
       ],
+      options: [
+        {
+          id: 'oi_ice_ice',
+          name: 'Лёд',
+          note: null,
+          groupId: 'og_ice',
+          groupName: 'Лёд',
+          stop: { expiresAt: '2026-10-04T21:00:00.000Z' },
+          productNames: ['Американо', 'Латте'],
+        },
+      ],
     });
+    // Catalog options of the groups on what this store sells, without those the brand switched off.
+    expect(prisma.optionItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          group: { products: { some: { product: { stores: { some: { storeId: 'pizza' } } } } } },
+          brandSettings: { none: { brandId: 'brand-1', enabled: false } },
+        },
+      }),
+    );
     // Only what this store sells.
     expect(prisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

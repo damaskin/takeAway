@@ -3,6 +3,7 @@
  */
 
 import type { AsapBlockedReason, VariationType } from './catalog';
+import type { OptionLine, OptionSelection } from './option-groups';
 import type { OrderReview } from './order-review';
 import type { Currency } from './shared-types';
 
@@ -115,6 +116,12 @@ export interface CartItem {
   quantity: number;
   variationIds: string[];
   modifiers: Record<string, number>;
+  /**
+   * Picks from the options catalog, for a product with catalog groups
+   * attached (then `variationIds` and `modifiers` are empty), with names and
+   * prices. Empty otherwise. Optional for older API builds.
+   */
+  options?: OptionLine[];
   unitPriceCents: number;
   unitPrepSeconds: number;
   notes: string | null;
@@ -136,6 +143,12 @@ export interface AddCartItemInput {
   quantity: number;
   variationIds?: string[];
   modifiers?: Record<string, number>;
+  /**
+   * Picks from the options catalog (a product with catalog groups). Omitted
+   * by clients that predate the catalog: the API then picks every default
+   * and answers 400 `OPTIONS_REQUIRED` when that is not a valid choice.
+   */
+  options?: OptionSelection[];
   notes?: string;
 }
 
@@ -143,6 +156,12 @@ export interface UpdateCartItemInput {
   quantity?: number;
   variationIds?: string[];
   modifiers?: Record<string, number>;
+  /**
+   * Picks from the options catalog (a product with catalog groups). Omitted
+   * by clients that predate the catalog: the API then picks every default
+   * and answers 400 `OPTIONS_REQUIRED` when that is not a valid choice.
+   */
+  options?: OptionSelection[];
   notes?: string;
 }
 
@@ -220,6 +239,12 @@ export type OrderItemSnapshot = {
   /** Size first, then milk, temperature and cup — the order a barista reads them in. */
   variations: OrderItemVariation[];
   modifierLines: OrderItemModifier[];
+  /**
+   * Picks from the options catalog, variants first, in the order the product
+   * page asked. Empty on lines of products without catalog groups and on
+   * orders placed before 2026-11-09.
+   */
+  optionLines: OptionLine[];
 };
 
 export interface OrderItem {

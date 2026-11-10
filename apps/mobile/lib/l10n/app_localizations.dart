@@ -3193,6 +3193,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{stand} server · {host}'**
   String standBadge(String stand, String host);
+
+  /// Under an option of the options catalog the store has run out of; the option is greyed out and cannot be picked.
+  ///
+  /// In en, this message translates to:
+  /// **'Out of stock'**
+  String get optionUnavailable;
+
+  /// Beside a list of options where at least {min} and at most {max} may be picked. When only a maximum applies, productAddonLimit («up to {max}») is shown.
+  ///
+  /// In en, this message translates to:
+  /// **'{min} to {max}'**
+  String optionPickRange(int min, int max);
+
+  /// Under a counted option: how many units the base price already includes (one meat portion in a shawarma).
+  ///
+  /// In en, this message translates to:
+  /// **'{count} included'**
+  String optionIncluded(int count);
+
+  /// Under a counted option: the price of every unit above what is included, e.g. «+25 MDL each».
+  ///
+  /// In en, this message translates to:
+  /// **'{price} each'**
+  String optionPerUnit(String price);
+
+  /// By the disabled add-to-cart button: the option groups that still need a pick, e.g. «Choose: Size».
+  ///
+  /// In en, this message translates to:
+  /// **'Choose: {groups}'**
+  String optionsChoose(String groups);
+
+  /// By the disabled add-to-cart button: a required option has run out, so the item cannot be made.
+  ///
+  /// In en, this message translates to:
+  /// **'Out of stock: {options}'**
+  String optionsOutOfStock(String options);
+
+  /// By the disabled add-to-cart button when the choice breaks some other rule.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your choice'**
+  String get optionsCheck;
+
+  /// Adding to the cart refused: the item has options to pick and none were sent (OPTIONS_REQUIRED).
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the options of this item on its page'**
+  String get errOptionsRequired;
+
+  /// Adding to the cart refused: a picked option is out of stock (OPTIONS_INVALID, OPTION_UNAVAILABLE).
+  ///
+  /// In en, this message translates to:
+  /// **'Something you picked has just run out — choose something else'**
+  String get errOptionsUnavailable;
+
+  /// Adding to the cart refused: a required option group has no pick (OPTIONS_INVALID, TOO_FEW).
+  ///
+  /// In en, this message translates to:
+  /// **'Choose everything this item needs'**
+  String get errOptionsTooFew;
+
+  /// Adding to the cart refused: more picks than a group allows (OPTIONS_INVALID, TOO_MANY).
+  ///
+  /// In en, this message translates to:
+  /// **'Too many add-ons — take some off'**
+  String get errOptionsTooMany;
+
+  /// Adding to the cart refused: the choice no longer matches the menu (OPTIONS_INVALID, other reasons).
+  ///
+  /// In en, this message translates to:
+  /// **'The menu has changed — open the item and choose again'**
+  String get errOptionsChanged;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -287,6 +287,7 @@ takeaway/
   - Базовая цена + диапазон цен с модификаторами
 - **Вариации** (size, temperature, milk, cup): влияют на цену, могут быть связаны
 - **Модификаторы** (shots, syrups, toppings): add-on с плюсом к цене, min/max count; у добавки есть группа (`Modifier.group`: «Сиропы», «Соусы», «Убрать»; пусто — общая «Добавки»), клиенты показывают добавки по группам
+- **Каталог «Добавки и варианты»** (п.17 менеджера, с 2026-11-09; подробно — `docs/option-groups.md`): один каталог групп и пунктов на платформу, ведёт SUPER_ADMIN. Вариант (`VARIANT`: размер, подача, основа, мясо) меняет товар и цену, добавка (`ADDON`: молоко, сироп, сахар, «Без лука») — сверху. Типы: A — выбор из списка (min/max; у варианта минимум 1), B — да/нет у каждого пункта, C — счётчик (min/max/default, `defaultQty` единиц входят в цену); D зарезервирован. Условие показа группы — выбранный пункт другой группы («Лёд» ← «Холодный»); если группы условия нет у товара, группа показывается всегда. Бренд подключает группы к товарам, задаёт одну цену добавки на бренд и выключает пункты, которых у него нет; точка ставит пункт в стоп. Цена позиции = базовая + цены выбранных вариантов (у каждого товара свои) и A/B-добавок + Σ C: цена × max(0, кол-во − default). Правила — одна реализация в `@takeaway/utils` (`option-groups.ts`), порт на Dart — в `libs/api-client-dart` (`option_groups.dart`), менять вместе. Товар с группами каталога продаётся только через них; товар без групп — по старым вариациям и модификаторам, пока SUPER_ADMIN не удалит старые опции бренда.
 - **Вид категории** (`Category.kind`: горячие напитки, холодные напитки, еда, выпечка, другое): по нему кабинет показывает поля товара (молоко, температура и стакан — только напиткам; калории и БЖУ — только еде, `showsNutrition` в `@takeaway/utils`), предлагает готовый набор опций и время приготовления по умолчанию (`Category.defaultPrepTimeSeconds`: кофе 3 мин, шаурма 15), а сайт и Mini App выбирают заглушку товара без фото (`libs/ui-kit/src/assets/product-placeholders`; в мобильном приложении заглушек нет)
 - **Набор опций категории** (`CategoryOption`): варианты и добавки, которые получает каждый товар категории — новый сразу при создании, существующие по кнопке «Применить к товарам категории». Обычно собирается из платформенного пресета вида (`OPTION_PRESETS` в shared-types). Подробнее — 5.3
 - **Меню по точкам**: меню общее для бренда, но каждый товар продаётся только в отмеченных точках (`ProductStore`) — бургерная и пиццерия одного бренда показывают разное; цена везде одна. Категория без товаров этой точки в её меню не показывается
@@ -513,6 +514,8 @@ takeaway/
 
 ### 3.12. POS integrations (расширение оригинального ТЗ)
 
+- **Добавки каталога в Poster** (с 2026-11-09) уходят не модификаторами, а текстом в комментарий к заказу: «takeAway #1234; Капучино ×2: M, Холодный · Овсяное; <комментарий>»; туда же — комментарии клиента к позициям. Синхронизация меню модификаторы Poster не создаёт (ответ Максима: модификаторы из Poster не берём).
+
 Реализованы внешние back-office интеграции для брендов, у которых уже есть iiko или Poster:
 
 - **Pluggable**: `IPosProvider` интерфейс, провайдер выбирается через enum `PosProvider`
@@ -630,6 +633,8 @@ StoreIngredientStop (storeId, ingredientId, expiresAt?)  -- добавка за�
 
 **Группы добавок.** `Modifier.group` — подпись группы на экране товара; `null` — общая группа «Добавки». `Ingredient.group` — группа, в которую попадает добавка, выбранная из справочника («Ваниль» → «Сиропы»); новая группа записи переносится в добавки товаров и наборов, где ещё стоит прежняя. `GET /admin/ingredients/groups?brandId=` — все группы бренда для подсказок.
 
+**Каталог «Добавки и варианты» (с 2026-11-09, `docs/option-groups.md`).** Енамы `OptionGroupKind` (VARIANT / ADDON) и `OptionGroupType` (A / B / C, D зарезервирован). `OptionGroup` — группа каталога (`name` уникально, `minSelect`/`maxSelect` только у A, `showIfOptionId` → `OptionItem`, SetNull). `OptionItem` — пункт (`name` уникально в группе, `note` — вторая строка «300–350 мл», `isDefault`, у C `minQty`/`maxQty`/`defaultQty`). `BrandOptionSetting` (бренд, пункт): `priceCents` — цена добавки на весь бренд (у вариантов не читается), `enabled`; нет строки — пункт есть, цена 0. `StoreOptionStop` (точка, пункт, `expiresAt?`) — стоп в точке. `ProductOptionGroup` (товар, группа, `sortOrder`) — подключённые группы, удаление группы с товарами запрещено (Restrict). `ProductOptionOverride` (товар, пункт): `priceCents` — сколько вариант добавляет к базовой цене этого товара (может быть < 0), `isDefault` — свой выбор по умолчанию. `CartItem.optionsJson` — `[{ optionId, qty }]` по id пункта; `OrderItem.productSnapshot.optionLines` — выбранное с названиями и ценами на момент заказа. Построение групп товара для точки: группы — варианты первыми, затем по `ProductOptionGroup.sortOrder`; пункты, выключенные брендом, не отдаются; группа без пунктов не отдаётся; группа, чьё условие — выключенный брендом пункт группы этого товара, тоже не отдаётся; `available` — нет действующего стопа в точке.
+
 ### 5.4. Cart / Order / Payment
 
 ```
@@ -676,6 +681,8 @@ Payment (id, orderId, provider[STRIPE|TELEGRAM_PAY|...], providerRef?,
 ```
 
 **Миграции 2026-11-09.** `20261109100000_order_cancel_money` — `Order.cancelMoney`; старые отменённые и истёкшие заказы заполнены по событиям возврата и платежам (что не удалось определить — null). `20261109110000_queue_policy` — поля очереди заказов: `Store.loadExtraSeconds`, `Product.prepParallel`, `Order.placedUnderLoad`, `OrderItem.prepSeconds` / `prepParallel`; без бэкфилла — строки заказов, сделанных с выключенным флагом, очередь читает через товар. Подробно — `docs/queue-policy.md`, 2.1.
+
+**Миграция `20261109120000_option_catalog`** — таблицы каталога и `CartItem.optionsJson`; в ней же стартовый каталог кофеен и фастфуда (29 групп, 141 пункт) с постоянными id (`og_coffee_size`, `oi_coffee_size_m`…), `ON CONFLICT DO NOTHING` — безопасно и на проде.
 
 ### 5.5. Loyalty / Promo / Gift cards / Campaigns
 
@@ -861,6 +868,8 @@ GET    /stores/:idOrSlug/menu        (категории + продукты + va
                                      //   категория несёт kind (HOT_DRINKS|COLD_DRINKS|FOOD|BAKERY|OTHER), товар — categoryKind;
                                      //   calories/proteinsGrams/fatsGrams/carbsGrams — null, если вид категории не FOOD (с 2026-11-06)
 GET    /products/:idOrSlug[?store=]  // включает brandId; ?store= (id или slug просматриваемой точки) ищет слаг внутри её бренда — слаги уникальны только в бренде;
+//   с 2026-11-09: optionGroups (ProductOptionGroup[] каталога для этой точки, варианты первыми; при непустом variations и modifiers = []) и hasRequiredOptions;
+//   в меню у ProductSummary — hasRequiredOptions (выбор по умолчанию не годится → плитка открывает товар)
                                      //   с ?store= — 404, если точка не продаёт товар, и без опций, добавка которых остановлена в этой точке;
                                      //   categoryKind товара, modifiers[].group (null = «Добавки»); allergens/caffeineLevel/dietTags с 2026-11-05 не отдаются;
                                      //   калории и БЖУ — null, если вид категории не FOOD (с 2026-11-06)
@@ -881,8 +890,11 @@ GET    /stores/:idOrSlug/suggestions?productIds=a,b[&limit=6]  → { productIds:
 GET    /cart                         // корзина несёт etaSeconds; только с QUEUE_POLICY_ENABLED (иначе полей нет) — readyAt (G, ISO),
                                      //   asapAvailable, asapBlockedReason (CLOSING_SOON — не успеют до закрытия; …)
 POST   /cart/items                   { productId, quantity, variationIds[], modifiers{} } → { cart, etaSeconds }
+//   + options?: [{ optionId, qty }] для товара с группами каталога (с 2026-11-09): без options — выбор по умолчанию или 400 OPTIONS_REQUIRED;
+//   нарушение правил — 400 OPTIONS_INVALID { errors: [{ code, groupId, optionId }] }; одинаковый выбор и комментарий — одна строка; CartItem.options — OptionLine[]
                                      // не больше одной вариации каждого типа; неизвестный id — 400; тип без выбора — вариация по умолчанию
 PATCH  /cart/items/:itemId
+//   options — новый выбор (проверка и цена как при добавлении, без слияния строк); без options строка сохраняет свой выбор и пересчитывается, не отклоняется
 DELETE /cart/items/:itemId
 DELETE /cart
 
@@ -1009,6 +1021,18 @@ GET/POST/PATCH/DELETE  /admin/ingredients[/:id]     справочник «До�
 #   POST/PATCH /admin/products/:id/modifiers: group (≤ 40, null = «Добавки»; при создании без group — группа записи справочника)
 #   POST /admin/products/:id/images: PRODUCT_PHOTO_RULE (JPEG/PNG/WebP/AVIF до 5 МБ; рекомендуем 1:1 от 1200×1200 или 3:4)
 GET                    /admin/ingredients/groups?brandId=   группы добавок бренда (справочник, товары, наборы) для подсказок
+# Каталог «Добавки и варианты» (с 2026-11-09, docs/option-groups.md)
+GET/POST              /admin/option-groups            SUPER_ADMIN: группы с пунктами и productCount; создание (400 OPTION_GROUP_INVALID, 409 OPTION_NAME_TAKEN)
+PATCH/DELETE          /admin/option-groups/:id        SUPER_ADMIN; удаление группы на товарах — 409 OPTION_GROUP_IN_USE
+POST                  /admin/option-groups/:id/options   SUPER_ADMIN: новый пункт
+PATCH/DELETE          /admin/option-items/:id         SUPER_ADMIN
+GET                   /admin/brands/:brandId/options  каталог с настройками бренда (BrandOptionCatalog) — роли «Добавок»
+PATCH                 /admin/brands/:brandId/options/:optionId   { priceCents?, enabled? } — роли «Добавок»
+PUT/DELETE            /admin/stores/:storeId/option-stops/:optionId   { expiresAt? } — роли стопа добавок в точке (в т.ч. кухня и PIN)
+GET/PUT               /admin/products/:id/option-groups   { groups[{groupId, sortOrder}], overrides[{optionId, priceCents, isDefault}] } — роли товаров; 400 OPTION_NOT_ON_PRODUCT
+GET                   /admin/brands/:brandId/legacy-options   SUPER_ADMIN: сколько старых опций у бренда (LegacyOptionsSummary)
+POST                  /admin/brands/:brandId/legacy-options/clear   SUPER_ADMIN: удалить старые вариации, модификаторы, наборы категорий, стопы и справочник бренда одной транзакцией (на проде — с согласия владельца)
+#   GET /admin/stores/:id/availability: options — пункты каталога, которые точка использует и бренд не выключил, со стопом (для стоп-листа кухни)
 GET/POST/PATCH/DELETE  /admin/stores[/:id]            // ответы несут readiness; 409 STORE_HAS_ORDERS / STORE_CURRENCY_LOCKED /
                                                     //   STORE_SLUG_TAKEN / STORE_NOT_READY
                                                     //   + kinds[] (COFFEE|FOOD, не пусто) в create/update

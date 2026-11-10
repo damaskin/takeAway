@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'options.dart';
+
 part 'order.g.dart';
 
 @JsonEnum(alwaysCreate: true)
@@ -187,6 +189,11 @@ class OrderItem {
     });
     return result;
   }
+
+  /// Picks from the options catalog as they were bought, variants first.
+  /// Empty on lines of products without catalog groups and on orders placed
+  /// before 2026-11-09; lines this build cannot read are left out.
+  List<OptionLine> get optionLines => OptionLine.listFrom(productSnapshot['optionLines']);
 }
 
 @JsonSerializable(createToJson: false)

@@ -3,19 +3,26 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { ProductDetail, StoreListItem, StoreMenu } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { catchError, throwError } from 'rxjs';
+import { catchError, throwError, type Observable } from 'rxjs';
 import { checkoutErrorText, LocaleFormatService } from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import {
+  defaultOptionPicks,
   defaultVariationSelection,
   describeChoice,
+  describeOptionLines,
   initialModifierCounts,
   isDrinkKind,
   isStoreInactive,
+  normalizeOptionPicks,
+  optionLinesFor,
+  orderOptionGroups,
+  priceWithOptionPicks,
   priceWithOptions,
   productKind,
   showsNutrition,
   suggestionRow,
+  toOptionSelections,
   type SuggestionRow,
   type VariationSelection,
 } from '@takeaway/utils';
@@ -25,6 +32,7 @@ import { CartService } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FoodSuggestionsComponent } from '../../shared/food-suggestions.component';
+import { optionChoiceProblem, ProductOptionGroupsComponent } from './product-option-groups.component';
 import { ProductOptionsComponent } from './product-options.component';
 
 /**
@@ -38,10 +46,13 @@ import { ProductOptionsComponent } from './product-options.component';
  *       breadcrumb
  *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
  *       meta: calories (a meal only)
- *       options: choice chips per size / temperature / milk / cup, add-on
- *         groups opening in place (see ProductOptionsComponent)
+ *       options: the options catalog's groups when the product has them
+ *         (see ProductOptionGroupsComponent), else choice chips per size /
+ *         temperature / milk / cup and add-on groups opening in place (see
+ *         ProductOptionsComponent)
  *       note: «Пожелание бариста» for a drink, «Комментарий к заказу» else
- *       add bar: the choice in one line, qty stepper + caramel pill button
+ *       add bar: the choice in one line — or what is still to choose, the
+ *         button off until it is chosen — qty stepper + caramel pill button
  *         ("Add to cart — $X"); pinned to the bottom of a phone's screen
  *       «К этому напитку» under a drink, when the store sells food
  */
@@ -54,6 +65,7 @@ import { ProductOptionsComponent } from './product-options.component';
     TranslatePipe,
     ProductImageComponent,
     ProductOptionsComponent,
+    ProductOptionGroupsComponent,
     FoodSuggestionsComponent,
   ],
   template: `
@@ -118,13 +130,21 @@ import { ProductOptionsComponent } from './product-options.component';
             }
           </div>
 
-          <app-product-options
-            [variations]="p.variations"
-            [modifiers]="p.modifiers"
-            [currency]="resolvedStore()?.currency"
-            [(selection)]="selectedVariations"
-            [(counts)]="modifierCounts"
-          />
+          @if (optionGroups().length > 0) {
+            <app-product-option-groups
+              [groups]="optionGroups()"
+              [currency]="resolvedStore()?.currency"
+              [(picks)]="optionPicks"
+            />
+          } @else {
+            <app-product-options
+              [variations]="p.variations"
+              [modifiers]="p.modifiers"
+              [currency]="resolvedStore()?.currency"
+              [(selection)]="selectedVariations"
+              [(counts)]="modifierCounts"
+            />
+          }
 
           <!-- Note for whoever makes it -->
           <div class="flex flex-col" style="gap: 8px">
@@ -147,7 +167,11 @@ import { ProductOptionsComponent } from './product-options.component';
 
           <!-- Add bar: the choice, qty + primary button -->
           <div class="pdp-add">
-            @if (choice()) {
+            @if (optionProblem(); as problem) {
+              <p class="pdp-choice pdp-missing" role="status" data-testid="option-hint">
+                {{ problem.key | translate: problem }}
+              </p>
+            } @else if (choice()) {
               <p class="pdp-choice" data-testid="choice-summary">{{ choice() }}</p>
             }
             <div class="flex items-center" style="gap: 16px">
@@ -181,7 +205,9 @@ import { ProductOptionsComponent } from './product-options.component';
               <button
                 type="button"
                 (click)="addToCart()"
-                [disabled]="adding() || !authStore.isAuthenticated() || !resolvedStore() || storeClosed()"
+                [disabled]="
+                  adding() || !authStore.isAuthenticated() || !resolvedStore() || storeClosed() || !!optionProblem()
+                "
                 class="flex items-center justify-center disabled:opacity-60"
                 style="flex: 1; height: 56px; background: var(--color-caramel); color: white; border-radius: var(--radius-pill); gap: 12px; font-family: var(--font-sans); font-size: 16px; font-weight: 600"
               >
@@ -311,6 +337,10 @@ import { ProductOptionsComponent } from './product-options.component';
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .pdp-missing {
+        font-weight: 600;
+        color: var(--color-caramel);
+      }
       @media (max-width: 900px) {
         .pdp {
           flex-direction: column;
@@ -355,22 +385,45 @@ export class ProductPage implements OnInit {
   readonly error = signal<string | null>(null);
   readonly selectedVariations = signal<VariationSelection>({});
   readonly modifierCounts = signal<Record<string, number>>({});
+  /** The choice from the options catalog, for a product with catalog groups. */
+  readonly optionPicks = signal<Record<string, number>>({});
   readonly quantity = signal(1);
   notes = '';
 
   /** The serving store's menu: the product's category, its kind, and what goes well with it. */
   readonly menu = signal<StoreMenu | null>(null);
 
+  /**
+   * The product's groups from the options catalog, variants first. When there
+   * are any the product is ordered through them alone; empty for a product
+   * on its older options, or from an API that predates the catalog.
+   */
+  readonly optionGroups = computed(() => orderOptionGroups(this.product()?.optionGroups ?? []));
+
+  /** What keeps the choice out of the cart — «Выберите: Размер (кофе)» — or null. */
+  readonly optionProblem = computed(() =>
+    this.optionGroups().length > 0 ? optionChoiceProblem(this.optionGroups(), this.optionPicks()) : null,
+  );
+
   readonly totalCents = computed(() => {
     const p = this.product();
     if (!p) return 0;
-    return priceWithOptions(p, this.selectedVariations(), this.modifierCounts()) * this.quantity();
+    const groups = this.optionGroups();
+    const unit =
+      groups.length > 0
+        ? priceWithOptionPicks(p.basePriceCents, groups, this.optionPicks())
+        : priceWithOptions(p, this.selectedVariations(), this.modifierCounts());
+    return unit * this.quantity();
   });
 
-  /** The choice in one line next to the button: "L · Oat · +Vanilla ×2". */
+  /** The choice in one line next to the button: "L · Oat · +Vanilla ×2", "M, Горячий · Овсяное · Ваниль". */
   readonly choice = computed(() => {
     const p = this.product();
-    return p ? describeChoice(p, this.selectedVariations(), this.modifierCounts()) : '';
+    if (!p) return '';
+    const groups = this.optionGroups();
+    return groups.length > 0
+      ? describeOptionLines(optionLinesFor(groups, this.optionPicks()))
+      : describeChoice(p, this.selectedVariations(), this.modifierCounts());
   });
 
   /**
@@ -482,25 +535,15 @@ export class ProductPage implements OnInit {
       return;
     }
     this.browsedStore = this.route.snapshot.queryParamMap.get('store');
-    const browsed = this.browsedStore;
-    this.catalog
-      .getProduct(slug, browsed)
-      .pipe(
-        // A store renamed since the link was made: look the product up without it.
-        catchError((err: unknown) =>
-          browsed && (err as { status?: number }).status === 404
-            ? this.catalog.getProduct(slug)
-            : throwError(() => err),
-        ),
-      )
-      .subscribe({
-        next: (p) => {
-          this.product.set(p);
-          this.selectedVariations.set(defaultVariationSelection(p.variations));
-          this.modifierCounts.set(initialModifierCounts(p.modifiers));
-        },
-        error: () => this.error.set(this.translate.instant('web.product.notFound')),
-      });
+    this.fetchProduct(slug).subscribe({
+      next: (p) => {
+        this.product.set(p);
+        this.selectedVariations.set(defaultVariationSelection(p.variations));
+        this.modifierCounts.set(initialModifierCounts(p.modifiers));
+        this.optionPicks.set(defaultOptionPicks(orderOptionGroups(p.optionGroups ?? [])));
+      },
+      error: () => this.error.set(this.translate.instant('web.product.notFound')),
+    });
 
     this.catalog.listStores().subscribe({
       next: (list) => this.stores.set(list),
@@ -508,34 +551,75 @@ export class ProductPage implements OnInit {
     });
   }
 
+  /** The product by its slug, in the store the customer came from when it has it. */
+  private fetchProduct(slug: string): Observable<ProductDetail> {
+    const browsed = this.browsedStore;
+    return this.catalog.getProduct(slug, browsed).pipe(
+      // A store renamed since the link was made: look the product up without it.
+      catchError((err: unknown) =>
+        browsed && (err as { status?: number }).status === 404 ? this.catalog.getProduct(slug) : throwError(() => err),
+      ),
+    );
+  }
+
   addToCart(): void {
     const p = this.product();
     const store = this.resolvedStore();
-    if (!p || !store) return;
+    if (!p || !store || this.optionProblem()) return;
     const storeId = store.id;
+    const notes = this.notes.trim() || undefined;
+    const catalog = this.optionGroups().length > 0;
     this.adding.set(true);
     this.addError.set(null);
     this.cart
-      .add({
-        storeId,
-        productId: p.id,
-        quantity: this.quantity(),
-        variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
-        modifiers: this.modifierCounts(),
-        notes: this.notes.trim() || undefined,
-      })
+      .add(
+        catalog
+          ? {
+              storeId,
+              productId: p.id,
+              quantity: this.quantity(),
+              options: toOptionSelections(this.optionPicks()),
+              notes,
+            }
+          : {
+              storeId,
+              productId: p.id,
+              quantity: this.quantity(),
+              variationIds: Object.values(this.selectedVariations()).filter((id): id is string => Boolean(id)),
+              modifiers: this.modifierCounts(),
+              notes,
+            },
+      )
       .subscribe({
         next: () => this.adding.set(false),
         error: (err) => {
           this.adding.set(false);
           const body = (err as { error?: { code?: unknown; message?: unknown } }).error;
           if (body?.code === 'STORE_NOT_TAKING_ORDERS') this.closedOnAdd.set(true);
+          // An option ran out or left the menu while the page was open: fetch
+          // the product again, so the page greys it out and says what to change.
+          if (body?.code === 'OPTIONS_INVALID') this.refreshOptions(p.slug);
           this.addError.set(
             checkoutErrorText(body, this.translate, this.fmt) ??
               (typeof body?.message === 'string' ? body.message : this.translate.instant('web.product.addFailed')),
           );
         },
       });
+  }
+
+  /**
+   * The product's groups as the store has them now. The customer's choice
+   * stays, less whatever left the menu (a group detached, an option switched
+   * off), which the page could no longer show to take back.
+   */
+  private refreshOptions(slug: string): void {
+    this.fetchProduct(slug).subscribe({
+      next: (p) => {
+        this.product.set(p);
+        this.optionPicks.update((picks) => normalizeOptionPicks(this.optionGroups(), picks));
+      },
+      error: () => undefined,
+    });
   }
 
   back(): void {

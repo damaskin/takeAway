@@ -1,4 +1,22 @@
 import type { Page, Route } from '@playwright/test';
+import type {
+  OptionGroupKind,
+  OptionGroupType,
+  OptionLine,
+  OptionSelection,
+  ProductOptionGroup,
+  ProductOptionItem,
+} from '@takeaway/shared-types';
+import {
+  defaultOptionPicks,
+  fromOptionSelections,
+  optionLinesFor,
+  optionSelectionKey,
+  orderOptionGroups,
+  priceWithOptionPicks,
+  toOptionSelections,
+  validateOptionPicks,
+} from '@takeaway/utils';
 
 /**
  * A small in-memory stand-in for the API, wired through Playwright's route
@@ -102,18 +120,137 @@ export interface FakeProduct {
   prepTimeSeconds: number;
   variations: Array<{ id: string; priceDeltaCents: number }>;
   modifiers: Array<{ id: string; priceDeltaCents: number }>;
+  /** Groups from the options catalog; the cart then takes `options` and ignores the rest. */
+  optionGroups?: ProductOptionGroup[];
   [field: string]: unknown;
 }
+
+function optionGroup(
+  id: string,
+  kind: OptionGroupKind,
+  type: OptionGroupType,
+  name: string,
+  options: ProductOptionItem[],
+  extra: Partial<Pick<ProductOptionGroup, 'minSelect' | 'maxSelect' | 'showIfOptionId'>> = {},
+): ProductOptionGroup {
+  return {
+    id,
+    kind,
+    type,
+    name,
+    minSelect: type === 'A' ? 0 : null,
+    maxSelect: type === 'A' ? 1 : null,
+    showIfOptionId: null,
+    options,
+    ...extra,
+  };
+}
+
+function optionItem(id: string, name: string, extra: Partial<ProductOptionItem> = {}): ProductOptionItem {
+  return {
+    id,
+    name,
+    note: null,
+    isDefault: false,
+    minQty: null,
+    maxQty: null,
+    defaultQty: null,
+    priceCents: 0,
+    available: true,
+    sortOrder: 0,
+    ...extra,
+  };
+}
+
+/**
+ * A coffee on the options catalog (Maxim's list 5.0, item 17), the way the
+ * spec's seed has it: a size to pick (no default), served hot unless iced,
+ * cow's milk unless changed (coconut has run out), up to two syrups, sugar
+ * 0–3, and ice only for an iced one. Base 30 AED: S −5, L +7, oat +10, a
+ * syrup +8.
+ */
+export const CATALOG_LATTE: FakeProduct = {
+  ...PRODUCT,
+  id: 'product-3',
+  slug: 'latte',
+  name: 'Latte',
+  description: 'Espresso and steamed milk.',
+  basePriceCents: 3000,
+  hasRequiredOptions: true,
+  optionGroups: [
+    optionGroup(
+      'og-size',
+      'VARIANT',
+      'A',
+      'Размер (кофе)',
+      [
+        optionItem('opt-s', 'S', { note: '150–250 мл', priceCents: -500 }),
+        optionItem('opt-m', 'M', { note: '300–350 мл', sortOrder: 1 }),
+        optionItem('opt-l', 'L', { note: '400–450 мл', priceCents: 700, sortOrder: 2 }),
+      ],
+      { minSelect: 1, maxSelect: 1 },
+    ),
+    optionGroup(
+      'og-serving',
+      'VARIANT',
+      'A',
+      'Подача',
+      [optionItem('opt-hot', 'Горячий', { isDefault: true }), optionItem('opt-iced', 'Холодный', { sortOrder: 1 })],
+      { minSelect: 1, maxSelect: 1 },
+    ),
+    optionGroup(
+      'og-milk',
+      'ADDON',
+      'A',
+      'Молоко',
+      [
+        optionItem('opt-cow', 'Коровье', { isDefault: true }),
+        optionItem('opt-oat', 'Овсяное', { priceCents: 1000, sortOrder: 1 }),
+        optionItem('opt-coconut', 'Кокосовое', { priceCents: 1000, available: false, sortOrder: 2 }),
+      ],
+      { minSelect: 1, maxSelect: 1 },
+    ),
+    optionGroup(
+      'og-syrups',
+      'ADDON',
+      'A',
+      'Сиропы',
+      [
+        optionItem('opt-vanilla', 'Ваниль', { priceCents: 800 }),
+        optionItem('opt-caramel', 'Карамель', { priceCents: 800, sortOrder: 1 }),
+        optionItem('opt-salted', 'Солёная карамель', { priceCents: 800, sortOrder: 2 }),
+      ],
+      { minSelect: 0, maxSelect: 2 },
+    ),
+    optionGroup('og-sugar', 'ADDON', 'C', 'Сахар', [
+      optionItem('opt-sugar', 'Сахар', { minQty: 0, maxQty: 3, defaultQty: 0 }),
+    ]),
+    optionGroup(
+      'og-ice',
+      'ADDON',
+      'C',
+      'Лёд',
+      [optionItem('opt-ice', 'Лёд', { minQty: 0, maxQty: 3, defaultQty: 0 })],
+      {
+        showIfOptionId: 'opt-iced',
+      },
+    ),
+  ],
+};
 
 interface CartItem {
   id: string;
   productId: string;
+  productSlug: string;
   productName: string;
   quantity: number;
   unitPriceCents: number;
   unitPrepSeconds: number;
   variationIds: string[];
   modifiers: Record<string, number>;
+  options: OptionLine[];
+  /** `optionSelectionKey` of the choice: the same product with the same key is one line. */
+  optionKey: string;
   notes: string | null;
 }
 
@@ -253,10 +390,33 @@ export async function installFakeApi(
         totalCents: i.unitPriceCents * i.quantity,
         variationIds: i.variationIds,
         modifiers: i.modifiers,
+        options: i.options,
         notes: i.notes,
       })),
     };
   };
+
+  /** The cart's lines as an order's items, with the snapshot the order page reads. */
+  const orderItems = () =>
+    items.map((i) => ({
+      id: i.id,
+      productId: i.productId,
+      quantity: i.quantity,
+      unitPriceCents: i.unitPriceCents,
+      totalCents: i.unitPriceCents * i.quantity,
+      productSnapshot: {
+        id: i.productId,
+        slug: i.productSlug,
+        name: i.productName,
+        variationIds: i.variationIds,
+        modifiers: i.modifiers,
+        notes: i.notes,
+        unitPrepSeconds: i.unitPrepSeconds,
+        variations: [],
+        modifierLines: [],
+        optionLines: i.options,
+      },
+    }));
 
   const newOrder = (patch: Record<string, unknown>): Record<string, unknown> => {
     const subtotalCents = cart().subtotalCents;
@@ -282,7 +442,7 @@ export async function installFakeApi(
       totalCents: subtotalCents,
       qrToken: 'qr-token',
       etaSeconds: 480,
-      items: cart().items,
+      items: orderItems(),
       createdAt: new Date().toISOString(),
       readyAt: null,
       cancelledAt: null,
@@ -408,7 +568,11 @@ export async function installFakeApi(
     const itemPath = path.match(/^\/cart\/items\/([^/]+)$/);
     if (itemPath && method === 'PATCH') {
       const item = items.find((i) => i.id === itemPath[1]);
-      const body = request.postDataJSON() as { quantity?: number };
+      const body = request.postDataJSON() as { quantity?: number; options?: OptionSelection[] };
+      // The line keeps its choice: the app sends it along, and it has to be the same one.
+      if (item && body.options && optionSelectionKey(body.options) !== item.optionKey) {
+        return json(route, { statusCode: 400, code: 'OPTIONS_INVALID', errors: [] }, 400);
+      }
       if (item && body.quantity) item.quantity = body.quantity;
       return json(route, cart());
     }
@@ -423,32 +587,55 @@ export async function installFakeApi(
         quantity: number;
         variationIds?: string[];
         modifiers?: Record<string, number>;
+        options?: OptionSelection[];
         notes?: string;
       };
       cartAdds.push(body);
-      // Like the server: the same product with the same options is one line.
-      const same = items.find((i) => i.productId === body.productId);
+      const product = products.find((p) => p.id === body.productId) ?? drink;
+      const groups = orderOptionGroups(product.optionGroups ?? []);
+      // Like the server: a product on the options catalog is priced from its
+      // choice by the same rules the page uses, and a choice that breaks them
+      // is refused.
+      const picks =
+        groups.length > 0 ? (body.options ? fromOptionSelections(body.options) : defaultOptionPicks(groups)) : {};
+      if (groups.length > 0) {
+        const errors = validateOptionPicks(groups, picks);
+        if (errors.length > 0) {
+          const code = body.options ? 'OPTIONS_INVALID' : 'OPTIONS_REQUIRED';
+          return json(route, { statusCode: 400, error: 'Bad Request', code, message: code, errors }, 400);
+        }
+      }
+      const optionKey = optionSelectionKey(toOptionSelections(picks));
+      const notes = body.notes ?? null;
+      // The same product with the same options and note is one line.
+      const same = items.find((i) => i.productId === product.id && i.optionKey === optionKey && i.notes === notes);
       if (same) {
         same.quantity += body.quantity ?? 1;
         return json(route, cart());
       }
-      const product = products.find((p) => p.id === body.productId) ?? drink;
-      const variationIds = body.variationIds ?? [];
-      const modifiers = body.modifiers ?? {};
+      const variationIds = groups.length > 0 ? [] : (body.variationIds ?? []);
+      const modifiers = groups.length > 0 ? {} : (body.modifiers ?? {});
       const unitPriceCents =
-        product.basePriceCents +
-        product.variations.filter((v) => variationIds.includes(v.id)).reduce((sum, v) => sum + v.priceDeltaCents, 0) +
-        product.modifiers.reduce((sum, m) => sum + (modifiers[m.id] ?? 0) * m.priceDeltaCents, 0);
+        groups.length > 0
+          ? priceWithOptionPicks(product.basePriceCents, groups, picks)
+          : product.basePriceCents +
+            product.variations
+              .filter((v) => variationIds.includes(v.id))
+              .reduce((sum, v) => sum + v.priceDeltaCents, 0) +
+            product.modifiers.reduce((sum, m) => sum + (modifiers[m.id] ?? 0) * m.priceDeltaCents, 0);
       items.push({
         id: `item-${nextId++}`,
         productId: product.id,
+        productSlug: product.slug,
         productName: product.name,
         quantity: body.quantity ?? 1,
         unitPriceCents,
         unitPrepSeconds: product.prepTimeSeconds,
         variationIds,
         modifiers,
-        notes: body.notes ?? null,
+        options: optionLinesFor(groups, picks),
+        optionKey,
+        notes,
       });
       return json(route, cart());
     }

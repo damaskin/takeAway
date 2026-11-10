@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { AsapBlockedReason } from '@takeaway/shared-types';
 
+import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
+
 export class CartItemDto {
   @ApiProperty()
   id!: string;
@@ -19,6 +21,14 @@ export class CartItemDto {
 
   @ApiProperty({ type: Object, description: 'Map { modifierId: count }' })
   modifiers!: Record<string, number>;
+
+  @ApiProperty({
+    type: [OptionLineDto],
+    description:
+      'Picks from the options catalog with names and prices, in page order (a product with catalog groups; then ' +
+      'variationIds and modifiers are empty). Empty otherwise.',
+  })
+  options!: OptionLineDto[];
 
   @ApiProperty()
   unitPriceCents!: number;
