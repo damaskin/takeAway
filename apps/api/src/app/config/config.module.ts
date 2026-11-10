@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { AgroprombankQrConfig } from '../payments/agroprombank-qr/agroprombank-qr.config';
 import { ConfigController } from './config.controller';
 import { FeatureFlagsService } from './feature-flags.service';
 
@@ -10,7 +11,9 @@ import { FeatureFlagsService } from './feature-flags.service';
 @Global()
 @Module({
   controllers: [ConfigController],
-  providers: [FeatureFlagsService],
+  // AgroprombankQrConfig reads nothing but the environment; the flags need
+  // only whether the QR payment is on and configured.
+  providers: [FeatureFlagsService, AgroprombankQrConfig],
   exports: [FeatureFlagsService],
 })
 export class FeaturesModule {}

@@ -730,6 +730,77 @@ class AppLocalizationsEn extends AppLocalizations {
   String get webPaymentFailed => 'The payment did not go through. You can try again.';
 
   @override
+  String get payMethodCard => 'By card';
+
+  @override
+  String get payMethodQr => 'By QR in the bank\'s app';
+
+  @override
+  String get payMethodQrSubtitle => 'Agroprombank\'s app';
+
+  @override
+  String get qrPaymentHint =>
+      'We\'ll show a QR code to pay in Agroprombank\'s app. If the store does not accept the order, the money is returned.';
+
+  @override
+  String get qrPayTitle => 'Pay by QR';
+
+  @override
+  String get qrPayToPay => 'To pay';
+
+  @override
+  String get qrPayScanHint => 'Scan the code in Agroprombank\'s app («Оплата по QR» section)';
+
+  @override
+  String get qrPayOtherDevice => 'You can also scan it from another device.';
+
+  @override
+  String get qrPayOpenBankApp => 'Open the bank app';
+
+  @override
+  String get qrPayBankAppNotOpened => 'Couldn\'t open the bank app. Scan the code in it instead.';
+
+  @override
+  String qrPayValidFor(String time) {
+    return 'The code is valid for $time';
+  }
+
+  @override
+  String get qrPayWaiting => 'Waiting for the payment…';
+
+  @override
+  String get qrPayCancel => 'Cancel';
+
+  @override
+  String get qrPayExpiredTitle => 'The invoice has expired';
+
+  @override
+  String get qrPayExpiredBody => 'This QR code no longer works. Get a new one to pay for the order.';
+
+  @override
+  String get qrPayNewCode => 'New QR code';
+
+  @override
+  String get qrPayByCard => 'Pay by card';
+
+  @override
+  String get qrPayFailedTitle => 'Couldn\'t get a QR code';
+
+  @override
+  String get qrPayFailedBody => 'The bank did not issue the invoice. Try again in a moment.';
+
+  @override
+  String get qrPayToOrder => 'Back to the order';
+
+  @override
+  String get payByQr => 'Pay by QR';
+
+  @override
+  String payByQrAmount(String total) {
+    return 'Pay $total by QR';
+  }
+
+  @override
   String get summaryTitle => 'Summary';
 
   @override
@@ -947,6 +1018,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
+  String get paymentStatePaidByQr => 'Paid by QR';
+
+  @override
+  String get paymentStatePaidByQrHint => 'If the store does not accept the order, the money is returned.';
+
+  @override
+  String get paymentStateAwaitingQr => 'Waiting for the QR payment';
+
+  @override
+  String get paymentStateQrNotPaid => 'The QR invoice was not paid';
+
+  @override
+  String get orderExpiredNotAcceptedRefundedQr => 'The store did not confirm the order — the money has been returned';
+
+  @override
+  String get cancelMoneyRefundedQr => 'The money paid by QR has been returned.';
+
+  @override
+  String get cancelMoneyNotChargedQr => 'No money was taken.';
+
+  @override
+  String get cancelMoneyReturnPendingQr => 'The money will be returned automatically.';
+
+  @override
   String get pickupCode => 'Your code';
 
   @override
@@ -967,6 +1062,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get cancelOrderBody =>
       'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.';
+
+  @override
+  String get cancelOrderBodyQr => 'The store has not accepted it yet. The money paid by QR will be returned.';
 
   @override
   String get cancelByPhone => 'Your order is already being made — call the store to cancel it';
@@ -1714,6 +1812,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get errTooManyUnpaidOrders =>
       'You already have unpaid orders — pay for or cancel one before placing a new one';
+
+  @override
+  String get errQrPaymentDisabled => 'Payment by QR is not available right now';
+
+  @override
+  String get errQrCurrencyUnsupported => 'This store can\'t be paid by QR';
+
+  @override
+  String get errOrderNotPayable => 'This order can no longer be paid';
+
+  @override
+  String get errQrBankUnavailable => 'The bank isn\'t answering. Try again in a minute.';
 
   @override
   String get standTitle => 'Server';

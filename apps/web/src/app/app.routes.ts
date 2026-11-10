@@ -72,6 +72,12 @@ export const appRoutes: Route[] = [
         canMatch: [authGuard],
         loadComponent: () => import('./features/order-status/order-status.page').then((m) => m.OrderStatusPage),
       },
+      // Paying the order by QR in the bank's app (Agroprombank «Мобильный платёж»).
+      {
+        path: 'orders/:id/qr',
+        canMatch: [authGuard],
+        loadComponent: () => import('./features/qr-payment/qr-payment.page').then((m) => m.QrPaymentPage),
+      },
       {
         path: 'profile',
         canMatch: [authGuard],

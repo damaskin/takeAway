@@ -15,6 +15,10 @@ A second flow, the bank's hosted payment page «Web-платёж», is described
 [section 11](#11-web-платёж-the-banks-payment-page). `CARD_PAYMENT_FLOW`
 chooses which one the clients run.
 
+A third, «Мобильный платёж» — an invoice paid by QR in the bank's own app —
+is offered next to either; see
+[section 12](#12-мобильный-платёж-paying-by-qr-in-the-banks-app).
+
 ---
 
 ## 1. What the bank gives you
@@ -681,3 +685,294 @@ now walks the Web-платёж path too: page → pay → held → KDS accept
 - [ ] `CARD_PAYMENT_FLOW=web`, `AGROPROMBANK_WEB_IS_TEST=false`; one live
       low-value order held, accepted (captured) and refunded from the admin;
       a second one cancelled to see the hold released.
+
+## 12. Мобильный платёж: paying by QR in the bank's app
+
+Implemented against _«Мобильный платеж. Веб сервис для работы с QR-кодом»_
+(ЗАО «Агропромбанк»). The customer pays an invoice we issue on a QR terminal
+(`QRT` + 15 digits) from the bank's own mobile app: they scan the QR code
+shown at checkout or, on the phone itself, open the bank app through a link.
+No card is bound, no key pair is needed, card data never touches us.
+
+### 12.1 How it differs from the card flows
+
+- **There is no hold.** A QR invoice, once paid, is money taken. To keep the
+  rule «the kitchen only ever sees paid orders, and an order it turns down
+  costs the customer nothing», a paid QR payment is parked on the order exactly
+  like a hold: the `Payment` row goes to `REQUIRES_ACTION`, the order appears
+  on the kitchen board, accepting it settles the row as `SUCCEEDED` **without
+  any bank call**, and a customer cancel before the accept, a kitchen
+  rejection or an expiry gives the money back with `ReversePayment`
+  (`REFUNDED`, `Order.cancelMoney = REFUNDED`). `PaymentProvider` gains
+  `AGROPROMBANK_QR`, and it joins `CARD_PROVIDERS`, so every hold rule in
+  sections 5, 6 and 11 applies to it unchanged.
+- **The bank's callback is not signed.** It is only a hint that something
+  happened: the outcome is always read back with `GetPaymentStateExtId`
+  (authenticated with our login over TLS), never taken from the callback.
+- **One amount, RUP only.** No tips (the QR carries one sum), currency code
+  `000` (рубль ПМР). A store selling in another currency cannot use it.
+- **Full refunds only.** `ReversePayment` takes no amount, so the admin
+  refund of a QR payment is all or nothing.
+
+### 12.2 Configuration
+
+| Env                                        | Meaning                                                                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AGROPROMBANK_QR_ENABLED`                  | Switches the QR payment on. It is offered **next to** the card flow (`CARD_PAYMENT_FLOW`), not instead of it: with both on the customer chooses at checkout, with cards off it is the only way to pay. |
+| `AGROPROMBANK_QR_SERVICE_URL`              | default `https://api.agroprombank.com/mobile/QRMobileService.asmx`                                                                                                                                     |
+| `AGROPROMBANK_QR_NAMESPACE`                | default `http://services.agroprombank.com/` (SOAPAction = namespace + function)                                                                                                                        |
+| `AGROPROMBANK_QR_LOGIN`                    | login for remote operations, issued by the bank                                                                                                                                                        |
+| `AGROPROMBANK_QR_PASSWORD` / `_FILE`       | its password                                                                                                                                                                                           |
+| `AGROPROMBANK_QR_EXTERNAL_TOKEN` / `_FILE` | optional token the bank may issue instead of login/password; when set, `Login` and `Password` go out empty                                                                                             |
+| `AGROPROMBANK_QR_TERMINAL_ID`              | the QR terminal, `QRT\d{15}`                                                                                                                                                                           |
+| `AGROPROMBANK_QR_CODE_FORMAT`              | what the QR code says. Default `{terminal}:{rub}:{extid}`; placeholders `{terminal}`, `{rub}` (sum as `12.50`), `{kop}` (sum in kopecks), `{extid}`. See question 1.                                   |
+| `AGROPROMBANK_QR_APP_LINK`                 | optional link that opens the bank app on the same phone with the code; placeholders `{code}` (URL-encoded QR text), `{extid}`, `{terminal}`. Unset: the clients show the QR code only. See question 2. |
+| `AGROPROMBANK_QR_LIFETIME_MINUTES`         | how long an invoice is offered, default 10; then it is closed (`ClosePaymentExtId`). Keep it at or below `ORDER_PAYMENT_TTL_MINUTES`.                                                                  |
+| `AGROPROMBANK_QR_TIMEOUT_MS`               | per call, default 15000                                                                                                                                                                                |
+
+The external id of an invoice (`extid`) is our `Payment.invoiceId`, taken from
+the same `agroprombank_invoice_seq` with the same digits-only
+`AGROPROMBANK_INVOICE_PREFIX` as the other flows: unique for the terminal
+forever, never reused. The SOAP header always carries `DeviceId` and `PushId`
+`-1`, as the documentation asks of a non-mobile client.
+
+`GET /config/features` gains `qrPaymentCurrencies: string[]` — `["RUP"]` while
+the QR payment is on and configured, `[]` otherwise; always present. A client
+offers «Оплатить по QR» only for a store whose currency is in that list.
+`PaymentHoldsService.cardPaymentRequired` treats an order as needing payment
+when the card flow is on, or when the QR payment is on and the order is in a
+currency it takes — a QR-only deployment does not lock a USD order out.
+
+Switching `AGROPROMBANK_QR_ENABLED` off stops new invoices only. As long as
+the terminal and the credentials are configured, money already taken by QR
+is still looked after: reversals, the cron, the callback and the status poll
+keep calling the bank.
+
+### 12.3 API
+
+```
+POST /api/payments/agroprombank-qr/start        { orderId }
+  → AgroprombankQrPaymentDto
+GET  /api/payments/agroprombank-qr/:paymentId   (customer polls every 3 s)
+  → AgroprombankQrPaymentDto
+POST /api/payments/agroprombank-qr/:paymentId/cancel   (customer closed the QR screen)
+  → AgroprombankQrPaymentDto
+POST /api/payments/agroprombank-qr/callback     (the bank; public; form fields `payments`, `trx`)
+  → 200 "OK"
+```
+
+```ts
+interface AgroprombankQrPaymentDto {
+  paymentId: string;
+  orderId: string;
+  /** PENDING — waiting for the customer to pay; PAID — the money is on the
+   *  order (held until the kitchen accepts; also after the accept); EXPIRED —
+   *  the invoice lapsed or was closed unpaid; REFUNDED — paid, then given back;
+   *  FAILED — the bank refused to issue the invoice. */
+  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'REFUNDED' | 'FAILED';
+  amountCents: number;
+  currency: 'RUP';
+  /** While PENDING: what to show. Null otherwise. */
+  qr: {
+    /** Text to render as the QR code. */
+    code: string;
+    /** Opens the bank app with this invoice on the same phone; null when not configured. */
+    appLink: string | null;
+    /** ISO instant the invoice stops being offered. */
+    expiresAt: string;
+  } | null;
+}
+```
+
+The DTO lives in `@takeaway/shared-types` (`AgroprombankQrPaymentDto`,
+`AgroprombankQrPaymentStatus`). Customer-only routes (the order's owner; any
+other payment id is 404). `start` and `cancel` answer `200`, not `201`.
+Errors carry `{ statusCode, error, code, message }`
+(`AgroprombankQrErrorBody`, `AgroprombankQrErrorCode` in shared-types):
+`QR_PAYMENT_DISABLED` (409), `QR_CURRENCY_UNSUPPORTED` (409, store not in
+RUP), `ORDER_NOT_PAYABLE` (409: cancelled, expired or nothing to pay),
+`QR_BANK_UNAVAILABLE` (503: the bank could not be reached — retry; `start`
+and `cancel` only, the status `GET` answers from the database instead).
+
+1. **Start** is idempotent per order. An order already paid (a card hold or
+   capture, a paid QR invoice, or money taken by any provider) answers that
+   payment — `PAID`, `qr: null`, its own `paymentId`, even when it is not a
+   QR payment. A `PENDING` QR invoice still inside its lifetime is checked
+   with `GetPaymentStateExtId` and answered again (same code) — a reload
+   never issues a second invoice. A lapsed one — or one issued for a total
+   the order no longer has — is closed first (`ClosePaymentExtId`) and
+   checked once more, so a payment that landed in the last second is not
+   lost; only then a new `extid` is allocated and
+   `CreatePaymentID(terminal, amountKopecks, "000", extid)` called. The
+   returned bank id is stored as `Payment.providerRef` (and
+   `rawJson.qrPaymentId`); the QR text is fixed at issue
+   (`rawJson.qrCode`). A SOAP fault from `CreatePaymentID` answers the DTO
+   with `FAILED`; no answer at all leaves the invoice `PENDING` (it may exist
+   at the bank) and answers 503 — the next start finds it at the bank and
+   answers it, or closes it once its call is long over and the bank knows
+   nothing of it. While the bank cannot say whether an earlier invoice was
+   paid, no new one is issued (503).
+2. **Status** (`GET`) answers from the database, and while `PENDING` asks the
+   bank (`GetPaymentStateExtId`) at most once every 3 s per payment. An
+   invoice past its lifetime is closed right there (`EXPIRED`), so the
+   screen stops showing a code the bank should no longer take.
+3. **Paid** — from the callback, the status poll, or the cron — is claimed
+   with a conditional update (`PENDING` → `REQUIRES_ACTION`), so it settles
+   the order once: the order goes onto the kitchen board and the staff are
+   told, as with a card hold. `rawJson` keeps `qrPaymentId` and `rrn` (the
+   card transaction's RRN) — `ReversePayment` needs both.
+4. **Cancel** closes an unpaid invoice (`ClosePaymentExtId`), re-checks it,
+   and marks it `EXPIRED` (stored as `FAILED` with `rawJson.closed = true`).
+   The order stays, so the customer can start again or pay by card. Found
+   paid on the re-check, it answers `PAID`. A bank that could not be told to
+   close it answers 503 and the invoice stays `PENDING`.
+5. **Accept** on the KDS: `CardPaymentsService.captureHoldForOrder` settles
+   the QR row as `SUCCEEDED` with no bank call (the money was taken at payment).
+6. **Release** (customer cancel before the accept, kitchen rejection, expiry):
+   `PaymentHoldsService.release` sends `ReversePayment(qrterminal, paymetid,
+rrn)` — the parameter names are the bank's, typos included — and marks the
+   row `REFUNDED` (event `REFUND_ISSUED`, `kind: "reversal"`). `paymetid` and
+   `rrn` come from `rawJson`, or from `GetPaymentStateExtId` when missing. The
+   order's `cancelMoney` reads `REFUNDED` (not `RELEASED`): the money was
+   taken. A failure is retried by the reconciliation cron like any hold
+   release (`PENDING` until then); the last try logs `REFUND NEEDED`.
+   Since `ReversePayment` answers nothing, the invoice is read back after it
+   and its `state` logged (question 6).
+7. **Back office** (`/admin/payments/agroprombank/:paymentId…`): `GET` —
+   the bank's record (`GetPaymentStateExtId`); `reverse` — `ReversePayment`
+   for a payment waiting for the kitchen or settled; `refund` — full only,
+   anything else is 400 `QR_PARTIAL_REFUND_UNSUPPORTED`; `complete` — settles
+   a waiting payment as the accept would, for exactly the paid amount (else
+   400 `QR_PARTIAL_CAPTURE_UNSUPPORTED`). `POST /admin/orders/:id/refund`
+   goes through the same full-only refund.
+
+The callback route parses `payments` (XML, one or more `<Payment>`), looks up
+each `externalid` among our `PENDING` QR payments — and `FAILED` ones, since a
+closed invoice may still have been paid in the app: if its order still waits
+for payment the money is used, otherwise it goes back — and runs the same
+check as the status poll. Unknown ids, another terminal, bad XML, or a bank
+that is down still get `200 OK` (and a log line); nothing in the callback
+body is trusted, `trx` included.
+
+**The order as the customer sees it.** `OrderDto.payment` gains an optional
+`provider` (`PaymentProvider`, `null` with `NONE`). For `AGROPROMBANK_QR`,
+`HELD` means the money is taken and waits on the order (given back in full if
+the store turns it down), `PAID` settled, `REFUNDED` reversed; a QR invoice
+closed unpaid — by the customer or once it lapsed — reads `NONE`, so the
+order offers payment again. `cardMask` stays `null` for QR.
+
+**What a client can rely on:**
+
+- `qr` is never `null` while `status` is `PENDING`, and always `null` otherwise.
+- An invoice past `qr.expiresAt` can still come back `PENDING` — until a poll
+  gets through to the bank (the next one at most 3 s later closes it and
+  answers `EXPIRED`) or, with the bank unreachable, until the cron closes it.
+  It can also still turn `PAID`: a payment from the last second is never
+  dropped. Show «Счёт истёк» locally and keep polling for a few minutes.
+- `start` on an order that cannot be paid — not `CREATED` (cancelled,
+  expired, or taken on by the kitchen) or with nothing to pay — answers 409
+  `ORDER_NOT_PAYABLE`, unless it already carries a payment: then that payment
+  is answered (`200`, `PAID`).
+
+### 12.4 State and money safety
+
+- Paid means `state = 2` in `GetPaymentStateExtId`. Any other state is
+  "not paid yet" until the lifetime runs out (question 3).
+- The paid sum must equal the invoice. The documentation does not say whether
+  `amount` comes back in rubles or kopecks, so both readings are accepted —
+  `amount` and `transactionamount` each on its own, `12.50`, `12,5` or
+  `1250` — and the one that matched is logged and kept in
+  `rawJson.amountReadings` (question 4); anything else, or a currency other
+  than `000`, is a mismatch — the money is reversed straight away and the
+  order stays unpaid. A record with no sum at all is accepted: the invoice
+  fixed it.
+- Money that arrives for an order that cannot use it — cancelled, expired,
+  already paid by another invoice — is reversed straight away; a refusal is
+  retried by the cron and logged loudly (`REFUND NEEDED`) after the last try.
+  A cancelled or expired order then reads `cancelMoney = REFUNDED` (or
+  `PENDING` until the retry lands).
+- The reconciliation cron (`agroprombank-reconcile`, the existing 5-minute
+  job) checks every `PENDING` QR invoice older than one minute, closes the
+  ones past their lifetime + 2 minutes — and at once those whose order was
+  cancelled or expired — and retries failed reversals (QR is in
+  `CARD_PROVIDERS`, so `retryPendingReleases` covers it).
+- A refusal (SOAP fault) of `GetPaymentStateExtId` reads as "not paid", like
+  an empty answer; only a bank that cannot be reached leaves things as they
+  are. The unpaid-order expiry spares an order whose latest payment attempt
+  is younger than `ORDER_PAYMENT_TTL_MINUTES`, QR included.
+- A transport failure never marks anything `FAILED`.
+
+### 12.5 Registration at the bank
+
+| Item         | Value                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------- |
+| QR terminal  | one, for takeAway (all brands), currency RUP                                          |
+| Callback URL | `https://takeaway.md/api/payments/agroprombank-qr/callback`                           |
+| Method       | POST, `application/x-www-form-urlencoded`                                             |
+| Staging      | a test terminal with `https://test.takeaway.md/api/payments/agroprombank-qr/callback` |
+
+### 12.6 Questions for the bank
+
+1. The QR text for an invoice made with `CreatePaymentID`: is it
+   `QRT…:<сумма>:<extid>`? Is the sum in rubles (`12.50`) or kopecks
+   (`1250`)? May it be left empty, since the invoice already carries it?
+2. **How does a customer pay from the phone the QR is shown on?** takeAway is
+   ordered from a phone (Telegram mini app, iOS/Android app, mobile site). Is
+   there a link (`https://…` or an app scheme) that opens the Агропромбанк
+   app with the QR text, on iOS and Android? Without it the QR can only be
+   scanned from a second device.
+3. The list of `state` values in `GetPaymentState*` (2 = «Оплачен»; created,
+   closed, expired, reversed?).
+4. Units of `amount` and `transactionamount` in the state XML and the callback.
+5. How long does an unpaid invoice stay payable, and does `ClosePaymentExtId`
+   stop the bank app from paying it?
+6. `ReversePayment`: does it work on a later day (the order may be rejected
+   tomorrow for a pre-order)? It returns nothing — how do we learn that it
+   went through (`state` after the reversal)? Is there a partial refund?
+7. The callback: is it signed, from which IP addresses does it come, does the
+   bank retry on a non-200 answer, and what body does it expect?
+8. The exact XML of `GetPaymentStateExtIdResult` (as in the callback?) and
+   its answer for an `extid` that was never paid or does not exist.
+9. Login/password or `ExternalToken` — which will we get? Are `DeviceId` and
+   `PushId` `-1` right for a server?
+10. Where does the money of the QR terminal settle (takeAway's account, as
+    with the card terminal), and is the bank's fee the same?
+
+### 12.7 Sandbox
+
+`pnpm agro:mock` also serves the QR web service at `/mobile/QRMobileService.asmx`
+on the Web-платёж port (`:8898`, so the staging proxy serves both) — every
+function of the documentation, SOAP 1.1, header checked against
+`AGRO_QR_MOCK_LOGIN` / `AGRO_QR_MOCK_PASSWORD` (default `sandbox` /
+`sandbox-pass`, `DeviceId`/`PushId` must be `-1`) — a fake «bank app» page at
+`/__sandbox/qr/app?code=…` with «Оплатить» / «Отказаться», and test
+affordances: `POST /__sandbox/qr/pay/:extid` (pays and fires the callback to
+`AGRO_QR_MOCK_API_BASE/payments/agroprombank-qr/callback`, default
+`AGRO_WEB_MOCK_API_BASE`), `POST /__sandbox/qr/pay/:extid?silent=1` (pays
+without the callback — a lost notification), `GET /__sandbox/qr/state`. An
+amount of exactly `66600` cannot be invoiced (CreatePaymentID answers a SOAP
+fault). Its states are 1 waiting, 2 paid, 3 closed, 4 reversed (only 2 is the
+bank's documented value); an unknown `extid` answers an empty `<Payments />`;
+`AGRO_QR_MOCK_AMOUNT_UNIT=rubles` reports sums in rubles instead of kopecks.
+`pnpm agro:dev-keys` prints the API environment for it. Locally,
+`AGROPROMBANK_QR_APP_LINK=http://localhost:8898/__sandbox/qr/app?code={code}`
+makes the «open the bank app» button work.
+
+The same sandbox backs `agroprombank-qr.e2e.spec.ts` (client and service end
+to end: issue, callback, accept with no bank call, reversal on rejection, a
+lost callback found by the poll and by the cron, a lapsed invoice, late money,
+a wrong sum, a bank reporting rubles, a refused reversal retried) and the
+sandbox compose stack, where `tools/agroprombank-mock/smoke.mjs` walks the QR
+path too.
+
+### 12.8 Going live
+
+- [ ] Answers to 12.6, then `AGROPROMBANK_QR_CODE_FORMAT` and
+      `AGROPROMBANK_QR_APP_LINK` set from them.
+- [ ] Terminal and callback registered (12.5); login/password (or token) in
+      `/opt/takeaway/secrets/agroprombank-qr-password`.
+- [ ] Migration `20261110100000_agroprombank_qr_provider` applied.
+- [ ] Staging first: one order paid by QR, accepted, one rejected (money back),
+      one left to expire; log lines checked for the amount unit and states.
+- [ ] Production with `AGROPROMBANK_QR_ENABLED=true`: one low-value live order
+      paid, accepted; a second one rejected to see `ReversePayment` work.

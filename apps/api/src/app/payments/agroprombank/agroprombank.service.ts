@@ -17,6 +17,7 @@ import { OrderSettlementService } from '../order-settlement.service';
 import { AgroprombankClient, AgroprombankError, AgroprombankTransportError } from './agroprombank.client';
 import { AgroprombankConfig, CARD_INSTITUTES } from './agroprombank.config';
 import { BANK_CURRENCY_CODES } from './constants';
+import { withFreshInvoiceId } from './invoice-ids';
 import { type XmlElement, children, num, text, toPlainObject } from './xml';
 
 export interface BoundCardView {
@@ -542,25 +543,19 @@ export class AgroprombankService {
   }
 
   /** Gives a deferred payment its invoice id and takes it out of `REQUIRES_ACTION`, exactly once. */
-  private async claimDeferred(payment: Payment): Promise<Payment & { invoiceId: string }> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const invoiceId = `${this.config.invoicePrefix}${await this.nextInvoiceNumber()}`;
-      try {
-        const claimed = await this.prisma.payment.updateMany({
-          where: { id: payment.id, status: 'REQUIRES_ACTION', invoiceId: null },
-          data: {
-            status: 'PENDING',
-            invoiceId,
-            rawJson: { deferred: true, requestedPreauth: false } satisfies Prisma.InputJsonValue,
-          },
-        });
-        if (claimed.count === 0) throw new ConflictException('This order is already being charged');
-        return { ...payment, status: 'PENDING', invoiceId };
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
-    throw new ConflictException('Could not allocate a unique invoice id');
+  private claimDeferred(payment: Payment): Promise<Payment & { invoiceId: string }> {
+    return withFreshInvoiceId(this.prisma, this.config.invoicePrefix, async (invoiceId) => {
+      const claimed = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: 'REQUIRES_ACTION', invoiceId: null },
+        data: {
+          status: 'PENDING',
+          invoiceId,
+          rawJson: { deferred: true, requestedPreauth: false } satisfies Prisma.InputJsonValue,
+        },
+      });
+      if (claimed.count === 0) throw new ConflictException('This order is already being charged');
+      return { ...payment, status: 'PENDING' as const, invoiceId };
+    });
   }
 
   /**
@@ -817,15 +812,10 @@ export class AgroprombankService {
 
   /**
    * Allocates the merchant-side operation id and its Payment row.
-   *
-   * `invoiceid` must stay unique for the entire life of the merchant contract.
-   * It is the prefix and the next value of `agroprombank_invoice_seq` — short
-   * numbers like the bank's own example (`123456`). The timestamp + random
-   * ids before ran to 18 digits, and every charge that carried one failed
-   * inside the bank ("Произошла ошибка", no operation on record). The DB's
-   * unique index stays the actual guarantee, so a collision is retried.
+   * `invoiceid` must stay unique for the entire life of the merchant
+   * contract — see {@link withFreshInvoiceId}.
    */
-  private async createPendingPayment(
+  private createPendingPayment(
     orderId: string,
     data: {
       amountCents: number;
@@ -841,44 +831,22 @@ export class AgroprombankService {
       preauth: boolean;
     },
   ): Promise<Payment & { invoiceId: string }> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const invoiceId = `${this.config.invoicePrefix}${await this.nextInvoiceNumber()}`;
-      try {
-        const payment = await this.prisma.payment.create({
-          data: {
-            orderId,
-            provider: 'AGROPROMBANK',
-            status: 'PENDING',
-            invoiceId,
-            amountCents: data.amountCents,
-            tipCents: data.tipCents,
-            currency: data.currency,
-            cardTokenId: data.cardTokenId,
-            rawJson: { requestedPreauth: data.preauth } satisfies Prisma.InputJsonValue,
-          },
-        });
-        return payment as Payment & { invoiceId: string };
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
-    throw new ConflictException('Could not allocate a unique invoice id');
-  }
-
-  /**
-   * The next number of the invoice sequence (migration
-   * 20260923160000_agroprombank_invoice_sequence). A sequence never hands a
-   * value out twice, even across concurrent charges — but a database restored
-   * from a backup rewinds it: move it past the highest invoice id the bank has
-   * already seen before taking payments again.
-   */
-  private async nextInvoiceNumber(): Promise<string> {
-    const rows = await this.prisma.$queryRaw<
-      Array<{ value: bigint }>
-    >`SELECT nextval('agroprombank_invoice_seq') AS value`;
-    const value = rows[0]?.value;
-    if (value === undefined) throw new Error('agroprombank_invoice_seq returned no value');
-    return value.toString();
+    return withFreshInvoiceId(this.prisma, this.config.invoicePrefix, async (invoiceId) => {
+      const payment = await this.prisma.payment.create({
+        data: {
+          orderId,
+          provider: 'AGROPROMBANK',
+          status: 'PENDING',
+          invoiceId,
+          amountCents: data.amountCents,
+          tipCents: data.tipCents,
+          currency: data.currency,
+          cardTokenId: data.cardTokenId,
+          rawJson: { requestedPreauth: data.preauth } satisfies Prisma.InputJsonValue,
+        },
+      });
+      return payment as Payment & { invoiceId: string };
+    });
   }
 
   /** Stores a freshly issued token, encrypted, and makes it the default if it is the first. */
@@ -1040,10 +1008,6 @@ function fingerprintOf(token: string): string {
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
 }
 
 function messageOf(err: unknown): string {

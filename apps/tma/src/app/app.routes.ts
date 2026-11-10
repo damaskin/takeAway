@@ -39,6 +39,11 @@ export const appRoutes: Route[] = [
         path: 'orders/:id',
         loadComponent: () => import('./features/order-status/order-status.page').then((m) => m.TmaOrderStatusPage),
       },
+      // Paying the order by QR in the bank's app (Agroprombank «Мобильный платёж»).
+      {
+        path: 'orders/:id/qr',
+        loadComponent: () => import('./features/qr-payment/qr-payment.page').then((m) => m.TmaQrPaymentPage),
+      },
       {
         path: 'cards',
         loadComponent: () => import('./features/payment-cards/payment-cards.page').then((m) => m.TmaPaymentCardsPage),

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Payment } from '@prisma/client';
 
+import { AgroprombankQrService } from './agroprombank-qr/agroprombank-qr.service';
 import { AgroprombankWebService } from './agroprombank-web/agroprombank-web.service';
 import { AgroprombankService } from './agroprombank/agroprombank.service';
 import { PaymentHoldsService } from './agroprombank/payment-holds.service';
@@ -15,7 +16,7 @@ export interface RefundAudit {
 
 /**
  * The money operations that do not care which Agroprombank flow took the
- * card — capture on accept, refund from the admin — routed to the service
+ * money — capture on accept, refund from the admin — routed to the service
  * that speaks to the bank for that payment.
  */
 @Injectable()
@@ -24,6 +25,7 @@ export class CardPaymentsService {
     private readonly holds: PaymentHoldsService,
     private readonly token: AgroprombankService,
     private readonly web: AgroprombankWebService,
+    private readonly qr: AgroprombankQrService,
   ) {}
 
   /**
@@ -36,7 +38,8 @@ export class CardPaymentsService {
    * customer agreed to the figure they saw at checkout, and anything the store
    * changed afterwards is a conversation, not a silent larger debit. A charge
    * that was put off until now (no preauthorization on the terminal) is made
-   * here for that same amount.
+   * here for that same amount. A paid QR invoice was money taken at payment:
+   * it is settled with no bank call.
    */
   async captureHoldForOrder(orderId: string): Promise<Payment | null> {
     const hold = await this.holds.findHold(orderId);
@@ -45,14 +48,24 @@ export class CardPaymentsService {
       await this.token.captureDeferred(hold.id);
     } else if (hold.provider === 'AGROPROMBANK_WEB') {
       await this.web.complete(hold.id, hold.amountCents);
+    } else if (hold.provider === 'AGROPROMBANK_QR') {
+      await this.qr.settleOnAccept(hold.id);
     } else {
       await this.token.completePreauthorization(hold.id, hold.amountCents);
     }
     return hold;
   }
 
-  /** Full or partial refund of a captured card payment; returns the bank-side reference. */
+  /**
+   * Full or partial refund of a captured card payment; returns the bank-side
+   * reference. A QR payment goes back in full only (`ReversePayment` takes no
+   * amount) — a partial refund is a 400 `QR_PARTIAL_REFUND_UNSUPPORTED`.
+   */
   async refund(payment: Payment, amountCents: number, audit: RefundAudit): Promise<string> {
+    if (payment.provider === 'AGROPROMBANK_QR') {
+      const result = await this.qr.refund(payment.id, amountCents, audit);
+      return result.rrn ?? result.invoiceId;
+    }
     if (payment.provider === 'AGROPROMBANK_WEB') {
       const result = await this.web.refund(payment.id, amountCents, audit);
       return result.rrn ?? result.invoiceId;

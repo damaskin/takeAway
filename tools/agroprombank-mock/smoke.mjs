@@ -7,8 +7,11 @@
  * put an order together, hold the money, let the kitchen accept (capture),
  * then refund — and the same for Web-платёж: the bank's page, the
  * notification, capture on accept, release on cancel, on the kitchen's
- * rejection and on expiry. Asserts the outcome at every step, so a green run
- * means the wiring genuinely works rather than merely returning 200s.
+ * rejection and on expiry — and for the QR payment: the invoice, the bank
+ * app, the callback, settling on accept, ReversePayment on cancel and on
+ * rejection, a lost callback and a closed invoice. Asserts the outcome at
+ * every step, so a green run means the wiring genuinely works rather than
+ * merely returning 200s.
  *
  *   node smoke.mjs
  */
@@ -371,6 +374,113 @@ check(
   (await prisma.payment.findUnique({ where: { id: web4.payment.id } }))?.status === 'REFUNDED',
   'блокировка снята при истечении',
 );
+
+// ── «Мобильный платёж» (QR) ─────────────────────────────────────────────────
+// The QR sandbox shares the Web-платёж port.
+const qrState = async () => fetch(`${MOCK_WEB}/__sandbox/qr/state`).then((r) => r.json());
+
+/** A fresh order with a QR invoice issued for it. */
+async function qrOrder(label) {
+  token = mintToken(customer.id);
+  const cartQ = await api('POST', '/cart/items', { storeId: store.id, productId: product.id, quantity: 1 });
+  const orderQ = await api('POST', '/orders', { cartId: cartQ.body.id, pickupMode: 'ASAP', fulfillmentType: 'PICKUP' });
+  const started = await api('POST', '/payments/agroprombank-qr/start', { orderId: orderQ.body.id });
+  check(
+    started.status === 200 && started.body?.status === 'PENDING' && Boolean(started.body?.qr?.code),
+    `${label}: банк выставил счёт, показан QR-код`,
+    started.body?.qr?.code,
+  );
+  const row = await prisma.payment.findUnique({ where: { id: started.body.paymentId } });
+  return { orderId: orderQ.body.id, paymentId: started.body.paymentId, extid: row?.invoiceId, started: started.body };
+}
+
+/** The customer pays in the bank app; `silent` loses the callback. */
+async function qrPay(extid, silent = false) {
+  await fetch(`${MOCK_WEB}/__sandbox/qr/pay/${extid}${silent ? '?silent=1' : ''}`, { method: 'POST' });
+}
+
+step('QR: оплата доступна для рублей ПМР');
+const features = await api('GET', '/config/features');
+check(features.body?.qrPaymentCurrencies?.includes('RUP'), 'qrPaymentCurrencies = ["RUP"]');
+
+step('QR: счёт, оплата в приложении банка, деньги ждут кухню, принятие без вызова банка');
+const qr1 = await qrOrder('заказ 1');
+const qrAgain = await api('POST', '/payments/agroprombank-qr/start', { orderId: qr1.orderId });
+check(
+  qrAgain.body?.paymentId === qr1.paymentId && qrAgain.body?.qr?.code === qr1.started.qr.code,
+  'повторный старт вернул тот же счёт и тот же код',
+);
+check(/^9\d+$/.test(qr1.extid ?? ''), 'extid — только цифры, с префиксом окружения', qr1.extid);
+if (qr1.started.qr.appLink) {
+  const app = await fetch(viaMock(qr1.started.qr.appLink));
+  check(app.status === 200, '«приложение банка» открыло счёт по ссылке', `HTTP ${app.status}`);
+}
+await qrPay(qr1.extid);
+check(
+  (await prisma.payment.findUnique({ where: { id: qr1.paymentId } }))?.status === 'REQUIRES_ACTION',
+  'колбэк принят, оплата подтверждена GetPaymentStateExtId',
+);
+const qrStatus = await api('GET', `/payments/agroprombank-qr/${qr1.paymentId}`);
+check(qrStatus.body?.status === 'PAID', 'клиент видит «оплачено»');
+const qrView = await api('GET', `/orders/${qr1.orderId}`);
+check(
+  qrView.body?.payment?.state === 'HELD' && qrView.body?.payment?.provider === 'AGROPROMBANK_QR',
+  'заказ: деньги на заказе до принятия, провайдер — QR',
+);
+token = mintToken(admin.id);
+const callsBeforeAccept = (await qrState()).calls.length;
+const acceptedQ = await api('POST', `/kds/orders/${qr1.orderId}/accept?storeId=${store.id}`);
+check(acceptedQ.status === 200 || acceptedQ.status === 201, 'кухня приняла заказ', `HTTP ${acceptedQ.status}`);
+check((await prisma.payment.findUnique({ where: { id: qr1.paymentId } }))?.status === 'SUCCEEDED', 'платёж SUCCEEDED');
+check(
+  (await qrState()).calls.slice(callsBeforeAccept).every((c) => c.startsWith('GetPaymentState')),
+  'при принятии деньги в банке не двигались',
+);
+
+step('QR: покупатель отменил оплаченный заказ — ReversePayment');
+const qr2 = await qrOrder('заказ 2');
+await qrPay(qr2.extid);
+token = mintToken(customer.id);
+const cancelledQ = await api('POST', `/orders/${qr2.orderId}/cancel`);
+check(cancelledQ.body?.status === 'CANCELLED', 'заказ отменён');
+check(
+  cancelledQ.body?.cancelMoney === 'REFUNDED',
+  'деньги возвращены (cancelMoney REFUNDED)',
+  cancelledQ.body?.cancelMoney,
+);
+check((await prisma.payment.findUnique({ where: { id: qr2.paymentId } }))?.status === 'REFUNDED', 'платёж REFUNDED');
+check(
+  (await qrState()).calls.some((c) => c.startsWith('ReversePayment')),
+  'банку отправлен ReversePayment',
+);
+
+step('QR: кухня отклонила заказ — деньги возвращены');
+const qr3 = await qrOrder('заказ 3');
+await qrPay(qr3.extid);
+token = mintToken(admin.id);
+const rejectedQ = await api('POST', `/kds/orders/${qr3.orderId}/reject?storeId=${store.id}`, {
+  reason: 'OUT_OF_STOCK',
+});
+check(rejectedQ.body?.money === 'refunded', 'заказ отклонён, деньги возвращены', JSON.stringify(rejectedQ.body));
+
+step('QR: колбэк потерян — оплату находит опрос статуса');
+const qr4 = await qrOrder('заказ 4');
+await qrPay(qr4.extid, true);
+token = mintToken(customer.id);
+const polled = await api('GET', `/payments/agroprombank-qr/${qr4.paymentId}`);
+check(polled.body?.status === 'PAID', 'опрос статуса нашёл оплату', polled.body?.status);
+
+step('QR: покупатель закрыл экран с кодом — счёт закрыт');
+const qr5 = await qrOrder('заказ 5');
+token = mintToken(customer.id);
+const closedQ = await api('POST', `/payments/agroprombank-qr/${qr5.paymentId}/cancel`);
+check(closedQ.body?.status === 'EXPIRED', 'счёт закрыт (EXPIRED)', closedQ.body?.status);
+check(
+  (await qrState()).payments.find((p) => p.externalId === qr5.extid)?.state === 3,
+  'банку отправлен ClosePaymentExtId',
+);
+const viewClosed = await api('GET', `/orders/${qr5.orderId}`);
+check(viewClosed.body?.payment?.state === 'NONE', 'заказ снова ждёт оплаты', viewClosed.body?.payment?.state);
 
 console.log(`\n${failures === 0 ? '✅ Все проверки пройдены' : `❌ Провалено проверок: ${failures}`}`);
 await prisma.$disconnect();

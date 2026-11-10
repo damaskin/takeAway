@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { Payment, Prisma } from '@prisma/client';
+import type { Currency, Payment, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgroprombankQrClient } from '../agroprombank-qr/agroprombank-qr.client';
+import { AgroprombankQrConfig } from '../agroprombank-qr/agroprombank-qr.config';
+import { qrPaymentRefs } from '../agroprombank-qr/payment-refs';
 import { AgroprombankWebClient, AgroprombankWebError } from '../agroprombank-web/agroprombank-web.client';
 import { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
 import { CARD_PROVIDERS, isDeferredCharge, releaseOutcome } from '../card-providers';
@@ -25,7 +28,9 @@ const RETRY_RELEASE_AFTER_MS = 2 * 60_000;
  * so both sides can hold it.
  *
  * Provider-aware: a hold taken through the bound-card flow is released with
- * `ReverseOperation`, one taken on the Web-платёж page with `CancelOperation`.
+ * `ReverseOperation`, one taken on the Web-платёж page with `CancelOperation`,
+ * and a paid QR invoice — money taken, parked like a hold — is given back
+ * with `ReversePayment`.
  */
 @Injectable()
 export class PaymentHoldsService {
@@ -37,6 +42,8 @@ export class PaymentHoldsService {
     private readonly client: AgroprombankClient,
     private readonly webConfig: AgroprombankWebConfig,
     private readonly webClient: AgroprombankWebClient,
+    private readonly qrConfig: AgroprombankQrConfig,
+    private readonly qrClient: AgroprombankQrClient,
   ) {}
 
   /**
@@ -51,17 +58,19 @@ export class PaymentHoldsService {
   }
 
   /**
-   * Whether an order has to be paid by card before the kitchen may take it.
+   * Whether an order has to be paid before the kitchen may take it.
    *
-   * Paying at the counter is gone: with card payments on — either flow — an
-   * order that costs anything waits for its hold before it reaches the kitchen
+   * Paying at the counter is gone: with card payments on — either flow — or
+   * the QR payment on for the order's currency, an order that costs anything
+   * waits for its hold (or its paid QR invoice) before it reaches the kitchen
    * board, and the board cannot accept it without one. A zero total (points or
-   * a gift card covered it all) has nothing to hold. With card payments
-   * switched off on a deployment nothing can be held, so the rule stands down
+   * a gift card covered it all) has nothing to hold. With no way to pay
+   * switched on for the order nothing can be held, so the rule stands down
    * rather than locking every order out.
    */
-  cardPaymentRequired(order: { totalCents: number }): boolean {
-    return this.webConfig.cardPaymentFlow !== 'none' && order.totalCents > 0;
+  cardPaymentRequired(order: { totalCents: number; currency: Currency }): boolean {
+    if (order.totalCents <= 0) return false;
+    return this.webConfig.cardPaymentFlow !== 'none' || this.qrConfig.currencies.includes(order.currency);
   }
 
   /** A hold or a completed card charge is on the order. */
@@ -93,11 +102,22 @@ export class PaymentHoldsService {
     if (isDeferredCharge(hold)) return this.voidDeferred(hold, reason);
     if (!hold.invoiceId) return null;
     const web = hold.provider === 'AGROPROMBANK_WEB';
-    if (web ? !this.webConfig.isConfigured : !this.config.isConfigured) return null;
+    const qr = hold.provider === 'AGROPROMBANK_QR';
+    // QR money is given back even with the QR payment switched off for new orders.
+    const reachable = web ? this.webConfig.isConfigured : qr ? this.qrConfig.canCallBank : this.config.isConfigured;
+    if (!reachable) return null;
 
     try {
       if (web) {
         await this.webClient.cancel(hold.invoiceId);
+      } else if (qr) {
+        const after = await this.qrClient.reverseInvoice(hold.invoiceId, qrPaymentRefs(hold));
+        // ReversePayment answers nothing; what the bank says afterwards is
+        // logged until it tells us which state a reversal leaves.
+        this.logger.log(
+          `ReversePayment for QR invoice extid=${hold.invoiceId}: the bank now says state ` +
+            `${after?.state ?? '?'} (${after?.stateDescription ?? 'no record'})`,
+        );
       } else {
         await this.client.invoke('ReverseOperation', { invoiceid: hold.invoiceId, amount: hold.amountCents });
       }
@@ -110,10 +130,13 @@ export class PaymentHoldsService {
       });
       // CancelOperation only works within the day of payment. A refusal there
       // is definitive, and a hold the bank will not cancel stays on the card
-      // until the bank lets it lapse — ops has to know.
-      const level = err instanceof AgroprombankWebError || attempts >= MAX_RELEASE_ATTEMPTS ? 'error' : 'warn';
+      // until the bank lets it lapse — ops has to know. A QR payment is money
+      // already taken: after the last try somebody has to give it back by hand.
+      const last = attempts >= MAX_RELEASE_ATTEMPTS;
+      const level = err instanceof AgroprombankWebError || last ? 'error' : 'warn';
       this.logger[level](
-        `Could not release the hold on order=${hold.orderId} payment=${hold.id} (attempt ${attempts}): ${message}`,
+        `${qr && last ? 'REFUND NEEDED: ' : ''}Could not ${qr ? 'give back the QR payment' : 'release the hold'} ` +
+          `on order=${hold.orderId} payment=${hold.id} (attempt ${attempts}): ${message}`,
       );
       return null;
     }
@@ -130,12 +153,12 @@ export class PaymentHoldsService {
           provider: hold.provider,
           invoiceId: hold.invoiceId,
           amount: hold.amountCents,
-          kind: 'hold-released',
+          kind: qr ? 'reversal' : 'hold-released',
           reason,
         } satisfies Prisma.InputJsonValue,
       },
     });
-    this.logger.log(`Released the hold on order=${hold.orderId} (${reason})`);
+    this.logger.log(`${qr ? 'Gave back the QR payment' : 'Released the hold'} on order=${hold.orderId} (${reason})`);
     return updated;
   }
 

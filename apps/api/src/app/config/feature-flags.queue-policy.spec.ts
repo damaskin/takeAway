@@ -1,9 +1,11 @@
 import type { ConfigService } from '@nestjs/config';
 
+import { AgroprombankQrConfig } from '../payments/agroprombank-qr/agroprombank-qr.config';
 import { FeatureFlagsService } from './feature-flags.service';
 
 function withEnv(env: Record<string, string>): FeatureFlagsService {
-  return new FeatureFlagsService({ get: (key: string) => env[key] } as unknown as ConfigService);
+  const config = { get: (key: string) => env[key] } as unknown as ConfigService;
+  return new FeatureFlagsService(config, new AgroprombankQrConfig(config));
 }
 
 describe('FeatureFlagsService.queuePolicyEnabled', () => {

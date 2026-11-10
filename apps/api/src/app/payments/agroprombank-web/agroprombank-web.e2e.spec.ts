@@ -4,6 +4,8 @@ import { type Server, createServer } from 'node:http';
 import type { Payment } from '@prisma/client';
 
 import type { PrismaService } from '../../prisma/prisma.service';
+import type { AgroprombankQrClient } from '../agroprombank-qr/agroprombank-qr.client';
+import type { AgroprombankQrConfig } from '../agroprombank-qr/agroprombank-qr.config';
 import type { AgroprombankClient } from '../agroprombank/agroprombank.client';
 import type { AgroprombankConfig } from '../agroprombank/agroprombank.config';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
@@ -253,6 +255,8 @@ describe('Agroprombank Web-платёж end-to-end (sandbox bank)', () => {
         {} as AgroprombankClient,
         config,
         client,
+        { canCallBank: false, currencies: [] } as unknown as AgroprombankQrConfig,
+        {} as AgroprombankQrClient,
       );
       service = new AgroprombankWebService(
         db.prisma as unknown as PrismaService,

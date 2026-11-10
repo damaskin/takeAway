@@ -1,9 +1,18 @@
+import { createServer } from 'node:http';
+
 import {
   DECLINE_AMOUNT,
   SANDBOX_PATH,
   UNKNOWN_CARD_DIGITS,
   createSandboxBank,
 } from '../../apps/api/src/app/payments/agroprombank/testing/sandbox-bank';
+import {
+  QR_APP_PATH,
+  QR_REFUSE_AMOUNT,
+  QR_SERVICE_PATH,
+  createSandboxQrBank,
+  isSandboxQrPath,
+} from '../../apps/api/src/app/payments/agroprombank-qr/testing/sandbox-qr-bank';
 import {
   WEB_DECLINE_AMOUNT,
   WEB_PAYMENT_PATH,
@@ -16,12 +25,14 @@ import { keepStateIn } from './state-file';
 /**
  * Standalone sandbox gateways — `pnpm agro:mock`.
  *
- * Thin wrappers around the same `createSandboxBank` / `createSandboxWebBank`
- * the integration tests use, so the mocks you develop against and the mocks
- * CI runs cannot drift apart:
+ * Thin wrappers around the same `createSandboxBank` / `createSandboxWebBank` /
+ * `createSandboxQrBank` the integration tests use, so the mocks you develop
+ * against and the mocks CI runs cannot drift apart:
  *   - :8899 — MerchantCAPService (bound cards);
- *   - :8898 — Web-платёж: the payment page, ResultURL notifications and the
- *     admin web service.
+ *   - :8898 — Web-платёж (the payment page, ResultURL notifications and the
+ *     admin web service) and «Мобильный платёж» (the QR web service, the fake
+ *     bank app and the callback), side by side on one port, so the staging
+ *     proxy that serves the one serves the other.
  *
  * Development only. Never point a deployment that takes real orders at this.
  */
@@ -32,6 +43,8 @@ const WEB_PORT = Number(process.env['AGRO_WEB_MOCK_PORT'] ?? 8898);
 const API_BASE = process.env['AGRO_WEB_MOCK_API_BASE'] ?? 'http://localhost:3000/api';
 /** Where the customer's browser reaches the API after the page — the redirects go there. */
 const PUBLIC_API_BASE = process.env['AGRO_WEB_MOCK_PUBLIC_API_BASE'] ?? API_BASE;
+/** Where the QR sandbox calls back; the Web-платёж API base unless set. */
+const QR_API_BASE = process.env['AGRO_QR_MOCK_API_BASE'] ?? API_BASE;
 /** One SMS code for every binding (a shared test environment); random when unset. */
 const FIXED_OTP = process.env['AGRO_MOCK_OTP']?.trim() || undefined;
 /** Where the sandboxes keep their memory across restarts; in memory only when unset. */
@@ -59,7 +72,15 @@ const webBank = createSandboxWebBank({
   log: (message) => log(`[web] ${message}`),
 });
 
-if (STATE_FILE) keepStateIn(STATE_FILE, bank, webBank, log);
+const qrBank = createSandboxQrBank({
+  login: process.env['AGRO_QR_MOCK_LOGIN'] ?? 'sandbox',
+  password: process.env['AGRO_QR_MOCK_PASSWORD'] ?? 'sandbox-pass',
+  callbackUrl: `${QR_API_BASE}/payments/agroprombank-qr/callback`,
+  amountUnit: process.env['AGRO_QR_MOCK_AMOUNT_UNIT'] === 'rubles' ? 'rubles' : 'kopecks',
+  log: (message) => log(`[qr] ${message}`),
+});
+
+if (STATE_FILE) keepStateIn(STATE_FILE, bank, webBank, qrBank, log);
 
 void bank.listen(PORT).then((port) => {
   log(`песочница «Клевер» слушает http://localhost:${port}${SANDBOX_PATH}`);
@@ -72,10 +93,23 @@ void bank.listen(PORT).then((port) => {
   log(`карта ${UNKNOWN_CARD_DIGITS} не привязывается, сумма ${DECLINE_AMOUNT} отклоняется — для проверки ошибок`);
 });
 
-void webBank.listen(WEB_PORT).then((port) => {
-  log(`Web-платёж: страница оплаты http://localhost:${port}${WEB_PAYMENT_PATH}`);
-  log(`Web-платёж: веб-сервис       http://localhost:${port}${WEB_SERVICE_PATH}`);
-  log(`Web-платёж: состояние         GET http://localhost:${port}/__sandbox/web/state`);
-  log(`Web-платёж: оплатить без браузера POST http://localhost:${port}/__sandbox/web/pay/:nivid`);
+// Web-платёж and the QR sandbox share a port: each request goes to the
+// sandbox whose path it is, through that sandbox's own server.
+const shared = createServer((req, res) => {
+  const { pathname } = new URL(req.url ?? '/', 'http://sandbox');
+  (isSandboxQrPath(pathname) ? qrBank.server : webBank.server).emit('request', req, res);
+});
+shared.listen(WEB_PORT, () => {
+  log(`Web-платёж: страница оплаты http://localhost:${WEB_PORT}${WEB_PAYMENT_PATH}`);
+  log(`Web-платёж: веб-сервис       http://localhost:${WEB_PORT}${WEB_SERVICE_PATH}`);
+  log(`Web-платёж: состояние         GET http://localhost:${WEB_PORT}/__sandbox/web/state`);
+  log(`Web-платёж: оплатить без браузера POST http://localhost:${WEB_PORT}/__sandbox/web/pay/:nivid`);
   log(`Web-платёж: ResultURL → ${API_BASE}/payments/agroprombank-web/result; сумма ${WEB_DECLINE_AMOUNT} отклоняется`);
+  log(`QR: веб-сервис               http://localhost:${WEB_PORT}${QR_SERVICE_PATH}`);
+  log(`QR: «приложение банка»       http://localhost:${WEB_PORT}${QR_APP_PATH}?code=…`);
+  log(
+    `QR: оплатить без приложения  POST http://localhost:${WEB_PORT}/__sandbox/qr/pay/:extid (?silent=1 — без колбэка)`,
+  );
+  log(`QR: состояние                GET http://localhost:${WEB_PORT}/__sandbox/qr/state`);
+  log(`QR: колбэк → ${QR_API_BASE}/payments/agroprombank-qr/callback; сумма ${QR_REFUSE_AMOUNT} не выставляется`);
 });

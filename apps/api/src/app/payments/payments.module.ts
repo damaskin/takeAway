@@ -7,6 +7,8 @@ import { OrdersModule } from '../orders/orders.module';
 import { PosModule } from '../pos/pos.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { AdminPaymentsController } from './admin-payments.controller';
+import { AgroprombankQrController } from './agroprombank-qr/agroprombank-qr.controller';
+import { AgroprombankQrService } from './agroprombank-qr/agroprombank-qr.service';
 import { AgroprombankWebController } from './agroprombank-web/agroprombank-web.controller';
 import { AgroprombankWebService } from './agroprombank-web/agroprombank-web.service';
 import { AgroprombankAdminController } from './agroprombank/agroprombank-admin.controller';
@@ -49,6 +51,7 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
     AgroprombankController,
     AgroprombankAdminController,
     AgroprombankWebController,
+    AgroprombankQrController,
   ],
   providers: [
     OrderSettlementService,
@@ -57,9 +60,17 @@ import { stripeClientProvider, StripeConfig } from './stripe.config';
     stripeClientProvider,
     AgroprombankService,
     AgroprombankWebService,
+    AgroprombankQrService,
     CardPaymentsService,
     AgroprombankCronService,
   ],
-  exports: [PaymentsService, AgroprombankService, AgroprombankWebService, CardPaymentsService, OrderSettlementService],
+  exports: [
+    PaymentsService,
+    AgroprombankService,
+    AgroprombankWebService,
+    AgroprombankQrService,
+    CardPaymentsService,
+    OrderSettlementService,
+  ],
 })
 export class PaymentsModule {}

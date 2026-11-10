@@ -91,6 +91,8 @@ describe('OrderStatusPage — waiting for the store', () => {
     order: OrderView,
     store: Partial<StoreDetail> = {},
     cancel: () => Observable<OrderView> = () => of({ ...order, status: 'CANCELLED', canCancel: false }),
+    /** `qrPaymentCurrencies` and whether a card flow is on; no QR and cards on by default. */
+    flags: { qr?: string[]; cards?: boolean } = {},
   ) {
     orders = { get: jest.fn(() => of(order)), cancel: jest.fn(cancel) };
     TestBed.configureTestingModule({
@@ -116,7 +118,15 @@ describe('OrderStatusPage — waiting for the store', () => {
           },
         },
         { provide: AuthStore, useValue: { user: signal(null) } },
-        { provide: FeatureFlagsStore, useValue: { load: jest.fn(), webPaymentsEnabled: signal(false) } },
+        {
+          provide: FeatureFlagsStore,
+          useValue: {
+            load: jest.fn(),
+            webPaymentsEnabled: signal(false),
+            cardPaymentsEnabled: signal(flags.cards ?? true),
+            qrPaymentCurrencies: signal(flags.qr ?? []),
+          },
+        },
         { provide: WebPaymentApi, useValue: {} },
       ],
     });
@@ -491,6 +501,70 @@ describe('OrderStatusPage — waiting for the store', () => {
       expect(byTestId('cancel-order')).not.toBeNull();
     });
   });
+
+  /** Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12). */
+  describe('paid by QR in the bank app', () => {
+    const QR_PAID = {
+      state: 'HELD',
+      amountCents: 4500,
+      cardMask: null,
+      paidAt: null,
+      provider: 'AGROPROMBANK_QR',
+    } as const;
+
+    it('offers to pay a new unpaid order by QR, and goes to the QR screen', async () => {
+      const unpaid = { ...ORDER, payment: { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null } } as const;
+      const { byTestId } = await open(unpaid, {}, undefined, { qr: ['RUP'] });
+      const link = byTestId('pay-by-qr');
+      expect(link?.textContent?.trim()).toBe('Оплатить по QR');
+      expect(link?.getAttribute('href')).toBe('/orders/order-1/qr');
+      TestBed.resetTestingModule();
+
+      // A store in another currency is not paid by QR.
+      const other = await open({ ...unpaid, currency: 'MDL' }, {}, undefined, { qr: ['RUP'] });
+      expect(other.byTestId('pay-by-qr')).toBeNull();
+    });
+
+    it('says the order is paid by QR and the money comes back if the store turns it down', async () => {
+      const { testText, byTestId, text } = await open({ ...ORDER, payment: QR_PAID }, {}, undefined, { qr: ['RUP'] });
+      expect(testText('payment-line')).toBe(
+        '✅ Оплачено по QR 45 руб. Если заведение не примет заказ, деньги вернутся.',
+      );
+      expect(text()).not.toContain('Спишем при принятии заказа');
+      expect(byTestId('pay-by-qr')).toBeNull();
+    });
+
+    it('says the QR payment was returned once a cancelled order gave the money back', async () => {
+      const { testText } = await open(
+        {
+          ...ORDER,
+          status: 'CANCELLED',
+          cancelledBy: 'STORE',
+          cancelReason: 'TOO_BUSY',
+          cancelMoney: 'REFUNDED',
+          payment: { ...QR_PAID, state: 'REFUNDED' },
+        },
+        {},
+        undefined,
+        { qr: ['RUP'] },
+      );
+      expect(testText('cancel-reason')).toBe(
+        'Заведение сейчас перегружено заказами. Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.',
+      );
+      expect(testText('payment-line')).toBe('↩️ Деньги возвращены 45 руб.');
+    });
+
+    // An API that does not name the provider: with cards off, QR is the only way it can have been paid.
+    it('reads the payment as QR when the API does not say, but only where cards are off', async () => {
+      const held = { ...ORDER, payment: { state: 'HELD', amountCents: 4500, cardMask: null, paidAt: null } } as const;
+      const qrOnly = await open(held, {}, undefined, { qr: ['RUP'], cards: false });
+      expect(qrOnly.testText('payment-line')).toContain('Оплачено по QR');
+      TestBed.resetTestingModule();
+
+      const both = await open(held, {}, undefined, { qr: ['RUP'], cards: true });
+      expect(both.testText('payment-line')).toContain('Спишем при принятии заказа');
+    });
+  });
 });
 
 describe('OrderStatusPage — «Как вам заказ?»', () => {
@@ -528,7 +602,15 @@ describe('OrderStatusPage — «Как вам заказ?»', () => {
           useValue: { subscribeToOrder: () => () => undefined, onStoreAvailabilityChanged: () => () => undefined },
         },
         { provide: AuthStore, useValue: { user: signal(null) } },
-        { provide: FeatureFlagsStore, useValue: { load: jest.fn(), webPaymentsEnabled: signal(false) } },
+        {
+          provide: FeatureFlagsStore,
+          useValue: {
+            load: jest.fn(),
+            webPaymentsEnabled: signal(false),
+            cardPaymentsEnabled: signal(true),
+            qrPaymentCurrencies: signal([]),
+          },
+        },
         { provide: WebPaymentApi, useValue: {} },
       ],
     });

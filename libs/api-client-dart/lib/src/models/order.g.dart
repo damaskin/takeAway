@@ -11,6 +11,11 @@ OrderPayment _$OrderPaymentFromJson(Map<String, dynamic> json) => OrderPayment(
   amountCents: (json['amountCents'] as num).toInt(),
   cardMask: json['cardMask'] as String?,
   paidAt: json['paidAt'] == null ? null : DateTime.parse(json['paidAt'] as String),
+  provider: $enumDecodeNullable(
+    _$PaymentProviderEnumMap,
+    json['provider'],
+    unknownValue: JsonKey.nullForUndefinedEnumValue,
+  ),
 );
 
 const _$PaymentStateEnumMap = {
@@ -20,6 +25,12 @@ const _$PaymentStateEnumMap = {
   PaymentState.paid: 'PAID',
   PaymentState.failed: 'FAILED',
   PaymentState.refunded: 'REFUNDED',
+};
+
+const _$PaymentProviderEnumMap = {
+  PaymentProvider.agroprombank: 'AGROPROMBANK',
+  PaymentProvider.agroprombankWeb: 'AGROPROMBANK_WEB',
+  PaymentProvider.agroprombankQr: 'AGROPROMBANK_QR',
 };
 
 OrderItem _$OrderItemFromJson(Map<String, dynamic> json) => OrderItem(

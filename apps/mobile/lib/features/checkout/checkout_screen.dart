@@ -85,13 +85,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         return;
       }
       unawaited(HapticFeedback.heavyImpact());
+      if (!mounted) return;
+      final placed = ref.read(checkoutProvider);
       // Web flow: the bank's page is already over the app; the order screen
       // waits underneath and offers to pay again if the page never opened.
-      if (mounted && ref.read(checkoutProvider).webLaunch == WebPaymentLaunch.notOpened) {
+      if (placed.webLaunch == WebPaymentLaunch.notOpened) {
         Snack.show(context, AppLocalizations.of(context).webPaymentNotOpened, icon: Icons.error_outline_rounded);
       }
       router.go(Routes.menu);
-      unawaited(router.push(Routes.order(orderId, placed: true)));
+      // QR: the invoice to pay in the bank's app comes first, the order
+      // screen once it is paid (straight away if it already is).
+      final qr = placed.qrPayment;
+      if (qr != null && qr.status != QrPaymentStatus.paid && qr.status != QrPaymentStatus.refunded) {
+        unawaited(router.push(Routes.orderQr(orderId, placed: true), extra: qr));
+      } else {
+        unawaited(router.push(Routes.order(orderId, placed: true)));
+      }
     } on CheckoutValidation catch (problem) {
       unawaited(HapticFeedback.vibrate());
       setState(() => _problem = problem.reason);
@@ -186,7 +195,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
           ),
           _DiscountsSection(state: state, currency: store.currency),
-          _PaymentSection(state: state, flags: flags, needsCard: controller.needsCard(cart, store)),
+          _PaymentSection(store: store, state: state, flags: flags, needsCard: controller.needsCard(cart, store)),
           _SummarySection(cart: cart, store: store, state: state, breakdown: breakdown),
           if (belowMinimum)
             Padding(
@@ -539,8 +548,9 @@ class _DiscountsSection extends ConsumerWidget {
 }
 
 class _PaymentSection extends ConsumerWidget {
-  const _PaymentSection({required this.state, required this.flags, required this.needsCard});
+  const _PaymentSection({required this.store, required this.state, required this.flags, required this.needsCard});
 
+  final Store store;
   final CheckoutState state;
   final FeatureFlags flags;
 
@@ -555,6 +565,58 @@ class _PaymentSection extends ConsumerWidget {
     final boundCards = flags.boundCardsEnabled;
     final cards = boundCards ? (ref.watch(cardsProvider).valueOrNull ?? const <BoundCard>[]) : const <BoundCard>[];
     final locked = state.placedOrderId != null;
+    final method = controller.payMethod(store);
+
+    // «Картой» / «По QR в приложении банка», when the store takes both.
+    Widget methodTile(PayMethod value, IconData icon, String title, {String? subtitle}) {
+      final selected = method == value;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Semantics(
+          selected: selected,
+          inMutuallyExclusiveGroup: true,
+          child: Material(
+            color: selected ? brand.caramelSoft : brand.cream,
+            borderRadius: BorderRadius.circular(Radii.button),
+            child: InkWell(
+              key: ValueKey('pay-method-${value.name}'),
+              borderRadius: BorderRadius.circular(Radii.button),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                controller.selectPayMethod(value);
+              },
+              child: AnimatedContainer(
+                duration: Motion.medium,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(Radii.button),
+                  border: Border.all(color: selected ? brand.caramel : Colors.transparent, width: 1.4),
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon, color: brand.textPrimary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: context.text.titleSmall),
+                          if (subtitle != null) Text(subtitle, style: context.text.bodySmall),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                      color: selected ? brand.caramel : brand.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     Widget option({
       required String? id,
@@ -613,39 +675,54 @@ class _PaymentSection extends ConsumerWidget {
       );
     }
 
+    // The card side: bound cards to pick from, or the bank's page.
+    final cardSide = [
+      for (final card in cards)
+        option(
+          id: card.id,
+          icon: Icons.credit_card_rounded,
+          title: card.label ?? card.maskedPan ?? l10n.cardFallbackTitle,
+          subtitle: card.isInactive
+              ? l10n.cardInactive
+              : [if (card.label != null) card.maskedPan, card.instituteName].whereType<String>().join(' · '),
+          enabled: !card.isInactive,
+        ),
+      // Orders are paid by card only; there is no paying at the counter.
+      if (flags.webPaymentsEnabled) ...[
+        if (needsCard) _PaymentNotice(text: l10n.webPaymentHint, icon: Icons.lock_outline_rounded),
+      ] else if (!boundCards)
+        _PaymentNotice(text: l10n.cardPaymentsUnavailable)
+      else if (needsCard && !cards.any((c) => !c.isInactive))
+        _PaymentNotice(text: l10n.addCardToOrder),
+      if (boundCards && !locked)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => context.push(Routes.paymentMethods),
+            icon: const Icon(Icons.add_card_rounded),
+            label: Text(l10n.addCard),
+          ),
+        ),
+      if (boundCards && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
+    ];
+
     return CheckoutSection(
       title: l10n.paymentTitle,
       icon: Icons.account_balance_wallet_outlined,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final card in cards)
-            option(
-              id: card.id,
-              icon: Icons.credit_card_rounded,
-              title: card.label ?? card.maskedPan ?? l10n.cardFallbackTitle,
-              subtitle: card.isInactive
-                  ? l10n.cardInactive
-                  : [if (card.label != null) card.maskedPan, card.instituteName].whereType<String>().join(' · '),
-              enabled: !card.isInactive,
-            ),
-          // Orders are paid by card only; there is no paying at the counter.
-          if (flags.webPaymentsEnabled) ...[
-            if (needsCard) _PaymentNotice(text: l10n.webPaymentHint, icon: Icons.lock_outline_rounded),
-          ] else if (!boundCards)
-            _PaymentNotice(text: l10n.cardPaymentsUnavailable)
-          else if (needsCard && !cards.any((c) => !c.isInactive))
-            _PaymentNotice(text: l10n.addCardToOrder),
-          if (boundCards && !locked)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => context.push(Routes.paymentMethods),
-                icon: const Icon(Icons.add_card_rounded),
-                label: Text(l10n.addCard),
-              ),
-            ),
-          if (boundCards && state.cardId != null) Text(l10n.holdHint, style: context.text.bodySmall),
+          if (controller.choosesPayMethod(store)) ...[
+            methodTile(PayMethod.card, Icons.credit_card_rounded, l10n.payMethodCard),
+            methodTile(PayMethod.qr, Icons.qr_code_2_rounded, l10n.payMethodQr, subtitle: l10n.payMethodQrSubtitle),
+            if (method == PayMethod.card && cards.isNotEmpty) const Divider(height: 16),
+          ],
+          if (method == PayMethod.qr) ...[
+            // Paid in the bank's app right after the order is placed; given
+            // back if the store turns it down.
+            if (needsCard) _PaymentNotice(text: l10n.qrPaymentHint, icon: Icons.qr_code_2_rounded),
+          ] else
+            ...cardSide,
         ],
       ),
     );

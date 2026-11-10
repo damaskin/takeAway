@@ -8,6 +8,10 @@ import type {
   SandboxTokenRequest,
 } from '../../apps/api/src/app/payments/agroprombank/testing/sandbox-bank';
 import type {
+  SandboxQrBank,
+  SandboxQrPayment,
+} from '../../apps/api/src/app/payments/agroprombank-qr/testing/sandbox-qr-bank';
+import type {
   SandboxInvoice,
   SandboxWebBank,
 } from '../../apps/api/src/app/payments/agroprombank-web/testing/sandbox-web-bank';
@@ -19,8 +23,8 @@ import type {
  * environment the mock is recreated whenever its sources change, and every
  * card bound before that would then be answered «Токен не найден» — the
  * tester's saved card dead for no reason they can see. So the cards, their
- * operations and the Web-платёж invoices are written out after every call
- * that can change them and read back on start.
+ * operations, the Web-платёж invoices and the QR payments are written out
+ * after every call that can change them and read back on start.
  */
 
 interface SavedState {
@@ -28,12 +32,14 @@ interface SavedState {
   tokens: SandboxToken[];
   operations: SandboxOperation[];
   invoices: SandboxInvoice[];
+  qrPayments: SandboxQrPayment[];
 }
 
 export function keepStateIn(
   file: string,
   bank: SandboxBank,
   webBank: SandboxWebBank,
+  qrBank: SandboxQrBank,
   log: (message: string) => void,
 ): void {
   if (existsSync(file)) {
@@ -43,9 +49,10 @@ export function keepStateIn(
       for (const token of saved.tokens ?? []) bank.tokens.set(token.token, token);
       for (const operation of saved.operations ?? []) bank.operations.set(operation.invoiceId, operation);
       for (const invoice of saved.invoices ?? []) webBank.invoices.set(invoice.nivid, invoice);
+      for (const payment of saved.qrPayments ?? []) qrBank.payments.set(payment.qrPaymentId, payment);
       log(
         `состояние из ${file}: токенов ${bank.tokens.size}, операций ${bank.operations.size}, ` +
-          `счетов Web-платежа ${webBank.invoices.size}`,
+          `счетов Web-платежа ${webBank.invoices.size}, QR-счетов ${qrBank.payments.size}`,
       );
     } catch (err) {
       log(`не прочитать ${file}, начинаю с пустого: ${err instanceof Error ? err.message : err}`);
@@ -58,6 +65,7 @@ export function keepStateIn(
       tokens: [...bank.tokens.values()],
       operations: [...bank.operations.values()],
       invoices: [...webBank.invoices.values()],
+      qrPayments: [...qrBank.payments.values()],
     };
     try {
       mkdirSync(dirname(file), { recursive: true });
@@ -70,7 +78,7 @@ export function keepStateIn(
   };
 
   // Only POSTs change anything; GETs (state, health checks) are not worth a write.
-  for (const server of [bank.server, webBank.server]) {
+  for (const server of [bank.server, webBank.server, qrBank.server]) {
     server.on('request', (req, res) => {
       if (req.method === 'POST') res.on('finish', save);
     });

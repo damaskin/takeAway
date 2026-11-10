@@ -1,4 +1,10 @@
+import { Logger } from '@nestjs/common';
+
 import type { PrismaService } from '../../prisma/prisma.service';
+import { AgroprombankQrError } from '../agroprombank-qr/agroprombank-qr.client';
+import type { AgroprombankQrClient } from '../agroprombank-qr/agroprombank-qr.client';
+import type { AgroprombankQrConfig } from '../agroprombank-qr/agroprombank-qr.config';
+import { releaseOutcome } from '../card-providers';
 import { AgroprombankWebError } from '../agroprombank-web/agroprombank-web.client';
 import type { AgroprombankWebClient } from '../agroprombank-web/agroprombank-web.client';
 import type { AgroprombankWebConfig } from '../agroprombank-web/agroprombank-web.config';
@@ -12,7 +18,10 @@ import { MAX_RELEASE_ATTEMPTS, PaymentHoldsService } from './payment-holds.servi
  * could not do at cancel time is retried rather than forgotten.
  */
 describe('PaymentHoldsService', () => {
-  const hold = (provider: 'AGROPROMBANK' | 'AGROPROMBANK_WEB', raw: Record<string, unknown> = {}) => ({
+  const hold = (
+    provider: 'AGROPROMBANK' | 'AGROPROMBANK_WEB' | 'AGROPROMBANK_QR',
+    raw: Record<string, unknown> = {},
+  ) => ({
     id: `hold-${provider}`,
     orderId: 'order-1',
     provider,
@@ -22,7 +31,7 @@ describe('PaymentHoldsService', () => {
     rawJson: raw,
   });
 
-  function build(flow: 'token' | 'web' | 'none' = 'web') {
+  function build(flow: 'token' | 'web' | 'none' = 'web', qrCurrencies: string[] = []) {
     const prisma = {
       payment: {
         findFirst: jest.fn(),
@@ -39,14 +48,17 @@ describe('PaymentHoldsService', () => {
     };
     const client = { invoke: jest.fn().mockResolvedValue({}) };
     const webClient = { cancel: jest.fn().mockResolvedValue({ state: 2 }) };
+    const qrClient = { reverseInvoice: jest.fn().mockResolvedValue({ state: 4, stateDescription: 'Возвращён' }) };
     const service = new PaymentHoldsService(
       prisma as unknown as PrismaService,
       { isConfigured: true, enabled: true } as unknown as AgroprombankConfig,
       client as unknown as AgroprombankClient,
       { isConfigured: true, cardPaymentFlow: flow } as unknown as AgroprombankWebConfig,
       webClient as unknown as AgroprombankWebClient,
+      { canCallBank: true, currencies: qrCurrencies } as unknown as AgroprombankQrConfig,
+      qrClient as unknown as AgroprombankQrClient,
     );
-    return { service, prisma, client, webClient };
+    return { service, prisma, client, webClient, qrClient };
   }
 
   it('releases a Web-платёж hold with CancelOperation', async () => {
@@ -149,9 +161,53 @@ describe('PaymentHoldsService', () => {
   });
 
   it('requires a card for a paid order whichever flow is on, and none when both are off', () => {
-    expect(build('web').service.cardPaymentRequired({ totalCents: 100 })).toBe(true);
-    expect(build('token').service.cardPaymentRequired({ totalCents: 100 })).toBe(true);
-    expect(build('none').service.cardPaymentRequired({ totalCents: 100 })).toBe(false);
-    expect(build('web').service.cardPaymentRequired({ totalCents: 0 })).toBe(false);
+    expect(build('web').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
+    expect(build('token').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
+    expect(build('none').service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(false);
+    expect(build('web').service.cardPaymentRequired({ totalCents: 0, currency: 'RUP' })).toBe(false);
+  });
+
+  // With cards off, a QR-only deployment still needs paying — but only in a currency QR takes.
+  it('requires payment when only the QR payment is on, for orders in its currency', () => {
+    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 100, currency: 'RUP' })).toBe(true);
+    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 100, currency: 'USD' })).toBe(false);
+    expect(build('none', ['RUP']).service.cardPaymentRequired({ totalCents: 0, currency: 'RUP' })).toBe(false);
+  });
+
+  it('gives a paid QR invoice back with ReversePayment, using the ids recorded when it was paid', async () => {
+    const { service, prisma, client, webClient, qrClient } = build();
+    const qrHold = hold('AGROPROMBANK_QR', { qrPaymentId: '5229848', rrn: '000602981706' });
+    prisma.payment.findFirst.mockResolvedValue(qrHold);
+    prisma.payment.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...qrHold,
+      ...data,
+    }));
+
+    const released = await service.releaseForOrder('order-1', 'order-cancelled-by-store');
+
+    expect(qrClient.reverseInvoice).toHaveBeenCalledWith('1100042', { qrPaymentId: '5229848', rrn: '000602981706' });
+    expect(client.invoke).not.toHaveBeenCalled();
+    expect(webClient.cancel).not.toHaveBeenCalled();
+    expect(released?.status).toBe('REFUNDED');
+    expect(releaseOutcome(released, true)).toBe('REFUNDED');
+    expect(prisma.orderEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        payload: expect.objectContaining({ provider: 'AGROPROMBANK_QR', kind: 'reversal' }),
+      }),
+    });
+  });
+
+  it('says REFUND NEEDED when a QR payment still cannot be given back after the last try', async () => {
+    const { service, prisma, qrClient } = build();
+    prisma.payment.findFirst.mockResolvedValue(
+      hold('AGROPROMBANK_QR', { qrPaymentId: '1', rrn: '2', releaseAttempts: MAX_RELEASE_ATTEMPTS - 1 }),
+    );
+    qrClient.reverseInvoice.mockRejectedValue(new AgroprombankQrError('ReversePayment', 'Отмена невозможна'));
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    await expect(service.releaseForOrder('order-1', 'retry')).resolves.toBeNull();
+
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/^REFUND NEEDED: /));
+    error.mockRestore();
   });
 });
