@@ -54,7 +54,13 @@ PromoValidation _$PromoValidationFromJson(Map<String, dynamic> json) => PromoVal
   reasonCode: json['reasonCode'] as String?,
   minOrderCents: (json['minOrderCents'] as num?)?.toInt(),
   currency: json['currency'] as String?,
+  source: $enumDecodeNullable(_$PromoSourceEnumMap, json['source'], unknownValue: JsonKey.nullForUndefinedEnumValue),
+  takeawayPromo: json['takeawayPromo'] == null
+      ? null
+      : ValidatedTakeawayPromo.fromJson(json['takeawayPromo'] as Map<String, dynamic>),
 );
+
+const _$PromoSourceEnumMap = {PromoSource.brand: 'BRAND', PromoSource.takeaway: 'TAKEAWAY'};
 
 GiftCardValidation _$GiftCardValidationFromJson(Map<String, dynamic> json) => GiftCardValidation(
   applicableCents: (json['applicableCents'] as num).toInt(),

@@ -670,6 +670,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get promoInvalid => 'This code is not valid.';
 
   @override
+  String get promoRemove => 'Remove';
+
+  @override
+  String welcomeBonusTitle(int percent) {
+    return 'Welcome bonus −$percent%';
+  }
+
+  @override
+  String takeawayPromoLabel(int percent) {
+    return 'takeAway promo −$percent%';
+  }
+
+  @override
+  String get bonusesTitle => 'My bonuses';
+
+  @override
+  String bonusAnyVenueUntil(String date) {
+    return 'On an order at any venue · until $date';
+  }
+
+  @override
+  String get pointsNotWithPromo => 'Points can\'t be combined with a promo code';
+
+  @override
   String get giftCard => 'Gift card';
 
   @override
@@ -1688,7 +1712,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errPromoAlreadyUsed => 'You have already used this promo code';
 
   @override
-  String get errPromoNotEligible => 'This code is for customers who haven\'t ordered in a while';
+  String get errPromoNotEligible => 'This code is for new customers or those who haven\'t ordered in a while';
+
+  @override
+  String get errPromoNotHere => 'This promo doesn\'t apply at this venue';
+
+  @override
+  String get errPromoWithPoints => 'Points can\'t be combined with a promo code';
 
   @override
   String get errGiftCardUnknown => 'There is no such gift card';

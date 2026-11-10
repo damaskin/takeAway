@@ -261,6 +261,7 @@ class _SlotRow extends StatelessWidget {
 }
 
 /// Code input with an Apply / clear button and the server's verdict below.
+/// A code applied from outside (the welcome bonus) shows in the field too.
 class CodeField extends StatefulWidget {
   const CodeField({
     required this.label,
@@ -269,6 +270,7 @@ class CodeField extends StatefulWidget {
     required this.successText,
     required this.onApply,
     required this.onClear,
+    this.clearLabel,
     super.key,
   });
 
@@ -279,12 +281,35 @@ class CodeField extends StatefulWidget {
   final ValueChanged<String> onApply;
   final VoidCallback onClear;
 
+  /// Words for taking an applied code off («Убрать»); a cross without.
+  final String? clearLabel;
+
   @override
   State<CodeField> createState() => _CodeFieldState();
 }
 
 class _CodeFieldState extends State<CodeField> {
   final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = widget.state.code ?? '';
+  }
+
+  @override
+  void didUpdateWidget(CodeField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Follow a code put in or taken off by checkout itself; a code the
+    // customer typed is already there (in their own letter case).
+    final code = widget.state.code;
+    if (code == oldWidget.state.code) return;
+    if (code == null) {
+      _controller.clear();
+    } else if (_controller.text.trim().toUpperCase() != code) {
+      _controller.text = code;
+    }
+  }
 
   @override
   void dispose() {
@@ -304,6 +329,9 @@ class _CodeFieldState extends State<CodeField> {
         TextField(
           controller: _controller,
           enabled: !s.ok,
+          // A disabled field ignores every touch by default, its suffix
+          // too — and the suffix is how an applied code comes off.
+          ignorePointers: false,
           textCapitalization: TextCapitalization.characters,
           autocorrect: false,
           inputFormatters: [
@@ -320,6 +348,14 @@ class _CodeFieldState extends State<CodeField> {
                   ? const Padding(
                       padding: EdgeInsets.all(14),
                       child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : s.ok && widget.clearLabel != null
+                  ? TextButton(
+                      onPressed: () {
+                        _controller.clear();
+                        widget.onClear();
+                      },
+                      child: Text(widget.clearLabel!),
                     )
                   : s.ok
                   ? IconButton(

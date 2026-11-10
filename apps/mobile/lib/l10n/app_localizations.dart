@@ -1244,6 +1244,42 @@ abstract class AppLocalizations {
   /// **'This code is not valid.'**
   String get promoInvalid;
 
+  /// Takes the welcome bonus off the checkout; it stays off for this cart.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get promoRemove;
+
+  /// The welcome bonus: on the profile banner, applied at checkout and as the checkout summary line.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome bonus −{percent}%'**
+  String welcomeBonusTitle(int percent);
+
+  /// A takeAway promo (paid by takeAway, any venue): applied at checkout and the discount line of the order.
+  ///
+  /// In en, this message translates to:
+  /// **'takeAway promo −{percent}%'**
+  String takeawayPromoLabel(int percent);
+
+  /// No description provided for @bonusesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'My bonuses'**
+  String get bonusesTitle;
+
+  /// Under the welcome bonus on the profile; date like «November 17».
+  ///
+  /// In en, this message translates to:
+  /// **'On an order at any venue · until {date}'**
+  String bonusAnyVenueUntil(String date);
+
+  /// No description provided for @pointsNotWithPromo.
+  ///
+  /// In en, this message translates to:
+  /// **'Points can\'t be combined with a promo code'**
+  String get pointsNotWithPromo;
+
   /// No description provided for @giftCard.
   ///
   /// In en, this message translates to:
@@ -3104,11 +3140,23 @@ abstract class AppLocalizations {
   /// **'You have already used this promo code'**
   String get errPromoAlreadyUsed;
 
-  /// No description provided for @errPromoNotEligible.
+  /// PROMO_NOT_ELIGIBLE: a brand code for customers away for a while, or a welcome code the customer was not given.
   ///
   /// In en, this message translates to:
-  /// **'This code is for customers who haven\'t ordered in a while'**
+  /// **'This code is for new customers or those who haven\'t ordered in a while'**
   String get errPromoNotEligible;
+
+  /// No description provided for @errPromoNotHere.
+  ///
+  /// In en, this message translates to:
+  /// **'This promo doesn\'t apply at this venue'**
+  String get errPromoNotHere;
+
+  /// No description provided for @errPromoWithPoints.
+  ///
+  /// In en, this message translates to:
+  /// **'Points can\'t be combined with a promo code'**
+  String get errPromoWithPoints;
 
   /// No description provided for @errGiftCardUnknown.
   ///

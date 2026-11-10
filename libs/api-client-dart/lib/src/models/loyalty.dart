@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'takeaway_promo.dart';
+
 part 'loyalty.g.dart';
 
 @JsonEnum(alwaysCreate: true)
@@ -96,6 +98,8 @@ class PromoValidation {
     this.reasonCode,
     this.minOrderCents,
     this.currency,
+    this.source,
+    this.takeawayPromo,
   });
 
   factory PromoValidation.fromJson(Map<String, dynamic> json) => _$PromoValidationFromJson(json);
@@ -117,6 +121,18 @@ class PromoValidation {
   final int discountCents;
   @JsonKey(defaultValue: 1)
   final double pointsMultiplier;
+
+  /// Whose code it is. Null when the code does not apply, from an API that
+  /// predates takeAway promos, and for a source this build does not know.
+  @JsonKey(unknownEnumValue: JsonKey.nullForUndefinedEnumValue)
+  final PromoSource? source;
+
+  /// The takeAway promo when [source] is [PromoSource.takeaway].
+  final ValidatedTakeawayPromo? takeawayPromo;
+
+  /// A takeAway promo or the welcome bonus: loyalty points cannot be added
+  /// to it (the API refuses the order with `PROMO_WITH_POINTS`).
+  bool get isTakeaway => valid && source == PromoSource.takeaway;
 }
 
 @JsonSerializable(createToJson: false)

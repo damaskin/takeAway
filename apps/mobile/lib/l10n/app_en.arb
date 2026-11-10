@@ -499,6 +499,39 @@
     }
   },
   "promoInvalid": "This code is not valid.",
+  "promoRemove": "Remove",
+  "@promoRemove": {
+    "description": "Takes the welcome bonus off the checkout; it stays off for this cart."
+  },
+  "welcomeBonusTitle": "Welcome bonus −{percent}%",
+  "@welcomeBonusTitle": {
+    "description": "The welcome bonus: on the profile banner, applied at checkout and as the checkout summary line.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "takeawayPromoLabel": "takeAway promo −{percent}%",
+  "@takeawayPromoLabel": {
+    "description": "A takeAway promo (paid by takeAway, any venue): applied at checkout and the discount line of the order.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "bonusesTitle": "My bonuses",
+  "bonusAnyVenueUntil": "On an order at any venue · until {date}",
+  "@bonusAnyVenueUntil": {
+    "description": "Under the welcome bonus on the profile; date like «November 17».",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "pointsNotWithPromo": "Points can't be combined with a promo code",
   "giftCard": "Gift card",
   "giftCardApplied": "{amount} covered by the gift card",
   "@giftCardApplied": {
@@ -1153,7 +1186,12 @@
   "errPromoMinOrderGeneric": "The order is too small for this promo code",
   "errPromoLimitReached": "This promo code has run out",
   "errPromoAlreadyUsed": "You have already used this promo code",
-  "errPromoNotEligible": "This code is for customers who haven't ordered in a while",
+  "errPromoNotEligible": "This code is for new customers or those who haven't ordered in a while",
+  "@errPromoNotEligible": {
+    "description": "PROMO_NOT_ELIGIBLE: a brand code for customers away for a while, or a welcome code the customer was not given."
+  },
+  "errPromoNotHere": "This promo doesn't apply at this venue",
+  "errPromoWithPoints": "Points can't be combined with a promo code",
   "errGiftCardUnknown": "There is no such gift card",
   "errGiftCardOtherBrand": "This gift card is not valid here",
   "errGiftCardCurrency": "This gift card is in another currency",

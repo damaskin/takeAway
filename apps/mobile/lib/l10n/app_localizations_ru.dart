@@ -677,6 +677,30 @@ class AppLocalizationsRu extends AppLocalizations {
   String get promoInvalid => 'Промокод недействителен.';
 
   @override
+  String get promoRemove => 'Убрать';
+
+  @override
+  String welcomeBonusTitle(int percent) {
+    return 'Приветственный бонус −$percent%';
+  }
+
+  @override
+  String takeawayPromoLabel(int percent) {
+    return 'Акция takeAway −$percent%';
+  }
+
+  @override
+  String get bonusesTitle => 'Мои бонусы';
+
+  @override
+  String bonusAnyVenueUntil(String date) {
+    return 'На заказ в любом заведении · до $date';
+  }
+
+  @override
+  String get pointsNotWithPromo => 'Баллы нельзя совместить с промокодом';
+
+  @override
   String get giftCard => 'Подарочная карта';
 
   @override
@@ -1708,7 +1732,13 @@ class AppLocalizationsRu extends AppLocalizations {
   String get errPromoAlreadyUsed => 'Вы уже воспользовались этим промокодом';
 
   @override
-  String get errPromoNotEligible => 'Этот промокод — для тех, кто давно у нас не был';
+  String get errPromoNotEligible => 'Этот промокод — для новых гостей или для тех, кто давно у нас не был';
+
+  @override
+  String get errPromoNotHere => 'Акция не действует в этом заведении';
+
+  @override
+  String get errPromoWithPoints => 'Баллы нельзя совместить с промокодом';
 
   @override
   String get errGiftCardUnknown => 'Такой подарочной карты нет';
