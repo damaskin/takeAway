@@ -281,7 +281,7 @@ void main() {
       await enterPromo(tester, 'RUPONLY');
       expect(find.text('Акция не действует в этом заведении'), findsOneWidget);
       await enterPromo(tester, 'WELCOME10');
-      expect(find.text('Этот промокод — для новых гостей или для тех, кто давно у нас не был'), findsOneWidget);
+      expect(find.text('Этот промокод вам недоступен'), findsOneWidget);
 
       api.orderRefusal = {'code': 'PROMO_WITH_POINTS', 'message': 'A takeAway promo does not combine with points'};
       await tester.tap(find.byType(PrimaryButton));

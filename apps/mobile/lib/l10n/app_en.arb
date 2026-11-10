@@ -1186,7 +1186,7 @@
   "errPromoMinOrderGeneric": "The order is too small for this promo code",
   "errPromoLimitReached": "This promo code has run out",
   "errPromoAlreadyUsed": "You have already used this promo code",
-  "errPromoNotEligible": "This code is for new customers or those who haven't ordered in a while",
+  "errPromoNotEligible": "This promo code isn't available to you",
   "@errPromoNotEligible": {
     "description": "PROMO_NOT_ELIGIBLE: a brand code for customers away for a while, or a welcome code the customer was not given."
   },

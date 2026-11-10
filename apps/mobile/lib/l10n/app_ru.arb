@@ -508,7 +508,7 @@
   "errPromoMinOrderGeneric": "Для этого промокода сумма заказа слишком мала",
   "errPromoLimitReached": "Промокод закончился",
   "errPromoAlreadyUsed": "Вы уже воспользовались этим промокодом",
-  "errPromoNotEligible": "Этот промокод — для новых гостей или для тех, кто давно у нас не был",
+  "errPromoNotEligible": "Этот промокод вам недоступен",
   "errPromoNotHere": "Акция не действует в этом заведении",
   "errPromoWithPoints": "Баллы нельзя совместить с промокодом",
   "errGiftCardUnknown": "Такой подарочной карты нет",
