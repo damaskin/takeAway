@@ -56,7 +56,7 @@ describe('perCustomerSql', () => {
   it('adds up spend in one currency when asked, the people and their orders whatever the currency', () => {
     const sql = perCustomerSql({ brandIds: ['b1'], storeIds: null }, undefined, 'MDL');
     expect(sql.sql).toContain(
-      'SUM(GREATEST(o."subtotalCents" - o."discountCents", 0)) FILTER (WHERE o."currency" = ?::"Currency")',
+      'SUM(GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents", 0), 0)) FILTER (WHERE o."currency" = ?::"Currency")',
     );
     expect(sql.sql).toContain('COUNT(*)::int AS "orders"');
     expect(sql.values).toEqual(['MDL', 'MDL', ['b1']]);

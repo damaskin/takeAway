@@ -196,7 +196,9 @@ describe('OverviewService.business', () => {
     const money = $queryRaw.mock.calls.map(query).filter((q) => q.sql.includes('"revenue"'));
     expect(money.length).toBeGreaterThanOrEqual(3);
     for (const q of money) {
-      expect(q.sql).toContain('GREATEST(o."subtotalCents" - o."discountCents", 0)');
+      expect(q.sql).toContain(
+        'GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents", 0), 0)',
+      );
       expect(q.sql).not.toContain('o."totalCents"');
     }
   });
