@@ -407,6 +407,19 @@ const ACTION_META: Record<KitchenAction, { label: string; color: string }> = {
         @if (order.notes) {
           <div class="kitchen-note">⚠ {{ order.notes }}</div>
         }
+        @if (order.takeawayPromo; as promo) {
+          <!-- Paid in full: takeAway covers the discount, the guest owes nothing at the counter.
+               Styled inline: the board's stylesheet is close to the component style budget. -->
+          <div
+            data-testid="ticket-takeaway-promo"
+            style="padding: 6px 10px; border-radius: 8px; border-left: 3px solid var(--color-caramel); background: var(--color-caramel-light); font-size: 13px; font-weight: 600; color: var(--color-espresso)"
+          >
+            {{
+              'admin.kitchen.card.takeawayPromo'
+                | translate: { percent: promo.percent, compensation: promoMoney(promo.discountCents) }
+            }}
+          </div>
+        }
         @if (failures()[order.id]; as reason) {
           <p class="kitchen-card-error" role="alert">{{ reason }}</p>
         }
@@ -1041,6 +1054,12 @@ export class KitchenPage {
 
   readonly store = computed(() => this.stores().find((s) => s.id === this.storeId()) ?? null);
   readonly clock = computed(() => this.fmt.time(this.now(), this.store()?.timezone));
+
+  /** A takeAway promo amount on a ticket, in the store's currency. */
+  promoMoney(cents: number): string {
+    return this.fmt.money(cents, this.store()?.currency);
+  }
+
   /** Other stores of the brand with orders waiting for «Принять» — what else the sidebar counter counts. */
   readonly waitingElsewhere = computed(() => {
     const pending = this.alerts.pendingByStore();
@@ -1516,7 +1535,13 @@ export class KitchenPage {
   private loadStores(brandId: string): void {
     this.catalog.listStores(brandId).subscribe({
       next: (rows) => {
-        const stores = rows.map((s) => ({ id: s.id, name: s.name, timezone: s.timezone ?? null, status: s.status }));
+        const stores = rows.map((s) => ({
+          id: s.id,
+          name: s.name,
+          timezone: s.timezone ?? null,
+          status: s.status,
+          currency: s.currency,
+        }));
         this.stores.set(stores);
         this.loaded.set(true);
         this.error.set(null);

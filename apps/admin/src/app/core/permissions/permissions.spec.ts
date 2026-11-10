@@ -70,6 +70,14 @@ describe('permissions map', () => {
       expect(navLink('settlements')).toBe('/settlements');
     });
 
+    it('keeps «Акции takeAway» SUPER_ADMIN-only: takeAway pays for them, a brand sees its side in settlements', () => {
+      expect(ADMIN_ROLES.takeawayPromos).toEqual(['SUPER_ADMIN']);
+      for (const role of ['BRAND_ADMIN', 'STORE_MANAGER', 'MENU_EDITOR', 'STAFF', 'RIDER'] as const) {
+        expect(canAccess(role, 'takeawayPromos')).toBe(false);
+      }
+      expect(navLink('takeawayPromos')).toBe('/takeaway-promos');
+    });
+
     it('keeps customer feedback SUPER_ADMIN-only', () => {
       expect(ADMIN_ROLES.feedback).toEqual(['SUPER_ADMIN']);
       expect(navLink('feedback')).toBe('/feedback');

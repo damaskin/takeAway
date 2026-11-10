@@ -8,6 +8,7 @@ import type {
   KitchenPauseRequest,
   ShiftExtendMinutes,
   StorePauseReason,
+  TakeawayPromoLine,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -36,6 +37,12 @@ export interface KitchenOrder extends Partial<KitchenOrderTimeline> {
   /** HERE once the customer tapped "I'm here" (or walked in), NEARBY when close. Absent from older API builds. */
   customerArrival?: 'NEARBY' | 'HERE' | null;
   customerArrivedAt?: string | null;
+  /**
+   * A takeAway promo on the order (built by the API's `toBoardRow`): the
+   * guest paid their part, takeAway covers the rest — nothing to collect.
+   * Absent from an API older than takeAway promos.
+   */
+  takeawayPromo?: TakeawayPromoLine | null;
   items: Array<{
     /** Raw `OrderItem.productSnapshot`; read it with `readOrderItemSnapshot`. */
     productSnapshot: unknown;

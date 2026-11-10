@@ -17,6 +17,8 @@ export interface KitchenStore {
   timezone: string | null;
   /** The store's own switch; CLOSED means no orders whatever the shift says. Absent where nobody needs it. */
   status?: string;
+  /** What the store sells in — the board writes the takeAway promo's amounts in it. Absent where nobody needs it. */
+  currency?: string | null;
 }
 
 /** An order nobody has taken on yet, with the store it came to. */

@@ -1,6 +1,11 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { CommissionRateHistory, SettlementPayout, SettlementReport } from '@takeaway/shared-types';
+import type {
+  BrandTakeawayPromoReport,
+  CommissionRateHistory,
+  SettlementPayout,
+  SettlementReport,
+} from '@takeaway/shared-types';
 import type { Observable } from 'rxjs';
 
 import { API_CONFIG } from '../api/api.config';
@@ -43,10 +48,15 @@ export class SettlementsApi {
   }
 
   report(query: SettlementQuery): Observable<SettlementReport> {
-    let params = new HttpParams().set('from', query.from).set('to', query.to);
-    if (query.brandId) params = params.set('brandId', query.brandId);
-    if (query.currency) params = params.set('currency', query.currency);
-    return this.http.get<SettlementReport>(this.base, { params });
+    return this.http.get<SettlementReport>(this.base, { params: queryParams(query) });
+  }
+
+  /**
+   * «Акции takeAway» of the brand: the promo orders of the period and what
+   * takeAway owes for them (the debt itself is always now).
+   */
+  takeawayPromos(query: SettlementQuery): Observable<BrandTakeawayPromoReport> {
+    return this.http.get<BrandTakeawayPromoReport>(`${this.base}/takeaway-promos`, { params: queryParams(query) });
   }
 
   rates(brandId: string | null): Observable<CommissionRateHistory> {
@@ -73,4 +83,11 @@ export class SettlementsApi {
   deletePayout(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/payouts/${encodeURIComponent(id)}`);
   }
+}
+
+function queryParams(query: SettlementQuery): HttpParams {
+  let params = new HttpParams().set('from', query.from).set('to', query.to);
+  if (query.brandId) params = params.set('brandId', query.brandId);
+  if (query.currency) params = params.set('currency', query.currency);
+  return params;
 }

@@ -15,6 +15,7 @@ export type AdminRole = 'SUPER_ADMIN' | 'BRAND_ADMIN' | 'STORE_MANAGER' | 'MENU_
 export type NavKey =
   | 'platform'
   | 'settlements'
+  | 'takeawayPromos'
   | 'dashboard'
   | 'kitchen'
   | 'menu'
@@ -55,6 +56,10 @@ export const ADMIN_ROLES: Record<NavKey, ReadonlyArray<AdminRole>> = {
   // Money the platform owes a brand for its card payments. The platform
   // admin sees every brand and pays out; the owner reads their own figures.
   settlements: [SA, BA],
+  // «Акции takeAway»: percent promos takeAway pays for at every venue, the
+  // welcome bonus and takeAway's debt to the brands for them — the platform
+  // team only. A brand sees its own side in «Расчёты».
+  takeawayPromos: [SA],
   dashboard: [SA, BA, SM],
   // The order board the standalone kitchen app used to be: everyone who
   // takes orders on, kitchen STAFF included.
@@ -134,6 +139,7 @@ export function defaultLandingFor(role: AdminRole | undefined | null, kitchenOnl
 const NAV_LINKS: Record<NavKey, string> = {
   platform: '/platform',
   settlements: '/settlements',
+  takeawayPromos: '/takeaway-promos',
   dashboard: '/dashboard',
   kitchen: '/kitchen',
   menu: '/menu',

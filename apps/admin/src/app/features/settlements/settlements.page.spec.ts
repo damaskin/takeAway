@@ -3,6 +3,7 @@ import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type {
+  BrandTakeawayPromoReport,
   CommissionRateHistory,
   SettlementPayout,
   SettlementReport,
@@ -28,6 +29,7 @@ const totals: SettlementTotals = {
   deliveryFeeCents: 0,
   capturedCents: 22833,
   refundedCents: 1000,
+  takeawayCompensationCents: 0,
   commissionBaseCents: 21833,
   commissionCents: 3275,
   payableCents: 18558,
@@ -44,6 +46,7 @@ function payout(overrides: Partial<SettlementPayout> = {}): SettlementPayout {
     amountCents: 10000,
     cardNetCents: 11765,
     commissionCents: 1765,
+    compensationCents: 0,
     status: 'PENDING',
     paidAt: null,
     reference: null,
@@ -76,6 +79,7 @@ function report(overrides: Partial<SettlementReport> = {}): SettlementReport {
       amountCents: 18558,
       cardNetCents: 21833,
       commissionCents: 3275,
+      compensationCents: 0,
       blocked: null,
       lastSettledDay: '2026-09-27',
     },
@@ -103,6 +107,20 @@ const HISTORY: CommissionRateHistory = {
   ],
 };
 
+/** No takeAway promo orders: the block shows its empty state. */
+const NO_PROMOS: BrandTakeawayPromoReport = {
+  brandId: 'b1',
+  currency: 'RUP',
+  period: { from: '2026-09-28', to: '2026-10-04', timeZone: 'Europe/Chisinau' },
+  orders: 0,
+  menuTotalCents: 0,
+  paidByGuestCents: 0,
+  compensationAccruedCents: 0,
+  compensationRepaidCents: 0,
+  currentDebtCents: 0,
+  items: [],
+};
+
 describe('SettlementsPage', () => {
   let fixture: ComponentFixture<SettlementsPage>;
   let api: {
@@ -113,6 +131,7 @@ describe('SettlementsPage', () => {
     createPayout: jest.Mock;
     markPaid: jest.Mock;
     deletePayout: jest.Mock;
+    takeawayPromos: jest.Mock;
   };
 
   async function render(role: 'SUPER_ADMIN' | 'BRAND_ADMIN', data: SettlementReport = report()) {
@@ -124,6 +143,7 @@ describe('SettlementsPage', () => {
       createPayout: jest.fn().mockReturnValue(of(payout({ id: 'p2', amountCents: 18558 }))),
       markPaid: jest.fn().mockReturnValue(of(payout({ status: 'PAID' }))),
       deletePayout: jest.fn().mockReturnValue(of(undefined)),
+      takeawayPromos: jest.fn().mockReturnValue(of(NO_PROMOS)),
     };
     TestBed.configureTestingModule({
       imports: [SettlementsPage],
@@ -276,5 +296,73 @@ describe('SettlementsPage', () => {
     expect(button('Отметить выплаченной')).toBeUndefined();
     expect(button('Сохранить ставку')).toBeUndefined();
     expect(text()).toContain('Ждёт перевода');
+  });
+
+  it('adds takeAway promo compensation to the card money: its own tile, the day column, the payout and the block', async () => {
+    // One promo order of 100,00 at 10 %: the guest paid 90 by card, takeAway owes 10,
+    // the commission (15 %) is on the full 100 — the brand gets 85, as for a regular order.
+    const withPromo: SettlementTotals = {
+      ...totals,
+      orders: 1,
+      cardOrders: 1,
+      zeroTotalOrders: 0,
+      salesCents: 10000,
+      promoDiscountCents: 0,
+      pointsDiscountCents: 0,
+      giftCardCents: 0,
+      capturedCents: 9000,
+      refundedCents: 0,
+      takeawayCompensationCents: 1000,
+      commissionBaseCents: 10000,
+      commissionCents: 1500,
+      payableCents: 8500,
+    };
+    await render(
+      'SUPER_ADMIN',
+      report({
+        totals: withPromo,
+        days: [{ date: '2026-09-28', ...withPromo }],
+        nextPayout: {
+          ...report().nextPayout,
+          amountCents: 8500,
+          cardNetCents: 9000,
+          commissionCents: 1500,
+          compensationCents: 1000,
+        },
+        payouts: [payout({ amountCents: 8500, cardNetCents: 9000, commissionCents: 1500, compensationCents: 1000 })],
+      }),
+    );
+
+    const tile = el().querySelector('[data-testid="settlement-compensation"]');
+    expect((tile?.textContent ?? '').replace(/\s+/g, ' ')).toContain('Компенсация takeAway по акциям');
+    expect(tile?.textContent).toContain('10');
+    expect(tile?.textContent).toContain('комиссия — с полной цены');
+
+    const headers = Array.from(el().querySelectorAll('.st-table thead th')).map((th) => th.textContent?.trim());
+    expect(headers).toContain('Компенсация takeAway');
+
+    const breakdown = (el().querySelector('[data-testid="payout-breakdown"]')?.textContent ?? '').replace(/\s+/g, ' ');
+    expect(breakdown).toContain('картами 90');
+    expect(breakdown).toContain('компенсация takeAway по акциям 10');
+    expect(breakdown).toContain('комиссия 15');
+    // 85 = 90 + 10 − 15: nothing is carried over from earlier periods.
+    expect(breakdown).not.toContain('перенос');
+
+    expect(text()).toContain('База комиссии = оплачено картами − возвраты + компенсация takeAway по акциям');
+    expect(api.takeawayPromos).toHaveBeenCalledWith({
+      brandId: 'b1',
+      currency: 'RUP',
+      from: '2026-09-28',
+      to: '2026-10-04',
+    });
+    expect(el().querySelector('[data-testid="settlement-takeaway-promos"]')).not.toBeNull();
+  });
+
+  it('shows no compensation tile for a brand without takeAway promo orders', async () => {
+    await render('BRAND_ADMIN');
+    expect(el().querySelector('[data-testid="settlement-compensation"]')).toBeNull();
+    expect(el().querySelector('[data-testid="stp-empty"]')?.textContent).toContain(
+      'За этот период заказов по акциям takeAway нет.',
+    );
   });
 });

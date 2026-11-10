@@ -132,6 +132,50 @@ export const appRoutes: Route[] = [
         data: { navKey: 'settlements' satisfies NavKey },
         loadComponent: () => import('./features/settlements/settlements.page').then((m) => m.SettlementsPage),
       },
+      // «Акции takeAway»: the form and the report stand alone; the list and
+      // «Долг takeAway» are tabs. `:promoId` comes after the tabs, so `debt`
+      // is never read as a promo id.
+      {
+        path: 'takeaway-promos/new',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'takeawayPromos' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/takeaway-promos/takeaway-promo-form.page').then((m) => m.TakeawayPromoFormPage),
+      },
+      {
+        path: 'takeaway-promos/:promoId/report',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'takeawayPromos' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/takeaway-promos/takeaway-promo-report.page').then((m) => m.TakeawayPromoReportPage),
+      },
+      {
+        path: 'takeaway-promos',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'takeawayPromos' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/takeaway-promos/takeaway-promos.page').then((m) => m.TakeawayPromosPage),
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () =>
+              import('./features/takeaway-promos/takeaway-promo-list.page').then((m) => m.TakeawayPromoListPage),
+          },
+          {
+            path: 'debt',
+            loadComponent: () =>
+              import('./features/takeaway-promos/takeaway-debt.page').then((m) => m.TakeawayDebtPage),
+          },
+        ],
+      },
+      {
+        path: 'takeaway-promos/:promoId',
+        canActivate: [adminPermissionGuard],
+        data: { navKey: 'takeawayPromos' satisfies NavKey },
+        loadComponent: () =>
+          import('./features/takeaway-promos/takeaway-promo-form.page').then((m) => m.TakeawayPromoFormPage),
+      },
       {
         path: 'dashboard',
         canActivate: [adminPermissionGuard],
