@@ -1907,6 +1907,16 @@ export const TRANSLATIONS_RU = {
       irreversible: 'Возврат необратим и уйдёт в платёжную систему сразу.',
       confirm: 'Подтвердить возврат',
       refunding: 'Возвращаем…',
+      /** The bank's QR payment gives money back only whole (ReversePayment takes no amount). */
+      fullRefundOnly: 'Оплату по QR можно вернуть только целиком.',
+      paidWith: 'Способ оплаты',
+      /** `Payment.provider`, as the manager reads it. */
+      providers: {
+        STRIPE: 'Карта (Stripe)',
+        AGROPROMBANK: 'Привязанная карта (Агропромбанк)',
+        AGROPROMBANK_WEB: 'Карта на странице банка (Агропромбанк)',
+        AGROPROMBANK_QR: 'QR (Агропромбанк)',
+      },
       timeline: 'История',
       events: {
         STATUS_CHANGED: 'Статус',

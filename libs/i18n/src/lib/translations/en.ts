@@ -1891,6 +1891,14 @@ export const TRANSLATIONS_EN: TranslationTree = {
       irreversible: 'A refund cannot be undone and reaches the payment provider immediately.',
       confirm: 'Confirm refund',
       refunding: 'Refunding…',
+      fullRefundOnly: 'A QR payment can only be refunded in full.',
+      paidWith: 'Paid with',
+      providers: {
+        STRIPE: 'Card (Stripe)',
+        AGROPROMBANK: 'Saved card (Agroprombank)',
+        AGROPROMBANK_WEB: "Card on the bank's page (Agroprombank)",
+        AGROPROMBANK_QR: 'QR (Agroprombank)',
+      },
       timeline: 'Timeline',
       events: {
         STATUS_CHANGED: 'Status',
