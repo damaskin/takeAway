@@ -24,6 +24,7 @@ import type {
   OrderCancelReason,
   OrderCanceller,
   Payment,
+  PaymentProvider,
   PaymentStatus,
   Prisma,
 } from '@prisma/client';
@@ -368,7 +369,9 @@ export class OrdersService {
             placedUnderLoad: cart.store.status === 'OVERLOADED',
             // Nothing to pay by card: the order is the kitchen's to accept
             // right away. Otherwise the clock starts when the payment lands.
-            kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents }) ? null : new Date(),
+            kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents, currency: cart.store.currency })
+              ? null
+              : new Date(),
             subtotalCents,
             discountCents,
             takeawayDiscountCents,
@@ -1359,6 +1362,7 @@ export class OrdersService {
       } | null;
       payments?: Array<{
         status: PaymentStatus;
+        provider?: PaymentProvider;
         amountCents: number;
         updatedAt: Date;
         cardToken?: { maskedPan: string | null } | null;
@@ -1492,11 +1496,13 @@ function notCancellable(reason: OrderNotCancellableBody['reason']): ConflictExce
  * Newest row wins: a retry after a decline leaves a FAILED row behind it, and
  * what the customer cares about is where their money is now. `REQUIRES_ACTION`
  * is how a preauthorized charge is parked, which is `HELD` in customer terms —
- * authorized, not taken.
+ * authorized, not taken. For a QR payment (`provider` AGROPROMBANK_QR) it is
+ * money taken and given back if the store turns the order down.
  */
 function toPaymentView(
   payments: Array<{
     status: PaymentStatus;
+    provider?: PaymentProvider;
     amountCents: number;
     updatedAt: Date;
     rawJson?: Prisma.JsonValue;
@@ -1504,11 +1510,11 @@ function toPaymentView(
   }>,
 ): OrderPaymentDto {
   const latest = payments[0];
-  if (!latest) return { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null };
-  // A charge called off before the accept: the card was never touched.
-  if (latest.status === 'FAILED' && isVoided(latest.rawJson)) {
-    return { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null };
-  }
+  const none: OrderPaymentDto = { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null, provider: null };
+  if (!latest) return none;
+  // A charge called off before the accept, or a QR invoice closed unpaid:
+  // nothing was ever taken.
+  if (latest.status === 'FAILED' && (isVoided(latest.rawJson) || isClosedQr(latest))) return none;
 
   const state: OrderPaymentState = (() => {
     switch (latest.status) {
@@ -1531,7 +1537,20 @@ function toPaymentView(
     amountCents: latest.amountCents,
     cardMask: latest.cardToken?.maskedPan ?? webCardMask(latest.rawJson),
     paidAt: state === 'PAID' ? latest.updatedAt.toISOString() : null,
+    provider: latest.provider ?? null,
   };
+}
+
+/** A QR invoice the customer closed, or that lapsed, before anyone paid it — see AgroprombankQrService. */
+function isClosedQr(payment: { provider?: PaymentProvider; rawJson?: Prisma.JsonValue }): boolean {
+  const raw = payment.rawJson;
+  return (
+    payment.provider === 'AGROPROMBANK_QR' &&
+    !!raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    (raw as Record<string, unknown>)['closed'] === true
+  );
 }
 
 /**

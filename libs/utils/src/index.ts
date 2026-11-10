@@ -21,3 +21,4 @@ export * from './lib/temp-password';
 export * from './lib/queue-policy';
 export * from './lib/ready-windows';
 export * from './lib/takeaway-promo';
+export * from './lib/qr-payment';

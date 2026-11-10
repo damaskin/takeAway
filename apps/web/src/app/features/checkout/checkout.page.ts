@@ -14,15 +14,18 @@ import type {
 } from '@takeaway/shared-types';
 import {
   calendarDaysFrom,
+  checkoutPaymentMethod,
   computeTax,
   describeOptionLines,
   groupSlotsByDay,
   isCartChangedError,
   isStoreInactive,
   productKind,
+  qrPaymentOffered,
   readyTimeShown,
   readyWindowTimes,
   suggestionRow,
+  type CheckoutPaymentMethod,
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
@@ -47,6 +50,8 @@ import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { PaymentMethodChoice } from '../../core/payments/payment-method-choice.service';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { FoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 
@@ -698,65 +703,97 @@ interface Step {
               />
             </form>
 
-            <!-- How the order gets paid for: by card, always. The amount is
-                 held now and taken when the store accepts the order; there is
-                 no paying at the counter. -->
+            <!-- How the order gets paid for: by card — the amount is held now
+                 and taken when the store accepts the order — or by QR in the
+                 bank's app. There is no paying at the counter. -->
             <section class="w-full flex flex-col" style="max-width: 500px; gap: var(--spacing-sm)">
               <span
                 style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
                 >{{ 'web.checkout.paymentTitle' | translate }}</span
               >
 
-              @if (boundCardsEnabled()) {
-                @for (card of cards(); track card.id) {
-                  <button
-                    type="button"
-                    (click)="selectCard(card.id)"
-                    class="flex items-center"
-                    [style.background]="selectedCardId() === card.id ? 'var(--color-espresso)' : 'var(--color-cream)'"
-                    [style.color]="selectedCardId() === card.id ? 'var(--color-foam)' : 'var(--color-espresso)'"
-                    [style.border]="selectedCardId() === card.id ? 'none' : '1px solid var(--color-border)'"
-                    style="height: 50px; padding: 0 16px; gap: 10px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
-                  >
-                    <span>💳</span>
-                    <span class="flex-1 text-left">{{ card.maskedPan || card.label }}</span>
-                  </button>
-                }
+              @if (paymentMethodChoice()) {
+                <div class="flex gap-3 w-full" role="radiogroup" data-testid="pay-method">
+                  @for (method of paymentMethods; track method.id) {
+                    <button
+                      type="button"
+                      role="radio"
+                      [attr.aria-checked]="paymentMethod() === method.id"
+                      [attr.data-testid]="'pay-method-' + method.id"
+                      (click)="selectPaymentMethod(method.id)"
+                      class="flex items-center justify-center w-full"
+                      [style.background]="paymentMethod() === method.id ? 'var(--color-caramel)' : 'var(--color-cream)'"
+                      [style.color]="paymentMethod() === method.id ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                      [style.border]="paymentMethod() === method.id ? 'none' : '1px solid var(--color-border)'"
+                      style="min-height: 44px; padding: 8px 14px; border-radius: 12px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                    >
+                      {{ method.label | translate }}
+                    </button>
+                  }
+                </div>
               }
 
-              @if (!cardPaymentsEnabled()) {
-                <p
-                  style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
-                >
-                  {{ 'web.checkout.cardsUnavailable' | translate }}
-                </p>
-              } @else if (webPaymentsEnabled()) {
+              @if (paymentMethod() === 'QR') {
                 @if (totalCents(c.subtotalCents) > 0) {
                   <p
-                    data-testid="web-payment-hint"
+                    data-testid="qr-payment-hint"
                     style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
                   >
-                    {{ 'web.checkout.bankPageHint' | translate }}
+                    {{ 'common.qrPayment.checkoutHint' | translate }}
                   </p>
                 }
-              } @else if (cards().length === 0 && totalCents(c.subtotalCents) > 0) {
-                <p
-                  style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
-                >
-                  {{ 'web.checkout.cardOnly' | translate }}
-                </p>
-              }
+              } @else {
+                @if (boundCardsEnabled()) {
+                  @for (card of cards(); track card.id) {
+                    <button
+                      type="button"
+                      (click)="selectCard(card.id)"
+                      class="flex items-center"
+                      [style.background]="selectedCardId() === card.id ? 'var(--color-espresso)' : 'var(--color-cream)'"
+                      [style.color]="selectedCardId() === card.id ? 'var(--color-foam)' : 'var(--color-espresso)'"
+                      [style.border]="selectedCardId() === card.id ? 'none' : '1px solid var(--color-border)'"
+                      style="height: 50px; padding: 0 16px; gap: 10px; border-radius: 14px; font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+                    >
+                      <span>💳</span>
+                      <span class="flex-1 text-left">{{ card.maskedPan || card.label }}</span>
+                    </button>
+                  }
+                }
 
-              @if (boundCardsEnabled()) {
-                <a
-                  routerLink="/profile/payment-methods"
-                  style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
-                  >{{ (cards().length === 0 ? 'web.checkout.addFirstCard' : 'web.checkout.addCard') | translate }}</a
-                >
-                @if (selectedCardId()) {
-                  <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
-                    {{ 'web.checkout.holdHint' | translate }}
-                  </span>
+                @if (!cardPaymentsEnabled()) {
+                  <p
+                    style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                  >
+                    {{ 'web.checkout.cardsUnavailable' | translate }}
+                  </p>
+                } @else if (webPaymentsEnabled()) {
+                  @if (totalCents(c.subtotalCents) > 0) {
+                    <p
+                      data-testid="web-payment-hint"
+                      style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                    >
+                      {{ 'web.checkout.bankPageHint' | translate }}
+                    </p>
+                  }
+                } @else if (cards().length === 0 && totalCents(c.subtotalCents) > 0) {
+                  <p
+                    style="margin: 0; padding: 12px 16px; background: var(--color-cream); border-radius: 14px; font-family: var(--font-sans); font-size: 14px; color: var(--color-espresso)"
+                  >
+                    {{ 'web.checkout.cardOnly' | translate }}
+                  </p>
+                }
+
+                @if (boundCardsEnabled()) {
+                  <a
+                    routerLink="/profile/payment-methods"
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-caramel); text-decoration: none"
+                    >{{ (cards().length === 0 ? 'web.checkout.addFirstCard' : 'web.checkout.addCard') | translate }}</a
+                  >
+                  @if (selectedCardId()) {
+                    <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)">
+                      {{ 'web.checkout.holdHint' | translate }}
+                    </span>
+                  }
                 }
               }
             </section>
@@ -860,6 +897,8 @@ export class CheckoutPage implements OnInit {
   private readonly cardsApi = inject(PaymentCardsApi);
   private readonly cardsStore = inject(PaymentCardsStore);
   private readonly webPayments = inject(WebPaymentApi);
+  private readonly qrPayments = inject(QrPaymentApi);
+  private readonly paymentChoice = inject(PaymentMethodChoice);
 
   readonly cart = signal<CartView | null>(null);
   /** The store the order goes to, for the «К заказу» cards. */
@@ -886,6 +925,21 @@ export class CheckoutPage implements OnInit {
   readonly boundCardsEnabled = this.flags.boundCardsEnabled;
   /** The customer pays on the bank's own page — the `web` flow. */
   readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
+  /** The store can be paid by QR in Agroprombank's app: its currency is one the QR payment takes. */
+  readonly qrPaymentOffered = computed(() => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()));
+  /** Both ways are on: the customer picks, and the pick is remembered on this device. */
+  readonly paymentMethodChoice = computed(() => this.cardPaymentsEnabled() && this.qrPaymentOffered());
+  /** How this order gets paid; null while neither the card nor QR is on. */
+  readonly paymentMethod = computed(() =>
+    checkoutPaymentMethod(
+      { card: this.cardPaymentsEnabled(), qr: this.qrPaymentOffered() },
+      this.paymentChoice.remembered(),
+    ),
+  );
+  readonly paymentMethods: ReadonlyArray<{ id: CheckoutPaymentMethod; label: string }> = [
+    { id: 'CARD', label: 'common.qrPayment.methodCard' },
+    { id: 'QR', label: 'common.qrPayment.methodQr' },
+  ];
   /**
    * `/config/features` answers after init, so a guard that read the flag once
    * saw it off and never offered the customer's cards. Load them as soon as
@@ -1084,9 +1138,9 @@ export class CheckoutPage implements OnInit {
     // Outside the serviceable radius — server will 400 anyway, stop the
     // customer at the button instead of letting them tap into an error.
     if (this.fulfillmentType() === 'DELIVERY' && this.deliveryReason() === 'OUTSIDE_RADIUS') return false;
-    // Orders are paid by card only; a total that points or a gift card
-    // covered in full is the one thing that needs no card.
-    if (this.needsCard() && !this.payingByCard()) return false;
+    // Orders are paid by card or by QR; a total that points or a gift card
+    // covered in full is the one thing that needs no payment.
+    if (this.needsCard() && !this.paymentReady()) return false;
     return true;
   });
 
@@ -1099,6 +1153,12 @@ export class CheckoutPage implements OnInit {
   readonly payingByCard = computed(
     () => this.webPaymentsEnabled() || (this.boundCardsEnabled() && this.selectedCardId() !== null),
   );
+
+  /** The chosen way to pay can take the order: QR always, a card once there is one to pay with. */
+  readonly paymentReady = computed(() => {
+    const method = this.paymentMethod();
+    return method === 'QR' || (method === 'CARD' && this.payingByCard());
+  });
 
   constructor() {
     // Under the queue policy the cart itself may be too late for «Сейчас»
@@ -1539,6 +1599,11 @@ export class CheckoutPage implements OnInit {
     this.selectedCardId.set(cardId);
   }
 
+  selectPaymentMethod(method: CheckoutPaymentMethod): void {
+    if (!this.paymentMethodChoice()) return;
+    this.paymentChoice.remember(method);
+  }
+
   selectSlot(slot: PickupSlot): void {
     if (!slot.available) return;
     this.scheduledAt.set(slot.startsAt);
@@ -1632,7 +1697,7 @@ export class CheckoutPage implements OnInit {
       this.payFor(this.placedOrderId);
       return;
     }
-    if (this.needsCard() && !this.payingByCard()) {
+    if (this.needsCard() && !this.paymentReady()) {
       this.submitting.set(false);
       this.error.set(this.translate.instant('web.checkout.cardOnly'));
       return;
@@ -1764,13 +1829,18 @@ export class CheckoutPage implements OnInit {
    * the amount is held on the bank's page instead.
    *
    * A decline keeps the customer on checkout with the reason, because that is
-   * the only screen where they can pick a different card.
+   * the only screen where they can pick a different card. Paying by QR goes
+   * on to the QR screen.
    */
   private payFor(orderId: string): void {
     const cardId = this.selectedCardId();
     if (!this.needsCard()) {
       this.submitting.set(false);
       void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+    if (this.paymentMethod() === 'QR') {
+      this.payByQr(orderId);
       return;
     }
     if (this.webPaymentsEnabled()) {
@@ -1812,6 +1882,27 @@ export class CheckoutPage implements OnInit {
         }
         // `submitting` stays on: the browser is on its way to the bank.
         this.webPayments.redirectToBank(res.page);
+      },
+      error: (err) => {
+        this.submitting.set(false);
+        this.error.set(this.errorText(err));
+      },
+    });
+  }
+
+  /**
+   * «Мобильный платёж»: the order exists, so issue its QR invoice and show
+   * it on the QR screen, which waits for the money. Already paid — the
+   * order page says so. A failure (the bank is down) keeps the customer
+   * here; the next tap retries against the same order, by QR or by card.
+   */
+  private payByQr(orderId: string): void {
+    this.qrPayments.start(orderId).subscribe({
+      next: (payment) => {
+        this.submitting.set(false);
+        const settled = payment.status === 'PAID' || payment.status === 'REFUNDED';
+        // Replacing checkout: Back from the QR screen should not land on an emptied basket.
+        void this.router.navigate(settled ? ['/orders', orderId] : ['/orders', orderId, 'qr'], { replaceUrl: true });
       },
       error: (err) => {
         this.submitting.set(false);

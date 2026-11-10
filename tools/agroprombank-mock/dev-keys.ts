@@ -105,6 +105,15 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       '  AGROPROMBANK_WEB_IS_TEST=true',
       '  PUBLIC_WEB_URL=http://localhost:4200',
       '',
+      'and at the QR («Мобильный платёж») sandbox, on the same port, with:',
+      '',
+      '  AGROPROMBANK_QR_ENABLED=true',
+      '  AGROPROMBANK_QR_SERVICE_URL=http://localhost:8898/mobile/QRMobileService.asmx',
+      '  AGROPROMBANK_QR_LOGIN=sandbox',
+      '  AGROPROMBANK_QR_PASSWORD=sandbox-pass',
+      '  AGROPROMBANK_QR_TERMINAL_ID=QRT000000000000001',
+      '  AGROPROMBANK_QR_APP_LINK=http://localhost:8898/__sandbox/qr/app?code={code}',
+      '',
     ].join('\n'),
   );
 }

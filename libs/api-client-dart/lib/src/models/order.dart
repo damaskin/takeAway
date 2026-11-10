@@ -136,9 +136,26 @@ enum PaymentState {
   refunded,
 }
 
+/// Who took (or holds) an order's money (`PaymentProviderEnum`).
+@JsonEnum(alwaysCreate: true)
+enum PaymentProvider {
+  /// A card bound in the profile («Клевер»).
+  @JsonValue('AGROPROMBANK')
+  agroprombank,
+
+  /// The bank's payment page («Web-платёж»).
+  @JsonValue('AGROPROMBANK_WEB')
+  agroprombankWeb,
+
+  /// QR in the bank's app («Мобильный платёж»): the money is taken at once
+  /// and given back if the kitchen turns the order down.
+  @JsonValue('AGROPROMBANK_QR')
+  agroprombankQr,
+}
+
 @JsonSerializable(createToJson: false)
 class OrderPayment {
-  const OrderPayment({required this.state, required this.amountCents, this.cardMask, this.paidAt});
+  const OrderPayment({required this.state, required this.amountCents, this.cardMask, this.paidAt, this.provider});
 
   factory OrderPayment.fromJson(Map<String, dynamic> json) => _$OrderPaymentFromJson(json);
 
@@ -149,6 +166,14 @@ class OrderPayment {
   final int amountCents;
   final String? cardMask;
   final DateTime? paidAt;
+
+  /// Who the payment went through. Optional: the API does not send it yet
+  /// (2026-11-10) — null then, and for a provider this build does not know.
+  @JsonKey(unknownEnumValue: JsonKey.nullForUndefinedEnumValue)
+  final PaymentProvider? provider;
+
+  /// Paid by QR in the bank's app, as far as the API says.
+  bool get byQr => provider == PaymentProvider.agroprombankQr;
 }
 
 @JsonSerializable(createToJson: false)

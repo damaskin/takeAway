@@ -237,7 +237,8 @@ abstract final class FeatureFlagsCache {
   static const delivery = 'flags.delivery';
   static const cards = 'flags.cards';
   static const cardFlow = 'flags.cardFlow';
-  static const keys = [delivery, cards, cardFlow];
+  static const qrCurrencies = 'flags.qrCurrencies';
+  static const keys = [delivery, cards, cardFlow, qrCurrencies];
 }
 
 final featureFlagsProvider = FutureProvider<FeatureFlags>((ref) async {
@@ -247,12 +248,14 @@ final featureFlagsProvider = FutureProvider<FeatureFlags>((ref) async {
     unawaited(prefs.setBool(FeatureFlagsCache.delivery, flags.deliveryEnabled));
     unawaited(prefs.setBool(FeatureFlagsCache.cards, flags.agroprombankEnabled));
     unawaited(prefs.setString(FeatureFlagsCache.cardFlow, flags.cardPaymentFlow.name));
+    unawaited(prefs.setStringList(FeatureFlagsCache.qrCurrencies, flags.qrPaymentCurrencies));
     return flags;
   } on Object {
     return FeatureFlags(
       deliveryEnabled: prefs.getBool(FeatureFlagsCache.delivery) ?? false,
       agroprombankEnabled: prefs.getBool(FeatureFlagsCache.cards) ?? false,
       cardPaymentFlow: CardPaymentFlow.tryParse(prefs.getString(FeatureFlagsCache.cardFlow)),
+      qrPaymentCurrencies: FeatureFlags.readQrPaymentCurrencies(prefs.getStringList(FeatureFlagsCache.qrCurrencies)),
     );
   }
 });

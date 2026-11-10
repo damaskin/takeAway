@@ -20,6 +20,7 @@ import { PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { CheckoutPage } from './checkout.page';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 
 /**
  * «Акции takeAway» at checkout (docs/takeaway-promos.md §5): the welcome
@@ -188,10 +189,12 @@ describe('CheckoutPage — takeAway promos and the welcome bonus', () => {
             cardPaymentsEnabled: signal(true),
             boundCardsEnabled: signal(false),
             webPaymentsEnabled: signal(true),
+            qrPaymentCurrencies: signal([]),
           },
         },
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
+        { provide: QrPaymentApi, useValue: { start: jest.fn() } },
         { provide: WebPaymentApi, useValue: { start: jest.fn(() => of({ page: null })) } },
         { provide: RealtimeService, useValue: { onStoreAvailabilityChanged: () => () => undefined } },
       ],

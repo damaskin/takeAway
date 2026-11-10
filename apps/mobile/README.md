@@ -21,7 +21,11 @@ NestJS API as the web app and the Telegram Mini App.
 - **Cart and checkout** — something to eat offered next to a drink, ASAP or a
   15-minute pickup slot (full slots are
   shown struck through), delivery where the store offers it, promo code, gift
-  card, loyalty points, pay with a bound Agroprombank card or at the counter.
+  card, loyalty points, pay with a bound Agroprombank card or on the bank's
+  page (Web-платёж), or by QR in Agroprombank's app («Мобильный платёж»,
+  for stores in RUP: the code with a countdown, a button that opens the
+  bank's app on the same phone, polled every 3 s while the app is in front —
+  docs/agroprombank-payments.md §12).
   Outside working hours only a scheduled pickup can be chosen.
 - **Live order** — Socket.IO with polling as a fallback, ETA ring (to the
   kitchen's new estimate when it took the order late), steps, the pickup code

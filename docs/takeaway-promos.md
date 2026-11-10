@@ -114,7 +114,7 @@ locale)`; it is a `PLATFORM_ANNOUNCEMENT` inbox item, push kind
 
 ## 3. Data model
 
-`apps/api/prisma/schema.prisma`, migration `20261110100000_takeaway_promos`:
+`apps/api/prisma/schema.prisma`, migration `20261110120000_takeaway_promos`:
 
 - `TakeawayPromo` — `name, code (unique, uppercase), percent, startsAt,
 endsAt, currency, budgetCents, spentCents, status ACTIVE|DISABLED|EXHAUSTED,

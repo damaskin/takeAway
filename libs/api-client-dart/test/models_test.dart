@@ -958,6 +958,82 @@ void main() {
 
       expect(const StartWebPaymentRequest(orderId: 'o1').toJson(), {'orderId': 'o1', 'returnTo': 'mobile'});
     });
+
+    test('reads the currencies the QR payment takes, none from an older API', () {
+      expect(FeatureFlags.fromJson({}).qrPaymentCurrencies, isEmpty);
+      expect(FeatureFlags.fromJson({'qrPaymentCurrencies': null}).qrPaymentCurrencies, isEmpty);
+
+      final on = FeatureFlags.fromJson({
+        'cardPaymentFlow': 'none',
+        'qrPaymentCurrencies': ['RUP', ' ', 42],
+      });
+      expect(on.qrPaymentCurrencies, ['RUP']);
+      expect(on.qrPaymentsFor('RUP'), isTrue);
+      expect(on.qrPaymentsFor('rup'), isTrue);
+      expect(on.qrPaymentsFor('MDL'), isFalse, reason: 'a store in another currency cannot use it');
+      expect(on.cardPaymentsEnabled, isFalse, reason: 'QR can be the only way to pay');
+      expect(FeatureFlags.fromJson(on.toJson()).qrPaymentCurrencies, ['RUP'], reason: 'the cached copy round-trips');
+    });
+
+    test('parses a QR invoice while it waits, once it is paid, and a status this build does not know', () {
+      final pending = QrPayment.fromJson({
+        'paymentId': 'pay_qr_1',
+        'orderId': 'ord_1',
+        'status': 'PENDING',
+        'amountCents': 4550,
+        'currency': 'RUP',
+        'qr': {
+          'code': 'QRT000000000000001:45.50:1000042',
+          'appLink': 'agroprombank://qr?code=QRT000000000000001%3A45.50%3A1000042',
+          'expiresAt': '2026-11-10T12:10:00.000Z',
+        },
+      });
+      expect(pending.status, QrPaymentStatus.pending);
+      expect(pending.amountCents, 4550);
+      expect(pending.qr!.code, 'QRT000000000000001:45.50:1000042');
+      expect(pending.qr!.appLinkUri!.scheme, 'agroprombank');
+      expect(pending.qr!.expiresAt, DateTime.utc(2026, 11, 10, 12, 10));
+
+      final scanOnly = QrPaymentCode.fromJson({'code': 'x', 'appLink': null, 'expiresAt': '2026-11-10T12:10:00Z'});
+      expect(scanOnly.appLinkUri, isNull);
+      expect(
+        QrPaymentCode.fromJson({'code': 'x', 'appLink': ' ', 'expiresAt': '2026-11-10T12:10:00Z'}).appLinkUri,
+        isNull,
+      );
+
+      final paid = QrPayment.fromJson({
+        'paymentId': 'pay_qr_1',
+        'orderId': 'ord_1',
+        'status': 'PAID',
+        'amountCents': 4550,
+        'currency': 'RUP',
+        'qr': null,
+      });
+      expect(paid.status, QrPaymentStatus.paid);
+      expect(paid.qr, isNull);
+
+      final later = QrPayment.fromJson({'paymentId': 'p', 'orderId': 'o', 'status': 'ON_HOLD', 'amountCents': 1});
+      expect(later.status, QrPaymentStatus.unknown);
+      expect(later.currency, 'RUP');
+
+      expect(const StartQrPaymentRequest(orderId: 'ord_1').toJson(), {'orderId': 'ord_1'});
+    });
+
+    test('tells a QR payment on the order apart when the API names the provider', () {
+      final qr = OrderPayment.fromJson({
+        'state': 'HELD',
+        'amountCents': 4550,
+        'cardMask': null,
+        'paidAt': null,
+        'provider': 'AGROPROMBANK_QR',
+      });
+      expect(qr.byQr, isTrue);
+
+      final card = OrderPayment.fromJson({'state': 'HELD', 'amountCents': 4550, 'provider': 'AGROPROMBANK_WEB'});
+      expect(card.byQr, isFalse);
+      expect(OrderPayment.fromJson({'state': 'HELD', 'amountCents': 1}).provider, isNull, reason: 'optional');
+      expect(OrderPayment.fromJson({'state': 'HELD', 'amountCents': 1, 'provider': 'NEW_BANK'}).provider, isNull);
+    });
   });
 
   group('feedback', () {

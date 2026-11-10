@@ -62,7 +62,9 @@ export type PaymentProviderEnum =
   /** Agroprombank («Клевер») — a card bound in the profile, charged by token. */
   | 'AGROPROMBANK'
   /** Agroprombank «Web-платёж» — the bank's hosted payment page. */
-  | 'AGROPROMBANK_WEB';
+  | 'AGROPROMBANK_WEB'
+  /** Agroprombank «Мобильный платёж» — paid by QR in the bank's own app. */
+  | 'AGROPROMBANK_QR';
 
 /**
  * Which card checkout the clients run, from `GET /config/features`:
@@ -100,6 +102,65 @@ export interface AgroprombankWebStartResponse {
   page: PaymentPage | null;
   /** When the bank page stops taking this invoice. */
   expiresAt: string | null;
+}
+
+/**
+ * A QR invoice as the customer sees it (docs/agroprombank-payments.md §12):
+ * `PENDING` — waiting to be paid in the bank's app; `PAID` — the money is on
+ * the order (given back if the kitchen turns it down); `EXPIRED` — lapsed or
+ * closed unpaid; `REFUNDED` — paid, then given back; `FAILED` — the bank
+ * would not issue the invoice.
+ */
+export type AgroprombankQrPaymentStatus = 'PENDING' | 'PAID' | 'EXPIRED' | 'REFUNDED' | 'FAILED';
+
+/** What to show while a QR invoice waits to be paid. */
+export interface AgroprombankQrCode {
+  /** Text to render as the QR code. */
+  code: string;
+  /** Opens the bank app with this invoice on the same phone; null when not configured. */
+  appLink: string | null;
+  /** ISO instant the invoice stops being offered. */
+  expiresAt: string;
+}
+
+/** `POST /payments/agroprombank-qr/start` body. */
+export interface AgroprombankQrStartRequest {
+  orderId: string;
+}
+
+/**
+ * Answer of `POST /payments/agroprombank-qr/start`, `GET
+ * /payments/agroprombank-qr/:paymentId` and `POST …/:paymentId/cancel`.
+ */
+export interface AgroprombankQrPaymentDto {
+  paymentId: string;
+  orderId: string;
+  status: AgroprombankQrPaymentStatus;
+  amountCents: number;
+  currency: 'RUP';
+  /** While PENDING: what to show. Null otherwise. */
+  qr: AgroprombankQrCode | null;
+}
+
+/**
+ * Why `POST /payments/agroprombank-qr/start` (or the status and cancel
+ * routes) refused: `QR_PAYMENT_DISABLED` (409) — the QR payment is off or not
+ * configured; `QR_CURRENCY_UNSUPPORTED` (409) — the order is not in RUP;
+ * `ORDER_NOT_PAYABLE` (409) — cancelled, expired, already paid or nothing to
+ * pay; `QR_BANK_UNAVAILABLE` (503) — the bank could not be reached, try again.
+ */
+export type AgroprombankQrErrorCode =
+  | 'QR_PAYMENT_DISABLED'
+  | 'QR_CURRENCY_UNSUPPORTED'
+  | 'ORDER_NOT_PAYABLE'
+  | 'QR_BANK_UNAVAILABLE';
+
+/** Error body of the QR payment routes. */
+export interface AgroprombankQrErrorBody {
+  statusCode: 409 | 503;
+  error: string;
+  code: AgroprombankQrErrorCode;
+  message: string;
 }
 
 export type PaymentStatusEnum =

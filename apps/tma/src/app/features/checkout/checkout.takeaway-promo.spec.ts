@@ -20,6 +20,7 @@ import { BonusesApi, PromoApi } from '../../core/promo/promo.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaCheckoutPage } from './checkout.page';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 
 /**
  * «Акции takeAway» in the Mini App's checkout (docs/takeaway-promos.md §5):
@@ -157,12 +158,14 @@ describe('TmaCheckoutPage — promo code and the welcome bonus', () => {
             cardPaymentsEnabled: signal(true),
             boundCardsEnabled: signal(false),
             webPaymentsEnabled: signal(true),
+            qrPaymentCurrencies: signal([]),
           },
         },
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
         { provide: WebPaymentApi, useValue: { start: jest.fn(() => of({ page: null })) } },
         { provide: PromoApi, useValue: { validate } },
+        { provide: QrPaymentApi, useValue: { start: jest.fn() } },
         {
           provide: BonusesApi,
           useValue: {

@@ -11,6 +11,7 @@ import type { Payment, PaymentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { BANK_CURRENCY_CODES } from '../agroprombank/constants';
+import { withFreshInvoiceId } from '../agroprombank/invoice-ids';
 import { PaymentHoldsService } from '../agroprombank/payment-holds.service';
 import { CARD_PROVIDERS } from '../card-providers';
 import { OrderSettlementService } from '../order-settlement.service';
@@ -628,40 +629,25 @@ export class AgroprombankWebService {
     return payment?.provider === 'AGROPROMBANK_WEB' ? payment : null;
   }
 
-  /** Same numbering as the bound-card flow — see AgroprombankService.createPendingPayment. */
-  private async createPendingPayment(
+  /** Same numbering as every other flow — see {@link withFreshInvoiceId}. */
+  private createPendingPayment(
     orderId: string,
     data: { amountCents: number; currency: Payment['currency']; raw: Record<string, Prisma.InputJsonValue> },
   ): Promise<Payment & { invoiceId: string }> {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const invoiceId = `${this.config.invoicePrefix}${await this.nextInvoiceNumber()}`;
-      try {
-        const payment = await this.prisma.payment.create({
-          data: {
-            orderId,
-            provider: 'AGROPROMBANK_WEB',
-            status: 'PENDING',
-            invoiceId,
-            amountCents: data.amountCents,
-            currency: data.currency,
-            rawJson: data.raw,
-          },
-        });
-        return payment as Payment & { invoiceId: string };
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
-    throw new ConflictException('Could not allocate a unique invoice id');
-  }
-
-  private async nextInvoiceNumber(): Promise<string> {
-    const rows = await this.prisma.$queryRaw<
-      Array<{ value: bigint }>
-    >`SELECT nextval('agroprombank_invoice_seq') AS value`;
-    const value = rows[0]?.value;
-    if (value === undefined) throw new Error('agroprombank_invoice_seq returned no value');
-    return value.toString();
+    return withFreshInvoiceId(this.prisma, this.config.invoicePrefix, async (invoiceId) => {
+      const payment = await this.prisma.payment.create({
+        data: {
+          orderId,
+          provider: 'AGROPROMBANK_WEB',
+          status: 'PENDING',
+          invoiceId,
+          amountCents: data.amountCents,
+          currency: data.currency,
+          rawJson: data.raw,
+        },
+      });
+      return payment as Payment & { invoiceId: string };
+    });
   }
 
   private async requirePayment(paymentId: string): Promise<Payment & { invoiceId: string }> {
@@ -760,10 +746,6 @@ function paidAt(payment: Payment): Date {
   const raw = rawOf(payment)['paidAt'];
   const parsed = typeof raw === 'string' ? new Date(raw) : null;
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed : payment.updatedAt;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002';
 }
 
 function messageOf(err: unknown): string {

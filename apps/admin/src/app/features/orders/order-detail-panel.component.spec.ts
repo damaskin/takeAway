@@ -176,6 +176,84 @@ describe('OrderDetailPanelComponent — catalog options', () => {
   });
 });
 
+/** Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12): the bank gives a QR payment back only whole. */
+describe('OrderDetailPanelComponent — paid by QR', () => {
+  const qrPayment = {
+    id: 'pay-1',
+    provider: 'AGROPROMBANK_QR',
+    status: 'SUCCEEDED',
+    amountCents: 4500,
+    refundedCents: 0,
+    providerRef: '777',
+    createdAt: '2026-11-09T09:01:00Z',
+  };
+
+  async function render(order: AdminOrderDetail) {
+    TestBed.configureTestingModule({
+      imports: [OrderDetailPanelComponent],
+      providers: [
+        provideTranslateService(),
+        { provide: AdminOrdersApi, useValue: { get: jest.fn().mockReturnValue(of(order)) } },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+    const fixture = TestBed.createComponent(OrderDetailPanelComponent);
+    fixture.componentRef.setInput('orderId', order.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  beforeEach(() => TestBed.resetTestingModule());
+
+  it('names QR as the way the customer paid, and refunds it only in full', async () => {
+    const order: AdminOrderDetail = {
+      ...ORDER,
+      status: 'PICKED_UP',
+      refundedCents: 0,
+      refundableCents: 4500,
+      payments: [{ ...qrPayment, id: 'pay-0', status: 'FAILED' }, qrPayment],
+    };
+    const fixture = await render(order);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('[data-testid="order-paid-with"]'))).toBe('QR (Агропромбанк)');
+
+    fixture.componentInstance.startRefund(order);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(text(el.querySelector('[data-testid="refund-full-only"]'))).toBe(
+      'Оплату по QR можно вернуть только целиком.',
+    );
+    expect(el.querySelector<HTMLInputElement>('[data-testid="refund-amount"]')?.disabled).toBe(true);
+
+    expect(fixture.componentInstance.amountValid(order)).toBe(true);
+    fixture.componentInstance.amountMajor = 20;
+    expect(fixture.componentInstance.amountValid(order)).toBe(false);
+  });
+
+  it('keeps a card payment refundable in part', async () => {
+    const order: AdminOrderDetail = {
+      ...ORDER,
+      status: 'PICKED_UP',
+      refundedCents: 0,
+      refundableCents: 4500,
+      payments: [{ ...qrPayment, provider: 'AGROPROMBANK_WEB' }],
+    };
+    const fixture = await render(order);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el.querySelector('[data-testid="order-paid-with"]'))).toBe('Карта на странице банка (Агропромбанк)');
+
+    fixture.componentInstance.startRefund(order);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(el.querySelector('[data-testid="refund-full-only"]')).toBeNull();
+    fixture.componentInstance.amountMajor = 20;
+    expect(fixture.componentInstance.amountValid(order)).toBe(true);
+  });
+});
+
 /**
  * A takeAway promo order (docs/takeaway-promos.md §4.4): the card says the
  * guest paid their part and takeAway covers the rest, so staff collect nothing.

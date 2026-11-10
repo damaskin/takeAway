@@ -1,9 +1,11 @@
 import type { ConfigService } from '@nestjs/config';
 
+import { AgroprombankQrConfig } from '../payments/agroprombank-qr/agroprombank-qr.config';
 import { FeatureFlagsService } from './feature-flags.service';
 
 function withEnv(env: Record<string, string>): FeatureFlagsService {
-  return new FeatureFlagsService({ get: (key: string) => env[key] } as unknown as ConfigService);
+  const config = { get: (key: string) => env[key] } as unknown as ConfigService;
+  return new FeatureFlagsService(config, new AgroprombankQrConfig(config));
 }
 
 describe('FeatureFlagsService.support', () => {
@@ -23,8 +25,26 @@ describe('FeatureFlagsService.support', () => {
       deliveryEnabled: false,
       agroprombankEnabled: false,
       cardPaymentFlow: 'none',
+      qrPaymentCurrencies: [],
       support: { email: 'help@takeaway.md', telegram: null },
     });
+  });
+});
+
+describe('FeatureFlagsService.qrPaymentCurrencies', () => {
+  const qr = {
+    AGROPROMBANK_QR_TERMINAL_ID: 'QRT169007299815722',
+    AGROPROMBANK_QR_LOGIN: 'takeaway',
+    AGROPROMBANK_QR_PASSWORD: 'secret',
+  };
+
+  it('offers RUP while the QR payment is on and configured', () => {
+    expect(withEnv({ ...qr, AGROPROMBANK_QR_ENABLED: 'true' }).snapshot().qrPaymentCurrencies).toEqual(['RUP']);
+  });
+
+  it('offers nothing while it is off, or on without its settings', () => {
+    expect(withEnv(qr).qrPaymentCurrencies).toEqual([]);
+    expect(withEnv({ AGROPROMBANK_QR_ENABLED: 'true' }).qrPaymentCurrencies).toEqual([]);
   });
 });
 

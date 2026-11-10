@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
@@ -25,6 +25,7 @@ import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { CheckoutPage } from './checkout.page';
@@ -160,6 +161,7 @@ describe('CheckoutPage — pickup time', () => {
   };
   let orders: { create: jest.Mock };
   let cartService: { load: jest.Mock; updateQuantity: jest.Mock };
+  let qrPayments: { start: jest.Mock };
 
   async function open(
     store: StoreDetail,
@@ -168,6 +170,10 @@ describe('CheckoutPage — pickup time', () => {
       suggestions?: Observable<StoreSuggestions>;
       deliveryEnabled?: boolean;
       cart?: CartView;
+      /** `qrPaymentCurrencies` of the feature flags; none by default. */
+      qr?: string[];
+      /** The card flow (the bank's page here) is on; on by default. */
+      cards?: boolean;
     } = {},
   ): Promise<{ page: CheckoutPage; root: HTMLElement; detect: () => void }> {
     catalog = {
@@ -180,6 +186,7 @@ describe('CheckoutPage — pickup time', () => {
     };
     orders = { create: jest.fn() };
     cartService = { load: jest.fn(() => of(opts.cart ?? CART)), updateQuantity: jest.fn(() => of(opts.cart ?? CART)) };
+    qrPayments = { start: jest.fn() };
     TestBed.configureTestingModule({
       providers: [
         provideRouter([{ path: 'checkout', component: CheckoutPage }]),
@@ -197,14 +204,16 @@ describe('CheckoutPage — pickup time', () => {
           useValue: {
             load: jest.fn(),
             deliveryEnabled: signal(opts.deliveryEnabled ?? false),
-            cardPaymentsEnabled: signal(true),
+            cardPaymentsEnabled: signal(opts.cards ?? true),
             boundCardsEnabled: signal(false),
-            webPaymentsEnabled: signal(true),
+            webPaymentsEnabled: signal(opts.cards ?? true),
+            qrPaymentCurrencies: signal(opts.qr ?? []),
           },
         },
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
         { provide: WebPaymentApi, useValue: { start: jest.fn() } },
+        { provide: QrPaymentApi, useValue: qrPayments },
         { provide: RealtimeService, useValue: { onStoreAvailabilityChanged: () => () => undefined } },
       ],
     });
@@ -523,6 +532,86 @@ describe('CheckoutPage — pickup time', () => {
       const failed = await open(STORE, { menu: MENU });
       expect(heading(failed.root)).toBe('Добавить к напитку?');
       expect(names(failed.root)).toEqual(['Круассан']);
+    });
+  });
+
+  /** Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12). */
+  describe('paying by QR in the bank app', () => {
+    const methodButton = (root: HTMLElement, method: 'CARD' | 'QR') =>
+      root.querySelector<HTMLButtonElement>(`[data-testid="pay-method-${method}"]`);
+
+    afterEach(() => localStorage.clear());
+
+    it('lets the customer choose the card or QR, starting from the card, and remembers the choice', async () => {
+      const first = await open(STORE, { qr: ['RUP'] });
+      expect(methodButton(first.root, 'CARD')?.textContent?.trim()).toBe('Картой');
+      expect(methodButton(first.root, 'QR')?.textContent?.trim()).toBe('По QR в приложении банка');
+      expect(first.page.paymentMethod()).toBe('CARD');
+      expect(first.root.querySelector('[data-testid="web-payment-hint"]')).not.toBeNull();
+
+      methodButton(first.root, 'QR')?.click();
+      first.detect();
+      expect(first.page.paymentMethod()).toBe('QR');
+      expect(first.root.querySelector('[data-testid="web-payment-hint"]')).toBeNull();
+      expect(text(first.root, 'qr-payment-hint')).toEqual([
+        'После оформления покажем QR-код — оплатите его в приложении Агропромбанка.',
+      ]);
+      expect(localStorage.getItem('takeaway.web.paymentMethod')).toBe('QR');
+      TestBed.resetTestingModule();
+
+      // The next checkout on this device starts from QR.
+      const next = await open(STORE, { qr: ['RUP'] });
+      expect(next.page.paymentMethod()).toBe('QR');
+    });
+
+    it('pays by QR only, with no choice, when cards are off', async () => {
+      const { page, root } = await open(STORE, { qr: ['RUP'], cards: false });
+      expect(root.querySelector('[data-testid="pay-method"]')).toBeNull();
+      expect(page.paymentMethod()).toBe('QR');
+      expect(page.canSubmit()).toBe(true);
+      expect(root.textContent).not.toContain('Оплата картой сейчас недоступна');
+    });
+
+    it('offers no QR for a store in another currency', async () => {
+      const { page, root } = await open({ ...STORE, currency: 'MDL' }, { qr: ['RUP'], cards: false });
+      expect(page.paymentMethod()).toBeNull();
+      expect(page.canSubmit()).toBe(false);
+      expect(root.textContent).toContain('Оплата картой сейчас недоступна');
+    });
+
+    it('places the order, issues its invoice and opens the QR screen', async () => {
+      const { page } = await open(STORE, { qr: ['RUP'], cards: false });
+      orders.create.mockReturnValue(of({ id: 'ord-1' }));
+      qrPayments.start.mockReturnValue(
+        of({ paymentId: 'pay-1', orderId: 'ord-1', status: 'PENDING', amountCents: 4500, currency: 'RUP', qr: null }),
+      );
+
+      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      page.placeOrder();
+
+      expect(qrPayments.start).toHaveBeenCalledWith('ord-1');
+      // In place of checkout: Back from the QR screen does not land on an emptied basket.
+      expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1', 'qr'], { replaceUrl: true });
+    });
+
+    it('stays on checkout when the bank is down, and the next tap retries the same order', async () => {
+      const { page, root, detect } = await open(STORE, { qr: ['RUP'], cards: false });
+      orders.create.mockReturnValue(of({ id: 'ord-1' }));
+      qrPayments.start.mockReturnValue(
+        throwError(
+          () => new HttpErrorResponse({ status: 503, error: { statusCode: 503, code: 'QR_BANK_UNAVAILABLE' } }),
+        ),
+      );
+
+      page.placeOrder();
+      detect();
+      expect(page.error()).toBe('Банк сейчас не отвечает — попробуйте ещё раз через минуту');
+      expect(root.textContent).toContain('Банк сейчас не отвечает');
+
+      page.placeOrder();
+      expect(orders.create).toHaveBeenCalledTimes(1);
+      expect(qrPayments.start).toHaveBeenCalledTimes(2);
     });
   });
 });

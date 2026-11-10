@@ -420,6 +420,9 @@ importers:
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
+      qrcode-generator:
+        specifier: ^2.0.4
+        version: 2.0.4
       rxjs:
         specifier: ^7.8.0
         version: 7.8.2

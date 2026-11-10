@@ -13,7 +13,9 @@ import {
   orderWaitNote,
   phoneHref,
   productKind,
+  qrPaymentOffered,
   readOrderItemSnapshot,
+  type OrderCancelledMoney,
 } from '@takeaway/utils';
 import { interval, take, timer, type Subscription } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -164,6 +166,21 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
             style="background: var(--color-caramel); color: var(--color-foam); height: 52px; border-radius: 14px; font-family: var(--font-sans); font-size: 15px; font-weight: 600"
           >
             {{ (retrying() ? 'common.loading' : retryLabel()) | translate }}
+          </button>
+        }
+        @if (canPayByQr()) {
+          <!-- Agroprombank «Мобильный платёж»: the QR screen starts the invoice, or shows the one waiting. -->
+          <button
+            type="button"
+            data-testid="pay-by-qr"
+            (click)="payByQr()"
+            class="w-full flex items-center justify-center"
+            [style.background]="canRetryPayment() ? 'var(--color-foam)' : 'var(--color-caramel)'"
+            [style.color]="canRetryPayment() ? 'var(--color-text-primary)' : 'var(--color-foam)'"
+            [style.border]="canRetryPayment() ? '1px solid var(--color-border-light)' : 'none'"
+            style="height: 52px; border-radius: 14px; font-family: var(--font-sans); font-size: 15px; font-weight: 600"
+          >
+            {{ 'common.qrPayment.order.payByQr' | translate }}
           </button>
         }
         @if (paymentError()) {
@@ -484,6 +501,39 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   readonly paymentState = computed<OrderPaymentState>(() => this.order()?.payment?.state ?? 'NONE');
 
+  /** The order's store can be paid by QR in Agroprombank's app. */
+  private readonly qrOffered = computed(() => {
+    const o = this.order();
+    return !!o && qrPaymentOffered(o.currency, this.flags.qrPaymentCurrencies());
+  });
+
+  /**
+   * The money came by QR in the bank's app: taken at once, not held, and
+   * given back if the store turns the order down. The API names the provider;
+   * an API that does not can only have been paid by QR when cards are off.
+   */
+  readonly paidByQr = computed(() => {
+    const provider = this.order()?.payment?.provider;
+    if (provider !== undefined) return provider === 'AGROPROMBANK_QR';
+    return this.qrOffered() && !this.flags.cardPaymentsEnabled();
+  });
+
+  /**
+   * «Оплатить по QR»: a new order whose money has not arrived, in a store the
+   * QR payment takes. The QR screen issues the invoice, or shows the one
+   * already waiting.
+   */
+  readonly canPayByQr = computed(() => {
+    const o = this.order();
+    if (!o || o.status !== 'CREATED' || !this.qrOffered()) return false;
+    return UNSETTLED.includes(this.paymentState());
+  });
+
+  /** A QR payment has no hold: whatever came back is money returned, not a hold lifted. */
+  private qrMoneyBack(money: OrderCancelledMoney): boolean {
+    return this.paidByQr() && (money === 'refunded' || money === 'released');
+  }
+
   /**
    * Where the money of a cancelled or expired order went (`endedOrderMoney`):
    * its payment chip says that, never «Спишем при принятии заказа» — the
@@ -507,17 +557,21 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
 
   readonly paymentTitle = computed(() => {
     const ended = this.endedMoney();
-    if (ended) return `web.orderStatus.payment.outcome.${ended}`;
+    if (ended) {
+      return this.qrMoneyBack(ended) ? 'common.qrPayment.order.refunded' : `web.orderStatus.payment.outcome.${ended}`;
+    }
     if (this.bankSaidFail()) return 'web.orderStatus.payment.failed';
+    const qr = this.paidByQr();
     switch (this.paymentState()) {
       case 'PAID':
-        return 'web.orderStatus.payment.paid';
+        return qr ? 'common.qrPayment.order.paid' : 'web.orderStatus.payment.paid';
       case 'HELD':
-        return 'web.orderStatus.payment.held';
+        // Paid by QR is money taken, parked on the order until the kitchen accepts it.
+        return qr ? 'common.qrPayment.order.paid' : 'web.orderStatus.payment.held';
       case 'PENDING':
-        return 'web.orderStatus.payment.pending';
+        return qr ? 'common.qrPayment.order.pending' : 'web.orderStatus.payment.pending';
       case 'FAILED':
-        return 'web.orderStatus.payment.failed';
+        return qr ? 'common.qrPayment.order.failed' : 'web.orderStatus.payment.failed';
       case 'REFUNDED':
         return 'web.orderStatus.payment.refunded';
       default: {
@@ -543,7 +597,9 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   /** A line under the payment chip saying what happens next, as a translation key. */
   readonly paymentHint = computed(() => {
     if (this.endedMoney()) return '';
-    if (this.paymentState() === 'HELD') return 'web.orderStatus.payment.heldHint';
+    if (this.paymentState() === 'HELD') {
+      return this.paidByQr() ? 'common.qrPayment.order.heldHint' : 'web.orderStatus.payment.heldHint';
+    }
     if (this.canRetryPayment() && this.paymentFailed()) return 'web.orderStatus.payment.retryHint';
     return '';
   });
@@ -576,7 +632,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
       case 'PAID':
         return '✅';
       case 'HELD':
-        return '🔒';
+        return this.paidByQr() ? '✅' : '🔒';
       case 'FAILED':
         return '⚠️';
       case 'REFUNDED':
@@ -660,7 +716,12 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
       lines.push({ kind: 'reason', key: 'common.orderCancelled.cardDeclinedHint', params: {} });
     if (c.comment)
       lines.push({ kind: 'comment', key: 'common.orderCancelled.comment', params: { comment: c.comment } });
-    if (c.money) lines.push({ kind: 'money', key: `common.orderCancelled.money.${c.money}`, params: {} });
+    if (c.money) {
+      const key = this.qrMoneyBack(c.money)
+        ? 'common.qrPayment.order.refundedLine'
+        : `common.orderCancelled.money.${c.money}`;
+      lines.push({ kind: 'money', key, params: {} });
+    }
     return lines.length > 0 ? lines : null;
   });
 
@@ -828,6 +889,14 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   private awaitingConfirmation(): boolean {
     const state = this.paymentState();
     return this.order()?.status === 'CREATED' && (state === 'NONE' || state === 'PENDING');
+  }
+
+  /** The QR screen: it issues the invoice, or shows the one already waiting. */
+  payByQr(): void {
+    const o = this.order();
+    if (!o) return;
+    this.tg.haptic('light');
+    void this.router.navigate(['/orders', o.id, 'qr']);
   }
 
   /** "Go to payment" while the issued bank page still works; "pay" after a failure. */

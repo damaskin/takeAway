@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
@@ -48,7 +48,7 @@ describe('TmaOrderStatusPage', () => {
   /** The page's `order.statusChanged` handler, as it subscribed. */
   let pushStatus: (event: { status: OrderView['status'] }) => void;
 
-  async function open(first: OrderView, opts: { phone?: string } = {}) {
+  async function open(first: OrderView, opts: { phone?: string; qr?: string[]; cards?: boolean } = {}) {
     orders = {
       get: jest.fn(() => of(first)),
       cancel: jest.fn(),
@@ -79,7 +79,15 @@ describe('TmaOrderStatusPage', () => {
             onStoreAvailabilityChanged: () => () => undefined,
           },
         },
-        { provide: FeatureFlagsStore, useValue: { load: jest.fn(), webPaymentsEnabled: signal(false) } },
+        {
+          provide: FeatureFlagsStore,
+          useValue: {
+            load: jest.fn(),
+            webPaymentsEnabled: signal(false),
+            cardPaymentsEnabled: signal(opts.cards ?? true),
+            qrPaymentCurrencies: signal(opts.qr ?? []),
+          },
+        },
         { provide: WebPaymentApi, useValue: { issuedPageUrl: () => null, forget: jest.fn(), start: jest.fn() } },
         {
           provide: TelegramBridgeService,
@@ -99,7 +107,8 @@ describe('TmaOrderStatusPage', () => {
       await harness.fixture.whenStable();
       harness.detectChanges();
     };
-    return { page, root, byTestId, settle, destroy: () => harness.fixture.destroy() };
+    const text = (id: string) => byTestId(id)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+    return { page, root, byTestId, text, settle, destroy: () => harness.fixture.destroy() };
   }
 
   afterEach(() => TestBed.resetTestingModule());
@@ -282,6 +291,66 @@ describe('TmaOrderStatusPage', () => {
       expect(byTestId('payment-line')?.textContent).toContain('Возврат в обработке');
       expect(root.textContent).not.toContain('Спишем при принятии заказа');
       expect(root.textContent).not.toContain('Если точка не примет заказ');
+      destroy();
+    });
+  });
+
+  /** Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12). */
+  describe('paid by QR in the bank app', () => {
+    const QR_PAID = {
+      state: 'HELD' as const,
+      amountCents: 4500,
+      cardMask: null,
+      paidAt: null,
+      provider: 'AGROPROMBANK_QR' as const,
+    };
+
+    it('offers to pay a new unpaid order by QR, on the QR screen', async () => {
+      const unpaid = order({
+        status: 'CREATED',
+        payment: { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null },
+      });
+      const { byTestId, destroy } = await open(unpaid, { qr: ['RUP'] });
+      const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      expect(byTestId('pay-by-qr')?.textContent?.trim()).toBe('Оплатить по QR');
+      byTestId('pay-by-qr')?.click();
+      expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1', 'qr']);
+      destroy();
+    });
+
+    it('offers no QR in a store of another currency', async () => {
+      const unpaid = order({
+        status: 'CREATED',
+        currency: 'MDL',
+        payment: { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null },
+      });
+      const { byTestId, destroy } = await open(unpaid, { qr: ['RUP'] });
+      expect(byTestId('pay-by-qr')).toBeNull();
+      destroy();
+    });
+
+    it('says the order is paid by QR and the money comes back if the store turns it down', async () => {
+      const { text, root, destroy } = await open(order({ payment: QR_PAID }), { qr: ['RUP'] });
+      expect(text('payment-line')).toContain('Оплачено по QR');
+      expect(root.textContent).toContain('Если заведение не примет заказ, деньги вернутся.');
+      expect(root.textContent).not.toContain('Спишем при принятии заказа');
+      destroy();
+    });
+
+    it('says the QR payment was returned on a cancelled order', async () => {
+      const { text, destroy } = await open(
+        order({
+          status: 'CANCELLED',
+          canCancel: false,
+          cancelledBy: 'CUSTOMER',
+          cancelMoney: 'REFUNDED',
+          payment: { ...QR_PAID, state: 'REFUNDED' },
+        }),
+        { qr: ['RUP'] },
+      );
+      expect(text('cancel-reason')).toContain('Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.');
+      expect(text('payment-line')).toContain('Деньги возвращены');
       destroy();
     });
   });

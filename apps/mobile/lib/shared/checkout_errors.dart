@@ -65,6 +65,11 @@ String? checkoutErrorText(BuildContext context, String? code, [Map<String, Objec
     'GIFT_CARD_CANCELLED' => l10n.errGiftCardCancelled,
     'GIFT_CARD_BALANCE_CHANGED' => l10n.errGiftCardBalanceChanged,
     'TOO_MANY_UNPAID_ORDERS' => l10n.errTooManyUnpaidOrders,
+    // Paying by QR in Agroprombank's app (docs/agroprombank-payments.md §12.3).
+    'QR_PAYMENT_DISABLED' => l10n.errQrPaymentDisabled,
+    'QR_CURRENCY_UNSUPPORTED' => l10n.errQrCurrencyUnsupported,
+    'ORDER_NOT_PAYABLE' => l10n.errOrderNotPayable,
+    'QR_BANK_UNAVAILABLE' => l10n.errQrBankUnavailable,
     // A cancel that came too late: the kitchen accepted the order, or the
     // money was taken, a moment ago.
     'ORDER_NOT_CANCELLABLE' => l10n.cancelByPhone,

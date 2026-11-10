@@ -120,6 +120,9 @@ class FakeApi extends Fake implements TakeAwayApi {
   /// older API does.
   List<String>? storeKinds;
 
+  /// Currency of the orders placed, e.g. RUP for a store that takes QR.
+  String orderCurrency = 'MDL';
+
   /// Body of the next promo check; null = the code takes 2 MDL off.
   Map<String, dynamic>? promoAnswer;
 
@@ -344,6 +347,7 @@ class FakeApi extends Fake implements TakeAwayApi {
   static Order sampleOrder({
     String status = 'CREATED',
     Map<String, dynamic>? payment,
+    String currency = 'MDL',
     double storeLatitude = 0,
     double storeLongitude = 0,
     String pickupMode = 'ASAP',
@@ -375,7 +379,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     'discountCents': discountCents,
     'taxCents': 0,
     'totalCents': 2000 - discountCents,
-    'currency': 'MDL',
+    'currency': currency,
     'storeId': 'st_1',
     'storeName': 'NoName — центр',
     'storeLatitude': storeLatitude,
@@ -740,7 +744,7 @@ class FakeApi extends Fake implements TakeAwayApi {
     }
     created.add(body);
     _cartItems.clear();
-    return currentOrder = sampleOrder();
+    return currentOrder = sampleOrder(currency: orderCurrency);
   }
 
   @override
@@ -845,6 +849,106 @@ class FakeApi extends Fake implements TakeAwayApi {
               url: webPaymentUrl,
             ),
     );
+  }
+
+  // ── Payments: QR in Agroprombank's app ─────────────────────────────────
+
+  /// The clock QR invoices are issued by: the test's fake time.
+  DateTime Function() now = DateTime.now;
+
+  /// How long a new QR invoice is offered.
+  Duration qrLifetime = const Duration(minutes: 10);
+
+  /// The link the invoices carry to open the bank's app; null = scan only.
+  String? qrAppLink = 'agroprombank://pay?code=QRT000000000000001%3A20%3A1000042';
+
+  /// The order id of every QR start, the payment id of every poll and of
+  /// every cancel, in turn.
+  final qrStarts = <String>[];
+  final qrPolls = <String>[];
+  final qrCancels = <String>[];
+
+  /// The status the invoice reads as now (polls and the next start).
+  String qrStatus = 'PENDING';
+
+  /// Error body (with its status) the next QR start fails with; null = it
+  /// answers the invoice.
+  (int, Map<String, Object?>)? qrStartFailure;
+
+  /// Status every poll fails with while set, e.g. 503; null = they answer.
+  int? qrPollFailure;
+
+  /// Status the next cancel fails with; null = it goes through.
+  int? qrCancelFailure;
+
+  var _qrSeq = 0;
+  DateTime? _qrExpiresAt;
+
+  /// The invoice as the API answers it, PENDING with its code.
+  static Map<String, dynamic> qrInvoiceJson({
+    String paymentId = 'pay_qr_1',
+    String status = 'PENDING',
+    int amountCents = 2000,
+    String? appLink,
+    DateTime? expiresAt,
+  }) => {
+    'paymentId': paymentId,
+    'orderId': 'ord_1',
+    'status': status,
+    'amountCents': amountCents,
+    'currency': 'RUP',
+    'qr': status == 'PENDING'
+        ? {
+            'code': 'QRT000000000000001:20:1000042',
+            'appLink': appLink,
+            'expiresAt': (expiresAt ?? DateTime.now().add(const Duration(minutes: 10))).toUtc().toIso8601String(),
+          }
+        : null,
+  };
+
+  QrPayment _qrInvoice() => QrPayment.fromJson(
+    qrInvoiceJson(paymentId: 'pay_qr_$_qrSeq', status: qrStatus, appLink: qrAppLink, expiresAt: _qrExpiresAt),
+  );
+
+  @override
+  Future<QrPayment> startQrPayment(StartQrPaymentRequest body) async {
+    qrStarts.add(body.orderId);
+    final failure = qrStartFailure;
+    if (failure != null) {
+      qrStartFailure = null;
+      throw _apiError('/payments/agroprombank-qr/start', failure.$1, failure.$2);
+    }
+    // Idempotent: a pending invoice still inside its time is answered again;
+    // a lapsed one makes way for a new one.
+    final lapsed = _qrExpiresAt == null || !now().isBefore(_qrExpiresAt!) || qrStatus == 'EXPIRED';
+    if (lapsed && qrStatus != 'PAID') {
+      _qrSeq++;
+      _qrExpiresAt = now().add(qrLifetime);
+      qrStatus = 'PENDING';
+    }
+    return _qrInvoice();
+  }
+
+  @override
+  Future<QrPayment> qrPayment(String paymentId) async {
+    qrPolls.add(paymentId);
+    final failure = qrPollFailure;
+    if (failure != null) {
+      throw _apiError('/payments/agroprombank-qr/$paymentId', failure, {'code': 'QR_BANK_UNAVAILABLE'});
+    }
+    return _qrInvoice();
+  }
+
+  @override
+  Future<QrPayment> cancelQrPayment(String paymentId) async {
+    qrCancels.add(paymentId);
+    final failure = qrCancelFailure;
+    if (failure != null) {
+      qrCancelFailure = null;
+      throw _apiError('/payments/agroprombank-qr/$paymentId/cancel', failure, {'message': 'Bank unavailable'});
+    }
+    if (qrStatus == 'PENDING') qrStatus = 'EXPIRED';
+    return _qrInvoice();
   }
 
   static BoundCard card({String id = 'card_1', bool isDefault = true}) => BoundCard.fromJson({

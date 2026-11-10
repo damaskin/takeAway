@@ -61,3 +61,31 @@ StartWebPaymentResult _$StartWebPaymentResultFromJson(Map<String, dynamic> json)
   page: json['page'] == null ? null : WebPaymentPage.fromJson(json['page'] as Map<String, dynamic>),
   expiresAt: json['expiresAt'] == null ? null : DateTime.parse(json['expiresAt'] as String),
 );
+
+QrPaymentCode _$QrPaymentCodeFromJson(Map<String, dynamic> json) => QrPaymentCode(
+  code: json['code'] as String,
+  expiresAt: DateTime.parse(json['expiresAt'] as String),
+  appLink: json['appLink'] as String?,
+);
+
+QrPayment _$QrPaymentFromJson(Map<String, dynamic> json) => QrPayment(
+  paymentId: json['paymentId'] as String,
+  orderId: json['orderId'] as String,
+  status: $enumDecode(_$QrPaymentStatusEnumMap, json['status'], unknownValue: QrPaymentStatus.unknown),
+  amountCents: (json['amountCents'] as num).toInt(),
+  currency: json['currency'] as String? ?? 'RUP',
+  qr: json['qr'] == null ? null : QrPaymentCode.fromJson(json['qr'] as Map<String, dynamic>),
+);
+
+const _$QrPaymentStatusEnumMap = {
+  QrPaymentStatus.pending: 'PENDING',
+  QrPaymentStatus.paid: 'PAID',
+  QrPaymentStatus.expired: 'EXPIRED',
+  QrPaymentStatus.refunded: 'REFUNDED',
+  QrPaymentStatus.failed: 'FAILED',
+  QrPaymentStatus.unknown: 'unknown',
+};
+
+Map<String, dynamic> _$StartQrPaymentRequestToJson(StartQrPaymentRequest instance) => <String, dynamic>{
+  'orderId': instance.orderId,
+};

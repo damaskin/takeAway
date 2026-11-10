@@ -10,6 +10,11 @@ export interface FeatureFlags {
   agroprombankEnabled: boolean;
   /** Absent on servers that predate it; see {@link resolveCardPaymentFlow}. */
   cardPaymentFlow?: CardPaymentFlow;
+  /**
+   * Store currencies the QR payment in the bank's app takes (`["RUP"]` while
+   * it is on); absent on servers that predate it, which means none.
+   */
+  qrPaymentCurrencies?: string[];
 }
 
 const DEFAULTS: FeatureFlags = { deliveryEnabled: false, agroprombankEnabled: false };
@@ -49,6 +54,11 @@ export class FeatureFlagsStore {
   readonly boundCardsEnabled = computed(() => this.cardPaymentFlow() === 'token');
   /** Checkout sends the customer to the bank's own payment page. */
   readonly webPaymentsEnabled = computed(() => this.cardPaymentFlow() === 'web');
+  /** Store currencies payable by QR in the bank's app — see `qrPaymentOffered`. */
+  readonly qrPaymentCurrencies = computed<readonly string[]>(() => {
+    const currencies = this._flags().qrPaymentCurrencies;
+    return Array.isArray(currencies) ? currencies : [];
+  });
 
   load(): void {
     this.http.get<FeatureFlags>(`${this.api.baseUrl}/config/features`).subscribe({

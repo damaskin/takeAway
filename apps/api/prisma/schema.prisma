@@ -225,6 +225,9 @@ enum PaymentProvider {
   AGROPROMBANK
   /// ЗАО «Агропромбанк» «Web-платёж» — the bank's hosted payment page.
   AGROPROMBANK_WEB
+  /// ЗАО «Агропромбанк» «Мобильный платёж» — an invoice on a QR terminal,
+  /// paid from the bank's own app.
+  AGROPROMBANK_QR
 }
 
 /// Lifecycle of a card bound to the merchant through a payment provider.

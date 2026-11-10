@@ -30,6 +30,8 @@ import '../../shared/widgets/store_map.dart';
 import '../cart/cart_controller.dart';
 import '../catalog/catalog_providers.dart';
 import '../catalog/product_visual.dart';
+import '../checkout/checkout_controller.dart';
+import '../checkout/qr_payment.dart';
 import '../checkout/web_payment.dart';
 import '../product/product_options.dart';
 import 'order_progress.dart';
@@ -107,6 +109,13 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     }
   }
 
+  /// Opens the QR to pay the order in the bank's app. The API answers the
+  /// invoice still pending instead of issuing a second one.
+  Future<void> _payByQr(Order order) async {
+    await GoRouter.of(context).push<Object?>(Routes.orderQr(order.id));
+    if (mounted) unawaited(ref.read(orderProvider(order.id).notifier).watchPayment());
+  }
+
   /// Coarse location pings while the order is on its way, so the barista
   /// sees "customer nearby" without the customer doing anything. Only with
   /// a permission already granted — this screen never prompts on its own.
@@ -156,11 +165,13 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
 
   Future<void> _cancel(Order order) async {
     final l10n = AppLocalizations.of(context);
+    // Money paid by QR was taken: cancelling gives it back.
+    final byQr = order.payment.state == PaymentState.held && orderPaidByQr(order, ref.read(qrPaidOrdersProvider));
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(l10n.cancelOrderTitle),
-        content: Text(l10n.cancelOrderBody),
+        content: Text(byQr ? l10n.cancelOrderBodyQr : l10n.cancelOrderBody),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.keepOrder)),
           TextButton(
@@ -245,7 +256,8 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
     final l10n = AppLocalizations.of(context);
     final async = ref.watch(orderProvider(widget.orderId));
     final order = async.valueOrNull;
-    final webPayments = ref.watch(featureFlagsProvider).valueOrNull?.webPaymentsEnabled ?? false;
+    final flags = ref.watch(featureFlagsProvider).valueOrNull ?? FeatureFlags.off;
+    final unpaid = order != null && _awaitsPayment(order);
 
     // Haptic nudge on every status change after the first render.
     if (order != null) {
@@ -282,12 +294,15 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
           ? null
           : _ActionBar(
               order: order,
-              canPayOnline: webPayments && _awaitsWebPayment(order),
+              canPayOnline: unpaid && flags.webPaymentsEnabled,
+              canPayByQr: unpaid && flags.qrPaymentsFor(order.currency),
+              preferQr: PayMethodPref.read(ref.read(sharedPreferencesProvider)) == PayMethod.qr,
               paying: _paying,
               hereSent: _hereSent,
               hereBusy: _hereBusy,
               reordering: _reordering,
               onPay: () => _payOnline(order),
+              onPayQr: () => _payByQr(order),
               onHere: () => _imHere(order),
               onReorder: () => _reorder(order),
             ),
@@ -295,9 +310,9 @@ class _OrderStatusScreenState extends ConsumerState<OrderStatusScreen> {
   }
 }
 
-/// A new order whose card payment never went through on the bank's page —
-/// nothing is held for it yet.
-bool _awaitsWebPayment(Order order) =>
+/// A new order whose payment never went through — on the bank's page or by
+/// QR: nothing is held or paid for it yet.
+bool _awaitsPayment(Order order) =>
     order.status == OrderStatus.created &&
     order.totalCents > 0 &&
     switch (order.payment.state) {
@@ -306,17 +321,21 @@ bool _awaitsWebPayment(Order order) =>
     };
 
 /// The one thing to do next, pinned under the thumb rather than below the
-/// map and the receipt: "Pay" while a web payment is outstanding, "I'm
-/// here" while the order is on its way, "Order again" once it is over.
+/// map and the receipt: "Pay" (on the bank's page, by QR, or either) while
+/// the order is unpaid, "I'm here" while it is on its way, "Order again"
+/// once it is over.
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.order,
     required this.canPayOnline,
+    required this.canPayByQr,
+    required this.preferQr,
     required this.paying,
     required this.hereSent,
     required this.hereBusy,
     required this.reordering,
     required this.onPay,
+    required this.onPayQr,
     required this.onHere,
     required this.onReorder,
   });
@@ -326,11 +345,18 @@ class _ActionBar extends StatelessWidget {
   /// The order waits for its payment on the bank's page: paying comes
   /// before anything else.
   final bool canPayOnline;
+
+  /// …or by QR in the bank's app (the store's currency takes it).
+  final bool canPayByQr;
+
+  /// With both, QR first: the customer paid by QR last time.
+  final bool preferQr;
   final bool paying;
   final bool hereSent;
   final bool hereBusy;
   final bool reordering;
   final VoidCallback onPay;
+  final VoidCallback onPayQr;
   final VoidCallback onHere;
   final VoidCallback onReorder;
 
@@ -345,13 +371,48 @@ class _ActionBar extends StatelessWidget {
         status != OrderStatus.outForDelivery &&
         status != OrderStatus.unknown;
 
-    final Widget? action = canPayOnline
+    final total = context.money(order.totalCents, order.currency);
+    final qrFirst = canPayByQr && (!canPayOnline || preferQr);
+    Widget byCard({required bool primary}) => primary
         ? PrimaryButton(
             key: const ValueKey('pay'),
-            label: l10n.placeOrderPay(context.money(order.totalCents, order.currency)),
+            label: l10n.placeOrderPay(total),
             icon: Icons.lock_outline_rounded,
             loading: paying,
             onPressed: onPay,
+          )
+        : SecondaryButton(
+            key: const ValueKey('pay'),
+            label: l10n.qrPayByCard,
+            icon: Icons.credit_card_rounded,
+            onPressed: paying ? null : onPay,
+          );
+    Widget byQr({required bool primary}) => primary
+        ? PrimaryButton(
+            key: const ValueKey('pay-qr'),
+            label: l10n.payByQrAmount(total),
+            icon: Icons.qr_code_2_rounded,
+            onPressed: onPayQr,
+          )
+        : SecondaryButton(
+            key: const ValueKey('pay-qr'),
+            label: l10n.payByQr,
+            icon: Icons.qr_code_2_rounded,
+            onPressed: onPayQr,
+          );
+
+    final Widget? action = canPayOnline || canPayByQr
+        ? Column(
+            key: const ValueKey('pay-actions'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (qrFirst) byQr(primary: true) else byCard(primary: true),
+              if (canPayOnline && canPayByQr) ...[
+                const SizedBox(height: 8),
+                if (qrFirst) byCard(primary: false) else byQr(primary: false),
+              ],
+            ],
           )
         : status.isTerminal
         ? PrimaryButton(
@@ -461,6 +522,8 @@ class _OrderBody extends ConsumerWidget {
     // its phone — the customer may already be at the counter.
     final wait = orderWaitNote(order, ref.watch(liveStoreProvider(order.storeId)), now);
     final phone = ref.watch(storeDetailProvider(order.storeId)).valueOrNull?.phone?.trim();
+    // Money taken by QR, not a card hold: worded as such everywhere below.
+    final byQr = orderPaidByQr(order, ref.watch(qrPaidOrdersProvider));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
@@ -475,7 +538,7 @@ class _OrderBody extends ConsumerWidget {
               const SizedBox(height: 4),
               AnimatedSwitcher(
                 duration: Motion.medium,
-                child: _Headline(key: ValueKey('$status$wait'), order: order, wait: wait, now: now),
+                child: _Headline(key: ValueKey('$status$wait'), order: order, wait: wait, now: now, byQr: byQr),
               ),
               const SizedBox(height: 4),
               // The time the countdown runs to: the kitchen's new estimate
@@ -507,13 +570,13 @@ class _OrderBody extends ConsumerWidget {
         ],
         if (orderCancellation(order) case final cancellation?) ...[
           const SizedBox(height: 16),
-          _CancellationCard(cancellation: cancellation),
+          _CancellationCard(cancellation: cancellation, byQr: byQr),
         ],
         const SizedBox(height: 24),
         OrderStepper(status: status, delivery: order.isDelivery),
         const SizedBox(height: 20),
         if (showCode) ...[_CodeCard(order: order), const SizedBox(height: 12)],
-        _PaymentCard(order: order),
+        _PaymentCard(order: order, byQr: byQr),
         const SizedBox(height: 16),
         _StoreCard(order: order, userPosition: userPosition),
         const SizedBox(height: 12),
@@ -543,11 +606,14 @@ class _OrderBody extends ConsumerWidget {
 /// open, or that the kitchen is running late — an expired order says why it
 /// ended and where the money is, and a cancelled one who called it off.
 class _Headline extends StatelessWidget {
-  const _Headline({required this.order, required this.wait, required this.now, super.key});
+  const _Headline({required this.order, required this.wait, required this.now, required this.byQr, super.key});
 
   final Order order;
   final OrderWaitNote? wait;
   final DateTime now;
+
+  /// Paid by QR: money given back is not "on its way to the card".
+  final bool byQr;
 
   @override
   Widget build(BuildContext context) {
@@ -561,7 +627,8 @@ class _Headline extends StatelessWidget {
         l10n.statusExpired,
         switch (expiredOutcome(order)) {
           ExpiredOutcome.notAccepted => l10n.orderExpiredNotAccepted,
-          ExpiredOutcome.notAcceptedRefunded => l10n.orderExpiredNotAcceptedRefunded,
+          ExpiredOutcome.notAcceptedRefunded =>
+            byQr ? l10n.orderExpiredNotAcceptedRefundedQr : l10n.orderExpiredNotAcceptedRefunded,
           ExpiredOutcome.paymentNotCompleted => l10n.orderExpiredPaymentNotCompleted,
         },
       ),
@@ -608,9 +675,12 @@ class _Headline extends StatelessWidget {
 /// declined card, what to do), its comment as typed, and where the money
 /// is — the story the push told.
 class _CancellationCard extends StatelessWidget {
-  const _CancellationCard({required this.cancellation});
+  const _CancellationCard({required this.cancellation, required this.byQr});
 
   final OrderCancellation cancellation;
+
+  /// Paid by QR: no card, no hold — the money itself goes back.
+  final bool byQr;
 
   @override
   Widget build(BuildContext context) {
@@ -627,10 +697,10 @@ class _CancellationCard extends StatelessWidget {
       null => c.by == CancelledParty.cardDeclined ? l10n.cancelCardDeclinedHint : null,
     };
     final money = switch (c.money) {
-      CancelledMoney.notCharged => l10n.cancelMoneyNotCharged,
+      CancelledMoney.notCharged => byQr ? l10n.cancelMoneyNotChargedQr : l10n.cancelMoneyNotCharged,
       CancelledMoney.released => l10n.cancelMoneyReleased,
-      CancelledMoney.refunded => l10n.cancelMoneyRefunded,
-      CancelledMoney.holdPending => l10n.cancelMoneyHoldPending,
+      CancelledMoney.refunded => byQr ? l10n.cancelMoneyRefundedQr : l10n.cancelMoneyRefunded,
+      CancelledMoney.holdPending => byQr ? l10n.cancelMoneyReturnPendingQr : l10n.cancelMoneyHoldPending,
       null => null,
     };
     final comment = c.comment;
@@ -689,9 +759,13 @@ class _Entrance extends StatelessWidget {
 }
 
 class _PaymentCard extends StatelessWidget {
-  const _PaymentCard({required this.order});
+  const _PaymentCard({required this.order, required this.byQr});
 
   final Order order;
+
+  /// Paid by QR in the bank's app: taken at once, given back if the store
+  /// turns the order down — next to the card's hold wording.
+  final bool byQr;
 
   @override
   Widget build(BuildContext context) {
@@ -704,9 +778,13 @@ class _PaymentCard extends StatelessWidget {
     final (String title, IconData icon, Color color) = switch (ended) {
       CancelledMoney.notCharged => (l10n.paymentStateNotCharged, Icons.money_off_rounded, brand.textSecondary),
       CancelledMoney.released => (l10n.paymentStateReleased, Icons.lock_open_rounded, brand.textSecondary),
-      CancelledMoney.refunded => (l10n.paymentStateRefundedToCard, Icons.undo_rounded, brand.textSecondary),
+      CancelledMoney.refunded => (
+        byQr ? l10n.paymentStateRefunded : l10n.paymentStateRefundedToCard,
+        Icons.undo_rounded,
+        brand.textSecondary,
+      ),
       CancelledMoney.holdPending => (l10n.paymentStateReturnPending, Icons.hourglass_top_rounded, brand.amber),
-      null => _liveState(order, l10n, brand),
+      null => _liveState(order, l10n, brand, byQr: byQr),
     };
     final detail = p.state == PaymentState.none
         ? context.money(order.totalCents, order.currency)
@@ -728,7 +806,7 @@ class _PaymentCard extends StatelessWidget {
                 Text(title, style: context.text.titleSmall),
                 Text(detail, style: context.text.bodySmall),
                 if (p.state == PaymentState.held && ended == null)
-                  Text(l10n.paymentStateHeldHint, style: context.text.bodySmall),
+                  Text(byQr ? l10n.paymentStatePaidByQrHint : l10n.paymentStateHeldHint, style: context.text.bodySmall),
               ],
             ),
           ),
@@ -738,28 +816,36 @@ class _PaymentCard extends StatelessWidget {
   }
 
   /// The payment as it stands on an order still going (or one that ended with nothing to say about the money).
-  static (String, IconData, Color) _liveState(Order order, AppLocalizations l10n, BrandColors brand) =>
-      switch (order.payment.state) {
-        PaymentState.paid => (l10n.paymentStatePaid, Icons.verified_rounded, brand.mint),
-        PaymentState.held => (l10n.paymentStateHeld, Icons.lock_clock_rounded, brand.amber),
-        PaymentState.pending => (l10n.paymentStatePending, Icons.hourglass_top_rounded, brand.amber),
-        PaymentState.failed => (l10n.paymentStateFailed, Icons.error_outline_rounded, brand.berry),
-        PaymentState.refunded => (l10n.paymentStateRefunded, Icons.undo_rounded, brand.textSecondary),
-        // A new order with nothing on it yet is waiting for its card; only old
-        // orders from before card-only checkout were paid at the counter.
-        PaymentState.none when order.status == OrderStatus.created => (
-          l10n.paymentStateAwaiting,
-          Icons.hourglass_top_rounded,
-          brand.amber,
-        ),
-        // Ended without being made: a released hold is no payment at all.
-        PaymentState.none when order.status.isCancelled => (
-          l10n.paymentStateNotCharged,
-          Icons.money_off_rounded,
-          brand.textSecondary,
-        ),
-        PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
-      };
+  static (String, IconData, Color) _liveState(
+    Order order,
+    AppLocalizations l10n,
+    BrandColors brand, {
+    required bool byQr,
+  }) => switch (order.payment.state) {
+    // QR money is taken at once and parked on the order like a hold.
+    PaymentState.held when byQr => (l10n.paymentStatePaidByQr, Icons.qr_code_2_rounded, brand.mint),
+    PaymentState.pending when order.payment.byQr => (l10n.paymentStateAwaitingQr, Icons.qr_code_2_rounded, brand.amber),
+    PaymentState.failed when order.payment.byQr => (l10n.paymentStateQrNotPaid, Icons.qr_code_2_rounded, brand.amber),
+    PaymentState.paid => (l10n.paymentStatePaid, Icons.verified_rounded, brand.mint),
+    PaymentState.held => (l10n.paymentStateHeld, Icons.lock_clock_rounded, brand.amber),
+    PaymentState.pending => (l10n.paymentStatePending, Icons.hourglass_top_rounded, brand.amber),
+    PaymentState.failed => (l10n.paymentStateFailed, Icons.error_outline_rounded, brand.berry),
+    PaymentState.refunded => (l10n.paymentStateRefunded, Icons.undo_rounded, brand.textSecondary),
+    // A new order with nothing on it yet is waiting for its card; only old
+    // orders from before card-only checkout were paid at the counter.
+    PaymentState.none when order.status == OrderStatus.created => (
+      l10n.paymentStateAwaiting,
+      Icons.hourglass_top_rounded,
+      brand.amber,
+    ),
+    // Ended without being made: a released hold is no payment at all.
+    PaymentState.none when order.status.isCancelled => (
+      l10n.paymentStateNotCharged,
+      Icons.money_off_rounded,
+      brand.textSecondary,
+    ),
+    PaymentState.none => (l10n.paymentStateAtCounter, Icons.storefront_rounded, brand.caramel),
+  };
 }
 
 /// Not cancellable by the customer any more, but not over either: the

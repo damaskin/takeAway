@@ -31,14 +31,28 @@ class FeatureFlags {
   /// Without an explicit [cardPaymentFlow] (an API that predates it, or a
   /// value this build does not know) the bound-card flow runs whenever
   /// [agroprombankEnabled] is on.
-  const FeatureFlags({this.deliveryEnabled = false, this.agroprombankEnabled = false, CardPaymentFlow? cardPaymentFlow})
-    : cardPaymentFlow = cardPaymentFlow ?? (agroprombankEnabled ? CardPaymentFlow.token : CardPaymentFlow.none);
+  const FeatureFlags({
+    this.deliveryEnabled = false,
+    this.agroprombankEnabled = false,
+    CardPaymentFlow? cardPaymentFlow,
+    this.qrPaymentCurrencies = const [],
+  }) : cardPaymentFlow = cardPaymentFlow ?? (agroprombankEnabled ? CardPaymentFlow.token : CardPaymentFlow.none);
 
   factory FeatureFlags.fromJson(Map<String, dynamic> json) => FeatureFlags(
     deliveryEnabled: json['deliveryEnabled'] as bool? ?? false,
     agroprombankEnabled: json['agroprombankEnabled'] as bool? ?? false,
     cardPaymentFlow: CardPaymentFlow.tryParse(json['cardPaymentFlow']),
+    qrPaymentCurrencies: readQrPaymentCurrencies(json['qrPaymentCurrencies']),
   );
+
+  /// The currencies of [qrPaymentCurrencies] out of whatever the API (or a
+  /// cache) holds: empty for an API that predates the QR payment.
+  static List<String> readQrPaymentCurrencies(Object? raw) => raw is List
+      ? [
+          for (final code in raw.whereType<String>())
+            if (code.trim().isNotEmpty) code.trim().toUpperCase(),
+        ]
+      : const [];
 
   static const off = FeatureFlags();
 
@@ -58,10 +72,19 @@ class FeatureFlags {
   /// Orders can be paid by card one way or the other.
   bool get cardPaymentsEnabled => cardPaymentFlow != CardPaymentFlow.none;
 
+  /// Store currencies that can be paid by QR in Agroprombank's app
+  /// («Мобильный платёж»): `["RUP"]` while it is on, empty otherwise. It is
+  /// offered next to the card flow, not instead of it.
+  final List<String> qrPaymentCurrencies;
+
+  /// Whether an order in [currency] (the store's) can be paid by QR.
+  bool qrPaymentsFor(String currency) => qrPaymentCurrencies.contains(currency.trim().toUpperCase());
+
   Map<String, dynamic> toJson() => {
     'deliveryEnabled': deliveryEnabled,
     'agroprombankEnabled': agroprombankEnabled,
     'cardPaymentFlow': cardPaymentFlow.name,
+    'qrPaymentCurrencies': qrPaymentCurrencies,
   };
 }
 

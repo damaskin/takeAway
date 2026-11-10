@@ -5,6 +5,7 @@ import { describeOrderItemOptions } from '@takeaway/utils';
 import { LocaleFormatService } from '@takeaway/i18n';
 
 import { orderCancelSummary } from '../../core/orders/order-cancel-summary';
+import { orderMoneyPayment, paymentProviderKey, refundsInFullOnly } from '../../core/orders/order-payment-provider';
 import {
   AdminOrdersApi,
   type AdminOrderDetail,
@@ -22,7 +23,8 @@ import {
  *
  * The refund control defaults to the full refundable balance because that
  * is the overwhelmingly common case, but the amount stays editable for the
- * "one drink was wrong" conversation. It is irreversible, so it asks once.
+ * "one drink was wrong" conversation — except for a QR payment, which the
+ * bank gives back only whole. It is irreversible, so it asks once.
  */
 @Component({
   selector: 'app-order-detail-panel',
@@ -273,6 +275,16 @@ import {
               }}
             </p>
           }
+          @if (paidWith(); as provider) {
+            <div class="flex items-center justify-between">
+              <span style="font-size: 13px; color: var(--color-text-secondary)">{{
+                'admin.orderDetail.paidWith' | translate
+              }}</span>
+              <span data-testid="order-paid-with" style="font-size: 13px; color: var(--color-text-primary)">{{
+                provider.key ? (provider.key | translate) : provider.raw
+              }}</span>
+            </div>
+          }
           @if (o.refundedCents > 0) {
             <div class="flex items-center justify-between">
               <span style="font-size: 13px; color: var(--color-berry)">{{
@@ -312,13 +324,23 @@ import {
                 }}</span>
                 <input
                   type="number"
+                  data-testid="refund-amount"
                   [(ngModel)]="amountMajor"
+                  [disabled]="fullRefundOnly()"
                   [min]="0.01"
                   [max]="o.refundableCents / 100"
                   step="0.01"
                   style="height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px"
                 />
               </label>
+              @if (fullRefundOnly()) {
+                <p
+                  data-testid="refund-full-only"
+                  style="margin: 0; font-size: 12px; color: var(--color-text-secondary)"
+                >
+                  {{ 'admin.orderDetail.fullRefundOnly' | translate }}
+                </p>
+              }
               <label class="flex flex-col" style="gap: 4px">
                 <span style="font-size: 12px; color: var(--color-text-secondary)">{{
                   'admin.orderDetail.reason' | translate
@@ -432,6 +454,15 @@ export class OrderDetailPanelComponent {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
+  /** How the customer paid — «QR (Агропромбанк)» — or null before any money came. */
+  readonly paidWith = computed(() => {
+    const payment = orderMoneyPayment(this.order()?.payments ?? []);
+    return payment ? { key: paymentProviderKey(payment.provider), raw: payment.provider } : null;
+  });
+
+  /** Paid by QR: the bank gives it back only whole, so the amount is not editable. */
+  readonly fullRefundOnly = computed(() => refundsInFullOnly(this.order()?.payments ?? []));
+
   readonly confirming = signal(false);
   readonly refunding = signal(false);
   readonly refundError = signal<string | null>(null);
@@ -468,6 +499,7 @@ export class OrderDetailPanelComponent {
 
   amountValid(order: AdminOrderDetail): boolean {
     const cents = Math.round(this.amountMajor * 100);
+    if (this.fullRefundOnly()) return cents === order.refundableCents;
     return cents > 0 && cents <= order.refundableCents;
   }
 

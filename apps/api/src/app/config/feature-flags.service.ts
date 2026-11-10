@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgroprombankQrConfig } from '../payments/agroprombank-qr/agroprombank-qr.config';
 import { type CardPaymentFlow, resolveCardPaymentFlow } from '../payments/agroprombank-web/constants';
 
 /** Where a business owner writes when moderation stalls or a rejection is unclear. */
@@ -14,6 +15,12 @@ export interface FeatureFlagsSnapshot {
   deliveryEnabled: boolean;
   agroprombankEnabled: boolean;
   cardPaymentFlow: CardPaymentFlow;
+  /**
+   * Currencies an order can be paid in by QR in Agroprombank's app
+   * («Мобильный платёж»): `['RUP']` while it is switched on and configured,
+   * `[]` otherwise. Offered next to the card flow, not instead of it.
+   */
+  qrPaymentCurrencies: string[];
   support: SupportContact;
   /**
    * Present (and true) only while `QUEUE_POLICY_ENABLED` is on, so a
@@ -33,7 +40,10 @@ export interface FeatureFlagsSnapshot {
  */
 @Injectable()
 export class FeatureFlagsService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly qr: AgroprombankQrConfig,
+  ) {}
 
   /**
    * Master switch for the M6 delivery module. When off:
@@ -74,6 +84,15 @@ export class FeatureFlagsService {
   }
 
   /**
+   * Where an order can be paid by QR in the bank's app — see
+   * docs/agroprombank-payments.md §12. A client offers «Оплатить по QR» only
+   * for a store whose currency is listed.
+   */
+  get qrPaymentCurrencies(): string[] {
+    return this.qr.currencies;
+  }
+
+  /**
    * The order-queue policy (docs/queue-policy.md): the queue calculator in
    * `@takeaway/utils` drives the ETA, «как можно скорее», the pre-order
    * windows, the booking check and the kitchen board's times. Off: the
@@ -101,6 +120,7 @@ export class FeatureFlagsService {
       deliveryEnabled: this.deliveryEnabled,
       agroprombankEnabled: this.agroprombankEnabled,
       cardPaymentFlow: this.cardPaymentFlow,
+      qrPaymentCurrencies: this.qrPaymentCurrencies,
       support: this.support,
       ...(this.queuePolicyEnabled ? { queuePolicyEnabled: true as const } : {}),
     };
