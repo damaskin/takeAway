@@ -12,6 +12,7 @@ import { CARD_PROVIDERS, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 import { QueueRecomputeService } from './queue-recompute.service';
 
 /** How long an order may sit unpaid before we let it go. */
@@ -68,6 +69,7 @@ export class OrderExpiryService {
     private readonly notifications: NotificationsService,
     private readonly realtime: RealtimeGateway,
     private readonly holds: PaymentHoldsService,
+    private readonly takeawayPromos: TakeawayPromoService,
     /** Always provided by OrdersModule; unit tests written before the queue policy leave it out. */
     @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
@@ -226,6 +228,7 @@ export class OrderExpiryService {
       if (claimed.count === 0) return null;
 
       await this.promo.releaseForOrder(tx, orderId);
+      await this.takeawayPromos.releaseForOrder(tx, orderId);
       await this.giftCards.releaseForOrder(tx, orderId);
       await this.loyalty.releaseForOrder(tx, orderId);
 

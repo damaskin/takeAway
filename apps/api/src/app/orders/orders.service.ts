@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
   Optional,
@@ -49,6 +50,12 @@ import { isCardProvider, releaseOutcome } from '../payments/card-providers';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromoService } from '../promo/promo.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
+import {
+  TAKEAWAY_LINE_SELECT,
+  type TakeawayLineSource,
+  toTakeawayPromoLine,
+} from '../takeaway-promos/takeaway-promo-view';
 import type { CreateOrderDto } from './dto/create-order.dto';
 import type { CustomerLocationDto, CustomerLocationResultDto } from './dto/customer-location.dto';
 import type { AdminOrderDetailDto } from './dto/admin-order-detail.dto';
@@ -157,6 +164,7 @@ export class OrdersService {
     private readonly kitchen: KitchenLoadService,
     private readonly cart: CartService,
     private readonly holds: PaymentHoldsService,
+    private readonly takeawayPromos: TakeawayPromoService,
     // Always provided by KitchenModule and this module; unit tests written
     // before the queue policy leave them out, which reads as the flag off.
     @Optional() private readonly queue?: QueuePolicyService,
@@ -262,20 +270,33 @@ export class OrdersService {
       deliveryDistanceM = quote.distanceM;
     }
 
-    // Resolve promo (if any) BEFORE the transaction — validation is cheap and
-    // catching a bad code here keeps our transaction tight. Discounts get
-    // locked in via applyAndRedeem() inside the tx below.
+    // Resolve the code (if any) BEFORE the transaction — validation is cheap
+    // and catching a bad code here keeps our transaction tight. A brand's
+    // promo is locked in via applyAndRedeem() inside the tx below, a takeAway
+    // promo's budget taken via reserveForOrder() there.
     const promoResult = dto.couponCode
-      ? await this.promo.validate(userId, dto.couponCode, cart.store.brandId, subtotalCents)
+      ? await this.promo.validate(userId, dto.couponCode, cart.store.brandId, subtotalCents, new Date(), {
+          currency: cart.store.currency,
+        })
       : null;
     if (promoResult && !promoResult.valid) {
+      await this.exhaustTakeawayIfShort(promoResult.reasonCode, dto.couponCode, subtotalCents);
       throw checkoutError(promoResult.reasonCode ?? 'PROMO_UNKNOWN', promoResult.reason ?? 'Promo code invalid', {
         minOrderCents: promoResult.minOrderCents,
         currency: promoResult.currency,
       });
     }
 
+    // A takeAway promo (docs/takeaway-promos.md): D comes off the menu price
+    // like any discount, and takeAway owes it to the venue. Loyalty points do
+    // not combine with it (§2.2) — the clients switch them off already.
+    const takeaway = promoResult?.source === 'TAKEAWAY' ? (promoResult.takeawayPromo ?? null) : null;
+    if (takeaway && (dto.pointsToSpend ?? 0) > 0) {
+      throw checkoutError('PROMO_WITH_POINTS', 'Loyalty points do not combine with a takeAway promo');
+    }
+
     const promoDiscountCents = promoResult?.discountCents ?? 0;
+    const takeawayDiscountCents = takeaway ? promoDiscountCents : 0;
     const pointsMultiplier = promoResult?.pointsMultiplier ?? 1;
 
     // Loyalty points, quoted against what is still payable after the promo.
@@ -325,7 +346,7 @@ export class OrdersService {
     // admin «Без имени».
     const customerName = dto.customerName?.trim() || (await this.profileName(userId));
 
-    const order = await this.withUniqueOrderCode((orderCode) =>
+    const placed = await this.withUniqueOrderCode((orderCode) =>
       this.prisma.$transaction(async (tx) => {
         // The queue policy books under the store's lock: the check above may
         // be stale by now, and two customers must not both take the last
@@ -350,6 +371,7 @@ export class OrdersService {
             kitchenVisibleAt: this.holds.cardPaymentRequired({ totalCents }) ? null : new Date(),
             subtotalCents,
             discountCents,
+            takeawayDiscountCents,
             taxCents,
             totalCents,
             currency: cart.store.currency,
@@ -358,7 +380,7 @@ export class OrdersService {
             customerName,
             customerPhone: dto.customerPhone,
             notes: dto.notes,
-            couponCode: dto.couponCode,
+            couponCode: takeaway ? takeaway.code : dto.couponCode,
             giftCardCode: normalizedGiftCode,
             giftCardCents,
             pointsSpent: pointsQuote.points,
@@ -393,7 +415,21 @@ export class OrdersService {
 
         // Record promo redemption in the same transaction so cart conversion,
         // promo use and points multiplier are all-or-nothing.
-        if (dto.couponCode && promoResult?.valid) {
+        if (takeaway) {
+          await this.takeawayPromos.reserveForOrder(tx, {
+            promoId: takeaway.id,
+            code: takeaway.code,
+            percent: takeaway.percent,
+            isWelcome: takeaway.isWelcome,
+            userId,
+            orderId: created.id,
+            brandId: cart.store.brandId,
+            storeId: cart.storeId,
+            currency: cart.store.currency,
+            menuTotalCents: subtotalCents,
+            discountCents: takeawayDiscountCents,
+          });
+        } else if (dto.couponCode && promoResult?.valid) {
           await this.promo.applyAndRedeem(
             {
               code: dto.couponCode,
@@ -446,7 +482,25 @@ export class OrdersService {
 
         return created;
       }),
-    );
+    ).catch(async (err: unknown) => {
+      // The budget could not take this order after all (another checkout got
+      // there first): the promo stops for everyone, now that the order's
+      // transaction has rolled back (§2.5).
+      if (takeaway) await this.exhaustTakeawayIfShort(checkoutErrorCode(err), takeaway.code, subtotalCents);
+      throw err;
+    });
+    const order = {
+      ...placed,
+      takeawayPromoRedemption: takeaway
+        ? {
+            code: takeaway.code,
+            percent: takeaway.percent,
+            menuTotalCents: subtotalCents,
+            discountCents: takeawayDiscountCents,
+            promo: { name: takeaway.name },
+          }
+        : null,
+    };
 
     // A new pre-order takes station time, a new order joins the queue: the
     // estimates of the orders behind it may move.
@@ -471,6 +525,21 @@ export class OrdersService {
     }
 
     return this.toOrderDto(order);
+  }
+
+  /**
+   * A checkout refused with PROMO_LIMIT_REACHED for a takeAway promo: when
+   * this order's discount did not fit what is left, the promo is exhausted
+   * for everyone (docs/takeaway-promos.md §2.5). Best-effort — the customer
+   * gets the refusal either way.
+   */
+  private async exhaustTakeawayIfShort(
+    reasonCode: string | null | undefined,
+    code: string | undefined,
+    menuTotalCents: number,
+  ): Promise<void> {
+    if (reasonCode !== 'PROMO_LIMIT_REACHED' || !code) return;
+    await this.takeawayPromos.exhaustIfShort(code, menuTotalCents).catch(() => false);
   }
 
   /**
@@ -516,6 +585,7 @@ export class OrdersService {
           include: { cardToken: { select: { maskedPan: true } } },
         },
         review: { select: { rating: true, comment: true, createdAt: true } },
+        takeawayPromoRedemption: { select: TAKEAWAY_LINE_SELECT },
       },
     });
     if (!order || order.userId !== userId) throw new NotFoundException('Order not found');
@@ -621,6 +691,7 @@ export class OrdersService {
         events: { orderBy: { createdAt: 'asc' } },
         store: { select: { name: true, timezone: true } },
         user: { select: { email: true } },
+        takeawayPromoRedemption: { select: TAKEAWAY_LINE_SELECT },
       },
     });
     if (!order) throw new NotFoundException('Order not found');
@@ -659,6 +730,7 @@ export class OrdersService {
       totalCents: order.totalCents,
       couponCode: order.couponCode,
       giftCardCode: order.giftCardCode,
+      takeawayPromo: toTakeawayPromoLine(order.takeawayPromoRedemption),
       cancelledAt: order.cancelledAt?.toISOString() ?? null,
       expiredAt: order.expiredAt?.toISOString() ?? null,
       cancelledBy: order.cancelledBy,
@@ -969,6 +1041,7 @@ export class OrdersService {
 
       // Taken at creation; a cancelled order that keeps them costs the customer twice.
       await this.promo.releaseForOrder(tx, order.id);
+      await this.takeawayPromos.releaseForOrder(tx, order.id);
       await this.giftCards.releaseForOrder(tx, order.id);
       await this.loyalty.releaseForOrder(tx, order.id);
 
@@ -1292,6 +1365,8 @@ export class OrdersService {
       }>;
       /** Left out where the order cannot have one yet (just created, just cancelled). */
       review?: { rating: number; comment: string | null; createdAt: Date } | null;
+      /** Its takeAway promo; null after a cancel or an expiry, which gave it back. */
+      takeawayPromoRedemption?: TakeawayLineSource | null;
     },
   ): OrderDto {
     const review = order.review ?? null;
@@ -1318,6 +1393,7 @@ export class OrdersService {
       customerPhone: order.customerPhone,
       notes: order.notes,
       couponCode: order.couponCode,
+      takeawayPromo: toTakeawayPromoLine(order.takeawayPromoRedemption),
       giftCardCode: order.giftCardCode,
       giftCardCents: order.giftCardCents,
       items: order.items.map<OrderItemDto>((i) => ({
@@ -1471,6 +1547,15 @@ function webCardMask(raw: Prisma.JsonValue | undefined): string | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const digits = (raw as Record<string, unknown>)['lastdgt'];
   return typeof digits === 'string' && /^\d{4}$/.test(digits) ? `•••• ${digits}` : null;
+}
+
+/** The stable `code` of a checkout refusal, if `err` is one. */
+function checkoutErrorCode(err: unknown): string | null {
+  if (!(err instanceof HttpException)) return null;
+  const body = err.getResponse();
+  return typeof body === 'object' && body !== null && typeof (body as { code?: unknown }).code === 'string'
+    ? (body as { code: string }).code
+    : null;
 }
 
 /** Great-circle distance in meters between two WGS-84 coords. */

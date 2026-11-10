@@ -6,6 +6,9 @@ import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, Length, Matche
 
 import { INACTIVE_DAYS } from '../../customers/customer-segment';
 
+/** Largest amount an Int column holds. */
+const MAX_INT = 2_147_483_647;
+
 export class PromoDto {
   @ApiProperty() id!: string;
   @ApiProperty() brandId!: string;
@@ -35,7 +38,24 @@ export class PromoDto {
 export class ValidatePromoDto {
   @ApiProperty() @IsString() @Length(2, 32) @Matches(/^[A-Za-z0-9_-]+$/) code!: string;
   @ApiProperty() @IsString() brandId!: string;
-  @ApiProperty() @IsInt() @Min(0) subtotalCents!: number;
+  @ApiProperty() @IsInt() @Min(0) @Max(MAX_INT) subtotalCents!: number;
+  @ApiPropertyOptional({
+    description:
+      "The cart's store. A takeAway promo works only at stores selling in its currency; without it the brand's stores are looked at.",
+  })
+  @IsOptional()
+  @IsString()
+  storeId?: string;
+}
+
+/** The takeAway promo a code turned out to be (docs/takeaway-promos.md §4.3). */
+export class ValidTakeawayPromoDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() percent!: number;
+  @ApiProperty({ description: 'The welcome bonus: auto-applied at checkout while the customer holds it.' })
+  isWelcome!: boolean;
 }
 
 export class ValidPromoResultDto {
@@ -46,8 +66,19 @@ export class ValidPromoResultDto {
   /** PROMO_MIN_ORDER: the promo's minimum subtotal, in `currency`. */
   @ApiProperty({ required: false }) minOrderCents?: number;
   @ApiProperty({ required: false }) currency?: string;
+  /** The brand's promo when the code is one; null for a takeAway promo. */
   @ApiProperty({ type: () => PromoDto, required: false, nullable: true })
   promo!: PromoDto | null;
+  @ApiPropertyOptional({
+    enum: ['BRAND', 'TAKEAWAY'],
+    nullable: true,
+    description:
+      "Whose code it is: BRAND — the brand's promo code; TAKEAWAY — a takeAway promo or the welcome bonus " +
+      '(takeAway compensates the venue; loyalty points do not combine with it). Null when not valid.',
+  })
+  source?: 'BRAND' | 'TAKEAWAY' | null;
+  @ApiPropertyOptional({ type: () => ValidTakeawayPromoDto, nullable: true })
+  takeawayPromo?: ValidTakeawayPromoDto | null;
   @ApiProperty() discountCents!: number;
   @ApiProperty() pointsMultiplier!: number;
 }

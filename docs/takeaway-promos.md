@@ -63,13 +63,20 @@ answer №11: takeAway never pays for those).
    no promo (400 `PROMO_LIMIT_REACHED`) and the promo becomes `EXHAUSTED`
    at once; also when what is left reaches exactly 0. It stays exhausted even
    if a cancelled order gives budget back; the platform admin raises the
-   budget and switches it on again.
+   budget and switches it on again. Only `POST /orders` exhausts — whether
+   its check before the order or the update inside the order's transaction
+   found the budget short; `/promo/validate` and `/promo/preview` only
+   answer. A budget the admin cuts down to what was spent exhausts it too.
 6. **Once per customer.** Unique `(promoId, userId)` on the redemption.
 7. **Editing.** Unused: every field. Used (≥ 1 redemption): only `name`,
    `endsAt` and `budgetCents` (never below `spentCents`); percent, code,
    currency, start and the welcome flag are frozen (409
-   `TAKEAWAY_PROMO_USED`). Switching off and on any time. Nothing done to a
-   promo changes orders already placed (they carry their own snapshot).
+   `TAKEAWAY_PROMO_USED`) — a frozen field sent unchanged is fine, the form
+   may post them all. Switching off and on any time; on again needs budget
+   left and a promo not past its end (409 `TAKEAWAY_PROMO_STATUS`: move the
+   end first). The edit locks the promo's row, so it cannot cross the first
+   order. Nothing done to a promo changes orders already placed (they carry
+   their own snapshot).
 8. **Debt status.** A promo order's debt is
    - `ACCRUED` («начислена») once the order counts (paid by card or accepted,
      the same «counts» as settlements) and no payout covers it yet;
@@ -82,7 +89,8 @@ answer №11: takeAway never pays for those).
 9. **Welcome bonus** (answer №16: yes; push + profile banner; auto-applied to
    the first order; removable in the cart):
    - The platform admin marks one takeAway promo `isWelcome` (at most one
-     ACTIVE welcome promo at a time — 409 `TAKEAWAY_PROMO_WELCOME_TAKEN`).
+     live welcome promo — ACTIVE and not past its end — at a time; 409
+     `TAKEAWAY_PROMO_WELCOME_TAKEN`).
    - A **new** customer account (Telegram, Google, Apple, email code) gets a
      `WelcomeBonus` right at sign-up when an ACTIVE welcome promo is inside its
      dates with budget left; otherwise nothing and no message.
@@ -94,7 +102,11 @@ answer №11: takeAway never pays for those).
      the app has registered its device by then; Mini App and web customers get
      it from the bot, as any push. Text from `welcomeBonusMessage(percent,
 locale)`; it is a `PLATFORM_ANNOUNCEMENT` inbox item, push kind
-     `announcement` — no new kinds, older apps show it.
+     `announcement` — no new kinds, older apps show it. The inbox item is
+     always written; the push follows the customer's «Акции» switch in
+     the notification settings, like any announcement. A bonus not told
+     about within a day (the API was down) gets no push — the profile
+     banner still shows it.
    - The code of the welcome promo works only for customers holding an unused,
      unexpired bonus for it (otherwise `PROMO_NOT_ELIGIBLE`, expired →
      `PROMO_EXPIRED`, used → `PROMO_ALREADY_USED`).
@@ -134,8 +146,8 @@ added to `ValidPromoResult`, `Order`, `SettlementTotals`,
 | `GET /admin/takeaway-promos/:id`          | `TakeawayPromo`       |                                                                                                                                             |
 | `PATCH /admin/takeaway-promos/:id`        | `TakeawayPromo`       | `UpdateTakeawayPromoInput`, rules of §2.7                                                                                                   |
 | `PATCH /admin/takeaway-promos/:id/status` | `TakeawayPromo`       | `{ status: 'ACTIVE' \| 'DISABLED' }`; ACTIVE from EXHAUSTED only with budget left (409 `TAKEAWAY_PROMO_BUDGET`); welcome uniqueness checked |
-| `GET /admin/takeaway-promos/:id/report`   | `TakeawayPromoReport` | counted orders only; by brand, store and UTC day                                                                                            |
-| `GET /admin/takeaway-promos/debt`         | `TakeawayDebtReport`  | every brand with promo orders, totals per currency, now                                                                                     |
+| `GET /admin/takeaway-promos/:id/report`   | `TakeawayPromoReport` | counted orders only; by brand, store and the UTC day the order counted                                                                      |
+| `GET /admin/takeaway-promos/debt`         | `TakeawayDebtReport`  | every brand with promo orders (a row per brand and currency, by name), totals per currency, now                                             |
 
 Errors carry `{ statusCode, error, code, message }` with
 `TakeawayPromoAdminErrorCode`: `TAKEAWAY_PROMO_CODE_TAKEN` (409),
@@ -168,19 +180,25 @@ compensation.
   off), `PROMO_NOT_STARTED`, `PROMO_EXPIRED` (past its end, or a welcome bonus
   past its 7 days), `PROMO_LIMIT_REACHED` (budget), `PROMO_ALREADY_USED`,
   `PROMO_NOT_ELIGIBLE` (a welcome code without a bonus; a guest preview of a
-  welcome code), `PROMO_NOT_HERE` (currency).
-- `POST /orders` with `couponCode` = a takeAway code: the same checks, then the
-  reservation of §2.4. With `pointsToSpend > 0` as well → 400
-  `PROMO_WITH_POINTS`. The order answer carries `takeawayPromo:
-TakeawayPromoLine | null` (also `GET /orders/:id` and the order lists).
+  welcome code), `PROMO_NOT_HERE` (currency). A guest preview checks
+  everything but once-per-customer.
+- `POST /orders` with `couponCode` = a takeAway code: the same checks (at the
+  store's currency), then the reservation of §2.4; `couponCode` is stored
+  uppercase. With `pointsToSpend > 0` as well → 400 `PROMO_WITH_POINTS`
+  (checked once the code is known valid). The order answer carries
+  `takeawayPromo: TakeawayPromoLine | null` — `POST /orders`,
+  `GET /orders/:id`, and the cancel answer (null there: the cancel gave it
+  back). `GET /me/orders` returns summaries without amounts and carries
+  none.
 - `GET /me/bonuses` → `CustomerBonus[]`: the customer's welcome bonus while
   unused, unexpired, and its promo ACTIVE, in its dates and with budget left;
   `[]` otherwise.
 
 ### 4.4 Staff
 
-The admin order detail and the kitchen board row carry `takeawayPromo:
-TakeawayPromoLine | null`, so the card can say «Акция takeAway −10%: гость
+The admin order detail (`GET /admin/orders/:id`) and the kitchen board row
+(`GET /kds/orders` and every `kds.orderChanged` with a row) carry
+`takeawayPromo: TakeawayPromoLine | null`, so the card can say «Акция takeAway −10%: гость
 оплатил 90,00, ещё 10,00 компенсирует takeAway» — the order is fully paid,
 nothing to collect from the guest.
 

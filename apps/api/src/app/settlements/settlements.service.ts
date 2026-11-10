@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, type BrandPayout, type Currency } from '@prisma/client';
 import {
   DEFAULT_COMMISSION_BPS,
+  type BrandTakeawayPromoReport,
   type CommissionRateHistory,
   type SettlementPayout,
   type SettlementPayoutPreview,
@@ -22,6 +23,7 @@ import {
   type RatePoint,
 } from '../plans/commission-history';
 import { PrismaService } from '../prisma/prisma.service';
+import { brandPromoSummary, countedRedemptions } from '../takeaway-promos/takeaway-debt';
 import type {
   CreatePayoutDto,
   MarkPayoutPaidDto,
@@ -165,6 +167,32 @@ export class SettlementsService {
         payouts: ledger,
       }),
       payouts: payouts.map(toPayoutDto),
+    };
+  }
+
+  /**
+   * The brand cabinet's «Акции takeAway» (docs/takeaway-promos.md §4.2): the
+   * brand's takeAway promo orders that counted in the period — the brand's
+   * local days, as in the report above — and what takeAway owes it now. The
+   * debt is read and summed as the platform's debt report does it
+   * (`takeaway-debt.ts`), so the two always show the same figure.
+   */
+  async takeawayPromos(
+    user: AuthenticatedUser,
+    query: SettlementQueryDto,
+    now: Date = new Date(),
+  ): Promise<BrandTakeawayPromoReport> {
+    const brandId = await this.brandFor(user, query.brandId);
+    const brand = await this.brandTerms(this.prisma, brandId);
+    const timeZone = await this.timeZoneOf(this.prisma, brandId);
+    const range = resolveDateRange({ from: query.from, to: query.to, days: query.days }, timeZone, DEFAULT_DAYS, now);
+    const currency = (query.currency as Currency | undefined) ?? brand.currency;
+    const rows = await countedRedemptions(this.prisma, { brandId, currency });
+    return {
+      brandId,
+      currency,
+      period: { from: range.from, to: range.to, timeZone },
+      ...brandPromoSummary(rows, { start: range.start, end: range.end }),
     };
   }
 

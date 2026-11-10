@@ -16,6 +16,7 @@ import type { PromoService } from '../promo/promo.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { ReferralsService } from '../referrals/referrals.service';
 import { OrdersService, canCustomerCancel, cancelRefusal } from './orders.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 /**
  * The customer cancels only before the kitchen accepts, and only while no
@@ -106,6 +107,7 @@ function harness(found: ReturnType<typeof orderRow>) {
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const release = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
+  const takeaway = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const holds = { releaseForOrder: jest.fn().mockResolvedValue({ id: 'pay-1', rawJson: {} }) };
   const realtime = { emitOrderStatusChanged: jest.fn(), emitKdsOrderChanged: jest.fn() };
   const notifications = { notifyStoreTeam: jest.fn().mockResolvedValue(1) };
@@ -125,8 +127,9 @@ function harness(found: ReturnType<typeof orderRow>) {
     {} as KitchenLoadService,
     {} as CartService,
     holds as unknown as PaymentHoldsService,
+    takeaway as unknown as TakeawayPromoService,
   );
-  return { service, prisma, tx, holds, realtime, notifications };
+  return { service, prisma, tx, holds, realtime, notifications, release, takeaway };
 }
 
 describe('OrdersService.cancel (item 19)', () => {
@@ -174,6 +177,17 @@ describe('OrdersService.cancel (item 19)', () => {
       },
       { staff: true, owner: true },
     );
+  });
+
+  // docs/takeaway-promos.md §2.4: the budget share, the redemption and the
+  // welcome bonus come back with the cancel, in its transaction.
+  it('gives back a takeAway promo with the brand promo, the gift card and the points', async () => {
+    const { service, tx, release, takeaway } = harness(orderRow());
+
+    await service.cancel('user-1', 'order-1');
+
+    expect(takeaway.releaseForOrder).toHaveBeenCalledWith(tx, 'order-1');
+    expect(release.releaseForOrder).toHaveBeenCalledTimes(3);
   });
 
   it('does not bother the kitchen about an order that never reached its board', async () => {

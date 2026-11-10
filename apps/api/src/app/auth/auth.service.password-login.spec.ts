@@ -10,6 +10,7 @@ import type { OAuthIdentityService } from './services/oauth-identity.service';
 import type { PasswordService } from './services/password.service';
 import type { TelegramService } from './services/telegram.service';
 import type { TokensService } from './services/tokens.service';
+import type { WelcomeBonusService } from '../takeaway-promos/welcome-bonus.service';
 
 interface Row {
   id: string;
@@ -67,6 +68,7 @@ function harness(seed: Row[]) {
     passwords as unknown as PasswordService,
     {} as KdsPinService,
     {} as KitchenDeviceService,
+    { onCustomerCreated: jest.fn() } as unknown as WelcomeBonusService,
   );
   return { auth, findUnique, tokens, passwords };
 }
