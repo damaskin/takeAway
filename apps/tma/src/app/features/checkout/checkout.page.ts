@@ -12,15 +12,18 @@ import type {
 } from '@takeaway/shared-types';
 import {
   calendarDaysFrom,
+  checkoutPaymentMethod,
   computeTax,
   describeOptionLines,
   groupSlotsByDay,
   isCartChangedError,
   isStoreInactive,
   productKind,
+  qrPaymentOffered,
   readyTimeShown,
   readyWindowTimes,
   suggestionRow,
+  type CheckoutPaymentMethod,
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
@@ -38,6 +41,8 @@ import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
+import { PaymentMethodChoice } from '../../core/payments/payment-method-choice.service';
+import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
@@ -452,8 +457,53 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         />
       }
 
-      <!-- Payment method: orders are paid by card only (Agroprombank). -->
-      @if (!cardPaymentsEnabled()) {
+      <!-- Payment method: by card (Agroprombank), or by QR in the bank's app. -->
+      @if (paymentMethodChoice()) {
+        <div class="flex flex-col" style="gap: 10px">
+          <span
+            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+            >{{ 'tma.checkout.paymentMethod' | translate }}</span
+          >
+          <div class="flex" style="gap: 8px" role="radiogroup" data-testid="pay-method">
+            @for (method of paymentMethods; track method.id) {
+              <button
+                type="button"
+                role="radio"
+                [attr.aria-checked]="paymentMethod() === method.id"
+                [attr.data-testid]="'pay-method-' + method.id"
+                (click)="selectPaymentMethod(method.id)"
+                class="flex-1"
+                [style.background]="paymentMethod() === method.id ? 'var(--color-caramel)' : 'var(--color-foam)'"
+                [style.color]="paymentMethod() === method.id ? 'white' : 'var(--color-text-primary)'"
+                [style.border]="
+                  paymentMethod() === method.id ? '1px solid transparent' : '1px solid var(--color-border-light)'
+                "
+                style="min-height: 44px; padding: 6px 10px; border-radius: var(--radius-button); font-family: var(--font-sans); font-size: 14px; font-weight: 600"
+              >
+                {{ method.label | translate }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+      @if (paymentMethod() === 'QR') {
+        <div class="flex flex-col" style="gap: 10px">
+          @if (!paymentMethodChoice()) {
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ 'tma.checkout.paymentMethod' | translate }}</span
+            >
+          }
+          @if (needsCard()) {
+            <p
+              data-testid="qr-payment-hint"
+              style="margin: 0; padding: 12px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
+            >
+              {{ 'common.qrPayment.checkoutHint' | translate }}
+            </p>
+          }
+        </div>
+      } @else if (!cardPaymentsEnabled()) {
         <p
           style="margin: 0; padding: 12px 14px; background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
         >
@@ -461,10 +511,12 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </p>
       } @else if (webPaymentsEnabled()) {
         <div class="flex flex-col" style="gap: 10px">
-          <span
-            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >{{ 'tma.checkout.paymentMethod' | translate }}</span
-          >
+          @if (!paymentMethodChoice()) {
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ 'tma.checkout.paymentMethod' | translate }}</span
+            >
+          }
           @if (needsCard()) {
             <p
               data-testid="web-payment-hint"
@@ -476,10 +528,12 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       } @else {
         <div class="flex flex-col" style="gap: 10px">
-          <span
-            style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
-            >{{ 'tma.checkout.paymentMethod' | translate }}</span
-          >
+          @if (!paymentMethodChoice()) {
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-primary)"
+              >{{ 'tma.checkout.paymentMethod' | translate }}</span
+            >
+          }
           @if (cards().length === 0) {
             @if (needsCard()) {
               <p style="margin: 0; font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">
@@ -580,6 +634,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly cardsApi = inject(PaymentCardsApi);
   private readonly cardsStore = inject(PaymentCardsStore);
   private readonly webPayments = inject(WebPaymentApi);
+  private readonly qrPayments = inject(QrPaymentApi);
+  private readonly paymentChoice = inject(PaymentMethodChoice);
 
   readonly cart = signal<CartView | null>(null);
   /** The store the order goes to, for the «К заказу» cards. */
@@ -664,6 +720,21 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly boundCardsEnabled = this.flags.boundCardsEnabled;
   /** The customer pays on the bank's own page — the `web` flow. */
   readonly webPaymentsEnabled = this.flags.webPaymentsEnabled;
+  /** The store can be paid by QR in Agroprombank's app: its currency is one the QR payment takes. */
+  readonly qrPaymentOffered = computed(() => qrPaymentOffered(this.currency(), this.flags.qrPaymentCurrencies()));
+  /** Both ways are on: the customer picks, and the pick is remembered on this device. */
+  readonly paymentMethodChoice = computed(() => this.cardPaymentsEnabled() && this.qrPaymentOffered());
+  /** How this order gets paid; null while neither the card nor QR is on. */
+  readonly paymentMethod = computed(() =>
+    checkoutPaymentMethod(
+      { card: this.cardPaymentsEnabled(), qr: this.qrPaymentOffered() },
+      this.paymentChoice.remembered(),
+    ),
+  );
+  readonly paymentMethods: ReadonlyArray<{ id: CheckoutPaymentMethod; label: string }> = [
+    { id: 'CARD', label: 'common.qrPayment.methodCard' },
+    { id: 'QR', label: 'common.qrPayment.methodQr' },
+  ];
   /**
    * `/config/features` answers after init, so a guard that read the flag once
    * saw it off and never offered the customer's cards. Load them as soon as
@@ -673,6 +744,11 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly loadCardsOnceEnabled = effect(() => {
     const flow = this.flags.cardPaymentFlow();
     untracked(() => (flow === 'token' ? this.loadCards() : this.refreshMainButton()));
+  });
+  /** QR turning up with the flags or the store, or the customer's pick, changes what the main button does. */
+  private readonly refreshOnPaymentMethod = effect(() => {
+    this.paymentMethod();
+    untracked(() => this.refreshMainButton());
   });
   readonly cards = signal<BoundCard[]>([]);
   readonly selectedCardId = signal<string | null>(null);
@@ -729,6 +805,12 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   readonly payingByCard = computed(
     () => this.webPaymentsEnabled() || (this.boundCardsEnabled() && this.selectedCardId() !== null),
   );
+
+  /** The chosen way to pay can take the order: QR always, a card once there is one to pay with. */
+  readonly paymentReady = computed(() => {
+    const method = this.paymentMethod();
+    return method === 'QR' || (method === 'CARD' && this.payingByCard());
+  });
 
   private detachBack: (() => void) | null = null;
 
@@ -852,6 +934,12 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
 
   goToCards(): void {
     void this.router.navigate(['/cards']);
+  }
+
+  selectPaymentMethod(method: CheckoutPaymentMethod): void {
+    if (!this.paymentMethodChoice()) return;
+    this.tg.haptic('light');
+    this.paymentChoice.remember(method);
   }
 
   private loadCards(): void {
@@ -1086,9 +1174,9 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.tg.hideMainButton();
       return;
     }
-    // Orders are paid by card only; until there is one to hold the amount
-    // on, there is nothing to press.
-    if (this.needsCard() && !this.payingByCard()) {
+    // Orders are paid by card or by QR; until there is a way to pay, there
+    // is nothing to press.
+    if (this.needsCard() && !this.paymentReady()) {
       this.tg.hideMainButton();
       return;
     }
@@ -1114,7 +1202,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       this.payFor(this.placedOrderId);
       return;
     }
-    if (this.needsCard() && !this.payingByCard()) {
+    if (this.needsCard() && !this.paymentReady()) {
       this.error.set(this.translate.instant('tma.checkout.cardOnly'));
       return;
     }
@@ -1238,12 +1326,17 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /**
    * Holds the amount on the selected card and opens the order screen. Only an
    * order with nothing left to pay goes there without a card. In the
-   * Web-платёж flow the amount is held on the bank's page instead.
+   * Web-платёж flow the amount is held on the bank's page instead; paying by
+   * QR goes on to the QR screen.
    */
   private payFor(orderId: string): void {
     const cardId = this.selectedCardId();
     if (!this.needsCard()) {
       void this.router.navigate(['/orders', orderId]);
+      return;
+    }
+    if (this.paymentMethod() === 'QR') {
+      this.payByQr(orderId);
       return;
     }
     if (this.webPaymentsEnabled()) {
@@ -1284,6 +1377,28 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.paying.set(false);
         if (res.page) this.tg.openLink(res.page.url);
         void this.router.navigate(['/orders', orderId]);
+      },
+      error: (err) => {
+        this.paying.set(false);
+        this.showError(err, 'common.requestFailed');
+      },
+    });
+  }
+
+  /**
+   * «Мобильный платёж»: issue the order's QR invoice and show it on the QR
+   * screen, which waits for the money. Already paid — the order screen says
+   * so. A failure (the bank is down) keeps the customer here; the next tap
+   * retries against the same order, by QR or by card.
+   */
+  private payByQr(orderId: string): void {
+    this.paying.set(true);
+    this.error.set(null);
+    this.qrPayments.start(orderId).subscribe({
+      next: (payment) => {
+        this.paying.set(false);
+        const settled = payment.status === 'PAID' || payment.status === 'REFUNDED';
+        void this.router.navigate(settled ? ['/orders', orderId] : ['/orders', orderId, 'qr'], { replaceUrl: true });
       },
       error: (err) => {
         this.paying.set(false);

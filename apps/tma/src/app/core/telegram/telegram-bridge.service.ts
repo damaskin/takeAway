@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import { looksLikePhone } from '@takeaway/utils';
 
 /** Edge insets reported by Telegram (Bot API 8.0+). */
 interface TelegramInset {
@@ -42,6 +43,8 @@ interface TelegramWebApp {
   };
   /** Bot API version the client supports, e.g. "8.0". */
   version?: string;
+  /** The Telegram client: `ios`, `android`, `tdesktop`, `macos`, `web`, … */
+  platform?: string;
   isVersionAtLeast?: (version: string) => boolean;
   colorScheme?: 'light' | 'dark';
   themeParams?: Record<string, string>;
@@ -213,8 +216,21 @@ export class TelegramBridgeService {
   }
 
   /**
-   * Opens an outside page — the bank's payment page — in the browser, leaving
-   * the Mini App open underneath. Outside Telegram it is a new tab.
+   * The Mini App runs on a phone or a tablet — Telegram for iOS or Android,
+   * else as the browser says — so a QR code shown here cannot be scanned
+   * with the same device.
+   */
+  get onPhone(): boolean {
+    const platform = window.Telegram?.WebApp?.platform;
+    if (platform === 'ios' || platform === 'android' || platform === 'android_x') return true;
+    if (platform && platform !== 'unknown') return false;
+    return looksLikePhone(typeof navigator === 'undefined' ? null : navigator.userAgent);
+  }
+
+  /**
+   * Opens an outside page — the bank's payment page, a link into the bank's
+   * app — in the browser, leaving the Mini App open underneath. Outside
+   * Telegram it is a new tab.
    */
   openLink(url: string): void {
     const tg = window.Telegram?.WebApp;
