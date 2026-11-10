@@ -18,6 +18,7 @@ import type { PromoService } from '../promo/promo.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { ReferralsService } from '../referrals/referrals.service';
 import { OrderReviewsService } from './order-reviews.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 /**
  * «Отзыв на покупку» (Maxim's list 5.0, item 11): 1–5 stars and a comment on
@@ -117,6 +118,7 @@ function harness() {
     {} as KitchenLoadService,
     {} as CartService,
     {} as PaymentHoldsService,
+    {} as TakeawayPromoService,
   );
   const service = new OrderReviewsService(prisma as unknown as PrismaService, orders);
   return { service, orders, prisma };

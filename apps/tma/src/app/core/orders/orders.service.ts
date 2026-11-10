@@ -8,6 +8,7 @@ import type {
   OrderItemSnapshot,
   OrderReview,
   PaymentProviderEnum,
+  TakeawayPromoLine,
 } from '@takeaway/shared-types';
 import { Observable } from 'rxjs';
 
@@ -99,6 +100,12 @@ export interface OrderView {
   canReview?: boolean;
   /** The customer's review, once left; absent from an older API. */
   review?: OrderReview | null;
+  /**
+   * The takeAway promo on the order («Акция takeAway −10%»): the guest paid
+   * `paidByGuestCents`, takeAway covers `discountCents`. Null without one;
+   * absent from an older API.
+   */
+  takeawayPromo?: TakeawayPromoLine | null;
 }
 
 export interface OrderSummary {

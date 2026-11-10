@@ -20,11 +20,17 @@ export const COUNTED = Prisma.sql`o."status" NOT IN ('CANCELLED', 'EXPIRED')`;
 /** «Продажи»: the items at menu price, before any discount. */
 export const SALES = Prisma.sql`o."subtotalCents"`;
 
+/**
+ * What the business itself took off: promo codes and loyalty points, but not
+ * a takeAway promo — takeAway pays the venue that one.
+ */
+const BUSINESS_DISCOUNT = Prisma.sql`GREATEST(o."discountCents" - o."takeawayDiscountCents", 0)`;
+
 /** «Скидки»: promo codes and loyalty points, never more than the sales. */
-export const DISCOUNTS = Prisma.sql`LEAST(o."discountCents", o."subtotalCents")`;
+export const DISCOUNTS = Prisma.sql`LEAST(${BUSINESS_DISCOUNT}, o."subtotalCents")`;
 
 /** «Выручка»: sales less discounts, however the customer paid. */
-export const REVENUE = Prisma.sql`GREATEST(o."subtotalCents" - o."discountCents", 0)`;
+export const REVENUE = Prisma.sql`GREATEST(o."subtotalCents" - ${BUSINESS_DISCOUNT}, 0)`;
 
 /** The part of the revenue a gift card paid for. */
 export const GIFT_CARDS = Prisma.sql`LEAST(o."giftCardCents", ${REVENUE})`;

@@ -19,6 +19,7 @@ import type { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { ReferralsService } from '../referrals/referrals.service';
 import { OrdersService } from './orders.service';
 import type { QueueRecomputeService } from './queue-recompute.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 const at = (iso: string) => new Date(iso);
 
@@ -209,6 +210,7 @@ function harness() {
     kitchen as unknown as KitchenLoadService,
     cart,
     holds as unknown as PaymentHoldsService,
+    {} as TakeawayPromoService,
     queue as unknown as QueuePolicyService,
     recompute as unknown as QueueRecomputeService,
   );

@@ -9,6 +9,7 @@ import {
 import { Locale, OAuthProvider, Prisma, Role, type User } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { WelcomeBonusService } from '../takeaway-promos/welcome-bonus.service';
 import { UsersService } from '../users/users.service';
 import type { AuthSessionDto, AuthUserDto } from './dto/auth-response.dto';
 import { KDS_PIN_LEGACY_SENTINEL_PREFIX, KdsPinService } from './services/kds-pin.service';
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly passwords: PasswordService,
     private readonly kdsPins: KdsPinService,
     private readonly kitchenDevices: KitchenDeviceService,
+    private readonly welcome: WelcomeBonusService,
   ) {}
 
   /**
@@ -347,6 +349,11 @@ export class AuthService {
     const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ').trim() || null;
     const locale = tgUser.language_code?.toLowerCase().startsWith('ru') ? 'RU' : 'EN';
     await this.releaseStaffTelegram(BigInt(tgUser.id));
+    // Whether this sign-in opens a new customer — only a new one gets the welcome bonus.
+    const known = await this.prisma.user.findUnique({
+      where: { telegramUserId: BigInt(tgUser.id) },
+      select: { id: true },
+    });
 
     const user = await this.prisma.user.upsert({
       where: { telegramUserId: BigInt(tgUser.id) },
@@ -362,6 +369,8 @@ export class AuthService {
     // Blocking has to hold on every door: Google and Apple already refused a
     // blocked account, Telegram used to hand it a fresh session.
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
+    // Not awaited: it never throws, and the sign-in does not wait on it.
+    if (!known) void this.welcome.onCustomerCreated(user.id, { kind: 'telegram', telegramUserId: tgUser.id });
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: deviceType, locale: user.locale },
@@ -438,6 +447,7 @@ export class AuthService {
     const verifiedEmail = email && identity.emailVerified ? email : null;
     const locale = identity.locale?.toLowerCase().startsWith('ru') ? Locale.RU : Locale.EN;
     const now = new Date();
+    let created = false;
 
     const user = await this.prisma.$transaction(async (tx) => {
       const link = await tx.oAuthAccount.findUnique({
@@ -487,6 +497,7 @@ export class AuthService {
         if (!taken) storedEmail = email;
       }
 
+      created = true;
       return tx.user.create({
         data: {
           email: storedEmail,
@@ -499,6 +510,13 @@ export class AuthService {
     });
 
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
+    if (created) {
+      void this.welcome.onCustomerCreated(user.id, {
+        kind: 'oauth',
+        provider: identity.provider,
+        subject: identity.providerUserId,
+      });
+    }
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },

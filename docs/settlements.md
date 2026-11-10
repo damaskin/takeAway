@@ -25,19 +25,20 @@ the brand's time zone** (the zone most of its stores keep — the same days the
 dashboards count). Currencies are never added together: NoName Coffee sold in
 MDL until 2026-09-23 and in RUP since, and those are two settlements.
 
-| Term                            | Meaning                                                                                                                                                                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Counted order**               | A card payment for it was captured (even if refunded since), **or** the store accepted it. A cancelled or expired order with no captured payment never counts; a held payment that was never captured does not either.         |
-| **Settled at**                  | The moment the store accepted the order; if it never did (paid, then cancelled and refunded), the moment its first payment was captured. It picks the order's **day** and its **commission rate**.                             |
-| **Продажи** (sales)             | `Order.subtotalCents` — line items before any discount.                                                                                                                                                                        |
-| **Промокоды**                   | `discountCents − pointsDiscountCents` — promo-code discounts.                                                                                                                                                                  |
-| **Баллы**                       | `pointsDiscountCents` — loyalty points spent.                                                                                                                                                                                  |
-| **Подарочные карты**            | `giftCardCents` — gift-card balance redeemed.                                                                                                                                                                                  |
-| **Оплачено картами** (captured) | Sum of `Payment.amountCents` over the order's payments in `SUCCEEDED`, `PARTIALLY_REFUNDED` or `REFUNDED`, in the order's currency. Tips (`Payment.tipCents`) are routed to the employee's card by the bank and are not in it. |
-| **Возвраты** (refunds)          | Sum of `Payment.refundedCents` over those payments (never more than captured).                                                                                                                                                 |
-| **База комиссии**               | captured − refunded: money the platform really received and kept.                                                                                                                                                              |
-| **Комиссия**                    | base × the rate in force when the order settled, rounded per order (see 3).                                                                                                                                                    |
-| **К выплате** (payable)         | base − commission.                                                                                                                                                                                                             |
+| Term                               | Meaning                                                                                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Counted order**                  | A card payment for it was captured (even if refunded since), **or** the store accepted it. A cancelled or expired order with no captured payment never counts; a held payment that was never captured does not either.               |
+| **Settled at**                     | The moment the store accepted the order; if it never did (paid, then cancelled and refunded), the moment its first payment was captured. It picks the order's **day** and its **commission rate**.                                   |
+| **Продажи** (sales)                | `Order.subtotalCents` — line items before any discount.                                                                                                                                                                              |
+| **Промокоды**                      | `discountCents − pointsDiscountCents − takeawayDiscountCents` — discounts of the brand's own promo codes (the brand pays for them).                                                                                                  |
+| **Баллы**                          | `pointsDiscountCents` — loyalty points spent.                                                                                                                                                                                        |
+| **Подарочные карты**               | `giftCardCents` — gift-card balance redeemed.                                                                                                                                                                                        |
+| **Оплачено картами** (captured)    | Sum of `Payment.amountCents` over the order's payments in `SUCCEEDED`, `PARTIALLY_REFUNDED` or `REFUNDED`, in the order's currency. Tips (`Payment.tipCents`) are routed to the employee's card by the bank and are not in it.       |
+| **Возвраты** (refunds)             | Sum of `Payment.refundedCents` over those payments (never more than captured).                                                                                                                                                       |
+| **Компенсация takeAway по акциям** | Σ D of the order's takeAway promo (`TakeawayPromoRedemption.discountCents`, docs/takeaway-promos.md): the discount takeAway gave at its own expense and owes the brand on top of the card money. 0 for a cancelled or expired order. |
+| **База комиссии**                  | captured − refunded + compensation: money the platform really received and kept, plus what takeAway owes for its promos — so the commission of a takeAway promo order is taken on its full menu price.                               |
+| **Комиссия**                       | base × the rate in force when the order settled, rounded per order (see 3).                                                                                                                                                          |
+| **К выплате** (payable)            | base − commission.                                                                                                                                                                                                                   |
 
 Every counted order with no card money is shown separately, never hidden:
 
@@ -55,7 +56,7 @@ commission (see decisions 1 and 6).
 Per order _i_ settled at _tᵢ_ with rate _r(tᵢ)_ in basis points:
 
 ```
-baseᵢ       = capturedᵢ − refundedᵢ
+baseᵢ       = capturedᵢ − refundedᵢ + compensationᵢ      -- compensation: D of a takeAway promo, else 0
 commissionᵢ = ⌊(baseᵢ × r(tᵢ) + 5000) / 10000⌋        -- half up, whole cents
 payableᵢ    = baseᵢ − commissionᵢ
 ```
@@ -142,7 +143,8 @@ covers anything before it. `Brand.commissionBps` mirrors the row in force now
 
 `BrandPayout`: brand, currency, `periodFrom`–`periodTo` (local days),
 `periodEnd` (the instant the last day ends), `amountCents`, the period's
-`cardNetCents` and `commissionCents` as they were when fixed, `status`
+`cardNetCents`, `commissionCents` and `compensationCents` (the takeAway promo
+debts it settles — already inside `amountCents`) as they were when fixed, `status`
 `PENDING` → `PAID`, `paidAt`, `reference`, `comment`, who did what.
 
 - **«Зафиксировать выплату»** (`POST /admin/settlements/payouts { brandId,
@@ -191,9 +193,12 @@ same report (`;` and decimal commas in Russian, for Excel).
 - The balance needs every counted order of the brand up to the end of the
   period; they are read on each request. Fine for today's volumes; at scale
   the per-order commission should be stored when the order settles.
-- No manual adjustment line (compensation for a platform-funded promo, a
-  penalty, a bank fee). Until there is one, a payout amount is exactly the
-  formula.
+- No manual adjustment line (a penalty, a bank fee). Until there is one, a
+  payout amount is exactly the formula. takeAway's own promos are not an
+  adjustment: their compensation is in the formula (`compensationᵢ`) since
+  2026-11-10, and «Зафиксировать выплату» stamps the promo debts it settles
+  (`TakeawayPromoRedemption.payoutId`), which then read «в выплате», and
+  «погашена» once the payout is marked paid.
 - Plan changes before 2026-10-10 were not recorded; the backfill assumes
   today's rate since each brand's creation.
 - Payouts are matched on the period they settle, not on the day the money
@@ -204,7 +209,9 @@ same report (`;` and decimal commas in Russian, for Excel).
 v1 takes the conservative reading of each; each is a small change once decided.
 
 1. **Who funds promo codes?** v1: the brand that created the promo — order B
-   pays the brand nothing. If the platform runs promos at its own cost
+   pays the brand nothing. Decided 2026-11-06 (Maxim, №11): a brand's own
+   code stays the brand's; takeAway's own promos are a separate kind that
+   takeAway pays for — «Акции takeAway», docs/takeaway-promos.md. If the platform runs promos at its own cost
    (launch campaigns, "first coffee free" from takeAway), those promos need a
    "funded by the platform" flag, and the platform owes the brand the discount
    (40.00 for order B) on top of the payout. Same question for **loyalty

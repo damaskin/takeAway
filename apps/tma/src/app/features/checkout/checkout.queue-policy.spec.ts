@@ -17,6 +17,7 @@ import { OrdersApi } from '../../core/orders/orders.service';
 import { PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { QrPaymentApi } from '../../core/payments/qr-payment.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
+import { BonusesApi, PromoApi } from '../../core/promo/promo.service';
 import { RealtimeService } from '../../core/realtime/realtime.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaCheckoutPage } from './checkout.page';
@@ -117,6 +118,8 @@ describe('TmaCheckoutPage under the order queue policy', () => {
         { provide: PaymentCardsApi, useValue: {} },
         { provide: PaymentCardsStore, useValue: { load: () => of([]) } },
         { provide: WebPaymentApi, useValue: { start: jest.fn() } },
+        { provide: PromoApi, useValue: {} },
+        { provide: BonusesApi, useValue: { list: () => of([]), isDismissed: () => false } },
         { provide: QrPaymentApi, useValue: { start: jest.fn() } },
         { provide: RealtimeService, useValue: { onStoreAvailabilityChanged: () => () => undefined } },
         {

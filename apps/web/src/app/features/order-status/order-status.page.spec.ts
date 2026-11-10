@@ -182,6 +182,49 @@ describe('OrderStatusPage — waiting for the store', () => {
     expect(text()).not.toContain('QR');
   });
 
+  describe('a takeAway promo on the order', () => {
+    const LATTE: OrderView['items'][number] = {
+      id: 'item-1',
+      quantity: 1,
+      unitPriceCents: 4500,
+      totalCents: 4500,
+      productSnapshot: {
+        id: 'latte',
+        slug: 'latte',
+        name: 'Латте',
+        variationIds: [],
+        modifiers: {},
+        notes: null,
+        unitPrepSeconds: 60,
+        variations: [],
+        modifierLines: [],
+        optionLines: [],
+      },
+    };
+
+    it('reads «Акция takeAway −10%» beside the code, then what the guest paid', async () => {
+      const { testText } = await open({
+        ...ORDER,
+        items: [LATTE],
+        totalCents: 4050,
+        takeawayPromo: {
+          code: 'WELCOME10',
+          name: 'Приветственный бонус',
+          percent: 10,
+          menuTotalCents: 4500,
+          discountCents: 450,
+          paidByGuestCents: 4050,
+        },
+      });
+      expect(testText('takeaway-promo-line')).toBe('Акция takeAway −10% · WELCOME10 − 4,50 руб.');
+    });
+
+    it('has no such line without one', async () => {
+      const { byTestId } = await open({ ...ORDER, items: [LATTE], takeawayPromo: null });
+      expect(byTestId('takeaway-promo-line')).toBeNull();
+    });
+  });
+
   it("counts down to the kitchen's new estimate instead of saying it is late", async () => {
     const { byTestId, testText, page } = await open({
       ...ORDER,

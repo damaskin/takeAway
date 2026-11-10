@@ -23,6 +23,8 @@ function order(overrides: Partial<SettlementOrderRow> = {}): SettlementOrderRow 
     subtotalCents: 0,
     discountCents: 0,
     pointsDiscountCents: 0,
+    takeawayDiscountCents: 0,
+    takeawayCompensationCents: 0,
     giftCardCents: 0,
     deliveryFeeCents: 0,
     totalCents: 0,
@@ -147,6 +149,63 @@ describe('settleOrder', () => {
     const settled = settleOrder(order({ capturedCents: 1000, refundedCents: 1500, hasCapture: true }), 1500);
     expect(settled).toMatchObject({ refundedCents: 1000, commissionBaseCents: 0 });
   });
+
+  // «Учёт акций takeAway»: 100 at 10 % — the guest pays 90, takeAway owes 10.
+  it('pays a takeAway promo order exactly what a regular order of the same price brings', () => {
+    const regular = settleOrder(
+      order({ subtotalCents: 10000, totalCents: 10000, capturedCents: 10000, hasCapture: true }),
+      1500,
+    );
+    const promo = settleOrder(
+      order({
+        subtotalCents: 10000,
+        discountCents: 1000,
+        takeawayDiscountCents: 1000,
+        takeawayCompensationCents: 1000,
+        totalCents: 9000,
+        capturedCents: 9000,
+        hasCapture: true,
+      }),
+      1500,
+    );
+    expect(promo).toMatchObject({
+      capturedCents: 9000,
+      takeawayCompensationCents: 1000,
+      // Commission on the full menu price P, not on what the guest paid.
+      commissionBaseCents: 10000,
+      commissionCents: 1500,
+      // Not the brand's own promo code.
+      promoDiscountCents: 0,
+    });
+    expect(promo.payableCents).toBe(regular.payableCents);
+    expect(promo.payableCents).toBe(8500);
+  });
+
+  it('owes nothing for the promo of an order that was cancelled and refunded', () => {
+    // The redemption is gone once the order is cancelled: the SQL reads 0.
+    const settled = settleOrder(
+      order({
+        subtotalCents: 10000,
+        discountCents: 1000,
+        takeawayDiscountCents: 1000,
+        takeawayCompensationCents: 0,
+        totalCents: 9000,
+        capturedCents: 9000,
+        refundedCents: 9000,
+        hasCapture: true,
+      }),
+      1500,
+    );
+    expect(settled).toMatchObject({ takeawayCompensationCents: 0, commissionBaseCents: 0, payableCents: 0 });
+  });
+
+  it('keeps the brand promo and the takeAway promo apart, with points beside them', () => {
+    const settled = settleOrder(
+      order({ subtotalCents: 5000, discountCents: 700, pointsDiscountCents: 200, takeawayDiscountCents: 0 }),
+      1500,
+    );
+    expect(settled).toMatchObject({ promoDiscountCents: 500, pointsDiscountCents: 200, takeawayCompensationCents: 0 });
+  });
 });
 
 describe('computeSettlement', () => {
@@ -235,7 +294,25 @@ describe('periodFigures', () => {
     ];
     expect(periodFigures(rows, [], 1500, at('2026-10-01T00:00:00Z'), at('2026-10-02T00:00:00Z'))).toEqual({
       cardNetCents: 1500,
+      compensationCents: 0,
       commissionCents: 225,
+    });
+  });
+
+  it('keeps the takeAway promo compensation out of the card money', () => {
+    const rows = [
+      order({
+        capturedCents: 1555 - 156,
+        takeawayDiscountCents: 156,
+        takeawayCompensationCents: 156,
+        hasCapture: true,
+      }),
+    ];
+    expect(periodFigures(rows, [], 1000, at('2026-10-02T00:00:00Z'), at('2026-10-03T00:00:00Z'))).toEqual({
+      cardNetCents: 1399,
+      compensationCents: 156,
+      // 10 % of 15.55, half up.
+      commissionCents: 156,
     });
   });
 });

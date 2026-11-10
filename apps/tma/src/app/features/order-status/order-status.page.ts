@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import type { CategoryKind, StoreDetail, StoreMenu } from '@takeaway/shared-types';
+import type { CategoryKind, StoreDetail, StoreMenu, TakeawayPromoLine } from '@takeaway/shared-types';
 import { LeafletMapComponent, ProductImageComponent, type LatLng, type MapMarker } from '@takeaway/ui-kit';
 import {
   buildDirectionsUrl,
@@ -26,7 +26,7 @@ import {
   type OrderStatusString,
   type OrderView,
 } from '../../core/orders/orders.service';
-import { LocaleFormatService } from '@takeaway/i18n';
+import { LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
@@ -358,6 +358,18 @@ function readPaymentReturn(value: string | null): PaymentReturn | null {
               </div>
             }
             <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
+            <!-- A takeAway promo: takeAway pays the venue this part, the total is what the guest paid. -->
+            @if (o.takeawayPromo; as promo) {
+              <div data-testid="takeaway-promo-line" class="flex items-center justify-between" style="gap: 12px">
+                <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)"
+                  >{{ takeawayPromoLine(promo) }} · {{ promo.code }}</span
+                >
+                <span
+                  style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint); white-space: nowrap"
+                  >− {{ price(promo.discountCents) }}</span
+                >
+              </div>
+            }
             <div class="flex items-center justify-between">
               <span
                 style="font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--color-text-primary)"
@@ -1053,6 +1065,11 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
     const si = order.indexOf(step);
     if (ci < 0 || si < 0) return false;
     return ci >= si;
+  }
+
+  /** «Акция takeAway −10%»: the order keeps no welcome flag, so every takeAway promo reads alike here. */
+  takeawayPromoLine(promo: TakeawayPromoLine): string {
+    return takeawayPromoLabel({ percent: promo.percent }, this.translate);
   }
 
   price(cents: number): string {

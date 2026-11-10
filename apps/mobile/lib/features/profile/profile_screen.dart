@@ -20,6 +20,7 @@ import '../auth/sign_in_sheet.dart';
 import '../catalog/catalog_providers.dart';
 import '../inbox/inbox_providers.dart';
 import '../inbox/inbox_widgets.dart';
+import 'bonus_banner.dart';
 import 'loyalty_widgets.dart';
 import 'profile_providers.dart';
 import 'settings_list.dart';
@@ -40,7 +41,9 @@ class ProfileScreen extends ConsumerWidget {
         color: context.brand.caramel,
         onRefresh: () async {
           if (user == null) return;
-          ref.invalidate(loyaltyProvider);
+          ref
+            ..invalidate(loyaltyProvider)
+            ..invalidate(bonusesProvider);
           await ref.read(authServiceProvider).refreshProfile().catchError((Object _) => user);
         },
         child: ListView(
@@ -53,6 +56,7 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const LoyaltyCardTile(),
               const SizedBox(height: 16),
+              const BonusBanner(),
               SettingsGroup(
                 children: [
                   SettingsTile(

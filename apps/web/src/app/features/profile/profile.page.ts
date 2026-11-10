@@ -1,13 +1,14 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import type { LoyaltyAccount } from '@takeaway/shared-types';
+import type { CustomerBonus, LoyaltyAccount } from '@takeaway/shared-types';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { LanguageSwitcherComponent } from '@takeaway/i18n';
+import { customerBonusTerms, LanguageSwitcherComponent, LocaleFormatService, takeawayPromoLabel } from '@takeaway/i18n';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { AuthStore } from '../../core/auth/auth.store';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
 import { InboxService } from '../../core/inbox/inbox.service';
+import { BonusesService } from '../../core/loyalty/bonuses.service';
 import { LoyaltyService } from '../../core/loyalty/loyalty.service';
 
 interface ProfileSection {
@@ -75,6 +76,39 @@ interface ProfileSection {
           </div>
           <span style="color: rgba(255,255,255,0.4); font-size: 24px">›</span>
         </div>
+
+        <!-- «Мои бонусы»: the welcome bonus while it is there to use; a tap goes to ordering -->
+        @if (bonuses().length > 0) {
+          <section data-testid="bonus-banner" class="flex flex-col" style="gap: 8px">
+            <span
+              style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-text-secondary)"
+              >{{ 'common.takeawayPromo.myBonuses' | translate }}</span
+            >
+            @for (bonus of bonuses(); track bonus.id) {
+              <a
+                routerLink="/menu"
+                data-testid="bonus"
+                class="flex items-center"
+                style="padding: 16px 20px; gap: 16px; border-radius: 16px; background: var(--color-foam); border: 1.5px solid var(--color-mint); text-decoration: none"
+              >
+                <span aria-hidden="true" style="font-size: 24px">🎁</span>
+                <span class="flex flex-col flex-1" style="gap: 4px; min-width: 0">
+                  <span
+                    data-testid="bonus-title"
+                    style="font-family: var(--font-sans); font-size: 16px; font-weight: 700; color: var(--color-espresso)"
+                    >{{ bonusTitle(bonus) }}</span
+                  >
+                  <span
+                    data-testid="bonus-terms"
+                    style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)"
+                    >{{ bonusTerms(bonus) }}</span
+                  >
+                </span>
+                <span style="color: var(--color-text-tertiary); font-size: 16px">›</span>
+              </a>
+            }
+          </section>
+        }
 
         <!-- Tier progress -->
         <div class="flex flex-col" style="gap: 8px">
@@ -188,14 +222,29 @@ export class ProfilePage implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly flags = inject(FeatureFlagsStore);
   private readonly inbox = inject(InboxService);
+  private readonly bonusesApi = inject(BonusesService);
+  private readonly fmt = inject(LocaleFormatService);
 
   readonly loyalty = signal<LoyaltyAccount | null>(null);
   readonly unread = this.inbox.unreadCount;
+  /** The customer's unused bonuses; the «Мои бонусы» banner shows while there is one. */
+  readonly bonuses = signal<CustomerBonus[]>([]);
 
   ngOnInit(): void {
     this.flags.load();
     this.loyaltyApi.me().subscribe({ next: (acc) => this.loyalty.set(acc) });
+    this.bonusesApi.list().subscribe({ next: (list) => this.bonuses.set(list), error: () => undefined });
     this.inbox.refreshUnread();
+  }
+
+  /** «Приветственный бонус −10%». */
+  bonusTitle(bonus: CustomerBonus): string {
+    return takeawayPromoLabel({ percent: bonus.percent, isWelcome: bonus.kind === 'WELCOME' }, this.translate);
+  }
+
+  /** «На заказ в любом заведении · до 17 ноября». */
+  bonusTerms(bonus: CustomerBonus): string {
+    return customerBonusTerms(bonus, this.translate, this.fmt.lang());
   }
 
   private readonly allSections: ProfileSection[] = [

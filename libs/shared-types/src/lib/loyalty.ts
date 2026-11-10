@@ -58,6 +58,11 @@ export interface ValidatePromoInput {
   code: string;
   brandId: string;
   subtotalCents: number;
+  /**
+   * The store of the cart. A takeAway promo works only at stores selling in
+   * its currency; without it the brand's stores are looked at.
+   */
+  storeId?: string;
 }
 
 export interface ValidPromoResult {
@@ -69,7 +74,17 @@ export interface ValidPromoResult {
   /** PROMO_MIN_ORDER: the promo's minimum subtotal, in `currency`. */
   minOrderCents?: number;
   currency?: string;
+  /** The brand's promo when the code is one; null for a takeAway promo. */
   promo: Promo | null;
+  /**
+   * Whose code it is: BRAND — the brand's promo code (the brand pays for
+   * it); TAKEAWAY — a takeAway promo or welcome bonus (takeAway compensates
+   * the venue, loyalty points cannot be added). Null when not valid; absent
+   * from older API builds.
+   */
+  source?: 'BRAND' | 'TAKEAWAY' | null;
+  /** The takeAway promo when `source` is TAKEAWAY. */
+  takeawayPromo?: { id: string; code: string; name: string; percent: number; isWelcome: boolean } | null;
   discountCents: number;
   pointsMultiplier: number;
 }

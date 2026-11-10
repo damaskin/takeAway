@@ -5,6 +5,7 @@ import { Role } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { BrandTakeawayPromoReportDto } from '../takeaway-promos/dto/takeaway-promo.dto';
 import {
   CommissionRateHistoryDto,
   CreatePayoutDto,
@@ -33,6 +34,19 @@ export class SettlementsController {
   @ApiOkResponse({ type: SettlementReportDto })
   report(@CurrentUser() user: AuthenticatedUser, @Query() query: SettlementQueryDto): Promise<SettlementReportDto> {
     return this.settlements.report(user, query);
+  }
+
+  /**
+   * «Акции takeAway» of the brand (docs/takeaway-promos.md §4.2): the promo
+   * orders that counted in the period and takeAway's debt to the brand now.
+   */
+  @Get('takeaway-promos')
+  @ApiOkResponse({ type: BrandTakeawayPromoReportDto })
+  takeawayPromos(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: SettlementQueryDto,
+  ): Promise<BrandTakeawayPromoReportDto> {
+    return this.settlements.takeawayPromos(user, query);
   }
 
   @Get('rates')

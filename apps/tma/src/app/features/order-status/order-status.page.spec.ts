@@ -128,6 +128,53 @@ describe('TmaOrderStatusPage', () => {
     destroy();
   });
 
+  describe('a takeAway promo on the order', () => {
+    const LATTE: OrderView['items'][number] = {
+      id: 'item-1',
+      quantity: 1,
+      totalCents: 4500,
+      productSnapshot: {
+        id: 'latte',
+        slug: 'latte',
+        name: 'Латте',
+        variationIds: [],
+        modifiers: {},
+        notes: null,
+        unitPrepSeconds: 60,
+        variations: [],
+        modifierLines: [],
+        optionLines: [],
+      },
+    };
+    const line = (root: HTMLElement) =>
+      root.querySelector('[data-testid="takeaway-promo-line"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+    it('reads «Акция takeAway −10%» beside the code', async () => {
+      const { root, destroy } = await open(
+        order({
+          items: [LATTE],
+          totalCents: 4050,
+          takeawayPromo: {
+            code: 'WELCOME10',
+            name: 'Приветственный бонус',
+            percent: 10,
+            menuTotalCents: 4500,
+            discountCents: 450,
+            paidByGuestCents: 4050,
+          },
+        }),
+      );
+      expect(line(root)).toMatch(/^Акция takeAway −10% · WELCOME10\s*− 4,50 руб\.$/);
+      destroy();
+    });
+
+    it('has no such line without one', async () => {
+      const { root, destroy } = await open(order({ items: [LATTE], takeawayPromo: null }));
+      expect(line(root)).toBeNull();
+      destroy();
+    });
+  });
+
   describe('a cancelled order says why (item 7)', () => {
     const NOT_CHARGED = { state: 'NONE' as const, amountCents: 0, cardMask: null, paidAt: null };
     const lines = (root: HTMLElement) =>

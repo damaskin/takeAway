@@ -10,6 +10,7 @@ import 'models/loyalty.dart';
 import 'models/misc.dart';
 import 'models/order.dart';
 import 'models/payments.dart';
+import 'models/takeaway_promo.dart';
 
 part 'takeaway_api.g.dart';
 
@@ -181,6 +182,11 @@ abstract class TakeAwayApi {
 
   @GET('/me/gift-cards')
   Future<List<GiftCardRedemption>> myGiftCards();
+
+  /// The customer's unused welcome bonus, while it lasts and its promo
+  /// runs; `[]` otherwise. 404 from an API that predates takeAway promos.
+  @GET('/me/bonuses')
+  Future<List<CustomerBonus>> myBonuses();
 
   @GET('/me/referrals')
   Future<ReferralSummary> referrals();

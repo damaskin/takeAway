@@ -383,6 +383,35 @@ void main() {
       expect(order.payment.state, PaymentState.none);
     });
 
+    test('reads the takeAway promo on an order, and none from an older API', () {
+      final order = Order.fromJson({
+        ...orderJson(),
+        'takeawayPromo': {
+          'code': 'WELCOME10',
+          'name': 'Приветственный бонус',
+          'percent': 10,
+          'menuTotalCents': 4500,
+          'discountCents': 450,
+          'paidByGuestCents': 4050,
+        },
+      });
+      final line = order.takeawayPromo!;
+      expect(line.code, 'WELCOME10');
+      expect(line.name, 'Приветственный бонус');
+      expect(line.percent, 10);
+      expect(line.menuTotalCents, 4500);
+      expect(line.discountCents, 450);
+      expect(line.paidByGuestCents, 4050);
+      expect(
+        order.copyWithStatus(OrderStatus.ready).takeawayPromo?.discountCents,
+        450,
+        reason: 'a live status change keeps the receipt as it was',
+      );
+
+      expect(Order.fromJson({...orderJson(), 'takeawayPromo': null}).takeawayPromo, isNull);
+      expect(Order.fromJson(orderJson()).takeawayPromo, isNull, reason: 'an API from before takeAway promos');
+    });
+
     test('knows which statuses end the order and which can be cancelled', () {
       expect(OrderStatus.pickedUp.isTerminal, isTrue);
       expect(OrderStatus.expired.isTerminal, isTrue);
@@ -763,6 +792,113 @@ void main() {
       final older = PromoValidation.fromJson({'valid': false, 'reason': 'Promo has expired'});
       expect(older.reasonCode, isNull);
       expect(older.minOrderCents, isNull);
+    });
+
+    test('tells a takeAway code from a brand code, and neither from an older API', () {
+      final welcome = PromoValidation.fromJson({
+        'valid': true,
+        'reason': null,
+        'reasonCode': null,
+        'promo': null,
+        'source': 'TAKEAWAY',
+        'takeawayPromo': {
+          'id': 'tp_1',
+          'code': 'WELCOME10',
+          'name': 'Приветственный бонус',
+          'percent': 10,
+          'isWelcome': true,
+        },
+        'discountCents': 156,
+        'pointsMultiplier': 1,
+      });
+      expect(welcome.source, PromoSource.takeaway);
+      expect(welcome.isTakeaway, isTrue);
+      expect(welcome.discountCents, 156);
+      final promo = welcome.takeawayPromo!;
+      expect(promo.id, 'tp_1');
+      expect(promo.code, 'WELCOME10');
+      expect(promo.percent, 10);
+      expect(promo.isWelcome, isTrue);
+
+      final typed = PromoValidation.fromJson({
+        'valid': true,
+        'source': 'TAKEAWAY',
+        'takeawayPromo': {'id': 'tp_2', 'code': 'AUTUMN', 'name': 'Осень', 'percent': 15},
+        'discountCents': 300,
+        'pointsMultiplier': 1,
+      });
+      expect(typed.takeawayPromo!.isWelcome, isFalse, reason: 'absent = not the welcome bonus');
+
+      final brand = PromoValidation.fromJson({
+        'valid': true,
+        'source': 'BRAND',
+        'promo': {'id': 'pr_1'},
+        'discountCents': 200,
+        'pointsMultiplier': 2,
+      });
+      expect(brand.source, PromoSource.brand);
+      expect(brand.isTakeaway, isFalse);
+      expect(brand.takeawayPromo, isNull);
+
+      final older = PromoValidation.fromJson({'valid': true, 'discountCents': 200, 'pointsMultiplier': 1});
+      expect(older.source, isNull);
+      expect(older.isTakeaway, isFalse);
+
+      final future = PromoValidation.fromJson({'valid': true, 'source': 'PARTNER', 'discountCents': 1});
+      expect(future.source, isNull, reason: 'a source this build does not know');
+
+      final refused = PromoValidation.fromJson({
+        'valid': false,
+        'reasonCode': 'PROMO_NOT_HERE',
+        'source': null,
+        'takeawayPromo': null,
+        'discountCents': 0,
+        'pointsMultiplier': 1,
+      });
+      expect(refused.reasonCode, 'PROMO_NOT_HERE');
+      expect(refused.isTakeaway, isFalse);
+    });
+
+    test('reads the welcome bonus, when it runs out and where it works', () {
+      final bonuses = [
+        for (final raw in [
+          {
+            'id': 'wb_1',
+            'kind': 'WELCOME',
+            'promoId': 'tp_1',
+            'code': 'WELCOME10',
+            'name': 'Приветственный бонус',
+            'percent': 10,
+            'currency': 'MDL',
+            'expiresAt': '2026-11-17T09:00:00.000Z',
+          },
+          {
+            'id': 'wb_2',
+            'kind': 'BIRTHDAY',
+            'promoId': 'tp_2',
+            'code': 'HB',
+            'name': 'С днём рождения',
+            'percent': 20,
+            'currency': 'RUP',
+            'expiresAt': '2026-12-01T00:00:00.000Z',
+          },
+        ])
+          CustomerBonus.fromJson(raw),
+      ];
+      final welcome = bonuses.first;
+      expect(welcome.kind, CustomerBonusKind.welcome);
+      expect(welcome.isWelcome, isTrue);
+      expect(welcome.code, 'WELCOME10');
+      expect(welcome.percent, 10);
+      expect(welcome.expiresAt, DateTime.utc(2026, 11, 17, 9));
+      expect(welcome.activeAt(DateTime.utc(2026, 11, 17, 8, 59)), isTrue);
+      expect(welcome.activeAt(DateTime.utc(2026, 11, 17, 9)), isFalse);
+      expect(welcome.worksIn('MDL'), isTrue);
+      expect(welcome.worksIn('mdl'), isTrue);
+      expect(welcome.worksIn('RUP'), isFalse);
+
+      expect(bonuses.last.kind, CustomerBonusKind.unknown, reason: 'a kind this build does not know still parses');
+      expect(bonuses.last.isWelcome, isFalse);
     });
 
     test('feature flags default to off', () {

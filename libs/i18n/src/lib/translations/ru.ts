@@ -182,7 +182,11 @@ export const TRANSLATIONS_RU = {
       PROMO_MIN_ORDER: 'Промокод действует при заказе от {{amount}}',
       PROMO_LIMIT_REACHED: 'Промокод закончился',
       PROMO_ALREADY_USED: 'Вы уже воспользовались этим промокодом',
-      PROMO_NOT_ELIGIBLE: 'Этот промокод — для тех, кто давно у нас не был',
+      /** A brand's code for inactive customers, or a welcome code that was not handed to this customer. */
+      PROMO_NOT_ELIGIBLE: 'Этот промокод вам недоступен',
+      /** A takeAway promo in another currency than the store's. */
+      PROMO_NOT_HERE: 'Акция не действует в этом заведении',
+      PROMO_WITH_POINTS: 'Баллы нельзя совместить с промокодом',
       TOO_MANY_UNPAID_ORDERS:
         'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый',
       GIFT_CARD_BALANCE_CHANGED: 'Баланс подарочной карты только что изменился — проверьте карту и попробуйте снова',
@@ -269,6 +273,17 @@ export const TRANSLATIONS_RU = {
       /** Only for what the store's orders show customers buying together (`source: copurchase`). */
       together: 'Часто берут вместе',
       add: 'Добавить: {{name}}',
+    },
+    /** «Акции takeAway» and the welcome bonus on the customer's screens (docs/takeaway-promos.md §5). */
+    takeawayPromo: {
+      myBonuses: 'Мои бонусы',
+      welcome: 'Приветственный бонус −{{percent}}%',
+      promo: 'Акция takeAway −{{percent}}%',
+      /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
+      anyStoreUntil: 'На заказ в любом заведении · до {{date}}',
+      remove: 'Убрать',
+      /** Under «Оплатить баллами» while a takeAway promo is applied. */
+      noPoints: 'Баллы нельзя совместить с промокодом',
     },
     /**
      * Agroprombank «Мобильный платёж» (docs/agroprombank-payments.md §12): the
@@ -1159,6 +1174,7 @@ export const TRANSLATIONS_RU = {
       reviews: 'Отзывы',
       settlements: 'Расчёты с брендами',
       settlementsOwn: 'Расчёты',
+      takeawayPromos: 'Акции takeAway',
     },
     staff: {
       title: 'Сотрудники',
@@ -1651,6 +1667,8 @@ export const TRANSLATIONS_RU = {
         acceptNow: 'Примите заказ · ждёт {{minutes}} мин',
         autoCancelIn: 'автоотмена через {{time}}',
         late: 'Опаздываем {{minutes}} мин',
+        /** A takeAway promo order: fully paid, nothing to collect from the guest. */
+        takeawayPromo: 'Акция takeAway −{{percent}}% · оплачено полностью, {{compensation}} компенсирует takeAway',
       },
       reminders: {
         start: 'Пора готовить #{{code}} к {{time}}',
@@ -1918,6 +1936,10 @@ export const TRANSLATIONS_RU = {
         AGROPROMBANK_QR: 'QR (Агропромбанк)',
       },
       timeline: 'История',
+      /** The discount line of a takeAway promo order. */
+      takeawayDiscount: 'Акция takeAway −{{percent}}%',
+      /** Staff must know nothing is left to collect from the guest. */
+      takeawayPromo: 'Акция takeAway −{{percent}}%: гость оплатил {{paid}}, ещё {{compensation}} компенсирует takeAway',
       events: {
         STATUS_CHANGED: 'Статус',
         ETA_UPDATED: 'Время готовности изменено',
@@ -3217,7 +3239,8 @@ export const TRANSLATIONS_RU = {
         createFailed: 'Не удалось создать промокод',
         saveFailed: 'Не удалось сохранить промокод',
         statusFailed: 'Не удалось сменить статус',
-        PROMO_CODE_TAKEN: 'Такой код уже есть у другого промокода бренда — придумайте другой.',
+        // A takeAway promo's code answers the same: one code field for customers, so codes never repeat.
+        PROMO_CODE_TAKEN: 'Этот код уже занят — придумайте другой.',
         PROMO_NOT_EDITABLE: 'Этот промокод уже нельзя менять — только его статус.',
         PROMO_STATUS_NOT_ALLOWED: 'Из этого статуса так перевести нельзя — обновите страницу.',
         PROMO_ENDED: 'Срок промокода закончился — сначала передвиньте дату окончания.',
@@ -3317,6 +3340,146 @@ export const TRANSLATIONS_RU = {
         alreadyActive: 'Бренд уже на этом тарифе.',
       },
     },
+    takeawayPromos: {
+      title: 'Акции takeAway',
+      subtitle:
+        'Скидки в процентах во всех заведениях за счёт takeAway: гость платит меньше, а разницу заведению takeAway компенсирует в ближайшей выплате.',
+      tabs: {
+        list: 'Акции',
+        debt: 'Долг takeAway',
+      },
+      newPromo: '+ Новая акция',
+      loading: 'Загружаем акции…',
+      loadError: 'Не удалось загрузить акции.',
+      empty: 'Акций пока нет. Создайте первую — например, приветственный бонус для новых клиентов.',
+      welcomeBadge: 'Приветственная',
+      percentValue: '−{{percent}}%',
+      budgetLine: 'израсходовано {{spent}} · осталось {{left}}',
+      cols: {
+        name: 'Акция',
+        code: 'Код',
+        percent: 'Скидка',
+        period: 'Период',
+        currency: 'Валюта',
+        budget: 'Бюджет',
+        orders: 'Заказы',
+        status: 'Статус',
+        actions: 'Действия',
+      },
+      status: {
+        SCHEDULED: 'Запланирована',
+        ACTIVE: 'Активна',
+        ENDED: 'Завершена',
+        DISABLED: 'Выключена',
+        EXHAUSTED: 'Бюджет исчерпан',
+      },
+      actions: {
+        edit: 'Изменить',
+        report: 'Отчёт',
+        disable: 'Выключить',
+        enable: 'Включить',
+        enableBlocked: 'Бюджет исчерпан — сначала увеличьте его в акции.',
+      },
+      createTitle: 'Новая акция takeAway',
+      editTitle: 'Акция {{code}}',
+      form: {
+        name: 'Название',
+        namePlaceholder: 'Приветственный бонус',
+        code: 'Промокод',
+        codeHint:
+          'От 2 до 32 латинских букв, цифр и знаков _ и -, сохраняется заглавными. Не должен совпадать с промокодами брендов.',
+        percent: 'Скидка, %',
+        percentHint: 'От 1 до 99 %. Считается от суммы заказа по меню вместе с вариантами и добавками.',
+        starts: 'Начало',
+        ends: 'Окончание',
+        currency: 'Валюта бюджета',
+        currencyHint: 'Акция действует во всех заведениях, которые продают в этой валюте.',
+        budget: 'Бюджет',
+        budgetHint:
+          'Сколько takeAway готов потратить на скидки. Когда остатка не хватит на скидку очередного заказа, акция выключится сама.',
+        budgetSpent: 'Уже израсходовано {{spent}} — бюджет не может быть меньше.',
+        welcome: 'Приветственная',
+        welcomeHint:
+          'Новый клиент получает её сразу после регистрации: уведомление и скидку на первый заказ, действует 7 дней. Активной может быть только одна приветственная акция.',
+        frozen:
+          'По акции уже есть заказы ({{count}}) — менять можно только название, дату окончания и бюджет (не меньше израсходованного). Для другой скидки создайте новую акцию.',
+        create: 'Создать акцию',
+        save: 'Сохранить',
+        loadFailed: 'Не удалось загрузить акцию.',
+        invalid: {
+          code: 'Промокод — от 2 до 32 латинских букв, цифр и знаков _ и -.',
+          percent: 'Скидка — целое число от 1 до 99 %.',
+          dates: 'Окончание должно быть позже начала.',
+          budget: 'Бюджет должен быть больше нуля.',
+        },
+      },
+      report: {
+        title: 'Отчёт: {{name}}',
+        subtitle: '{{code}} · −{{percent}}% · {{from}} – {{to}} · {{currency}}',
+        hint: 'Учтены заказы, которые оплачены или приняты заведением; отменённые не считаются.',
+        kpi: {
+          orders: 'Заказы',
+          customers: 'Клиенты',
+          budget: 'Бюджет',
+          spent: 'Израсходовано',
+          left: 'Остаток',
+        },
+        foot: {
+          menuTotal: 'по меню {{value}}',
+          compensation: 'скидки {{value}}',
+          held: 'ждут оплаты {{value}}',
+        },
+        byBrand: 'По брендам',
+        byStore: 'По заведениям',
+        byDay: 'По дням (UTC)',
+        cols: {
+          brand: 'Бренд',
+          store: 'Заведение',
+          date: 'Дата',
+          orders: 'Заказы',
+          menuTotal: 'По меню',
+          compensation: 'Компенсация takeAway',
+        },
+        empty: 'По акции ещё нет учтённых заказов.',
+        loadFailed: 'Не удалось загрузить отчёт.',
+      },
+      debt: {
+        title: 'Долг takeAway перед заведениями',
+        hint: 'На сейчас, за всё время. Начислено — скидки по учтённым заказам; в выплате — вошло в зафиксированную, но ещё не переведённую выплату; погашено — в выплатах, отмеченных выплаченными. Долг = начислено − погашено: эту сумму нужно иметь к ближайшим выплатам.',
+        kpi: 'Долг takeAway · {{currency}}',
+        accrued: 'начислено {{value}}',
+        repaid: 'погашено {{value}}',
+        cols: {
+          brand: 'Бренд',
+          currency: 'Валюта',
+          accrued: 'Начислено',
+          inPayout: 'В выплате',
+          repaid: 'Погашено',
+          debt: 'Долг',
+        },
+        total: 'Итого · {{currency}}',
+        open: 'Расчёты',
+        openHint: 'Открыть расчёты бренда {{brand}}',
+        empty: 'Заказов по акциям takeAway ещё не было — долга нет.',
+        loadFailed: 'Не удалось загрузить долг.',
+      },
+      errors: {
+        TAKEAWAY_PROMO_CODE_TAKEN:
+          'Этот код уже занят — другой акцией takeAway или промокодом бренда. Придумайте другой.',
+        TAKEAWAY_PROMO_USED:
+          'По акции уже есть заказы: менять можно только название, дату окончания и бюджет. Для другой скидки создайте новую акцию.',
+        TAKEAWAY_PROMO_DATES: 'Окончание должно быть позже начала.',
+        TAKEAWAY_PROMO_PERCENT: 'Скидка — целое число от 1 до 99 %.',
+        TAKEAWAY_PROMO_BUDGET: 'Бюджет должен быть больше нуля и не меньше уже израсходованного.',
+        TAKEAWAY_PROMO_WELCOME_TAKEN:
+          'Активной может быть только одна приветственная акция — сначала выключите другую или снимите у неё отметку.',
+        TAKEAWAY_PROMO_STATUS: 'Так переключить акцию нельзя — обновите страницу.',
+        budgetExhausted: 'Бюджет акции исчерпан — увеличьте его, тогда акцию можно будет включить.',
+        createFailed: 'Не удалось создать акцию.',
+        saveFailed: 'Не удалось сохранить акцию.',
+        statusFailed: 'Не удалось переключить акцию.',
+      },
+    },
     settlements: {
       title: 'Расчёты с брендами',
       titleOwn: 'Расчёты',
@@ -3347,6 +3510,7 @@ export const TRANSLATIONS_RU = {
         payableOwn: 'К выплате вам',
         paid: 'Уже выплачено',
         closing: 'Остаток',
+        compensation: 'Компенсация takeAway по акциям',
       },
       foot: {
         refunded: 'возвраты {{value}}',
@@ -3357,6 +3521,8 @@ export const TRANSLATIONS_RU = {
         pending: 'ждёт перевода {{value}}',
         opening: 'на начало {{value}}',
         closingPending: 'из них зафиксировано {{value}}',
+        compensation: 'скидки по акциям takeAway, гасятся в выплате',
+        fullPrice: 'комиссия — с полной цены',
       },
       zeroTotal:
         'Заказов на 0 (всё покрыли промокод, баллы или подарочная карта): {{count}}. Денег через платформу по ним не было, и к выплате они ничего не добавляют.',
@@ -3366,6 +3532,8 @@ export const TRANSLATIONS_RU = {
         title: 'Выплата бренду',
         summary: 'С {{from}} по {{to}}: {{amount}}',
         breakdown: 'за эти дни: картами {{card}} − комиссия {{commission}}',
+        breakdownCompensation:
+          'за эти дни: картами {{card}} + компенсация takeAway по акциям {{compensation}} − комиссия {{commission}}',
         carried: 'перенос из прошлых периодов {{amount}}',
         reference: 'Номер платёжки',
         comment: 'Комментарий',
@@ -3398,6 +3566,7 @@ export const TRANSLATIONS_RU = {
         deliveryFeeCents: 'Доставка',
         capturedCents: 'Оплачено картами',
         refundedCents: 'Возвраты',
+        takeawayCompensationCents: 'Компенсация takeAway',
         commissionBaseCents: 'База комиссии',
         commissionCents: 'Комиссия',
         payableCents: 'К выплате',
@@ -3419,6 +3588,7 @@ export const TRANSLATIONS_RU = {
         period: 'Период',
         amount: 'Сумма',
         commission: 'Комиссия',
+        compensation: 'Компенсация takeAway',
         status: 'Статус',
         paidAt: 'Выплачено',
         reference: 'Платёжка, комментарий',
@@ -3460,7 +3630,9 @@ export const TRANSLATIONS_RU = {
         title: 'Как считается',
         captured:
           '«Оплачено картами» — деньги, которые реально пришли на счёт платформы по заказам бренда (без чаевых сотрудникам).',
-        base: 'База комиссии = оплачено картами − возвраты. Промокоды, баллы и подарочные карты в базу не входят: этих денег у платформы нет.',
+        base: 'База комиссии = оплачено картами − возвраты + компенсация takeAway по акциям. Промокоды бренда, баллы и подарочные карты в базу не входят: этих денег у платформы нет.',
+        compensation:
+          'Компенсация takeAway по акциям — скидки по акциям takeAway: их оплачивает takeAway, а не бренд, и возвращает в выплате отдельной строкой. Комиссия с такого заказа берётся с полной цены по меню, поэтому заказ по акции приносит бренду столько же, сколько обычный.',
         commission:
           'Комиссия = база × ставка, действовавшая, когда точка приняла заказ. Округление до копейки — по каждому заказу.',
         payable:
@@ -3475,6 +3647,38 @@ export const TRANSLATIONS_RU = {
         PAYOUT_ALREADY_PAID: 'Эта выплата уже отмечена выплаченной.',
         PAYOUT_PAID: 'Выплаченную выплату удалить нельзя.',
         PAYOUT_NOT_LATEST: 'Удалить можно только последнюю выплату.',
+      },
+      promos: {
+        title: 'Акции takeAway',
+        hint: 'Скидки по акциям takeAway оплачивает takeAway: гость платит меньше, а разницу takeAway возвращает в ближайшей выплате отдельной строкой. Комиссия с такого заказа — с полной цены по меню.',
+        summary: {
+          orders: 'Заказов по акциям',
+          menuTotal: 'Продажи по ценам меню',
+          paidByGuest: 'Оплачено гостями',
+          accrued: 'Компенсация начислена',
+          repaid: 'Компенсация погашена',
+          debt: 'Долг takeAway к ближайшей выплате',
+          debtHint: 'на сейчас, за всё время',
+        },
+        cols: {
+          date: 'Дата',
+          order: '№',
+          promo: 'Акция',
+          menuTotal: 'По меню',
+          paidByGuest: 'Оплатил гость',
+          compensation: 'Компенсация takeAway',
+          status: 'Статус',
+        },
+        promoName: '{{name}} −{{percent}}%',
+        status: {
+          ACCRUED: 'начислена',
+          IN_PAYOUT: 'в выплате',
+          REPAID: 'погашена',
+          repaidOn: 'погашена {{date}}',
+        },
+        empty: 'За этот период заказов по акциям takeAway нет.',
+        loading: 'Загружаем…',
+        loadError: 'Не удалось загрузить акции takeAway.',
       },
     },
     dateRange: {

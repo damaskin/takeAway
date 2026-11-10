@@ -104,6 +104,9 @@ Order _$OrderFromJson(Map<String, dynamic> json) => Order(
   ),
   canReview: json['canReview'] as bool?,
   review: json['review'] == null ? null : OrderReview.fromJson(json['review'] as Map<String, dynamic>),
+  takeawayPromo: json['takeawayPromo'] == null
+      ? null
+      : TakeawayPromoLine.fromJson(json['takeawayPromo'] as Map<String, dynamic>),
 );
 
 const _$OrderStatusEnumMap = {

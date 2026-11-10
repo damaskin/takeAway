@@ -6,6 +6,7 @@ import type { AsapBlockedReason, VariationType } from './catalog';
 import type { OptionLine, OptionSelection } from './option-groups';
 import type { OrderReview } from './order-review';
 import type { Currency } from './shared-types';
+import type { TakeawayPromoLine } from './takeaway-promo';
 
 export type FulfillmentTypeEnum = 'PICKUP' | 'DINE_IN' | 'DELIVERY';
 export type PickupModeEnum = 'ASAP' | 'SCHEDULED';
@@ -325,6 +326,13 @@ export interface Order extends OrderSummary {
   customerPhone: string | null;
   notes: string | null;
   couponCode: string | null;
+  /**
+   * The takeAway promo on the order, when the code was one: the guest paid
+   * `paidByGuestCents` of `menuTotalCents`, takeAway compensates the venue
+   * `discountCents` (also part of `discountCents` above). Null without one;
+   * absent from older API builds.
+   */
+  takeawayPromo?: TakeawayPromoLine | null;
   items: OrderItem[];
   acceptedAt: string | null;
   startedAt: string | null;
@@ -429,8 +437,15 @@ export type PromoErrorCode =
   | 'PROMO_MIN_ORDER'
   | 'PROMO_LIMIT_REACHED'
   | 'PROMO_ALREADY_USED'
-  /** The code is for inactive customers only, and this customer is not one. */
-  | 'PROMO_NOT_ELIGIBLE';
+  /**
+   * The code is for inactive customers only, and this customer is not one —
+   * or it is a welcome bonus that was not handed to this customer.
+   */
+  | 'PROMO_NOT_ELIGIBLE'
+  /** A takeAway promo that does not run in this store's currency. */
+  | 'PROMO_NOT_HERE'
+  /** A takeAway promo and loyalty points in one order: they do not combine. */
+  | 'PROMO_WITH_POINTS';
 
 /**
  * Stable codes on the errors a customer can meet while placing an order. The

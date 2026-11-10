@@ -4,6 +4,7 @@ import { Locale, Role } from '@prisma/client';
 import { loginCodeMail } from '../../mail/login-code.mail';
 import { MailService } from '../../mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WelcomeBonusService } from '../../takeaway-promos/welcome-bonus.service';
 import { AuthService } from '../auth.service';
 import type { AuthSessionDto } from '../dto/auth-response.dto';
 import { EMAIL_CODE_TTL_SECONDS, EmailCodeService } from './email-code.service';
@@ -41,6 +42,7 @@ export class EmailLoginService {
     private readonly codes: EmailCodeService,
     private readonly tokens: TokensService,
     private readonly auth: AuthService,
+    private readonly welcome: WelcomeBonusService,
   ) {}
 
   /** True when this server can mail codes, i.e. SMTP is configured. */
@@ -81,6 +83,7 @@ export class EmailLoginService {
     const address = normalizeEmail(email);
     const { locale } = await this.codes.consume(address, code);
     const now = new Date();
+    let created = false;
 
     const user = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.user.findUnique({ where: { email: address } });
@@ -101,10 +104,13 @@ export class EmailLoginService {
             'the address moved to a new profile instead of joining that one',
         );
       }
+      created = true;
       return tx.user.create({ data: { email: address, emailVerifiedAt: now, locale } });
     });
 
     if (user.blockedAt) throw new UnauthorizedException('Account is blocked');
+    // A new customer gets the welcome bonus; not awaited, it never throws.
+    if (created) void this.welcome.onCustomerCreated(user.id, { kind: 'email', address });
 
     const device = await this.prisma.device.create({
       data: { userId: user.id, type: 'WEB', locale: user.locale },

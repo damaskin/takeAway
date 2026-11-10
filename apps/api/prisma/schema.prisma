@@ -420,29 +420,31 @@ model User {
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  kdsPinStore         Store?               @relation("KdsPinStore", fields: [kdsPinStoreId], references: [id], onDelete: SetNull)
-  kdsPinBrand         Brand?               @relation("KdsPinBrand", fields: [kdsPinBrandId], references: [id], onDelete: SetNull)
-  devices             Device[]
-  oauthAccounts       OAuthAccount[]
-  passwordResetTokens PasswordResetToken[]
-  ownedBrands         Brand[]              @relation("BrandOwner")
-  carts               Cart[]
-  orders              Order[]
-  loyaltyAccount      LoyaltyAccount?
-  pointsLedger        PointsLedger[]
-  promoRedemptions    PromoRedemption[]
+  kdsPinStore              Store?                    @relation("KdsPinStore", fields: [kdsPinStoreId], references: [id], onDelete: SetNull)
+  kdsPinBrand              Brand?                    @relation("KdsPinBrand", fields: [kdsPinBrandId], references: [id], onDelete: SetNull)
+  devices                  Device[]
+  oauthAccounts            OAuthAccount[]
+  passwordResetTokens      PasswordResetToken[]
+  ownedBrands              Brand[]                   @relation("BrandOwner")
+  carts                    Cart[]
+  orders                   Order[]
+  loyaltyAccount           LoyaltyAccount?
+  pointsLedger             PointsLedger[]
+  promoRedemptions         PromoRedemption[]
+  takeawayPromoRedemptions TakeawayPromoRedemption[]
+  welcomeBonus             WelcomeBonus?
   // Multi-store scope for staff/rider roles. Empty for CUSTOMER; brand-admin
   // and super-admin bypass the pivot entirely (see UserStoreScopeService).
-  userStores          UserStore[]
+  userStores               UserStore[]
   // Delivery orders assigned to this user (RIDER). SetNull on delete so we
   // can remove riders without wiping the order history.
-  assignedDeliveries  Order[]              @relation("RiderDeliveries")
-  giftCardsPurchased  GiftCard[]           @relation("GiftCardsPurchased")
+  assignedDeliveries       Order[]                   @relation("RiderDeliveries")
+  giftCardsPurchased       GiftCard[]                @relation("GiftCardsPurchased")
   // Cards bound to the merchant for tokenized payments (Agroprombank).
-  cardTokens          CardToken[]
-  cardBindings        CardBindingRequest[]
-  shiftsOpened        StoreShift[]         @relation("ShiftOpenedBy")
-  shiftsClosed        StoreShift[]         @relation("ShiftClosedBy")
+  cardTokens               CardToken[]
+  cardBindings             CardBindingRequest[]
+  shiftsOpened             StoreShift[]              @relation("ShiftOpenedBy")
+  shiftsClosed             StoreShift[]              @relation("ShiftClosedBy")
 
   // Referral program — every user gets a unique code lazily on first read.
   // referredByUserId points at the user whose code unlocked this account's
@@ -734,33 +736,38 @@ enum PayoutStatus {
 /// that lands after a payout is carried into the next one. See
 /// docs/settlements.md.
 model BrandPayout {
-  id              String       @id @default(cuid())
-  brandId         String
-  currency        Currency
+  id                String       @id @default(cuid())
+  brandId           String
+  currency          Currency
   /// First and last local day the payout settles, both included, in `timeZone`.
-  periodFrom      DateTime     @db.Date
-  periodTo        DateTime     @db.Date
-  timeZone        String
+  periodFrom        DateTime     @db.Date
+  periodTo          DateTime     @db.Date
+  timeZone          String
   /// The instant `periodTo` ends at (local midnight after it). Balances are
   /// matched on it: the payout settles everything settled before it.
-  periodEnd       DateTime
+  periodEnd         DateTime
   /// What the platform transfers.
-  amountCents     Int
+  amountCents       Int
   /// The period's own figures when it was fixed, kept for the record: card
   /// money net of refunds, and the commission on it.
-  cardNetCents    Int
-  commissionCents Int
-  status          PayoutStatus @default(PENDING)
-  paidAt          DateTime?
+  cardNetCents      Int
+  commissionCents   Int
+  /// «Компенсация takeAway по акциям» of the period: Σ D of the takeAway
+  /// promo orders this payout settles. Already part of `amountCents`.
+  compensationCents Int          @default(0)
+  status            PayoutStatus @default(PENDING)
+  paidAt            DateTime?
   /// Bank transfer number or any other handle on the payment.
-  reference       String?
-  comment         String?
-  createdById     String?
-  paidById        String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  reference         String?
+  comment           String?
+  createdById       String?
+  paidById          String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand                    Brand                     @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The takeAway promo debts it settles, stamped when it was fixed.
+  takeawayPromoRedemptions TakeawayPromoRedemption[]
 
   @@index([brandId, currency, periodEnd])
 }
@@ -1700,118 +1707,125 @@ model GiftCardRedemption {
 }
 
 model Order {
-  id                  String             @id @default(cuid())
-  userId              String
-  storeId             String
-  status              OrderStatus        @default(CREATED)
-  fulfillmentType     FulfillmentType    @default(PICKUP)
-  pickupMode          PickupMode         @default(ASAP)
+  id                    String             @id @default(cuid())
+  userId                String
+  storeId               String
+  status                OrderStatus        @default(CREATED)
+  fulfillmentType       FulfillmentType    @default(PICKUP)
+  pickupMode            PickupMode         @default(ASAP)
   // UTC. For ASAP it's the moment we expect to hand it over.
-  pickupAt            DateTime
-  subtotalCents       Int
-  discountCents       Int                @default(0)
-  taxCents            Int                @default(0)
-  totalCents          Int
-  currency            Currency
+  pickupAt              DateTime
+  subtotalCents         Int
+  discountCents         Int                @default(0)
+  taxCents              Int                @default(0)
+  totalCents            Int
+  currency              Currency
   // 4-digit human-readable code shown to the customer and barista.
-  orderCode           String             @unique
+  orderCode             String             @unique
   // Opaque token embedded in the pickup QR; independent of the short code.
-  qrToken             String             @unique
-  paymentIntentId     String?
+  qrToken               String             @unique
+  paymentIntentId       String?
   /// Seconds the customer waits once the kitchen starts on their order —
   /// the longest single item, because a barista pulls a shot while the milk
   /// steams. Snapshotted at creation so a later menu edit cannot rewrite it.
-  prepSeconds         Int                @default(0)
+  prepSeconds           Int                @default(0)
   /// Seconds of kitchen time this order consumes, summed across items. This
   /// is what loads the queue for everyone behind it, and it is deliberately
   /// a different number from prepSeconds.
-  workSeconds         Int                @default(0)
-  customerName        String?
-  customerPhone       String?
-  notes               String?
-  couponCode          String?
+  workSeconds           Int                @default(0)
+  customerName          String?
+  customerPhone         String?
+  notes                 String?
+  couponCode            String?
   /// Gift-card code typed at checkout (normalized). Mirrored here so we
   /// keep the original code alongside the redemption row even if the
   /// gift card is later cancelled.
-  giftCardCode        String?
-  giftCardCents       Int                @default(0)
+  giftCardCode          String?
+  giftCardCents         Int                @default(0)
   /// Loyalty points the customer burned on this order, and what they were
   /// worth. Kept separate from `discountCents` so a receipt can say
   /// "you spent 250 points" rather than just showing a smaller number.
-  pointsSpent         Int                @default(0)
-  pointsDiscountCents Int                @default(0)
+  pointsSpent           Int                @default(0)
+  pointsDiscountCents   Int                @default(0)
+  /// D of a takeAway promo (docs/takeaway-promos.md): part of
+  /// `discountCents`, paid by takeAway to the venue rather than by the
+  /// venue. Snapshotted at checkout. The live debt is the order's
+  /// TakeawayPromoRedemption — a cancelled order gives it back.
+  takeawayDiscountCents Int                @default(0)
   // Delivery-only fields. Mirror of address/fee kept on the Order so history
   // is immutable even if the customer's default address changes later. All
   // nullable because the PICKUP / DINE_IN path doesn't fill them.
-  deliveryAddressLine String?
-  deliveryCity        String?
-  deliveryLatitude    Float?
-  deliveryLongitude   Float?
-  deliveryNotes       String?
-  deliveryFeeCents    Int                @default(0)
+  deliveryAddressLine   String?
+  deliveryCity          String?
+  deliveryLatitude      Float?
+  deliveryLongitude     Float?
+  deliveryNotes         String?
+  deliveryFeeCents      Int                @default(0)
   /// Estimated distance from store to delivery address (metres). Optional —
   /// geocoding/distance estimation is a follow-up, stored here when available.
-  deliveryDistanceM   Int?
-  riderId             String?
+  deliveryDistanceM     Int?
+  riderId               String?
   /// Identifier of the corresponding order in the external POS (iiko orderId
   /// or Poster transactionId), set after a successful ORDER_PUSH job.
-  posExternalId       String?
+  posExternalId         String?
   // Status timeline — denormalized from OrderEvent for quick queries.
-  createdAt           DateTime           @default(now())
-  acceptedAt          DateTime?
-  startedAt           DateTime?
-  readyAt             DateTime?
-  pickedUpAt          DateTime?
-  outForDeliveryAt    DateTime?
-  deliveredAt         DateTime?
-  cancelledAt         DateTime?
+  createdAt             DateTime           @default(now())
+  acceptedAt            DateTime?
+  startedAt             DateTime?
+  readyAt               DateTime?
+  pickedUpAt            DateTime?
+  outForDeliveryAt      DateTime?
+  deliveredAt           DateTime?
+  cancelledAt           DateTime?
   /// Who cancelled the order, why and what the kitchen added — what the
   /// customer's order screen says about it. Mirrors the CANCELLED event;
   /// null unless CANCELLED, and on orders cancelled before 2026-11-05 whose
   /// event did not say. `cancelComment` is the kitchen's own words, shown as
   /// is; never the bank's message on a declined card.
-  cancelledBy         OrderCanceller?
-  cancelReason        OrderCancelReason?
-  cancelComment       String?
+  cancelledBy           OrderCanceller?
+  cancelReason          OrderCancelReason?
+  cancelComment         String?
   /// Where the money went when the order was cancelled or expired, as the
   /// push said. Null while the order is live, when there was no card money
   /// to speak of, and on older orders the backfill could not tell.
-  cancelMoney         OrderCancelMoney?
-  expiredAt           DateTime?
+  cancelMoney           OrderCancelMoney?
+  expiredAt             DateTime?
   /// When the order became the kitchen's to accept — shown on the board:
   /// at creation when nothing has to be paid by card, else when the card
   /// hold (or the charge put off until the accept, or a captured payment)
   /// landed. The acceptance clock runs from here. Null for orders still
   /// waiting for their payment, and for orders from before 2026-10-14.
-  kitchenVisibleAt    DateTime?
+  kitchenVisibleAt      DateTime?
   /// Staff and the brand owner were told the order is still not accepted (once).
-  acceptAlertSentAt   DateTime?
+  acceptAlertSentAt     DateTime?
   /// «Пора готовить предзаказ» went to the staff (once).
-  startReminderSentAt DateTime?
+  startReminderSentAt   DateTime?
   /// The customer got «Немного задерживаемся» because the order ran past pickupAt (once).
-  lateNotifiedAt      DateTime?
+  lateNotifiedAt        DateTime?
   /// Staff and the brand owner were told the order is five minutes late (once).
-  lateAlertSentAt     DateTime?
+  lateAlertSentAt       DateTime?
   /// When the kitchen expects the order ready, set when it accepted or
   /// started the order too late to make pickupAt (now + its own cooking
   /// time). pickupAt stays the original promise; the customer's countdown
   /// and «Немного задерживаемся» run to this instead. Null otherwise.
-  readyEstimateAt     DateTime?
+  readyEstimateAt       DateTime?
   /// L of the queue policy: the store was «Загружены» (OVERLOADED) when the
   /// order was placed, so its accept time grows by the store's N. Switching
   /// the load off later does not move the order.
-  placedUnderLoad     Boolean            @default(false)
+  placedUnderLoad       Boolean            @default(false)
 
-  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  store              Store               @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  rider              User?               @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
-  items              OrderItem[]
-  events             OrderEvent[]
-  payments           Payment[]
-  pointsEntries      PointsLedger[]
-  promoRedemption    PromoRedemption?
-  giftCardRedemption GiftCardRedemption?
-  review             OrderReview?
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  store                   Store                    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  rider                   User?                    @relation("RiderDeliveries", fields: [riderId], references: [id], onDelete: SetNull)
+  items                   OrderItem[]
+  events                  OrderEvent[]
+  payments                Payment[]
+  pointsEntries           PointsLedger[]
+  promoRedemption         PromoRedemption?
+  takeawayPromoRedemption TakeawayPromoRedemption?
+  welcomeBonus            WelcomeBonus?
+  giftCardRedemption      GiftCardRedemption?
+  review                  OrderReview?
 
   @@index([userId, createdAt])
   @@index([storeId, status])
@@ -2097,6 +2111,111 @@ model PromoRedemption {
 
   @@index([promoId])
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// takeAway promos («Акции takeAway», docs/takeaway-promos.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TakeawayPromoStatus {
+  ACTIVE
+  /// Switched off by a platform admin.
+  DISABLED
+  /// The budget ran out (or the next discount did not fit): set by the API,
+  /// the promo applies to nothing any more.
+  EXHAUSTED
+}
+
+/// A percent discount takeAway runs at every venue at its own expense. The
+/// guest pays P − D, takeAway owes the venue D and settles it in the payout,
+/// and the commission is taken on the full menu price P.
+model TakeawayPromo {
+  id          String              @id @default(cuid())
+  name        String
+  /// What the customer types, uppercase. Unique here and never equal to a
+  /// brand's promo code (the API checks both ways).
+  code        String              @unique
+  /// 1..99. Frozen after the first order.
+  percent     Int
+  startsAt    DateTime
+  endsAt      DateTime
+  /// The budget's currency: the promo works at stores selling in it.
+  currency    Currency
+  budgetCents Int
+  /// Σ D of the orders holding the promo. Taken with the order in one
+  /// conditional update (never past the budget), given back when the order
+  /// is cancelled or expires unpaid.
+  spentCents  Int                 @default(0)
+  status      TakeawayPromoStatus @default(ACTIVE)
+  exhaustedAt DateTime?
+  /// Handed out on sign-up as a welcome bonus. At most one ACTIVE at a time.
+  isWelcome   Boolean             @default(false)
+  createdById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  redemptions    TakeawayPromoRedemption[]
+  welcomeBonuses WelcomeBonus[]
+
+  @@index([isWelcome, status])
+}
+
+/// One order holding a takeAway promo — and takeAway's debt to the venue for
+/// it once the order counts (paid or accepted). Deleted, with `spentCents`
+/// given back, when the order is cancelled or expires.
+model TakeawayPromoRedemption {
+  id             String   @id @default(cuid())
+  promoId        String
+  userId         String
+  orderId        String   @unique
+  /// Plain snapshots: reports group by them.
+  brandId        String
+  storeId        String
+  currency       Currency
+  code           String
+  percent        Int
+  /// P — the order at menu prices, variants and add-ons included.
+  menuTotalCents Int
+  /// D — the discount, and takeAway's debt to the venue.
+  discountCents  Int
+  /// The payout that settles the debt, stamped when it was fixed; the debt
+  /// is repaid once that payout is marked paid.
+  payoutId       String?
+  createdAt      DateTime @default(now())
+
+  promo  TakeawayPromo @relation(fields: [promoId], references: [id], onDelete: Restrict)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payout BrandPayout?  @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  /// A customer uses a promo once.
+  @@unique([promoId, userId])
+  @@index([brandId, currency])
+  @@index([payoutId])
+}
+
+/// The welcome bonus a new customer got on sign-up: the right to use the
+/// welcome promo once within 7 days. One per person, ever — `identityHash`
+/// (Telegram id, verified email or social account, hashed) survives the
+/// account being deleted, so signing up again gives nothing.
+model WelcomeBonus {
+  id           String    @id @default(cuid())
+  promoId      String
+  userId       String    @unique
+  identityHash String    @unique
+  expiresAt    DateTime
+  /// The order holding it; cleared when that order is cancelled or expires.
+  orderId      String?   @unique
+  /// The inbox item and push went out (a minute after sign-up, once the
+  /// app has registered its device).
+  notifiedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  promo TakeawayPromo @relation(fields: [promoId], references: [id], onDelete: Restrict)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([notifiedAt, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

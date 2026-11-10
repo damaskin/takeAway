@@ -17,6 +17,29 @@ final loyaltyProvider = FutureProvider<LoyaltyAccount?>((ref) async {
   return _guard(ref.watch(apiProvider).loyalty);
 });
 
+/// The customer's bonuses (`GET /me/bonuses`): today only the welcome bonus,
+/// listed by the API while it is unused, unexpired and its promo runs. It
+/// feeds the profile banner and the checkout's auto-apply, both extras: an
+/// API that predates it (404) or a failed read leaves the customer without
+/// a bonus on screen rather than with an error.
+final bonusesProvider = FutureProvider<List<CustomerBonus>>((ref) async {
+  if (ref.watch(currentUserIdProvider) == null) return const [];
+  try {
+    return await ref.watch(apiProvider).myBonuses();
+  } on Object {
+    return const [];
+  }
+});
+
+/// The welcome bonus to show and to apply now. The list is read once and
+/// may outlive the bonus, so one past its expiry is left out here too.
+final activeBonusProvider = Provider<CustomerBonus?>((ref) {
+  final now = DateTime.now();
+  return (ref.watch(bonusesProvider).valueOrNull ?? const <CustomerBonus>[])
+      .where((bonus) => bonus.isWelcome && bonus.activeAt(now))
+      .firstOrNull;
+});
+
 final referralsProvider = FutureProvider.autoDispose<ReferralSummary>((ref) {
   ref.watch(currentUserIdProvider);
   return _guard(ref.watch(apiProvider).referrals);

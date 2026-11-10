@@ -253,3 +253,64 @@ describe('OrderDetailPanelComponent — paid by QR', () => {
     expect(fixture.componentInstance.amountValid(order)).toBe(true);
   });
 });
+
+/**
+ * A takeAway promo order (docs/takeaway-promos.md §4.4): the card says the
+ * guest paid their part and takeAway covers the rest, so staff collect nothing.
+ */
+describe('OrderDetailPanelComponent — a takeAway promo order', () => {
+  beforeEach(() => TestBed.resetTestingModule());
+
+  async function render(order: AdminOrderDetail) {
+    TestBed.configureTestingModule({
+      imports: [OrderDetailPanelComponent],
+      providers: [
+        provideTranslateService(),
+        { provide: AdminOrdersApi, useValue: { get: jest.fn().mockReturnValue(of(order)) } },
+      ],
+    });
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('ru', TRANSLATIONS_RU as unknown as Translation);
+    translate.use('ru');
+    const fixture = TestBed.createComponent(OrderDetailPanelComponent);
+    fixture.componentRef.setInput('orderId', order.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const PROMO_ORDER: AdminOrderDetail = {
+    ...ORDER,
+    status: 'ACCEPTED',
+    currency: 'MDL',
+    subtotalCents: 10000,
+    discountCents: 1000,
+    totalCents: 9000,
+    couponCode: 'HELLO10',
+    refundedCents: 0,
+    refundableCents: 9000,
+    takeawayPromo: {
+      code: 'HELLO10',
+      name: 'Приветственный бонус',
+      percent: 10,
+      menuTotalCents: 10000,
+      discountCents: 1000,
+      paidByGuestCents: 9000,
+    },
+  };
+
+  it('says what the guest paid and what takeAway compensates', async () => {
+    const el = await render(PROMO_ORDER);
+    expect(text(el.querySelector('[data-testid="order-takeaway-promo"]'))).toBe(
+      'Акция takeAway −10%: гость оплатил 90 MDL, ещё 10 MDL компенсирует takeAway',
+    );
+    // The discount line names the promo instead of a plain «Скидка».
+    expect(text(el)).toContain('Акция takeAway −10% HELLO10');
+  });
+
+  it('has no such line on an order without one', async () => {
+    const el = await render({ ...PROMO_ORDER, takeawayPromo: null, couponCode: 'BRAND5' });
+    expect(el.querySelector('[data-testid="order-takeaway-promo"]')).toBeNull();
+    expect(text(el)).toContain('Скидка BRAND5');
+  });
+});

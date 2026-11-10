@@ -8,6 +8,7 @@ import type { PromoService } from '../promo/promo.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
 import { PaymentHoldsService } from '../payments/agroprombank/payment-holds.service';
 import { OrderExpiryService } from './order-expiry.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 function orderRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -31,6 +32,7 @@ interface Harness {
   realtime: { emitOrderStatusChanged: jest.Mock; emitKdsOrderChanged: jest.Mock };
   notifications: { notifyOrderStatus: jest.Mock };
   holds: { releaseForOrder: jest.Mock; findHold: jest.Mock };
+  takeaway: { releaseForOrder: jest.Mock };
 }
 
 function harness(
@@ -64,6 +66,7 @@ function harness(
   const promo = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const giftCards = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const loyalty = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
+  const takeaway = { releaseForOrder: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitOrderStatusChanged: jest.fn(), emitKdsOrderChanged: jest.fn() };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const holds = { releaseForOrder: jest.fn().mockResolvedValue(null), findHold: jest.fn().mockResolvedValue(null) };
@@ -80,9 +83,10 @@ function harness(
     notifications as unknown as NotificationsService,
     realtime as unknown as RealtimeGateway,
     holds as unknown as PaymentHoldsService,
+    takeaway as unknown as TakeawayPromoService,
   );
 
-  return { service, tx, prisma, promo, giftCards, loyalty, realtime, notifications, holds };
+  return { service, tx, prisma, promo, giftCards, loyalty, realtime, notifications, holds, takeaway };
 }
 
 describe('OrderExpiryService', () => {
@@ -114,6 +118,8 @@ describe('OrderExpiryService', () => {
       expect(h.promo.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
       expect(h.giftCards.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
       expect(h.loyalty.releaseForOrder).toHaveBeenCalledWith(expect.anything(), 'order-1');
+      // A takeAway promo's share of the budget and the welcome bonus too (docs/takeaway-promos.md §2.4).
+      expect(h.takeaway.releaseForOrder).toHaveBeenCalledWith(h.tx, 'order-1');
     });
 
     it('records why the order died, not just that it did', async () => {
@@ -160,6 +166,7 @@ describe('OrderExpiryService', () => {
       expect(h.promo.releaseForOrder).not.toHaveBeenCalled();
       expect(h.giftCards.releaseForOrder).not.toHaveBeenCalled();
       expect(h.loyalty.releaseForOrder).not.toHaveBeenCalled();
+      expect(h.takeaway.releaseForOrder).not.toHaveBeenCalled();
       expect(h.tx.order.update).not.toHaveBeenCalled();
     });
 

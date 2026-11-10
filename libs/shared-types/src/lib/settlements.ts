@@ -39,7 +39,7 @@ export interface SettlementTotals {
   unpaidTotalCents: number;
   /** «Продажи»: line items before any discount. */
   salesCents: number;
-  /** Promo-code discounts. */
+  /** Discounts of the brand's own promo codes (the brand pays for them). */
   promoDiscountCents: number;
   /** Loyalty points spent. */
   pointsDiscountCents: number;
@@ -51,11 +51,20 @@ export interface SettlementTotals {
   capturedCents: number;
   /** Of it, given back to customers. */
   refundedCents: number;
-  /** Commission base: captured − refunded. */
+  /**
+   * «Компенсация takeAway по акциям»: the discounts of takeAway promos on
+   * these orders (Σ D), which takeAway owes the brand on top of the card
+   * money. Not in `promoDiscountCents`. Absent from older API builds.
+   */
+  takeawayCompensationCents: number;
+  /**
+   * Commission base: captured − refunded + takeAway compensation — the
+   * commission of a takeAway promo order is taken on its full menu price.
+   */
   commissionBaseCents: number;
   /** takeAway's commission, rounded per order (half up). */
   commissionCents: number;
-  /** Owed to the brand for these orders: base − commission. */
+  /** Owed to the brand for these orders: base − commission (the compensation is in the base). */
   payableCents: number;
 }
 
@@ -103,6 +112,8 @@ export interface SettlementPayoutPreview {
   /** The period's own card money and commission. */
   cardNetCents: number;
   commissionCents: number;
+  /** The period's own takeAway promo compensation (the debts this payout settles). */
+  compensationCents: number;
   blocked: PayoutBlockReason | null;
   /** Last day already settled by a payout, if any. */
   lastSettledDay: string | null;
@@ -118,6 +129,8 @@ export interface SettlementPayout {
   amountCents: number;
   cardNetCents: number;
   commissionCents: number;
+  /** «Компенсация takeAway по акциям» of the period; 0 on payouts fixed before 2026-11-10. */
+  compensationCents: number;
   status: PayoutStatus;
   paidAt: string | null;
   reference: string | null;

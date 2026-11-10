@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { checkoutError } from '../common/http/checkout-error';
 import { isInactiveCustomer } from '../customers/customer-segment';
 import { PrismaService } from '../prisma/prisma.service';
+import { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 import {
   ApplyPromoInput,
   ApplyPromoResultDto,
@@ -47,15 +48,24 @@ function isUniqueViolation(err: unknown): boolean {
 export class PromoService {
   private readonly logger = new Logger(PromoService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly takeaway: TakeawayPromoService,
+  ) {}
 
   // ────────────────────────────────────────────────────────────────────────
   // Customer-facing validation
   // ────────────────────────────────────────────────────────────────────────
 
   /**
-   * Pure validation: does this promo work for this user right now?
-   * Does NOT create a redemption — checkout does that via applyAndRedeem().
+   * Pure validation: does this code work for this user right now?
+   * Does NOT create a redemption — checkout does that via applyAndRedeem()
+   * (a brand's code) or TakeawayPromoService.reserveForOrder (takeAway's).
+   *
+   * One code field for both kinds (docs/takeaway-promos.md §2.1): the
+   * brand's promo with the code wins, otherwise a takeAway promo is looked
+   * up — at the store's currency (`place.currency` at checkout, else the
+   * store or the brand's stores).
    */
   async validate(
     userId: string | null,
@@ -63,13 +73,17 @@ export class PromoService {
     brandId: string,
     subtotalCents: number,
     now = new Date(),
+    place: { storeId?: string; currency?: string } = {},
   ): Promise<ValidPromoResultDto> {
     const promo = await this.prisma.promo.findUnique({
       where: { brandId_code: { brandId, code: code.toUpperCase() } },
       include: { _count: { select: { redemptions: true } } },
     });
 
-    if (!promo) return this.invalid('PROMO_UNKNOWN', 'Unknown promo code');
+    if (!promo) {
+      const takeaway = await this.takeaway.validate({ userId, code, subtotalCents, place: { ...place, brandId } }, now);
+      return takeaway ?? this.invalid('PROMO_UNKNOWN', 'Unknown promo code');
+    }
     // SCHEDULED is a started promo waiting for its date: it works from startsAt.
     if (promo.status !== PromoStatus.RUNNING && promo.status !== PromoStatus.SCHEDULED) {
       return this.invalid('PROMO_INACTIVE', 'Promo is not active');
@@ -125,6 +139,8 @@ export class PromoService {
       reason: null,
       reasonCode: null,
       promo: this.toDto(promo, redemptionsCount, now),
+      source: 'BRAND',
+      takeawayPromo: null,
       discountCents,
       pointsMultiplier,
     };
@@ -220,6 +236,7 @@ export class PromoService {
     this.assertDates(starts, ends);
     this.assertValidValue(dto.type, dto.value);
     if (dto.segmentStoreId) await this.assertStore(dto.brandId, dto.segmentStoreId);
+    await this.assertNotTakeawayCode(dto.code);
     const status = !dto.status || dto.status === PromoStatus.DRAFT ? PromoStatus.DRAFT : activeStatus(starts, now);
 
     try {
@@ -281,6 +298,7 @@ export class PromoService {
     const inactiveDays = dto.inactiveDays === undefined ? current.inactiveDays : dto.inactiveDays;
     const storeId = dto.segmentStoreId === undefined ? current.segmentStoreId : dto.segmentStoreId;
     if (inactiveDays !== null && storeId) await this.assertStore(current.brandId, storeId);
+    if (dto.code !== undefined && dto.code.toUpperCase() !== current.code) await this.assertNotTakeawayCode(dto.code);
     // A started promo whose start moved keeps saying the truth about it.
     const status =
       current.status === PromoStatus.SCHEDULED || current.status === PromoStatus.RUNNING
@@ -389,6 +407,13 @@ export class PromoService {
     if (!store) throw promoError(400, 'PROMO_STORE', 'That store is not one of the brand');
   }
 
+  /** A takeAway promo's code is taken for every brand: one code field serves both (docs/takeaway-promos.md §2.1). */
+  private async assertNotTakeawayCode(code: string): Promise<void> {
+    if (await this.takeaway.codeTaken(code)) {
+      throw promoError(409, 'PROMO_CODE_TAKEN', `The code ${code.toUpperCase()} is already used by a takeAway promo`);
+    }
+  }
+
   private codeTaken(err: unknown, code: string): unknown {
     if (!isUniqueViolation(err)) return err;
     return promoError(409, 'PROMO_CODE_TAKEN', `The code ${code.toUpperCase()} is already used by another promo`);
@@ -404,7 +429,16 @@ export class PromoService {
   }
 
   private invalid(reasonCode: PromoErrorCode, reason: string): ValidPromoResultDto {
-    return { valid: false, reason, reasonCode, promo: null, discountCents: 0, pointsMultiplier: 1 };
+    return {
+      valid: false,
+      reason,
+      reasonCode,
+      promo: null,
+      source: null,
+      takeawayPromo: null,
+      discountCents: 0,
+      pointsMultiplier: 1,
+    };
   }
 
   private toDto(

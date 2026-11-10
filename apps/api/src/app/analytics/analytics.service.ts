@@ -209,6 +209,7 @@ export class AnalyticsService {
         userId: true,
         subtotalCents: true,
         discountCents: true,
+        takeawayDiscountCents: true,
         giftCardCents: true,
         acceptedAt: true,
         readyAt: true,

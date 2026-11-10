@@ -177,7 +177,11 @@ export const TRANSLATIONS_EN: TranslationTree = {
       PROMO_MIN_ORDER: 'This promo code needs an order of {{amount}} or more',
       PROMO_LIMIT_REACHED: 'This promo code has run out',
       PROMO_ALREADY_USED: 'You have already used this promo code',
-      PROMO_NOT_ELIGIBLE: "This code is for customers who haven't ordered in a while",
+      /** A brand's code for inactive customers, or a welcome code that was not handed to this customer. */
+      PROMO_NOT_ELIGIBLE: "This promo code isn't available to you",
+      /** A takeAway promo in another currency than the store's. */
+      PROMO_NOT_HERE: "This promo doesn't work at this venue",
+      PROMO_WITH_POINTS: "Points can't be combined with a promo code",
       TOO_MANY_UNPAID_ORDERS: 'You already have unpaid orders — pay for or cancel one before placing a new one',
       GIFT_CARD_BALANCE_CHANGED: 'The gift card balance has just changed — check the card and try again',
       GIFT_CARD_UNKNOWN: 'There is no gift card with this code',
@@ -261,6 +265,17 @@ export const TRANSLATIONS_EN: TranslationTree = {
       /** Only for what the store's orders show customers buying together (`source: copurchase`). */
       together: 'Often bought together',
       add: 'Add {{name}}',
+    },
+    /** «Акции takeAway» and the welcome bonus on the customer's screens (docs/takeaway-promos.md §5). */
+    takeawayPromo: {
+      myBonuses: 'My bonuses',
+      welcome: 'Welcome bonus −{{percent}}%',
+      promo: 'takeAway promo −{{percent}}%',
+      /** Under the bonus in the profile; the date is the bonus's last day in the customer's calendar. */
+      anyStoreUntil: 'On an order at any venue · until {{date}}',
+      remove: 'Remove',
+      /** Under «Pay with points» while a takeAway promo is applied. */
+      noPoints: "Points can't be combined with a promo code",
     },
     qrPayment: {
       methodCard: 'By card',
@@ -1141,6 +1156,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
       reviews: 'Reviews',
       settlements: 'Brand settlements',
       settlementsOwn: 'Settlements',
+      takeawayPromos: 'takeAway promos',
     },
     staff: {
       title: 'Staff roster',
@@ -1635,6 +1651,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         acceptNow: 'Accept the order · waiting {{minutes}} min',
         autoCancelIn: 'cancelled automatically in {{time}}',
         late: '{{minutes}} min late',
+        takeawayPromo: 'takeAway promo −{{percent}}% · fully paid, takeAway covers {{compensation}}',
       },
       reminders: {
         start: 'Time to make #{{code}} for {{time}}',
@@ -1900,6 +1917,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         AGROPROMBANK_QR: 'QR (Agroprombank)',
       },
       timeline: 'Timeline',
+      takeawayDiscount: 'takeAway promo −{{percent}}%',
+      takeawayPromo:
+        'takeAway promo −{{percent}}%: the guest paid {{paid}}, takeAway covers the other {{compensation}}',
       events: {
         STATUS_CHANGED: 'Status',
         ETA_UPDATED: 'Ready time changed',
@@ -3196,7 +3216,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         createFailed: 'Could not create the promo code',
         saveFailed: 'Could not save the promo code',
         statusFailed: 'Could not change the status',
-        PROMO_CODE_TAKEN: 'Another promo of the brand already has this code — pick another one.',
+        PROMO_CODE_TAKEN: 'This code is already taken — pick another one.',
         PROMO_NOT_EDITABLE: 'This promo code can no longer change — only its status.',
         PROMO_STATUS_NOT_ALLOWED: 'It cannot move there from its current status — refresh the page.',
         PROMO_ENDED: 'The promo is past its end date — move the end date first.',
@@ -3296,6 +3316,145 @@ export const TRANSLATIONS_EN: TranslationTree = {
         alreadyActive: 'The brand is already on this plan.',
       },
     },
+    takeawayPromos: {
+      title: 'takeAway promos',
+      subtitle:
+        "Percent discounts at every venue at takeAway's expense: the guest pays less, and takeAway pays the venue the difference in the next payout.",
+      tabs: {
+        list: 'Promos',
+        debt: 'takeAway debt',
+      },
+      newPromo: '+ New promo',
+      loading: 'Loading promos…',
+      loadError: 'Could not load the promos.',
+      empty: 'No promos yet. Create the first one — a welcome bonus for new customers, for instance.',
+      welcomeBadge: 'Welcome',
+      percentValue: '−{{percent}}%',
+      budgetLine: 'spent {{spent}} · left {{left}}',
+      cols: {
+        name: 'Promo',
+        code: 'Code',
+        percent: 'Discount',
+        period: 'Period',
+        currency: 'Currency',
+        budget: 'Budget',
+        orders: 'Orders',
+        status: 'Status',
+        actions: 'Actions',
+      },
+      status: {
+        SCHEDULED: 'Scheduled',
+        ACTIVE: 'Active',
+        ENDED: 'Ended',
+        DISABLED: 'Switched off',
+        EXHAUSTED: 'Budget used up',
+      },
+      actions: {
+        edit: 'Edit',
+        report: 'Report',
+        disable: 'Switch off',
+        enable: 'Switch on',
+        enableBlocked: 'The budget is used up — raise it in the promo first.',
+      },
+      createTitle: 'New takeAway promo',
+      editTitle: 'Promo {{code}}',
+      form: {
+        name: 'Name',
+        namePlaceholder: 'Welcome bonus',
+        code: 'Promo code',
+        codeHint: "2 to 32 Latin letters, digits, _ and -, stored in capitals. It must not match a brand's promo code.",
+        percent: 'Discount, %',
+        percentHint: '1 to 99 %. Taken off the order at menu prices, variants and add-ons included.',
+        starts: 'Starts',
+        ends: 'Ends',
+        currency: 'Budget currency',
+        currencyHint: 'The promo works at every venue selling in this currency.',
+        budget: 'Budget',
+        budgetHint:
+          "How much takeAway is ready to spend on discounts. Once what is left does not cover the next order's discount, the promo switches itself off.",
+        budgetSpent: '{{spent}} already spent — the budget cannot be lower.',
+        welcome: 'Welcome',
+        welcomeHint:
+          'A new customer gets it right after signing up: a notification and a discount on the first order, valid for 7 days. Only one welcome promo can be active.',
+        frozen:
+          'The promo already has orders ({{count}}) — only the name, the end date and the budget (not below what was spent) can change. For another discount, create a new promo.',
+        create: 'Create the promo',
+        save: 'Save',
+        loadFailed: 'Could not load the promo.',
+        invalid: {
+          code: 'The code is 2 to 32 Latin letters, digits, _ and -.',
+          percent: 'The discount is a whole number from 1 to 99 %.',
+          dates: 'The end must be after the start.',
+          budget: 'The budget must be above zero.',
+        },
+      },
+      report: {
+        title: 'Report: {{name}}',
+        subtitle: '{{code}} · −{{percent}}% · {{from}} – {{to}} · {{currency}}',
+        hint: 'Orders that were paid or accepted by the venue; cancelled ones do not count.',
+        kpi: {
+          orders: 'Orders',
+          customers: 'Customers',
+          budget: 'Budget',
+          spent: 'Spent',
+          left: 'Left',
+        },
+        foot: {
+          menuTotal: 'at menu prices {{value}}',
+          compensation: 'discounts {{value}}',
+          held: 'awaiting payment {{value}}',
+        },
+        byBrand: 'By brand',
+        byStore: 'By venue',
+        byDay: 'By day (UTC)',
+        cols: {
+          brand: 'Brand',
+          store: 'Venue',
+          date: 'Date',
+          orders: 'Orders',
+          menuTotal: 'At menu prices',
+          compensation: 'takeAway compensation',
+        },
+        empty: 'No counted orders with this promo yet.',
+        loadFailed: 'Could not load the report.',
+      },
+      debt: {
+        title: "takeAway's debt to the venues",
+        hint: 'Now, all time. Accrued — discounts of counted orders; in a payout — part of a payout fixed but not transferred yet; repaid — in payouts marked paid. Debt = accrued − repaid: the money to have ready for the next payouts.',
+        kpi: 'takeAway debt · {{currency}}',
+        accrued: 'accrued {{value}}',
+        repaid: 'repaid {{value}}',
+        cols: {
+          brand: 'Brand',
+          currency: 'Currency',
+          accrued: 'Accrued',
+          inPayout: 'In a payout',
+          repaid: 'Repaid',
+          debt: 'Debt',
+        },
+        total: 'Total · {{currency}}',
+        open: 'Settlements',
+        openHint: 'Open the settlements of {{brand}}',
+        empty: 'No takeAway promo orders yet — no debt.',
+        loadFailed: 'Could not load the debt.',
+      },
+      errors: {
+        TAKEAWAY_PROMO_CODE_TAKEN:
+          "This code is already taken — by another takeAway promo or a brand's promo code. Pick another one.",
+        TAKEAWAY_PROMO_USED:
+          'The promo already has orders: only the name, the end date and the budget can change. For another discount, create a new promo.',
+        TAKEAWAY_PROMO_DATES: 'The end must be after the start.',
+        TAKEAWAY_PROMO_PERCENT: 'The discount is a whole number from 1 to 99 %.',
+        TAKEAWAY_PROMO_BUDGET: 'The budget must be above zero and not below what was already spent.',
+        TAKEAWAY_PROMO_WELCOME_TAKEN:
+          'Only one welcome promo can be active — switch the other one off or untick it first.',
+        TAKEAWAY_PROMO_STATUS: 'The promo cannot be switched like that — reload the page.',
+        budgetExhausted: "The promo's budget is used up — raise it, and the promo can be switched on.",
+        createFailed: 'Could not create the promo.',
+        saveFailed: 'Could not save the promo.',
+        statusFailed: 'Could not switch the promo.',
+      },
+    },
     settlements: {
       title: 'Brand settlements',
       titleOwn: 'Settlements',
@@ -3327,6 +3486,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         payableOwn: 'Owed to you',
         paid: 'Already paid out',
         closing: 'Balance',
+        compensation: 'takeAway promo compensation',
       },
       foot: {
         refunded: 'refunds {{value}}',
@@ -3337,6 +3497,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         pending: 'awaiting transfer {{value}}',
         opening: 'opening {{value}}',
         closingPending: 'of it fixed {{value}}',
+        compensation: 'takeAway promo discounts, repaid in the payout',
+        fullPrice: 'commission on the full price',
       },
       zeroTotal:
         'Orders at 0 (a promo code, points or a gift card covered everything): {{count}}. No money came through the platform for them, and they add nothing to the payout.',
@@ -3346,6 +3508,8 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'Payout to the brand',
         summary: '{{from}} to {{to}}: {{amount}}',
         breakdown: 'for these days: card {{card}} − commission {{commission}}',
+        breakdownCompensation:
+          'for these days: card {{card}} + takeAway promo compensation {{compensation}} − commission {{commission}}',
         carried: 'carried over from earlier periods {{amount}}',
         reference: 'Transfer number',
         comment: 'Comment',
@@ -3379,6 +3543,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         deliveryFeeCents: 'Delivery',
         capturedCents: 'Paid by card',
         refundedCents: 'Refunds',
+        takeawayCompensationCents: 'takeAway compensation',
         commissionBaseCents: 'Commission base',
         commissionCents: 'Commission',
         payableCents: 'Owed',
@@ -3400,6 +3565,7 @@ export const TRANSLATIONS_EN: TranslationTree = {
         period: 'Period',
         amount: 'Amount',
         commission: 'Commission',
+        compensation: 'takeAway compensation',
         status: 'Status',
         paidAt: 'Paid',
         reference: 'Transfer, comment',
@@ -3441,7 +3607,9 @@ export const TRANSLATIONS_EN: TranslationTree = {
         title: 'How it is calculated',
         captured:
           "“Paid by card” is the money that actually reached the platform's account for the brand's orders (staff tips excluded).",
-        base: 'Commission base = paid by card − refunds. Promo codes, points and gift cards are not in it: the platform never has that money.',
+        base: "Commission base = paid by card − refunds + takeAway promo compensation. The brand's promo codes, points and gift cards are not in it: the platform never has that money.",
+        compensation:
+          'takeAway promo compensation — the discounts of takeAway promos: takeAway pays them, not the brand, and returns them in the payout as a line of their own. The commission of such an order is taken on its full menu price, so a promo order brings the brand what a regular one does.',
         commission:
           'Commission = base × the rate in force when the store accepted the order, rounded to the cent order by order.',
         payable:
@@ -3456,6 +3624,38 @@ export const TRANSLATIONS_EN: TranslationTree = {
         PAYOUT_ALREADY_PAID: 'This payout is already marked as paid.',
         PAYOUT_PAID: 'A paid payout cannot be removed.',
         PAYOUT_NOT_LATEST: 'Only the latest payout can be removed.',
+      },
+      promos: {
+        title: 'takeAway promos',
+        hint: 'takeAway pays for the discounts of its promos: the guest pays less, and takeAway returns the difference in the next payout as a line of its own. The commission of such an order is on its full menu price.',
+        summary: {
+          orders: 'Promo orders',
+          menuTotal: 'Sales at menu prices',
+          paidByGuest: 'Paid by guests',
+          accrued: 'Compensation accrued',
+          repaid: 'Compensation repaid',
+          debt: 'takeAway owes for the next payout',
+          debtHint: 'now, all time',
+        },
+        cols: {
+          date: 'Date',
+          order: 'No.',
+          promo: 'Promo',
+          menuTotal: 'At menu prices',
+          paidByGuest: 'Guest paid',
+          compensation: 'takeAway compensation',
+          status: 'Status',
+        },
+        promoName: '{{name}} −{{percent}}%',
+        status: {
+          ACCRUED: 'accrued',
+          IN_PAYOUT: 'in a payout',
+          REPAID: 'repaid',
+          repaidOn: 'repaid {{date}}',
+        },
+        empty: 'No takeAway promo orders in this period.',
+        loading: 'Loading…',
+        loadError: 'Could not load the takeAway promos.',
       },
     },
     dateRange: {

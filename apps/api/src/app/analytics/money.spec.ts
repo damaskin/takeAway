@@ -112,6 +112,17 @@ describe('money definitions', () => {
       giftCardCents: 0,
     });
   });
+
+  it('counts a takeAway promo order at its full menu price — takeAway pays the venue the discount', () => {
+    // 100 at 10 %: the guest pays 90, takeAway owes the venue 10.
+    expect(
+      orderMoney({ subtotalCents: 10000, discountCents: 1000, takeawayDiscountCents: 1000, giftCardCents: 0 }),
+    ).toEqual({ salesCents: 10000, discountCents: 0, revenueCents: 10000, giftCardCents: 0 });
+    // Points beside a brand promo still are the business's own discount.
+    expect(
+      orderMoney({ subtotalCents: 10000, discountCents: 1500, takeawayDiscountCents: 1000, giftCardCents: 0 }),
+    ).toEqual({ salesCents: 10000, discountCents: 500, revenueCents: 9500, giftCardCents: 0 });
+  });
 });
 
 describe('productRevenue', () => {

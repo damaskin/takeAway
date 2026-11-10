@@ -1,6 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
 import 'options.dart';
+import 'takeaway_promo.dart';
 
 part 'order.g.dart';
 
@@ -274,6 +275,7 @@ class Order {
     this.cancelMoney,
     this.canReview,
     this.review,
+    this.takeawayPromo,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) => _$OrderFromJson(json);
@@ -367,6 +369,11 @@ class Order {
   /// The customer's review, once they left one.
   final OrderReview? review;
 
+  /// The takeAway promo or welcome bonus on the order: its discount is part
+  /// of [discountCents], takeAway pays it to the venue. Null without one and
+  /// from APIs that predate takeAway promos.
+  final TakeawayPromoLine? takeawayPromo;
+
   /// What the countdown runs to: the kitchen's new estimate once it accepted
   /// or started the order too late, else the promise. The same rule as the
   /// web (`orderDueAt` in `@takeaway/utils`).
@@ -438,6 +445,7 @@ class Order {
     // every status change tells; leaving that status closes it at once.
     canReview: next.isHandedOver ? canReview : false,
     review: review,
+    takeawayPromo: takeawayPromo,
   );
 }
 

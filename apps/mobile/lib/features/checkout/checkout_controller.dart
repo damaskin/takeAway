@@ -84,6 +84,8 @@ class CheckoutState {
     this.slot,
     this.promo = AppliedCode.empty,
     this.promoMultiplier = 1,
+    this.promoSource,
+    this.takeawayPromo,
     this.giftCard = AppliedCode.empty,
     this.points = const PointsState(),
     this.delivery = const DeliveryState(),
@@ -103,6 +105,14 @@ class CheckoutState {
   final DateTime? slot;
   final AppliedCode promo;
   final double promoMultiplier;
+
+  /// Whose the applied promo code is; null while none applies and from an
+  /// API that predates takeAway promos.
+  final PromoSource? promoSource;
+
+  /// The takeAway promo or welcome bonus behind the applied code.
+  final ValidatedTakeawayPromo? takeawayPromo;
+
   final AppliedCode giftCard;
   final PointsState points;
   final DeliveryState delivery;
@@ -142,12 +152,22 @@ class CheckoutState {
   /// Whether «Как можно скорее» can be chosen for [store] now.
   bool asapOffered(Store store) => store.isOpen && asapRefused == null;
 
+  /// A takeAway promo or the welcome bonus is applied: loyalty points do not
+  /// combine with it (the API refuses the order with `PROMO_WITH_POINTS`),
+  /// so «Оплатить баллами» is off and the order goes with none.
+  bool get pointsBlockedByPromo => promo.ok && promoSource == PromoSource.takeaway;
+
+  /// The applied code is the welcome bonus.
+  bool get welcomeBonusApplied => pointsBlockedByPromo && (takeawayPromo?.isWelcome ?? false);
+
   CheckoutState copyWith({
     FulfillmentType? fulfillment,
     PickupMode? mode,
     DateTime? Function()? slot,
     AppliedCode? promo,
     double? promoMultiplier,
+    PromoSource? Function()? promoSource,
+    ValidatedTakeawayPromo? Function()? takeawayPromo,
     AppliedCode? giftCard,
     PointsState? points,
     DeliveryState? delivery,
@@ -166,6 +186,8 @@ class CheckoutState {
     slot: slot == null ? this.slot : slot(),
     promo: promo ?? this.promo,
     promoMultiplier: promoMultiplier ?? this.promoMultiplier,
+    promoSource: promoSource == null ? this.promoSource : promoSource(),
+    takeawayPromo: takeawayPromo == null ? this.takeawayPromo : takeawayPromo(),
     giftCard: giftCard ?? this.giftCard,
     points: points ?? this.points,
     delivery: delivery ?? this.delivery,
@@ -208,11 +230,22 @@ class CheckoutValidation implements Exception {
 
 enum CheckoutProblem { deliveryAddress, pickSlot, outsideDeliveryArea, cardNeeded, storeClosed }
 
+/// Carts the customer took the welcome bonus off at checkout. While the app
+/// runs, checkout does not put it back on the same cart however often it is
+/// opened; the customer may still type the code in. Placing the order ends
+/// that cart's choice: the next one is offered the bonus again.
+final bonusRemovedCartsProvider = StateProvider<Set<String>>((ref) => const {});
+
 /// All of checkout's moving parts. Discounts are always the server's
 /// numbers (validated against the cart), and the total is computed with the
 /// same tax function the API settles orders with.
 class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
   TakeAwayApi get _api => ref.read(apiProvider);
+
+  /// The welcome bonus was put into the promo field once in this checkout
+  /// (or that was tried): it is never put back by itself after that.
+  bool _bonusTried = false;
+  bool _disposed = false;
 
   @override
   CheckoutState build() {
@@ -220,6 +253,9 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     // the same store (the app re-reads stores on resume) must not wipe the
     // codes and slot they already chose.
     ref.watch(activeStoreProvider.select((s) => s?.id));
+    _bonusTried = false;
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
 
     // Cards and the feature flag load independently; whichever lands last
     // decides the default, unless the customer already chose.
@@ -230,6 +266,9 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     ref
       ..listen(cardsProvider, (_, _) => repick())
       ..listen(featureFlagsProvider, (_, _) => repick())
+      // The bonus and the cart may land after checkout opened.
+      ..listen(activeBonusProvider, (_, _) => _applyBonus())
+      ..listen(activeCartProvider, (_, _) => _applyBonus())
       // The store closing (or its queue filling up) while the customer is
       // here takes «as soon as possible» away; a time later is still fine.
       ..listen(activeStoreProvider, (_, store) {
@@ -242,6 +281,8 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
     // for an order now — overnight, before the shift, a full queue — takes a
     // pre-order, so checkout starts on a time later.
     final store = ref.read(activeStoreProvider);
+    // Once the first state is in place: the welcome bonus, when there is one.
+    scheduleMicrotask(_applyBonus);
     return CheckoutState(
       cardId: _defaultCardId(),
       payMethod: PayMethodPref.read(ref.read(sharedPreferencesProvider)),
@@ -305,18 +346,54 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
 
   // ── Discounts ──────────────────────────────────────────────────────────
 
-  Future<void> applyPromo(String raw) async {
+  /// The welcome bonus goes into the promo field by itself
+  /// (docs/takeaway-promos.md, screens): with no code typed or applied, at a
+  /// store selling in the bonus's currency, on a cart the customer did not
+  /// take it off, and not over points already chosen. Once per checkout; a
+  /// refusal clears the field quietly, since the customer never asked.
+  void _applyBonus() {
+    if (_disposed || _bonusTried) return;
+    final bonus = ref.read(activeBonusProvider);
+    final store = _store;
+    final cart = _cart;
+    if (bonus == null || store == null || cart == null || cart.isEmpty) return;
+    final s = state;
+    if (s.promo.code != null || s.points.spent > 0 || s.placedOrderId != null) return;
+    if (!bonus.worksIn(store.currency)) return;
+    if (ref.read(bonusRemovedCartsProvider).contains(cart.id)) return;
+    _bonusTried = true;
+    unawaited(applyPromo(bonus.code, auto: true));
+  }
+
+  Future<void> applyPromo(String raw, {bool auto = false}) async {
     final code = raw.trim().toUpperCase();
     final store = _store;
     final cart = _cart;
     if (code.isEmpty || store == null || cart == null) return;
-    state = state.copyWith(promo: AppliedCode(code: code, busy: true));
+    state = state.copyWith(
+      promo: AppliedCode(code: code, busy: true),
+      promoSource: () => null,
+      takeawayPromo: () => null,
+    );
+    // Only the answer for the code still in the field counts: the customer
+    // may have cleared it, or typed another, while this one was checked.
+    bool current() => !_disposed && state.promo.busy && state.promo.code == code;
     try {
       final result = await _api.validatePromo({
         'code': code,
         'brandId': store.brandId,
         'subtotalCents': cart.subtotalCents,
+        // A takeAway promo works only at stores selling in its currency.
+        'storeId': store.id,
       });
+      if (!current()) return;
+      if (auto && !result.valid) {
+        state = state.copyWith(promo: AppliedCode.empty);
+        // Used or expired meanwhile: the profile stops offering it too.
+        ref.invalidate(bonusesProvider);
+        return;
+      }
+      final takeaway = result.isTakeaway;
       state = state.copyWith(
         promo: AppliedCode(
           code: code,
@@ -332,18 +409,35 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
                 ),
         ),
         promoMultiplier: result.valid ? result.pointsMultiplier : 1,
+        promoSource: () => result.valid ? result.source : null,
+        takeawayPromo: () => takeaway ? result.takeawayPromo : null,
+        // A takeAway promo and points do not combine: the points come off.
+        points: takeaway ? const PointsState() : null,
       );
       // Points are capped by what is left to pay, which the promo changed.
-      if (state.points.spent > 0) unawaited(applyPoints(state.points.spent));
+      if (!takeaway && state.points.spent > 0) unawaited(applyPoints(state.points.spent));
     } on Object catch (error) {
+      if (!current()) return;
       state = state.copyWith(
-        promo: AppliedCode(code: code, error: ApiError.from(error)),
+        promo: auto ? AppliedCode.empty : AppliedCode(code: code, error: ApiError.from(error)),
       );
     }
   }
 
   void clearPromo() {
-    state = state.copyWith(promo: AppliedCode.empty, promoMultiplier: 1);
+    final cart = _cart;
+    final bonus = ref.read(activeBonusProvider);
+    final s = state;
+    final wasBonus = s.welcomeBonusApplied || (bonus != null && s.promo.code == bonus.code.toUpperCase());
+    state = state.copyWith(
+      promo: AppliedCode.empty,
+      promoMultiplier: 1,
+      promoSource: () => null,
+      takeawayPromo: () => null,
+    );
+    if (wasBonus && cart != null) {
+      ref.read(bonusRemovedCartsProvider.notifier).update((carts) => {...carts, cart.id});
+    }
     if (state.points.spent > 0) unawaited(applyPoints(state.points.spent));
   }
 
@@ -370,7 +464,7 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
   /// pay; the server clamps to the balance and the order value.
   Future<void> applyPoints(int points) async {
     final cart = _cart;
-    if (cart == null) return;
+    if (cart == null || state.pointsBlockedByPromo) return;
     final payable = (cart.subtotalCents - (state.promo.ok ? state.promo.cents : 0)).clamp(0, 1 << 31);
     state = state.copyWith(
       points: PointsState(spent: state.points.spent, cents: state.points.cents, busy: true),
@@ -519,7 +613,12 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
             notes: _blankToNull(form.notes),
             couponCode: s.promo.ok ? s.promo.code : null,
             giftCardCode: s.giftCard.ok ? s.giftCard.code : null,
-            pointsToSpend: s.points.spent > 0 ? s.points.spent : null,
+            // With a takeAway promo, explicitly none (`PROMO_WITH_POINTS`).
+            pointsToSpend: s.pointsBlockedByPromo
+                ? 0
+                : s.points.spent > 0
+                ? s.points.spent
+                : null,
             deliveryAddressLine: delivery ? form.address.trim() : null,
             deliveryCity: delivery ? form.city.trim() : null,
             deliveryLatitude: delivery ? s.delivery.lat : null,
@@ -529,6 +628,10 @@ class CheckoutController extends AutoDisposeNotifier<CheckoutState> {
         );
         orderId = order.id;
         state = state.copyWith(placedOrderId: orderId);
+        // The cart became an order: a bonus taken off it is offered again
+        // on the next one, and a bonus used here leaves the profile.
+        ref.read(bonusRemovedCartsProvider.notifier).update((carts) => {...carts}..remove(cart.id));
+        if (s.pointsBlockedByPromo) ref.invalidate(bonusesProvider);
         unawaited(ref.read(contactPrefsProvider).remember(name: form.name, phone: form.phone));
       }
 

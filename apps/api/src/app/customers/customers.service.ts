@@ -191,6 +191,7 @@ export class CustomersService {
           status: true,
           subtotalCents: true,
           discountCents: true,
+          takeawayDiscountCents: true,
           giftCardCents: true,
           currency: true,
           store: { select: { name: true } },

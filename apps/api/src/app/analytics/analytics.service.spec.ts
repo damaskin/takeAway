@@ -384,7 +384,9 @@ describe('AnalyticsService.revenueSeries', () => {
     });
     expect(r.salesCents - r.discountCents).toBe(r.totalRevenueCents);
     const sql = sqlOf($queryRaw.mock.calls[0] as unknown[]).sql;
-    expect(sql).toContain('GREATEST(o."subtotalCents" - o."discountCents", 0)');
+    expect(sql).toContain(
+      'GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents", 0), 0)',
+    );
     expect(sql).not.toContain('o."totalCents"');
   });
 
@@ -413,7 +415,7 @@ describe('AnalyticsService.topProducts', () => {
     const sql = sqlOf($queryRaw.mock.calls[0] as unknown[]);
     // Each line's share of its order's revenue, by price, rounded down per product.
     expect(sql.sql).toContain(
-      'FLOOR(SUM(oi."totalCents"::numeric * GREATEST(o."subtotalCents" - o."discountCents", 0) / NULLIF(o."subtotalCents", 0)))',
+      'FLOOR(SUM(oi."totalCents"::numeric * GREATEST(o."subtotalCents" - GREATEST(o."discountCents" - o."takeawayDiscountCents", 0), 0) / NULLIF(o."subtotalCents", 0)))',
     );
     expect(sql.sql).toContain(`o."status" NOT IN ('CANCELLED', 'EXPIRED')`);
     expect(sql.sql).toContain('ORDER BY 4 DESC');

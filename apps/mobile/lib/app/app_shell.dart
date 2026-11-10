@@ -16,6 +16,7 @@ import '../features/catalog/catalog_providers.dart';
 import '../features/checkout/web_payment.dart';
 import '../features/inbox/inbox_providers.dart';
 import '../features/orders/orders_providers.dart';
+import '../features/profile/profile_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../shared/widgets/state_views.dart';
 import 'router.dart';
@@ -125,10 +126,13 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   /// A message came in or was read elsewhere: the badges and, when it is on
-  /// screen, the list are read again.
+  /// screen, the list are read again. So are the bonuses: the welcome push
+  /// is such a message, and a bonus runs out while the app sleeps.
   void _refreshInbox() {
     unawaited(ref.read(inboxUnreadProvider.notifier).refresh());
-    ref.invalidate(inboxProvider);
+    ref
+      ..invalidate(inboxProvider)
+      ..invalidate(bonusesProvider);
   }
 
   /// `takeaway://pay?orderId=…&status=…`: the bank is done with the

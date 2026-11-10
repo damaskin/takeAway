@@ -1,10 +1,11 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService, type Translation } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
 import type { Promo } from '@takeaway/shared-types';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { ActiveBrandService } from '../../core/brand-context/active-brand.service';
 import { AdminCatalogApi } from '../../core/catalog/admin-catalog.service';
@@ -104,5 +105,23 @@ describe('PromoFormPage', () => {
 
     fixture.componentInstance.submit();
     expect(api.update).toHaveBeenCalledWith('p1', expect.objectContaining({ type: 'FIXED', value: 500 }));
+  });
+
+  it('says a taken code is taken, whoever holds it — another brand promo or a takeAway promo', async () => {
+    const fixture = await render();
+    api.create.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { statusCode: 409, code: 'PROMO_CODE_TAKEN', message: 'Promo code already exists' },
+          }),
+      ),
+    );
+    fixture.componentInstance.form.patchValue({ code: 'hello10', label: 'Привет', value: 10 });
+    fixture.componentInstance.submit();
+    fixture.detectChanges();
+
+    expect(text(root(fixture).querySelector('[role="alert"]'))).toBe('Этот код уже занят — придумайте другой.');
   });
 });

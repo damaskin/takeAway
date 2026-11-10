@@ -10,6 +10,7 @@ import type { OAuthIdentity, OAuthIdentityService } from './services/oauth-ident
 import type { PasswordService } from './services/password.service';
 import type { TelegramService } from './services/telegram.service';
 import type { TokensService } from './services/tokens.service';
+import type { WelcomeBonusService } from '../takeaway-promos/welcome-bonus.service';
 
 interface Row {
   id: string;
@@ -108,6 +109,7 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
     hash: jest.fn(async () => 'new-hash'),
   };
   const oauth = { verify: jest.fn<Promise<OAuthIdentity>, [string, string]>() };
+  const welcome = { onCustomerCreated: jest.fn().mockResolvedValue(true) };
   const auth = new AuthService(
     prisma as unknown as PrismaService,
     {} as UsersService,
@@ -117,8 +119,9 @@ function harness(seed: Row[] = [], accounts: Account[] = []) {
     passwords as unknown as PasswordService,
     {} as KdsPinService,
     {} as KitchenDeviceService,
+    welcome as unknown as WelcomeBonusService,
   );
-  return { auth, users, accounts, prisma, tokens, oauth };
+  return { auth, users, accounts, prisma, tokens, oauth, welcome };
 }
 
 const google = (email: string | null, emailVerified = true, sub = 'g-ana'): OAuthIdentity => ({
@@ -144,6 +147,24 @@ describe('AuthService social sign-in by email', () => {
     // The address belongs to whoever proved it, and is proven on the new profile.
     expect(users.get('mallory')?.email).toBeNull();
     expect(users.get(session.user.id)).toMatchObject({ email: 'ana@gmail.com', emailVerifiedAt: expect.any(Date) });
+  });
+
+  it('gives the welcome bonus to a new profile only, keyed on the provider account', async () => {
+    const { auth, oauth, welcome } = harness(
+      [row('ana', { email: 'ana@gmail.com' })],
+      [{ provider: 'GOOGLE', providerUserId: 'g-ana', userId: 'ana' }],
+    );
+    oauth.verify.mockResolvedValueOnce(google('ana@gmail.com'));
+    await auth.loginWithOAuth('GOOGLE', 'id-token');
+    expect(welcome.onCustomerCreated).not.toHaveBeenCalled();
+
+    oauth.verify.mockResolvedValueOnce(google('bob@gmail.com', true, 'g-bob'));
+    const bob = await auth.loginWithOAuth('GOOGLE', 'id-token');
+    expect(welcome.onCustomerCreated).toHaveBeenCalledWith(bob.user.id, {
+      kind: 'oauth',
+      provider: 'GOOGLE',
+      subject: 'g-bob',
+    });
   });
 
   it('joins a profile whose address a provider has already proven', async () => {

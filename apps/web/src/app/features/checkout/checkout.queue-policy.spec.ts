@@ -11,6 +11,7 @@ import { AuthStore } from '../../core/auth/auth.store';
 import { CartService, type CartView } from '../../core/cart/cart.service';
 import { CatalogService } from '../../core/catalog/catalog.service';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
+import { BonusesService } from '../../core/loyalty/bonuses.service';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
@@ -108,6 +109,7 @@ describe('CheckoutPage under the order queue policy', () => {
         { provide: OrdersApi, useValue: { create: jest.fn() } },
         { provide: LoyaltyService, useValue: { me: () => of({ pointsBalance: 0 }) } },
         { provide: PromoService, useValue: {} },
+        { provide: BonusesService, useValue: { list: () => of([]), isDismissed: () => false } },
         { provide: DeliveryFeeApi, useValue: { quote: () => of({ feeCents: 0, distanceM: null, deliverable: true }) } },
         {
           provide: FeatureFlagsStore,

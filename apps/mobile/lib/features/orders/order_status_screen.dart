@@ -1017,7 +1017,12 @@ class _ItemsCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final brand = context.brand;
     final currency = order.currency;
-    final discount = order.discountCents;
+    // A takeAway promo or welcome bonus has its own line, «Акция takeAway
+    // −10%»; its discount is part of discountCents, so «Скидки» keeps only
+    // whatever else lowered the price.
+    final promo = order.takeawayPromo;
+    final promoCents = promo == null ? 0 : promo.discountCents.clamp(0, order.discountCents);
+    final discount = order.discountCents - promoCents;
     // Lines show their photos only when every line has one: a receipt with a
     // picture on some lines and not others reads as images gone missing, and
     // the quantities would not line up.
@@ -1088,6 +1093,7 @@ class _ItemsCard extends ConsumerWidget {
             ),
           const Divider(height: 20),
           line(l10n.subtotal, order.subtotalCents),
+          if (promo != null && promoCents > 0) line(l10n.takeawayPromoLabel(promo.percent), promoCents, minus: true),
           if (discount > 0) line(l10n.discountsTitle, discount, minus: true),
           if (order.deliveryFeeCents > 0) line(l10n.deliveryFee, order.deliveryFeeCents),
           if (order.giftCardCents > 0) line(l10n.giftCard, order.giftCardCents, minus: true),

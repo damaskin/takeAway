@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { acceptancePolicy, kitchenTimeline } from '../kitchen/kitchen-timeline';
+import { TAKEAWAY_LINE_SELECT, toTakeawayPromoLine } from '../takeaway-promos/takeaway-promo-view';
 
 /**
  * One row of the kitchen board — `GET /kds/orders` and every
@@ -21,6 +22,8 @@ export const BOARD_INCLUDE = {
     orderBy: { createdAt: 'asc' },
   },
   store: { select: { kitchenParallelism: true, baseEtaSeconds: true } },
+  // «Акция takeAway −10%»: the card says the guest paid in full (docs/takeaway-promos.md §4.4).
+  takeawayPromoRedemption: { select: TAKEAWAY_LINE_SELECT },
 } satisfies Prisma.OrderInclude;
 
 export type BoardOrder = Prisma.OrderGetPayload<{ include: typeof BOARD_INCLUDE }>;
@@ -72,6 +75,8 @@ export function toBoardRow(o: BoardOrder, plan?: BoardPlan | null) {
       productSnapshot: i.productSnapshot,
       quantity: i.quantity,
     })),
+    // Rows read before the include had it carry nothing: no promo.
+    takeawayPromo: toTakeawayPromoLine(o.takeawayPromoRedemption),
   };
 }
 

@@ -6,9 +6,11 @@ import type {
   AsapBlockedReason,
   CartChangedError,
   CategoryKind,
+  CustomerBonus,
   PickupSlot,
   StoreListItem,
   StoreMenu,
+  ValidPromoResult,
 } from '@takeaway/shared-types';
 import {
   calendarDaysFrom,
@@ -27,7 +29,13 @@ import {
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
-import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
+import {
+  asapBlockedText,
+  checkoutErrorText,
+  LocaleFormatService,
+  pickupDayLabel,
+  takeawayPromoLabel,
+} from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import { type Observable, map } from 'rxjs';
 
@@ -37,6 +45,7 @@ import { CatalogService } from '../../core/catalog/catalog.service';
 import { refreshStoresWhileVisible } from '../../core/catalog/live-store-refresh';
 import { storeSuggestions } from '../../core/catalog/store-suggestions';
 import { FeatureFlagsStore } from '../../core/config/feature-flags.store';
+import { BonusesService } from '../../core/loyalty/bonuses.service';
 import { LoyaltyService, PromoService } from '../../core/loyalty/loyalty.service';
 import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
@@ -445,9 +454,9 @@ interface Step {
                 }}</span>
               </div>
               @if (discountCents() > 0) {
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-testid="promo-line">
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)">{{
-                    'web.checkout.promoLine' | translate: { code: promoCode() }
+                    takeawayPromo() ? takeawayLabel() : ('web.checkout.promoLine' | translate: { code: promoCode() })
                   }}</span>
                   <span
                     style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
@@ -531,14 +540,18 @@ interface Step {
                   }}</span>
                 </div>
 
+                <!-- Off while a takeAway promo is applied: the two do not combine. -->
                 <div
                   class="flex items-center"
+                  [style.opacity]="takeawayPromo() ? 0.5 : 1"
                   style="gap: 8px; background: var(--color-foam); border: 1px solid var(--color-border); border-radius: var(--radius-input); padding: 4px 4px 4px 14px"
                 >
                   <span style="color: var(--color-text-tertiary)">🏆</span>
                   <input
+                    data-testid="points-input"
                     [value]="pointsInput()"
                     (input)="onPointsInput($event)"
+                    [disabled]="takeawayPromo() !== null"
                     type="number"
                     min="0"
                     [max]="pointsBalance()"
@@ -549,7 +562,7 @@ interface Step {
                     type="button"
                     data-testid="points-apply"
                     (click)="pointsSpent() > 0 ? clearPoints() : applyPoints()"
-                    [disabled]="pointsLoading()"
+                    [disabled]="pointsLoading() || takeawayPromo() !== null"
                     class="flex items-center justify-center disabled:opacity-50"
                     style="height: 36px; padding: 0 14px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
                   >
@@ -562,7 +575,13 @@ interface Step {
                     }
                   </button>
                 </div>
-                @if (pointsStatus()) {
+                @if (takeawayPromo()) {
+                  <span
+                    data-testid="points-blocked"
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-secondary)"
+                    >{{ 'common.takeawayPromo.noPoints' | translate }}</span
+                  >
+                } @else if (pointsStatus()) {
                   <span
                     style="font-family: var(--font-sans); font-size: 12px"
                     [style.color]="pointsSpent() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
@@ -584,6 +603,7 @@ interface Step {
               >
                 <span style="color: var(--color-text-tertiary)">🎟</span>
                 <input
+                  data-testid="promo-input"
                   [value]="promoInput()"
                   (input)="onPromoInput($event)"
                   type="text"
@@ -593,6 +613,7 @@ interface Step {
                 />
                 <button
                   type="button"
+                  data-testid="promo-apply"
                   (click)="applyPromo()"
                   [disabled]="!promoInput() || promoLoading()"
                   class="flex items-center justify-center disabled:opacity-50"
@@ -600,6 +621,8 @@ interface Step {
                 >
                   @if (promoLoading()) {
                     …
+                  } @else if (takeawayPromo()) {
+                    {{ 'common.takeawayPromo.remove' | translate }}
                   } @else if (discountCents() > 0) {
                     {{ 'common.clear' | translate }}
                   } @else {
@@ -609,6 +632,7 @@ interface Step {
               </div>
               @if (promoStatus()) {
                 <span
+                  data-testid="promo-status"
                   style="font-family: var(--font-sans); font-size: 12px"
                   [style.color]="discountCents() > 0 ? 'var(--color-mint)' : 'var(--color-berry)'"
                 >
@@ -861,6 +885,7 @@ export class CheckoutPage implements OnInit {
   private readonly catalog = inject(CatalogService);
   private readonly orders = inject(OrdersApi);
   private readonly promo = inject(PromoService);
+  private readonly bonusesApi = inject(BonusesService);
   private readonly loyalty = inject(LoyaltyService);
   private readonly translate = inject(TranslateService);
   private readonly fmt = inject(LocaleFormatService);
@@ -965,6 +990,20 @@ export class CheckoutPage implements OnInit {
   readonly discountCents = signal(0);
   readonly promoStatus = signal<string | null>(null);
   readonly promoLoading = signal(false);
+  /**
+   * The applied code is takeAway's own promo or the welcome bonus
+   * (`source: TAKEAWAY`): takeAway pays for it, and loyalty points cannot
+   * go on the same order. Null for a brand's code and with none applied.
+   */
+  readonly takeawayPromo = signal<NonNullable<ValidPromoResult['takeawayPromo']> | null>(null);
+  /** The customer's unused bonuses (`GET /me/bonuses`); checkout puts one on by itself. */
+  readonly bonuses = signal<CustomerBonus[]>([]);
+  /**
+   * The cart and subtotal the bonus was last put on for. A changed basket
+   * takes discounts off, and the bonus then goes back on once for the new
+   * subtotal; a refusal is not asked again for the same one.
+   */
+  private bonusTriedFor: string | null = null;
 
   // Loyalty points — the balance comes from the server and so does the
   // quote, because both are server state the client must not invent.
@@ -1132,6 +1171,16 @@ export class CheckoutPage implements OnInit {
       });
     });
 
+    // The welcome bonus goes into the promo field by itself once the cart is
+    // known and its store sells in the bonus's currency (docs/takeaway-promos.md §5).
+    effect(() => {
+      const cart = this.cart();
+      const currency = this.currency();
+      const bonus = this.bonuses().find((b) => b.currency === currency);
+      if (!cart || !bonus || !this.brandId()) return;
+      untracked(() => this.putBonusOn(bonus, cart));
+    });
+
     // The store opening, closing or filling up while the customer is here
     // turns «Сейчас» on or off without a reload.
     refreshStoresWhileVisible((event) => {
@@ -1158,6 +1207,10 @@ export class CheckoutPage implements OnInit {
       next: (account) => this.pointsBalance.set(account.pointsBalance),
       error: () => this.pointsBalance.set(0),
     });
+    // Without the answer checkout just has no bonus to put on.
+    if (this.authStore.isAuthenticated()) {
+      this.bonusesApi.list().subscribe({ next: (list) => this.bonuses.set(list), error: () => undefined });
+    }
 
     const storeSlug = this.route.snapshot.queryParamMap.get('store');
     if (storeSlug) {
@@ -1294,14 +1347,14 @@ export class CheckoutPage implements OnInit {
     this.promoInput.set((event.target as HTMLInputElement).value.trim().toUpperCase());
     if (this.promoCode() && this.promoInput() !== this.promoCode()) {
       // User started editing a confirmed code — reset the applied discount.
-      this.clearPromo();
+      this.removePromo();
     }
   }
 
   applyPromo(): void {
     // Acting as a toggle: if one is already applied, the button clears it.
-    if (this.discountCents() > 0) {
-      this.clearPromo();
+    if (this.discountCents() > 0 || this.takeawayPromo()) {
+      this.removePromo();
       return;
     }
     const code = this.promoInput();
@@ -1311,7 +1364,7 @@ export class CheckoutPage implements OnInit {
 
     this.promoLoading.set(true);
     this.promoStatus.set(null);
-    this.promo.validate(code, brandId, cart.subtotalCents).subscribe({
+    this.promo.validate(code, brandId, cart.subtotalCents, this.activeStoreId() ?? undefined).subscribe({
       next: (res) => {
         this.promoLoading.set(false);
         if (!res.valid) {
@@ -1326,6 +1379,15 @@ export class CheckoutPage implements OnInit {
         }
         this.promoCode.set(code);
         this.discountCents.set(res.discountCents);
+        if (res.source === 'TAKEAWAY' && res.takeawayPromo) {
+          // takeAway pays for this one, and loyalty points do not go on the
+          // same order (the API refuses both with PROMO_WITH_POINTS).
+          this.takeawayPromo.set(res.takeawayPromo);
+          this.clearPoints();
+          this.pointsInput.set(0);
+          this.promoStatus.set(this.takeawayLabel());
+          return;
+        }
         if (res.discountCents > 0) {
           this.promoStatus.set(
             this.translate.instant('web.checkout.promoApplied', { amount: this.price(res.discountCents) }),
@@ -1349,6 +1411,57 @@ export class CheckoutPage implements OnInit {
     this.promoCode.set(null);
     this.discountCents.set(0);
     this.promoStatus.set(null);
+    this.takeawayPromo.set(null);
+  }
+
+  /**
+   * The customer took the code off. Their welcome bonus then stays off this
+   * cart for the session — the field is emptied, and typing the code back is
+   * the way to have it again.
+   */
+  removePromo(): void {
+    const cart = this.cart();
+    const code = this.promoCode();
+    if (cart && code !== null && this.bonuses().some((b) => b.code === code)) {
+      this.bonusesApi.dismiss(cart.id);
+      this.promoInput.set('');
+    }
+    this.clearPromo();
+  }
+
+  /** «Приветственный бонус −10%», «Акция takeAway −15%» — the applied takeAway promo; empty without one. */
+  takeawayLabel(): string {
+    const promo = this.takeawayPromo();
+    return promo ? takeawayPromoLabel(promo, this.translate) : '';
+  }
+
+  /**
+   * Puts the bonus code into the promo field and checks it, unless a code is
+   * on already, the customer typed another one, or took the bonus off this
+   * cart. Once per cart and subtotal, so a refusal is not asked again.
+   */
+  private putBonusOn(bonus: CustomerBonus, cart: CartView): void {
+    if (cart.items.length === 0 || this.placedOrder() || this.promoCode() !== null || this.promoLoading()) return;
+    if (this.bonusesApi.isDismissed(cart.id)) return;
+    if (this.promoInput() && this.promoInput() !== bonus.code) return;
+    if (new Date(bonus.expiresAt).getTime() <= Date.now()) return;
+    const key = `${cart.id}:${cart.subtotalCents}`;
+    if (this.bonusTriedFor === key) return;
+    this.bonusTriedFor = key;
+    this.promoInput.set(bonus.code);
+    this.applyPromo();
+  }
+
+  /** The bonus will go back on by itself: it is the applied code, and the customer has not taken it off. */
+  private bonusComesBack(): boolean {
+    const cart = this.cart();
+    const code = this.promoCode();
+    return (
+      !!cart &&
+      code !== null &&
+      !this.bonusesApi.isDismissed(cart.id) &&
+      this.bonuses().some((b) => b.code === code && b.currency === this.currency())
+    );
   }
 
   // ── Gift card flow ──────────────────────────────────────────────────────
@@ -1394,7 +1507,8 @@ export class CheckoutPage implements OnInit {
 
   applyPoints(): void {
     const cart = this.cart();
-    if (!cart) return;
+    // Points do not combine with a takeAway promo; the control is off then.
+    if (!cart || this.takeawayPromo()) return;
     const payable = Math.max(0, cart.subtotalCents - this.discountCents());
 
     this.pointsLoading.set(true);
@@ -1609,7 +1723,8 @@ export class CheckoutPage implements OnInit {
       notes: v.notes || undefined,
       couponCode: this.promoCode() ?? undefined,
       giftCardCode: this.giftCardCode() ?? undefined,
-      pointsToSpend: this.pointsSpent() || undefined,
+      // Explicitly none with a takeAway promo: the API refuses the two together.
+      pointsToSpend: this.takeawayPromo() ? 0 : this.pointsSpent() || undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: d.addressLine.trim(),
@@ -1844,10 +1959,13 @@ export class CheckoutPage implements OnInit {
    */
   private onCartQuantityChanged(): void {
     if (this.promoCode() === null && this.pointsSpent() === 0 && this.giftCardCode() === null) return;
+    // The welcome bonus goes back on by itself for the new subtotal; only
+    // what the customer has to apply again is worth a word.
+    const reapply = this.pointsSpent() > 0 || this.giftCardCode() !== null || !this.bonusComesBack();
     this.clearPromo();
     this.clearPoints();
     this.clearGiftCard();
-    this.error.set(this.translate.instant('web.checkout.cartChangedDiscounts'));
+    if (reapply) this.error.set(this.translate.instant('web.checkout.cartChangedDiscounts'));
   }
 
   price(cents: number): string {

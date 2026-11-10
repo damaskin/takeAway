@@ -11,6 +11,7 @@ const COLUMNS: ReadonlyArray<{ key: keyof SettlementTotals; money: boolean }> = 
   { key: 'deliveryFeeCents', money: true },
   { key: 'capturedCents', money: true },
   { key: 'refundedCents', money: true },
+  { key: 'takeawayCompensationCents', money: true },
   { key: 'commissionBaseCents', money: true },
   { key: 'commissionCents', money: true },
   { key: 'payableCents', money: true },
@@ -40,8 +41,9 @@ export function settlementCsv(report: SettlementReport, label: (key: string) => 
   const cell = (value: string) =>
     value.includes(sep) || /["\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
   const line = (cells: string[]) => cells.map(cell).join(sep);
+  // `?? 0`: an API older than takeAway promos sends no compensation.
   const row = (first: string, t: SettlementTotals) =>
-    line([first, ...COLUMNS.map((c) => (c.money ? money(t[c.key]) : String(t[c.key])))]);
+    line([first, ...COLUMNS.map((c) => (c.money ? money(t[c.key] ?? 0) : String(t[c.key] ?? 0)))]);
   const rates = report.rates
     .map((r) => `${formatPercent(r.bps, russian)} % (${r.from} – ${r.to})`)
     .join(russian ? '; ' : ', ');

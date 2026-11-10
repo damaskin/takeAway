@@ -16,8 +16,8 @@ import { OrderAlertsService } from '../../core/kitchen/order-alerts.service';
 import { KitchenPage } from './kitchen.page';
 
 const STORES = [
-  { id: 's1', name: 'Качели - Балка', timezone: 'Europe/Chisinau', status: 'OPEN' },
-  { id: 's2', name: 'Центр', timezone: 'Europe/Chisinau', status: 'OPEN' },
+  { id: 's1', name: 'Качели - Балка', timezone: 'Europe/Chisinau', status: 'OPEN', currency: 'RUP' },
+  { id: 's2', name: 'Центр', timezone: 'Europe/Chisinau', status: 'OPEN', currency: 'RUP' },
 ];
 
 describe('KitchenPage — which store the board shows', () => {
@@ -172,5 +172,37 @@ describe('KitchenPage — which store the board shows', () => {
     const addons = [...el.querySelectorAll('[data-testid="ticket-addon"]')].map((a) => a.textContent?.trim());
     expect(chips).toEqual(['M', 'Горячий']);
     expect(addons).toEqual(['+ Ваниль + Солёная карамель', '+ Сахар ×2']);
+  });
+
+  it('tells the kitchen a takeAway promo order is paid in full', async () => {
+    const order = (id: string, takeawayPromo: unknown) => ({
+      id,
+      orderCode: id.toUpperCase(),
+      status: 'PAID',
+      pickupMode: 'ASAP',
+      pickupAt: new Date(Date.now() + 600_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      customerName: 'Ира',
+      notes: null,
+      takeawayPromo,
+      items: [{ quantity: 1, productSnapshot: { id: 'p1', name: 'Капучино' } }],
+    });
+    const el = await open('s1', [
+      order('a1', {
+        code: 'HELLO10',
+        name: 'Приветственный бонус',
+        percent: 10,
+        menuTotalCents: 10000,
+        discountCents: 1000,
+        paidByGuestCents: 9000,
+      }),
+      order('a2', null),
+    ]);
+
+    const lines = [...el.querySelectorAll('[data-testid="ticket-takeaway-promo"]')].map((n) =>
+      (n.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    );
+    expect(lines).toEqual(['Акция takeAway −10% · оплачено полностью, 10 руб. компенсирует takeAway']);
+    expect(el.querySelector('[data-testid="ticket-A1"] [data-testid="ticket-takeaway-promo"]')).not.toBeNull();
   });
 });

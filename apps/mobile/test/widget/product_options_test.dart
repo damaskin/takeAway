@@ -525,7 +525,7 @@ void main() {
       await openCheckout(tester);
 
       await enter(tester, 'Промокод', 'BACK10');
-      expect(find.text('Этот промокод — для тех, кто давно у нас не был'), findsOneWidget);
+      expect(find.text('Этот промокод вам недоступен'), findsOneWidget);
       expect(find.textContaining('have not ordered'), findsNothing);
 
       await enter(tester, 'Подарочная карта', 'GIFT1');

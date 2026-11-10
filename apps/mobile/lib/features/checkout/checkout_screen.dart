@@ -487,6 +487,8 @@ class _DiscountsSection extends ConsumerWidget {
     final controller = ref.read(checkoutProvider.notifier);
     final balance = ref.watch(loyaltyProvider).valueOrNull?.pointsBalance ?? 0;
     final points = state.points;
+    // A takeAway promo or the welcome bonus: no points next to it.
+    final pointsBlocked = state.pointsBlockedByPromo;
 
     return CheckoutSection(
       title: l10n.discountsTitle,
@@ -498,11 +500,15 @@ class _DiscountsSection extends ConsumerWidget {
             label: l10n.promoCode,
             icon: Icons.confirmation_number_outlined,
             state: state.promo,
-            successText: state.promo.cents > 0
-                ? l10n.promoApplied(context.money(state.promo.cents, currency))
-                : state.promoMultiplier > 1
-                ? l10n.promoPoints(state.promoMultiplier.toStringAsFixed(state.promoMultiplier % 1 == 0 ? 0 : 1))
-                : null,
+            successText:
+                promoLabel(l10n, state) ??
+                (state.promo.cents > 0
+                    ? l10n.promoApplied(context.money(state.promo.cents, currency))
+                    : state.promoMultiplier > 1
+                    ? l10n.promoPoints(state.promoMultiplier.toStringAsFixed(state.promoMultiplier % 1 == 0 ? 0 : 1))
+                    : null),
+            // The bonus came by itself; taking it off is a word, not a cross.
+            clearLabel: state.welcomeBonusApplied ? l10n.promoRemove : null,
             onApply: controller.applyPromo,
             onClear: controller.clearPromo,
           ),
@@ -520,10 +526,14 @@ class _DiscountsSection extends ConsumerWidget {
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               value: points.spent > 0,
-              onChanged: points.busy ? null : (on) => on ? controller.applyPoints(balance) : controller.clearPoints(),
+              onChanged: points.busy || pointsBlocked
+                  ? null
+                  : (on) => on ? controller.applyPoints(balance) : controller.clearPoints(),
               title: Text(l10n.payWithPoints, style: context.text.titleSmall),
               subtitle: Text(
-                points.spent > 0
+                pointsBlocked
+                    ? l10n.pointsNotWithPromo
+                    : points.spent > 0
                     ? l10n.pointsApplied(points.spent, context.money(points.cents, currency))
                     : points.message != null && points.message!.startsWith('min:')
                     ? l10n.pointsTooFew(points.min)
@@ -545,6 +555,14 @@ class _DiscountsSection extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// How an applied takeAway promo reads: «Приветственный бонус −10%» or
+/// «Акция takeAway −10%»; null for a brand's code, which reads as before.
+String? promoLabel(AppLocalizations l10n, CheckoutState state) {
+  final promo = state.takeawayPromo;
+  if (!state.pointsBlockedByPromo || promo == null) return null;
+  return promo.isWelcome ? l10n.welcomeBonusTitle(promo.percent) : l10n.takeawayPromoLabel(promo.percent);
 }
 
 class _PaymentSection extends ConsumerWidget {
@@ -798,7 +816,7 @@ class _SummarySection extends StatelessWidget {
           SummaryLine(label: l10n.subtotal, cents: cart.subtotalCents, currency: currency),
           if (state.promo.ok && state.promo.cents > 0)
             SummaryLine(
-              label: l10n.promoDiscount(state.promo.code!),
+              label: promoLabel(l10n, state) ?? l10n.promoDiscount(state.promo.code!),
               cents: state.promo.cents,
               currency: currency,
               negative: true,

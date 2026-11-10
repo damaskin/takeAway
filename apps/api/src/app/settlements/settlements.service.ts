@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma, type BrandPayout, type Currency } from '@prisma/client';
 import {
   DEFAULT_COMMISSION_BPS,
+  type BrandTakeawayPromoReport,
   type CommissionRateHistory,
   type SettlementPayout,
   type SettlementPayoutPreview,
@@ -22,6 +23,7 @@ import {
   type RatePoint,
 } from '../plans/commission-history';
 import { PrismaService } from '../prisma/prisma.service';
+import { brandPromoSummary, countedRedemptions } from '../takeaway-promos/takeaway-debt';
 import type {
   CreatePayoutDto,
   MarkPayoutPaidDto,
@@ -60,6 +62,8 @@ interface RawOrderRow {
   subtotalCents: number;
   discountCents: number;
   pointsDiscountCents: number;
+  takeawayDiscountCents: number;
+  takeawayCompensationCents: number;
   giftCardCents: number;
   deliveryFeeCents: number;
   totalCents: number;
@@ -163,6 +167,32 @@ export class SettlementsService {
         payouts: ledger,
       }),
       payouts: payouts.map(toPayoutDto),
+    };
+  }
+
+  /**
+   * The brand cabinet's «Акции takeAway» (docs/takeaway-promos.md §4.2): the
+   * brand's takeAway promo orders that counted in the period — the brand's
+   * local days, as in the report above — and what takeAway owes it now. The
+   * debt is read and summed as the platform's debt report does it
+   * (`takeaway-debt.ts`), so the two always show the same figure.
+   */
+  async takeawayPromos(
+    user: AuthenticatedUser,
+    query: SettlementQueryDto,
+    now: Date = new Date(),
+  ): Promise<BrandTakeawayPromoReport> {
+    const brandId = await this.brandFor(user, query.brandId);
+    const brand = await this.brandTerms(this.prisma, brandId);
+    const timeZone = await this.timeZoneOf(this.prisma, brandId);
+    const range = resolveDateRange({ from: query.from, to: query.to, days: query.days }, timeZone, DEFAULT_DAYS, now);
+    const currency = (query.currency as Currency | undefined) ?? brand.currency;
+    const rows = await countedRedemptions(this.prisma, { brandId, currency });
+    return {
+      brandId,
+      currency,
+      period: { from: range.from, to: range.to, timeZone },
+      ...brandPromoSummary(rows, { start: range.start, end: range.end }),
     };
   }
 
@@ -292,7 +322,7 @@ export class SettlementsService {
         if (preview.blocked === 'NOTHING_DUE' || preview.periodFrom === null) {
           throw codedConflict('PAYOUT_NOTHING_DUE', 'Nothing is owed to the brand at the end of the period');
         }
-        return tx.brandPayout.create({
+        const payout = await tx.brandPayout.create({
           data: {
             brandId: brand.id,
             currency,
@@ -303,11 +333,24 @@ export class SettlementsService {
             amountCents: preview.amountCents,
             cardNetCents: preview.cardNetCents,
             commissionCents: preview.commissionCents,
+            compensationCents: preview.compensationCents,
             reference: dto.reference ?? null,
             comment: dto.comment ?? null,
             createdById: user.id,
           },
         });
+        // The takeAway promo debts this payout settles: every counted promo
+        // order up to the period's end not in a payout yet — a late one from
+        // an earlier period included, as its money is in `amountCents` too.
+        // Removing the (pending) payout clears the stamp (FK SET NULL).
+        const owed = rows.filter((r) => r.takeawayCompensationCents > 0).map((r) => r.id);
+        if (owed.length > 0) {
+          await tx.takeawayPromoRedemption.updateMany({
+            where: { orderId: { in: owed }, payoutId: null },
+            data: { payoutId: payout.id },
+          });
+        }
+        return payout;
       },
       { timeout: 20_000 },
     );
@@ -373,6 +416,9 @@ export class SettlementsService {
              o."subtotalCents" AS "subtotalCents",
              o."discountCents" AS "discountCents",
              o."pointsDiscountCents" AS "pointsDiscountCents",
+             o."takeawayDiscountCents" AS "takeawayDiscountCents",
+             CASE WHEN o."status" IN ('CANCELLED', 'EXPIRED') THEN 0
+                  ELSE COALESCE(tr."discountCents", 0) END AS "takeawayCompensationCents",
              o."giftCardCents" AS "giftCardCents",
              o."deliveryFeeCents" AS "deliveryFeeCents",
              o."totalCents" AS "totalCents",
@@ -390,6 +436,7 @@ export class SettlementsService {
           AND p."currency" = o."currency"
           AND p."status" IN ${CAPTURED}
       ) pay ON TRUE
+      LEFT JOIN "TakeawayPromoRedemption" tr ON tr."orderId" = o."id"
       WHERE s."brandId" = ${brandId}
         AND o."currency" = ${currency}::"Currency"
         AND o."createdAt" < ${endAt}
@@ -405,6 +452,8 @@ export class SettlementsService {
       subtotalCents: r.subtotalCents,
       discountCents: r.discountCents,
       pointsDiscountCents: r.pointsDiscountCents,
+      takeawayDiscountCents: r.takeawayDiscountCents,
+      takeawayCompensationCents: r.takeawayCompensationCents,
       giftCardCents: r.giftCardCents,
       deliveryFeeCents: r.deliveryFeeCents,
       totalCents: r.totalCents,
@@ -509,13 +558,14 @@ export class SettlementsService {
             startOfDay(plan.periodFrom, input.timeZone),
             input.end,
           )
-        : { cardNetCents: 0, commissionCents: 0 };
+        : { cardNetCents: 0, compensationCents: 0, commissionCents: 0 };
     return {
       periodFrom: plan.periodFrom,
       periodTo: input.to,
       amountCents: plan.amountCents,
       cardNetCents: figures.cardNetCents,
       commissionCents: figures.commissionCents,
+      compensationCents: figures.compensationCents,
       blocked: plan.blocked,
       lastSettledDay: last?.periodTo ?? null,
     };
@@ -573,6 +623,7 @@ function toPayoutDto(p: BrandPayout): SettlementPayout {
     amountCents: p.amountCents,
     cardNetCents: p.cardNetCents,
     commissionCents: p.commissionCents,
+    compensationCents: p.compensationCents,
     status: p.status,
     paidAt: p.paidAt?.toISOString() ?? null,
     reference: p.reference,

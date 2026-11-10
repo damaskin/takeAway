@@ -13,6 +13,7 @@ import { PaymentHoldsModule } from '../payments/agroprombank/payment-holds.modul
 import { PromoModule } from '../promo/promo.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { ReferralsModule } from '../referrals/referrals.module';
+import { TakeawayPromosModule } from '../takeaway-promos/takeaway-promos.module';
 import { OrderExpiryService } from './order-expiry.service';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
@@ -22,6 +23,7 @@ import { QueueRecomputeService } from './queue-recompute.service';
   imports: [
     RealtimeModule,
     PromoModule,
+    TakeawayPromosModule,
     LoyaltyModule,
     AuthModule,
     NotificationsModule,

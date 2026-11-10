@@ -14,6 +14,7 @@ import { OVERVIEW_STYLES } from '../../shared/overview/overview.styles';
 import { settlementCsv } from './settlement-csv';
 import { type DayRange, SETTLEMENT_PRESETS, type SettlementPreset, presetRange, todayIn } from './settlement-periods';
 import { SettlementRatesComponent } from './settlement-rates.component';
+import { SettlementTakeawayPromosComponent } from './settlement-takeaway-promos.component';
 
 /** Columns of the daily table, in order; the first is the day. */
 const DAY_COLUMNS: ReadonlyArray<keyof SettlementTotals> = [
@@ -25,6 +26,7 @@ const DAY_COLUMNS: ReadonlyArray<keyof SettlementTotals> = [
   'deliveryFeeCents',
   'capturedCents',
   'refundedCents',
+  'takeawayCompensationCents',
   'commissionBaseCents',
   'commissionCents',
   'payableCents',
@@ -51,7 +53,7 @@ const ERROR_CODES = {
 @Component({
   selector: 'app-settlements',
   standalone: true,
-  imports: [TranslatePipe, KpiCardComponent, SettlementRatesComponent],
+  imports: [TranslatePipe, KpiCardComponent, SettlementRatesComponent, SettlementTakeawayPromosComponent],
   template: `
     <section class="ov" [attr.aria-busy]="loading()">
       <header class="st-head">
@@ -162,6 +164,16 @@ const ERROR_CODES = {
             [footLeft]="'admin.settlements.foot.refunded' | translate: { value: money(r.totals.refundedCents) }"
             [footRight]="'admin.settlements.foot.cardOrders' | translate: { count: r.totals.cardOrders }"
           />
+          <!-- What takeAway owes for its promo orders: paid on top of the card money; the commission is on the full price. -->
+          @if (r.totals.takeawayCompensationCents) {
+            <app-kpi-card
+              data-testid="settlement-compensation"
+              [label]="'admin.settlements.kpi.compensation' | translate"
+              [value]="money(r.totals.takeawayCompensationCents)"
+              [footLeft]="'admin.settlements.foot.compensation' | translate"
+              [footRight]="'admin.settlements.foot.fullPrice' | translate"
+            />
+          }
           <app-kpi-card
             [label]="'admin.settlements.kpi.commission' | translate: { rate: rateLabel() }"
             [value]="money(r.totals.commissionCents)"
@@ -244,12 +256,24 @@ const ERROR_CODES = {
                         }
                 }}
               </p>
-              <p class="dash-hint">
-                {{
-                  'admin.settlements.payout.breakdown'
-                    | translate
-                      : { card: money(r.nextPayout.cardNetCents), commission: money(r.nextPayout.commissionCents) }
-                }}
+              <p class="dash-hint" data-testid="payout-breakdown">
+                @if (r.nextPayout.compensationCents) {
+                  {{
+                    'admin.settlements.payout.breakdownCompensation'
+                      | translate
+                        : {
+                            card: money(r.nextPayout.cardNetCents),
+                            compensation: money(r.nextPayout.compensationCents),
+                            commission: money(r.nextPayout.commissionCents),
+                          }
+                  }}
+                } @else {
+                  {{
+                    'admin.settlements.payout.breakdown'
+                      | translate
+                        : { card: money(r.nextPayout.cardNetCents), commission: money(r.nextPayout.commissionCents) }
+                  }}
+                }
                 @if (carried(); as c) {
                   · {{ 'admin.settlements.payout.carried' | translate: { amount: money(c) } }}
                 }
@@ -339,6 +363,7 @@ const ERROR_CODES = {
                     <th scope="col">{{ 'admin.settlements.payouts.period' | translate }}</th>
                     <th scope="col">{{ 'admin.settlements.payouts.amount' | translate }}</th>
                     <th scope="col">{{ 'admin.settlements.payouts.commission' | translate }}</th>
+                    <th scope="col">{{ 'admin.settlements.payouts.compensation' | translate }}</th>
                     <th scope="col">{{ 'admin.settlements.payouts.status' | translate }}</th>
                     <th scope="col">{{ 'admin.settlements.payouts.paidAt' | translate }}</th>
                     <th scope="col">{{ 'admin.settlements.payouts.reference' | translate }}</th>
@@ -355,6 +380,7 @@ const ERROR_CODES = {
                       <td>{{ day(p.periodFrom) }} – {{ day(p.periodTo) }}</td>
                       <td>{{ money(p.amountCents) }}</td>
                       <td>{{ money(p.commissionCents) }}</td>
+                      <td>{{ money(p.compensationCents) }}</td>
                       <td>
                         <span class="st-status" [attr.data-status]="p.status">{{
                           'admin.settlements.payouts.statuses.' + p.status | translate
@@ -403,6 +429,8 @@ const ERROR_CODES = {
           }
         </article>
 
+        <app-settlement-takeaway-promos [report]="r" />
+
         <app-settlement-rates [brandId]="brandId()" [canEdit]="isPlatformAdmin()" (changed)="reload()" />
 
         <article class="dash-card">
@@ -412,6 +440,7 @@ const ERROR_CODES = {
           <ul class="st-formula">
             <li>{{ 'admin.settlements.formula.captured' | translate }}</li>
             <li>{{ 'admin.settlements.formula.base' | translate }}</li>
+            <li>{{ 'admin.settlements.formula.compensation' | translate }}</li>
             <li>{{ 'admin.settlements.formula.commission' | translate }}</li>
             <li>{{ 'admin.settlements.formula.payable' | translate }}</li>
             <li>{{ 'admin.settlements.formula.balance' | translate }}</li>
@@ -673,7 +702,8 @@ export class SettlementsPage {
   readonly carried = computed(() => {
     const next = this.report()?.nextPayout;
     if (!next) return 0;
-    return next.amountCents - (next.cardNetCents - next.commissionCents);
+    // An API older than takeAway promos sends no compensation.
+    return next.amountCents - (next.cardNetCents + (next.compensationCents ?? 0) - next.commissionCents);
   });
 
   constructor() {
@@ -723,7 +753,8 @@ export class SettlementsPage {
     return [payout.reference, payout.comment].filter((v): v is string => !!v).join(' · ') || '—';
   }
 
-  cell(column: keyof SettlementTotals, value: number): string {
+  /** A figure of the daily table; a column an older API does not send reads «—». */
+  cell(column: keyof SettlementTotals, value: number | undefined): string {
     return column === 'orders' ? String(value) : this.money(value);
   }
 

@@ -216,7 +216,12 @@ import {
           @if (o.discountCents > 0) {
             <div class="flex items-center justify-between">
               <span style="font-size: 13px; color: var(--color-mint)"
-                >{{ 'common.discount' | translate }} {{ o.couponCode }}</span
+                >{{
+                  o.takeawayPromo
+                    ? ('admin.orderDetail.takeawayDiscount' | translate: { percent: o.takeawayPromo.percent })
+                    : ('common.discount' | translate)
+                }}
+                {{ o.couponCode }}</span
               >
               <span style="font-size: 13px; color: var(--color-mint)">− {{ money(o.discountCents, o.currency) }}</span>
             </div>
@@ -253,6 +258,23 @@ import {
               money(o.totalCents, o.currency)
             }}</span>
           </div>
+          <!-- takeAway pays the promo's discount: the order is fully paid, nothing to collect from the guest. -->
+          @if (o.takeawayPromo; as promo) {
+            <p
+              data-testid="order-takeaway-promo"
+              style="margin: 4px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--color-caramel-light); font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-espresso)"
+            >
+              {{
+                'admin.orderDetail.takeawayPromo'
+                  | translate
+                    : {
+                        percent: promo.percent,
+                        paid: money(promo.paidByGuestCents, o.currency),
+                        compensation: money(promo.discountCents, o.currency),
+                      }
+              }}
+            </p>
+          }
           @if (paidWith(); as provider) {
             <div class="flex items-center justify-between">
               <span style="font-size: 13px; color: var(--color-text-secondary)">{{

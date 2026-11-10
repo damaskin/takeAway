@@ -7,6 +7,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 
 import { MailModule } from '../mail/mail.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { TakeawayPromosModule } from '../takeaway-promos/takeaway-promos.module';
 import { TelegramBotModule } from '../telegram-bot/telegram-bot.module';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
@@ -44,6 +45,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     RealtimeModule,
     // «Забыли пароль?» sends the link to the Telegram chat staff linked too.
     TelegramBotModule,
+    // A new customer gets the welcome bonus (docs/takeaway-promos.md §2.9).
+    TakeawayPromosModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

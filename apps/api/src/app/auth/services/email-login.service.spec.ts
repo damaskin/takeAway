@@ -9,6 +9,7 @@ import { EmailCodeService } from './email-code.service';
 import { EmailLoginService } from './email-login.service';
 import { MemoryRedis } from './testing/memory-redis';
 import type { TokensService } from './tokens.service';
+import type { WelcomeBonusService } from '../../takeaway-promos/welcome-bonus.service';
 
 interface Row {
   id: string;
@@ -68,6 +69,7 @@ function setup(seed: Row[] = [], options: { smtp?: boolean; accepts?: boolean } 
     })),
   };
   const auth = { toAuthUser: (u: Row) => ({ id: u.id, email: u.email, role: u.role, locale: u.locale }) };
+  const welcome = { onCustomerCreated: jest.fn().mockResolvedValue(true) };
   const redis = new MemoryRedis();
   const codes = new EmailCodeService(redis.asService(), {
     get: (key: string) => (key === 'JWT_ACCESS_SECRET' ? 'test-access-secret' : undefined),
@@ -78,6 +80,7 @@ function setup(seed: Row[] = [], options: { smtp?: boolean; accepts?: boolean } 
     codes,
     tokens as unknown as TokensService,
     auth as unknown as AuthService,
+    welcome as unknown as WelcomeBonusService,
   );
 
   /** The six digits from the last letter. */
@@ -91,7 +94,7 @@ function setup(seed: Row[] = [], options: { smtp?: boolean; accepts?: boolean } 
     await service.start(email, locale);
     return lastCode();
   };
-  return { service, users, prisma, mail, letters, tokens, codeFor };
+  return { service, users, prisma, mail, letters, tokens, codeFor, welcome };
 }
 
 async function failure(promise: Promise<unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -165,7 +168,7 @@ describe('EmailLoginService', () => {
 
   describe('verify', () => {
     it('opens a new customer with a proven address and the language the code was asked in', async () => {
-      const { service, users, tokens, codeFor } = setup();
+      const { service, users, tokens, codeFor, welcome } = setup();
       const code = await codeFor('Ivan@Mail.ru', 'ru');
 
       const session = await service.verify('ivan@mail.RU', code);
@@ -179,10 +182,15 @@ describe('EmailLoginService', () => {
       expect(created).toMatchObject({ email: 'ivan@mail.ru', role: Role.CUSTOMER, locale: 'RU' });
       expect(created?.emailVerifiedAt).toBeInstanceOf(Date);
       expect(tokens.issue).toHaveBeenCalledWith(session.user.id, 'device-1');
+      // A new customer: the welcome bonus, keyed on the address (docs/takeaway-promos.md §2.9).
+      expect(welcome.onCustomerCreated).toHaveBeenCalledWith(session.user.id, {
+        kind: 'email',
+        address: 'ivan@mail.ru',
+      });
     });
 
     it('signs a customer whose address is proven into their own profile', async () => {
-      const { service, users, prisma, codeFor } = setup([
+      const { service, users, prisma, codeFor, welcome } = setup([
         row('ana', { email: 'ana@mail.ru', emailVerifiedAt: new Date('2026-09-01') }),
       ]);
 
@@ -191,6 +199,7 @@ describe('EmailLoginService', () => {
       expect(session.user.id).toBe('ana');
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(users.size).toBe(1);
+      expect(welcome.onCustomerCreated).not.toHaveBeenCalled();
     });
 
     it('does not walk into a profile that only typed the address in', async () => {
