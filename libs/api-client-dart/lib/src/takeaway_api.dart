@@ -255,6 +255,22 @@ abstract class TakeAwayApi {
   @POST('/payments/agroprombank-web/start')
   Future<StartWebPaymentResult> startWebPayment(@Body() StartWebPaymentRequest body);
 
+  // ── Payments: Agroprombank «Мобильный платёж» (QR in the bank's app) ───
+
+  /// Issues the order's QR invoice, or answers the one still pending (the
+  /// same code) or the order's payment once it is paid. Idempotent.
+  @POST('/payments/agroprombank-qr/start')
+  Future<QrPayment> startQrPayment(@Body() StartQrPaymentRequest body);
+
+  /// The invoice as it stands; the customer's screen polls it.
+  @GET('/payments/agroprombank-qr/{paymentId}')
+  Future<QrPayment> qrPayment(@Path('paymentId') String paymentId);
+
+  /// Closes an unpaid invoice — the customer left the QR screen on purpose.
+  /// The order stays, to be paid again.
+  @POST('/payments/agroprombank-qr/{paymentId}/cancel')
+  Future<QrPayment> cancelQrPayment(@Path('paymentId') String paymentId);
+
   // ── Devices (push tokens) ──────────────────────────────────────────────
 
   @POST('/devices')

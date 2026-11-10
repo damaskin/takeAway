@@ -143,3 +143,96 @@ class StartWebPaymentResult {
 
   bool get alreadySettled => page == null;
 }
+
+/// Where a QR invoice stands (Agroprombank «Мобильный платёж»,
+/// `AgroprombankQrPaymentStatus` in `@takeaway/shared-types`).
+@JsonEnum(alwaysCreate: true)
+enum QrPaymentStatus {
+  /// Waiting for the customer to pay in the bank's app.
+  @JsonValue('PENDING')
+  pending,
+
+  /// The money is on the order: given back if the kitchen turns it down,
+  /// kept once it accepts.
+  @JsonValue('PAID')
+  paid,
+
+  /// The invoice lapsed or was closed unpaid; a new one can be issued.
+  @JsonValue('EXPIRED')
+  expired,
+
+  /// Paid, then given back.
+  @JsonValue('REFUNDED')
+  refunded,
+
+  /// The bank would not issue the invoice.
+  @JsonValue('FAILED')
+  failed,
+
+  /// A status this build does not know.
+  unknown,
+}
+
+/// What to show while a QR invoice waits to be paid.
+@JsonSerializable(createToJson: false)
+class QrPaymentCode {
+  const QrPaymentCode({required this.code, required this.expiresAt, this.appLink});
+
+  factory QrPaymentCode.fromJson(Map<String, dynamic> json) => _$QrPaymentCodeFromJson(json);
+
+  /// The text to render as the QR code.
+  final String code;
+
+  /// Opens the bank's app with this invoice on the same phone; null when the
+  /// server has no such link, and then the code can only be scanned.
+  final String? appLink;
+
+  /// When the invoice stops being offered.
+  final DateTime expiresAt;
+
+  /// [appLink] as a link the phone can open; null when there is none.
+  Uri? get appLinkUri {
+    final raw = appLink?.trim() ?? '';
+    final uri = raw.isEmpty ? null : Uri.tryParse(raw);
+    return uri != null && uri.hasScheme ? uri : null;
+  }
+}
+
+/// A QR invoice for an order, as the customer sees it — the answer of
+/// `POST /payments/agroprombank-qr/start`, `GET /payments/agroprombank-qr/{id}`
+/// and `POST /payments/agroprombank-qr/{id}/cancel`
+/// (`AgroprombankQrPaymentDto`).
+@JsonSerializable(createToJson: false)
+class QrPayment {
+  const QrPayment({
+    required this.paymentId,
+    required this.orderId,
+    required this.status,
+    required this.amountCents,
+    this.currency = 'RUP',
+    this.qr,
+  });
+
+  factory QrPayment.fromJson(Map<String, dynamic> json) => _$QrPaymentFromJson(json);
+
+  final String paymentId;
+  final String orderId;
+  @JsonKey(unknownEnumValue: QrPaymentStatus.unknown)
+  final QrPaymentStatus status;
+  final int amountCents;
+  @JsonKey(defaultValue: 'RUP')
+  final String currency;
+
+  /// While [status] is pending: the code to show. Null otherwise.
+  final QrPaymentCode? qr;
+}
+
+/// Body of `POST /payments/agroprombank-qr/start`.
+@JsonSerializable(createFactory: false)
+class StartQrPaymentRequest {
+  const StartQrPaymentRequest({required this.orderId});
+
+  final String orderId;
+
+  Map<String, dynamic> toJson() => _$StartQrPaymentRequestToJson(this);
+}

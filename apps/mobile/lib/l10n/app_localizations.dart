@@ -1340,6 +1340,138 @@ abstract class AppLocalizations {
   /// **'The payment did not go through. You can try again.'**
   String get webPaymentFailed;
 
+  /// Checkout, «Оплата»: pay by card (a bound card or the bank's page). Shown when QR is offered too.
+  ///
+  /// In en, this message translates to:
+  /// **'By card'**
+  String get payMethodCard;
+
+  /// Checkout, «Оплата»: pay by QR code in Agroprombank's app («Мобильный платёж»).
+  ///
+  /// In en, this message translates to:
+  /// **'By QR in the bank\'s app'**
+  String get payMethodQr;
+
+  /// No description provided for @payMethodQrSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Agroprombank\'s app'**
+  String get payMethodQrSubtitle;
+
+  /// Checkout, QR chosen: what happens next. The money is taken at once and given back if the store turns the order down.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll show a QR code to pay in Agroprombank\'s app. If the store does not accept the order, the money is returned.'**
+  String get qrPaymentHint;
+
+  /// Title of the QR payment screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay by QR'**
+  String get qrPayTitle;
+
+  /// No description provided for @qrPayToPay.
+  ///
+  /// In en, this message translates to:
+  /// **'To pay'**
+  String get qrPayToPay;
+
+  /// QR payment screen, under the code. «Оплата по QR» is the name of the section in the bank's app and stays in Russian.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan the code in Agroprombank\'s app («Оплата по QR» section)'**
+  String get qrPayScanHint;
+
+  /// QR payment screen, when the bank's app cannot be opened from this phone: the code can be scanned from a second phone.
+  ///
+  /// In en, this message translates to:
+  /// **'You can also scan it from another device.'**
+  String get qrPayOtherDevice;
+
+  /// No description provided for @qrPayOpenBankApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Open the bank app'**
+  String get qrPayOpenBankApp;
+
+  /// No description provided for @qrPayBankAppNotOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t open the bank app. Scan the code in it instead.'**
+  String get qrPayBankAppNotOpened;
+
+  /// QR payment screen: countdown to the invoice's expiry, time as m:ss.
+  ///
+  /// In en, this message translates to:
+  /// **'The code is valid for {time}'**
+  String qrPayValidFor(String time);
+
+  /// No description provided for @qrPayWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the payment…'**
+  String get qrPayWaiting;
+
+  /// QR payment screen: closes the invoice. The order stays, unpaid.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get qrPayCancel;
+
+  /// No description provided for @qrPayExpiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The invoice has expired'**
+  String get qrPayExpiredTitle;
+
+  /// No description provided for @qrPayExpiredBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This QR code no longer works. Get a new one to pay for the order.'**
+  String get qrPayExpiredBody;
+
+  /// No description provided for @qrPayNewCode.
+  ///
+  /// In en, this message translates to:
+  /// **'New QR code'**
+  String get qrPayNewCode;
+
+  /// No description provided for @qrPayByCard.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay by card'**
+  String get qrPayByCard;
+
+  /// No description provided for @qrPayFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t get a QR code'**
+  String get qrPayFailedTitle;
+
+  /// No description provided for @qrPayFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The bank did not issue the invoice. Try again in a moment.'**
+  String get qrPayFailedBody;
+
+  /// No description provided for @qrPayToOrder.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to the order'**
+  String get qrPayToOrder;
+
+  /// Order screen: pay an unpaid order by QR in the bank's app.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay by QR'**
+  String get payByQr;
+
+  /// No description provided for @payByQrAmount.
+  ///
+  /// In en, this message translates to:
+  /// **'Pay {total} by QR'**
+  String payByQrAmount(String total);
+
   /// No description provided for @summaryTitle.
   ///
   /// In en, this message translates to:
@@ -1742,6 +1874,54 @@ abstract class AppLocalizations {
   /// **'Awaiting payment'**
   String get paymentStateAwaiting;
 
+  /// Order screen, payment line: paid by QR in the bank's app, before the store accepts the order.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid by QR'**
+  String get paymentStatePaidByQr;
+
+  /// No description provided for @paymentStatePaidByQrHint.
+  ///
+  /// In en, this message translates to:
+  /// **'If the store does not accept the order, the money is returned.'**
+  String get paymentStatePaidByQrHint;
+
+  /// No description provided for @paymentStateAwaitingQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for the QR payment'**
+  String get paymentStateAwaitingQr;
+
+  /// No description provided for @paymentStateQrNotPaid.
+  ///
+  /// In en, this message translates to:
+  /// **'The QR invoice was not paid'**
+  String get paymentStateQrNotPaid;
+
+  /// No description provided for @orderExpiredNotAcceptedRefundedQr.
+  ///
+  /// In en, this message translates to:
+  /// **'The store did not confirm the order — the money has been returned'**
+  String get orderExpiredNotAcceptedRefundedQr;
+
+  /// Order screen, cancelled order paid by QR: the payment was reversed (cancelMoney REFUNDED).
+  ///
+  /// In en, this message translates to:
+  /// **'The money paid by QR has been returned.'**
+  String get cancelMoneyRefundedQr;
+
+  /// No description provided for @cancelMoneyNotChargedQr.
+  ///
+  /// In en, this message translates to:
+  /// **'No money was taken.'**
+  String get cancelMoneyNotChargedQr;
+
+  /// No description provided for @cancelMoneyReturnPendingQr.
+  ///
+  /// In en, this message translates to:
+  /// **'The money will be returned automatically.'**
+  String get cancelMoneyReturnPendingQr;
+
   /// Over the order number on the order screen; the kitchen hands the order over by it.
   ///
   /// In en, this message translates to:
@@ -1783,6 +1963,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.'**
   String get cancelOrderBody;
+
+  /// No description provided for @cancelOrderBodyQr.
+  ///
+  /// In en, this message translates to:
+  /// **'The store has not accepted it yet. The money paid by QR will be returned.'**
+  String get cancelOrderBodyQr;
 
   /// In place of «Cancel order» once the kitchen accepted the order or the money was taken; also the error when a cancel comes too late.
   ///
@@ -3157,6 +3343,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You already have unpaid orders — pay for or cancel one before placing a new one'**
   String get errTooManyUnpaidOrders;
+
+  /// QR payment refused: switched off on the server (QR_PAYMENT_DISABLED).
+  ///
+  /// In en, this message translates to:
+  /// **'Payment by QR is not available right now'**
+  String get errQrPaymentDisabled;
+
+  /// QR payment refused: the store sells in a currency the QR payment does not take (QR_CURRENCY_UNSUPPORTED).
+  ///
+  /// In en, this message translates to:
+  /// **'This store can\'t be paid by QR'**
+  String get errQrCurrencyUnsupported;
+
+  /// Payment refused: the order is cancelled, expired or has nothing to pay (ORDER_NOT_PAYABLE).
+  ///
+  /// In en, this message translates to:
+  /// **'This order can no longer be paid'**
+  String get errOrderNotPayable;
+
+  /// QR payment: the bank could not be reached (QR_BANK_UNAVAILABLE, 503).
+  ///
+  /// In en, this message translates to:
+  /// **'The bank isn\'t answering. Try again in a minute.'**
+  String get errQrBankUnavailable;
 
   /// Hidden tester sheet (long press on the logo): which backend the app talks to.
   ///

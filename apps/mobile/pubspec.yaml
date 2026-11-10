@@ -50,6 +50,9 @@ dependencies:
   google_fonts: ^8.2.1
   intl: ^0.20.2
   url_launcher: ^6.3.2
+  # The QR code of Agroprombank's «Мобильный платёж». Pinned: 4.1.0 is the
+  # current stable (pure Dart painting over package:qr), bump by hand.
+  qr_flutter: 4.1.0
   share_plus: ^13.3.0
   package_info_plus: ^10.2.1
   app_links: ^7.0.0
@@ -62,6 +65,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   mocktail: ^1.0.5
+  # Fake time for the QR payment's polling (flutter_test already pulls it in).
+  fake_async: ^1.3.3
 
 flutter:
   uses-material-design: true

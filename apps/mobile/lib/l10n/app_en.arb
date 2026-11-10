@@ -562,6 +562,67 @@
   "@webPaymentFailed": {
     "description": "Snack when the bank sends the customer back with a failed payment."
   },
+  "payMethodCard": "By card",
+  "@payMethodCard": {
+    "description": "Checkout, «Оплата»: pay by card (a bound card or the bank's page). Shown when QR is offered too."
+  },
+  "payMethodQr": "By QR in the bank's app",
+  "@payMethodQr": {
+    "description": "Checkout, «Оплата»: pay by QR code in Agroprombank's app («Мобильный платёж»)."
+  },
+  "payMethodQrSubtitle": "Agroprombank's app",
+  "qrPaymentHint": "We'll show a QR code to pay in Agroprombank's app. If the store does not accept the order, the money is returned.",
+  "@qrPaymentHint": {
+    "description": "Checkout, QR chosen: what happens next. The money is taken at once and given back if the store turns the order down."
+  },
+  "qrPayTitle": "Pay by QR",
+  "@qrPayTitle": {
+    "description": "Title of the QR payment screen."
+  },
+  "qrPayToPay": "To pay",
+  "qrPayScanHint": "Scan the code in Agroprombank's app («Оплата по QR» section)",
+  "@qrPayScanHint": {
+    "description": "QR payment screen, under the code. «Оплата по QR» is the name of the section in the bank's app and stays in Russian."
+  },
+  "qrPayOtherDevice": "You can also scan it from another device.",
+  "@qrPayOtherDevice": {
+    "description": "QR payment screen, when the bank's app cannot be opened from this phone: the code can be scanned from a second phone."
+  },
+  "qrPayOpenBankApp": "Open the bank app",
+  "qrPayBankAppNotOpened": "Couldn't open the bank app. Scan the code in it instead.",
+  "qrPayValidFor": "The code is valid for {time}",
+  "@qrPayValidFor": {
+    "description": "QR payment screen: countdown to the invoice's expiry, time as m:ss.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "qrPayWaiting": "Waiting for the payment…",
+  "qrPayCancel": "Cancel",
+  "@qrPayCancel": {
+    "description": "QR payment screen: closes the invoice. The order stays, unpaid."
+  },
+  "qrPayExpiredTitle": "The invoice has expired",
+  "qrPayExpiredBody": "This QR code no longer works. Get a new one to pay for the order.",
+  "qrPayNewCode": "New QR code",
+  "qrPayByCard": "Pay by card",
+  "qrPayFailedTitle": "Couldn't get a QR code",
+  "qrPayFailedBody": "The bank did not issue the invoice. Try again in a moment.",
+  "qrPayToOrder": "Back to the order",
+  "payByQr": "Pay by QR",
+  "@payByQr": {
+    "description": "Order screen: pay an unpaid order by QR in the bank's app."
+  },
+  "payByQrAmount": "Pay {total} by QR",
+  "@payByQrAmount": {
+    "placeholders": {
+      "total": {
+        "type": "String"
+      }
+    }
+  },
   "summaryTitle": "Summary",
   "placeOrderPay": "Pay {total}",
   "@placeOrderPay": {
@@ -728,6 +789,20 @@
   },
   "paymentStateAtCounter": "Paying at the counter",
   "paymentStateAwaiting": "Awaiting payment",
+  "paymentStatePaidByQr": "Paid by QR",
+  "@paymentStatePaidByQr": {
+    "description": "Order screen, payment line: paid by QR in the bank's app, before the store accepts the order."
+  },
+  "paymentStatePaidByQrHint": "If the store does not accept the order, the money is returned.",
+  "paymentStateAwaitingQr": "Waiting for the QR payment",
+  "paymentStateQrNotPaid": "The QR invoice was not paid",
+  "orderExpiredNotAcceptedRefundedQr": "The store did not confirm the order — the money has been returned",
+  "cancelMoneyRefundedQr": "The money paid by QR has been returned.",
+  "@cancelMoneyRefundedQr": {
+    "description": "Order screen, cancelled order paid by QR: the payment was reversed (cancelMoney REFUNDED)."
+  },
+  "cancelMoneyNotChargedQr": "No money was taken.",
+  "cancelMoneyReturnPendingQr": "The money will be returned automatically.",
   "pickupCode": "Your code",
   "@pickupCode": {
     "description": "Over the order number on the order screen; the kitchen hands the order over by it."
@@ -738,6 +813,7 @@
   "cancelOrder": "Cancel order",
   "cancelOrderTitle": "Cancel this order?",
   "cancelOrderBody": "The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.",
+  "cancelOrderBodyQr": "The store has not accepted it yet. The money paid by QR will be returned.",
   "cancelByPhone": "Your order is already being made — call the store to cancel it",
   "@cancelByPhone": {
     "description": "In place of «Cancel order» once the kitchen accepted the order or the money was taken; also the error when a cancel comes too late."
@@ -1167,6 +1243,22 @@
   "errTooManyUnpaidOrders": "You already have unpaid orders — pay for or cancel one before placing a new one",
   "@errTooManyUnpaidOrders": {
     "description": "Checkout refused: the customer already has the maximum number of unpaid orders (TOO_MANY_UNPAID_ORDERS)."
+  },
+  "errQrPaymentDisabled": "Payment by QR is not available right now",
+  "@errQrPaymentDisabled": {
+    "description": "QR payment refused: switched off on the server (QR_PAYMENT_DISABLED)."
+  },
+  "errQrCurrencyUnsupported": "This store can't be paid by QR",
+  "@errQrCurrencyUnsupported": {
+    "description": "QR payment refused: the store sells in a currency the QR payment does not take (QR_CURRENCY_UNSUPPORTED)."
+  },
+  "errOrderNotPayable": "This order can no longer be paid",
+  "@errOrderNotPayable": {
+    "description": "Payment refused: the order is cancelled, expired or has nothing to pay (ORDER_NOT_PAYABLE)."
+  },
+  "errQrBankUnavailable": "The bank isn't answering. Try again in a minute.",
+  "@errQrBankUnavailable": {
+    "description": "QR payment: the bank could not be reached (QR_BANK_UNAVAILABLE, 503)."
   },
   "standTitle": "Server",
   "@standTitle": {

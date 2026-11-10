@@ -8,6 +8,7 @@ import '../core/storage/app_prefs.dart';
 import '../core/theme/tokens.dart';
 import '../features/cart/cart_screen.dart';
 import '../features/checkout/checkout_screen.dart';
+import '../features/checkout/qr_payment_screen.dart';
 import '../features/inbox/inbox_item_screen.dart';
 import '../features/inbox/inbox_screen.dart';
 import '../features/menu/menu_screen.dart';
@@ -41,6 +42,10 @@ abstract final class Routes {
 
   static String product(String id) => '/product/$id';
   static String order(String id, {bool placed = false}) => placed ? '/order/$id?placed=1' : '/order/$id';
+
+  /// Paying the order by QR in Agroprombank's app; `placed` when it comes
+  /// straight from checkout (the order screen is not under it then).
+  static String orderQr(String id, {bool placed = false}) => placed ? '/order/$id/qr?placed=1' : '/order/$id/qr';
 
   /// «Уведомления»; one message opens over the list.
   static const inbox = '/inbox';
@@ -151,6 +156,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             orderId: state.pathParameters['id']!,
             justPlaced: state.uri.queryParameters['placed'] == '1',
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/order/:id/qr',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => QrPaymentScreen(
+          orderId: state.pathParameters['id']!,
+          justPlaced: state.uri.queryParameters['placed'] == '1',
+          initial: state.extra is QrPayment ? state.extra! as QrPayment : null,
         ),
       ),
       GoRoute(
