@@ -35,7 +35,9 @@ export class PromoController {
   @Post('promo/validate')
   @ApiOkResponse({ type: ValidPromoResultDto })
   validate(@CurrentUser() user: AuthenticatedUser, @Body() dto: ValidatePromoDto): Promise<ValidPromoResultDto> {
-    return this.promo.validate(user.id, dto.code, dto.brandId, dto.subtotalCents);
+    return this.promo.validate(user.id, dto.code, dto.brandId, dto.subtotalCents, new Date(), {
+      storeId: dto.storeId,
+    });
   }
 
   // Same validation, for signed-out guests that just want to preview a code.
@@ -44,7 +46,9 @@ export class PromoController {
   @Throttle({ default: { limit: PREVIEW_PER_MINUTE, ttl: 60_000 } })
   @ApiOkResponse({ type: ValidPromoResultDto })
   preview(@Body() dto: ValidatePromoDto): Promise<ValidPromoResultDto> {
-    return this.promo.validate(null, dto.code, dto.brandId, dto.subtotalCents);
+    return this.promo.validate(null, dto.code, dto.brandId, dto.subtotalCents, new Date(), {
+      storeId: dto.storeId,
+    });
   }
 
   // Admin / brand-admin CRUD. Managing promo codes is a PRO feature; codes

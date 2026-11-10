@@ -19,7 +19,9 @@ import type { PrismaService } from '../prisma/prisma.service';
 import type { PromoService } from '../promo/promo.service';
 import type { RealtimeGateway } from '../realtime/realtime.gateway';
 import type { ReferralsService } from '../referrals/referrals.service';
+import { checkoutError } from '../common/http/checkout-error';
 import { OrdersService } from './orders.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 function variation(v: Partial<Variation> & Pick<Variation, 'id' | 'type' | 'name'>): Variation {
   return {
@@ -234,6 +236,11 @@ function harness() {
   const mail = { sendOrderReceipt: jest.fn().mockResolvedValue(undefined), sendWelcome: jest.fn() };
   const receiptPdf = { render: jest.fn().mockResolvedValue(null) };
   const loyalty = { quoteRedemption: jest.fn().mockResolvedValue({ points: 0, discountCents: 0 }) };
+  const promo = { validate: jest.fn(), applyAndRedeem: jest.fn().mockResolvedValue({}) };
+  const takeaway = {
+    reserveForOrder: jest.fn().mockResolvedValue(undefined),
+    exhaustIfShort: jest.fn().mockResolvedValue(false),
+  };
   const notifications = { notifyOrderStatus: jest.fn().mockResolvedValue(undefined) };
   const realtime = { emitKdsOrderChanged: jest.fn() };
   // Card payments off unless a test says otherwise.
@@ -254,7 +261,7 @@ function harness() {
   const service = new OrdersService(
     prisma as unknown as PrismaService,
     realtime as unknown as RealtimeGateway,
-    {} as PromoService,
+    promo as unknown as PromoService,
     loyalty as unknown as LoyaltyService,
     config as unknown as ConfigService,
     notifications as unknown as NotificationsService,
@@ -267,12 +274,13 @@ function harness() {
     kitchen as unknown as KitchenLoadService,
     cart,
     holds as unknown as PaymentHoldsService,
+    takeaway as unknown as TakeawayPromoService,
   );
 
   /** Makes the store answer differently for this test. */
   const storeIs = (patch: Partial<typeof view>) => availability.forStore.mockResolvedValue({ ...view, ...patch });
 
-  return { service, prisma, tx, mail, realtime, holds, kitchen, config, storeIs };
+  return { service, prisma, tx, mail, realtime, holds, kitchen, config, storeIs, promo, takeaway, loyalty };
 }
 
 const placeOrder = { cartId: 'cart-1', pickupMode: 'ASAP' as const };
@@ -712,6 +720,44 @@ describe('OrdersService order detail and receipt', () => {
     expect(JSON.stringify(detail)).not.toMatch(/"(lat|lng)"/);
   });
 
+  // docs/takeaway-promos.md §4.4: the card says the guest paid in full and takeAway owes the rest.
+  it('carries the takeAway promo line on the admin detail and the customer order', async () => {
+    const { service, prisma } = harness();
+    const stored = {
+      ...storedOrder([LATTE_SNAPSHOT]),
+      discountCents: 150,
+      totalCents: 1350,
+      couponCode: 'AUTUMN10',
+      takeawayPromoRedemption: {
+        code: 'AUTUMN10',
+        percent: 10,
+        menuTotalCents: 1500,
+        discountCents: 150,
+        promo: { name: 'Осенняя акция' },
+      },
+    };
+    prisma.order.findUnique.mockResolvedValue(stored);
+    const line = {
+      code: 'AUTUMN10',
+      name: 'Осенняя акция',
+      percent: 10,
+      menuTotalCents: 1500,
+      discountCents: 150,
+      paidByGuestCents: 1350,
+    };
+
+    await expect(service.getForAdmin('order-1')).resolves.toMatchObject({ takeawayPromo: line });
+    await expect(service.getForUser('user-1', 'order-1')).resolves.toMatchObject({ takeawayPromo: line });
+    expect(prisma.order.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({ takeawayPromoRedemption: expect.anything() }),
+      }),
+    );
+
+    prisma.order.findUnique.mockResolvedValue({ ...stored, takeawayPromoRedemption: null });
+    await expect(service.getForAdmin('order-1')).resolves.toMatchObject({ takeawayPromo: null });
+  });
+
   it('prints the options under each line of the receipt', async () => {
     const { service, prisma, mail } = harness();
     prisma.order.findUnique.mockResolvedValue(storedOrder([LATTE_SNAPSHOT, LEGACY_SNAPSHOT]));
@@ -723,5 +769,152 @@ describe('OrdersService order detail and receipt', () => {
       { name: 'Латте', options: 'L · Овсяное · +Ваниль ×2', quantity: 2, totalCents: 1500 },
       { name: 'Латте', options: '', quantity: 2, totalCents: 1500 },
     ]);
+  });
+});
+
+/** A takeAway promo at checkout (docs/takeaway-promos.md §2.4, §4.3). */
+describe('OrdersService.create — takeAway promos', () => {
+  const autumn = { id: 'tp-1', code: 'AUTUMN10', name: 'Осенняя акция', percent: 10, isWelcome: false };
+  const takeawayCode = (discountCents = 150) => ({
+    valid: true,
+    reason: null,
+    reasonCode: null,
+    promo: null,
+    source: 'TAKEAWAY' as const,
+    takeawayPromo: autumn,
+    discountCents,
+    pointsMultiplier: 1,
+  });
+  const refused = (reasonCode: string) => ({
+    valid: false,
+    reason: 'no',
+    reasonCode,
+    promo: null,
+    source: null,
+    takeawayPromo: null,
+    discountCents: 0,
+    pointsMultiplier: 1,
+  });
+  const withCode = { ...placeOrder, couponCode: 'autumn10' };
+
+  it('takes D off the menu price and reserves it from the budget in the order transaction', async () => {
+    const { service, prisma, tx, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue(takeawayCode());
+
+    const order = await service.create('user-1', withCode);
+
+    // Looked up at the store's own currency.
+    expect(promo.validate).toHaveBeenCalledWith('user-1', 'autumn10', 'brand-a', 1500, expect.any(Date), {
+      currency: 'MDL',
+    });
+    expect(tx.order.create.mock.calls[0]?.[0]?.data).toMatchObject({
+      subtotalCents: 1500,
+      discountCents: 150,
+      takeawayDiscountCents: 150,
+      totalCents: 1350,
+      couponCode: 'AUTUMN10',
+    });
+    expect(takeaway.reserveForOrder).toHaveBeenCalledWith(tx, {
+      promoId: 'tp-1',
+      code: 'AUTUMN10',
+      percent: 10,
+      isWelcome: false,
+      userId: 'user-1',
+      orderId: 'order-1',
+      brandId: 'brand-a',
+      storeId: 'store-1',
+      currency: 'MDL',
+      menuTotalCents: 1500,
+      discountCents: 150,
+    });
+    expect(promo.applyAndRedeem).not.toHaveBeenCalled();
+    expect(order.takeawayPromo).toEqual({
+      code: 'AUTUMN10',
+      name: 'Осенняя акция',
+      percent: 10,
+      menuTotalCents: 1500,
+      discountCents: 150,
+      paidByGuestCents: 1350,
+    });
+  });
+
+  it('refuses loyalty points beside a takeAway promo with PROMO_WITH_POINTS', async () => {
+    const { service, prisma, tx, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue(takeawayCode());
+
+    await expect(service.create('user-1', { ...withCode, pointsToSpend: 100 })).rejects.toMatchObject({
+      status: 400,
+      response: expect.objectContaining({ code: 'PROMO_WITH_POINTS' }),
+    });
+    expect(tx.order.create).not.toHaveBeenCalled();
+    expect(takeaway.reserveForOrder).not.toHaveBeenCalled();
+  });
+
+  it('leaves a brand code as it was: the brand pays, nothing for takeAway', async () => {
+    const { service, prisma, tx, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue({
+      ...takeawayCode(300),
+      source: 'BRAND',
+      takeawayPromo: null,
+      promo: { id: 'p-1', code: 'COFFEE20' },
+    });
+
+    const order = await service.create('user-1', { ...placeOrder, couponCode: 'coffee20' });
+
+    expect(tx.order.create.mock.calls[0]?.[0]?.data).toMatchObject({
+      discountCents: 300,
+      takeawayDiscountCents: 0,
+      couponCode: 'coffee20',
+    });
+    expect(promo.applyAndRedeem).toHaveBeenCalled();
+    expect(takeaway.reserveForOrder).not.toHaveBeenCalled();
+    expect(order.takeawayPromo).toBeNull();
+  });
+
+  it('exhausts the promo when the budget refused the order inside the transaction', async () => {
+    const { service, prisma, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue(takeawayCode());
+    takeaway.reserveForOrder.mockRejectedValue(
+      checkoutError('PROMO_LIMIT_REACHED', 'The promo budget cannot take this order'),
+    );
+
+    await expect(service.create('user-1', withCode)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PROMO_LIMIT_REACHED' }),
+    });
+    expect(takeaway.exhaustIfShort).toHaveBeenCalledWith('AUTUMN10', 1500);
+  });
+
+  it('exhausts the promo when the check before the transaction found the budget short', async () => {
+    const { service, prisma, tx, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue(refused('PROMO_LIMIT_REACHED'));
+
+    await expect(service.create('user-1', withCode)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PROMO_LIMIT_REACHED' }),
+    });
+    expect(takeaway.exhaustIfShort).toHaveBeenCalledWith('autumn10', 1500);
+    expect(tx.order.create).not.toHaveBeenCalled();
+  });
+
+  it('passes the once-per-customer refusal through and exhausts nothing', async () => {
+    const { service, prisma, promo, takeaway } = harness();
+    prisma.cart.findUnique.mockResolvedValue(cartWith(latte()));
+    promo.validate.mockResolvedValue(takeawayCode());
+    takeaway.reserveForOrder.mockRejectedValue(checkoutError('PROMO_ALREADY_USED', 'You already used this promo'));
+
+    await expect(service.create('user-1', withCode)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PROMO_ALREADY_USED' }),
+    });
+    expect(takeaway.exhaustIfShort).not.toHaveBeenCalled();
+
+    promo.validate.mockResolvedValue(refused('PROMO_NOT_HERE'));
+    await expect(service.create('user-1', withCode)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PROMO_NOT_HERE' }),
+    });
+    expect(takeaway.exhaustIfShort).not.toHaveBeenCalled();
   });
 });

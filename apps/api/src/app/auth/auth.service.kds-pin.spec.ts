@@ -12,6 +12,7 @@ import type { OAuthIdentityService } from './services/oauth-identity.service';
 import type { PasswordService } from './services/password.service';
 import type { TelegramService } from './services/telegram.service';
 import type { TokensService } from './services/tokens.service';
+import type { WelcomeBonusService } from '../takeaway-promos/welcome-bonus.service';
 
 type Row = Pick<User, 'id' | 'role' | 'blockedAt' | 'kdsPinHash' | 'kdsPinStoreId' | 'kdsPinBrandId' | 'locale'>;
 
@@ -129,6 +130,7 @@ describe('AuthService.loginWithKdsPin', () => {
       {} as PasswordService,
       pins,
       devices as unknown as KitchenDeviceService,
+      { onCustomerCreated: jest.fn() } as unknown as WelcomeBonusService,
     );
     return { auth, findFirst, findMany, tokens, devices, values };
   }

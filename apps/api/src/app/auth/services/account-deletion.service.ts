@@ -103,6 +103,14 @@ export class AccountDeletionService {
    *   payments            kept untouched — accounting and refunds.
    *   assignedDeliveries  kept — rider side; a customer has none.
    *   promoRedemptions    kept — per-promo usage accounting.
+   *   takeawayPromo-      kept — takeAway's debt to the venue for the order
+   *   Redemptions         (docs/takeaway-promos.md); an open order's one is
+   *                       given back by its cancel or expiry, as ever.
+   *   welcomeBonus        kept, used or not. Its `identityHash` is what
+   *                       makes the bonus once per person: signing up again
+   *                       with the same Telegram, address or social account
+   *                       gives no second one. It holds only a hash, no
+   *                       contact.
    *   giftCardsPurchased  kept — the card belongs to whoever holds the code;
    *                       the purchaser link is sales history.
    *   referrals (both     kept, as is referredByUserId — the reward record of

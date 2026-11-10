@@ -12,6 +12,7 @@ import {
 import type { OrderItemModifier, OrderItemSnapshot, OrderItemVariation, OptionLine } from '@takeaway/shared-types';
 
 import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
+import { TakeawayPromoLineDto } from '../../takeaway-promos/dto/takeaway-promo.dto';
 
 export class OrderItemVariationDto implements OrderItemVariation {
   @ApiProperty()
@@ -220,6 +221,16 @@ export class OrderDto {
 
   @ApiProperty({ nullable: true, type: String })
   couponCode!: string | null;
+
+  @ApiPropertyOptional({
+    type: () => TakeawayPromoLineDto,
+    nullable: true,
+    description:
+      'The takeAway promo on the order (docs/takeaway-promos.md): the guest paid `paidByGuestCents`, takeAway ' +
+      'compensates the venue `discountCents` (also inside `discountCents` above). Null without one, and after a ' +
+      'cancel or expiry, which gave it back.',
+  })
+  takeawayPromo?: TakeawayPromoLineDto | null;
 
   @ApiProperty({ nullable: true, type: String })
   giftCardCode!: string | null;

@@ -5,6 +5,7 @@ import { validate } from 'class-validator';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CreatePromoDto, UpdatePromoDto } from './dto/promo.dto';
 import { PromoService } from './promo.service';
+import type { TakeawayPromoService } from '../takeaway-promos/takeaway-promo.service';
 
 const NOW = new Date('2026-10-10T12:00:00Z');
 const day = (offset: number) => new Date(NOW.getTime() + offset * 24 * 60 * 60_000);
@@ -48,7 +49,13 @@ function setup(over: Partial<PromoRow> = {}, opts: { segment?: unknown[]; usedBy
     store: { findFirst: jest.fn(() => Promise.resolve({ id: 's1' })) },
     $queryRaw: jest.fn(() => Promise.resolve(opts.segment ?? [])),
   };
-  return { svc: new PromoService(prisma as unknown as PrismaService), prisma, row: () => row };
+  const takeaway = { validate: jest.fn().mockResolvedValue(null), codeTaken: jest.fn().mockResolvedValue(false) };
+  return {
+    svc: new PromoService(prisma as unknown as PrismaService, takeaway as unknown as TakeawayPromoService),
+    prisma,
+    row: () => row,
+    takeaway,
+  };
 }
 
 describe('PromoService.validate', () => {
@@ -91,6 +98,53 @@ describe('PromoService.validate', () => {
     const { svc, prisma } = setup({ inactiveDays: 14 });
     await expect(svc.validate(null, 'BACK15', 'b1', 10_000, NOW)).resolves.toMatchObject({ valid: true });
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+/** One code field for both kinds (docs/takeaway-promos.md §2.1, §4.3). */
+describe('PromoService.validate — takeAway promos', () => {
+  const takeawayAnswer = {
+    valid: true,
+    reason: null,
+    reasonCode: null,
+    promo: null,
+    source: 'TAKEAWAY',
+    takeawayPromo: { id: 'tp-1', code: 'AUTUMN10', name: 'Осень', percent: 10, isWelcome: false },
+    discountCents: 1_000,
+    pointsMultiplier: 1,
+  };
+
+  it('answers a brand code as before, marked BRAND, without looking at takeAway promos', async () => {
+    const { svc, takeaway } = setup();
+    await expect(svc.validate('u1', 'back15', 'b1', 10_000, NOW)).resolves.toMatchObject({
+      valid: true,
+      source: 'BRAND',
+      takeawayPromo: null,
+      promo: { code: 'BACK15' },
+    });
+    expect(takeaway.validate).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a takeAway promo when the brand has no such code, at the store named', async () => {
+    const { svc, prisma, takeaway } = setup();
+    prisma.promo.findUnique.mockResolvedValue(null as never);
+    takeaway.validate.mockResolvedValue(takeawayAnswer);
+
+    await expect(svc.validate('u1', 'autumn10', 'b1', 10_000, NOW, { storeId: 's1' })).resolves.toBe(takeawayAnswer);
+    expect(takeaway.validate).toHaveBeenCalledWith(
+      { userId: 'u1', code: 'autumn10', subtotalCents: 10_000, place: { storeId: 's1', brandId: 'b1' } },
+      NOW,
+    );
+  });
+
+  it('says PROMO_UNKNOWN when neither kind has the code', async () => {
+    const { svc, prisma } = setup();
+    prisma.promo.findUnique.mockResolvedValue(null as never);
+    await expect(svc.validate(null, 'NOPE', 'b1', 10_000, NOW)).resolves.toMatchObject({
+      valid: false,
+      reasonCode: 'PROMO_UNKNOWN',
+      source: null,
+    });
   });
 });
 
@@ -226,6 +280,40 @@ describe('PromoService.create', () => {
       }),
     );
     expect(prisma.store.findFirst).toHaveBeenCalledWith({ where: { id: 's1', brandId: 'b1' }, select: { id: true } });
+  });
+});
+
+describe('PromoService — codes of takeAway promos are taken (§2.1)', () => {
+  const draft = {
+    brandId: 'b1',
+    code: 'autumn10',
+    label: 'Осень',
+    type: 'PERCENT' as const,
+    value: 10,
+    startsAt: day(1).toISOString(),
+    endsAt: day(15).toISOString(),
+  };
+
+  it('refuses a new brand promo with a takeAway code, 409 PROMO_CODE_TAKEN', async () => {
+    const { svc, prisma, takeaway } = setup();
+    takeaway.codeTaken.mockResolvedValue(true);
+    await expect(svc.create(draft, NOW)).rejects.toMatchObject({
+      status: 409,
+      response: expect.objectContaining({ code: 'PROMO_CODE_TAKEN' }),
+    });
+    expect(takeaway.codeTaken).toHaveBeenCalledWith('autumn10');
+    expect(prisma.promo.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a brand promo renamed to a takeAway code, and lets its own code be', async () => {
+    const { svc, takeaway } = setup({ status: 'DRAFT' });
+    takeaway.codeTaken.mockResolvedValue(true);
+    await expect(svc.update('p1', { code: 'autumn10' }, NOW)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'PROMO_CODE_TAKEN' }),
+    });
+    await expect(svc.update('p1', { code: 'back15', label: 'Снова' }, NOW)).resolves.toMatchObject({
+      label: 'Снова',
+    });
   });
 });
 

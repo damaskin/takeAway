@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderCancelMoney, OrderCancelReason, OrderCanceller } from '@prisma/client';
 
 import { OptionLineDto } from '../../option-groups/dto/option-groups.dto';
+import { TakeawayPromoLineDto } from '../../takeaway-promos/dto/takeaway-promo.dto';
 import { OrderItemModifierDto, OrderItemVariationDto } from './order.dto';
 
 export class AdminOrderEventDto {
@@ -76,6 +77,12 @@ export class AdminOrderDetailDto {
   @ApiProperty() totalCents!: number;
   @ApiPropertyOptional({ type: String, nullable: true }) couponCode!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) giftCardCode!: string | null;
+  /**
+   * «Акция takeAway −10%: гость оплатил 90,00, ещё 10,00 компенсирует
+   * takeAway» — the order is paid in full, nothing to collect from the guest.
+   */
+  @ApiPropertyOptional({ type: () => TakeawayPromoLineDto, nullable: true })
+  takeawayPromo!: TakeawayPromoLineDto | null;
 
   @ApiPropertyOptional({ type: String, nullable: true }) cancelledAt!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) expiredAt!: string | null;

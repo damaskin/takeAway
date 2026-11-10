@@ -10,6 +10,7 @@ import type { OAuthIdentityService } from './services/oauth-identity.service';
 import type { PasswordService } from './services/password.service';
 import type { TelegramService } from './services/telegram.service';
 import type { TokensService } from './services/tokens.service';
+import type { WelcomeBonusService } from '../takeaway-promos/welcome-bonus.service';
 
 interface Row {
   id: string;
@@ -64,6 +65,7 @@ function harness(seed: Row[]) {
   const tokens = { issue: jest.fn(async () => ({ accessToken: 'a', refreshToken: 'r' })) };
   const telegram = { verifyInitData: jest.fn(() => ({ user: { id: 777, first_name: 'Ира' }, authDate: 0 })) };
   const oauth = { verifyTelegram: jest.fn(async () => ({ id: 777, firstName: 'Ира' })) };
+  const welcome = { onCustomerCreated: jest.fn().mockResolvedValue(true) };
   const auth = new AuthService(
     prisma as unknown as PrismaService,
     {} as UsersService,
@@ -73,8 +75,9 @@ function harness(seed: Row[]) {
     {} as PasswordService,
     {} as KdsPinService,
     {} as KitchenDeviceService,
+    welcome as unknown as WelcomeBonusService,
   );
-  return { auth, users, tokens };
+  return { auth, users, tokens, welcome };
 }
 
 const person = (id: string, role: Role, extra: Partial<Row> = {}): Row => ({
@@ -115,10 +118,30 @@ describe('AuthService — Telegram sign-in never lands in a staff account', () =
   });
 
   it('signs a customer in as before', async () => {
-    const { auth, users } = harness([person('guest', Role.CUSTOMER, { telegramUserId: 777n })]);
+    const { auth, users, welcome } = harness([person('guest', Role.CUSTOMER, { telegramUserId: 777n })]);
     const session = await auth.verifyTelegram('init-data');
     expect(session.user.id).toBe('guest');
     expect(users.size).toBe(1);
+    // Not new: no welcome bonus (docs/takeaway-promos.md §2.9).
+    expect(welcome.onCustomerCreated).not.toHaveBeenCalled();
+  });
+
+  it('gives a new customer the welcome bonus, keyed on the Telegram id', async () => {
+    const { auth, welcome } = harness([]);
+
+    const session = await auth.verifyTelegram('init-data');
+
+    expect(welcome.onCustomerCreated).toHaveBeenCalledWith(session.user.id, {
+      kind: 'telegram',
+      telegramUserId: 777,
+    });
+  });
+
+  it('never fails or holds up the sign-in over the bonus', async () => {
+    const { auth, welcome } = harness([]);
+    welcome.onCustomerCreated.mockReturnValue(new Promise(() => undefined));
+
+    await expect(auth.verifyTelegram('init-data')).resolves.toMatchObject({ accessToken: 'a' });
   });
 });
 

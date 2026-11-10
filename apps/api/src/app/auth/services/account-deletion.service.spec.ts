@@ -18,6 +18,7 @@ import type { OAuthIdentityService } from './oauth-identity.service';
 import type { PasswordService } from './password.service';
 import type { TelegramService } from './telegram.service';
 import type { TokensService } from './tokens.service';
+import type { WelcomeBonusService } from '../../takeaway-promos/welcome-bonus.service';
 
 interface FakeUser {
   id: string;
@@ -679,6 +680,7 @@ describe('AccountDeletionService', () => {
         {} as PasswordService,
         {} as KdsPinService,
         {} as KitchenDeviceService,
+        { onCustomerCreated: jest.fn() } as unknown as WelcomeBonusService,
       );
     }
 

@@ -43,6 +43,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { StorageModule } from './storage/storage.module';
+import { TakeawayPromosModule } from './takeaway-promos/takeaway-promos.module';
 import { TelegramBotModule } from './telegram-bot/telegram-bot.module';
 import { UsersModule } from './users/users.module';
 
@@ -69,6 +70,7 @@ import { UsersModule } from './users/users.module';
     KitchenModule,
     CartModule,
     PromoModule,
+    TakeawayPromosModule,
     LoyaltyModule,
     OrdersModule,
     OrderReviewsModule,
