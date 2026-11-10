@@ -5,7 +5,7 @@ import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { TranslateService, type Translation, provideTranslateService } from '@ngx-translate/core';
 import { TRANSLATIONS_RU } from '@takeaway/i18n';
-import type { AuthUser, LoyaltyAccount } from '@takeaway/shared-types';
+import type { AuthUser, CustomerBonus, LoyaltyAccount } from '@takeaway/shared-types';
 
 import { API_CONFIG } from '../../core/api/api.config';
 import { TmaAuthStore } from '../../core/auth/tma-auth.store';
@@ -33,6 +33,18 @@ const ACCOUNT: LoyaltyAccount = {
   pointsToNextTier: 380,
   tierProgressPercent: 24,
   recent: [],
+};
+
+/** Noon UTC: 17 November on any customer's calendar between UTC−11 and UTC+11. */
+const WELCOME: CustomerBonus = {
+  id: 'bonus-1',
+  kind: 'WELCOME',
+  promoId: 'promo-1',
+  code: 'WELCOME10',
+  name: 'Приветственный бонус',
+  percent: 10,
+  currency: 'RUP',
+  expiresAt: '2026-11-17T12:00:00.000Z',
 };
 
 describe('TmaProfilePage', () => {
@@ -75,10 +87,34 @@ describe('TmaProfilePage', () => {
 
   const el = () => fixture.nativeElement as HTMLElement;
   const byTestId = (id: string) => el().querySelector(`[data-testid="${id}"]`);
+  /** The page asks for the customer's bonuses next to the points; none unless a test gives some. */
+  const flushBonuses = async (bonuses: CustomerBonus[] = []) => {
+    http.expectOne('/api/me/bonuses').flush(bonuses);
+    await fixture.whenStable();
+  };
+
+  it('shows «Мои бонусы» while the welcome bonus is there, and leads to the places to order from', async () => {
+    http.expectOne('/api/loyalty/me').flush(ACCOUNT);
+    await flushBonuses([WELCOME]);
+    const banner = byTestId('bonus-banner')?.textContent?.replace(/\s+/g, ' ');
+    expect(banner).toContain('Мои бонусы');
+    expect(byTestId('bonus-title')?.textContent?.trim()).toBe('Приветственный бонус −10%');
+    expect(byTestId('bonus-terms')?.textContent?.trim()).toBe('На заказ в любом заведении · до 17 ноября');
+
+    const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    (byTestId('bonus') as HTMLButtonElement).click();
+    expect(navigate).toHaveBeenCalledWith(['/stores']);
+  });
+
+  it('shows no bonus banner without a bonus', async () => {
+    http.expectOne('/api/loyalty/me').flush(ACCOUNT);
+    await flushBonuses();
+    expect(byTestId('bonus-banner')).toBeNull();
+  });
 
   it('shows the real loyalty account', async () => {
     http.expectOne('/api/loyalty/me').flush(ACCOUNT);
-    await fixture.whenStable();
+    await flushBonuses();
     expect(byTestId('loyalty-points')?.textContent?.trim()).toBe('120 баллов');
     expect(byTestId('loyalty-tier')?.textContent).toContain('Серебряный');
     expect(byTestId('loyalty-card')?.textContent).toContain('380 баллов до уровня «Золотой»');
@@ -87,14 +123,14 @@ describe('TmaProfilePage', () => {
   // It used to show «Gold, 2,450 баллов» to everybody.
   it('shows no loyalty card at all when the account cannot be read', async () => {
     http.expectOne('/api/loyalty/me').flush({}, { status: 500, statusText: 'Server Error' });
-    await fixture.whenStable();
+    await flushBonuses();
     expect(byTestId('loyalty-card')).toBeNull();
     expect(el().textContent).not.toContain('2,450');
   });
 
   it('says the customer is signed in with Telegram instead of offering a sign-out', async () => {
     http.expectOne('/api/loyalty/me').flush(ACCOUNT);
-    await fixture.whenStable();
+    await flushBonuses();
     expect(byTestId('signed-in')?.textContent).toContain('Вы вошли через Telegram');
     expect(byTestId('telegram-name')?.textContent?.trim()).toBe('Максим Петров · @maxim');
     expect(el().textContent).not.toContain('Выйти');
@@ -102,7 +138,7 @@ describe('TmaProfilePage', () => {
 
   it('leads every row somewhere and switches the language in place', async () => {
     http.expectOne('/api/loyalty/me').flush(ACCOUNT);
-    await fixture.whenStable();
+    await flushBonuses();
     const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const rows = Array.from(el().querySelectorAll<HTMLButtonElement>('button[data-route]'));
     expect(rows.map((r) => r.dataset['route'])).toEqual([

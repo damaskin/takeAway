@@ -6,9 +6,11 @@ import type {
   AsapBlockedReason,
   CartChangedError,
   CategoryKind,
+  CustomerBonus,
   PickupSlot,
   StoreListItem,
   StoreMenu,
+  ValidPromoResult,
 } from '@takeaway/shared-types';
 import {
   calendarDaysFrom,
@@ -24,7 +26,13 @@ import {
   type PickupSlotDay,
   type SuggestionRow,
 } from '@takeaway/utils';
-import { asapBlockedText, checkoutErrorText, LocaleFormatService, pickupDayLabel } from '@takeaway/i18n';
+import {
+  asapBlockedText,
+  checkoutErrorText,
+  LocaleFormatService,
+  pickupDayLabel,
+  takeawayPromoLabel,
+} from '@takeaway/i18n';
 import { ProductImageComponent } from '@takeaway/ui-kit';
 import { type Observable, map } from 'rxjs';
 
@@ -39,6 +47,7 @@ import { DeliveryFeeApi } from '../../core/orders/delivery-fee.service';
 import { OrdersApi } from '../../core/orders/orders.service';
 import { type BoundCard, PaymentCardsApi, PaymentCardsStore } from '../../core/payments/payment-cards.service';
 import { WebPaymentApi } from '../../core/payments/web-payment.service';
+import { BonusesApi, PromoApi } from '../../core/promo/promo.service';
 import { TelegramBridgeService } from '../../core/telegram/telegram-bridge.service';
 import { TmaFoodSuggestionsComponent } from '../../shared/food-suggestions.component';
 
@@ -51,7 +60,7 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
  *   pickupSec  — ASAP / Scheduled toggle + time
  *   storeSec   — foam card with store name and address
  *   orderSec   — order lines + totals
- *   promo      — foam input for promo codes (stubbed)
+ *   promo      — foam input for promo codes; the welcome bonus goes in by itself
  *   paySec     — payment method select (Apple/Google/Card stub)
  * MainButton (Telegram blue) fires placeOrder with current pickup mode.
  */
@@ -405,6 +414,17 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
                 </div>
               }
               <hr style="border: none; border-top: 1px solid var(--color-border-light); margin: 0" />
+              @if (discountCents() > 0) {
+                <div class="flex items-center justify-between" data-testid="promo-line">
+                  <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-mint)">{{
+                    takeawayPromo() ? takeawayLabel() : ('web.checkout.promoLine' | translate: { code: promoCode() })
+                  }}</span>
+                  <span
+                    style="font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--color-mint)"
+                    >− {{ price(discountCents()) }}</span
+                  >
+                </div>
+              }
               @if (fulfillmentType() === 'DELIVERY') {
                 <div class="flex items-center justify-between">
                   <span style="font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary)">{{
@@ -534,18 +554,50 @@ type FulfillmentType = 'PICKUP' | 'DELIVERY';
         </div>
       }
 
-      <!-- Promo code -->
-      <div
-        class="flex items-center"
-        style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); padding: 0 14px; height: 48px; gap: 8px"
-      >
-        <span style="color: var(--color-text-tertiary); font-size: 16px">🎟</span>
-        <input
-          type="text"
-          [placeholder]="'tma.checkout.promo' | translate"
-          class="flex-1 outline-none bg-transparent"
-          style="font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary)"
-        />
+      <!-- Promo code: a brand's, a takeAway promo or the welcome bonus — one field for all -->
+      <div class="flex flex-col" style="gap: 6px">
+        <div
+          class="flex items-center"
+          style="background: var(--color-foam); border: 1px solid var(--color-border-light); border-radius: var(--radius-input); padding: 0 6px 0 14px; height: 48px; gap: 8px"
+        >
+          <span style="color: var(--color-text-tertiary); font-size: 16px">🎟</span>
+          <input
+            data-testid="promo-input"
+            type="text"
+            autocapitalize="characters"
+            [value]="promoInput()"
+            (input)="onPromoInput($event)"
+            [placeholder]="'tma.checkout.promo' | translate"
+            class="flex-1 outline-none bg-transparent"
+            style="min-width: 0; font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); text-transform: uppercase"
+          />
+          @if (promoInput() || promoCode()) {
+            <button
+              type="button"
+              data-testid="promo-apply"
+              (click)="onPromoButton()"
+              [disabled]="promoLoading()"
+              class="flex items-center justify-center disabled:opacity-50"
+              style="flex: none; height: 36px; padding: 0 12px; background: var(--color-caramel); color: white; border-radius: 10px; font-family: var(--font-sans); font-size: 13px; font-weight: 600"
+            >
+              @if (promoLoading()) {
+                …
+              } @else if (promoCode() !== null) {
+                {{ (takeawayPromo() ? 'common.takeawayPromo.remove' : 'common.clear') | translate }}
+              } @else {
+                {{ 'common.apply' | translate }}
+              }
+            </button>
+          }
+        </div>
+        @if (promoStatus()) {
+          <span
+            data-testid="promo-status"
+            style="padding-left: 4px; font-family: var(--font-sans); font-size: 12px"
+            [style.color]="promoCode() !== null ? 'var(--color-mint)' : 'var(--color-berry)'"
+            >{{ promoStatus() }}</span
+          >
+        }
       </div>
 
       @if (error()) {
@@ -580,6 +632,8 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private readonly cardsApi = inject(PaymentCardsApi);
   private readonly cardsStore = inject(PaymentCardsStore);
   private readonly webPayments = inject(WebPaymentApi);
+  private readonly promo = inject(PromoApi);
+  private readonly bonusesApi = inject(BonusesApi);
 
   readonly cart = signal<CartView | null>(null);
   /** The store the order goes to, for the «К заказу» cards. */
@@ -654,6 +708,22 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** OUTSIDE_RADIUS / permission-denied messages surfaced to the customer. */
   readonly deliveryReason = signal<string | null>(null);
   private activeStoreId: string | null = null;
+  /** The store's brand, which promo validation needs. */
+  private brandId: string | null = null;
+
+  // Promo state: promoCode() is the code the API confirmed, promoInput() what is typed.
+  readonly promoInput = signal('');
+  readonly promoCode = signal<string | null>(null);
+  readonly discountCents = signal(0);
+  readonly promoStatus = signal<string | null>(null);
+  readonly promoLoading = signal(false);
+  /** The applied code is takeAway's own promo or the welcome bonus (`source: TAKEAWAY`); null otherwise. */
+  readonly takeawayPromo = signal<NonNullable<ValidPromoResult['takeawayPromo']> | null>(null);
+  /** The customer's unused bonuses (`GET /me/bonuses`); checkout puts one on by itself. */
+  readonly bonuses = signal<CustomerBonus[]>([]);
+  /** The cart and subtotal the bonus was last put on for, so a refusal is not asked again. */
+  private bonusTriedFor: string | null = null;
+
   /** Store tax config — the same numbers the server settles the order with. */
   readonly taxRateBps = signal(0);
   readonly taxIncludedInPrice = signal(true);
@@ -744,6 +814,16 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       });
     });
 
+    // The welcome bonus goes into the promo field by itself once the cart is
+    // known and its store sells in the bonus's currency (docs/takeaway-promos.md §5).
+    effect(() => {
+      const cart = this.cart();
+      const currency = this.currency();
+      const bonus = this.bonuses().find((b) => b.currency === currency);
+      if (!cart || !bonus) return;
+      untracked(() => this.putBonusOn(bonus, cart));
+    });
+
     // The store opening, closing or filling up while the customer is here
     // turns «Сейчас» on or off without reopening checkout.
     refreshStoresWhileVisible((event) => {
@@ -775,6 +855,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
         this.storeName.set(store.name);
         this.deliveryAvailable.set((store.fulfillmentTypes ?? []).includes('DELIVERY'));
         this.activeStoreId = store.id;
+        this.brandId = store.brandId;
         this.taxRateBps.set(store.taxRateBps);
         this.taxIncludedInPrice.set(store.taxIncludedInPrice);
         this.currency.set(store.currency);
@@ -800,6 +881,10 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     });
 
     this.flags.load();
+    // Without the answer checkout just has no bonus to put on.
+    if (this.authStore.isAuthenticated()) {
+      this.bonusesApi.list().subscribe({ next: (list) => this.bonuses.set(list), error: () => undefined });
+    }
 
     this.detachBack = this.tg.setBackButton(() => {
       if (history.length > 1) history.back();
@@ -938,7 +1023,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   private breakdown(subtotalCents: number): { taxCents: number; totalCents: number } {
     return computeTax({
       subtotalCents,
-      discountCents: 0,
+      discountCents: this.discountCents(),
       deliveryFeeCents: this.fulfillmentType() === 'DELIVERY' ? this.deliveryFeeCents() : 0,
       giftCardCents: 0,
       taxRateBps: this.taxRateBps(),
@@ -1048,6 +1133,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       next: (cart) => {
         this.cart.set(cart);
         this.changingItemId.set(null);
+        this.recheckPromo();
         // More or less work for the kitchen: the windows that fit it change.
         if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
         this.refreshMainButton();
@@ -1062,6 +1148,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
   /** A «К заказу» item went in: show the new cart and the new total on the button. */
   onUpsellAdded(cart: CartView): void {
     this.cart.set(cart);
+    this.recheckPromo();
     if (this.pickupMode() === 'SCHEDULED') this.loadSlots();
     this.refreshMainButton();
   }
@@ -1125,6 +1212,7 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
       pickupMode: this.pickupMode(),
       pickupAt,
       fulfillmentType: this.fulfillmentType(),
+      couponCode: this.promoCode() ?? undefined,
       ...(isDelivery
         ? {
             deliveryAddressLine: this.deliveryAddress().trim(),
@@ -1229,10 +1317,145 @@ export class TmaCheckoutPage implements OnInit, OnDestroy {
     this.cartService.load(storeId).subscribe({
       next: (cart) => {
         this.cart.set(cart);
+        this.recheckPromo();
         this.refreshMainButton();
       },
       error: () => undefined,
     });
+  }
+
+  // ── Promo code ──────────────────────────────────────────────────────────
+
+  onPromoInput(event: Event): void {
+    this.promoInput.set((event.target as HTMLInputElement).value.trim().toUpperCase());
+    // Editing a confirmed code takes it off.
+    if (this.promoCode() !== null && this.promoInput() !== this.promoCode()) this.removePromo();
+  }
+
+  /** The customer's tap on «Применить» / «Убрать». */
+  onPromoButton(): void {
+    this.tg.haptic('light');
+    this.applyPromo();
+  }
+
+  /** Checks the typed code, or takes the applied one off. */
+  applyPromo(): void {
+    if (this.promoCode() !== null) {
+      this.removePromo();
+      return;
+    }
+    const code = this.promoInput();
+    const cart = this.cart();
+    if (!code || !cart || !this.brandId || this.promoLoading()) return;
+    this.promoLoading.set(true);
+    this.promoStatus.set(null);
+    this.promo
+      .validate({
+        code,
+        brandId: this.brandId,
+        subtotalCents: cart.subtotalCents,
+        ...(this.activeStoreId ? { storeId: this.activeStoreId } : {}),
+      })
+      .subscribe({
+        next: (res) => {
+          this.promoLoading.set(false);
+          if (!res.valid) {
+            this.promoStatus.set(
+              checkoutErrorText(
+                { code: res.reasonCode, minOrderCents: res.minOrderCents, currency: res.currency },
+                this.translate,
+                this.fmt,
+              ) ?? this.translate.instant('web.checkout.promoInvalid'),
+            );
+            this.refreshMainButton();
+            return;
+          }
+          this.promoCode.set(code);
+          this.discountCents.set(res.discountCents);
+          const takeaway = res.source === 'TAKEAWAY' ? (res.takeawayPromo ?? null) : null;
+          this.takeawayPromo.set(takeaway);
+          this.promoStatus.set(
+            takeaway
+              ? this.takeawayLabel()
+              : res.discountCents > 0
+                ? this.translate.instant('web.checkout.promoApplied', { amount: this.price(res.discountCents) })
+                : res.pointsMultiplier > 1
+                  ? this.translate.instant('web.checkout.promoPointsApplied', { mult: res.pointsMultiplier })
+                  : this.translate.instant('common.apply'),
+          );
+          this.refreshMainButton();
+        },
+        error: (err) => {
+          this.promoLoading.set(false);
+          const body = (err as { error?: unknown } | null)?.error;
+          this.promoStatus.set(
+            checkoutErrorText(body, this.translate, this.fmt) ?? this.translate.instant('common.requestFailed'),
+          );
+          this.refreshMainButton();
+        },
+      });
+  }
+
+  /**
+   * The customer took the code off. Their welcome bonus then stays off this
+   * cart for the session — the field is emptied, and typing the code back is
+   * the way to have it again.
+   */
+  removePromo(): void {
+    const cart = this.cart();
+    const code = this.promoCode();
+    if (cart && code !== null && this.bonuses().some((b) => b.code === code)) {
+      this.bonusesApi.dismiss(cart.id);
+      this.promoInput.set('');
+    }
+    this.clearPromo();
+    this.refreshMainButton();
+  }
+
+  private clearPromo(): void {
+    this.promoCode.set(null);
+    this.discountCents.set(0);
+    this.promoStatus.set(null);
+    this.takeawayPromo.set(null);
+  }
+
+  /** «Приветственный бонус −10%», «Акция takeAway −15%» — the applied takeAway promo; empty without one. */
+  takeawayLabel(): string {
+    const promo = this.takeawayPromo();
+    return promo ? takeawayPromoLabel(promo, this.translate) : '';
+  }
+
+  /**
+   * Puts the bonus code into the promo field and checks it, unless a code is
+   * on already, the customer typed another one, or took the bonus off this
+   * cart. Once per cart and subtotal, so a refusal is not asked again.
+   */
+  private putBonusOn(bonus: CustomerBonus, cart: CartView): void {
+    if (cart.items.length === 0 || this.placedOrder() || this.promoCode() !== null || this.promoLoading()) return;
+    if (this.bonusesApi.isDismissed(cart.id)) return;
+    if (this.promoInput() && this.promoInput() !== bonus.code) return;
+    if (new Date(bonus.expiresAt).getTime() <= Date.now()) return;
+    const key = `${cart.id}:${cart.subtotalCents}`;
+    if (this.bonusTriedFor === key) return;
+    this.bonusTriedFor = key;
+    this.promoInput.set(bonus.code);
+    this.applyPromo();
+  }
+
+  /**
+   * The basket changed, so the applied code's discount was worked out for
+   * the old subtotal: check the code again for the new one. Without a code
+   * the welcome bonus may still go on by itself.
+   */
+  private recheckPromo(): void {
+    const code = this.promoCode();
+    const cart = this.cart();
+    if (code === null || !cart) return;
+    this.clearPromo();
+    if (cart.items.length === 0) return;
+    this.bonusTriedFor = `${cart.id}:${cart.subtotalCents}`;
+    this.promoInput.set(code);
+    this.applyPromo();
   }
 
   /**
