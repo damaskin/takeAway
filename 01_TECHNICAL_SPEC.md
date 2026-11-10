@@ -695,6 +695,18 @@ Promo (id, brandId, code, label, type[PERCENT|FIXED|BOGO|POINTS_MULTIPLIER],
        status[DRAFT|SCHEDULED|RUNNING|PAUSED|EXPIRED],
        inactiveDays?, segmentStoreId?)   // код только для неактивных клиентов
 PromoRedemption (id, promoId, userId, orderId unique, discountCents)
+TakeawayPromo (id, name, code unique (не совпадает с кодами Promo), percent 1..99, startsAt, endsAt,
+               currency (валюта бюджета; действует в точках этой валюты), budgetCents, spentCents (CHECK 0..budget),
+               status[ACTIVE|DISABLED|EXHAUSTED], exhaustedAt?, isWelcome (не больше одной ACTIVE), createdById?)
+               // «Акции takeAway», docs/takeaway-promos.md: скидка за счёт takeAway во всех заведениях
+TakeawayPromoRedemption (id, promoId [RESTRICT], userId, orderId unique [CASCADE], brandId, storeId, currency, code,
+                         percent, menuTotalCents (P), discountCents (D — долг takeAway перед брендом),
+                         payoutId? [SET NULL] (выплата, которая гасит долг))
+  unique (promoId, userId) — один раз на клиента; создаётся при оформлении вместе с spentCents += D (условный UPDATE),
+  удаляется (spentCents −= D) при отмене / истечении / отказе карты
+WelcomeBonus (id, promoId, userId unique, identityHash unique (sha256 tg:/email:/oauth: — раз на человека, переживает
+              удаление аккаунта), expiresAt (+7 дней), orderId? unique [SET NULL], notifiedAt?)
+Order.takeawayDiscountCents — D акции takeAway (входит и в discountCents)
 GiftCard (id, code unique, brandId, initialAmountCents, balanceCents, currency,
           status[ACTIVE|REDEEMED|EXPIRED|CANCELLED], purchaserUserId?, recipientEmail?,
           expiresAt?)
@@ -728,7 +740,8 @@ BrandCommissionRate (id, brandId, bps, source[PLAN|INDIVIDUAL], effectiveFrom, n
   unique (brandId, effectiveFrom); строка действует до effectiveFrom следующей (интервалы без дыр и наложений),
   первая — и до себя; Brand.commissionBps = строка, действующая сейчас; миграция завела каждому бренду текущую ставку с его создания
 BrandPayout (id, brandId, currency, periodFrom DATE, periodTo DATE, timeZone, periodEnd (момент конца periodTo),
-             amountCents (> 0), cardNetCents, commissionCents (цифры периода на момент фиксации),
+             amountCents (> 0), cardNetCents, commissionCents, compensationCents (компенсация takeAway по акциям)
+             (цифры периода на момент фиксации),
              status[PENDING|PAID], paidAt?, reference?, comment?, createdById?, paidById?)
   periods идут подряд без наложений; Brand → payouts ON DELETE RESTRICT
 ```
@@ -744,7 +757,7 @@ mv_orders_daily (brandId, storeId, day, orderCount, revenueCents,
 
 Источник: `Order` join `Store` для заказов кроме `CANCELLED` и `EXPIRED`, агрегация по UTC-дню; `revenueCents` — выручка (см. ниже), с миграции `20261010120000_analytics_revenue_basis`. SLA-hit считается при readyAt − coalesce(acceptedAt, createdAt) ≤ 7 минут. Pickup-длительность — readyAt → pickedUpAt. Питает только `/admin/analytics/brands` (платформа; точки в валюте, отличной от валюты бренда, не суммируются); аналитика бренда считается по `Order` в его часовом поясе.
 
-**Деньги — одно определение на всех экранах** (`apps/api/src/app/analytics/money.ts`, SQL-двойники `SALES`/`DISCOUNTS`/`REVENUE`/`GIFT_CARDS` в `analytics-sql.ts`): **продажи** = `subtotalCents` (позиции по ценам меню); **скидки** = `min(discountCents, subtotalCents)` (промокоды + баллы — их даёт бизнес); **выручка** = `max(subtotalCents − discountCents, 0)` — независимо от того, оплачено картой или подарочной картой; **подарочные карты** = `min(giftCardCents, выручка)` — часть выручки. `totalCents` (списание с карты) выручкой не является: в нём нет оплаченного подарочной картой, зато есть доставка и налог сверху цены. Подарочные карты выпускаются в админке и продаются (если продаются) вне takeAway, поэтому продажа карты нигде не считается, а покупка по ней — один раз, в выручке. Топ позиций — на той же базе: скидка заказа раскладывается по позициям пропорционально цене, сумма по позиции округляется вниз, поэтому Σ позиций ≤ выручки; `salesCents` — та же позиция до скидок. Клиенты: новые — первый засчитанный заказ в скоупе попал в период; постоянные — заказывали в скоупе и раньше (`returningCustomers = customers − newCustomers`); `cohort.repeatRatePercent` — другая метрика: доля клиентов с ≥ 2 заказами внутри периода. Изменение к прошлому периоду — `null`, если прошлый период без выручки (экран пишет «новое за период»).
+**Деньги — одно определение на всех экранах** (`apps/api/src/app/analytics/money.ts`, SQL-двойники `SALES`/`DISCOUNTS`/`REVENUE`/`GIFT_CARDS` в `analytics-sql.ts`): **продажи** = `subtotalCents` (позиции по ценам меню); **скидки** = `min(discountCents − takeawayDiscountCents, subtotalCents)` (промокоды + баллы — их даёт бизнес; скидку акции takeAway платит takeAway, она не скидка бизнеса, с миграции `20261110110000_analytics_takeaway_promo`); **выручка** = `max(subtotalCents − (discountCents − takeawayDiscountCents), 0)` — независимо от того, оплачено картой или подарочной картой; **подарочные карты** = `min(giftCardCents, выручка)` — часть выручки. `totalCents` (списание с карты) выручкой не является: в нём нет оплаченного подарочной картой, зато есть доставка и налог сверху цены. Подарочные карты выпускаются в админке и продаются (если продаются) вне takeAway, поэтому продажа карты нигде не считается, а покупка по ней — один раз, в выручке. Топ позиций — на той же базе: скидка заказа раскладывается по позициям пропорционально цене, сумма по позиции округляется вниз, поэтому Σ позиций ≤ выручки; `salesCents` — та же позиция до скидок. Клиенты: новые — первый засчитанный заказ в скоупе попал в период; постоянные — заказывали в скоупе и раньше (`returningCustomers = customers − newCustomers`); `cohort.repeatRatePercent` — другая метрика: доля клиентов с ≥ 2 заказами внутри периода. Изменение к прошлому периоду — `null`, если прошлый период без выручки (экран пишет «новое за период»).
 
 **Валюта.** Деньги в разных валютах не складываются: если точки бренда в нескольких валютах, все эндпоинты аналитики сужаются до точек одной (`currency` в запросе; выбранная точка — её валюта; по умолчанию `defaultCurrency()` из `libs/utils`: валюта бренда, если она есть у точек, иначе валюта большинства точек). `/admin/customers` людей не сужает — клиенты и сегменты считаются по всем точкам (`AnalyticsScopeResolver.people`), как аудитории рассылок и промокоды; в выбранной валюте только траты и средний чек (`currency` в запросе, ответ несёт `currency` и `currencies[]`, «Клиенты» показывают выбор валюты), а у карточки клиента траты по точке — в валюте точки. `revenue` и `overview` возвращают `currency` и `currencies[]`, строки `stores` — `currency`. Платформа (`/admin/platform/overview`) берёт только точки в валюте бренда.
 
@@ -936,8 +949,13 @@ GET|POST /payments/agroprombank-web/success|fail             (public) SuccessURL
 ### 6.5. Promo / Gift cards / Loyalty
 
 ```
-POST   /promo/validate               { code, cartId }
-POST   /promo/preview                { code, cartId } → { discountCents, finalTotalCents }
+POST   /promo/validate               { code, brandId, subtotalCents, storeId? } → { valid, reasonCode, promo (бренда) | null,
+                                     source: BRAND|TAKEAWAY, takeawayPromo { id, code, name, percent, isWelcome } | null, discountCents }
+                                     // сначала промокод бренда, иначе акция takeAway; коды отказа PROMO_* + PROMO_NOT_HERE (валюта)
+POST   /promo/preview                то же без входа (приветственный код — PROMO_NOT_ELIGIBLE)
+GET    /me/bonuses                   → CustomerBonus[] — неиспользованный приветственный бонус, пока его акция действует
+POST   /orders                       couponCode = код акции takeAway: бюджет резервируется в транзакции заказа;
+                                     с pointsToSpend > 0 — 400 PROMO_WITH_POINTS; заказ несёт takeawayPromo (строка чека)
 POST   /gift-cards/validate          { code, cartId } → { balanceCents, applicableCents }
 GET    /loyalty                      → { balance, tier, lifetimePoints, recentEntries[] }
 ```
@@ -1096,6 +1114,15 @@ POST                   /admin/orders/:id/refund          { amountCents?, reason?
 GET/POST               /admin/promo                      // PRO (promo); статус в ответе — «по факту»
 GET/PATCH              /admin/promo/:id                  // PRO: правка черновика / запланированного или на паузе без использований
 PATCH                  /admin/promo/:id/status           // { status: RUNNING|PAUSED|EXPIRED } — черновик → активен → пауза → завершён
+                                                         //   код, занятый акцией takeAway, — 409 PROMO_CODE_TAKEN
+# Акции takeAway (только SUPER_ADMIN), с 2026-11-10, docs/takeaway-promos.md
+GET/POST               /admin/takeaway-promos            // POST { name, code, percent 1..99, startsAt, endsAt, currency, budgetCents, isWelcome? }
+GET/PATCH              /admin/takeaway-promos/:id        // после первого заказа — только name, endsAt, budgetCents (≥ spent); иначе 409 TAKEAWAY_PROMO_USED
+PATCH                  /admin/takeaway-promos/:id/status { status: ACTIVE|DISABLED } // EXHAUSTED → ACTIVE только с остатком бюджета
+GET                    /admin/takeaway-promos/:id/report // засчитанные заказы: заказы, клиенты, Σ P, Σ D; по брендам, точкам, UTC-дням
+GET                    /admin/takeaway-promos/debt       // долг takeAway: по бренду начислено / в выплате / погашено / долг; итоги по валютам
+// ошибки: TAKEAWAY_PROMO_CODE_TAKEN | _USED | _DATES | _PERCENT | _BUDGET | _WELCOME_TAKEN | _STATUS
+// cron welcome-bonus-notify (раз в минуту): пуш + «Уведомления» о приветственном бонусе через минуту после регистрации
 GET/POST/DELETE        /admin/gift-cards[/:id]?brandId=   // SUPER_ADMIN — brandId обязателен; кабинет шлёт бренд из шапки; POST — только currency=RUP
 GET/POST               /admin/campaigns                  ?brandId= (SUPER_ADMIN — обязательно) // PRO (campaigns) — весь контроллер
 GET                    /admin/campaigns/preview          ?brandId=&audience=&channel=[&inactiveDays=3|7|14&storeId=] → охват по каналам + настроенные транспорты
@@ -1140,6 +1167,8 @@ GET                    /admin/customers/:id?currency=      // PRO: итоги (c
 
 # Расчёты с брендами (SUPER_ADMIN — любой бренд, brandId обязателен; BRAND_ADMIN — только свои, чтение). См. docs/settlements.md
 GET                    /admin/settlements?brandId=&currency=&from=&to=   // brand {plan, currentBps, planBps}, currency, currencies[], period, totals, days[] (все дни периода), rates[] (ставки периода), balance {opening, payable, paid, pending, closing, closingPending}, nextPayout {periodFrom, periodTo (≤ вчера в поясе бренда), amountCents, cardNetCents, commissionCents, blocked: PERIOD_OPEN|OVERLAP|NOTHING_DUE|null}, payouts[]
+GET                    /admin/settlements/takeaway-promos?brandId=&currency=&from=&to=  // «Акции takeAway» бренда: итоги периода, currentDebtCents (сейчас), items[] со статусом ACCRUED|IN_PAYOUT|REPAID
+                       // в отчёте: totals.takeawayCompensationCents; база комиссии = captured − refunded + компенсация; nextPayout/payouts[].compensationCents
 GET                    /admin/settlements/rates?brandId=   // история ставок: { plan, planBps, currentBps, timeZone, rates[{ bps, source, effectiveFrom, effectiveTo, note }] }
 POST                   /admin/settlements/rates          { brandId, bps (0–5000) | null — ставка тарифа, effectiveFrom: YYYY-MM-DD (полночь в поясе бренда), note? }  // SUPER_ADMIN
 DELETE                 /admin/settlements/rates/:id      // SUPER_ADMIN
