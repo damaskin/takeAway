@@ -141,6 +141,27 @@ export interface AgroprombankQrPaymentDto {
   qr: AgroprombankQrCode | null;
 }
 
+/**
+ * Why `POST /payments/agroprombank-qr/start` (or the status and cancel
+ * routes) refused: `QR_PAYMENT_DISABLED` (409) — the QR payment is off or not
+ * configured; `QR_CURRENCY_UNSUPPORTED` (409) — the order is not in RUP;
+ * `ORDER_NOT_PAYABLE` (409) — cancelled, expired, already paid or nothing to
+ * pay; `QR_BANK_UNAVAILABLE` (503) — the bank could not be reached, try again.
+ */
+export type AgroprombankQrErrorCode =
+  | 'QR_PAYMENT_DISABLED'
+  | 'QR_CURRENCY_UNSUPPORTED'
+  | 'ORDER_NOT_PAYABLE'
+  | 'QR_BANK_UNAVAILABLE';
+
+/** Error body of the QR payment routes. */
+export interface AgroprombankQrErrorBody {
+  statusCode: 409 | 503;
+  error: string;
+  code: AgroprombankQrErrorCode;
+  message: string;
+}
+
 export type PaymentStatusEnum =
   | 'PENDING'
   | 'REQUIRES_ACTION'
