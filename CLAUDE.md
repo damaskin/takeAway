@@ -12,6 +12,8 @@
 
 Agent skills Angular (`angular-developer`, `angular-new-app`) лежат в `.claude/skills/` и закоммичены — ставить ничего не нужно. Как обновлять — `docs/agent-skills.md`.
 
+Фичи, которые затрагивают API и хотя бы один клиент или делаются параллельными агентами, планируем через OpenSpec: `/openspec-propose` → ревью Raynor → `/openspec-apply-change` → `/openspec-archive-change`. План — в `openspec/changes/<имя>/`, правила для планов — в `openspec/config.yaml`, порядок работы и установка CLI — `docs/openspec.md`. Багфиксы и мелкие правки — без него.
+
 ## Окружения
 
 `main` → тест (https://test.takeaway.md, автоматически); прод — только релизным тегом `vYYYY.MM.DD` на проверенный на тесте коммит, с подтверждением владельца. Тест — обезвреженная копия прода со своим ботом @takeaway_test_bot. Подробности, команды релиза и отката — `docs/environments.md`.

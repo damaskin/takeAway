@@ -7,8 +7,10 @@ tmp
 pnpm-lock.yaml
 *.pen
 
-# Vendored agent skills — keep byte-identical to upstream angular/skills
+# Vendored agent skills — keep byte-identical to upstream angular/skills and
+# to what `openspec update` generates (it only refreshes untouched copies)
 .claude/skills
+.agents/skills
 
 # Flutter tooling output and Xcode-managed asset catalogs (Xcode rewrites
 # Contents.json in its own style whenever an asset is touched).

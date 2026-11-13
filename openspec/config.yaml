@@ -1,0 +1,67 @@
+schema: spec-driven
+
+# Constraints an agent cannot infer from the code. Project rules live in
+# CLAUDE.md and 02_CLAUDE_PROMPT.md; how we use OpenSpec — docs/openspec.md.
+context: |
+  Language: write every artifact in English (project rule for code and docs).
+  Talk to Raynor in Russian.
+
+  Product: pre-order first takeaway. Every order is a pre-order with a pickup
+  time, live status and ETA, and a pickup code. Judge every product decision by
+  one question: does it get the customer to pickup faster, without a queue?
+  Courier delivery is outside the core (behind DELIVERY_ENABLED).
+
+  Surfaces a change can touch:
+  - api: NestJS + Prisma + PostgreSQL + Redis (apps/api)
+  - web: customer site and PWA, takeaway.md (apps/web)
+  - tma: Telegram Mini App (apps/tma)
+  - admin: business cabinet and platform admin; the kitchen board (KDS) lives
+    inside it (apps/admin)
+  - mobile: Flutter customer app, App Store and Google Play (apps/mobile)
+  - libs: shared-types, api-client (TypeScript) and api-client-dart (Flutter),
+    ui-kit, i18n, utils
+  The same customer behaviour usually has to work on web, tma and mobile.
+
+  Fixed facts:
+  - User-facing strings exist in Russian and English: libs/i18n
+    (translations/ru.ts, en.ts) and apps/mobile/lib/l10n (app_ru.arb,
+    app_en.arb).
+  - Durations (prep time, ETA) are integer seconds.
+  - Payments: Agroprombank acquiring behind AGROPROMBANK_* flags, Stripe kept
+    as the fallback. Never store card data.
+  - Prisma migrations are named and never edited once applied to staging.
+
+  Specs organization:
+  - Name a capability after the API module that owns the behaviour
+    (apps/api/src/app/<module>): orders, catalog, cart, payments, kitchen,
+    loyalty, promo, notifications, auth, business, analytics, and so on.
+    A client-only behaviour goes under the closest domain, never under an app
+    name such as "web" or "mobile".
+  - Write specs only for what the change touches. Do not back-fill existing
+    behaviour. 01_TECHNICAL_SPEC.md stays the architecture, data model and
+    roadmap overview; openspec/specs/ holds behaviour, one capability at a time.
+
+rules:
+  proposal:
+    - List the affected surfaces (api, web, tma, admin, mobile, libs).
+    - Say whether the change needs a Prisma migration, a new env variable or a feature flag, and whether it must stay off on production at first.
+    - State what is out of scope.
+  specs:
+    - Scenarios describe what a customer, a staff member, a business owner or an API client observes, not how the code does it.
+  design:
+    - When the data model, the API contract or the stack changes, name the 01_TECHNICAL_SPEC.md sections to update.
+  tasks:
+    - Group tasks under one heading per surface (API, Libs, Admin, Web, TMA, Mobile, Docs) so parallel agents in separate worktrees can each take one group. API and libs come first, clients depend on them.
+    - Inside each group, add the tests that cover it.
+    - End with a Docs group - a line in docs/CHANGELOG.md under [Unreleased] (Russian, user-facing, as the file asks) and the 01_TECHNICAL_SPEC.md sections from design.md.
+
+operations:
+  apply:
+    guidance:
+      - Before calling a group done, run lint, test and build for the affected projects (pnpm nx affected -t lint test build).
+      - Prisma schema changes go through pnpm prisma migrate dev --name <snake_case_name>.
+  archive:
+    guidance:
+      - Archive in the branch that carries the code, before its pull request merges, so the specs on main describe the code on main.
+      - If openspec/specs/<capability>/spec.md conflicts with another merged change, keep the requirements of both.
+      - When archive creates a new capability spec, replace its placeholder Purpose with one sentence on what the capability is for.

@@ -9,6 +9,8 @@
 
 Источник — [angular/skills](https://github.com/angular/skills) (выкладка из `angular/angular`, каталог `skills/dev-skills/`), лицензия MIT.
 
+Рядом лежат скиллы OpenSpec (`openspec-*`, ещё и в `.agents/skills/` для Codex и Cursor). Их генерирует и обновляет `openspec update`, а не `pnpm skills:update` — см. `docs/openspec.md`.
+
 ## Почему в репозитории, а не глобально
 
 Скилы — это часть инструкций, по которым агент пишет наш код, поэтому они версионируются вместе с кодом:
