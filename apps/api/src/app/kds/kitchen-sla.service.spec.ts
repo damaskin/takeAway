@@ -474,8 +474,9 @@ describe('KitchenSlaService', () => {
       await service.acceptTick();
 
       // 10 minutes after 12:00:07 reached the board: due now, not a minute later.
-      const where = prisma.order.findMany.mock.calls[0]?.[0]?.where;
-      expect(where.AND[0]).toEqual({
+      // The reminder's query comes first; the timeout's is the one with AND.
+      const where = prisma.order.findMany.mock.calls.map((call) => call[0]?.where).find((w) => w?.AND);
+      expect(where?.AND[0]).toEqual({
         OR: [{ storeId: { in: ['store-1'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:00:07Z') } }],
       });
     });
