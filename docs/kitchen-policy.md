@@ -270,7 +270,10 @@ Board (`apps/admin/src/app/features/kitchen/kitchen.page.ts`,
 
 ## E. Acceptance SLA, lateness and the new estimate
 
-`apps/api/src/app/kds/kitchen-sla.service.ts`, cron `kitchen-order-sla`, every minute.
+`apps/api/src/app/kds/kitchen-sla.service.ts`: the acceptance reminder and timeout
+on cron `kitchen-accept-sla` every 10 seconds (since 2026-11-13 — once a minute they
+fired up to a minute late), start reminders, late orders and the queue estimates on
+cron `kitchen-order-sla` every minute.
 
 - **The store's accept time A** («Время для принятия заказа», `Store.baseEtaSeconds`,
   whole minutes 1–60, default 10; below a minute counts as 10, see
