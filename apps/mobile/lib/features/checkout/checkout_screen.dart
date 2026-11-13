@@ -585,7 +585,7 @@ class _PaymentSection extends ConsumerWidget {
     final locked = state.placedOrderId != null;
     final method = controller.payMethod(store);
 
-    // «Картой» / «По QR в приложении банка», when the store takes both.
+    // «Картой» / «Оплата мобильным платежом», when the store takes both.
     Widget methodTile(PayMethod value, IconData icon, String title, {String? subtitle}) {
       final selected = method == value;
       return Padding(

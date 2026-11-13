@@ -112,6 +112,36 @@ describe('TmaProductPage', () => {
     return { label, tap, enabled: enabled !== false };
   };
 
+  // Maxim 2026-11-11: the brand fills protein / fat / carbs, the buyer saw only kcal.
+  it('shows the calories and the filled macros of a meal', async () => {
+    const harness = await open(
+      product({
+        id: 'shawarma',
+        slug: 'shawarma',
+        name: 'Шаурма',
+        categoryKind: 'FOOD',
+        calories: 540,
+        proteinsGrams: 24,
+        fatsGrams: null,
+        carbsGrams: 41.5,
+      }),
+    );
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('[data-testid="product-kcal"]'))).toBe('🔥 540 ккал');
+    expect(text(el.querySelector('[data-testid="product-macros"]'))).toBe('Белки 24 г · Углеводы 41.5 г');
+  });
+
+  it('shows no nutrition for a drink, whatever the API sends', async () => {
+    const harness = await open(
+      product({ categoryKind: 'HOT_DRINKS', calories: 150, proteinsGrams: 8, fatsGrams: 6, carbsGrams: 12 }),
+    );
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="product-kcal"]')).toBeNull();
+    expect(el.querySelector('[data-testid="product-macros"]')).toBeNull();
+  });
+
   it('keeps Telegram’s button inert, saying what to choose, until a size is picked', async () => {
     const harness = await open(product({ hasRequiredOptions: true, optionGroups: COFFEE_GROUPS }));
     const el = harness.routeNativeElement as HTMLElement;

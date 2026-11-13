@@ -545,7 +545,7 @@ describe('CheckoutPage — pickup time', () => {
     it('lets the customer choose the card or QR, starting from the card, and remembers the choice', async () => {
       const first = await open(STORE, { qr: ['RUP'] });
       expect(methodButton(first.root, 'CARD')?.textContent?.trim()).toBe('Картой');
-      expect(methodButton(first.root, 'QR')?.textContent?.trim()).toBe('По QR в приложении банка');
+      expect(methodButton(first.root, 'QR')?.textContent?.trim()).toBe('Оплата мобильным платежом');
       expect(first.page.paymentMethod()).toBe('CARD');
       expect(first.root.querySelector('[data-testid="web-payment-hint"]')).not.toBeNull();
 

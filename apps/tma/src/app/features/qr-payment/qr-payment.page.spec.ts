@@ -213,7 +213,7 @@ describe('TmaQrPaymentPage', () => {
   it('has no retry where the QR payment is off for the store', async () => {
     const off = new HttpErrorResponse({ status: 409, error: { statusCode: 409, code: 'QR_CURRENCY_UNSUPPORTED' } });
     const { byTestId, text } = await open({ start: () => throwError(() => off) });
-    expect(text('qr-failed')).toContain('В этом заведении оплата по QR недоступна');
+    expect(text('qr-failed')).toContain('В этом заведении оплата мобильным платежом недоступна');
     expect(byTestId('qr-retry')).toBeNull();
   });
 });

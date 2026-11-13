@@ -218,13 +218,13 @@ describe('OrderDetailPanelComponent — paid by QR', () => {
     };
     const fixture = await render(order);
     const el = fixture.nativeElement as HTMLElement;
-    expect(text(el.querySelector('[data-testid="order-paid-with"]'))).toBe('QR (Агропромбанк)');
+    expect(text(el.querySelector('[data-testid="order-paid-with"]'))).toBe('Мобильный платёж (Агропромбанк)');
 
     fixture.componentInstance.startRefund(order);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(text(el.querySelector('[data-testid="refund-full-only"]'))).toBe(
-      'Оплату по QR можно вернуть только целиком.',
+      'Мобильный платёж можно вернуть только целиком.',
     );
     expect(el.querySelector<HTMLInputElement>('[data-testid="refund-amount"]')?.disabled).toBe(true);
 

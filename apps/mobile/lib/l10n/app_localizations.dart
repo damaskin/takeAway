@@ -1385,7 +1385,7 @@ abstract class AppLocalizations {
   /// Checkout, «Оплата»: pay by QR code in Agroprombank's app («Мобильный платёж»).
   ///
   /// In en, this message translates to:
-  /// **'By QR in the bank\'s app'**
+  /// **'Mobile payment'**
   String get payMethodQr;
 
   /// No description provided for @payMethodQrSubtitle.
@@ -1403,7 +1403,7 @@ abstract class AppLocalizations {
   /// Title of the QR payment screen.
   ///
   /// In en, this message translates to:
-  /// **'Pay by QR'**
+  /// **'Mobile payment'**
   String get qrPayTitle;
 
   /// No description provided for @qrPayToPay.
@@ -1499,13 +1499,13 @@ abstract class AppLocalizations {
   /// Order screen: pay an unpaid order by QR in the bank's app.
   ///
   /// In en, this message translates to:
-  /// **'Pay by QR'**
+  /// **'Pay by mobile payment'**
   String get payByQr;
 
   /// No description provided for @payByQrAmount.
   ///
   /// In en, this message translates to:
-  /// **'Pay {total} by QR'**
+  /// **'Pay {total} by mobile payment'**
   String payByQrAmount(String total);
 
   /// No description provided for @summaryTitle.
@@ -1913,7 +1913,7 @@ abstract class AppLocalizations {
   /// Order screen, payment line: paid by QR in the bank's app, before the store accepts the order.
   ///
   /// In en, this message translates to:
-  /// **'Paid by QR'**
+  /// **'Paid by mobile payment'**
   String get paymentStatePaidByQr;
 
   /// No description provided for @paymentStatePaidByQrHint.
@@ -1925,13 +1925,13 @@ abstract class AppLocalizations {
   /// No description provided for @paymentStateAwaitingQr.
   ///
   /// In en, this message translates to:
-  /// **'Waiting for the QR payment'**
+  /// **'Waiting for the mobile payment'**
   String get paymentStateAwaitingQr;
 
   /// No description provided for @paymentStateQrNotPaid.
   ///
   /// In en, this message translates to:
-  /// **'The QR invoice was not paid'**
+  /// **'The mobile payment did not go through'**
   String get paymentStateQrNotPaid;
 
   /// No description provided for @orderExpiredNotAcceptedRefundedQr.
@@ -1943,7 +1943,7 @@ abstract class AppLocalizations {
   /// Order screen, cancelled order paid by QR: the payment was reversed (cancelMoney REFUNDED).
   ///
   /// In en, this message translates to:
-  /// **'The money paid by QR has been returned.'**
+  /// **'The money paid by mobile payment has been returned.'**
   String get cancelMoneyRefundedQr;
 
   /// No description provided for @cancelMoneyNotChargedQr.
@@ -2003,7 +2003,7 @@ abstract class AppLocalizations {
   /// No description provided for @cancelOrderBodyQr.
   ///
   /// In en, this message translates to:
-  /// **'The store has not accepted it yet. The money paid by QR will be returned.'**
+  /// **'The store has not accepted it yet. The money paid by mobile payment will be returned.'**
   String get cancelOrderBodyQr;
 
   /// In place of «Cancel order» once the kitchen accepted the order or the money was taken; also the error when a cancel comes too late.
@@ -3395,13 +3395,13 @@ abstract class AppLocalizations {
   /// QR payment refused: switched off on the server (QR_PAYMENT_DISABLED).
   ///
   /// In en, this message translates to:
-  /// **'Payment by QR is not available right now'**
+  /// **'Mobile payment is not available right now'**
   String get errQrPaymentDisabled;
 
   /// QR payment refused: the store sells in a currency the QR payment does not take (QR_CURRENCY_UNSUPPORTED).
   ///
   /// In en, this message translates to:
-  /// **'This store can\'t be paid by QR'**
+  /// **'This store doesn\'t take mobile payment'**
   String get errQrCurrencyUnsupported;
 
   /// Payment refused: the order is cancelled, expired or has nothing to pay (ORDER_NOT_PAYABLE).

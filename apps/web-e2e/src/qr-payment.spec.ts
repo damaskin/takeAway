@@ -56,7 +56,7 @@ test.describe('paying by QR', () => {
     // The customer pays in the bank's app; the next status read brings the order up.
     api.payQr();
     await page.waitForURL(/\/orders\/order-1$/, { timeout: 10_000 });
-    await expect(page.getByTestId('payment-line')).toContainText('Paid by QR');
+    await expect(page.getByTestId('payment-line')).toContainText('Paid by mobile payment');
     await expect(page.getByTestId('payment-line')).toContainText("If the store doesn't accept the order");
     expect(api.qrCancels).toEqual([]);
   });

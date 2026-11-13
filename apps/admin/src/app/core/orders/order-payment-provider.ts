@@ -23,7 +23,7 @@ export function orderMoneyPayment(payments: readonly AdminOrderPayment[]): Admin
   return null;
 }
 
-/** «QR (Агропромбанк)» — the translation key for a provider; null for one this build has no words for. */
+/** «Мобильный платёж (Агропромбанк)» — the translation key for a provider; null for one this build has no words for. */
 export function paymentProviderKey(provider: string): string | null {
   return (PROVIDERS as readonly string[]).includes(provider) ? `admin.orderDetail.providers.${provider}` : null;
 }

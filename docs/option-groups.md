@@ -82,6 +82,8 @@ Admin (brand — the roles that edit the add-on library today: SUPER_ADMIN, BRAN
 
 Loaded by the migration that creates the tables, with fixed ids, so every environment has the same catalog (inserting is safe on prod). Sizes are split into name + note («M» + «300–350 мл»); other names as written. «Лёд» is one group (coffee position). No catalog default for «Соус в блюдо» (per product).
 
+Migration `20261113100000_option_espresso_strength` (Maxim, 2026-11-12) renames `og_espresso` «Эспрессо» to «Крепость» and gives the shots hints: Ристретто «крепче, меньше объём», Эспрессо «классика» (default), Доппио «двойная порция», Лунго «мягче, больше объём» — skipped where takeAway already renamed the group or wrote a hint.
+
 ## Out of scope
 
 Combo sets, pizza, type D (spec §9). Migrating old options into the catalog automatically (answer 9: delete, then attach anew).

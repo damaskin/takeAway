@@ -519,7 +519,7 @@ export class TmaOrderStatusPage implements OnInit, OnDestroy {
   });
 
   /**
-   * «Оплатить по QR»: a new order whose money has not arrived, in a store the
+   * «Оплатить мобильным платежом»: a new order whose money has not arrived, in a store the
    * QR payment takes. The QR screen issues the invoice, or shows the one
    * already waiting.
    */

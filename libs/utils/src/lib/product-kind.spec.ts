@@ -1,6 +1,6 @@
 import type { CategoryKind, CategoryWithProducts, ProductSummary } from '@takeaway/shared-types';
 
-import { isDrinkKind, isFoodKind, menuProductKinds, productKind, showsNutrition } from './product-kind';
+import { isDrinkKind, isFoodKind, menuProductKinds, nutritionFacts, productKind, showsNutrition } from './product-kind';
 
 function product(id: string, categoryKind?: CategoryKind): ProductSummary {
   return {
@@ -68,6 +68,40 @@ describe('showsNutrition', () => {
     for (const kind of ['HOT_DRINKS', 'COLD_DRINKS', 'BAKERY', 'OTHER'] as const) {
       expect(showsNutrition(kind)).toBe(false);
     }
+  });
+});
+
+describe('nutritionFacts', () => {
+  it('shows calories and every filled macro for a meal, in order', () => {
+    expect(nutritionFacts({ calories: 420, proteinsGrams: 18, fatsGrams: 12.5, carbsGrams: 40.04 }, 'FOOD')).toEqual({
+      calories: 420,
+      macros: [
+        { key: 'proteins', grams: '18' },
+        { key: 'fats', grams: '12.5' },
+        { key: 'carbs', grams: '40' },
+      ],
+    });
+  });
+
+  it('skips what the brand left empty', () => {
+    expect(
+      nutritionFacts({ calories: null, proteinsGrams: 7, fatsGrams: null, carbsGrams: undefined }, 'FOOD'),
+    ).toEqual({
+      calories: null,
+      macros: [{ key: 'proteins', grams: '7' }],
+    });
+    expect(nutritionFacts({ calories: 0, proteinsGrams: 0 }, 'FOOD')).toEqual({
+      calories: 0,
+      macros: [{ key: 'proteins', grams: '0' }],
+    });
+  });
+
+  it('shows nothing when nothing is filled or the product is not a meal', () => {
+    expect(
+      nutritionFacts({ calories: null, proteinsGrams: null, fatsGrams: null, carbsGrams: null }, 'FOOD'),
+    ).toBeNull();
+    expect(nutritionFacts({ calories: 120, proteinsGrams: 4, fatsGrams: 3, carbsGrams: 9 }, 'HOT_DRINKS')).toBeNull();
+    expect(nutritionFacts({ calories: 300, proteinsGrams: 4 }, 'BAKERY')).toBeNull();
   });
 });
 

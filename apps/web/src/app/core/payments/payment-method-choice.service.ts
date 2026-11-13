@@ -4,7 +4,7 @@ import { type CheckoutPaymentMethod, readCheckoutPaymentMethod } from '@takeaway
 const STORAGE_KEY = 'takeaway.web.paymentMethod';
 
 /**
- * «Картой» or «По QR» — what the customer paid with last time on this
+ * «Картой» or «Оплата мобильным платежом» — what the customer paid with last time on this
  * device, picked again at the next checkout where both are offered.
  *
  * Kept in localStorage: a convenience, so a browser that refuses storage

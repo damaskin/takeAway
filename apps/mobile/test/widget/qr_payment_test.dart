@@ -85,7 +85,7 @@ void main() {
 
       await _reveal(tester, find.byKey(const ValueKey('pay-method-qr')));
       expect(find.text('Картой'), findsOneWidget);
-      expect(find.text('По QR в приложении банка'), findsOneWidget);
+      expect(find.text('Оплата мобильным платежом'), findsOneWidget);
       expect(find.textContaining('на защищённой странице банка'), findsOneWidget, reason: 'a card is the default');
 
       await tester.tap(find.byKey(const ValueKey('pay-method-qr')));
@@ -100,7 +100,7 @@ void main() {
       expect(api.created, hasLength(1));
       expect(api.qrStarts, ['ord_1']);
       expect(h.webPayments.opened, isEmpty, reason: 'no bank page in the QR flow');
-      expect(find.text('Оплата по QR'), findsOneWidget);
+      expect(find.text('Оплата мобильным платежом'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
       expect(find.text(_total), findsOneWidget);
       expect(find.textContaining('Код действует ещё 9:5'), findsOneWidget);
@@ -130,7 +130,7 @@ void main() {
 
       expect(api.qrPolls, hasLength(polls + 1));
       expect(find.text('Заказ #4821'), findsOneWidget);
-      expect(find.text('Оплачено по QR'), findsOneWidget, reason: 'this phone saw it paid by QR');
+      expect(find.text('Оплачено мобильным платежом'), findsOneWidget, reason: 'this phone saw it paid by QR');
       expect(find.text('Если заведение не примет заказ, деньги вернутся.'), findsOneWidget);
       expect(find.text('Спишем при принятии заказа'), findsNothing);
       await h.unmount(tester);
@@ -205,7 +205,7 @@ void main() {
       await _openOrder(tester, h);
 
       expect(find.byKey(const ValueKey('pay')), findsNothing, reason: 'cards are off');
-      await tester.tap(find.text('Оплатить $_total по QR'));
+      await tester.tap(find.text('Оплатить $_total мобильным платежом'));
       await settle(tester);
       expect(api.qrStarts, ['ord_1']);
       expect(find.byType(QrImageView), findsOneWidget);
@@ -215,7 +215,7 @@ void main() {
       await settle(tester);
       expect(find.text('Заказ #4821'), findsOneWidget);
       expect(api.qrCancels, isEmpty);
-      await tester.tap(find.text('Оплатить $_total по QR'));
+      await tester.tap(find.text('Оплатить $_total мобильным платежом'));
       await settle(tester);
       expect(api.qrStarts, ['ord_1', 'ord_1']);
       expect(find.textContaining('Код действует ещё'), findsOneWidget);
@@ -225,7 +225,7 @@ void main() {
       expect(api.qrCancels, ['pay_qr_1']);
       expect(api.cancelled, isEmpty, reason: 'the order stays, to be paid again');
       expect(find.text('Заказ #4821'), findsOneWidget);
-      expect(find.text('Оплатить $_total по QR'), findsOneWidget);
+      expect(find.text('Оплатить $_total мобильным платежом'), findsOneWidget);
       await h.unmount(tester);
     });
 
@@ -273,7 +273,7 @@ void main() {
 
       // No card retry on the order screen in the bound-card flow: QR is it.
       expect(find.byKey(const ValueKey('pay')), findsNothing);
-      await tester.tap(find.text('Оплатить $_total по QR'));
+      await tester.tap(find.text('Оплатить $_total мобильным платежом'));
       await settle(tester);
       await tester.pump(const Duration(seconds: 31));
       await settle(tester);
@@ -290,7 +290,7 @@ void main() {
       final api = _rupStore(_webAndQr)..currentOrder = FakeApi.sampleOrder(currency: 'RUP');
       final h = await pumpApp(tester, api: api, saved: {'checkout.payMethod': 'qr'});
       await _openOrder(tester, h);
-      expect(find.text('Оплатить $_total по QR'), findsOneWidget);
+      expect(find.text('Оплатить $_total мобильным платежом'), findsOneWidget);
       expect(find.text('Оплатить картой'), findsOneWidget);
       await h.unmount(tester);
     });
@@ -338,14 +338,14 @@ void main() {
       final h = await pumpApp(tester, api: api);
       await _openOrder(tester, h);
 
-      expect(find.text('Оплачено по QR'), findsOneWidget);
+      expect(find.text('Оплачено мобильным платежом'), findsOneWidget);
       expect(find.text('Если заведение не примет заказ, деньги вернутся.'), findsOneWidget);
       expect(find.byKey(const ValueKey('pay-qr')), findsNothing, reason: 'nothing left to pay');
 
       await _reveal(tester, find.text('Отменить заказ'));
       await tester.tap(find.text('Отменить заказ'));
       await settle(tester);
-      expect(find.text('Точка ещё не приняла заказ. Деньги, оплаченные по QR, вернутся.'), findsOneWidget);
+      expect(find.text('Точка ещё не приняла заказ. Деньги, оплаченные мобильным платежом, вернутся.'), findsOneWidget);
       await tester.tap(find.text('Оставить'));
       await settle(tester);
       await h.unmount(tester);
@@ -365,7 +365,7 @@ void main() {
       await _openOrder(tester, h);
 
       await _reveal(tester, find.byKey(const ValueKey('cancel-reason')));
-      expect(find.text('Деньги, оплаченные по QR, вернули.'), findsOneWidget);
+      expect(find.text('Деньги, оплаченные мобильным платежом, вернули.'), findsOneWidget);
       expect(find.text('Деньги вернутся на карту.'), findsNothing);
       await _reveal(tester, find.byKey(const ValueKey('payment-line')));
       expect(find.text('Деньги возвращены'), findsOneWidget);
@@ -377,7 +377,7 @@ void main() {
       final h = await pumpApp(tester, api: api);
       await _openOrder(tester, h);
       expect(find.text('Спишем при принятии заказа'), findsOneWidget);
-      expect(find.text('Оплачено по QR'), findsNothing);
+      expect(find.text('Оплачено мобильным платежом'), findsNothing);
       await h.unmount(tester);
     });
   });

@@ -178,6 +178,37 @@ describe('ProductPage', () => {
     expect(text(el.querySelector('label[for="pdp-notes"]'))).toBe('Комментарий к заказу');
   });
 
+  // Maxim 2026-11-11: the brand fills protein / fat / carbs, the buyer saw only kcal.
+  it('shows the protein, fat and carbs of a meal, skipping what is empty', async () => {
+    const harness = await open(
+      'shawarma',
+      product('shawarma', {
+        name: 'Шаурма',
+        categoryId: 'food',
+        categoryKind: 'FOOD',
+        calories: 540,
+        proteinsGrams: 24,
+        fatsGrams: 18.5,
+        carbsGrams: null,
+      }),
+    );
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('[data-testid="product-meta"]'))).toBe('🔥 540 ккал Белки 24 г · Жиры 18.5 г');
+    expect(text(el)).not.toContain('Углеводы');
+  });
+
+  it('shows macros of a meal even without calories', async () => {
+    const harness = await open(
+      'salad',
+      product('salad', { name: 'Салат', categoryId: 'food', categoryKind: 'FOOD', carbsGrams: 12 }),
+    );
+    const el = harness.routeNativeElement as HTMLElement;
+
+    expect(text(el.querySelector('[data-testid="product-macros"]'))).toBe('Углеводы 12 г');
+    expect(text(el)).not.toContain('ккал');
+  });
+
   it('prices the choice live and sums it up next to the button', async () => {
     const harness = await open('latte', LATTE);
     const el = harness.routeNativeElement as HTMLElement;

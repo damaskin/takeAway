@@ -35,6 +35,9 @@ const STALE_AFTER_SECONDS = 2 * 60 * 60;
 /** Longest a pre-order's cooking may start before its pickup, for the candidate query. */
 const START_LOOKAHEAD_SECONDS = 12 * 60 * 60;
 
+/** How often the acceptance reminder and timeout are checked: they fire at most this late. */
+export const ACCEPT_TICK_SECONDS = 10;
+
 /** Marks an order the timeout could not cancel safely, so it is not retried every minute. */
 const BLOCKED_NOTE = 'acceptTimeoutBlocked';
 
@@ -44,7 +47,10 @@ type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refun
 
 /**
  * The kitchen's promises, enforced by the clock (docs/kitchen-policy.md,
- * sections D and E), every minute:
+ * sections D and E). The acceptance reminder and timeout run every
+ * {@link ACCEPT_TICK_SECONDS} seconds, so they land within that of their
+ * moment (a minute's tick let them fire up to a minute late — Maxim saw
+ * the auto-cancel ~30 s after the accept time); the rest every minute:
  *
  * - an ASAP order nobody accepted for half its store's accept time
  *   («Время для принятия заказа», `acceptancePolicy`) → a Telegram reminder
@@ -77,6 +83,7 @@ type BlockReason = 'payment_in_flight' | 'refund_failed' | 'accepted_after_refun
 export class KitchenSlaService {
   private readonly logger = new Logger(KitchenSlaService.name);
   private running = false;
+  private acceptRunning = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -90,27 +97,53 @@ export class KitchenSlaService {
     @Optional() private readonly recompute?: QueueRecomputeService,
   ) {}
 
+  /** The acceptance reminder and timeout: due to the second, so checked every ten. */
+  @Cron(CronExpression.EVERY_10_SECONDS, { name: 'kitchen-accept-sla' })
+  async acceptTick(): Promise<void> {
+    if (this.acceptRunning) return;
+    this.acceptRunning = true;
+    try {
+      await this.run(this.acceptanceSteps(new Date()));
+    } finally {
+      this.acceptRunning = false;
+    }
+  }
+
+  /** Start reminders, late orders and the queue estimates: a minute either way is fine. */
   @Cron(CronExpression.EVERY_MINUTE, { name: 'kitchen-order-sla' })
   async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
-      await this.sweep(new Date());
+      await this.run(this.clockSteps(new Date()));
     } finally {
       this.running = false;
     }
   }
 
+  /** Every check at once — what the two ticks do between them. */
   async sweep(now: Date): Promise<void> {
-    const steps: Array<[string, () => Promise<unknown>]> = [
+    await this.run([...this.acceptanceSteps(now), ...this.clockSteps(now)]);
+  }
+
+  private acceptanceSteps(now: Date): Array<[string, () => Promise<unknown>]> {
+    return [
       ['acceptance alerts', () => this.alertUnaccepted(now)],
       ['acceptance timeouts', () => this.expireUnaccepted(now)],
+    ];
+  }
+
+  private clockSteps(now: Date): Array<[string, () => Promise<unknown>]> {
+    return [
       ['start reminders', () => this.remindStarts(now)],
       ['late orders', () => this.flagLate(now)],
       // Queue policy: the estimates follow the clock too (a reserve's start
       // coming, a started order running over).
       ['queue estimates', () => this.recompute?.runActiveStores(now) ?? Promise.resolve(0)],
     ];
+  }
+
+  private async run(steps: Array<[string, () => Promise<unknown>]>): Promise<void> {
     for (const [name, step] of steps) {
       try {
         await step();

@@ -430,6 +430,73 @@ describe('KitchenSlaService', () => {
     await expect(harness([preorder]).service.remindStarts(at('2026-10-14T08:55:00Z'))).resolves.toBe(1);
   });
 
+  // Maxim 2026-11-11: the auto-cancel came ~30 s after the accept time — the
+  // whole sweep ran once a minute. The acceptance checks now have their own
+  // ten-second tick; the start reminders, late orders and queue estimates
+  // stay on the minute.
+  describe('ticks', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('checks only the acceptance reminder and timeout on the ten-second tick', async () => {
+      const { service } = harness();
+      const alert = jest.spyOn(service, 'alertUnaccepted');
+      const timeout = jest.spyOn(service, 'expireUnaccepted');
+      const starts = jest.spyOn(service, 'remindStarts');
+      const late = jest.spyOn(service, 'flagLate');
+
+      await service.acceptTick();
+
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(timeout).toHaveBeenCalledTimes(1);
+      expect(starts).not.toHaveBeenCalled();
+      expect(late).not.toHaveBeenCalled();
+    });
+
+    it('leaves the acceptance checks out of the minute tick', async () => {
+      const { service } = harness();
+      const alert = jest.spyOn(service, 'alertUnaccepted');
+      const timeout = jest.spyOn(service, 'expireUnaccepted');
+      const starts = jest.spyOn(service, 'remindStarts');
+      const late = jest.spyOn(service, 'flagLate');
+
+      await service.tick();
+
+      expect(alert).not.toHaveBeenCalled();
+      expect(timeout).not.toHaveBeenCalled();
+      expect(starts).toHaveBeenCalledTimes(1);
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels an order on the first ten-second tick past its accept time', async () => {
+      jest.useFakeTimers({ now: at('2026-10-14T12:10:07Z') });
+      const { service, prisma } = harness();
+
+      await service.acceptTick();
+
+      // 10 minutes after 12:00:07 reached the board: due now, not a minute later.
+      // The reminder's query comes first; the timeout's is the one with AND.
+      const where = prisma.order.findMany.mock.calls.map((call) => call[0]?.where).find((w) => w?.AND);
+      expect(where?.AND[0]).toEqual({
+        OR: [{ storeId: { in: ['store-1'] }, kitchenVisibleAt: { lte: at('2026-10-14T12:00:07Z') } }],
+      });
+    });
+
+    it('skips a ten-second tick while the previous one is still running', async () => {
+      const { service } = harness();
+      let release: () => void = () => undefined;
+      const alert = jest
+        .spyOn(service, 'alertUnaccepted')
+        .mockImplementationOnce(() => new Promise<number>((resolve) => (release = () => resolve(0))));
+
+      const first = service.acceptTick();
+      await service.acceptTick();
+      release();
+      await first;
+
+      expect(alert).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('keeps going when one check fails', async () => {
     const { service, prisma } = harness();
     prisma.order.findMany.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValue([]);

@@ -757,7 +757,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get payMethodCard => 'By card';
 
   @override
-  String get payMethodQr => 'By QR in the bank\'s app';
+  String get payMethodQr => 'Mobile payment';
 
   @override
   String get payMethodQrSubtitle => 'Agroprombank\'s app';
@@ -767,7 +767,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'We\'ll show a QR code to pay in Agroprombank\'s app. If the store does not accept the order, the money is returned.';
 
   @override
-  String get qrPayTitle => 'Pay by QR';
+  String get qrPayTitle => 'Mobile payment';
 
   @override
   String get qrPayToPay => 'To pay';
@@ -817,11 +817,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get qrPayToOrder => 'Back to the order';
 
   @override
-  String get payByQr => 'Pay by QR';
+  String get payByQr => 'Pay by mobile payment';
 
   @override
   String payByQrAmount(String total) {
-    return 'Pay $total by QR';
+    return 'Pay $total by mobile payment';
   }
 
   @override
@@ -1042,22 +1042,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paymentStateAwaiting => 'Awaiting payment';
 
   @override
-  String get paymentStatePaidByQr => 'Paid by QR';
+  String get paymentStatePaidByQr => 'Paid by mobile payment';
 
   @override
   String get paymentStatePaidByQrHint => 'If the store does not accept the order, the money is returned.';
 
   @override
-  String get paymentStateAwaitingQr => 'Waiting for the QR payment';
+  String get paymentStateAwaitingQr => 'Waiting for the mobile payment';
 
   @override
-  String get paymentStateQrNotPaid => 'The QR invoice was not paid';
+  String get paymentStateQrNotPaid => 'The mobile payment did not go through';
 
   @override
   String get orderExpiredNotAcceptedRefundedQr => 'The store did not confirm the order — the money has been returned';
 
   @override
-  String get cancelMoneyRefundedQr => 'The money paid by QR has been returned.';
+  String get cancelMoneyRefundedQr => 'The money paid by mobile payment has been returned.';
 
   @override
   String get cancelMoneyNotChargedQr => 'No money was taken.';
@@ -1088,7 +1088,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'The store has not accepted it yet, so nothing was charged. If an amount is held on your card, the hold is released.';
 
   @override
-  String get cancelOrderBodyQr => 'The store has not accepted it yet. The money paid by QR will be returned.';
+  String get cancelOrderBodyQr =>
+      'The store has not accepted it yet. The money paid by mobile payment will be returned.';
 
   @override
   String get cancelByPhone => 'Your order is already being made — call the store to cancel it';
@@ -1844,10 +1845,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'You already have unpaid orders — pay for or cancel one before placing a new one';
 
   @override
-  String get errQrPaymentDisabled => 'Payment by QR is not available right now';
+  String get errQrPaymentDisabled => 'Mobile payment is not available right now';
 
   @override
-  String get errQrCurrencyUnsupported => 'This store can\'t be paid by QR';
+  String get errQrCurrencyUnsupported => 'This store doesn\'t take mobile payment';
 
   @override
   String get errOrderNotPayable => 'This order can no longer be paid';

@@ -683,7 +683,7 @@ Payment (id, orderId, provider[STRIPE|TELEGRAM_PAY|...], providerRef?,
 
 **Миграции 2026-11-09.** `20261109100000_order_cancel_money` — `Order.cancelMoney`; старые отменённые и истёкшие заказы заполнены по событиям возврата и платежам (что не удалось определить — null). `20261109110000_queue_policy` — поля очереди заказов: `Store.loadExtraSeconds`, `Product.prepParallel`, `Order.placedUnderLoad`, `OrderItem.prepSeconds` / `prepParallel`; без бэкфилла — строки заказов, сделанных с выключенным флагом, очередь читает через товар. Подробно — `docs/queue-policy.md`, 2.1.
 
-**Миграция `20261109120000_option_catalog`** — таблицы каталога и `CartItem.optionsJson`; в ней же стартовый каталог кофеен и фастфуда (29 групп, 141 пункт) с постоянными id (`og_coffee_size`, `oi_coffee_size_m`…), `ON CONFLICT DO NOTHING` — безопасно и на проде.
+**Миграция `20261109120000_option_catalog`** — таблицы каталога и `CartItem.optionsJson`; в ней же стартовый каталог кофеен и фастфуда (29 групп, 141 пункт) с постоянными id (`og_coffee_size`, `oi_coffee_size_m`…), `ON CONFLICT DO NOTHING` — безопасно и на проде. `20261113100000_option_espresso_strength` — группа `og_espresso` «Эспрессо» → «Крепость» и подсказки у пунктов (Ристретто «крепче, меньше объём», Эспрессо «классика», Доппио «двойная порция», Лунго «мягче, больше объём»); пропускается, если группу уже переименовали или подсказку уже написали.
 
 ### 5.5. Loyalty / Promo / Gift cards / Campaigns
 

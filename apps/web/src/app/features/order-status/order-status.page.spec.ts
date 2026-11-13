@@ -559,7 +559,7 @@ describe('OrderStatusPage — waiting for the store', () => {
       const unpaid = { ...ORDER, payment: { state: 'NONE', amountCents: 0, cardMask: null, paidAt: null } } as const;
       const { byTestId } = await open(unpaid, {}, undefined, { qr: ['RUP'] });
       const link = byTestId('pay-by-qr');
-      expect(link?.textContent?.trim()).toBe('Оплатить по QR');
+      expect(link?.textContent?.trim()).toBe('Оплатить мобильным платежом');
       expect(link?.getAttribute('href')).toBe('/orders/order-1/qr');
       TestBed.resetTestingModule();
 
@@ -571,7 +571,7 @@ describe('OrderStatusPage — waiting for the store', () => {
     it('says the order is paid by QR and the money comes back if the store turns it down', async () => {
       const { testText, byTestId, text } = await open({ ...ORDER, payment: QR_PAID }, {}, undefined, { qr: ['RUP'] });
       expect(testText('payment-line')).toBe(
-        '✅ Оплачено по QR 45 руб. Если заведение не примет заказ, деньги вернутся.',
+        '✅ Оплачено мобильным платежом 45 руб. Если заведение не примет заказ, деньги вернутся.',
       );
       expect(text()).not.toContain('Спишем при принятии заказа');
       expect(byTestId('pay-by-qr')).toBeNull();
@@ -592,7 +592,7 @@ describe('OrderStatusPage — waiting for the store', () => {
         { qr: ['RUP'] },
       );
       expect(testText('cancel-reason')).toBe(
-        'Заведение сейчас перегружено заказами. Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.',
+        'Заведение сейчас перегружено заказами. Мобильный платёж возвращён — деньги вернулись на ваш счёт в банке.',
       );
       expect(testText('payment-line')).toBe('↩️ Деньги возвращены 45 руб.');
     });
@@ -601,7 +601,7 @@ describe('OrderStatusPage — waiting for the store', () => {
     it('reads the payment as QR when the API does not say, but only where cards are off', async () => {
       const held = { ...ORDER, payment: { state: 'HELD', amountCents: 4500, cardMask: null, paidAt: null } } as const;
       const qrOnly = await open(held, {}, undefined, { qr: ['RUP'], cards: false });
-      expect(qrOnly.testText('payment-line')).toContain('Оплачено по QR');
+      expect(qrOnly.testText('payment-line')).toContain('Оплачено мобильным платежом');
       TestBed.resetTestingModule();
 
       const both = await open(held, {}, undefined, { qr: ['RUP'], cards: true });
