@@ -15,12 +15,12 @@ import {
   isDrinkKind,
   isStoreInactive,
   normalizeOptionPicks,
+  nutritionFacts,
   optionLinesFor,
   orderOptionGroups,
   priceWithOptionPicks,
   priceWithOptions,
   productKind,
-  showsNutrition,
   suggestionRow,
   toOptionSelections,
   type SuggestionRow,
@@ -43,7 +43,7 @@ import { TmaProductOptionsComponent } from './product-options.component';
  * tcContent (0/16/16/16 padding, gap 20):
  *   hero — 220px image: the photo, or the placeholder for the product's kind
  *   infoRow — title (Fraunces 20/700) · live price (Inter 18/700 caramel)
- *   meta — calories (a meal only), prep time
+ *   meta — calories and macros (a meal only), prep time
  *   description
  *   options — the options catalog's groups when the product has them (see
  *     TmaProductOptionGroupsComponent), else choice chips per size /
@@ -88,10 +88,24 @@ import { TmaProductOptionsComponent } from './product-options.component';
               >{{ p.name }}</span
             >
             <div class="flex items-center flex-wrap" style="gap: 4px 12px">
-              @if (hasNutrition() && p.calories !== null) {
-                <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
-                  >🔥 {{ 'tma.product.labels.kcal' | translate: { calories: p.calories } }}</span
-                >
+              @if (nutrition(); as n) {
+                @if (n.calories !== null) {
+                  <span
+                    data-testid="product-kcal"
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                    >🔥 {{ 'tma.product.labels.kcal' | translate: { calories: n.calories } }}</span
+                  >
+                }
+                @if (n.macros.length > 0) {
+                  <span
+                    data-testid="product-macros"
+                    style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
+                  >
+                    @for (m of n.macros; track m.key; let last = $last) {
+                      {{ 'tma.product.labels.' + m.key | translate: { grams: m.grams } }}{{ last ? '' : ' · ' }}
+                    }
+                  </span>
+                }
               }
               <span style="font-family: var(--font-sans); font-size: 12px; color: var(--color-text-tertiary)"
                 >⌛ {{ minutes(p.prepTimeSeconds) }} {{ 'common.units.min' | translate }}</span
@@ -281,8 +295,11 @@ export class TmaProductPage implements OnInit, OnDestroy {
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
 
-  /** Calories are a meal's: a drink or a pastry shows none, whatever an older API sends. */
-  readonly hasNutrition = computed(() => showsNutrition(this.kind()));
+  /** Calories and macros are a meal's: a drink or a pastry shows none, whatever an older API sends. */
+  readonly nutrition = computed(() => {
+    const p = this.product();
+    return p ? nutritionFacts(p, this.kind()) : null;
+  });
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {

@@ -454,7 +454,7 @@ export class OrderDetailPanelComponent {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  /** How the customer paid — «QR (Агропромбанк)» — or null before any money came. */
+  /** How the customer paid — «Мобильный платёж (Агропромбанк)» — or null before any money came. */
   readonly paidWith = computed(() => {
     const payment = orderMoneyPayment(this.order()?.payments ?? []);
     return payment ? { key: paymentProviderKey(payment.provider), raw: payment.provider } : null;

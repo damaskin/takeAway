@@ -313,7 +313,7 @@ describe('TmaOrderStatusPage', () => {
       const { byTestId, destroy } = await open(unpaid, { qr: ['RUP'] });
       const navigate = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-      expect(byTestId('pay-by-qr')?.textContent?.trim()).toBe('Оплатить по QR');
+      expect(byTestId('pay-by-qr')?.textContent?.trim()).toBe('Оплатить мобильным платежом');
       byTestId('pay-by-qr')?.click();
       expect(navigate).toHaveBeenCalledWith(['/orders', 'ord-1', 'qr']);
       destroy();
@@ -332,7 +332,7 @@ describe('TmaOrderStatusPage', () => {
 
     it('says the order is paid by QR and the money comes back if the store turns it down', async () => {
       const { text, root, destroy } = await open(order({ payment: QR_PAID }), { qr: ['RUP'] });
-      expect(text('payment-line')).toContain('Оплачено по QR');
+      expect(text('payment-line')).toContain('Оплачено мобильным платежом');
       expect(root.textContent).toContain('Если заведение не примет заказ, деньги вернутся.');
       expect(root.textContent).not.toContain('Спишем при принятии заказа');
       destroy();
@@ -349,7 +349,7 @@ describe('TmaOrderStatusPage', () => {
         }),
         { qr: ['RUP'] },
       );
-      expect(text('cancel-reason')).toContain('Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.');
+      expect(text('cancel-reason')).toContain('Мобильный платёж возвращён — деньги вернулись на ваш счёт в банке.');
       expect(text('payment-line')).toContain('Деньги возвращены');
       destroy();
     });

@@ -765,7 +765,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get payMethodCard => 'Картой';
 
   @override
-  String get payMethodQr => 'По QR в приложении банка';
+  String get payMethodQr => 'Оплата мобильным платежом';
 
   @override
   String get payMethodQrSubtitle => 'Приложение Агропромбанка';
@@ -775,7 +775,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'Покажем QR-код для оплаты в приложении Агропромбанка. Если заведение не примет заказ, деньги вернутся.';
 
   @override
-  String get qrPayTitle => 'Оплата по QR';
+  String get qrPayTitle => 'Оплата мобильным платежом';
 
   @override
   String get qrPayToPay => 'К оплате';
@@ -825,11 +825,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get qrPayToOrder => 'К заказу';
 
   @override
-  String get payByQr => 'Оплатить по QR';
+  String get payByQr => 'Оплатить мобильным платежом';
 
   @override
   String payByQrAmount(String total) {
-    return 'Оплатить $total по QR';
+    return 'Оплатить $total мобильным платежом';
   }
 
   @override
@@ -1050,22 +1050,22 @@ class AppLocalizationsRu extends AppLocalizations {
   String get paymentStateAwaiting => 'Ждём оплату';
 
   @override
-  String get paymentStatePaidByQr => 'Оплачено по QR';
+  String get paymentStatePaidByQr => 'Оплачено мобильным платежом';
 
   @override
   String get paymentStatePaidByQrHint => 'Если заведение не примет заказ, деньги вернутся.';
 
   @override
-  String get paymentStateAwaitingQr => 'Ждём оплату по QR';
+  String get paymentStateAwaitingQr => 'Ждём мобильный платёж';
 
   @override
-  String get paymentStateQrNotPaid => 'Счёт по QR не оплачен';
+  String get paymentStateQrNotPaid => 'Мобильный платёж не прошёл';
 
   @override
   String get orderExpiredNotAcceptedRefundedQr => 'Точка не подтвердила заказ — деньги вернули';
 
   @override
-  String get cancelMoneyRefundedQr => 'Деньги, оплаченные по QR, вернули.';
+  String get cancelMoneyRefundedQr => 'Деньги, оплаченные мобильным платежом, вернули.';
 
   @override
   String get cancelMoneyNotChargedQr => 'Деньги не списывались.';
@@ -1096,7 +1096,7 @@ class AppLocalizationsRu extends AppLocalizations {
       'Точка ещё не приняла заказ, деньги не списаны. Если сумма забронирована на карте, бронь снимется.';
 
   @override
-  String get cancelOrderBodyQr => 'Точка ещё не приняла заказ. Деньги, оплаченные по QR, вернутся.';
+  String get cancelOrderBodyQr => 'Точка ещё не приняла заказ. Деньги, оплаченные мобильным платежом, вернутся.';
 
   @override
   String get cancelByPhone => 'Заказ уже готовят — для отмены позвоните в точку';
@@ -1865,10 +1865,10 @@ class AppLocalizationsRu extends AppLocalizations {
       'У вас уже есть неоплаченные заказы — оплатите или отмените один из них, чтобы оформить новый';
 
   @override
-  String get errQrPaymentDisabled => 'Оплата по QR сейчас недоступна';
+  String get errQrPaymentDisabled => 'Оплата мобильным платежом сейчас недоступна';
 
   @override
-  String get errQrCurrencyUnsupported => 'В этом заведении нельзя оплатить по QR';
+  String get errQrCurrencyUnsupported => 'В этом заведении нельзя оплатить мобильным платежом';
 
   @override
   String get errOrderNotPayable => 'Этот заказ уже нельзя оплатить';

@@ -41,7 +41,7 @@ final bankAppLauncherProvider = Provider<BankAppLauncher>((ref) => const DeviceB
 
 /// Orders this phone saw paid by QR. Until the API names the provider of an
 /// order's payment (`payment.provider`, optional), this is how the order
-/// screen tells money taken by QR («Оплачено по QR») from a card hold.
+/// screen tells money taken by QR («Оплачено мобильным платежом») from a card hold.
 class QrPaidOrders {
   const QrPaidOrders(this._prefs);
 

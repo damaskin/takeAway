@@ -15,12 +15,12 @@ import {
   isDrinkKind,
   isStoreInactive,
   normalizeOptionPicks,
+  nutritionFacts,
   optionLinesFor,
   orderOptionGroups,
   priceWithOptionPicks,
   priceWithOptions,
   productKind,
-  showsNutrition,
   suggestionRow,
   toOptionSelections,
   type SuggestionRow,
@@ -45,7 +45,7 @@ import { ProductOptionsComponent } from './product-options.component';
  *     pdpDetailCol (fill) —
  *       breadcrumb
  *       title (Fraunces 36/700) + description (Inter 16, 1.6 line-height)
- *       meta: calories (a meal only)
+ *       meta: calories and macros (a meal only)
  *       options: the options catalog's groups when the product has them
  *         (see ProductOptionGroupsComponent), else choice chips per size /
  *         temperature / milk / cup and add-on groups opening in place (see
@@ -122,10 +122,19 @@ import { ProductOptionsComponent } from './product-options.component';
                 {{ p.description }}
               </p>
             }
-            <!-- Meta: calories, for a meal -->
-            @if (hasNutrition() && p.calories !== null) {
+            <!-- Meta: calories and macros, for a meal -->
+            @if (nutrition(); as n) {
               <div class="pdp-meta" data-testid="product-meta">
-                <span>🔥 {{ 'web.product.labels.kcal' | translate: { calories: p.calories } }}</span>
+                @if (n.calories !== null) {
+                  <span>🔥 {{ 'web.product.labels.kcal' | translate: { calories: n.calories } }}</span>
+                }
+                @if (n.macros.length > 0) {
+                  <span data-testid="product-macros">
+                    @for (m of n.macros; track m.key; let last = $last) {
+                      {{ 'web.product.labels.' + m.key | translate: { grams: m.grams } }}{{ last ? '' : ' · ' }}
+                    }
+                  </span>
+                }
               </div>
             }
           </div>
@@ -467,8 +476,11 @@ export class ProductPage implements OnInit {
 
   readonly isDrink = computed(() => isDrinkKind(this.kind()));
 
-  /** Calories are a meal's: a drink or a pastry shows none, whatever an older API sends. */
-  readonly hasNutrition = computed(() => showsNutrition(this.kind()));
+  /** Calories and macros are a meal's: a drink or a pastry shows none, whatever an older API sends. */
+  readonly nutrition = computed(() => {
+    const product = this.product();
+    return product ? nutritionFacts(product, this.kind()) : null;
+  });
 
   /** The store's answer for the product on screen (see `storeSuggestions`). */
   private readonly suggestions = storeSuggestions(() => {

@@ -201,8 +201,8 @@ export const TRANSLATIONS_RU = {
       /** The cart got no choice for a product that needs one. */
       OPTIONS_REQUIRED: 'Выберите вариант на странице товара',
       /** Paying by QR (docs/agroprombank-payments.md §12.3). */
-      QR_PAYMENT_DISABLED: 'Оплата по QR сейчас недоступна',
-      QR_CURRENCY_UNSUPPORTED: 'В этом заведении оплата по QR недоступна',
+      QR_PAYMENT_DISABLED: 'Оплата мобильным платежом сейчас недоступна',
+      QR_CURRENCY_UNSUPPORTED: 'В этом заведении оплата мобильным платежом недоступна',
       ORDER_NOT_PAYABLE: 'Этот заказ уже оплачен или закрыт',
       QR_BANK_UNAVAILABLE: 'Банк сейчас не отвечает — попробуйте ещё раз через минуту',
     },
@@ -292,9 +292,9 @@ export const TRANSLATIONS_RU = {
      */
     qrPayment: {
       methodCard: 'Картой',
-      methodQr: 'По QR в приложении банка',
+      methodQr: 'Оплата мобильным платежом',
       checkoutHint: 'После оформления покажем QR-код — оплатите его в приложении Агропромбанка.',
-      title: 'Оплата по QR',
+      title: 'Оплата мобильным платежом',
       orderLine: 'Заказ {{code}} · {{amount}}',
       loading: 'Готовим QR-код…',
       codeLabel: 'QR-код для оплаты заказа',
@@ -316,15 +316,15 @@ export const TRANSLATIONS_RU = {
       toOrder: 'К заказу',
       /** The order page. */
       order: {
-        payByQr: 'Оплатить по QR',
-        pending: 'Ждём оплату по QR',
-        failed: 'Счёт по QR не оплачен',
-        paid: 'Оплачено по QR',
+        payByQr: 'Оплатить мобильным платежом',
+        pending: 'Ждём мобильный платёж',
+        failed: 'Мобильный платёж не прошёл',
+        paid: 'Оплачено мобильным платежом',
         heldHint: 'Если заведение не примет заказ, деньги вернутся.',
         /** The payment line of a cancelled or expired order paid by QR, once the money went back. */
         refunded: 'Деньги возвращены',
         /** The money line of a cancelled order paid by QR (cancelMoney REFUNDED). */
-        refundedLine: 'Оплата по QR возвращена — деньги вернулись на ваш счёт в банке.',
+        refundedLine: 'Мобильный платёж возвращён — деньги вернулись на ваш счёт в банке.',
       },
     },
   },
@@ -431,6 +431,9 @@ export const TRANSLATIONS_RU = {
         addons: 'Добавки',
         specialInstructions: 'Особые пожелания',
         kcal: '{{calories}} ккал',
+        proteins: 'Белки {{grams}} г',
+        fats: 'Жиры {{grams}} г',
+        carbs: 'Углеводы {{grams}} г',
       },
       placeholders: {
         notes: 'Есть пожелания? Например, погорячее или без сахара…',
@@ -1926,14 +1929,14 @@ export const TRANSLATIONS_RU = {
       confirm: 'Подтвердить возврат',
       refunding: 'Возвращаем…',
       /** The bank's QR payment gives money back only whole (ReversePayment takes no amount). */
-      fullRefundOnly: 'Оплату по QR можно вернуть только целиком.',
+      fullRefundOnly: 'Мобильный платёж можно вернуть только целиком.',
       paidWith: 'Способ оплаты',
       /** `Payment.provider`, as the manager reads it. */
       providers: {
         STRIPE: 'Карта (Stripe)',
         AGROPROMBANK: 'Привязанная карта (Агропромбанк)',
         AGROPROMBANK_WEB: 'Карта на странице банка (Агропромбанк)',
-        AGROPROMBANK_QR: 'QR (Агропромбанк)',
+        AGROPROMBANK_QR: 'Мобильный платёж (Агропромбанк)',
       },
       timeline: 'История',
       /** The discount line of a takeAway promo order. */
@@ -4090,6 +4093,9 @@ export const TRANSLATIONS_RU = {
         cup: 'Чашка',
         addons: 'Добавки',
         kcal: '{{calories}} ккал',
+        proteins: 'Белки {{grams}} г',
+        fats: 'Жиры {{grams}} г',
+        carbs: 'Углеводы {{grams}} г',
       },
       offlinePrompt: 'Нет связи с сервером — добавить в корзину пока нельзя.',
       addFailed: 'Не удалось добавить товар в корзину. Попробуйте ещё раз.',
